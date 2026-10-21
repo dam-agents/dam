@@ -171,16 +171,31 @@ const OPENRC: &str = "/sbin/openrc";
 
 // UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`. openrc runs in the entrypoint's environment, of which its rc_env_allow passes on only what the image names, such as the gateway a service pulls through.
 fn run_openrc(runlevel: &str, env: &[(String, String)], stopping: &mut bool) {
+    finish_openrc(runlevel, spawn_openrc(runlevel, env), stopping);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: starts `openrc <runlevel>` as a child of the init, unblocked for it, or reports why not and gives none.
+fn spawn_openrc(runlevel: &str, env: &[(String, String)]) -> Option<std::process::Child> {
     let mut openrc = std::process::Command::new(OPENRC);
     openrc.arg(runlevel).env_clear().env("PATH", DEFAULT_PATH);
-    let spawned = unblocked(openrc.envs(env.iter().map(|(key, value)| (key, value)))).spawn();
-    match spawned.map(|child| wait_for(child.id(), stopping)) {
-        Ok(0) => logf!("openrc {runlevel} done"),
-        Ok(status) => announce(&format!(
+    match unblocked(openrc.envs(env.iter().map(|(key, value)| (key, value)))).spawn() {
+        Ok(child) => Some(child),
+        Err(e) => {
+            announce(&format!("WARNING: running openrc {runlevel}: {e}"));
+            None
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits out an `openrc` child and reports how it ended, splitting a runlevel that failed from one that did not.
+fn finish_openrc(runlevel: &str, child: Option<std::process::Child>, stopping: &mut bool) {
+    match child.map(|child| wait_for(child.id(), stopping)) {
+        Some(0) => logf!("openrc {runlevel} done"),
+        Some(status) => announce(&format!(
             "WARNING: openrc {runlevel} {}",
             exit_description(status)
         )),
-        Err(e) => announce(&format!("WARNING: running openrc {runlevel}: {e}")),
+        None => {}
     }
 }
 
@@ -2621,8 +2636,12 @@ fn end_cgroup(stopping: &mut bool) {
 // UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
 fn stop(openrc: bool) -> ! {
     if openrc {
-        vm::shutdown_started();
-        run_openrc("shutdown", &[], &mut true);
+        // UNIT_BOUNDARY_DESCRIPTION: the spawn is what the stop's own state is about, so it runs under that state's lock: a shutdown started beside the kill would either be killed under it or stop services that are already gone.
+        if let Some(shutdown) = vm::begin_shutdown(|| spawn_openrc("shutdown", &[])) {
+            finish_openrc("shutdown", shutdown, &mut true);
+        } else {
+            logf!("the workload was already killed; openrc shutdown would stop no service");
+        }
         end_the_rest(&mut true);
     }
     flush_home_on_stop();

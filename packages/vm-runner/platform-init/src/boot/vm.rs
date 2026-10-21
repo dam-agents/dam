@@ -1,6 +1,5 @@
 use std::io::Read;
 use std::os::unix::process::CommandExt;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -751,31 +750,48 @@ fn online_memory(start: u64, length: u64) -> io::Result<()> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the stop handshake between the protocol thread and the supervisor, which runs on the init's main thread. The protocol thread asks for a stop with SIGTERM to the init, which the supervisor waits for, and waits on this for the supervisor to say the workload is gone and the home is written out.
-static STOPPED: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
+// UNIT_BOUNDARY_DESCRIPTION: the phases of the stop handshake between the protocol thread and the supervisor, which runs on the init's main thread. The protocol thread asks for a stop with SIGTERM to the init, which the supervisor waits for, and waits on this for the supervisor to say the workload is gone and the home is written out. The phase is one value under one lock because the moment openrc's shutdown starts and the moment the kill is decided are a single decision: a kill issued while the shutdown runs would end it mid-run, and a shutdown started after the kill would stop nothing, since everything it would stop is already gone.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Phase {
+    // UNIT_BOUNDARY_DESCRIPTION: the workload has been signalled and has its grace, so openrc's shutdown may still start.
+    Stopping,
+    // UNIT_BOUNDARY_DESCRIPTION: openrc's shutdown has been running since this instant, and must not be killed under it.
+    Shutdown(Instant),
+    // UNIT_BOUNDARY_DESCRIPTION: the kill was issued at this instant, so nothing new may start.
+    Killed(Instant),
+    // UNIT_BOUNDARY_DESCRIPTION: the supervisor finished the stop, so the home is written out.
+    Done,
+}
+
+static STOP: (Mutex<Phase>, Condvar) = (Mutex::new(Phase::Stopping), Condvar::new());
 
 // UNIT_BOUNDARY_DESCRIPTION: the supervisor's end once the workload has stopped. The init is the guest's PID 1 and may not exit, since the kernel then panics; the host takes the VMM down once the stop is confirmed.
 pub fn stopped() -> ! {
-    let (lock, cvar) = &STOPPED;
-    *lock.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    let (lock, cvar) = &STOP;
+    *lock.lock().unwrap_or_else(|e| e.into_inner()) = Phase::Done;
     cvar.notify_all();
     loop {
         std::thread::park();
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the supervisor has started openrc's shutdown, which is part of the stop in its own right: the shutdown is its child and runs each service's stop in turn. A stop reads this to give the services room rather than killing the shutdown mid-run, which would end the stops that had not come round yet. False until the supervisor reaches the shutdown, since that comes after the entrypoint has had its grace.
-static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
-
-// UNIT_BOUNDARY_DESCRIPTION: the supervisor's mark that openrc's shutdown is running, so a stop waits out the services' stops rather than killing the shutdown that runs them.
-pub fn shutdown_started() {
-    SHUTDOWN_STARTED.store(true, Ordering::SeqCst);
+// UNIT_BOUNDARY_DESCRIPTION: starts openrc's shutdown, unless the kill is already decided: everything but the init is gone by then, so a shutdown started now would stop no service. `start` runs while the stop's lock is held, so the kill cannot fall between the mark and the child that mark is about, and the shutdown's own window begins at the instant its child exists. That is the race that ended shutdowns mid-run: a mark and a kill that are not one decision leave either a shutdown spawned under a kill, or a mark read before the child it names. Holding the lock across the spawn costs the stop only that spawn — a fork and an exec of this init — because the protocol thread's own decision is to wait for it.
+pub fn begin_shutdown<T>(start: impl FnOnce() -> T) -> Option<T> {
+    let (lock, cvar) = &STOP;
+    let mut phase = lock.lock().unwrap_or_else(|e| e.into_inner());
+    if !matches!(*phase, Phase::Stopping) {
+        return None;
+    }
+    let started = start();
+    *phase = Phase::Shutdown(Instant::now());
+    cvar.notify_all();
+    Some(started)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the grace a stop gives the workload when the host names none, the same as smolvm's guest agent gave it.
 const DEFAULT_STOP_GRACE: Duration = Duration::from_secs(10);
-// UNIT_BOUNDARY_DESCRIPTION: what a stop that has reached openrc's shutdown adds to its window, to let the image's services be stopped. The shutdown runs each service's stop in turn, so a kill inside it ends the services whose stops had not come round yet, and a service's stop may take as long as the workload's own — a container runtime stops its containers in ten seconds by default, which is what a hibernating vm agent saw of a slow docker stop ahead of its own service. The workload's grace, this and AFTER_KILL together come to 25 s, inside STOP_ON_CLOSE's 40 s, the window the runner gives a stop when its pod goes away.
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+// UNIT_BOUNDARY_DESCRIPTION: how long openrc's shutdown may run before a stop gives up on it, from the instant its child exists rather than from the stop's start. The shutdown runs each service's stop in turn, so a kill inside it ends the services whose stops had not come round yet; a stop that kills at the end of the workload's grace alone therefore loses them. This is one shared, best-effort window and not one per service: a slow service still spends what the services after it would have had, and a cleanup that must happen is not guaranteed by it — issue 5339 says why an init and not a stop hook is where a guarantee has to live. Five seconds is what the runner can spare: the default wait is this plus the workload's grace and AFTER_KILL, 20 s, which leaves 20 s of the 40 s STOP_ON_CLOSE the runner gives a stop when its pod goes away. What follows the wait — taking and releasing the storage guard, sync, the disk's freeze, the ack and the VMM's own teardown — is unbounded work on slow or fragmented storage and is not part of that budget.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 // UNIT_BOUNDARY_DESCRIPTION: how often a stop tells the host it is still at work. The host resets its idle deadline on every progress frame, so a workload that takes its whole grace does not read as a guest that hung.
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
 // UNIT_BOUNDARY_DESCRIPTION: what the supervisor gets, after every process was killed, to write the home out and say so.
@@ -828,7 +844,7 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits for the supervisor to finish the stop, telling the host it is still at work, and calls `kill` once the window runs out. The window is `grace`, and `shutdown_grace` more once the supervisor has started openrc's shutdown: that shutdown is its own child and runs each service's stop in turn, so the kill would end it mid-run and leave a service whose stop had not come round yet without one. The flag is read on every turn of the loop, because the supervisor reaches the shutdown well after the stop asked for it, and the added window is measured from the same start so the whole stop stays inside the one the runner gives it: a shutdown that hangs is still cut short, `after_kill` later.
+// UNIT_BOUNDARY_DESCRIPTION: waits for the supervisor to finish the stop, telling the host it is still at work once a second, and issues `kill` once the phase allows it. The kill is decided under the phase's own lock, so it lands either before openrc's shutdown starts, which then does not start at all, or after it, and then only `shutdown_grace` past the instant that shutdown began. `after_kill` stays for the supervisor to write the home out and say so. Every instant here bounds this wait alone: the guard release, the sync and the disk freeze that follow it are unbounded work, as they were before.
 fn wait_out_stop(
     conn: &mut File,
     grace: Duration,
@@ -836,42 +852,51 @@ fn wait_out_stop(
     after_kill: Duration,
     kill: impl Fn(),
 ) {
-    let started = Instant::now();
-    let mut killed = false;
-    let (lock, cvar) = &STOPPED;
-    let mut stopped = lock.lock().unwrap_or_else(|e| e.into_inner());
-    while !*stopped {
-        let deadline = started
-            + grace
-            + if SHUTDOWN_STARTED.load(Ordering::SeqCst) {
-                shutdown_grace
-            } else {
-                Duration::ZERO
+    let waiting = Instant::now();
+    let mut frame_at = waiting + PROGRESS_EVERY;
+    let (lock, cvar) = &STOP;
+    let mut phase = lock.lock().unwrap_or_else(|e| e.into_inner());
+    loop {
+        let now = Instant::now();
+        let wake = match *phase {
+            Phase::Done => break,
+            Phase::Killed(at) => {
+                if now >= at + after_kill {
+                    announce("the supervisor did not finish the stop; freezing the disk anyway");
+                    break;
+                }
+                (at + after_kill).min(frame_at)
+            }
+            running => {
+                let kill_at = match running {
+                    Phase::Shutdown(at) => (waiting + grace).max(at + shutdown_grace),
+                    _ => waiting + grace,
+                };
+                if now >= kill_at {
+                    kill();
+                    *phase = Phase::Killed(now);
+                    cvar.notify_all();
+                    continue;
+                }
+                kill_at.min(frame_at)
+            }
+        };
+        if now >= frame_at {
+            frame_at = now + PROGRESS_EVERY;
+            let progress = AgentResponse::Progress {
+                message: "stopping the workload".into(),
+                percent: None,
+                layer: None,
             };
-        if !killed && Instant::now() >= deadline {
-            kill();
-            killed = true;
+            if send(conn, &progress).is_err() {
+                break;
+            }
+            continue;
         }
-        if killed && Instant::now() >= deadline + after_kill {
-            announce("the supervisor did not finish the stop; freezing the disk anyway");
-            break;
-        }
-        let left = deadline.saturating_duration_since(Instant::now());
-        stopped = cvar
-            .wait_timeout(
-                stopped,
-                PROGRESS_EVERY.min(left.max(Duration::from_millis(1))),
-            )
+        phase = cvar
+            .wait_timeout(phase, wake.saturating_duration_since(now))
             .unwrap_or_else(|e| e.into_inner())
             .0;
-        let progress = AgentResponse::Progress {
-            message: "stopping the workload".into(),
-            percent: None,
-            layer: None,
-        };
-        if send(conn, &progress).is_err() {
-            break;
-        }
     }
 }
 
@@ -985,69 +1010,193 @@ mod tests {
             .any(|c| c == smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY));
     }
 
-    // TEST_SCENARIO: openrc's shutdown is the supervisor's child and runs each service's stop in turn, and a stop that kills everything but the init at the end of the workload's grace would end it mid-run: a service whose stop had not come round yet writes nothing, which is what a hibernating vm agent saw of a slow docker stop ahead of its own service. So the kill waits out a shutdown the supervisor has begun, and a shutdown that hangs is still cut short. The shutdown here is a real child in a group of its own that writes a marker once it gets to it, as a stop_post does, and the stop signals that group as it signals every other process.
+    // TEST_SCENARIO: openrc's shutdown is the supervisor's child and runs each service's stop in turn, and a stop that kills everything but the init at the end of the workload's grace ends it mid-run: a service whose stop had not come round writes nothing, which is what a hibernating agent saw of a slow docker stop ahead of its own service. The kill is therefore a decision of the stop's own state, taken under the lock that starts the shutdown: a shutdown may still start, so the stop gives it its own window, or the kill has gone, so a shutdown is never spawned at all. A shutdown that hangs is cut short, the progress frames settle back to one a second after the kill, and the wait returns on its own bound without the supervisor. The shutdown here is a real child in a group of its own that writes a marker once it reaches its service's stop, as a stop_post does, and the stop signals that group as it signals every other process.
     #[test]
-    fn a_stop_waits_out_the_openrc_shutdown_before_it_kills() {
+    fn a_stop_lets_the_openrc_shutdown_finish_before_it_kills() {
         let dir = std::env::temp_dir().join(format!(
             "platform-init-shutdown-stop-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let marker = dir.join("service-stopped");
-        let grace = Duration::from_millis(300);
-        let after_kill = Duration::from_millis(1500);
-        let run = |shutdown_grace: Duration, reaching_shutdown: bool| {
-            let (lock, _) = &STOPPED;
-            *lock.lock().unwrap_or_else(|e| e.into_inner()) = false;
-            SHUTDOWN_STARTED.store(false, Ordering::SeqCst);
-            let _ = fs::remove_file(&marker);
-            let mut shutdown = std::process::Command::new("/bin/sh")
-                .arg("-c")
-                .arg(format!("sleep 0.7; : > {}", marker.display()))
-                .process_group(0)
-                .spawn()
-                .unwrap();
-            let pid = shutdown.id() as libc::pid_t;
-            // UNIT_BOUNDARY_DESCRIPTION: the supervisor reaches openrc's shutdown a moment after the stop asks for one, and finishes the stop a moment after the shutdown does.
-            let supervisor = std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(100));
-                if reaching_shutdown {
-                    shutdown_started();
-                }
-                std::thread::sleep(Duration::from_millis(1400));
-                let (lock, cvar) = &STOPPED;
-                *lock.lock().unwrap_or_else(|e| e.into_inner()) = true;
-                cvar.notify_all();
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static RUNS: AtomicUsize = AtomicUsize::new(0);
+        // UNIT_BOUNDARY_DESCRIPTION: one whole stop, as the supervisor and the protocol thread run it together. `services_take` is how long the shutdown's service takes to reach its stop, `late` starts the shutdown only after the kill has gone, and `finishes` says whether a supervisor that got its shutdown reports the stop done. The result is what the stop did: when it killed, whether a shutdown was spawned, whether the marker is there, how many progress frames it wrote, and how long it waited.
+        #[derive(Debug)]
+        struct Run {
+            killed: Option<Duration>,
+            spawned: Option<Duration>,
+            marked: bool,
+            frames: usize,
+            waited: Duration,
+        }
+        let run = |services_take: Duration,
+                   grace: Duration,
+                   shutdown_grace: Duration,
+                   after_kill: Duration,
+                   finishes: bool,
+                   late: bool,
+                   bound: Duration| {
+            let n = RUNS.fetch_add(1, Ordering::SeqCst);
+            let marker = dir.join(format!("service-stopped-{n}"));
+            let progress = dir.join(format!("progress-{n}"));
+            let spawned = Mutex::new(None::<Duration>);
+            let child_pid = std::sync::atomic::AtomicI32::new(0);
+            let deadline = std::sync::atomic::AtomicBool::new(false);
+            *STOP.0.lock().unwrap_or_else(|e| e.into_inner()) = Phase::Stopping;
+            let killed = Mutex::new(None);
+            let started = Instant::now();
+            // UNIT_BOUNDARY_DESCRIPTION: the stop writes a progress frame on every turn, and a connection it cannot write to ends the wait, so the frames go to a file of this test's and are counted by its length.
+            let mut conn = fs::File::create(&progress).unwrap();
+            let (killed_at, spawned_at, waited) = std::thread::scope(|scope| {
+                // UNIT_BOUNDARY_DESCRIPTION: a stop that never returns from its own bounds would hang the suite rather than fail it, so the supervisor ends the wait at a ceiling well past every bound this test sets, and the run then fails on the elapsed time it reports.
+                let ceiling = &deadline;
+                scope.spawn(move || {
+                    std::thread::sleep(bound * 3);
+                    let (lock, cvar) = &STOP;
+                    *lock.lock().unwrap_or_else(|e| e.into_inner()) = Phase::Done;
+                    ceiling.store(true, Ordering::SeqCst);
+                    cvar.notify_all();
+                });
+                scope.spawn(|| {
+                    if late {
+                        // UNIT_BOUNDARY_DESCRIPTION: the supervisor that reaches its shutdown only after the workload was killed waits for that kill, which is the order an entrypoint that ignores SIGTERM produces.
+                        while killed.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                    } else {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    let child = begin_shutdown(|| {
+                        let child = std::process::Command::new("/bin/sh")
+                            .arg("-c")
+                            .arg(format!(
+                                "sleep {}; : > {}",
+                                services_take.as_secs_f64(),
+                                marker.display()
+                            ))
+                            .process_group(0)
+                            .spawn()
+                            .unwrap();
+                        // UNIT_BOUNDARY_DESCRIPTION: the group is named under the stop's own lock, with the phase that says the shutdown is running, so the kill that phase allows can always reach it.
+                        child_pid.store(child.id() as libc::pid_t, Ordering::SeqCst);
+                        *spawned.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(started.elapsed());
+                        child
+                    });
+                    if let Some(mut child) = child {
+                        let _ = child.wait();
+                    }
+                    if finishes {
+                        let (lock, cvar) = &STOP;
+                        *lock.lock().unwrap_or_else(|e| e.into_inner()) = Phase::Done;
+                        cvar.notify_all();
+                    }
+                });
+                wait_out_stop(&mut conn, grace, shutdown_grace, after_kill, || {
+                    *killed.lock().unwrap_or_else(|e| e.into_inner()) = Some(started.elapsed());
+                    let pid = child_pid.load(Ordering::SeqCst);
+                    if pid != 0 {
+                        // SAFETY: kill(2) reads no memory; the pid leads the group this test made, which holds nothing but the shutdown.
+                        unsafe { libc::kill(-pid, libc::SIGKILL) };
+                    }
+                });
+                let waited = started.elapsed();
+                let killed_at = *killed.lock().unwrap_or_else(|e| e.into_inner());
+                let spawned_at = *spawned.lock().unwrap_or_else(|e| e.into_inner());
+                assert!(
+                    !deadline.load(Ordering::SeqCst),
+                    "the stop did not return inside its own bound; the suite had to end it"
+                );
+                (killed_at, spawned_at, waited)
             });
-            let killed = AtomicBool::new(false);
-            // UNIT_BOUNDARY_DESCRIPTION: the stop writes a progress frame on every turn, and a connection it cannot write to ends the wait, so the frames go to a file of this test's.
-            let mut conn = fs::File::create(dir.join("progress")).unwrap();
-            wait_out_stop(&mut conn, grace, shutdown_grace, after_kill, || {
-                killed.store(true, Ordering::SeqCst);
-                // SAFETY: kill(2) reads no memory; the pid leads the group this test made, which holds nothing but the shutdown.
-                unsafe { libc::kill(-pid, libc::SIGKILL) };
-            });
-            supervisor.join().unwrap();
-            let _ = shutdown.wait();
-            (killed.load(Ordering::SeqCst), marker.exists())
+            let frame = smolvm_protocol::encode_message(&AgentResponse::Progress {
+                message: "stopping the workload".into(),
+                percent: None,
+                layer: None,
+            })
+            .unwrap()
+            .len();
+            Run {
+                killed: killed_at,
+                spawned: spawned_at,
+                marked: marker.exists(),
+                frames: fs::metadata(&progress).map_or(0, |m| m.len() as usize) / frame,
+                waited,
+            }
         };
-        let (killed, stopped) = run(Duration::from_millis(1500), true);
-        assert!(
-            !killed && stopped,
-            "a stop killed openrc's shutdown before a service's stop ran"
+
+        // TEST_SCENARIO: the service's stop outlives the workload's grace, so a kill at the end of that grace alone takes it before it writes anything, which is the reported failure.
+        let slow = run(
+            Duration::from_millis(1200),
+            Duration::from_millis(200),
+            Duration::from_millis(1500),
+            Duration::from_millis(400),
+            true,
+            false,
+            Duration::from_millis(1500),
         );
-        let (killed, stopped) = run(Duration::from_millis(1500), false);
         assert!(
-            killed && !stopped,
-            "a stop waited out a shutdown window the supervisor never opened"
+            slow.spawned.is_some(),
+            "the supervisor never started a shutdown"
         );
-        let (killed, stopped) = run(Duration::from_millis(200), true);
         assert!(
-            killed && !stopped,
-            "a shutdown that hangs kept the stop from ending"
+            slow.killed.is_none() && slow.marked,
+            "a stop killed openrc's shutdown before a service's stop ran ({slow:?})"
         );
-        let _ = fs::remove_dir_all(&dir);
+
+        // TEST_SCENARIO: a supervisor that reaches its shutdown only after the kill starts none, because everything a shutdown stops is already gone.
+        let after = run(
+            Duration::from_millis(50),
+            Duration::from_millis(100),
+            Duration::from_millis(1500),
+            Duration::from_millis(100),
+            true,
+            true,
+            Duration::from_millis(200),
+        );
+        assert!(
+            after.killed.is_some() && after.spawned.is_none() && !after.marked,
+            "a shutdown started after the kill, where everything it would stop is gone ({after:?})"
+        );
+
+        // TEST_SCENARIO: a shutdown that never finishes is killed at its own window and not before, and the wait returns on its own bound without the supervisor.
+        let hanging = run(
+            Duration::from_secs(5),
+            Duration::from_millis(200),
+            Duration::from_millis(300),
+            Duration::from_millis(1200),
+            false,
+            false,
+            Duration::from_millis(600),
+        );
+        let began = hanging
+            .spawned
+            .unwrap_or_else(|| panic!("the supervisor never started a shutdown"));
+        let killed = hanging
+            .killed
+            .unwrap_or_else(|| panic!("a shutdown that hangs kept the stop from killing it"));
+        assert!(
+            killed >= began + Duration::from_millis(280),
+            "the kill came at {killed:?}, less than the shutdown's window after it began at {began:?}"
+        );
+        assert!(
+            hanging.waited >= Duration::from_millis(1300)
+                && hanging.waited < Duration::from_millis(1800),
+            "the wait did not return on its own bound: {:?}",
+            hanging.waited
+        );
+        assert!(
+            !hanging.marked,
+            "a service's stop ran after the shutdown was killed ({hanging:?})"
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: the pre-kill wait writes one progress frame a second, and the post-kill wait keeps that cadence rather than spinning.
+        assert!(
+            hanging.frames <= 5,
+            "the stop wrote {} progress frames in {:?}",
+            hanging.frames,
+            hanging.waited
+        );
     }
 
     // TEST_SCENARIO: on a new disk in the subvolume layout the home arrives with its seed: the agent's subvolume does not exist until the image's home is copied into a staged subvolume and renamed into place, so the home is the image's, with its owner and mode, and the root of a subvolume. A store that existed empty before its seed would be taken for a seeded home and never get the image's files. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored seeds_a_home_subvolume`.
