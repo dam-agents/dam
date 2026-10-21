@@ -20,6 +20,7 @@ import type {
   ToolContent,
 } from "../../types.js";
 import { describeJsonRpcError } from "./errors.js";
+import { PLUMBING_TAGS } from "./plumbing-tags.js";
 import type { AcpUpdate, FrameMeta } from "./types.js";
 
 const OUTPUT_LIMIT_STOP_REASON: StopReason = "max_tokens";
@@ -28,26 +29,6 @@ function isOutputLimitStop(stopReason: string | undefined): boolean {
   return stopReason === OUTPUT_LIMIT_STOP_REASON;
 }
 
-const PLUMBING_TAGS = [
-  "continued-from",
-  "how-to-respond",
-  "addressed-to-you",
-  "reading-along",
-  "network-access",
-  "attached-files",
-  "turn-undelivered",
-  "turn-interrupted",
-  "system-reminder",
-  "task-notification",
-  "agent-message",
-  "command-name",
-  "command-message",
-  "command-args",
-  "local-command-stdout",
-  "local-command-stderr",
-  "local-command-caveat",
-  "user-prompt-submit-hook",
-];
 const PLUMBING_RE = new RegExp(
   `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*(?<!/))?>[\\s\\S]*?<\\/\\1>`,
   "g",

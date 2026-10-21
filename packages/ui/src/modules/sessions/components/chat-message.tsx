@@ -20,6 +20,7 @@ import { hasAgentContent } from "../../acp/session-projection.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { activityItems } from "../lib/activity-groups.js";
+import { withoutAgentMarkup } from "../lib/agent-markup.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import { repliesOnlyWithError } from "../lib/replies-only-with-error.js";
 import type { MessageTime } from "../lib/thread-items.js";
@@ -144,7 +145,7 @@ export const ChatMessage = memo(function ChatMessage({
   const items = useMemo(
     () =>
       message.role === "assistant"
-        ? activityItems(message.parts, isFanOut)
+        ? activityItems(withoutAgentMarkup(message.parts), isFanOut)
         : activityItems(message.parts, () => true),
     [message.role, message.parts, isFanOut],
   );
