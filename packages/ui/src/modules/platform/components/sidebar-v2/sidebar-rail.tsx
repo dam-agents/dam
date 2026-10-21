@@ -21,7 +21,6 @@ import {
   RAIL_SEPARATOR,
   railTile,
 } from "@/components/ui/rail-tile";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -72,32 +71,28 @@ export function SidebarRail({
       )}
       data-testid="sidebar-rail"
     >
-      <Tooltip content="Expand navigation" side="right">
-        <button
-          type="button"
-          onClick={onExpand}
-          aria-label="Expand navigation"
-          data-testid="sidebar-rail-expand"
-          className={cn(railTile(false), FOCUS_RING)}
-        >
-          <ChevronRight size={RAIL_GLYPH} />
-        </button>
-      </Tooltip>
-      <Tooltip content="Home" side="right">
-        <button
-          type="button"
-          onClick={() => {
-            setView("home");
-            navigate();
-          }}
-          aria-label="Home"
-          aria-current={homeOpen ? "page" : undefined}
-          data-testid="sidebar-home-row"
-          className={cn(railTile(homeOpen), FOCUS_RING)}
-        >
-          <Home size={RAIL_GLYPH} />
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label="Expand navigation"
+        data-testid="sidebar-rail-expand"
+        className={cn(railTile(false), FOCUS_RING)}
+      >
+        <ChevronRight size={RAIL_GLYPH} />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setView("home");
+          navigate();
+        }}
+        aria-label="Home"
+        aria-current={homeOpen ? "page" : undefined}
+        data-testid="sidebar-home-row"
+        className={cn(railTile(homeOpen), FOCUS_RING)}
+      >
+        <Home size={RAIL_GLYPH} />
+      </button>
       {pins.size > 0 && (
         <PinnedTile
           open={open === "pinned"}
@@ -138,21 +133,19 @@ export function SidebarRail({
           />
         ))}
       </div>
-      <Tooltip content="Settings" side="right">
-        <button
-          type="button"
-          onClick={() => {
-            navigateToSettings();
-            navigate();
-          }}
-          aria-label="Settings"
-          aria-current={settingsOpen ? "page" : undefined}
-          data-testid="sidebar-settings-row"
-          className={cn(railTile(settingsOpen), "mt-auto", FOCUS_RING)}
-        >
-          <Settings size={RAIL_GLYPH} />
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        onClick={() => {
+          navigateToSettings();
+          navigate();
+        }}
+        aria-label="Settings"
+        aria-current={settingsOpen ? "page" : undefined}
+        data-testid="sidebar-settings-row"
+        className={cn(railTile(settingsOpen), "mt-auto", FOCUS_RING)}
+      >
+        <Settings size={RAIL_GLYPH} />
+      </button>
     </div>
   );
 }
