@@ -57,6 +57,7 @@ The runtime sorts what runs in the pod into four kinds, one row per process tree
 A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-pod), and the runtime reads every one of them the same way.
 
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct children — the chat harnesses, the pod service, terminals, SSH servers.
+Nor is openrc's user-services manager, which starts and stops the agent's [Startup Items](#startup-items).
 
 A row carries the **output file** behind the process's stdout or stderr when that is a regular file, and the user can read its tail.
 The runtime reads only a file a scan recorded, never a path a caller names, with one exception: a Startup Item's log, which it builds from an item id that passed the same id rule as the list, and only for an item the list or a running row names.
@@ -132,6 +133,8 @@ At boot, services start before the runtime, from the file it wrote before the ma
 User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
 
 The supervisor of a user service carries its name (`RC_USER_SERVICES`, `RC_SVCNAME`), which the process scan reads beside the keep mark, so its tree under the reaper is one **Startup Item** row rather than a Detached Process; a process below another root that only inherited those variables is not.
+The manager that runs those supervisors — `user.root`, the `supervise-daemon` of openrc's own user service, and the `openrc-user` below it — is no row at all: the scan drops both from the table and re-parents their children to the reaper, so the docker or k3s service it supervises lists as its own Startup Item row, as it would without the manager, and nothing of the manager counts in the header or keeps the agent awake.
+A finished history record of it, written before the scan dropped it, is left out of the list too.
 The panel lists every service in a section of its own, running, exited or off, with its log as output and history, and keeps a running service's row out of the background groups, the header count and the finished history.
 A service that runs with no script any more is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
 **A service never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for one.

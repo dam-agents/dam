@@ -39,6 +39,16 @@ function normalizeCommand(text: string): string {
 }
 
 const SHELL_EVAL = /\beval '((?:[^']|'"'"'|'\\'')*)'/;
+const USER_SERVICE_MANAGER = /^supervise-daemon\s+user\./;
+const USER_SERVICE_MANAGER_BINARY =
+  /(?:^|\s)\/usr\/lib\/rc\/bin\/openrc-user(?:\s|$)/;
+
+export function isUserServiceManager(cmdline: string): boolean {
+  return (
+    USER_SERVICE_MANAGER.test(cmdline) ||
+    USER_SERVICE_MANAGER_BINARY.test(cmdline)
+  );
+}
 const COMMAND_LABEL_MAX = 500;
 
 function isShellWrapper(cmdline: string): boolean {
@@ -97,11 +107,31 @@ export function platformOwnPids(
  * below it. Such a tree whose root is the supervise-daemon of one of the
  * agent's own openrc services is a Startup Item instead, one row per service:
  * the supervisor is the root, and the row shows the service's own command
- * below it. Work under an attached PTY or SSH
+ * below it. The user-services manager that runs those supervisors is no row
+ * at all: its processes are dropped from every tree and its services re-parented
+ * to the reaper in its place, so they classify as they would without it.
+ * Work under an attached PTY or SSH
  * shell is not listed until it detaches.
  */
 export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
-  const { processes } = input.snapshot;
+  const scanned = input.snapshot.processes;
+  const managers = new Set(
+    scanned.filter((p) => isUserServiceManager(p.cmdline)).map((p) => p.pid),
+  );
+  const parent = new Map(scanned.map((p) => [p.pid, p.ppid]));
+  const reaped = (pid: number): number => {
+    let at = pid;
+    while (managers.has(at)) at = parent.get(at) ?? 1;
+    return at;
+  };
+  const processes =
+    managers.size === 0
+      ? scanned
+      : scanned
+          .filter((p) => !managers.has(p.pid))
+          .map((p) =>
+            managers.has(p.ppid) ? { ...p, ppid: reaped(p.ppid) } : p,
+          );
   const byPid = new Map<number, ScannedProcess>();
   const children = new Map<number, ScannedProcess[]>();
   for (const p of processes) {
