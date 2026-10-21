@@ -130,7 +130,10 @@ A kubelet answers a resize it cannot grant within a few passes of the machine wa
 Once the grace is over and the node has still not granted enough for one more machine, the grant is exhausted and the owner's idle agents are the only room left.
 That is a bounded retry policy rather than a proof that the node refused this ask: expiry says the wait has gone on long enough, not that the node answered.
 An owner's only waiter is the agent being reconciled, so the wait is counted from the agent's own reconcile rather than from its peers.
-A node that reports no grant is not a stepped ask at all: with no figure to measure the demand against, the whole demand stands, so no grace applies and the reclaim runs as it does for a start the pool refused.
+A node that reports no grant is not a stepped ask at all: with no figure to measure the demand against, the whole demand stands, so no grace applies.
+Such a start is held under the unreadable-grant rule above rather than reclaimed against a grant the controller never read, so the reclaim there is the pool-bound one, not this one.
+The grace is recorded on every reconcile, from the sizing read taken after the ensure, and a reconcile that finds the ask no longer stepped clears it.
+Recording it only where a reclaim reads it would leave a grace the node's grant ended behind, and a later start that needs the same request of the same pod would inherit it and free an idle machine at once.
 A demand that no longer steps down ends the wait at once.
 Room to free is counted from the machines the runner holds or is about to hold, never from the owner's other starts waiting for the node: a waiting start holds nothing, so counting it would ask a reclaim for room no idle agent can give and neither start would ever be admitted, and a waiting agent is never itself the agent a reclaim hibernates.
 **A restart is not an admission.** A machine the runner already counts as running is restarted against the pool limit alone, never the grant: its boot replaces memory it already holds, and the request the ceiling comes from is sized from the use it holds while idle, below the warm-up floor it boots at, so capping that restart would refuse a revision roll, an image or env change, a CA rotation and a guest gone quiet for good — and no retry would ever grow the request the machine's own use cannot raise.

@@ -293,17 +293,23 @@ func (r *AgentReconciler) runnerAskIsStepped(ctx context.Context, owner string, 
 	return steppedAsk{}, false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the reclaim should wait before freeing room for a start the node has not granted: the owner's ask is stepped down, and this very ask became so less than a grace ago. The first pass that finds an ask records when; any other ask — a wave the node granted, a further step down, a replacement pod — starts its own grace, and a pass that finds nothing stepped clears the record, so a grace is never inherited.
-func (r *AgentReconciler) reclaimWaitsForTheReducedAsk(owner string, ask steppedAsk, stepped bool) bool {
+// UNIT_BOUNDARY_DESCRIPTION: the grace is recorded where every reconcile can see it, not only where a reclaim would read it: a pass that finds the ask stepped records when this ask began, and a pass that finds nothing stepped clears the record. Reading it only inside the reclaim would leave a spent grace behind a wave the node granted, and a later start of the same size on the same pod would then inherit it and free an idle machine at once. A different ask — a further step down, a replacement pod — starts its own grace, and one already recorded keeps its time unchanged, so an ask still being evaluated is not prolonged pass after pass.
+func (r *AgentReconciler) noteSteppedAsk(ctx context.Context, owner string, agent *apiv1.Agent) {
+	ask, stepped := r.runnerAskIsStepped(ctx, owner, agent)
 	if !stepped {
 		r.steppedSince.Delete(owner)
-		return false
+		return
 	}
 	if since, ok := r.steppedSince.Load(owner); ok && since.(steppedAskTimestamp).ask == ask {
-		return time.Since(since.(steppedAskTimestamp).at) < steppedGrantGrace
+		return
 	}
 	r.steppedSince.Store(owner, steppedAskTimestamp{ask: ask, at: time.Now()})
-	return true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the reclaim should wait before freeing room for a start the node has not granted: the ask is stepped down, and this very ask became so less than a grace ago. An ask no pass has recorded yet is waited for too, since the pass that would have recorded it is the one this reclaim runs after.
+func (r *AgentReconciler) reclaimWaitsForTheReducedAsk(owner string) bool {
+	since, ok := r.steppedSince.Load(owner)
+	return !ok || time.Since(since.(steppedAskTimestamp).at) < steppedGrantGrace
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the grace a stepped ask was first seen under.
