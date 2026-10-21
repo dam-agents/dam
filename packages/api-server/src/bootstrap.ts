@@ -298,6 +298,7 @@ import {
   listConnectionTemplateIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
+import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import {
   startPlatformProviderSaga,
@@ -799,6 +800,18 @@ export async function bootstrap() {
       "oauth:connections",
       OAUTH_FLOW_TTL_MS,
     ),
+    secretRequestStores: {
+      pending: createRedisTtlStore(
+        sharedRedis,
+        "connections:secret-request",
+        SECRET_REQUEST_TTL_MS,
+      ),
+      outcomes: createRedisTtlStore(
+        sharedRedis,
+        "connections:secret-request-outcome",
+        SECRET_REQUEST_TTL_MS,
+      ),
+    },
     operatorCredentials: {
       ...(config.defaultGithubClientId && config.defaultGithubClientSecret
         ? {

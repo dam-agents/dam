@@ -31,7 +31,7 @@ Platform persists state on four durable substrates, split cleanly between the pl
   On the `vm` Backend there are none: a machine keeps one disk on its owner's runner instead, which [vm storage](vm-storage.md) owns.
 
 Alongside the durable substrates, the platform runs a **Redis** the api-server cannot boot without — a bundled single-replica instance by default, or an external endpoint chosen at deploy time.
-It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)).
+It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, pending [connection secret requests](connections.md#connection), and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)).
 Losing this state signs restricted viewers out, interrupts pending sign-ins and invalidates outstanding render grants; viewers must sign in again or reload the share page.
 No artifact content or viewer allowlist is lost; Postgres stays the source of truth for anything durable, and the scheduled sweeps re-assert their registrations so a dataset loss cannot silently stop them ([platform-topology](platform-topology.md)).
 

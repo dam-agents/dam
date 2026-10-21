@@ -569,6 +569,13 @@ export type {
   AgentConnections,
   AuthConfig as ConnectionAuthConfig,
   AuthKind as ConnectionAuthKind,
+  SecretRequestDestination,
+  SecretRequestField,
+  SecretRequestState,
+  SecretRequestStatus,
+  SecretRequestTicket,
+  SecretRequestView,
+  SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
   authConfig as connectionAuthConfigSchema,
@@ -585,6 +592,9 @@ export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
   ConnectionUpdateInput,
+  ConnectionRequestSecretInput,
+  SecretlessConnectionCreateInput,
+  SecretRequestSubmitInput,
 } from "./modules/connections/schemas.js";
 
 export {

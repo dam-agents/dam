@@ -148,7 +148,7 @@ The recurring patterns, stated once:
 - **`--json` parity.** Every read verb emits raw contract types under `--json` (an empty result is `[]`, never null); mutations emit a small result object.
   A very small number of verbs augment the raw shape where the annotation is the whole point of the flag — those departures are documented at the call site.
 - **TTY discipline.** Destructive verbs confirm on a TTY, take `--yes` to bypass, and refuse on non-TTY without it.
-  Interactive-only verbs (interactive create, masked secret prompts) refuse on non-TTY and point at the scripted path.
+  Interactive-only verbs (interactive create, masked secret prompts) refuse on non-TTY and point at the scripted path; a missing connection secret goes to the web page instead, which needs no TTY.
 - **An agent that cannot start says why.** A call through an agent (`dam run`, `dam file`, `dam ssh`) that the api-server could not wake the agent for says so, with the server's sentence for the wake failure — the one the web app shows; `dam run` and `dam file` exit with the agent-not-reachable code.
   When no sentence comes back — the run relay closes its socket, or a gateway gives up on a slow wake and answers with its own page — the CLI reads the reason from the agent's state: the refusal of an agent waiting for room, or the error of a failed one.
 - **Client-side ref resolution.** Agent refs resolve through `resolveAgent`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
@@ -173,7 +173,8 @@ A CLI change that leaves the skill describing a command that no longer exists fa
 
 The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
 Sign-in stays the device flow the user approves in a browser, and the agent never reads the credential store or the bearer variable.
-Every command that stores a secret — a connection's credential, a rotated one, a new API key — is handed to the user to run in a terminal of their own, where the CLI's masked prompt takes it, and the agent then verifies the outcome with a read verb.
+A connection's credential, new or rotated, the agent never sees: it runs `connect` or `update` without the secret, the CLI opens the [secret-entry page](connections.md#connection) where the user types it, and waits for the outcome, as it waits for an OAuth sign-in.
+The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 
 The agent reaches the deployment only through the CLI, never through the API directly.
