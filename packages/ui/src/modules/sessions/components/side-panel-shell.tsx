@@ -260,7 +260,13 @@ export function SidePanelShell({
               "md:border-l md:border-border",
             )}
           >
-            <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+            <div
+              className={cn(
+                "flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3",
+                // UNIT_BOUNDARY_DESCRIPTION: JanUI's panel fills the screen beside its rail at a narrow width, so it keeps its own top bar with its X instead of a back button and a title of its own.
+                tiles ? "hidden" : "md:hidden",
+              )}
+            >
               <Button
                 ref={mobileBackRef}
                 variant="ghost"
