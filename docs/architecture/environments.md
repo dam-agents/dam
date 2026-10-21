@@ -6,7 +6,7 @@ Last verified: 2026-10-21
 
 An **Environment** is a sandbox an Agent creates and controls to run software for other people and agents to open — typically one per pull request, running its build.
 The Agent that creates it is its **Owning Agent**.
-Users see an Environment as its own kind of thing under its agent, never as an agent: it is left out of every agent list, picker and count.
+Users see an Environment as its own kind of thing under its agent, never as an agent: it is left out of every agent list, picker and count, and the sidebar lists it under its Owning Agent as an Environment.
 The api-server's agent list leaves it out, so the app, the CLI and an API key's agent picker never show it; it is still found by id.
 
 The feature is behind the per-user `environments` [feature](features.md), offered only on an install that runs microVMs.
@@ -98,6 +98,7 @@ They act on the calling Agent's Environments alone, found by name.
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
 In the app, a vm agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
+The sidebar lists an agent's Environments under it, once it is expanded: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
 The owner creates none there; the agent does.
 
 The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.
