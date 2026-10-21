@@ -2,8 +2,9 @@ import type { CarbonIconType } from "@carbon/icons-react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 
-// UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 24px column and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
-export const TREE_LEADING = "flex w-6 shrink-0 justify-center";
+// UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 40px column, wide enough for an avatar that spans a two-line row, and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
+export const TREE_LEADING = "flex w-10 shrink-0 justify-center";
+export const TREE_AVATAR = 40;
 
 export function AddRow({
   icon: Icon,
@@ -60,7 +61,7 @@ export function RetryRow({
       onClick={() => {
         if (!retrying) onRetry();
       }}
-      className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
+      className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
     >
       {retrying ? "Retrying…" : `${label} Retry`}
     </button>

@@ -97,7 +97,7 @@ export function AgentSessionList({
     >
       {asleep ? (
         <p
-          className="py-1.5 pl-[42px] text-xs text-muted-foreground"
+          className="py-1.5 pl-[58px] text-xs text-muted-foreground"
           data-testid="sidebar-agent-asleep"
         >
           Its sessions show when it wakes.
@@ -114,7 +114,7 @@ export function AgentSessionList({
         />
       )}
       {!list.loading && !list.failed && rows.length === 0 && filtered && (
-        <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
+        <p className="py-1.5 pl-[58px] text-xs text-muted-foreground">
           {emptyText}
         </p>
       )}
@@ -147,7 +147,7 @@ export function AgentSessionList({
           onClick={() => {
             if (!isFetchingNextPage) void fetchNextPage();
           }}
-          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
+          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
         >
           {isFetchingNextPage ? "Loading…" : "Load more"}
         </button>

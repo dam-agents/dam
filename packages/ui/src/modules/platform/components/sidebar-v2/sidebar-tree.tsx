@@ -52,6 +52,7 @@ import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import {
+  agentSubline,
   awaitsApproval,
   isExpanded,
   offFeedPins,
@@ -61,7 +62,7 @@ import {
 } from "../../lib/sidebar-tree.js";
 import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
-import { AddRow, TREE_LEADING } from "./add-row.js";
+import { AddRow, TREE_AVATAR, TREE_LEADING } from "./add-row.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { FeedSessionRow, OffFeedPinnedRow } from "./pinned-rows.js";
 
@@ -259,7 +260,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   data-testid="sidebar-flat-more"
                   onClick={() => setFlatShown(flatShown + FLAT_PAGE)}
                   className={cn(
-                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                     FOCUS_RING,
                   )}
                 >
@@ -268,7 +269,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
               )}
               {unpinned.length <= flatShown && !activity.complete && (
                 <p
-                  className="py-1.5 pr-2 pl-[42px] text-xs text-muted-foreground"
+                  className="py-1.5 pr-2 pl-[58px] text-xs text-muted-foreground"
                   data-testid="sidebar-flat-end"
                 >
                   Older sessions show under their agent in Group by agents.
@@ -419,6 +420,7 @@ function AgentNode({
     onNavigate?.();
   };
   const listId = useId();
+  const sublineId = useId();
   return (
     <li
       data-testid="sidebar-agent"
@@ -440,20 +442,21 @@ function AgentNode({
           aria-controls={expanded ? listId : undefined}
           aria-current={current && !newSessionPage ? "page" : undefined}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+          aria-describedby={sublineId}
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
+            "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
             FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
               : "text-foreground",
           )}
         >
-          <span className={cn(TREE_LEADING, "relative h-6 items-center")}>
+          <span className={cn(TREE_LEADING, "relative items-center")}>
             <AgentAvatar
               name={agent.name}
               avatar={agent.avatar}
-              size={24}
+              size={TREE_AVATAR}
               mood={mood}
               className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
             />
@@ -466,11 +469,17 @@ function AgentNode({
               )}
             />
           </span>
-          <span
-            title={agent.name}
-            className="min-w-0 flex-1 truncate text-sm font-medium"
-          >
-            {agent.name}
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span title={agent.name} className="truncate text-sm font-medium">
+              {agent.name}
+            </span>
+            <span
+              id={sublineId}
+              aria-hidden
+              className="truncate text-2xs font-normal text-muted-foreground"
+            >
+              {agentSubline(agent)}
+            </span>
           </span>
           {cue && !expanded && <AgentCue tone={cue} />}
         </button>

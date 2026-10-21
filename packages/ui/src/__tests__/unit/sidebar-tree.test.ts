@@ -12,6 +12,7 @@ import {
 import { AddRow } from "../../modules/platform/components/sidebar-v2/add-row.js";
 import {
   activityTone,
+  agentSubline,
   awaitsApproval,
   isExpanded,
   offFeedPins,
@@ -19,6 +20,7 @@ import {
   splitPinned,
   toggleExpanded,
 } from "../../modules/platform/lib/sidebar-tree.js";
+import type { AgentView } from "../../types.js";
 
 describe("sidebar tree", () => {
   // TEST_SCENARIO: opening one Agent leaves the others as they are, and a second toggle closes it again.
@@ -192,6 +194,28 @@ describe("sidebar tree", () => {
     expect(sessionContext({ ...session, mode: SessionMode.Terminal })).toBe(
       "Claude · Opus 4.7",
     );
+  });
+
+  // TEST_SCENARIO: the second line of an Agent row names its state the way the Agent list's badge does: disabled and over budget outrank the pod state, and a refused start reads "Can't start".
+  it("names the Agent state under its name", () => {
+    const agent = {
+      state: "running",
+      disabled: false,
+      overBudget: false,
+      vm: false,
+    } as AgentView;
+    expect(agentSubline(agent)).toBe("Running");
+    expect(agentSubline({ ...agent, state: "hibernated" })).toBe("Sleeping");
+    expect(agentSubline({ ...agent, overBudget: true })).toBe("Over budget");
+    expect(agentSubline({ ...agent, disabled: true })).toBe("Disabled");
+    expect(agentSubline({ ...agent, state: "error" })).toBe("Error");
+    expect(
+      agentSubline({
+        ...agent,
+        state: "error",
+        podTerminationCode: "MachineBootFailed",
+      }),
+    ).toBe("Can't start");
   });
 });
 
