@@ -64,8 +64,10 @@ Show the user the URL and the code, and tell them to approve it.
 If the browser can't open here, add `--no-browser`.
 The server is saved as the active one, so later commands don't need `--server`.
 
-When already signed in, `dam auth login` refuses without a terminal; add `--force` only when the user wants to sign in again.
-If any command later says the session expired, run `dam auth login` again.
+When the saved session still works, `dam auth login` refuses without a terminal; add `--force` only when the user wants to sign in again.
+If any command later says the session expired, run `dam auth login` again: an expired session does not count as signed in, so it needs no `--force`.
+`dam auth status` marks such a session `session expired`.
+An older CLI may still answer "already logged in" for an expired session; then `dam auth login --force` signs in again.
 
 ### Check the version
 
