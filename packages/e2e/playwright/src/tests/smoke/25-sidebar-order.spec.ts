@@ -171,8 +171,8 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that goes to the top. A click on an Agent opens and closes its Sessions and moves nothing.
-test("drag reorders Agents, and a new Agent goes to the top", async ({
+// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on an Agent opens and closes its Sessions and moves nothing.
+test("drag reorders Agents, and a new Agent joins the foot", async ({
   page,
   browser,
 }) => {
@@ -223,11 +223,11 @@ test("drag reorders Agents, and a new Agent goes to the top", async ({
     }
   });
 
-  await test.step("a new Agent goes to the top", async () => {
+  await test.step("a new Agent joins the foot", async () => {
     await createSleeping(LATE_AGENT);
     await expect
       .poll(() => shownAgents(page))
-      .toEqual([LATE_AGENT, third, second, first]);
+      .toEqual([third, second, first, LATE_AGENT]);
   });
 
   await test.step("a click opens and closes an Agent's Sessions in place", async () => {
