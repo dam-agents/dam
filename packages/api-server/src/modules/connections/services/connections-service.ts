@@ -1404,10 +1404,11 @@ export function createConnectionsService(deps: {
             message: `template ${template.id}: missing privateKey`,
           });
         }
+        const appAuth = auth;
         const minted = await rejectIfInvalid(() =>
           mintGitHubAppToken(deps.githubAppEngine, {
             connectionRef: `connection:${id}:${template.id}`,
-            auth,
+            auth: appAuth,
             privateKeyPem,
           }),
         );
