@@ -10,13 +10,13 @@ import {
 } from "../../agents/api/queries.js";
 import { changesKeys } from "../api/keys.js";
 
-export function useChangesWatch(agentId: string, enabled: boolean) {
+export function useChangesWatch(agentId: string | null, enabled: boolean) {
   const queryClient = useQueryClient();
   const operable = useIsAgentOperable(agentId);
   const compat = useAgentLacksLiveUpdates(agentId);
 
   useEffect(() => {
-    if (!enabled || !operable || compat) return;
+    if (!enabled || !operable || compat || agentId === null) return;
     return watchWithRetry((onError) =>
       agentTrpc(agentId).changes.watch.subscribe(undefined, {
         onData: (notice) => {

@@ -6,6 +6,8 @@ Last verified: 2026-10-21
 
 An agent often works in more than one git repository in one Session: its main checkout, several worktrees of one repository, clones of other repositories, and temporary clones outside its home.
 The **Changes Panel** shows the git state of all of them, the way a pull request shows a diff.
+The UI offers the panel only while the agent has a repository: an agent whose list of Change Sets is empty has nothing to show, so its chat has no Changes tab, and a panel that was open closes.
+While the answer is not in yet the tab stays, so it never pops in late on an agent that does have a repository.
 agent-runtime owns everything on this page, because only the pod can read the repositories; the UI reaches it over the agent's tRPC surface, which the api-server relays without reading it.
 The panel only shows changes: it never stages, commits or reverts.
 Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).

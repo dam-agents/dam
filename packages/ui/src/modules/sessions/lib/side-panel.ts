@@ -30,6 +30,7 @@ export type SidePanelAvailability = {
   agent: boolean;
   artifacts: boolean;
   canOpenBrowser: boolean;
+  changes: boolean;
   processesEnabled: boolean;
   gettingStarted: boolean;
 };
@@ -40,7 +41,7 @@ export function hiddenSidePanelTabs(
   const shown: Record<SidePanelTab, boolean> = {
     artifacts: available.artifacts,
     files: available.agent,
-    changes: available.agent,
+    changes: available.agent && available.changes,
     delegation: available.agent,
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
