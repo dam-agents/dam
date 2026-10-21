@@ -1,4 +1,42 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+
+export const GRANT = `printf "grant %s\\n" "$(cat /platform/storage-room 2>/dev/null || echo -)"`;
+export const APPLIED = `printf "applied %s\\n" "$(cat /run/platform-storage-applied 2>/dev/null || echo -)"`;
+export const AVAIL_KB = `echo "avail=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
+export const ROOM_KB = `room=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')`;
+export const FILLED_KB = `echo "avail-after-fill=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
+export const AVAILABLE_AFTER_PROBE_KB = `echo "avail-after-probe=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
+
+// UNIT_BOUNDARY_DESCRIPTION: one room reading: the published grant and the settled generation on both sides of the guest's free space, so a reading the guard moved under is told apart from one it held.
+export function roomCommand(): string {
+  return [GRANT, APPLIED, AVAIL_KB, GRANT, APPLIED].join("\n");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one attempt at the case's refusal, as the shell the guest runs: clear the last attempt, print the bracket, mark the whole remaining room, print the room that left, print the bracket, make the write an agent would make next, print the room after it, and print the bracket. `probeMiB` is the size of that write.
+export function refusalCommand(probeMiB: number): string {
+  return [
+    "rm -rf /tmp/e2e-fill/*",
+    GRANT,
+    APPLIED,
+    ROOM_KB,
+    'if fallocate -l "$(( room / 1024 ))M" /tmp/e2e-fill/full 2>/tmp/e2e-fill/full.err; then echo "fill=whole"; else',
+    'echo "fill=chunked"',
+    "for size in 256 128 64 32 16 8; do",
+    "n=0",
+    'while [ "$n" -lt 4096 ] && fallocate -l "${size}M" "/tmp/e2e-fill/part-${size}-$n" 2>/dev/null; do n=$((n+1)); done',
+    "done",
+    "fi",
+    "sync",
+    FILLED_KB,
+    GRANT,
+    APPLIED,
+    `if fallocate -l ${probeMiB}M /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
+    AVAILABLE_AFTER_PROBE_KB,
+    GRANT,
+    APPLIED,
+  ].join("\n");
+}
 
 export interface Room {
   id: string;
@@ -54,6 +92,7 @@ export function parseRoom(lines: string[]): Room {
       applied.length === 2 &&
       first !== "" &&
       generation !== "" &&
+      first === generation &&
       published.every((id) => id === first) &&
       applied.every((gen) => gen === generation),
   };
@@ -86,6 +125,7 @@ export function parseLook(lines: string[]): Look {
       applied.length === 3 &&
       first !== "" &&
       generation !== "" &&
+      first === generation &&
       published.every((id) => id === first) &&
       applied.every((gen) => gen === generation),
   };
@@ -136,6 +176,17 @@ if (import.meta.main) {
   ]);
   assert.equal(behind.stable, false);
   assert.equal(judged(behind, "6"), false);
+
+  // TEST_SCENARIO: the published grant and the guard's generation each hold steady but name different grants, so the room belongs to one and the bytes to the other. Neither line moving is not enough: the pair has to be the same grant.
+  const mismatched = parseRoom([
+    grant("8", 300),
+    applied("7"),
+    "avail=10240",
+    grant("8", 300),
+    applied("7"),
+  ]);
+  assert.equal(mismatched.stable, false);
+  assert.equal(judged(mismatched, "6"), false);
 
   // TEST_SCENARIO: the guest was held by no grant at all, which is no generation to compare a room with.
   const absent = parseRoom([
@@ -247,6 +298,41 @@ if (import.meta.main) {
   ]);
   assert.equal(Number.isFinite(blindLook.filledMiB), false);
   assert.equal(judgeable(blindLook, "6", PROBE), false);
+
+  // TEST_SCENARIO: the commands the case really sends are run through a real shell, with `df`, `cat` and `fallocate` stubbed, and read with the parser above. A shell function that is defined and never called prints no bracket, and hand-written parser lines cannot tell that apart from a look of unknown generation: only the emitted string can. Both commands must print their bracket and parse as one stable generation.
+  const STUB = [
+    "mkdir -p /tmp/e2e-fill 2>/dev/null || true",
+    'df() { echo "Filesystem 1024-blocks Used Available Capacity Mounted"; echo "/dev/x 100 1 10485760 1% /home/agent"; }',
+    'cat() { case "$1" in /platform/storage-room) echo "8 314572800" ;; /run/platform-storage-applied) echo "8" ;; *) return 1 ;; esac; }',
+    "fallocate() { return 1; }",
+  ].join("\n");
+  const shell = (command: string) =>
+    execFileSync("sh", ["-c", `${STUB}\n${command}`], {
+      encoding: "utf8",
+    }).split("\n");
+  const emittedRoom = parseRoom(shell(roomCommand()));
+  assert.equal(
+    emittedRoom.id,
+    "8",
+    "the room reading printed no published grant",
+  );
+  assert.equal(
+    emittedRoom.generation,
+    "8",
+    "the room reading printed no applied generation",
+  );
+  assert.equal(emittedRoom.stable, true);
+  const emittedRefusal = shell(refusalCommand(PROBE)).join("\n");
+  assert.match(emittedRefusal, /probe=refused/);
+  const emittedLook = parseLook(emittedRefusal.split("\n"));
+  assert.equal(emittedLook.id, "8", "the refusal printed no published grant");
+  assert.equal(
+    emittedLook.generation,
+    "8",
+    "the refusal printed no applied generation",
+  );
+  assert.equal(emittedLook.stable, true);
+  assert.equal(Number.isFinite(emittedLook.filledMiB), true);
 
   console.log("storage-look self-check OK");
 }

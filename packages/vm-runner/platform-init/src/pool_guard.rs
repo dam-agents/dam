@@ -9,6 +9,7 @@ pub struct PoolGuard {
     floor_from: Option<u64>,
     ceiling: Option<(u64, u64)>,
     pub keep: u64,
+    desired: u64,
     short: bool,
 }
 
@@ -39,12 +40,18 @@ impl PoolGuard {
             POOL_GUARD_FLOOR.saturating_sub(used.saturating_sub(from))
         });
         self.keep = left.max(floor);
-        avail.saturating_sub(self.keep)
+        self.desired = avail.saturating_sub(self.keep);
+        self.desired
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the grant generation the guard's accounting is based on, which is the one it last took up and not the one the runner last published: the two differ for as long as it takes the guard's own look to read the file. `size` is what sets it, so a generation reported here has had its room counted from the bytes the guest had written when the guard read it.
     pub fn applied(&self) -> Option<&str> {
         self.grant.as_ref().map(|(id, ..)| id.as_str())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the guard file size this generation's room is held by, as the last look asked for it, whether or not the guard has been moved to it yet. A generation is settled only once the guard's blocks are this size: until then the guest's free space is produced by an older generation's hold, and a reader comparing the two would take a release that has not happened for one that has.
+    pub fn desired(&self) -> u64 {
+        self.desired
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: grows the guard from `held` toward `want` through `fits`, which resizes the file to the given size and says whether the disk took it: a preallocation takes all of it or nothing. When `want` does not fit, the disk holds less than statvfs reported, so it bisects between the two until within POOL_GUARD_STEP, for the largest guard that fits, about 14 preallocations on a 200 GiB disk; which is what the guest could write without one. A coarser ceiling would hand its gap back to the guest at every look, past its grant. That is the ceiling until the guest frees room (guard_look), and the guard settles at it less the room the guest is to keep, in one more resize. Returns the size the guard settled at and whether this refusal starts a shortage, the one time it is worth a warning.
@@ -647,5 +654,24 @@ mod tests {
         assert_eq!(state.applied(), Some("2"));
         state.size(None, disk, used);
         assert_eq!(state.applied(), None);
+    }
+
+    // TEST_SCENARIO: a generation the guard has taken up is not settled until the guard's hold is the size that generation asked for. While it is backed off and the hold still belongs to the older generation, the desire it reports is the new one and the hold is not, so a publisher comparing the two withholds the id: the guest's free space still belongs to the old grant, and publishing the new id beside it would make a release that has not happened read as one that has.
+    #[test]
+    fn a_generation_is_settled_only_once_the_hold_is_its_own() {
+        let (disk, used) = (100 * GIB, 20 * GIB);
+        let mut state = PoolGuard::default();
+        let avail = disk - used;
+        state.size(Some(("1".into(), 10 * GIB)), avail, used);
+        let old = state.desired();
+        let new = state.size(Some(("2".into(), 40 * GIB)), avail, used);
+        assert_eq!(state.applied(), Some("2"));
+        assert_ne!(new, old, "the new grant asks the guard for another size");
+        assert_eq!(state.desired(), new);
+        assert_ne!(
+            state.desired(),
+            old,
+            "a hold still at the older generation's size is not the new generation's own"
+        );
     }
 }

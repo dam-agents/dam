@@ -23,7 +23,7 @@ deny_net = true
 deny_write = true
 
 [tasks."check:storage-look"]
-description = "A look across a grant renewal is thrown away, and an absent grant is no grant"
+description = "The emitted guest commands really print their bracket, a look across a settled-generation move is thrown away, and an absent grant is no grant"
 run = "node src/lib/storage-look.ts"
 sources = ["src/lib/storage-look.ts"]
 outputs = []

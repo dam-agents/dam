@@ -18,10 +18,13 @@ import {
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 import {
+  AVAIL_KB,
   judgeable,
   judged,
   parseLook,
   parseRoom,
+  refusalCommand,
+  roomCommand,
   type Room,
 } from "../../lib/storage-look.js";
 
@@ -43,16 +46,6 @@ const HOST_HEADROOM_MIB = 1024;
 const NEXT_WRITE_MIB = 64;
 // UNIT_BOUNDARY_DESCRIPTION: a runner look renews every grant every 30 s (STORAGE_CHECK) and the guard moves at most once per 30 s (POOL_GUARD_BACKOFF), so a refusal that recovers does so inside this window; a guest refused after it is the wedge.
 const RENEWAL_MS = 75_000;
-// UNIT_BOUNDARY_DESCRIPTION: the guest's own free space in KiB, and what it can still write after it has. The awk program is in shell single quotes: inside double quotes the shell would expand `$4` itself and awk would print the whole row.
-const AVAIL_KB = `echo "avail=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
-const ROOM_KB = `room=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')`;
-// UNIT_BOUNDARY_DESCRIPTION: the guest's own free space after the fill and after the probe, each on a line of its own so a look can tell the guard's answer before the write from its answer after it. A guard that took a renewal during either hands the marked room back, and the room after the probe is where that shows.
-const FILLED_KB = `echo "avail-after-fill=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
-const AVAILABLE_AFTER_PROBE_KB = `echo "avail-after-probe=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
-// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published, printed on a line of its own so a look's reads are told apart from whatever else the guest prints. Each line carries the word, so a parser can pick the grant lines out of a look that also holds a fill's report and a refusal's error text.
-const GRANT = `grant() { printf "grant %s\\n" "$(cat /platform/storage-room 2>/dev/null || echo -)"; }`;
-// UNIT_BOUNDARY_DESCRIPTION: the grant generation the guard has taken up, printed beside the runner's published one. The two are different facts: the runner writes a new id every look, and the guard reads that file on a look of its own, so the published id names a grant the guard may not have counted yet. A look is judged on this line and never on the published one.
-const APPLIED = `applied() { printf "applied %s\\n" "$(cat /run/platform-storage-applied 2>/dev/null || echo -)"; }`;
 // UNIT_BOUNDARY_DESCRIPTION: how long the ceiling case may spend reaching the refusal: filling a budget of many GiB, and waiting out the runner's 30 s grant look and the guard's 30 s backoff after every refusal the guest recovers from.
 const CEILING_MS = 600_000;
 
@@ -90,11 +83,7 @@ function claimKb(): { used: number; capacity: number } {
 
 // UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine, the generation the guard has taken up, and the guest's own free space, read in one guest command with both lines bracketing the room. The guard's generation is the one fact that says whose room this is: the runner publishes a new id every look and the guard reads that file on a look of its own, so the published id can name a grant the guard has not counted, and `parseRoom` says why both lines have to agree.
 function readRoom(id: string = probeId): Room {
-  return parseRoom(
-    inGuest(id, [GRANT, APPLIED, AVAIL_KB, GRANT, APPLIED].join("\n")).split(
-      "\n",
-    ),
-  );
+  return parseRoom(inGuest(id, roomCommand()).split("\n"));
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: waits for a reading the guard has settled on and returns it: a generation the guard took up after `after`, the generation the case saw once its own write had landed, and one whose guest room meets both of the caller's bounds at once. The generation is what makes the reading a settled one and not a passing figure: the runner publishes a new id at every look, so the published id differs from `after` long before the guard has read the file, while the applied generation is the one whose room the guard has counted, and requiring it to differ is what exercises the renewal over the case's own writes instead of skipping it when the room happens to read well. The bounds are one pair, both applied to the same reading, so a room the guard has not yet shrunk cannot pass as a healthy one, and a room it has not yet grown cannot fail as a wedged one. And both lines agree across the room, so the free space belongs to one generation. The window is `WAIT_MS`, well past the runner's 30 s look and the guard's 30 s backoff; a claim with no grant is no claim measured and fails at once rather than looping on a figure no bound can satisfy.
@@ -131,30 +120,7 @@ async function markAndProbe(after: string): Promise<{
   const deadline = Date.now() + WAIT_MS;
   for (;;) {
     await keepAwake(probeId);
-    const lines = inGuest(
-      probeId,
-      [
-        "rm -rf /tmp/e2e-fill/*",
-        GRANT,
-        APPLIED,
-        ROOM_KB,
-        'if fallocate -l "$(( room / 1024 ))M" /tmp/e2e-fill/full 2>/tmp/e2e-fill/full.err; then echo "fill=whole"; else',
-        'echo "fill=chunked"',
-        "for size in 256 128 64 32 16 8; do",
-        "n=0",
-        'while [ "$n" -lt 4096 ] && fallocate -l "${size}M" "/tmp/e2e-fill/part-${size}-$n" 2>/dev/null; do n=$((n+1)); done',
-        "done",
-        "fi",
-        "sync",
-        FILLED_KB,
-        GRANT,
-        APPLIED,
-        `if fallocate -l ${NEXT_WRITE_MIB}M /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
-        AVAILABLE_AFTER_PROBE_KB,
-        GRANT,
-        APPLIED,
-      ].join("\n"),
-    ).split("\n");
+    const lines = inGuest(probeId, refusalCommand(NEXT_WRITE_MIB)).split("\n");
     const look = parseLook(lines);
     if (judgeable(look, after, NEXT_WRITE_MIB)) {
       return {

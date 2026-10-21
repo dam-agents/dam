@@ -1842,18 +1842,6 @@ fn guard_pool(dir: File) {
         ) {
             return;
         }
-        // UNIT_BOUNDARY_DESCRIPTION: the generation the guard has taken up, written where the guest can read it, so a reader in the guest can tell a grant this guard is counting on from one only the runner has published. The runner writes a new id every look and the guard reads that file on a look of its own, so the published id can name a grant whose room the guard has not counted yet; this file names the one it has. It is written after the look that counted the room and only when it changes, since a look that took up nothing new has nothing to say. A guest that finds no file reads no generation and judges nothing.
-        let applied = state.applied().unwrap_or("-").to_string();
-        if applied != applied_written {
-            match fs::write(guest::STORAGE_APPLIED_PATH, &applied) {
-                Ok(()) => applied_written = applied,
-                Err(e) => {
-                    if !std::mem::replace(&mut applied_failing, true) {
-                        logf!("WARNING: writing the applied storage grant ({e}); a look in the guest cannot tell a grant the guard took up from one it has not read");
-                    }
-                }
-            }
-        }
         let mark = room_of(room, marked);
         let since = marked_at.map_or(std::time::Duration::ZERO, |at| at.elapsed());
         let due = mark_due(marked, mark, since);
@@ -1865,6 +1853,13 @@ fn guard_pool(dir: File) {
             marked_at = Some(std::time::Instant::now());
         }
         if want.is_none() {
+            publish_settled(
+                state.applied().map(str::to_string),
+                state.desired(),
+                held,
+                &mut applied_written,
+                &mut applied_failing,
+            );
             continue;
         }
         if let Err(e) = flush_filesystem(home) {
@@ -1911,6 +1906,13 @@ fn guard_pool(dir: File) {
         if !publish_while_running(state.granted, state.room, held) {
             return;
         }
+        publish_settled(
+            state.applied().map(str::to_string),
+            state.desired(),
+            held,
+            &mut applied_written,
+            &mut applied_failing,
+        );
         if let (true, Some(e)) = (warn, error) {
             logf!("WARNING: sizing the storage guard to {want} bytes, it holds {held}: {e}");
         }
@@ -1942,6 +1944,34 @@ fn keeping_progress(progress: &mut impl FnMut(), work: impl FnOnce() + Send) {
 const PROGRESS_SILENCE: std::time::Duration = std::time::Duration::from_millis(200);
 
 // UNIT_BOUNDARY_DESCRIPTION: takes the guard out of the slot on a clean stop, so it is detached from it and cannot regrow, and reports progress while a guard move holds the mutex. The caller releases it under `keeping_progress`: an unnamed file's blocks are freed when the filesystem gets to it, which on btrfs once lasted 35 s into the next boot, holding that boot's guest to room it did not have.
+// UNIT_BOUNDARY_DESCRIPTION: tells the guest which grant generation its free space belongs to, and only once that generation's hold is really in the filesystem: a generation the guard has taken up but not yet sized to leaves the guest's room produced by the older hold, and a reader that saw the new generation beside the old room would take a release that has not happened for one that has. So a generation is published only when the guard's blocks equal what that generation asked for, and the file is replaced whole: a reader never sees a half-written id, and a failed publication leaves the last settled generation standing rather than destroying it. Nothing here stops the guard on a publication error, because the observer must not become a way for the guest's writes to go unheld.
+fn publish_settled(
+    applied: Option<String>,
+    desired: u64,
+    held: u64,
+    written: &mut String,
+    failing: &mut bool,
+) {
+    if desired != held {
+        return;
+    }
+    let settled = applied.unwrap_or_else(|| "-".to_string());
+    if settled == *written {
+        return;
+    }
+    let staged = format!("{}.new", guest::STORAGE_APPLIED_PATH);
+    let ok = fs::write(&staged, &settled).is_ok()
+        && fs::rename(&staged, guest::STORAGE_APPLIED_PATH).is_ok();
+    if ok {
+        *written = settled;
+        return;
+    }
+    let _ = fs::remove_file(&staged);
+    if !std::mem::replace(failing, true) {
+        logf!("WARNING: publishing the settled storage grant; a look in the guest cannot tell a grant the guard took up from one it has not settled");
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: publishes what a look saw only while the guard is still in its slot, and reports whether it did. A stop takes the set out of the slot and publishes the stopped state, so a look that read its blocks before the take would otherwise store a live grant over the stopped state afterwards, and an eviction thread could see a stopped guest as granted until the disk is frozen. The slot's own lock orders the stop's clear with every publication, and is held across the check and the store and nothing more, so a stop still never waits on a trim or a sync.
 fn publish_while_running(granted: bool, room: u64, held: u64) -> bool {
     let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
