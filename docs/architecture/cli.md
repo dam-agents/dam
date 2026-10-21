@@ -18,11 +18,11 @@ The CLI runs on the user's machine.
 It reads and writes only under the XDG config and state directories and makes outbound network calls only to the configured server.
 There is no telemetry and no anonymous reporting — the platform collects nothing, and the CLI does not break that posture.
 
-The one deliberate exception is `dam ssh`'s editor modes: dam's own SSH host entries live in `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so an external editor's SSH client can resolve the agent host.
+One deliberate exception is `dam ssh`'s editor modes: dam's own SSH host entries live in `$XDG_CONFIG_HOME/dam/ssh_config`, and a single `Include` line is added to `~/.ssh/config` so an external editor's SSH client can resolve the agent host.
 dam never touches the user's own `~/.ssh` keys (see [SSH access](#ssh-access)).
 
 The other exception is `dam version`: it also asks the npm registry for the `latest` dist-tag of `@dam-agents/cli`, so it can tell an out-of-date CLI even when the server cannot.
-It reads `npm_config_registry`, the variable npm itself sets, so a mirror the user configured for npm is the one it asks.
+It asks `registry.npmjs.org`, or the registry in `npm_config_registry` when that variable is set.
 It sends nothing about the user, and no other verb makes the call.
 
 ## Config
@@ -52,7 +52,8 @@ When the server advertises no floor, BelowFloor is never produced.
 The floor is operator-configurable via Helm, so known-broken clients can be dropped without rebuilding the image.
 Networked verbs opt into the gate; `dam version` is the un-gated informational counterpart that surfaces the same verdict but always exits 0.
 It also compares the CLI with the `latest` CLI on npm, which catches an old CLI against a server built from `main`.
-`dam version --json` prints the versions, the verdict, whether the CLI is behind npm's `latest`, and one `upToDate` answer; a field it could not learn is `null`, with the reason beside it.
+`dam version --json` prints the versions, the verdict, whether the CLI is behind npm's `latest`, and one `upToDate` answer.
+A field it could not learn is `null`, with the reason beside it; `upToDate` is `null` when neither npm nor a recommended CLI could tell.
 
 ## Authentication
 

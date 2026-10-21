@@ -260,6 +260,34 @@ describe("dam version (integration)", () => {
     expect(report.latestError).toContain("503");
   });
 
+  // TEST_SCENARIO: with npm unreachable and a dev server that recommends no CLI, nothing can tell whether the CLI is current. `upToDate` must say it does not know, not pass.
+  it("--json: npm unreachable and no recommended CLI gives upToDate null", async () => {
+    fixture.setNpmLatest(undefined);
+    fixture.setResponse({ body: { serverVersion: "0.2.24-dev-db35e8abf4bd" } });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version", "--json"], env());
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      verdict: "ok",
+      latestCliVersion: null,
+      upToDate: null,
+    });
+  });
+
+  it("--json: npm unreachable, the server's recommended CLI still decides", async () => {
+    fixture.setNpmLatest(undefined);
+    fixture.setResponse({
+      body: { serverVersion: "1.0.0", recommendedClientVersion: "0.0.0" },
+    });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version", "--json"], env());
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      verdict: "ok",
+      upToDate: true,
+    });
+  });
+
   it("npm unreachable: says so on stderr, still prints the server line", async () => {
     fixture.setNpmLatest(undefined);
     await configureServer(fixture.url);

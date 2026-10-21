@@ -49,7 +49,6 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
       const behindLatest = latest.ok
         ? compareVersions(local, latest.value) < 0
         : null;
-      const serverBehind = verdict ? verdict.kind !== "ok" : null;
       const report: VersionReport = {
         cliVersion: local,
         serverVersion: verdict?.serverVersion ?? null,
@@ -58,10 +57,7 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
         latestCliVersion: latest.ok ? latest.value : null,
         verdict: verdict?.kind ?? null,
         behindLatest,
-        upToDate:
-          serverBehind === null && behindLatest === null
-            ? null
-            : !serverBehind && !behindLatest,
+        upToDate: upToDate(verdict, behindLatest),
       };
       if (!compat.ok && compat.error.kind !== "missing-config") {
         report.serverError =
@@ -111,4 +107,13 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
         );
       }
     });
+}
+
+function upToDate(
+  verdict: CompatVerdict | undefined,
+  behindLatest: boolean | null,
+): boolean | null {
+  if (verdict !== undefined && verdict.kind !== "ok") return false;
+  if (behindLatest !== null) return !behindLatest;
+  return verdict?.serverRecommendedClient !== undefined ? true : null;
 }
