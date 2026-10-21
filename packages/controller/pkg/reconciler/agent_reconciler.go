@@ -462,7 +462,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the old order: a parked agent retried every few seconds must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
 	// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for the owner's storage is answered the same way until space frees, so this pass keeps the old order rather than start a gateway pod the refusal will scale down again.
-	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
+	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAwaitingWarmUp || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
 	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && !parkedLast)
 	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted && !served
 	if gatewayUp {
@@ -532,11 +532,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
 			}
 		}
+		// UNIT_BOUNDARY_DESCRIPTION: a start the wave of a restart holds back is
+		// UNIT_BOUNDARY_DESCRIPTION: not the owner's memory being full: the machines
+		// UNIT_BOUNDARY_DESCRIPTION: the runner is bringing back fill the pool at their
+		// UNIT_BOUNDARY_DESCRIPTION: warm-up floors and settle below it, so the start
+		// UNIT_BOUNDARY_DESCRIPTION: waits for them rather than hibernate one of them,
+		// UNIT_BOUNDARY_DESCRIPTION: and reads as a start in progress so a wake waits for
+		// UNIT_BOUNDARY_DESCRIPTION: it. The window is read from the runner pod, so it is
+		// UNIT_BOUNDARY_DESCRIPTION: the same one after a controller restart, and past it
+		// UNIT_BOUNDARY_DESCRIPTION: the owner's idle agents are the room the start has.
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
-			running, parked, overBudget = false, true, r.vmMemoryFullMessage(ctx, agent, owner)
+			running, parked = false, true
 			r.recordParkedRetry(name)
-			if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) }); err != nil {
-				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+			if r.runnerWarmingUp(ctx, owner) {
+				awaiting, awaitingReason = vmAwaitingWarmUpMessage, apiv1.ReasonAwaitingWarmUp
+			} else {
+				overBudget = r.vmMemoryFullMessage(ctx, agent, owner)
+				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) }); err != nil {
+					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+				}
 			}
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
