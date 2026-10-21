@@ -64,7 +64,7 @@ import { AgentSessionList } from "./agent-session-list.js";
 import { FeedPinnedRow, OffFeedPinnedRow } from "./pinned-rows.js";
 
 const REVEAL =
-  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
+  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 group-has-[[data-state=open]]/agent:pointer-events-auto group-has-[[data-state=open]]/agent:opacity-100";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar as one tree: the pinned
@@ -298,7 +298,10 @@ function AgentNode({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-[88px] pl-2 text-left select-none",
+            "flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2 text-left select-none",
+            agentFilter
+              ? "pr-[88px]"
+              : "pr-16 group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
             FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"

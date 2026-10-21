@@ -84,6 +84,7 @@ export function SidebarAgentSessions({
   const showConfirm = useStore((s) => s.showConfirm);
   const actWhenAwake = useActWhenAwake(agentId);
   const filter = useAgentSessionFilter(agentId);
+  const filtered = !!filter && isFiltered(filter);
 
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
@@ -110,7 +111,7 @@ export function SidebarAgentSessions({
         <AgentSessionList
           agentId={agentId}
           sessionActions={sessionActions}
-          filter={filter}
+          filter={filtered ? filter : undefined}
           limit={limit}
           onLimitChange={setLimit}
           focusAfter={focusAfter}
@@ -121,11 +122,11 @@ export function SidebarAgentSessions({
         <SessionPreview
           agentId={agentId}
           sessions={
-            filter
+            filtered
               ? preview.filter((item) => matchesActivityFilters(item, filter))
               : preview
           }
-          filtered={!!filter}
+          filtered={filtered}
           complete={previewComplete}
           sessionActions={sessionActions}
           conversationOf={conversationOf}
@@ -254,13 +255,14 @@ function AgentSessionList({
     fetchNextPage,
   } = list;
 
-  const filtered = !!filter && isFiltered(filter);
+  const filtered = filter !== undefined;
   const rows = newestFirst(
     list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(
         ({ session, state }) =>
-          !filter ||
+          filter === undefined ||
+          state.active ||
           matchesActivityFilters(
             {
               session,

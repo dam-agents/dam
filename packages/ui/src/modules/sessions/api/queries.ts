@@ -82,10 +82,13 @@ export function useAgentsWithUnreadListedSessions(
   return useMemo(() => new Set(ids ? ids.split("\n") : []), [ids]);
 }
 
-export function keepFirstSessionPages(): void {
+export function keepFirstSessionPages(agentId?: string): void {
   queryClient.setQueriesData<SessionPages>(
     {
-      queryKey: acpSessionsKeys.all,
+      queryKey:
+        agentId === undefined
+          ? acpSessionsKeys.all
+          : acpSessionsKeys.pages(agentId),
       predicate: ({ queryKey }) => queryKey[2] === "pages",
     },
     (prev) =>

@@ -32,9 +32,9 @@ const ACTIONS_PADDING = {
 } as const;
 
 const HOVER_REVEAL =
-  "transition-opacity focus-within:opacity-100 group-hover/agent:opacity-100 has-[[data-state=open]]:opacity-100";
+  "transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100 group-has-[[data-state=open]]/agent:opacity-100";
 const HIDDEN_UNTIL_HOVER =
-  "pointer-events-none opacity-0 focus-within:pointer-events-auto group-hover/agent:pointer-events-auto has-[[data-state=open]]:pointer-events-auto";
+  "pointer-events-none opacity-0 group-hover/agent:pointer-events-auto group-focus-within/agent:pointer-events-auto group-has-[[data-state=open]]/agent:pointer-events-auto";
 
 export function SidebarAgentRow({
   agent,
