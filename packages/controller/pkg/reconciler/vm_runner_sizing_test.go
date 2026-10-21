@@ -405,6 +405,19 @@ func runnerPodReportsItsGrant(t *testing.T, r *AgentReconciler, allocated string
 	require.NoError(t, err)
 }
 
+// TEST_SCENARIO: the node answered the last resize with Deferred: it has no room for what the controller asked, and it grants a resize whole or not at all.
+func runnerPodResizeDeferred(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	ctx := context.Background()
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
 // TEST_SCENARIO: the pod's spec is set to exactly what the owner's demand asks, as an earlier resize leaves it on a node that never reports the result, so a further resize would ask for nothing new.
 func runnerPodCarriesTheDemand(t *testing.T, r *AgentReconciler, demand runnerDemand) {
 	t.Helper()
@@ -603,6 +616,43 @@ func TestTheRunnerRequestFallsOnlyClearlyBelowTheCurrentStep(t *testing.T) {
 	assert.Equal(t, "2560Mi", held.String())
 	down := runnerMemoryRequest(1920-512, 512, current, floor, limit)
 	assert.Equal(t, "2Gi", down.String())
+}
+
+// TEST_SCENARIO: the node grants a resize whole or not at all, so a request covering every start waiting for it is one the node defers while it has room for only some of them, and every start waits although one of them fits. While the node defers, the ask steps down to what the pod already holds plus one machine's warm-up: that is one more machine than the runner can admit, the waiting starts retry against it, and the ones that fit go in waves instead of none of them ever starting.
+func TestADeferredResizeAsksForWhatTheNodeHoldsPlusOneWarmUp(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "8Gi")
+	for _, peer := range []string{"peer-a", "peer-b", "peer-c"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+	}
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "4608Mi", runnerPodRequest(t, r), "every waiting start is asked for while the node has not answered")
+
+	runnerPodResizeDeferred(t, r)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "2Gi", runnerPodRequest(t, r),
+		"what the pod holds plus one warm-up of 1Gi: the node defers the whole ask, so a smaller one is the only one it can grant")
+}
+
+// TEST_SCENARIO: the ask a deferred resize steps down to is one more machine than the pod holds, and never what the demand does not ask for: a request above the demand reserves memory the machines will not use. It is never below what the install asked for, and never above the limit, which the API refuses.
+func TestTheAskADeferredResizeStepsDownToStaysWithinItsBounds(t *testing.T) {
+	floor, limit := resource.MustParse("1Gi"), resource.MustParse("8Gi")
+	stepped := runnerRequestWithinGrant(4096, 1024, 1024, floor, limit)
+	assert.Equal(t, "2Gi", stepped.String())
+	asking := runnerRequestWithinGrant(1024, 1024, 1024, floor, limit)
+	assert.Equal(t, "1Gi", asking.String(), "never more than the demand asks for")
+	floored := runnerRequestWithinGrant(4096, 0, 0, floor, limit)
+	assert.Equal(t, "1Gi", floored.String(), "never below the request the install set")
+	capped := runnerRequestWithinGrant(16384, 16384, 1024, floor, limit)
+	assert.Equal(t, "8Gi", capped.String(), "never above the limit, which the API refuses")
 }
 
 // TEST_SCENARIO: an install that sets only the limit gets a pod whose request Kubernetes defaulted to the limit. That is already the safest request there is, so nothing is lowered.

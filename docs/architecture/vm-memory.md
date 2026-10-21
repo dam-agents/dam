@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -108,6 +108,12 @@ Only that node's own answer counts, on the field the API server files it against
 The answer is about one pod, so it lapses with that pod: a replacement pod is a new question to whatever node it lands on, and a pod that starts reporting its grant — a kubelet that gained the gate, a reschedule onto a node that has it — takes the ceiling back from the next start on.
 A node that can resize and still reports nothing keeps the hold, since the figure it owes is one a resize would give it.
 A start that does not fit waits, until the node applies the resize the controller asked for; while the node defers or refuses that resize the `RunnerCapacity` condition on the owner's vm Agents says so.
+The node grants a resize whole or not at all, so an ask that covers every start waiting for it is one the node defers while it has room for only some of them, and all of them wait together although one of them fits.
+While the node defers the ask, the controller asks for one machine's warm-up above what the pod already holds rather than for the whole demand: that is the most the node can grant the pod, the waiting starts retry against it, and the ones that fit start in waves the node can hold — each wave raises the ask again for the next.
+The starts go in the order they retry, which is the order they became waiting, rather than smallest first: the runner has no queue of its own to order, each start is admitted on its own ensure, and admitting the first to ask keeps one start from being passed over for ever by a smaller one that keeps waking.
+No start is admitted past what the node granted: the runner's ceiling stays the grant, and the stepped ask only decides how much the node is asked for next.
+The stepped ask never falls below what the node granted, since a request under the memory the machines hold reserves nothing of it and the scheduler places other pods into memory they use, and never rises above the demand, the limit or below the install's request.
+A node that refuses the resize as infeasible is not stepped down to: it will never grant the ask, and a smaller one only makes the diagnosis read as a start that keeps failing.
 Waiting for the node is not the owner's pool being full: the runner reports it under `MachineAwaitingAllocation`, and the controller publishes it under its own `AwaitingAllocation` reason rather than `OverBudget`, so a wake waits for the start the way it waits for any boot instead of failing on it, and the admission-refusal alert leaves it out.
 The Agent is retried at the machine watch's few seconds rather than at the parked tick, and no idle agent is hibernated for room the node is already being asked for, so the person reads that their agent is waiting for the node.
 A resize the node has deferred or refused does not land on its own, so the room it did grant is freed the way a refused start frees it: the owner's idle agents hibernate, and the parked tick retries the start under the machine watch's cadence.
@@ -121,6 +127,7 @@ That request is also what the runner may admit machines against, so the pod the 
 The request rises a step as soon as the counts need it, but falls only once they are a quarter step below the step under it, so use that sits on a step boundary does not resize the pod at every pass; admission and the metric stay exact.
 A cluster without in-place resize keeps the install's request.
 A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
+While that condition says the node deferred the ask, the request is the one above — what the pod holds plus one machine's warm-up — rather than the whole demand, so the node can grant it and its wave of starts can go.
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
 An agent whose cold boot is still in progress is not hibernated for a refused start or past the 90% threshold, since its last activity is the wake that began a boot which can outlast the idle floor; the runner's pressure signal may still take it, as the kernel's kill would restart its machine too.

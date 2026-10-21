@@ -209,6 +209,19 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resour
 	return want
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the node grants a resize whole or not at all, so a request covering every start waiting for the node is one it defers while it has room for only some of them: every start then waits although one of them fits. While the node defers, the ask steps down to one machine's warm-up above what the pod already holds, since that is the most the node may grant the pod on top of the memory it holds now. The waiting starts retry against it, so they go in waves the node can hold, and each wave's grant is one warm-up of room for the next. An install with no warm-up floor is left alone: a machine there boots at its size, so what one more of them costs is the whole demand and nothing is gained by asking for less. A request under what the pod holds reserves less than the machines use, so the step never goes below the grant; it never goes above what the demand asks, below the install's request, or above the limit.
+func runnerRequestWithinGrant(wantMiB, grantMiB, bootMiB int, floor, limit resource.Quantity) resource.Quantity {
+	stepped := min(int64(roundedMiB(grantMiB+bootMiB)), int64(wantMiB))
+	want := *resource.NewQuantity(stepped<<20, resource.BinarySI)
+	if want.Cmp(floor) < 0 {
+		want = floor
+	}
+	if want.Cmp(limit) > 0 {
+		want = limit
+	}
+	return want
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, each counted at the larger of its live and its next size, plus one machine's worth for the runner itself and the VMMs' own I/O threads. Unless the install caps it lower, the limit it decides covers the vCPUs of every machine that should be running. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
 func runnerCPULimit(vCPUs, machineCPUs int, request resource.Quantity, ceiling *resource.Quantity) resource.Quantity {
 	want := *resource.NewQuantity(int64(vCPUs+max(machineCPUs, 1)), resource.DecimalSI)
@@ -276,10 +289,16 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 	cpuRequest, hasCPURequest := res.Requests[corev1.ResourceCPU]
 	currentCPU, hasCPULimit := res.Limits[corev1.ResourceCPU]
 	currentRequest := res.Requests[corev1.ResourceMemory]
+	memoryRequest := runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit)
+	if st, pending := resizePending(pod); pending && st.reason == apiv1.ReasonRunnerResizeDeferred {
+		if grantMiB, reported := runnerPodGrantMiB(pod); reported && r.config.VM.Runner.BootMiB > 0 {
+			memoryRequest = runnerRequestWithinGrant(int(memoryRequest.Value()>>20), grantMiB, r.config.VM.Runner.BootMiB, floor, limit)
+		}
+	}
 	return runnerPodWant{
 		res:            res,
 		memoryLimit:    limit,
-		memoryRequest:  runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit),
+		memoryRequest:  memoryRequest,
 		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, ceiling),
 		hasCPURequest:  hasCPURequest,
 		currentLimit:   current,
