@@ -112,7 +112,10 @@ export function SidePanelShell({
 
   const sidePanelOpen = activeTab !== null;
   const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
-  const mobilePanelOpen = mobileOnPanel || (sidePanelOpen && dockedShown);
+  // UNIT_BOUNDARY_DESCRIPTION: under JanUI a tab is the whole of what the panel shows, so an open tab is what a narrow viewport lays over the page.
+  const mobilePanelOpen = tiles
+    ? sidePanelOpen
+    : mobileOnPanel || (sidePanelOpen && dockedShown);
   const maximizable = maximizableView(
     activeTab,
     dockedShown,
@@ -137,7 +140,33 @@ export function SidePanelShell({
   const mobileOverlay = mobilePanelOpen && !desktop;
   useEffect(() => {
     if (!mobileOverlay) return;
+    const before = document.activeElement as HTMLElement | null;
     mobileBackRef.current?.focus();
+    // UNIT_BOUNDARY_DESCRIPTION: over the page the panel is the only thing to reach, so Tab stays inside it; the element that opened it gets the keyboard back when it closes.
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || e.defaultPrevented || layerAbove()) return;
+      const root = filePanelRef.current;
+      if (!root) return;
+      const items = [
+        ...root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => el.offsetParent !== null);
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      if (!root.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onTab);
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (layerAbove()) return;
@@ -154,7 +183,9 @@ export function SidePanelShell({
     });
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onTab);
       releaseBackEntry();
+      before?.focus();
     };
   }, [mobileOverlay, closeMobilePanel]);
 
@@ -195,8 +226,14 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-chrome relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-          !mobilePanelOpen && "max-md:hidden",
+          "flex bg-chrome relative z-content",
+          tiles
+            ? mobilePanelOpen &&
+                "max-md:fixed max-md:inset-y-0 max-md:left-14 max-md:right-14 max-md:z-overlay"
+            : cn(
+                "max-md:fixed max-md:inset-0 max-md:z-overlay",
+                !mobilePanelOpen && "max-md:hidden",
+              ),
           sidePanelFills
             ? "md:flex-1 md:min-w-0"
             : sidePanelOpen && sidePanelW === null
