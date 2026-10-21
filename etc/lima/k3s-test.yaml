@@ -106,10 +106,10 @@ provision:
         valuesContent: |
           ports:
             platform:
-              port: 5555
+              port: 6555
               expose:
                 default: true
-              exposedPort: 5555
+              exposedPort: 6555
               protocol: TCP
       EOF
 
@@ -130,11 +130,11 @@ copyToHost:
     deleteOnStop: true
 
 portForwards:
-  - guestPort: 5555
-    hostPort: 5555
+  - guestPort: 6555
+    hostPort: 6555
   - guestPort: 16445
     hostPort: 16445
 
 message: |
-  Test k3s cluster is ready. Access services via port 5555.
+  Test k3s cluster is ready. Access services via port 6555.
   KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml
