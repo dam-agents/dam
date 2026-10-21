@@ -47,10 +47,8 @@ describe("provider names", () => {
     });
     const custom = row("curve-bender");
     const deployment = row("curve-bender-deployment");
-    expect(providerRowName(custom)).toBe(
-      "IBM ETE LiteLLM CurveBender (custom key)",
-    );
-    expect(providerRowName(deployment)).toBe("IBM ETE LiteLLM CurveBender");
+    expect(providerRowName(custom)).toBe("CurveBender custom key");
+    expect(providerRowName(deployment)).toBe("CurveBender");
     expect(providerNameFor("curve-bender-deployment")).toBe(
       providerName("curve-bender", "curve-bender-deployment"),
     );

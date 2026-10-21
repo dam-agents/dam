@@ -118,6 +118,7 @@ export function ProviderSection({
                 <ProviderRow
                   key={`${row.type}:${row.templateId ?? ""}`}
                   type={row.type}
+                  templateId={row.templateId}
                   name={providerRowName(row)}
                   connected={!!item}
                   degraded={!!item && degradedTemplate(item.conn.templateId)}

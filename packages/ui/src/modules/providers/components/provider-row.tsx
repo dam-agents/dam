@@ -14,6 +14,7 @@ import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
+  templateId?: string;
   name?: string;
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
@@ -27,6 +28,7 @@ interface Props {
 
 export function ProviderRow({
   type,
+  templateId,
   name: givenName,
   harnesses,
   connected,
@@ -41,7 +43,7 @@ export function ProviderRow({
   const refused = connected && keyCheck?.result === "refused";
   const body = (
     <>
-      <CardIcon provider={type} />
+      <CardIcon provider={type} templateId={templateId} />
       <div className="min-w-0 flex-1">
         <div className="flex h-8 items-center gap-2">
           <p

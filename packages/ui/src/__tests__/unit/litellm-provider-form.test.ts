@@ -15,7 +15,7 @@ describe("LiteLLM provider labels and documentation", () => {
           onSave: async () => {},
         }),
       );
-      expect(html).toContain("IBM ETE LiteLLM CurveBender");
+      expect(html).toContain("CurveBender custom key");
       expect(html).toContain('href="https://ibm.biz/cb-docs"');
       expect(html).toContain("CurveBender documentation");
       expect(html).toContain('href="https://litellm.cb.ete.res.ibm.com/ui/"');

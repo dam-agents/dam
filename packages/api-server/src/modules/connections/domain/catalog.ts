@@ -203,7 +203,7 @@ function curveBenderContributions(
 
 const CURVE_BENDER: HeaderConnectionTemplate = {
   id: "curve-bender",
-  name: "IBM ETE LiteLLM CurveBender (custom key)",
+  name: "CurveBender custom key",
   category: "app",
   isCustom: false,
   description: "Open-source models hosted internally in IBM.",
@@ -243,7 +243,7 @@ const CURVE_BENDER_DEPLOYMENT_PATHS = [
  */
 const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
   id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  name: "IBM ETE LiteLLM CurveBender",
+  name: "CurveBender",
   category: "app",
   isCustom: false,
   description: "Open-source models hosted internally in IBM.",

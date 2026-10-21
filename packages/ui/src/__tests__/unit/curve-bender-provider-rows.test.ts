@@ -65,8 +65,8 @@ const render = () =>
     ),
   );
 
-const CUSTOM = "IBM ETE LiteLLM CurveBender (custom key)";
-const SHARED = "IBM ETE LiteLLM CurveBender";
+const CUSTOM = "CurveBender custom key";
+const SHARED = "CurveBender";
 
 const deploymentConfigured = () =>
   (state.templates = [{ id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID }]);

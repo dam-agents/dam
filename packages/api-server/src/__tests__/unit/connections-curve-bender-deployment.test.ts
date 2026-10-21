@@ -296,7 +296,7 @@ describe("deployment CurveBender connection", () => {
     await svc.listAndReconcileConnections();
 
     expect(deploymentRows(store.rows).map((c) => c.name)).toEqual([
-      "IBM ETE LiteLLM CurveBender LLM",
+      "CurveBender LLM",
     ]);
   });
 });
