@@ -3167,5 +3167,5 @@ impl Drop for Settle<'_> {
 }
 
 #[cfg(test)]
-#[path = "server_tests.rs"]
+#[path = "server_tests/mod.rs"]
 mod tests;
