@@ -152,6 +152,7 @@ export interface AcpRuntime {
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
   toolCallsOpen(sessionId: string): boolean;
+  harnessBusy(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
@@ -992,8 +993,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const sessionId of new Set([
         ...heldRuns.keys(),
         ...harnessActivity.busySessions(),
-      ]))
+      ])) {
+        if (harnessGone && !promptScheduler.hasTurnInFlight(sessionId))
+          deps.onTurnOutcome?.(sessionId, {
+            stopReason: null,
+            error: `${harnessGone} in its Autonomous Turn`,
+          });
         dropHarnessWork(sessionId);
+      }
     heldRuns.clear();
     harnessActivity.clear();
     promptScheduler.clear();
@@ -2460,6 +2467,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     toolCallsOpen(sessionId) {
       return (openToolCalls.get(sessionId)?.size ?? 0) > 0;
+    },
+
+    harnessBusy(sessionId) {
+      return harnessActivity.isBusy(sessionId);
     },
 
     sessionFrames(sessionId) {

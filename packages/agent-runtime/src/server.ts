@@ -560,7 +560,8 @@ runningSessionsOf = (harness) =>
     )
     .map(([sessionId]) => sessionId);
 sessionState = {
-  turnRunning: (sessionId) => acpRuntime.isSessionRunning(sessionId),
+  turnRunning: (sessionId) =>
+    acpRuntime.isSessionRunning(sessionId) || acpRuntime.harnessBusy(sessionId),
   localWork: (sessionId) =>
     acpRuntime.toolCallsOpen(sessionId) || backgroundWork.hasWork(sessionId),
   spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
