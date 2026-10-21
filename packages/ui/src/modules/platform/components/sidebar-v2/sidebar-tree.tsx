@@ -257,6 +257,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                 icon={FaceAdd}
                 hoverIcon={FaceActivatedAdd}
                 label="New agent"
+                avatar
                 testId="sidebar-new-agent-row"
                 disabled={!defaultAgent.ready}
                 onClick={() => void defaultAgent.create()}

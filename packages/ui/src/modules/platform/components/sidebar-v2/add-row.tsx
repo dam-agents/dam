@@ -16,6 +16,7 @@ export function AddRow({
   testId,
   disabled = false,
   current = false,
+  avatar = false,
   onClick,
 }: {
   icon: CarbonIconType;
@@ -25,6 +26,7 @@ export function AddRow({
   testId: string;
   disabled?: boolean;
   current?: boolean;
+  avatar?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -35,17 +37,17 @@ export function AddRow({
       aria-current={current ? "page" : undefined}
       disabled={disabled}
       onClick={onClick}
-      className={`group flex h-[34px] w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50 ${FOCUS_RING}`}
+      className={`group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left ${avatar ? "pr-2" : "px-2"} text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50 ${avatar ? "h-12" : "h-[34px]"} ${FOCUS_RING}`}
     >
       <span className={TREE_LEADING}>
         <Icon
-          size={SIDEBAR_GLYPH}
+          size={avatar ? TREE_AVATAR : SIDEBAR_GLYPH}
           aria-hidden
           className={HoverIcon ? "group-hover:hidden" : undefined}
         />
         {HoverIcon && (
           <HoverIcon
-            size={SIDEBAR_GLYPH}
+            size={avatar ? TREE_AVATAR : SIDEBAR_GLYPH}
             aria-hidden
             className="hidden group-hover:block"
           />
