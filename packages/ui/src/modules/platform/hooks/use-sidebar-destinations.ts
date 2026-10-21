@@ -37,7 +37,7 @@ export function useSidebarDestinations() {
   const starterKits: SidebarDestination = {
     label: "Starter kits",
     icon: Gift,
-    active: view === "starter-kits",
+    active: view === "starter-kits" || view === "starter-kit",
     navigate: () => setView("starter-kits"),
   };
   const docs: SidebarDestination = {

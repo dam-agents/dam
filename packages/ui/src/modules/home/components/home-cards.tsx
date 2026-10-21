@@ -30,6 +30,7 @@ import { useAppConnections } from "../../connections/api/queries.js";
 import { useMonthlySpend } from "../../metrics/hooks/use-monthly-spend.js";
 import { formatTokens } from "../../metrics/lib/format.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
+import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useAttention, useFeed } from "../api/queries.js";
 import {
   CHANNEL_TYPE_LABELS,
@@ -451,7 +452,7 @@ export function ConnectionsCard() {
 }
 
 export function ArtifactsCard() {
-  const setView = useStore((s) => s.setView);
+  const openSidePanel = useOpenSidePanel();
   const { data } = useArtifacts();
   const artifacts = data ?? [];
   const bytes = artifacts.reduce((n, a) => n + (a.sizeBytes ?? 0), 0);
@@ -462,7 +463,7 @@ export function ArtifactsCard() {
     <Card
       title="Artifacts"
       pictogram={<Cardboard aria-hidden />}
-      onOpen={() => setView("artifacts")}
+      onOpen={() => openSidePanel("artifacts")}
     >
       <div className="flex gap-8">
         <Big value={artifacts.length} label="published" />
