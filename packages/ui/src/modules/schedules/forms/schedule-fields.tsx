@@ -27,6 +27,7 @@ import {
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
+  useSessionDefaults,
 } from "../../sessions/api/session-pair.js";
 import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import {
@@ -509,7 +510,8 @@ interface ChoicesControl {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks.
- * "Agent default" is the empty choice and says what that default is now. On
+ * "Scheduled default" is the empty choice and says what that default is now,
+ * and whether it is the chat default, set on the Providers page. On
  * a runtime without the Model Router the old single model field stands.
  */
 export function ScheduleChoicesField<T extends ChoicesControl>({
@@ -534,6 +536,10 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     control: typed,
     name: "settings",
   });
+  const { data: savedDefaults } = useSessionDefaults(
+    routed && agentId ? agentId : null,
+  );
+  const sameAsChat = savedDefaults !== undefined && !savedDefaults.scheduled;
   const storedModel = modelField.value;
   const settingsValue = settingsField.value;
   const { data: catalog } = useHarnessCatalog();
@@ -606,12 +612,14 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const todayModel = fallback?.model
     ? modelIndicatorLabel(groups, fallback.model)
     : null;
+  const now = (value: string) =>
+    sameAsChat ? `Now: ${value}, same as chat` : `Now: ${value}`;
+  const defaultHint = sameAsChat
+    ? "Scheduled default runs on the agent's scheduled default, set on its Providers page, which is the same as its chat default."
+    : "Scheduled default runs on the agent's scheduled default, set on its Providers page.";
   return (
     <div className="flex flex-col gap-4">
-      <FormField
-        label="Harness"
-        hint="Agent default runs on the agent's default harness and model."
-      >
+      <FormField label="Harness" hint={defaultHint}>
         <Controller
           control={typed}
           name="harness"
@@ -621,11 +629,15 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
               choices={harnessChoices}
               value={field.value || null}
               clearable
-              clearedLabel="Agent default"
+              placeholder="Scheduled default"
+              clearedLabel="Scheduled default"
               clearedDescription={
                 fallback?.harness
-                  ? `Today: ${harnessChoices.find((c) => c.id === fallback.harness)?.name ?? fallback.harness}`
-                  : "Follows the agent's default harness"
+                  ? now(
+                      harnessChoices.find((c) => c.id === fallback.harness)
+                        ?.name ?? fallback.harness,
+                    )
+                  : "Follows the agent's scheduled default"
               }
               onSelect={(id) => {
                 field.onChange(id ?? "");
@@ -638,7 +650,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       </FormField>
       <FormField
         label="Model"
-        hint="Each model is named with its provider. Agent default uses the agent's default model for the harness."
+        hint="Each model is named with its provider. Scheduled default uses the scheduled default's model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
         <AwakeModelsGate agentId={agentId}>
@@ -647,11 +659,12 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
             choices={modelChoices}
             value={modelValue || null}
             clearable
-            clearedLabel="Agent default"
+            placeholder="Scheduled default"
+            clearedLabel="Scheduled default"
             clearedDescription={
               todayModel
-                ? `Today: ${todayModel}`
-                : "Follows the agent's default model for the harness"
+                ? now(todayModel)
+                : "Follows the scheduled default's model for the harness"
             }
             onSelect={(id) => {
               modelField.onChange(id ?? "");

@@ -444,12 +444,14 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-function pairMeta(pair: SessionPair | undefined): Record<string, string> {
+function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
   if (!pair) return {};
   return {
+    follows: "channel",
     harness: pair.harness,
     ...(pair.provider !== null && { provider: pair.provider }),
     ...(pair.model !== null && { model: pair.model }),
+    ...(pair.settings && { settings: pair.settings }),
   };
 }
 

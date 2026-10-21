@@ -1,6 +1,7 @@
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import type {
+  DefaultKind,
   DefaultModelNotice,
   HarnessCatalog,
   HarnessConfigService,
@@ -21,6 +22,8 @@ import { createHarnessConfigSnapshotRepo } from "./infrastructure/snapshot-repo.
 import { createRuntimeCatalogReader } from "./infrastructure/runtime-catalog.js";
 import { createScheduleModelForFire } from "./services/schedule-model.js";
 import { startConvertDefaultOnHelloSaga } from "./sagas/convert-default-on-hello.js";
+import { startPublishDefaultsOnHelloSaga } from "./sagas/publish-defaults-on-hello.js";
+import { createSessionDefaultsPublisher } from "./services/session-defaults-publisher.js";
 import {
   createDefaultConverter,
   type DefaultConverter,
@@ -83,14 +86,20 @@ export function composeHarnessConfigModule(deps: {
 }): { service: HarnessConfigService } {
   const { db, outboxRepo, ...serviceDeps } = deps;
   const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
+  const pairRepo = createSessionPairRepo(db);
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
-      pairRepo: createSessionPairRepo(db),
+      pairRepo,
       eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),
       retireReset: (agentId, tx, harness) =>
         resetRepo.retire(agentId, tx, harness),
+      publishDefaults: createSessionDefaultsPublisher({
+        db,
+        pairRepo,
+        runtimeMutator: deps.runtimeMutator,
+      }),
     }),
   };
 }
@@ -112,6 +121,7 @@ export function composeSessionChoicesValidator(deps: {
 
 export type FirePair = (
   agentId: string,
+  kind: DefaultKind,
   preferred: { harness?: string; provider?: string; model?: string },
 ) => Promise<SessionPair | null | undefined>;
 
@@ -125,7 +135,8 @@ export function composeFirePair(deps: {
     ...deps,
     pairRepo: createSessionPairRepo(deps.db),
   };
-  return (agentId, preferred) => resolveFirePair(resolver, agentId, preferred);
+  return (agentId, kind, preferred) =>
+    resolveFirePair(resolver, agentId, kind, preferred);
 }
 
 export function composeInitializationPairResolver(deps: {
@@ -147,16 +158,22 @@ export function composeDefaultConverter(deps: {
   wake: (agentId: string) => Promise<WakeStamp | null>;
   lastHelloAt: (agentId: string) => Promise<number | null>;
   ownerOf: (agentId: string) => Promise<string | undefined>;
-  redeliver: (agentId: string) => Promise<void>;
+  runtimeMutator: RuntimeMutator;
   log: (msg: string) => void;
 }): { converter: DefaultConverter; helloSaga: Subscription } {
-  const { db, namespace, ownerOf, redeliver, ...rest } = deps;
+  const { db, namespace, ownerOf, runtimeMutator, ...rest } = deps;
+  const pairRepo = createSessionPairRepo(db);
+  const publishDefaults = createSessionDefaultsPublisher({
+    db,
+    pairRepo,
+    runtimeMutator,
+  });
   const converter = createDefaultConverter({
     ...rest,
     onSaved: (agentId) => {
-      void redeliver(agentId).catch((err: Error) =>
+      void publishDefaults(agentId).catch((err: Error) =>
         deps.log(
-          `[default-conversion] ${agentId}: redelivery failed, the outbox sweep will carry it: ${err.message}`,
+          `[default-conversion] ${agentId}: sending the defaults failed: ${err.message}`,
         ),
       );
       void ownerOf(agentId)
@@ -171,21 +188,26 @@ export function composeDefaultConverter(deps: {
           ),
         );
     },
-    pairRepo: createSessionPairRepo(db),
+    pairRepo,
     snapshotRepo: createHarnessConfigSnapshotRepo(db),
     catalogView: createRuntimeCatalogReader(namespace),
   });
-  return { converter, helloSaga: startConvertDefaultOnHelloSaga(converter) };
+  const helloSaga = startConvertDefaultOnHelloSaga(converter);
+  helloSaga.add(startPublishDefaultsOnHelloSaga(publishDefaults));
+  return { converter, helloSaga };
 }
 
 export function composeConvertingFirePair(
   converter: DefaultConverter,
   firePair: FirePair,
-): (agentId: string) => Promise<SessionPair | null | undefined> {
-  return async (agentId) => {
+): (
+  agentId: string,
+  kind: DefaultKind,
+) => Promise<SessionPair | null | undefined> {
+  return async (agentId, kind) => {
     const outcome = await converter.convert(agentId);
     try {
-      return await firePair(agentId, {});
+      return await firePair(agentId, kind, {});
     } catch (err) {
       if (err instanceof NoDefaultModelError && outcome === "waiting")
         throw new NoDefaultModelError(undefined, { pending: true });

@@ -98,6 +98,8 @@ An agent may also tie one to **the session that scheduled it**: *continue* makes
 Either way the scheduling session must be known for certain, and the platform tool has no session of its own — the MCP endpoint is one per agent.
 So agent-runtime gives every session a reference of its own and hands the harness, for each session it opens or loads, its own copy of the platform MCP entry carrying that reference; the tool records it, and the pod resolves it back when the fire lands.
 A harness that does not honour a per-session entry sends no reference, and the tool refuses to tie the task to a session rather than guess.
+Codex's ACP adapter drops a session's entry whose name its `config.toml` already holds, and the platform entry is there for the terminal's `codex`, so Codex chat processes run with that filtering off and the session's own entry wins.
+Bob reads MCP servers only from its own files and Pi's adapter takes no HTTP servers, so neither gets the entry: their manifests declare `sessionMcpEntry: false`, the harness reports `identifiesSession: false`, the session picker's Subagents block says a session's platform sub-agent settings cannot pass, and `spawn_subagent` names that reason when a spawn from such a session names no model.
 The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it waits on Home for a verdict the way a detached run's does, and expires only when nobody answers it in time ([cli](cli.md#headless-runs)).
 If that session is gone by then, *continue* runs the task in a fresh session instead, so it is not lost; *report* drops the result, since there is nobody left to tell.
 
@@ -161,6 +163,7 @@ The session model differs by schedule mode (a one-time schedule is fresh, or lan
   The schedule accumulates a list of sessions over time, browseable under the schedules tab.
 - **Continuous schedule** — the first fire creates a session via `session/new`; every subsequent fire calls `session/resume` against the same session id.
   One schedule, one session, history retained across fires.
+  A schedule that names no choices of its own runs that session on the scheduled default, and the session follows it from its next fire ([sessions](sessions.md#session-inside-the-pod)).
 
 The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC.
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
@@ -177,7 +180,9 @@ How the title reaches the session list belongs to [platform topology](platform-t
 
 A schedule, recurring or [one-time](#one-time-schedules), carries the same choices as a session: the **harness** its sessions run on, their **model** as a qualified name (`<alias>/<model id>`, [harness configuration](harness-config.md#the-model-router)) and the harness's per-session **settings** (an effort level, a reasoning mode), which include the session's platform sub-agent settings ([session settings](harness-config.md#session-settings)).
 A schedule's choices live on its sessions alone.
-Each choice is optional; an unset one takes the agent's saved default ([harness configuration](harness-config.md#session-settings)), and no settings.
+Each choice is optional; an unset one takes the agent's scheduled default, which is the chat default unless the owner saved one for schedules ([harness configuration](harness-config.md#session-settings)), and its settings.
+The schedule tools tell the agent that the owner sets that default and that a schedule names choices of its own only for a reason the task gives.
+The scheduled section of the agent's Providers page lists every schedule that names a harness, model or settings of its own, except a one-time task that continues its session, and moves one or all of them to the scheduled default by clearing those choices; moving all asks first, listing each change.
 With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
 On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 

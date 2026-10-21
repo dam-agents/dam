@@ -41,6 +41,7 @@ export function createSessionChoicesValidator(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   firePair: (
     agentId: string,
+    kind: "scheduled",
     preferred: { harness?: string; model?: string },
   ) => Promise<{ harness: string; model: string | null } | null | undefined>;
 }): SessionChoicesValidator {
@@ -85,7 +86,7 @@ export function createSessionChoicesValidator(deps: {
     choices: SessionChoices,
   ): Promise<string | undefined> => {
     const fire = await deps
-      .firePair(agentId, {
+      .firePair(agentId, "scheduled", {
         ...(choices.harness !== undefined && { harness: choices.harness }),
         ...(choices.model !== undefined && { model: choices.model }),
       })
@@ -136,7 +137,7 @@ export function createSessionChoicesValidator(deps: {
     const carried = harnessesOf(capabilities) ?? [];
     const harness =
       choices.harness ??
-      (await deps.pairRepo.read(agentId))?.harness ??
+      (await deps.pairRepo.read(agentId, "scheduled"))?.harness ??
       (capabilities as { defaultHarness?: string } | null)?.defaultHarness ??
       deps.catalog.default;
     if (

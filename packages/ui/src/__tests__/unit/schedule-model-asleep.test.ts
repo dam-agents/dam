@@ -51,6 +51,7 @@ vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
+  useSessionDefaults: () => ({ data: undefined }),
   useHarnessCatalog: () => ({
     data: {
       harnesses: [

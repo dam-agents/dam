@@ -9,6 +9,7 @@ import { createAttentionService } from "../../modules/attention/services/attenti
 const notSet: DefaultModelNotice = {
   id: "agent-a:not-set",
   agentId: "agent-a",
+  kinds: ["chat", "channel", "scheduled"],
   state: "not-set",
   harness: "claude-code",
   model: null,

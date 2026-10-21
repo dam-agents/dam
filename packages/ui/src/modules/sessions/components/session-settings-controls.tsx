@@ -195,14 +195,25 @@ export function SessionSettingsControls({
                   <span id={`${id}-platform-heading`} className={heading}>
                     Platform sub-agents
                   </span>
-                  <PlatformSubagentSettings
-                    agentId={agentId}
-                    carried={carried}
-                    settings={settings}
-                    idPrefix={id}
-                    disabled={disabled}
-                    onChange={onChange}
-                  />
+                  {capability?.identifiesSession === false ? (
+                    <p className="col-span-2 text-muted-foreground">
+                      {harnessDisplayName(
+                        capability.name,
+                        harnessCatalog?.harnesses,
+                      ) ?? capability.name}{" "}
+                      can&rsquo;t pass these settings to its sub-agents yet, so
+                      the agent names a harness and model when it spawns one.
+                    </p>
+                  ) : (
+                    <PlatformSubagentSettings
+                      agentId={agentId}
+                      carried={carried}
+                      settings={settings}
+                      idPrefix={id}
+                      disabled={disabled}
+                      onChange={onChange}
+                    />
+                  )}
                 </div>
               )}
             </div>

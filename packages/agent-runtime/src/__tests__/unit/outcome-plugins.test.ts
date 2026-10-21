@@ -44,6 +44,7 @@ describe("outcome plugins", () => {
     expect(calls[0]?.platformMeta).toEqual({
       type: SessionType.Regular,
       mode: SessionMode.Chat,
+      follows: "chat",
       ...pair,
     });
   });

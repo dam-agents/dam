@@ -61,7 +61,6 @@ export function SkillsStoppedPanel({
   revalidatingBySource,
   errorBySource,
   addSourceRow,
-  callout,
   disabledNotice,
   comingUp,
   onStart,
@@ -79,7 +78,6 @@ export function SkillsStoppedPanel({
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   addSourceRow: ReactNode;
-  callout?: ReactNode;
   disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
@@ -89,7 +87,6 @@ export function SkillsStoppedPanel({
 }) {
   return (
     <div className="flex flex-col gap-8">
-      {callout && <div className="-mb-4">{callout}</div>}
       {disabledNotice ?? (
         <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
           — its skills are read-only until it wakes. Wake the agent to change

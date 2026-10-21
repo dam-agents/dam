@@ -3,6 +3,12 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Pi's ACP adapter takes no HTTP MCP servers, so the per-session entry a
+# session/new carries never reaches it and its platform tool calls name no
+# session: a session's platform sub-agent settings cannot apply, and a task
+# cannot be tied to the session that scheduled it.
+sessionMcpEntry: false
+
 # Pi picks the API per model, so it reaches every provider the router serves.
 modelRouter:
   dialects: [openai-responses, openai-chat, anthropic-messages]
