@@ -649,6 +649,8 @@ func TestTheAskADeferredResizeStepsDownToStaysWithinItsBounds(t *testing.T) {
 	assert.Equal(t, "2Gi", stepped.String())
 	asking := runnerRequestWithinGrant(1024, 1024, 1024, floor, limit)
 	assert.Equal(t, "1Gi", asking.String(), "never more than the demand asks for")
+	fallen := runnerRequestWithinGrant(512, 2048, 1024, floor, limit)
+	assert.Equal(t, "1Gi", fallen.String(), "a demand under the grant is asked for as it is, raised only to the install's request")
 	floored := runnerRequestWithinGrant(4096, 0, 0, floor, limit)
 	assert.Equal(t, "1Gi", floored.String(), "never below the request the install set")
 	capped := runnerRequestWithinGrant(16384, 16384, 1024, floor, limit)
