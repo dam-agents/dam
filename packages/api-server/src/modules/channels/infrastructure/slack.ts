@@ -3254,6 +3254,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       });
       outcome = "success";
     } catch (err) {
+      if (superseded)
+        replaceSeenAbove(instanceName, threadKey, [
+          ...readSeenAbove(instanceName, threadKey),
+          ...verdictRefs().map((ref) => ref.eventTs),
+        ]);
       if (stopped()) {
         outcome = "success";
         getLogger().info(
@@ -5708,9 +5713,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       if (superseded()) {
         outcome = "success";
+        replaceSeenAbove(args.instanceName, args.threadKey, [
+          ...readSeenAbove(args.instanceName, args.threadKey),
+          ...args.messages.map((m) => m.eventTs),
+        ]);
         getLogger().info(
           { agentId: args.instanceName, error: formatError(err) },
-          "slack.ambient_turn.superseded_with_error",
+          "slack.ambient_turn.superseded",
         );
         return { posted: false, replyText: null, replies: [] };
       }
