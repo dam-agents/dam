@@ -1,13 +1,14 @@
-import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as tar from "tar";
+import { dedupeByName, parseGithubRepo } from "agent-runtime-api";
 import {
-  dedupeByName,
-  parseGithubRepo,
-  SKILL_SOURCE_ROOTS,
-} from "agent-runtime-api";
+  findSkillDirs,
+  hashSkillDir,
+  parseFrontmatter,
+  subPathEscapes,
+} from "agent-runtime-api/skill-tree";
 import type { SourcePathReason } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
@@ -32,161 +33,6 @@ export class SkillSourcePathError extends Error {
 
 const MAX_TARBALL_BYTES = 50 * 1024 * 1024;
 const MAX_SKILL_MD_BYTES = 1024 * 1024;
-
-interface Frontmatter {
-  name?: string;
-  description?: string;
-}
-
-export function parseFrontmatter(content: string): Frontmatter {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return {};
-  const lines = match[1].split(/\r?\n/);
-  const out: Frontmatter = {};
-  for (let i = 0; i < lines.length; i++) {
-    const m = /^(name|description):\s*(.*)$/.exec(lines[i]);
-    if (!m) continue;
-    const key = m[1] as keyof Frontmatter;
-    const raw = m[2].trim();
-    const blockMatch = /^([>|])[+-]?$/.exec(raw);
-    if (blockMatch) {
-      const folded = blockMatch[1] === ">";
-      const collected: string[] = [];
-      let j = i + 1;
-      while (j < lines.length) {
-        const line = lines[j];
-        if (line.trim() === "") {
-          collected.push("");
-          j++;
-          continue;
-        }
-        if (!/^\s+/.test(line)) break;
-        collected.push(line.replace(/^\s+/, ""));
-        j++;
-      }
-      while (collected.length > 0 && collected[collected.length - 1] === "")
-        collected.pop();
-      out[key] = folded ? collected.join(" ") : collected.join("\n");
-      i = j - 1;
-      continue;
-    }
-    const unquoted = raw.replace(/^["']|["']$/g, "");
-    if (unquoted) out[key] = unquoted;
-  }
-  return out;
-}
-
-async function walkFiles(root: string): Promise<string[]> {
-  const out: string[] = [];
-  async function rec(dir: string): Promise<void> {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const ent of entries) {
-      if (ent.name.startsWith(".")) continue;
-      const full = path.join(dir, ent.name);
-      if (ent.isDirectory()) await rec(full);
-      else if (ent.isFile()) out.push(full);
-    }
-  }
-  await rec(root);
-  return out;
-}
-
-export async function computeContentHash(absDir: string): Promise<string> {
-  const files = (await walkFiles(absDir)).sort();
-  const h = createHash("sha256");
-  for (const abs of files) {
-    const rel = path.relative(absDir, abs);
-    h.update(rel);
-    h.update(Buffer.from([0]));
-    h.update(await fs.readFile(abs));
-    h.update(Buffer.from([0]));
-  }
-  return h.digest("hex");
-}
-
-function subPathEscapes(subPath: string): boolean {
-  return subPath.startsWith("/") || subPath.split("/").includes("..");
-}
-
-function isMissingDir(err: unknown): boolean {
-  const code = (err as { code?: string }).code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-
-async function findSkillDirs(
-  repoDir: string,
-  version: string,
-  subPath?: string,
-): Promise<string[]> {
-  if (subPath) {
-    if (subPathEscapes(subPath)) {
-      throw new Error(`skill source path rejected: ${subPath}`);
-    }
-    const root = path.join(repoDir, subPath);
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch (err) {
-      if (isMissingDir(err)) {
-        throw new SkillSourcePathError("path-missing", subPath, version);
-      }
-      throw err;
-    }
-    const dirs = [
-      ...((await isSkillDir(root)) ? [path.relative(repoDir, root)] : []),
-      ...(await skillDirsIn(repoDir, root, entries)),
-    ];
-    if (dirs.length === 0) {
-      throw new SkillSourcePathError("path-empty", subPath, version);
-    }
-    return dirs;
-  }
-  const found: string[] = [];
-  for (const root of SKILL_SOURCE_ROOTS) {
-    found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
-  }
-  if (found.length > 0) return found;
-  return skillDirsUnder(repoDir, repoDir);
-}
-
-async function skillDirsUnder(
-  repoDir: string,
-  root: string,
-): Promise<string[]> {
-  let entries: import("node:fs").Dirent[];
-  try {
-    entries = await fs.readdir(root, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return skillDirsIn(repoDir, root, entries);
-}
-
-async function isSkillDir(dir: string): Promise<boolean> {
-  try {
-    await fs.access(path.join(dir, "SKILL.md"));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function skillDirsIn(
-  repoDir: string,
-  root: string,
-  entries: import("node:fs").Dirent[],
-): Promise<string[]> {
-  const out: string[] = [];
-  for (const ent of entries) {
-    if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-    const dir = path.join(root, ent.name);
-    try {
-      await fs.access(path.join(dir, "SKILL.md"));
-      out.push(path.relative(repoDir, dir));
-    } catch {}
-  }
-  return out;
-}
 
 export async function scanPublicGithubArchive(
   gitUrl: string,
@@ -228,7 +74,11 @@ export async function scanPublicGithubArchive(
       throw new Error("tarball contained no directories");
     const repoDir = path.join(tmp, extracted[0].name);
 
-    const skillDirs = await findSkillDirs(repoDir, version, subPath);
+    const found = await findSkillDirs(repoDir, subPath);
+    if (found.kind !== "found") {
+      throw new SkillSourcePathError(found.kind, found.subPath, version);
+    }
+    const skillDirs = found.dirs;
     const scanned = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);
@@ -237,7 +87,7 @@ export async function scanPublicGithubArchive(
           "utf8",
         );
         const fm = parseFrontmatter(content);
-        const contentHash = await computeContentHash(absDir);
+        const contentHash = await hashSkillDir(absDir);
         return {
           source: gitUrl,
           name: fm.name?.trim() || path.basename(rel),

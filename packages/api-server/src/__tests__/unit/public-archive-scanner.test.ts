@@ -3,9 +3,8 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { hashSkillDir, parseFrontmatter } from "agent-runtime-api/skill-tree";
 import {
-  computeContentHash,
-  parseFrontmatter,
   PublicArchiveNotFoundError,
   scanPublicGithubArchive,
 } from "../../modules/skills/infrastructure/public-archive-scanner.js";
@@ -36,7 +35,7 @@ describe("parseFrontmatter", () => {
   });
 });
 
-describe("computeContentHash", () => {
+describe("hashSkillDir", () => {
   let dir: string;
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "apiserver-hash-"));
@@ -47,12 +46,12 @@ describe("computeContentHash", () => {
 
   it("produces stable hex digest depending on contents", async () => {
     await fs.writeFile(path.join(dir, "SKILL.md"), "v1");
-    const a = await computeContentHash(dir);
+    const a = await hashSkillDir(dir);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     await fs.writeFile(path.join(dir, "SKILL.md"), "v1");
-    expect(await computeContentHash(dir)).toBe(a);
+    expect(await hashSkillDir(dir)).toBe(a);
     await fs.writeFile(path.join(dir, "SKILL.md"), "v2");
-    expect(await computeContentHash(dir)).not.toBe(a);
+    expect(await hashSkillDir(dir)).not.toBe(a);
   });
 });
 

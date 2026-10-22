@@ -1,9 +1,7 @@
 import { load as parseYaml } from "js-yaml";
 import { describe, expect, it } from "vitest";
-import {
-  ensureFrontmatterName,
-  parseFrontmatter,
-} from "../../modules/skills/domain/frontmatter.js";
+import { parseFrontmatter } from "agent-runtime-api/skill-tree";
+import { ensureFrontmatterName } from "../../modules/skills/domain/frontmatter.js";
 import { makeSkillSlug } from "../../modules/skills/domain/skill-name.js";
 
 function yamlName(content: string): unknown {

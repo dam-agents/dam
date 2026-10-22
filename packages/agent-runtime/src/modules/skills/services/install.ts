@@ -5,6 +5,7 @@ import type {
   SkillsDomainError,
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
+import { subPathEscapes } from "agent-runtime-api/skill-tree";
 import type { SkillName } from "../domain/skill-name.js";
 import type { SkillPath } from "../domain/skill-path.js";
 import {
@@ -13,10 +14,7 @@ import {
 } from "../infrastructure/github-rest-client.js";
 import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
-import {
-  subPathEscapes,
-  type LocalSkillRepository,
-} from "../infrastructure/local-skill-repository.js";
+import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
 
 export interface InstallDeps {
   github: GitHubRestClient;
