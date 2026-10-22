@@ -138,6 +138,7 @@ function makeService(
         throw new Error("Unexpected dependency: providerBalance");
       },
     },
+    credentialProbe: { probe: async () => ({ status: "passed" }) },
     providerKeyProbe: { probe: async () => ({ ok: true }) },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",

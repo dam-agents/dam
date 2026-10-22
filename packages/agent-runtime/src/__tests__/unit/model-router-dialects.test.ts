@@ -487,7 +487,11 @@ describe("session handles", () => {
    * X-Task-Id (and X-Parent-Task-Id on a subagent's call), Codex by its
    * session-id header (session_id before 0.159) with a subagent's own
    * thread-id beside it, Claude Code inside the request metadata's user_id,
-   * a JSON object since 2.1 and a `_session_` suffix before. */
+   * a JSON object since 2.1 and a `_session_` suffix before. A Claude Code
+   * parent in the metadata marks a forked conversation, which a rewound
+   * Session's copy is too, so it is a Session of its own; only the agent id
+   * header marks a subagent's call, which then carries both ids for the
+   * caller to pick the Session between. */
   it("reads the session from each harness's own marker", () => {
     const req = (headers: Record<string, string>) => ({ headers }) as never;
     expect(sessionOf(req({ "x-task-id": "s1" }), {})).toEqual({
@@ -524,18 +528,19 @@ describe("session handles", () => {
         },
       }),
     ).toEqual({ sessionId: "33333333-3333-3333-3333-333333333333" });
-    expect(
-      sessionOf(req({}), {
-        metadata: {
-          user_id: JSON.stringify({
-            session_id: "child",
-            parent_session_id: "33333333-3333-3333-3333-333333333333",
-          }),
-        },
-      }),
-    ).toEqual({
-      sessionId: "child",
-      parentSessionId: "33333333-3333-3333-3333-333333333333",
+    const forked = {
+      metadata: {
+        user_id: JSON.stringify({
+          session_id: "child",
+          parent_session_id: "33333333-3333-3333-3333-333333333333",
+        }),
+      },
+    };
+    expect(sessionOf(req({}), forked)).toEqual({ sessionId: "child" });
+    expect(sessionOf(req({ "x-claude-code-agent-id": "a1" }), forked)).toEqual({
+      sessionId: "a1",
+      parentSessionId: "child",
+      forkedFrom: "33333333-3333-3333-3333-333333333333",
     });
     expect(sessionOf(req({}), { metadata: { user_id: "nothing" } })).toBeNull();
   });

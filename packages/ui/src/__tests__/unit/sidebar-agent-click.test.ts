@@ -105,7 +105,7 @@ describe("the attention record answers for an Agent only once it loaded", () => 
       previewComplete({
         isPending: false,
         isSuccess: true,
-        data: { items: [], dismissed: [], defaultModels: [] },
+        data: { items: [], dismissed: [], defaultModels: [], outageAlerts: [] },
       }),
     ).toBe(true);
   });

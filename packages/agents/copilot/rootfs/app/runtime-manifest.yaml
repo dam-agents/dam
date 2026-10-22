@@ -33,14 +33,19 @@ drivers:
     keyPath: mcpServers
 
   # Copilot's ~/.copilot/settings.json holds the defaults the Config panel
-  # writes; a session's mode is a live ACP config option.
+  # writes. A session's mode and effort change inside the live session; an ACP
+  # session ignores --autopilot and starts in Agent, so the runtime sends the
+  # catalog's start mode. Copilot takes reasoning_effort as a config option it
+  # does not advertise.
   harness-config:
     file: "$HOME/.copilot/settings.json"
     sessionSettings:
-      mode: { configOption: mode }
+      mode: { mode: true, deriveStartMode: true }
+      effort: { configOption: reasoning_effort }
     keys:
       configOptions:
         mode: platform.mode
+        effort: reasoningEffort
     catalog:
       options:
         - id: model
@@ -52,7 +57,7 @@ drivers:
           name: Mode
           description: How Copilot works through a prompt
           category: mode
-          default: "https://agentclientprotocol.com/protocol/session-modes#agent"
+          default: "https://agentclientprotocol.com/protocol/session-modes#autopilot"
           choices:
             - value: "https://agentclientprotocol.com/protocol/session-modes#agent"
               name: "Agent"
@@ -63,3 +68,20 @@ drivers:
             - value: "https://agentclientprotocol.com/protocol/session-modes#autopilot"
               name: "Autopilot"
               description: "Keeps working until the task is done, without stopping to ask"
+        # Copilot sends the value to the provider as it is.
+        - id: effort
+          name: Effort
+          description: Reasoning effort level
+          category: thought_level
+          default: "medium"
+          choices:
+            - value: minimal
+              name: "Minimal"
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"

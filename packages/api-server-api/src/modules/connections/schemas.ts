@@ -281,6 +281,7 @@ export const secretRequestIdInputSchema = z.object({
 export const secretRequestSubmitInputSchema = secretRequestIdInputSchema.extend(
   {
     fields: z.record(z.string().max(64), z.string().min(1).max(65_536)),
+    saveAnyway: z.boolean().optional(),
   },
 );
 export type SecretRequestSubmitInput = z.infer<

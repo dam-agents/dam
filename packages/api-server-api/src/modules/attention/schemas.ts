@@ -8,7 +8,7 @@ export const attentionDismissInputSchema = z.object({
   items: z
     .array(
       z.object({
-        kind: z.enum(["session", "approval", "default-model"]),
+        kind: z.enum(["session", "approval", "default-model", "outage-alert"]),
         id: z.string().trim().min(1).max(512),
       }),
     )

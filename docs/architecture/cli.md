@@ -59,6 +59,7 @@ A field it could not learn is `null`, with the reason beside it; `upToDate` is `
 
 `dam auth login` authenticates against the active host's Keycloak realm ([security-and-credentials.md](security-and-credentials.md)) via the OAuth 2.0 Device Authorization Grant ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)).
 The realm advertises a public `platform-cli` client (device grant only, no secret); the CLI discovers its id from the server rather than hardcoding it, then drives the standard device flow — print (and optionally open) a verification URL, poll the token endpoint — and on success persists a per-host credential record under `$XDG_STATE_HOME/dam/` with restrictive permissions and an atomic write.
+A user who refuses the grant in the browser ends the poll with `access_denied`: login exits non-zero, says the user refused the sign-in, and saves nothing.
 
 Credentials are keyed by host URL, so switching between deployments never clobbers state.
 A host that moved redirects its `/api/auth/config` to the new host; login follows that redirect, keys the credential under the new host, and saves the new host as the active one.
@@ -179,6 +180,7 @@ A CLI change that leaves the skill describing a command that no longer exists fa
 The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
 Sign-in stays the device flow the user approves in a browser, and the agent never reads the credential store or the bearer variable.
 A connection's credential, new or rotated, the agent never sees: it runs `connect` or `update` without the secret, the CLI opens the [secret-entry page](connections.md#connection) where the user types it, and waits for the outcome, as it waits for an OAuth sign-in.
+Since the agent cannot check that secret itself, the outcome carries the server's [credential check](connections.md#connection) where the template has one, and `dam connection test` runs it again on the stored credential, so the agent can tell a broken token from a working one.
 The masked terminal prompt stays the fallback, for a user who prefers it or a server without the page; a command that takes it, and a new API key, which is printed once to whoever creates it, are handed to the user to run in a terminal of their own, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 

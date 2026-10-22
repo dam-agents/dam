@@ -11,6 +11,7 @@ import { buildReauthCommand } from "./commands/reauth.js";
 import { buildRevokeCommand } from "./commands/revoke.js";
 import { buildScopeCommand } from "./commands/scope.js";
 import { buildTemplatesCommand } from "./commands/templates.js";
+import { buildTestCommand } from "./commands/test.js";
 import { buildUpdateCommand } from "./commands/update.js";
 import {
   createConnectionService,
@@ -69,6 +70,13 @@ export function composeConnectionModule(
       configService: opts.configService,
       createConnectionService: createService,
       browserOpener: opts.browserOpener,
+    }),
+  );
+  parent.addCommand(
+    buildTestCommand({
+      compatService: opts.compatService,
+      configService: opts.configService,
+      createConnectionService: createService,
     }),
   );
   parent.addCommand(

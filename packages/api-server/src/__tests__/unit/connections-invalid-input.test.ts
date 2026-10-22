@@ -47,6 +47,7 @@ describe("connection create with an invalid input", () => {
       githubAppEngine: unused(),
       s3CredentialProbe: unused(),
       providerBalance: unused(),
+      credentialProbe: unused(),
       providerKeyProbe: unused(),
       oauthCallbackUrl: "https://example.com/callback",
       brandName: "Test",
