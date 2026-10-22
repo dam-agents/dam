@@ -39,7 +39,8 @@ const HOVER_CLOSE_MS = 300;
  * the trigger or the trigger takes focus, and stays while the pointer moves
  * into it; a click or Enter opens it and moves focus into the grid. A pick
  * closes the grid. An image upload holds it open from the file dialog to the
- * end of the upload, so the input that receives the file is still there. The
+ * end of the upload, so the input that receives the file is still there; a
+ * hold that ends after the mouse left closes the grid as leaving would. The
  * figures are aria-hidden, so every control carries the character's name for
  * screen readers.
  */
@@ -91,7 +92,6 @@ export function AvatarPicker({
       later(false, HOVER_CLOSE_MS);
     },
   };
-  // A hold that ends after the mouse left closes the grid as leaving would.
   const hold = (next: boolean) => {
     holding.current = next;
     if (!next && pointerGone.current) later(false, HOVER_CLOSE_MS);
@@ -262,7 +262,8 @@ export function AvatarGrid({
  * UNIT_BOUNDARY_DESCRIPTION: The experimental custom avatars: one emoji typed
  * or pasted, or an uploaded JPG or PNG that the api-server crops to a square.
  * `onHold` is true from the click that opens the file dialog until the dialog
- * is cancelled or the upload ends.
+ * is cancelled or the upload ends. React has no onCancel for inputs, so the
+ * file dialog's cancel is listened to natively.
  */
 function CustomAvatarInputs({
   onPick,
@@ -339,8 +340,6 @@ function CustomAvatarInputs({
               className="sr-only"
               disabled={uploading}
               ref={(el) => {
-                // React has no onCancel for inputs; the file dialog's cancel
-                // is a native event only.
                 const release = () => onHold?.(false);
                 el?.addEventListener("cancel", release);
                 return () => el?.removeEventListener("cancel", release);
