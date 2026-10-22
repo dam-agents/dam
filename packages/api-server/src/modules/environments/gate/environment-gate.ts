@@ -18,6 +18,7 @@ import {
   relayHeaders,
   requestAllowed,
   RESERVED_PREFIX,
+  siblingPreflight,
   SESSION_COOKIE_PLAIN,
   SESSION_COOKIE_SECURE,
   SESSION_TTL_MS,
@@ -26,6 +27,7 @@ import {
   SIGNIN_COOKIE_SECURE,
   SIGNIN_TTL_MS,
   type EnvironmentSession,
+  type PlatformCredentials,
 } from "../domain/gate.js";
 import type { EnvironmentRecord } from "../domain/environment.js";
 import type { EnvironmentsRepository } from "../infrastructure/environments-repository.js";
@@ -56,12 +58,18 @@ const GATE_HEADERS: Record<string, string> = {
 export interface EnvironmentGateDeps {
   domain: string;
   scheme: "http" | "https";
-  // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address and the binding of the browser's sign-in secret; and the share host's sign-out, which ends the identity provider's session too and offers to sign in again.
-  frontDoorUrl: (address: string, next: string, binding: string) => string;
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address, the binding of the browser's sign-in secret, and the sign-in chain it is a step of, if any; and the share host's sign-out, which ends the identity provider's session too and offers to sign in again.
+  frontDoorUrl: (
+    address: string,
+    next: string,
+    binding: string,
+    chain?: string,
+  ) => string;
   signOutUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
   ownerList: (owningAgentId: string) => Promise<string[]>;
   signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
+  platform: PlatformCredentials;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   upstream: (agentId: string) => { host: string; port: number };
@@ -169,19 +177,33 @@ export function createEnvironmentGate(
     return secret;
   }
 
+  function ownOrigins(record: EnvironmentRecord, host: string | undefined) {
+    return environmentOrigins(record, {
+      scheme: deps.scheme,
+      domain: deps.domain,
+      hostHeader: host,
+    });
+  }
+
   function allowed(
     record: EnvironmentRecord,
     host: string | undefined,
     source: { origin: string | undefined; site: string | undefined },
   ) {
-    return requestAllowed(
-      source,
-      environmentOrigins(record, {
-        scheme: deps.scheme,
-        domain: deps.domain,
-        hostHeader: host,
-      }),
-    );
+    return requestAllowed(source, ownOrigins(record, host));
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: lets a page of another endpoint of the same Environment read the gate's own refusal, so it sees a 401 or 403 instead of a network error; the gate's pages carry nothing that endpoint may not see.
+  function siblingCors(c: Context, record: EnvironmentRecord) {
+    const origin = c.req.header("origin");
+    if (
+      origin === undefined ||
+      !ownOrigins(record, c.req.header("host")).has(origin)
+    )
+      return;
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Access-Control-Allow-Credentials", "true");
+    c.header("Vary", "Origin");
   }
 
   async function reserved(
@@ -220,6 +242,26 @@ export function createEnvironmentGate(
       });
       gateHeaders(c);
       return c.redirect(redeemed.next, 302);
+    }
+    if (path === "/.platform/signin") {
+      const chain = c.req.query("chain") ?? "";
+      if (!isSignInToken(chain))
+        return page(c, 404, "Not found", "Nothing is served here.");
+      gateHeaders(c);
+      return c.html(
+        renderGatePage({
+          brandName: deps.brandName,
+          title: "Signing you in",
+          body: "Signing you in to every part of this Environment.",
+          continueTo: deps.frontDoorUrl(
+            address,
+            "/",
+            signInBinding(signInSecret(c)),
+            chain,
+          ),
+        }),
+        200,
+      );
     }
     if (path === "/.platform/sign-out") {
       const id = getCookie(c, cookieName);
@@ -268,6 +310,7 @@ export function createEnvironmentGate(
       address: resolved.address,
       publicHost: c.req.header("host") ?? "",
       scheme: deps.scheme,
+      platform: deps.platform,
     });
     headers.set(DECLARED_PORTS_HEADER, declaredPorts(resolved.record));
     // UNIT_BOUNDARY_DESCRIPTION: the visitor's hop-by-hop headers describe its own connection, and fetch refuses a request that carries them (a chunked upload, an `Expect: 100-continue`); the body still streams, which proxy() sends chunked itself.
@@ -331,6 +374,21 @@ export function createEnvironmentGate(
     }
     if (c.req.path.startsWith(RESERVED_PREFIX))
       return reserved(c, address, record);
+    const preflight = siblingPreflight(
+      {
+        method: c.req.method,
+        origin: c.req.header("origin"),
+        requestMethod: c.req.header("access-control-request-method"),
+        requestHeaders: c.req.header("access-control-request-headers"),
+      },
+      ownOrigins(record, c.req.header("host")),
+    );
+    if (preflight) {
+      gateHeaders(c);
+      for (const [name, value] of Object.entries(preflight))
+        c.header(name, value);
+      return c.body(null, 204);
+    }
 
     const visitor = await session(getCookie(c, cookieName));
     const access = decideAccess(
@@ -344,6 +402,7 @@ export function createEnvironmentGate(
     );
     if (!access.allow) {
       deny(record, visitor, address, access.reason);
+      siblingCors(c, record);
       if (access.reason === "not-signed-in") {
         if (isNavigation(c)) {
           gateHeaders(c);
@@ -483,6 +542,7 @@ export function createEnvironmentGate(
         address: resolved.address,
         publicHost: req.headers.host ?? "",
         scheme: deps.scheme,
+        platform: deps.platform,
       });
       headers.set(DECLARED_PORTS_HEADER, declaredPorts(resolved.record));
       headers.set("connection", "Upgrade");

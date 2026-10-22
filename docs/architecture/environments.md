@@ -83,13 +83,19 @@ The api-server names the declared ports on every request, so a port the Environm
   The share host signs the visitor in with its own session and identity provider client, the ones a restricted artifact uses, so a visitor signs in once for both; one already signed in passes straight through, with no page and no click.
   It checks the owner and the effective list, and either shows a refusal naming the account the visitor is signed in with, whom to ask and a switch of account, or hands the address a code that works once, for that address and the browser holding the secret only, within a minute, so a code that leaks through a log, the history or a referrer opens nothing elsewhere.
   The address trades the code for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
+- **One sign-in covers every endpoint.** In an Environment with several endpoints, the first address's code sends the browser on through each other endpoint, which gets a session the same way, bound to a secret of its own, and the last returns the visitor to the page they asked for.
+  So an app whose pages call another of its endpoints, such as its own login server or API, finds a session there.
+  Each step is a page that moves on by itself, not a redirect, so an Environment with many endpoints never reaches a browser's limit on redirects in a row.
 - **The address checks again on every request**, by its session and the list as it stands, so a person taken off the list is refused at their next request.
   The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
-  Every address reserves `/.platform/` for the hand-off and sign-out, which never reach the app.
+  Every address reserves `/.platform/` for the hand-off, the steps of a sign-in and sign-out, which never reach the app.
 - **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
   The address refuses every request whose `Origin` is not one of its own Environment's endpoints — a script's call, a form post, a WebSocket — before it reaches the app; a link, a typed address, a frame and an image carry no origin and pass.
   A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
-- **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret) or an `Authorization` header, passes on every cookie the app set itself, and never lets the app set the platform's.
+  A CORS preflight from another endpoint of the same Environment carries no cookie, so the gate answers it itself, allowing the method and headers asked for with credentials; the call that follows is checked as any other, and its answer is the app's.
+  A refusal of a call from another endpoint carries CORS headers for that endpoint, so its page reads the status instead of a network error.
+- **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret), passes on every cookie the app set itself, and never lets the app set the platform's.
+  An `Authorization` header reaches the app unless it is a platform credential: a platform API key, or a bearer token that names the platform's identity provider as its issuer, or names none, so an app that signs its own users in gets their tokens.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
 - **Wake.** A request to a sleeping Environment wakes it and waits until its runtime answers, not until the app does: a request that comes before the app listens gets the gate's "not answering" page, and the visitor tries again.
