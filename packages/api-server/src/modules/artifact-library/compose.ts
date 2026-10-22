@@ -7,10 +7,7 @@ import type { AcpClientFactory } from "../../core/acp-client.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
-import {
-  RELAY_TOKEN_TTL_MS,
-  type RelayGrant,
-} from "./domain/relay-grant.js";
+import { RELAY_TOKEN_TTL_MS, type RelayGrant } from "./domain/relay-grant.js";
 import {
   RENDER_TOKEN_TTL_MS,
   type RenderGrant,
