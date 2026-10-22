@@ -22,7 +22,7 @@ key="${usage_key:?}"
 name="platform-vm-runner:$key"
 base="$(.mise/tasks/image/resolve import-path vm-runner)"
 [ -e "$base" ] || { echo "e2e:runner-release: no runner image at $base" >&2; exit 1; }
-work="$(mktemp -d)"
+work="$(TMPDIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}" mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/root/usr/local/libexec/vm-runner"
 printf '%s\n' "$key" > "$work/root/usr/local/libexec/vm-runner/reboot-id"

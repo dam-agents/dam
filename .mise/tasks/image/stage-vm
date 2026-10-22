@@ -24,13 +24,17 @@ IMAGE_DIR="${VM_IMAGE_DIR:-$(helm template platform "$MISE_CONFIG_ROOT/helm" \
   echo "image:stage-vm: helm/values-local.yaml names no node image cache directory, and no VM_IMAGE_DIR was given — set virtualization.imageCache.hostPath in that file, or hand in the directory the install's runners mount as VM_IMAGE_DIR" >&2
   exit 1
 }
-work="$(mktemp -d)"
+# Under the runner's temp directory in CI: the hard links below need the work
+# directory on the filesystem the lane's layout is on, and on the ubuntu-26.04
+# runner image /tmp is a small filesystem of its own.
+work="$(TMPDIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}" mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # A layout is linked in, not unpacked: the e2e lane leaves a built agent image as
-# its layout, and its blobs are the image's. The link needs both under /tmp, where
-# the lane and this work directory live. gzip-layout and name-layout replace the
-# files they rewrite, which leaves the layout they read alone.
+# its layout, and its blobs are the image's. The link needs both on one
+# filesystem, the temp directory the lane and this work directory share.
+# gzip-layout and name-layout replace the files they rewrite, which leaves the
+# layout they read alone.
 layout="$work/layout"
 mkdir -p "$layout"
 if [ -d "$usage_image" ]; then cp -al "$usage_image/." "$layout"; else tar -xf "$usage_image" -C "$layout"; fi

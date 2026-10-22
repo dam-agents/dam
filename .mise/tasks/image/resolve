@@ -43,7 +43,7 @@ set -euo pipefail
 IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # Where image:ci-build leaves an image's OCI layout: it names this for the oci
 # task, and import_path finds an image's layout by it.
-OCI_OUT="${AGENT_OCI_OUT:-/tmp/ci-build/oci}"
+OCI_OUT="${AGENT_OCI_OUT:-${RUNNER_TEMP:-/tmp}/ci-build/oci}"
 
 # Test-only files and the agents' READMEs never ship (final images copy dist/ +
 # node_modules, an agent's rootfs), so they don't move the last-touching commit.

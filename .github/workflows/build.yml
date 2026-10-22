@@ -404,7 +404,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-images-${{ matrix.arch }}
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           retention-days: 1
           if-no-files-found: error
 
@@ -424,7 +424,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digests-images-*
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           merge-multiple: true
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
@@ -443,7 +443,7 @@ jobs:
           # keycloak's merge takes minutes of copying inside the registry; its
           # registry requests are logged to find where the time goes.
           CI_MERGE_DEBUG: keycloak
-        run: .mise/tasks/image/ci-merge /tmp/digests controller vm-runner api-server ui keycloak
+        run: .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" controller vm-runner api-server ui keycloak
 
   build-agents:
     # One job per arch builds the agents one after another; see
@@ -495,7 +495,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-agents-${{ matrix.arch }}
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           retention-days: 1
           if-no-files-found: error
 
@@ -512,7 +512,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digests-agents-*
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           merge-multiple: true
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
@@ -526,7 +526,7 @@ jobs:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: |
           read -r -a agents <<< "$AGENTS"
-          SOURCE_SHA_TAGGED="$AGENTS" .mise/tasks/image/ci-merge /tmp/digests "${agents[@]}"
+          SOURCE_SHA_TAGGED="$AGENTS" .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" "${agents[@]}"
 
   build-workloads:
     # One job per arch, one workload after another, like build-agents, and
@@ -566,7 +566,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-workloads-${{ matrix.arch }}
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           retention-days: 1
           if-no-files-found: error
 
@@ -583,7 +583,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digests-workloads-*
-          path: /tmp/digests
+          path: ${{ runner.temp }}/digests
           merge-multiple: true
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
@@ -597,7 +597,7 @@ jobs:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: |
           read -r -a workloads <<< "$WORKLOADS"
-          SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge /tmp/digests "${workloads[@]}"
+          SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" "${workloads[@]}"
 
   build-mock:
     name: build mock (e2e fixture)
