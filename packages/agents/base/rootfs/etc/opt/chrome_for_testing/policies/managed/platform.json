@@ -1,11 +1,12 @@
 {
+  "AlternateErrorPagesEnabled": false,
   "BrowserNetworkTimeQueriesEnabled": false,
   "BrowserSignin": 0,
   "SyncDisabled": true,
   "SigninInterceptionEnabled": false,
   "SearchSuggestEnabled": false,
   "TranslateEnabled": false,
-  "SpellcheckEnabled": false,
+  "SpellcheckLanguageBlocklist": ["en-US", "en-GB"],
   "AIModeSettings": 1,
   "GeminiSettings": 1,
   "GoogleSearchSidePanelEnabled": false,

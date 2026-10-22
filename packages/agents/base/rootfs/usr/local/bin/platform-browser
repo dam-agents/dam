@@ -6,7 +6,13 @@
 # after any restart. Chromium reports itself automated (navigator.webdriver)
 # whenever its DevTools port is open, the port agent-browser drives it through;
 # with testing mode off that report is turned off and the port stays.
+# Chrome's component updater and Safe Browsing list updates reach Google with no
+# page asking, and the gateway holds each for the user's approval, so the
+# switches that turn them off are on every launch, whatever the testing mode.
+quiet="--disable-background-networking --disable-component-update"
 if [ "$(cat "${HOME:-/home/agent}/.local/share/platform/browser-launch" 2>/dev/null)" = standard ]; then
-  set -- --disable-blink-features=AutomationControlled "$@"
+  set -- $quiet --disable-blink-features=AutomationControlled "$@"
+else
+  set -- $quiet "$@"
 fi
 exec /opt/ms-playwright/chromium "$@"

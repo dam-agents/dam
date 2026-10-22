@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -40,10 +40,13 @@ A runtime too old to report the mode shows the switch disabled.
 
 **Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions, component updates, autofill's form predictions, translation and the spell-check dictionary.
 Every such call is egress the gateway holds for the user's approval, though no page asked for it.
-A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions, translation (and its bubble over pages in another language), spell-check and Google's AI and search side panel features, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
-Launch switches point the account check, the push-messaging check-in and the component updater at a closed loopback port, and turn off autofill's queries to Google's form-prediction server; no policy stops these.
+A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions, translation (and its bubble over pages in another language), Google's AI and search side panel features, and the error-page web service whose captive-portal check calls `connectivitycheck.gstatic.com`, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
+It also blocks the spell-check dictionary languages, so the browser neither loads nor downloads a dictionary from `redirector.gvt1.com`; turning spell-check off outright would still fetch one.
+The list holds English, because an image that sets no locale gets that dictionary; a derived image with another locale adds its language too.
+`platform-browser` carries `--disable-background-networking` and `--disable-component-update` into every launch, whatever the testing mode, so the launcher does not rely on agent-browser's own defaults for them.
+`AGENT_BROWSER_ARGS` points the account check, the push-messaging check-in and the component updater at a closed loopback port, and turns off autofill's queries to Google's form-prediction server.
 The component updater also brings security data, such as certificate revocation lists, so the browser goes without their updates.
-Safe Browsing stays on, and its list updates are the only background traffic left.
+Safe Browsing stays on, but with background networking off it never updates its lists, so its protection ages; Chrome for Testing does no real-time Safe Browsing lookups, which need a Google-branded build.
 
 ## Tabs
 
