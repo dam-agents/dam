@@ -1,4 +1,4 @@
-import { Add, Save } from "@carbon/icons-react";
+import { Save } from "@carbon/icons-react";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -16,12 +16,11 @@ import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
-import { AddSourceRow, SkillSourcesSection } from "./skill-sources-section.js";
+import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
-import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
+import { SkillsReadOnlyPanel } from "./skills-read-only-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
-import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
 import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 
 export function SkillsSurface({
@@ -53,8 +52,7 @@ export function SkillsSurface({
     toggleAllWithConfirm,
     removeSourceWithConfirm,
   } = useSkillsConfirms(surface, derived);
-  const { sources, publishes, updatingAll, updateAll, downloadStandalone } =
-    surface;
+  const { publishes, updatingAll, updateAll, downloadStandalone } = surface;
   const {
     searching,
     totals,
@@ -67,19 +65,10 @@ export function SkillsSurface({
     anyInstalled,
     drifted,
     trackTargets,
-    snapshotRows,
-    snapshotOnCount,
   } = derived;
 
   const openAddSource = () =>
     setOpenModal({ kind: "add-source", mode: "github", files: [] });
-  const addSourceButton = (
-    <Button variant="outline" size="sm" onClick={openAddSource}>
-      <Add size={16} /> Add source
-    </Button>
-  );
-  const addSourceRow = <AddSourceRow onClick={openAddSource} />;
-
   const manageConnections = agentId
     ? () => navigateToSandboxHome(agentId, "connections")
     : undefined;
@@ -89,27 +78,6 @@ export function SkillsSurface({
     agentDisabled && agentId ? (
       <AgentDisabledNotice agentId={agentId} />
     ) : undefined;
-
-  const stoppedPanel = (
-    <SkillsStoppedPanel
-      onCount={snapshotOnCount}
-      rows={snapshotRows}
-      sources={sources}
-      sourcesLoaded={surface.sourcesLoaded}
-      visibilityBySource={surface.visibilityBySource}
-      scannedAtBySource={surface.scannedAtBySource}
-      loadingBySource={surface.loadingBySource}
-      revalidatingBySource={surface.revalidatingBySource}
-      errorBySource={surface.errorBySource}
-      addSourceRow={addSourceRow}
-      disabledNotice={disabledNotice}
-      comingUp={!!comingUp}
-      onStart={() => agentId && wakeAgent.wake(agentId)}
-      onRescan={(src) => void surface.refreshSource(src.id)}
-      onRemove={(src) => void removeSourceWithConfirm(src)}
-      onManageConnections={manageConnections}
-    />
-  );
 
   const dropEnabled = !readOnly && !!agentId;
   const surfaceDropProps = dropEnabled
@@ -133,26 +101,6 @@ export function SkillsSurface({
       }
     : {};
 
-  const neverRunPanel = (
-    <SkillsNeverRunPanel
-      sources={sources}
-      sourcesLoaded={surface.sourcesLoaded}
-      visibilityBySource={surface.visibilityBySource}
-      scannedAtBySource={surface.scannedAtBySource}
-      loadingBySource={surface.loadingBySource}
-      revalidatingBySource={surface.revalidatingBySource}
-      errorBySource={surface.errorBySource}
-      addSourceButton={addSourceButton}
-      addSourceRow={addSourceRow}
-      disabledNotice={disabledNotice}
-      comingUp={!!comingUp}
-      onStart={() => agentId && wakeAgent.wake(agentId)}
-      onRescan={(src) => void surface.refreshSource(src.id)}
-      onRemove={(src) => void removeSourceWithConfirm(src)}
-      onManageConnections={manageConnections}
-    />
-  );
-
   return (
     <div
       {...surfaceDropProps}
@@ -164,10 +112,18 @@ export function SkillsSurface({
       {readOnly ? (
         configPending && !ran ? (
           <SkillSourcesSkeleton />
-        ) : ran ? (
-          stoppedPanel
         ) : (
-          neverRunPanel
+          <SkillsReadOnlyPanel
+            surface={surface}
+            derived={derived}
+            mode={ran ? "stopped" : "never-run"}
+            comingUp={!!comingUp}
+            disabledNotice={disabledNotice}
+            onStart={() => agentId && wakeAgent.wake(agentId)}
+            onAddSource={openAddSource}
+            onRemove={(src) => void removeSourceWithConfirm(src)}
+            onManageConnections={manageConnections}
+          />
         )
       ) : (
         <>
