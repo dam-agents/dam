@@ -3,7 +3,6 @@ import { ChevronLeft } from "@carbon/icons-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../../brand.js";
@@ -17,16 +16,14 @@ export function SidebarHeader({ onCollapse, onHome }: Props) {
   return (
     // UNIT_BOUNDARY_DESCRIPTION: the header's bottom border takes a pixel of its height, so the chevron tile starts at the top rather than centring in what the border leaves, and lands where the rail's first tile does.
     <div className="flex h-12 shrink-0 items-start border-b border-border px-1">
-      <Tooltip content="Collapse navigation" side="bottom">
-        <button
-          type="button"
-          onClick={onCollapse}
-          aria-label="Collapse navigation"
-          className={cn(railTile(false), FOCUS_RING)}
-        >
-          <ChevronLeft size={RAIL_GLYPH} />
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        onClick={onCollapse}
+        aria-label="Collapse navigation"
+        className={cn(railTile(false), FOCUS_RING)}
+      >
+        <ChevronLeft size={RAIL_GLYPH} />
+      </button>
       <button
         type="button"
         onClick={onHome}
