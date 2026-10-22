@@ -35,12 +35,12 @@ runs:
     # otherwise redoes from deb.debian.org. The build keys its own copy by the
     # day so that a rebuild picks up Debian's updates, which is why this key is
     # dated too: an older day's entry would be built again anyway. The build
-    # makes the base after this action has run, so build.yml's build-agents job
+    # makes the base after this action has run, so .github/actions/image-build
     # saves it on main, from the outputs below.
     - id: day
       shell: bash
       run: echo "utc=$(date -u +%F)" >> "$GITHUB_OUTPUT"
-    # As above: build.yml saves this entry on main alone.
+    # As above: image-build saves this entry on main alone.
     # jactionlint ignore=cache-poisoning
     - id: apt-base
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
