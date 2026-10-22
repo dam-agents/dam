@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -131,6 +131,7 @@ The harnesses look for instruction files in different places, so each image wire
 A harness that walks up from the work directory finds it on its own; where a harness's walk stops short of the home, at the work directory or at a git root, it gets a link to `~/AGENTS.md` in its own global instructions at start, and a regular file an owner put at that path stays theirs.
 Each harness's README names the files it reads ([Claude Code](../../packages/agents/claude-code/README.md#agent-instructions), [Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration), [Copilot](../../packages/agents/copilot/README.md#platform-instructions)).
 `work/AGENTS.md` still loads beside them on every harness, for a kit whose work directory is its toolkit.
+Pi and Codex read an `AGENTS.override.md` in place of the `AGENTS.md` beside it, and the other harnesses ignore it, so an override in the home splits what the harnesses read: the agent's instructions belong in `~/AGENTS.md` alone.
 A harness reads these files when a session starts, so an edit applies from the next session; Codex reads its global file again each turn, so there an edit applies from the next turn.
 Claude Code on its own drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere on its walk, so the image's managed settings make it load `AGENTS.md` beside `CLAUDE.md`, and a definition that keeps a `CLAUDE.md` loses neither file.
 

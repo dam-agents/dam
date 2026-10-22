@@ -43,7 +43,7 @@ app/
 ## Platform instructions
 
 `pi-platform` links `~/.pi/agent/AGENTS.md`, Pi's global context file, to `/etc/AGENTS.md` at every start, so the platform instructions never sit in a file the owner edits.
-Pi reads the global file first, then one `AGENTS.md` (or `CLAUDE.md`) in each directory from `/` down to the work directory, so the agent's own `~/AGENTS.md` and `work/AGENTS.md` load after it ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+Pi reads the global file first, then one file in each directory from `/` down to the work directory, the first of `AGENTS.override.md`, `AGENTS.md` and `CLAUDE.md` it finds there, so the agent's own `~/AGENTS.md` and `work/AGENTS.md` load after it ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
 A regular file the owner put at `~/.pi/agent/AGENTS.md` is kept, and then replaces the platform instructions for that agent.
 
 ## MCP servers
