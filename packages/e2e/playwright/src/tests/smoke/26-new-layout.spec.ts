@@ -240,21 +240,31 @@ test("pins a Session above every Agent", async ({ page }) => {
   await expect(pinnedSection).toHaveCount(0);
   await expect(inAgent).toBeVisible();
 
+  await inAgent.hover();
   await inAgent.getByTestId("session-menu-button").focus();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await expect(inPinned.locator("[data-row-main]")).toBeFocused();
+
   await inPinned.hover();
-  await inPinned.getByTestId("session-menu-button").click();
-  await page.getByRole("menuitem", { name: "Unpin session" }).click();
+  await inPinned.getByTestId("session-menu-button").focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
   await expect(inAgent.locator("[data-row-main]")).toBeFocused();
+
+  await inAgent.hover();
+  await inAgent.getByTestId("session-menu-button").focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(inPinned.locator("[data-row-main]")).toBeFocused();
 
   const agentRow = node.getByTestId("sidebar-agent-row");
   await agentRow.click();
   await expect(agentRow).toHaveAttribute("aria-expanded", "false");
   await inPinned.hover();
-  await inPinned.getByTestId("session-menu-button").click();
-  await page.getByRole("menuitem", { name: "Unpin session" }).click();
+  await inPinned.getByTestId("session-menu-button").focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
   await expect(pinnedSection).toHaveCount(0);
   await expect(agentRow).toBeFocused();
 });
