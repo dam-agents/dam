@@ -32,7 +32,7 @@ The UI shows the checklist as the **Get started** side panel, a panel like any o
 The panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle, close X and phone behavior.
 Every side panel's top bar ends with that X, behind a vertical border; it closes the panel.
 In an Agent's chat with the JanUI experiment off, the X shows only where it closes something: on Get started, Approvals and a docked delegation.
-On a phone the X is hidden, the ring sits in the top bar and the panel fills the screen under a back button.
+On a phone the X is hidden, the ring sits in the top bar and the panel fills the screen under a back button; with the JanUI experiment on the panel has no bar of its own and keeps its X, from the left rail to the right one.
 The phone's Back gesture closes that full-screen panel and returns to the page under it, or first closes a dialog open above the panel.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.

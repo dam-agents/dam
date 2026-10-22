@@ -76,7 +76,10 @@ export function lookupPrice(book: PriceBook, query: PriceQuery): CallPrice {
   const override = matchModel(operatorRows, names);
   if (override) return { kind: "row", row: override, source: "override" };
 
-  if (query.provider === "curve-bender") {
+  if (
+    query.provider === "curve-bender" ||
+    query.provider === "curve-bender-deployment"
+  ) {
     return { kind: "zero", source: "provider-rule" };
   }
   if (

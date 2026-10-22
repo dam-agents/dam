@@ -4,10 +4,13 @@ import { registerHooks } from "node:module";
 const PATCHED_VERSION = "0.0.34";
 const UPSTREAM_GAPS =
   "pi-acp keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
-  "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72) " +
-  "and reports a reply cut at the output limit as max_tokens";
+  "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72), " +
+  "reports a reply cut at the output limit as max_tokens " +
+  "and hands each pi the session ref its session/new or session/load carries";
 const HELPERS = `globalThis[Symbol.for("platform.pi-acp-patch")]`;
+const SESSION_REF_HEADER = "x-platform-session-ref";
 const stopReasons = new WeakMap();
+const sessionRefs = new Map();
 const lastRepliesOfTurns = new WeakMap();
 
 function dropOwnImport() {
@@ -84,6 +87,28 @@ function replayMeta(message, messages) {
   return cutReply(message, messages)
     ? { _meta: { platform: { stopReason: "max_tokens" } } }
     : {};
+}
+
+function sessionRefOf(mcpServers) {
+  for (const server of Array.isArray(mcpServers) ? mcpServers : []) {
+    const header = (Array.isArray(server?.headers) ? server.headers : []).find(
+      (h) => String(h?.name).toLowerCase() === SESSION_REF_HEADER,
+    );
+    if (typeof header?.value === "string" && header.value) return header.value;
+  }
+  return undefined;
+}
+
+function rememberSessionRef(sessionId, mcpServers) {
+  const ref = sessionRefOf(mcpServers);
+  if (ref) sessionRefs.set(sessionId, ref);
+}
+
+function piEnv(sessionId, mcpServers) {
+  const ref =
+    sessionRefOf(mcpServers) ??
+    (sessionId === undefined ? undefined : sessionRefs.get(sessionId));
+  return ref ? { ...process.env, PLATFORM_SESSION_REF: ref } : process.env;
 }
 
 const edits = [
@@ -165,6 +190,37 @@ const edits = [
       `            ...${HELPERS}.replayMeta(m, messages),\n`,
     count: 1,
   },
+  {
+    find: '      stdio: "pipe",\n      env: process.env\n',
+    replace: '      stdio: "pipe",\n      env: params.env ?? process.env\n',
+    count: 1,
+  },
+  {
+    find: "        cwd: params.cwd,\n        piCommand: params.piCommand\n      });\n",
+    replace:
+      "        cwd: params.cwd,\n" +
+      "        piCommand: params.piCommand,\n" +
+      `        env: ${HELPERS}.piEnv(undefined, params.mcpServers)\n` +
+      "      });\n",
+    count: 1,
+  },
+  {
+    find:
+      "          sessionPath: stored.sessionFile,\n" +
+      "          piCommand: process.env.PI_ACP_PI_COMMAND\n",
+    replace:
+      "          sessionPath: stored.sessionFile,\n" +
+      "          piCommand: process.env.PI_ACP_PI_COMMAND,\n" +
+      `          env: ${HELPERS}.piEnv(sessionId, opts?.mcpServers)\n`,
+    count: 1,
+  },
+  {
+    find: "    this.mcpServers = opts.mcpServers;\n",
+    replace:
+      "    this.mcpServers = opts.mcpServers;\n" +
+      `    ${HELPERS}.rememberSessionRef(opts.sessionId, opts.mcpServers);\n`,
+    count: 1,
+  },
 ];
 
 function patched(url, loaded) {
@@ -191,6 +247,8 @@ globalThis[Symbol.for("platform.pi-acp-patch")] = {
   turnStopReason,
   cutReply,
   replayMeta,
+  piEnv,
+  rememberSessionRef,
 };
 
 registerHooks({

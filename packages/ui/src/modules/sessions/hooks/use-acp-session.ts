@@ -127,7 +127,12 @@ export function useAcpSession(
 
   const [delivery] = useState(createPromptDelivery);
 
-  const makeUpdateHandler = useAcpUpdateHandler();
+  const reloadAfterResetRef = useRef<(sessionId: string) => void>(() => {});
+  const onSessionReset = useCallback(
+    (sid: string) => reloadAfterResetRef.current(sid),
+    [],
+  );
+  const makeUpdateHandler = useAcpUpdateHandler(onSessionReset);
 
   const {
     ensureLive,
@@ -365,9 +370,14 @@ export function useAcpSession(
         { kind: "text" as const, text: rewrite.text },
       ];
       const promptId = crypto.randomUUID();
-      const result = (await live.connection.agent.request(
-        "platform/rewriteFrom",
-        {
+      const optimistic = rewrite.mode === "rewind";
+      if (optimistic) {
+        setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
+        useStore.getState().setRewriting(null);
+      }
+      useStore.getState().setRewritePending(live.sessionId);
+      const result = (await live.connection.agent
+        .request("platform/rewriteFrom", {
           sessionId: live.sessionId,
           mode: rewrite.mode,
           messageId: rewrite.messageId,
@@ -384,12 +394,28 @@ export function useAcpSession(
                     : rewrite.title,
               }
             : {}),
-        },
-      )) as { sessionId: string };
-      bindEngagement(result.sessionId);
-      setSessionId(result.sessionId);
-      setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
-      useStore.getState().setRewriting(null);
+        })
+        .catch((err: unknown) => {
+          if (optimistic && useStore.getState().sessionId === live.sessionId) {
+            setMessages(all);
+            useStore.getState().setRewriting({
+              messageId: rewrite.messageId,
+              mode: rewrite.mode,
+            });
+          }
+          throw err;
+        })
+        .finally(() => useStore.getState().setRewritePending(null))) as {
+        sessionId: string;
+      };
+      if (!optimistic) {
+        setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
+        useStore.getState().setRewriting(null);
+      }
+      if (result.sessionId !== live.sessionId) {
+        bindEngagement(result.sessionId);
+        setSessionId(result.sessionId);
+      }
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
       });
@@ -397,11 +423,16 @@ export function useAcpSession(
     [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
   );
 
+  reloadAfterResetRef.current = (sid: string) => {
+    if (useStore.getState().sessionId === sid) void resumeSession(sid);
+  };
+
   const takeBackPrompt = useTakeBackPrompt({
     selectedAgent,
     stopAgent,
     ensureLive,
     bindEngagement,
+    reloadSession: resumeSession,
   });
 
   const sendPrompt = useCallback(

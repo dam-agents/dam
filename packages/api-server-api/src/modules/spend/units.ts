@@ -8,6 +8,7 @@ const PROVIDER_UNITS: Readonly<Record<string, SpendUnit>> = {
   "anthropic-oauth": "usd_list",
   bob: "bobcoin",
   "curve-bender": "free",
+  "curve-bender-deployment": "free",
   "platform-llm": "usd",
 };
 

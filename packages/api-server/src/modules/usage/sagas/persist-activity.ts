@@ -1,3 +1,4 @@
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";
 import {
@@ -44,6 +45,12 @@ export type PersistActivityDeps = {
 
 const STREAM_CONCURRENCY = 8;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the activity log records what an actor did. The
+ * deployment's own CurveBender Connection is created for every user by the
+ * deployment, so it is no user's addition and records none; the built-in
+ * provider still records one.
+ */
 export function startPersistActivitySaga(
   deps: PersistActivityDeps,
 ): Subscription {
@@ -141,17 +148,21 @@ export function startPersistActivitySaga(
     },
   }));
 
-  persist<ConnectionCreated>(EventType.ConnectionCreated, (event) => ({
-    type: "connection_added",
-    actorSub: event.actorSub,
-    agentId: null,
-    surface: event.kind,
-    outcome: "success",
-    payload: {
-      connectionKey: event.connectionKey,
-      templateId: event.templateId,
-    },
-  }));
+  persist<ConnectionCreated>(EventType.ConnectionCreated, (event) =>
+    event.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID
+      ? null
+      : {
+          type: "connection_added",
+          actorSub: event.actorSub,
+          agentId: null,
+          surface: event.kind,
+          outcome: "success",
+          payload: {
+            connectionKey: event.connectionKey,
+            templateId: event.templateId,
+          },
+        },
+  );
 
   persist<ConnectionRemoved>(EventType.ConnectionRemoved, (event) => ({
     type: "connection_removed",

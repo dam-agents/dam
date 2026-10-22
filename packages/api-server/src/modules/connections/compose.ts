@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   PLATFORM_LLM_TEMPLATE_ID,
   type ConnectionsService,
   type HarnessCatalog,
@@ -34,7 +35,7 @@ import {
 } from "./domain/catalog.js";
 import {
   createConnectionsService,
-  type PlatformLlmConnections,
+  type ManagedProviderConnections,
 } from "./services/connections-service.js";
 import {
   createContributionFanOut,
@@ -88,6 +89,7 @@ export interface ComposeConnectionsAtBootOpts {
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
   platformProvider?: PlatformProviderEndpoint | null;
+  curveBenderDeployment?: boolean;
   e2eEnabled?: boolean;
 }
 
@@ -98,6 +100,7 @@ export function composeConnectionsAtBoot(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
       platformProvider: opts.platformProvider ?? null,
+      curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );
 
@@ -149,10 +152,14 @@ export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
   return createConnectionsRepository(db).listDistinctGrantAgentIds();
 }
 
-export function listPlatformConnectionOwners(db: Db): Promise<string[]> {
-  return createConnectionsRepository(db).listOwnersOfTemplate(
-    PLATFORM_LLM_TEMPLATE_ID,
+export async function listManagedConnectionOwners(db: Db): Promise<string[]> {
+  const repo = createConnectionsRepository(db);
+  const owners = await Promise.all(
+    [PLATFORM_LLM_TEMPLATE_ID, CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID].map((id) =>
+      repo.listOwnersOfTemplate(id),
+    ),
   );
+  return [...new Set(owners.flat())];
 }
 
 export function listConnectionTemplateIds(db: Db): () => Promise<string[]> {
@@ -216,8 +223,9 @@ export function composeConnectionsForOwner(opts: {
   platformProviderEnabled: () => Promise<boolean>;
   platformProviderKey: string | null;
   platformProviderCa: string | null;
+  curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
-}): ConnectionsService & PlatformLlmConnections {
+}): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
 
@@ -269,6 +277,7 @@ export function composeConnectionsForOwner(opts: {
     platformProviderEnabled: opts.platformProviderEnabled,
     platformProviderKey: opts.platformProviderKey,
     platformProviderCa: opts.platformProviderCa,
+    curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }

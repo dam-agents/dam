@@ -26,7 +26,7 @@ export function ProviderToggleRow({
   return (
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex items-center gap-3">
-        <CardIcon provider={provider.type} />
+        <CardIcon provider={provider.type} templateId={provider.templateId} />
         <div className="min-w-0 flex-1">
           <span className="block truncate text-base font-medium text-foreground">
             {provider.name}

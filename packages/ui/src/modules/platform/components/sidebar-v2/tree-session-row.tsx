@@ -32,7 +32,7 @@ import { sessionTitleLabel } from "../../../sessions/lib/session-title.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
 import { ActivityDot } from "./activity-dot.js";
-import { TREE_AVATAR, TREE_LEADING } from "./add-row.js";
+import { TREE_LEADING } from "./add-row.js";
 
 type RowState = Omit<
   ComponentProps<typeof SessionRow>,
@@ -80,17 +80,18 @@ export function togglePinKeepingFocus(
       acpSessionsKeys.session(agentId, session.sessionId),
       session,
     );
+  // UNIT_BOUNDARY_DESCRIPTION: the pin is one of the row's menu actions, and the menu renders in a portal of its own, so the keyboard is inside the menu rather than the row when it is chosen; either place means the row had the keyboard.
+  const focused = document.activeElement;
   const hadFocus =
-    document.activeElement
-      ?.closest("[data-pin-key]")
-      ?.getAttribute("data-pin-key") === key;
+    focused?.closest("[data-pin-key]")?.getAttribute("data-pin-key") === key ||
+    (focused?.closest('[role="menu"]') ?? null) !== null;
   togglePinnedSession(key);
   if (!hadFocus) return;
   requestAnimationFrame(() => {
     (
       [
         ...document.querySelectorAll<HTMLElement>(
-          `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
+          `[data-pin-key="${CSS.escape(key)}"] [data-row-main]`,
         ),
       ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
@@ -164,35 +165,34 @@ export function TreeSessionRow({
       <SessionRow
         session={s}
         {...state}
-        conversation={
-          <>
-            {withAgent && `${withAgent.name} · `}
-            {harnessIcon && (
-              <HarnessIcons
-                harnesses={[s.harness!]}
-                size="xs"
-                focusable={false}
-                className="mr-1 inline-flex align-[-2px]"
-              />
-            )}
-            {context}
-          </>
+        conversation={context}
+        metaLead={withAgent && `${withAgent.name} · `}
+        harnessIcon={
+          harnessIcon && (
+            <HarnessIcons
+              harnesses={[s.harness!]}
+              size="xs"
+              focusable={false}
+            />
+          )
         }
         leading={
           withAgent ? (
-            <span className={cn(TREE_LEADING, "relative mt-0.5 self-start")}>
-              <AgentAvatar
-                name={withAgent.name}
-                avatar={withAgent.avatar}
-                size={TREE_AVATAR}
-                mood={avatarMood(withAgent.state, withAgent)}
-              />
-              <span className="absolute right-0 -bottom-1">{dot}</span>
+            <span
+              className={cn(TREE_LEADING, "relative items-start justify-start")}
+            >
+              <span className="relative -mt-0.5">
+                <AgentAvatar
+                  name={withAgent.name}
+                  avatar={withAgent.avatar}
+                  size={28}
+                  mood={avatarMood(withAgent.state, withAgent)}
+                />
+                <span className="absolute -right-0.5 -bottom-0.5">{dot}</span>
+              </span>
             </span>
           ) : (
-            <span className={cn(TREE_LEADING, "h-5 items-center self-start")}>
-              {dot}
-            </span>
+            <span className={cn(TREE_LEADING, "items-center")}>{dot}</span>
           )
         }
         activityIndicators={false}

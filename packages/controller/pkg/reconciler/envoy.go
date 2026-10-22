@@ -159,7 +159,7 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	return out
 }
 
-var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "bob", "bedrock", "platform-llm"}
+var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "bob", "bedrock", "platform-llm"}
 
 func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
 	out := map[string]string{}
@@ -201,6 +201,22 @@ func scopeCovers(scope, route string) bool {
 
 func scopesOverlap(a, b string) bool {
 	return scopeCovers(a, b) || scopeCovers(b, a)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the HCM settings a router that matches on a path prefix needs. Envoy routes on the raw `:path` unless told otherwise, so a dot segment or a doubled slash steps out of the prefix the route matched into a path that route's credential was kept off, and an escaped slash cannot be resolved at all. Merging the path and refusing an escaped slash happen before any filter or route reads it.
+func pathNormalizationHCM() ev {
+	return ev{
+		"normalize_path":                   true,
+		"merge_slashes":                    true,
+		"path_with_escaped_slashes_action": "REJECT_REQUEST",
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any injected credential on this chain is scoped to a path. Such a chain routes on a path prefix, so the request path must be normalized before it is matched, or a dot segment or an escaped slash steps out of its scope into a path the credential was kept off. A chain of host-wide credentials keeps the raw path, and so does a signer's path scope, since a signed object key may hold an encoded slash anywhere in it.
+func (c envoyHostChain) PathScopedCredentials() bool {
+	return slices.ContainsFunc(c.Credentials, func(cred envoyCredential) bool {
+		return injectionScope(cred.PathPattern) != "/"
+	})
 }
 
 func (c envoyHostChain) PathScopes() []string {

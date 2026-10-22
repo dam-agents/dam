@@ -44,14 +44,26 @@ const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
   sm: "size-5",
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one preset can offer two providers a user tells
+ * apart only by their rows, so a template may take its own shade of the
+ * preset's tile. The glyph stays white on the tile whichever theme is up.
+ */
+const TEMPLATE_BG: Readonly<Record<string, string>> = {
+  "curve-bender-deployment": "bg-icon-teal-deep",
+};
+
 export function CardIcon({
   provider,
+  templateId,
   size = "md",
 }: {
   provider: ProviderPresetType;
+  templateId?: string;
   size?: "lg" | "md" | "sm";
 }) {
   const { Icon: OutlineIcon, bg } = STYLES[provider];
+  const tileBg = (templateId && TEMPLATE_BG[templateId]) || bg;
   const Icon =
     size === "sm" && provider === "bob" ? BobFilledIcon : OutlineIcon;
   return (
@@ -60,7 +72,7 @@ export function CardIcon({
       className={cn(
         "shrink-0 flex items-center justify-center",
         TILE_SIZE_CLASS[size],
-        size !== "sm" && ["rounded-lg text-white", bg],
+        size !== "sm" && ["rounded-lg text-white", tileBg],
       )}
     >
       <Icon

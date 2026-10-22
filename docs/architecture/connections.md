@@ -293,11 +293,12 @@ Every harness reaches the endpoint through the [Model Router](harness-config.md#
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.
 
-### App preset: IBM ETE LiteLLM CurveBender
+### App preset: CurveBender custom key
 
 A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude and GPT.
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
+This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender custom key` so it cannot be confused with the deployment's, below.
 
 Work runs on GLM.
 Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
@@ -305,6 +306,24 @@ The endpoint's model list names models but does not describe them, so the Connec
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.
+
+### Deployment preset: CurveBender
+
+The same proxy, reached with a key the deployment provides instead of the user's.
+The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
+It is not behind a feature flag: where the key is set, every user has it.
+The Connection is the deployment's, managed exactly like the built-in preset's below — provisioned by the user's own Connection listing, following the deployment's key, removed when the deployment drops the key, and refused to the user's own create, update and delete.
+It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
+Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance.
+Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
+Each prefix is matched at a segment boundary, so `/v1/messagesX` is a path outside the scope, not a longer match ([credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
+One key serves every user, and the gateway's scope keeps it off the rest of the proxy: the management routes (`/key/*`, `/user/*`, `/spend/*`), where a key that outlives its Connection could be minted, the shared key's spend read, or the key deleted for everyone, and the shared-identity routes (`/v1/files`, `/v1/batches`, `/v1/vector_stores`, `/v1/assistants`, `/v1/threads`, `/v1/memory`, `/v1/mcp/*`, `/v1/traces`, …), where every user's agent would read what another stored under the one identity the key names.
+The chain carrying this path-scoped credential matches whole path segments and refuses an escaped slash, so `/v1/messages/../../key/generate` cannot step out of its scope (the rules are on [credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
+The user-keyed preset above keeps injecting on its host's every path, since the key is that user's own.
+Bob never reaches this Connection through the gateway: the Model Router folds Bob's compiled-in `/inference` prefix in the pod and calls `/v1/chat/completions`, so the deployment preset carries no `/inference` rewrite.
+The scope is not evidence that the key itself is limited: the operator must still mint the deployment's key for inference only, with LiteLLM `allowed_routes: ["llm_api_routes"]`, so a path the gateway does not know about cannot manage keys or reach another user's stored state.
+Calls are metered and attributed to the Connection that made them, and the key never reaches the agent or a browser.
+Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
 
 ### Built-in preset: platform LLM
 

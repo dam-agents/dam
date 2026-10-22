@@ -46,6 +46,7 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
 	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+	spendTheMemoryGrace(t, r, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason)
 

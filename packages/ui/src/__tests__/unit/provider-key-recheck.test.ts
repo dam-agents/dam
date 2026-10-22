@@ -28,6 +28,9 @@ vi.mock("../../modules/features/api/queries.js", () => ({
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useDeleteConnection: () => ({ mutate: vi.fn() }),
 }));
+vi.mock("../../modules/connections/api/queries.js", () => ({
+  useConnectionTemplates: () => ({ data: [], isPending: false }),
+}));
 vi.mock("../../modules/providers/api/mutations.js", () => ({
   useRecheckProviderKeys: () => ({
     mutate: vi.fn(),
@@ -50,7 +53,11 @@ vi.mock("../../modules/provider-status/api/queries.js", () => ({
   useProviderStatus: () => ({ data: undefined }),
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
-  useProviderItems: () => ({ itemByType: state.items, isPending: false }),
+  useProviderItems: () => ({
+    itemByType: state.items,
+    itemByTemplateId: new Map(),
+    isPending: false,
+  }),
 }));
 
 const render = () =>

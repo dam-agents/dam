@@ -7,7 +7,12 @@ import { ProviderSection } from "../../modules/providers/components/provider-sec
 
 const state = vi.hoisted(() => ({
   flags: {} as Record<string, boolean> | undefined,
+  templates: [] as { id: string }[] | undefined,
   items: new Map<string, { id: string; conn: { templateId: string } }>(),
+  itemsByTemplate: new Map<
+    string,
+    { id: string; conn: { templateId: string } }
+  >(),
 }));
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
@@ -20,6 +25,12 @@ vi.mock("../../modules/features/api/queries.js", () => ({
 }));
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useDeleteConnection: () => ({ mutate: vi.fn() }),
+}));
+vi.mock("../../modules/connections/api/queries.js", () => ({
+  useConnectionTemplates: () => ({
+    data: state.templates,
+    isPending: state.templates === undefined,
+  }),
 }));
 vi.mock("../../modules/providers/api/mutations.js", () => ({
   useRecheckProviderKeys: () => ({ mutate: vi.fn(), isPending: false }),
@@ -40,7 +51,11 @@ vi.mock("../../modules/provider-status/api/queries.js", () => ({
   useProviderStatus: () => ({ data: undefined }),
 }));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
-  useProviderItems: () => ({ itemByType: state.items, isPending: false }),
+  useProviderItems: () => ({
+    itemByType: state.items,
+    itemByTemplateId: state.itemsByTemplate,
+    isPending: false,
+  }),
 }));
 
 const render = (onConnected?: (id: string) => void) =>
@@ -61,7 +76,9 @@ const platformRow = (html: string) =>
 describe("built-in provider row", () => {
   beforeEach(() => {
     state.flags = {};
+    state.templates = [];
     state.items = new Map();
+    state.itemsByTemplate = new Map();
   });
 
   // TEST_SCENARIO: while the feature flags are still loading, only placeholders show, so the built-in row cannot appear later and shift the rows below it.

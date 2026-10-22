@@ -11,3 +11,8 @@ PLATFORM_HARNESS = "pi"
 # for the gateway to hold for approval.
 PI_OFFLINE = "1"
 PI_ACP_PI_COMMAND = "/usr/local/bin/pi-platform"
+# Pi refuses to connect an MCP server whose header names an unset variable, so
+# a pi that serves no platform session (a terminal, `pi mcp list`) sends a blank
+# session ref, which the request trims to none. pi-acp-patch.mjs sets each chat
+# session's own.
+PLATFORM_SESSION_REF = " "

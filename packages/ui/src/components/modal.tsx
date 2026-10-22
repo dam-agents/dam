@@ -1,13 +1,6 @@
 import { Close } from "@carbon/icons-react";
 import type { ReactNode, RefObject } from "react";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -277,13 +270,21 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
   ).filter((el) => el.getClientRects().length > 0);
 }
 
-export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
-  const [previouslyFocused] = useState(
-    () => document.activeElement as HTMLElement | null,
-  );
+export function useFocusTrap(
+  containerRef: RefObject<HTMLElement | null>,
+  active = true,
+  fallback?: () => HTMLElement | null,
+) {
+  // UNIT_BOUNDARY_DESCRIPTION: the element to hand the keyboard back to is the one focused as the trap closes over the page, read on the render that closes it because the trap's own first effect moves focus inside itself.
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+  const wasActive = useRef(false);
+  if (active && !wasActive.current)
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+  wasActive.current = active;
+
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!active || !container) return;
 
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
@@ -312,13 +313,13 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       }
       const first = focusables[0]!;
       const last = focusables[focusables.length - 1]!;
-      const active = document.activeElement as HTMLElement | null;
+      const focused = document.activeElement as HTMLElement | null;
       if (e.shiftKey) {
-        if (active === first || !container.contains(active)) {
+        if (focused === first || !container.contains(focused)) {
           e.preventDefault();
           last.focus();
         }
-      } else if (active === last || !container.contains(active)) {
+      } else if (focused === last || !container.contains(focused)) {
         e.preventDefault();
         first.focus();
       }
@@ -328,9 +329,11 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     return () => {
       cancelAnimationFrame(grabRaf);
       container.removeEventListener("keydown", onKey);
-      previouslyFocused?.focus?.();
+      const back = previouslyFocused.current;
+      // UNIT_BOUNDARY_DESCRIPTION: the opener may be gone by the time the trap closes, as the rail's Expand tile is when the pane it opened replaces the rail, so the caller names what takes the keyboard then.
+      (back?.isConnected ? back : fallback?.())?.focus?.();
     };
-  }, [containerRef, previouslyFocused]);
+  }, [containerRef, active, fallback]);
 }
 
 const openModalIds: string[] = [];

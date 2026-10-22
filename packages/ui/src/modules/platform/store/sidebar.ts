@@ -48,8 +48,6 @@ export interface SidebarSlice {
   setMobileNavOpen: (open: boolean) => void;
   sidebarPinned: boolean;
   setSidebarPinned: (pinned: boolean) => void;
-  sidebarPeek: boolean;
-  setSidebarPeek: (peek: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -132,6 +130,4 @@ export const createSidebarSlice: StateCreator<
     writePersistedFlag(SIDEBAR_V2_PINNED_STORAGE_KEY, pinned);
     set({ sidebarPinned: pinned });
   },
-  sidebarPeek: false,
-  setSidebarPeek: (peek) => set({ sidebarPeek: peek }),
 });

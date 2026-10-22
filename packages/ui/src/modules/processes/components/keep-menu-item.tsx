@@ -3,7 +3,7 @@ import type { ProcessRow } from "agent-runtime-api";
 import { DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 
 import { useSetKeep } from "../api/mutations.js";
-import { ALWAYS_ON_KEEP_HINT, keepSourceCaption } from "../lib/process-copy.js";
+import { ALWAYS_ON_KEEP_HINT } from "../lib/process-copy.js";
 import { MenuItemText } from "./menu-item-text.js";
 
 interface Props {
@@ -26,8 +26,10 @@ export function KeepMenuItem({ agentId, row, alwaysOn }: Props) {
     >
       <MenuItemText
         label="Keep the agent awake"
-        caption={alwaysOn ? ALWAYS_ON_KEEP_HINT : keepSourceCaption(row)}
-        captionTestId="process-keep-source"
+        {...(alwaysOn && {
+          caption: ALWAYS_ON_KEEP_HINT,
+          captionTestId: "process-keep-source",
+        })}
       />
     </DropdownMenuCheckboxItem>
   );

@@ -1,18 +1,25 @@
 import {
-  Activity,
   Book,
   Branch,
   type CarbonIconType,
   Folder,
-  Globe,
+  Gears,
   Notification,
   Task,
+  Wikis,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RAIL_BADGE, railIndicator, railTile } from "@/components/ui/rail-tile";
+import {
+  RAIL_BADGE,
+  RAIL_COLUMN,
+  RAIL_GAP,
+  RAIL_GLYPH,
+  railIndicator,
+  railTile,
+} from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -28,8 +35,8 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "artifacts", label: "Artifacts", icon: ArtifactIcon },
   { tab: "files", label: "Files", icon: Folder },
   { tab: "changes", label: "Changes", icon: Branch },
-  { tab: "browser", label: "Browser", icon: Globe },
-  { tab: "processes", label: "Processes", icon: Activity },
+  { tab: "browser", label: "Browser", icon: Wikis },
+  { tab: "processes", label: "Processes", icon: Gears },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
@@ -42,7 +49,7 @@ const APP_TABS: ReadonlySet<SidePanelTab> = new Set([
 export interface SidePanelBadge {
   count: number;
   label: string;
-  tone?: "warning";
+  tone?: "warning" | "neutral";
 }
 
 export interface SidePanelTabProps {
@@ -88,13 +95,17 @@ export function SidePanelTabButtons({
               aria-hidden
               className={railIndicator("right", active === tab)}
             />
-            {icons[tab] ?? <Icon size={20} />}
+            {icons[tab] ?? <Icon size={RAIL_GLYPH} />}
             {shown && (
               <span
                 data-testid={`side-panel-badge-${tab}`}
                 className={cn(
                   RAIL_BADGE,
-                  shown.tone === "warning" ? "bg-warning" : "bg-accent",
+                  shown.tone === "warning"
+                    ? "bg-warning"
+                    : shown.tone === "neutral"
+                      ? "bg-muted-foreground"
+                      : "bg-accent",
                 )}
               >
                 {shown.count > 9 ? "9+" : shown.count}
@@ -127,11 +138,13 @@ export function SidePanelTabButtons({
                 className={cn(
                   "absolute flex items-center justify-center rounded-full border-0 font-bold text-white",
                   rail
-                    ? "top-2 right-1.5 h-[18px] min-w-[18px] px-1 text-[11px]"
+                    ? "top-2 right-[3px] h-[18px] min-w-[18px] px-1 text-[11px]"
                     : "-top-1 -right-1 h-4 min-w-4 px-1 text-[10px]",
                   shown.tone === "warning"
                     ? "bg-warning hover:bg-warning"
-                    : "bg-accent hover:bg-accent",
+                    : shown.tone === "neutral"
+                      ? "bg-muted-foreground hover:bg-muted-foreground"
+                      : "bg-accent hover:bg-accent",
                 )}
               >
                 {shown.count > 9 ? "9+" : shown.count}
@@ -172,7 +185,7 @@ export function SidePanelBar({
       data-testid="side-panel-bar"
       className={cn(
         tiles
-          ? "flex w-[60px] shrink-0 flex-col items-center gap-2 border-l border-border bg-chrome py-3"
+          ? cn("w-14 shrink-0 border-l border-border bg-chrome", RAIL_COLUMN)
           : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
@@ -185,7 +198,10 @@ export function SidePanelBar({
         {...props}
       />
       <div
-        className={cn("mt-auto flex flex-col", tiles && "items-center gap-2")}
+        className={cn(
+          "mt-auto flex flex-col",
+          tiles && cn("items-center", RAIL_GAP),
+        )}
       >
         {tiles ? (
           <>
@@ -221,7 +237,7 @@ function DocsLink() {
         className={railTile(false)}
       >
         <span aria-hidden className={railIndicator("right", false)} />
-        <Book size={20} />
+        <Book size={RAIL_GLYPH} />
       </a>
     </Tooltip>
   );

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -280,6 +281,53 @@ func (r *AgentReconciler) ParkedForRetry() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the grace a start refused for room is given before the
+// UNIT_BOUNDARY_DESCRIPTION: refusal is read as the pool's, kept beside the reconciler
+// UNIT_BOUNDARY_DESCRIPTION: against the activity stamp it was refused under: a retry of
+// UNIT_BOUNDARY_DESCRIPTION: that same start reads the refusal rather than the loader
+// UNIT_BOUNDARY_DESCRIPTION: again, and a newer start gets a grace of its own. None of it
+// UNIT_BOUNDARY_DESCRIPTION: survives the process, which costs a restarted controller one
+// UNIT_BOUNDARY_DESCRIPTION: more loader rather than a failed wake, and keeps the stamp on
+// UNIT_BOUNDARY_DESCRIPTION: the Agent meaning only the room a reclaim earned.
+type memoryGrace struct {
+	lastActivity string
+	until        time.Time
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether this start is inside its grace, opening one if it has
+// UNIT_BOUNDARY_DESCRIPTION: never been given one; a start whose grace has run out, or that
+// UNIT_BOUNDARY_DESCRIPTION: has had its wait already, is answered false.
+func (r *AgentReconciler) memoryGrace(name, lastActivity string) bool {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	grace, ok := r.memoryGraces[name]
+	if !ok || grace.lastActivity != lastActivity {
+		if r.memoryGraces == nil {
+			r.memoryGraces = make(map[string]memoryGrace)
+		}
+		r.memoryGraces[name] = memoryGrace{lastActivity: lastActivity, until: r.clockNow().Add(memoryGraceWait)}
+		return true
+	}
+	return r.clockNow().Before(grace.until)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: this start has had its wait, so the refusal that follows is
+// UNIT_BOUNDARY_DESCRIPTION: the pool's rather than one given a grace of its own.
+func (r *AgentReconciler) markMemoryGraced(name, lastActivity string) {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	if r.memoryGraces == nil {
+		r.memoryGraces = make(map[string]memoryGrace)
+	}
+	r.memoryGraces[name] = memoryGrace{lastActivity: lastActivity}
+}
+
+func (r *AgentReconciler) clearMemoryGrace(name string) {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	delete(r.memoryGraces, name)
 }
 
 func (r *AgentReconciler) clearDeniedWake(name string) {

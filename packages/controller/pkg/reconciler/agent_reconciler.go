@@ -49,6 +49,8 @@ type AgentReconciler struct {
 	ownerLocks            map[string]*sync.Mutex
 	deniedWakes           map[string]string
 	parkedRetry           map[string]struct{}
+	memoryGraces          map[string]memoryGrace
+	memoryWaitWrites      sync.Map
 	busyProbe             func(ctx context.Context, agentName string) bool
 	podStatus             func(ctx context.Context, agentName string) (idle, answered bool)
 	runnerMu              sync.Mutex
@@ -82,8 +84,10 @@ type AgentReconciler struct {
 	resizeNotices         sync.Map
 	claimNotices          sync.Map
 	runnerCapacity        sync.Map
+	runnerUnavailable     sync.Map
 	nodeLostNotices       sync.Map
 	nodeLostLast          atomic.Int64
+	unavailableLast       atomic.Int64
 	poolLevels            sync.Map
 	notReadyPolls         sync.Map
 	vmStartClocks         sync.Map
@@ -462,7 +466,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the old order: a parked agent retried every few seconds must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
 	// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for the owner's storage is answered the same way until space frees, so this pass keeps the old order rather than start a gateway pod the refusal will scale down again.
-	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAwaitingWarmUp || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
+	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAwaitingWarmUp || lastReady.Reason == apiv1.ReasonAwaitingMemory || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
 	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && !parkedLast)
 	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted && !served
 	if gatewayUp {
@@ -541,17 +545,64 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		// UNIT_BOUNDARY_DESCRIPTION: it. The window is read from the runner pod, so it is
 		// UNIT_BOUNDARY_DESCRIPTION: the same one after a controller restart, and past it
 		// UNIT_BOUNDARY_DESCRIPTION: the owner's idle agents are the room the start has.
+		// UNIT_BOUNDARY_DESCRIPTION: A refusal whose own reclaim hibernated an idle agent
+		// UNIT_BOUNDARY_DESCRIPTION: for it is a wait rather than a refusal: the room that
+		// UNIT_BOUNDARY_DESCRIPTION: agent holds frees within seconds, so the parked retry
+		// UNIT_BOUNDARY_DESCRIPTION: starts this one by itself and the owner is not asked to
+		// UNIT_BOUNDARY_DESCRIPTION: free room the platform is making. It is read as a start
+		// UNIT_BOUNDARY_DESCRIPTION: in progress, and asked for again at the machine watch's
+		// UNIT_BOUNDARY_DESCRIPTION: cadence so it does not wait the half minute of the parked
+		// UNIT_BOUNDARY_DESCRIPTION: tick. A refusal nothing has freed room for inside
+		// UNIT_BOUNDARY_DESCRIPTION: memoryReclaimWait is the pool's again: it reads
+		// UNIT_BOUNDARY_DESCRIPTION: OverBudget with the message that says what frees it, so a
+		// UNIT_BOUNDARY_DESCRIPTION: pool that cannot hold the start never reads as a start
+		// UNIT_BOUNDARY_DESCRIPTION: that is merely slow. A plan the runner did not refuse for room
+		// UNIT_BOUNDARY_DESCRIPTION: is a start that got in or one that stopped, so its wait ends with
+		// UNIT_BOUNDARY_DESCRIPTION: it: a refusal after it is a new question rather than the wait of
+		// UNIT_BOUNDARY_DESCRIPTION: the room freed before. The wait is stamped by the agents the
+		// UNIT_BOUNDARY_DESCRIPTION: reclaim put to sleep, before a later one's failure ends this
+		// UNIT_BOUNDARY_DESCRIPTION: pass: those side effects stand, so the retry finds the room
+		// UNIT_BOUNDARY_DESCRIPTION: and this start is no more a refusal than if every agent had
+		// UNIT_BOUNDARY_DESCRIPTION: gone to sleep.
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked = false, true
 			r.recordParkedRetry(name)
 			if r.runnerWarmingUp(ctx, owner) {
 				awaiting, awaitingReason = vmAwaitingWarmUpMessage, apiv1.ReasonAwaitingWarmUp
 			} else {
-				overBudget = r.vmMemoryFullMessage(ctx, agent, owner)
-				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) }); err != nil {
+				r.retryMemoryWait(ctx, name)
+				freed, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) })
+				if freed > 0 {
+					_ = r.noteMemoryWait(ctx, name)
+				}
+				waiting := freed > 0 || r.memoryWaiting(agent)
+				if waiting {
+					// UNIT_BOUNDARY_DESCRIPTION: the wait this start has had is all it gets: past
+					// UNIT_BOUNDARY_DESCRIPTION: it the refusal is the pool's rather than the start
+					// UNIT_BOUNDARY_DESCRIPTION: of a grace of its own.
+					r.markMemoryGraced(name, lastActivity)
+				} else if waiting = r.memoryGrace(name, lastActivity); !waiting {
+					if clearErr := r.clearMemoryWait(ctx, agent); clearErr != nil && err == nil {
+						err = clearErr
+					}
+				}
+				if err != nil {
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}
+				if waiting {
+					awaiting, awaitingReason = vmAwaitingMemoryMessage, apiv1.ReasonAwaitingMemory
+					if r.requeue != nil {
+						r.requeue(name, vmReadinessPoll)
+					}
+				} else {
+					overBudget = r.vmMemoryFullMessage(ctx, agent, owner)
+				}
 			}
+		} else if err := r.clearMemoryWait(ctx, agent); err != nil {
+			return fmt.Errorf("agent %s: clearing the memory wait: %w", name, err)
+		} else {
+			// UNIT_BOUNDARY_DESCRIPTION: a start that got in or stopped ends the memory refusal of this Agent, and the grace spent on one of its starts with it.
+			r.clearMemoryGrace(name)
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
 		if machine.Reason == vmrunner.ReasonAwaitingAllocation {
@@ -566,7 +617,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			}
 			// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
 			if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
-				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
+				if _, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}
 			}
@@ -648,7 +699,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 
 	if hardStop {
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
+		if _, err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -928,6 +979,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
+	r.memoryWaitWrites.Delete(name)
 	unresolvedGrants.forget(name)
 	return nil
 }

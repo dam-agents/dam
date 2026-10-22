@@ -1,4 +1,8 @@
-import { GETTING_STARTED_TASKS, type GettingStartedTask } from "api-server-api";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  GETTING_STARTED_TASKS,
+  type GettingStartedTask,
+} from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { concatMap, merge, type Observable, type Subscription } from "rxjs";
 import { filter, map } from "rxjs/operators";
@@ -44,6 +48,7 @@ function tasksDone(): Observable<TaskDone> {
     ),
     e.pipe(
       ofType<ConnectionCreated>(EventType.ConnectionCreated),
+      filter((ev) => ev.templateId !== CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID),
       map((ev) => ({ owner: ev.actorSub, task: "create-connection" as const })),
     ),
     e.pipe(
@@ -79,7 +84,9 @@ function tasksDone(): Observable<TaskDone> {
  * them in a stable order. A task this replica already recorded is skipped
  * without a database read, because a message is sent on every prompt. A
  * reset forgets the user's tasks on this replica only; another replica skips
- * a task it recorded before the reset until it restarts.
+ * a task it recorded before the reset until it restarts. The deployment's own
+ * CurveBender Connection arrives for every user, so it is no connection the
+ * user made and finishes nothing; the built-in provider still counts.
  */
 export function startUnlockAvatarsSaga(recorder: UnlockRecorder): Subscription {
   const recorded = new Set<string>();

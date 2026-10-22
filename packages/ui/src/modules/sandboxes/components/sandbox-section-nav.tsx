@@ -13,9 +13,9 @@ import {
   Slack,
   UserInterface,
 } from "@carbon/pictograms-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
-import { Select } from "@/components/ui/select";
+import { Tabs } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -123,28 +123,39 @@ export function SandboxSectionNav({
   summaries,
   warnings,
 }: Props) {
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    strip.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [active]);
   return (
     <nav
       aria-label="Agent sections"
       className="flex shrink-0 flex-col gap-1 md:sticky md:top-10 md:w-[245px] md:self-start"
     >
-      {header}
-      <div className="px-3 md:hidden">
-        <Select
-          aria-label="Section"
+      <div ref={strip} className="contents">
+        <Tabs
+          ariaLabel="Agent sections"
+          tabs={sections.map((entry) => ({
+            value: entry.section,
+            label: entry.title,
+            trailing: warnings?.[entry.section] ? (
+              <WarningAltFilled
+                size={14}
+                className="text-warning"
+                aria-hidden
+              />
+            ) : undefined,
+          }))}
           value={active}
-          onChange={(e) => {
-            const next = sections.find((s) => s.section === e.target.value);
-            if (next) onNavigate(next.section);
-          }}
-        >
-          {sections.map((entry) => (
-            <option key={entry.section} value={entry.section}>
-              {warnings?.[entry.section] ? `${entry.title} (!)` : entry.title}
-            </option>
-          ))}
-        </Select>
+          onValueChange={onNavigate}
+          variant="pill"
+          size="sm"
+          className="flex-row overflow-x-auto px-3 [mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)] [&>button]:shrink-0 md:hidden"
+        />
       </div>
+      {header}
       <div className="hidden flex-col gap-1 md:flex">
         {sections.map((entry) => (
           <SectionNavItem
