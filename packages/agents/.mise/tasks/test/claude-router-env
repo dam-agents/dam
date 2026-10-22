@@ -34,6 +34,7 @@ try {
   assert.equal(custom.ANTHROPIC_BASE_URL, "http://127.0.0.1:24180");
   assert.equal(custom.ANTHROPIC_CUSTOM_HEADERS, "X-Platform-Harness: claude-code");
   assert.equal(custom.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, "1");
+  assert.equal(custom.CLAUDE_CODE_GATEWAY_HINT_HEADERS, "1");
   assert.equal(custom.ANTHROPIC_MODEL, undefined);
   assert.match(custom.NO_PROXY, /^127\.0\.0\.1,localhost,::1/);
   assert.equal(custom.ANTHROPIC_AUTH_TOKEN, "sk-platform:conn:ibm");
@@ -44,6 +45,7 @@ try {
   assert.equal(marked.ANTHROPIC_AUTH_TOKEN, "platform:conn:router");
   assert.equal(marked.ANTHROPIC_CUSTOM_HEADERS, "X-Platform-Harness: claude-code");
   assert.equal(marked.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, "1");
+  assert.equal(marked.CLAUDE_CODE_GATEWAY_HINT_HEADERS, "1");
   assert.match(marked.NO_PROXY, /^127\.0\.0\.1,localhost,::1/);
 
   // TEST_SCENARIO: A custom header set by the pod (a workload's own) stays after the harness marker.
@@ -54,6 +56,7 @@ try {
   const bare = envAfter(rewritten, { PATH: process.env.PATH, CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-example", ANTHROPIC_MODEL: "opus" });
   assert.equal(bare.ANTHROPIC_BASE_URL, undefined);
   assert.equal(bare.ANTHROPIC_CUSTOM_HEADERS, undefined);
+  assert.equal(bare.CLAUDE_CODE_GATEWAY_HINT_HEADERS, undefined);
   assert.equal(bare.ANTHROPIC_MODEL, "opus");
 
   // TEST_SCENARIO: A session's subagent model is forced, so neither an Agent tool call's model argument nor an agent definition's model outranks it; a session without one leaves Claude Code's own precedence alone.

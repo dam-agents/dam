@@ -8,7 +8,9 @@ manifestVersion: 1
 # lowercased, so every catalog name reaches it as claude/<alias>/<id>.
 # claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables
 # and caps CLAUDE_CODE_MAX_CONTEXT_TOKENS, since Claude Code reads no
-# per-model window from /v1/models.
+# per-model window from /v1/models. The slots are the default provider's, so
+# the router moves a side call on one (a title, a WebFetch summary, the
+# classifier, an alias-named subagent) to the session's provider by tier.
 modelRouter:
   dialects: [anthropic-messages]
   sessionModel: { configOption: model }
