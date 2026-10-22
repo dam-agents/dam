@@ -1,4 +1,5 @@
 import {
+  AUTH_ERROR_HINT,
   jsonRpcErrorDetails,
   nextUtcMidnight,
   platformUndeliveredMetaSchema,
@@ -81,7 +82,7 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   ],
   [
     /\b401\b|authentication_error|unauthenticated|invalid (api|x-api)[\s_-]?key|unauthorized/i,
-    "The model backend rejected the credential. Check that the API/OAuth secret is correct and linked to this agent (Agents → select agent → Secrets).",
+    AUTH_ERROR_HINT,
   ],
   [
     /\b429\b|rate[\s_-]?limit/i,
@@ -115,7 +116,7 @@ export function describeSendError(raw: string): SendErrorDescription {
   if (spendRefusal) return spendRefusal;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
-    if (/credential secret/i.test(raw)) return { message: raw };
+    if (raw.startsWith(AUTH_ERROR_HINT)) return { message: raw };
     return { message: raw, hint };
   }
   if (PROVIDER_UNAVAILABLE.test(raw))
