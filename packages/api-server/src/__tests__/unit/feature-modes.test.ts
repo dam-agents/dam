@@ -28,6 +28,7 @@ describe("feature modes", () => {
         "custom-avatars": "experimental",
         "platform-provider": "experimental",
         "new-layout": "experimental",
+        "unified-right-toolbar": "experimental",
         environments: "experimental",
       },
     });
