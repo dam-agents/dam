@@ -4,7 +4,11 @@ import {
   readPersistedNumber,
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
-import { clampSidebarWidth, SIDEBAR_DEFAULT_W } from "../lib/sidebar-layout.js";
+import {
+  clampSidebarWidth,
+  dragSidebarWidth,
+  SIDEBAR_DEFAULT_W,
+} from "../lib/sidebar-layout.js";
 
 const SIDEBAR_WIDTH_KEY = "platform-sidebar-w";
 
@@ -16,11 +20,16 @@ export function useSidebarWidth({
     clampSidebarWidth(readPersistedNumber(key, fallback)),
   );
   const widthRef = useRef(width);
+  const reachedRef = useRef<number | null>(null);
   const [resizing, setResizing] = useState(false);
 
   const resize = useCallback(
     (delta: number) => {
-      const next = clampSidebarWidth(widthRef.current + delta);
+      const { reached, width: next } = dragSidebarWidth(
+        reachedRef.current ?? widthRef.current,
+        delta,
+      );
+      reachedRef.current = reached;
       widthRef.current = next;
       writePersistedNumber(key, next);
       setResizing(true);
@@ -29,7 +38,10 @@ export function useSidebarWidth({
     [key],
   );
 
-  const endResize = useCallback(() => setResizing(false), []);
+  const endResize = useCallback(() => {
+    reachedRef.current = null;
+    setResizing(false);
+  }, []);
 
   return { width, resizing, resize, endResize };
 }
