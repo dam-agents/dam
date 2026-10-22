@@ -16,8 +16,11 @@ import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import {
   callCostText,
+  formatAt,
   formatDayWindow,
+  hourWindow,
   NO_CALL_TELEMETRY,
+  readWindowLabel,
   spendText,
   spendWindow,
 } from "../domain/spend-window.js";
@@ -45,7 +48,7 @@ export function buildMetricsCommand(deps: {
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
       "--since <hours>",
-      `lookback window in hours; the spend covers the UTC days it touches (max ${METRICS_MAX_SINCE_HOURS}; default: every measured day)`,
+      `lookback window in hours; spend older than 30 days counts whole UTC days (max ${METRICS_MAX_SINCE_HOURS}; default: every measured day)`,
     )
     .option("--session <id>", "narrow to one session")
     .option(
@@ -115,16 +118,15 @@ export function buildMetricsCommand(deps: {
         const metrics = deps.createMetricsService(host);
         const metering = await metrics.metering();
         exitOnServiceError(metering, host);
-        const window = spendWindow({
-          sinceHours,
-          startDay: metering.value.startDay,
-          now: new Date(),
-        });
+        const now = new Date();
+        const days = spendWindow({ startDay: metering.value.startDay, now });
+        const range =
+          sinceHours === undefined ? days : { at: hourWindow(sinceHours, now) };
         const [breakdown, sessions, overview, titles] = await Promise.all([
-          metrics.breakdown({ agentId: agent.id, ...window }),
+          metrics.breakdown({ agentId: agent.id, ...range }),
           metrics.sessions({
             agentId: agent.id,
-            ...window,
+            ...range,
             ...(opts.session && { sessionIds: [opts.session] }),
             limit: SPEND_SESSIONS_MAX,
           }),
@@ -187,7 +189,7 @@ export function buildMetricsCommand(deps: {
           return writeStdoutAndExit(
             `${JSON.stringify({
               agentId: agent.id,
-              window,
+              window: breakdown.value.window ?? days,
               measuredSince: metering.value.startedAt,
               totals,
               byModel,
@@ -198,7 +200,20 @@ export function buildMetricsCommand(deps: {
           );
         }
 
-        const windowLabel = `${formatDayWindow(window)}, UTC days${opts.session ? ` · session ${opts.session}` : ""}`;
+        const read = breakdown.value.window;
+        const shownDays = read
+          ? {
+              from: read.fromAt.slice(0, 10),
+              to: new Date(Date.parse(read.toAt) - 1)
+                .toISOString()
+                .slice(0, 10),
+            }
+          : days;
+        const windowLabel = `${
+          read && sinceHours !== undefined
+            ? readWindowLabel(read, shownDays, sinceHours)
+            : `${formatDayWindow(days)}, UTC days`
+        }${opts.session ? ` · session ${opts.session}` : ""}`;
         if (totals.length === 0 && (calls?.length ?? 0) === 0) {
           process.stderr.write(
             `No measured spend for ${agent.name} in ${windowLabel}.\n`,
@@ -268,7 +283,7 @@ export function buildMetricsCommand(deps: {
             r.cacheReadTokens.toLocaleString(),
             (r.cacheWrite5mTokens + r.cacheWrite1hTokens).toLocaleString(),
             spendText(r.amounts),
-            r.lastDay,
+            r.lastAt ? formatAt(r.lastAt) : r.lastDay,
           ]),
           0,
         );

@@ -114,6 +114,7 @@ export function createSpendIngest(deps: {
         payer: row.payer,
         sessionId: row.sessionId,
         connectionId: row.connectionId,
+        providerTemplate: row.provider,
         model: row.model,
         startedAt: call.startedAt,
         unit: row.unit,

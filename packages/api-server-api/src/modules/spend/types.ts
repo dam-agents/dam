@@ -130,6 +130,7 @@ interface SpendAgentRow {
 export interface SpendBreakdown {
   from: string;
   to: string;
+  window?: SpendReadWindow;
   totals: (SpendAmount & SpendCounts)[];
   byDay: (SpendAmount & { day: string })[];
   byAgent: (SpendAmount & SpendAgentRow)[];
@@ -170,17 +171,21 @@ export interface SpendSessionRow {
   cacheWrite1hTokens: number;
   firstDay: string;
   lastDay: string;
+  firstAt?: string;
+  lastAt?: string;
 }
 
 export interface SpendSessions {
   rows: SpendSessionRow[];
   truncated: boolean;
+  window?: SpendReadWindow;
 }
 
 export interface AgentSpendQuery {
   agentId: string;
   from: string;
   to: string;
+  at?: { fromAt: string; toAt: string };
   sessionId?: string;
   sessionLimit?: number;
   subAgentLimit?: number;
@@ -210,6 +215,7 @@ export interface AgentSpend {
   sessionCount: number;
   sessions?: SpendSessions;
   subAgents?: { rows: SubAgentSpendRow[]; truncated: boolean };
+  window?: SpendReadWindow;
 }
 
 export interface SpendTurns {
@@ -226,6 +232,12 @@ export interface SpendMetering {
   startDay: string;
   noticeUntil: string | null;
   earlierEstimatesUntil: string | null;
+}
+
+export interface SpendReadWindow {
+  granularity: "hour" | "day";
+  fromAt: string;
+  toAt: string;
 }
 
 export interface SpendCallCost extends SpendAmount {

@@ -1246,6 +1246,7 @@ export const spendCalls = pgTable(
     costMicros: bigint("cost_micros", { mode: "number" }).notNull(),
     routerCallId: text("router_call_id").notNull().default(""),
     connectionId: text("connection_id").notNull().default(""),
+    providerTemplate: text("provider_template").notNull().default(""),
     model: text("model").notNull().default(""),
     uncachedInputTokens: bigint("uncached_input_tokens", { mode: "number" })
       .notNull()

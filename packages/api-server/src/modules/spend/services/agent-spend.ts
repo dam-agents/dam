@@ -9,6 +9,7 @@ import {
   foldSubAgents,
   type AgentLedgerRow,
 } from "../domain/agent-spend.js";
+import { readRangeOf } from "../domain/read-window.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import { readSessionSpend, type SpawnedSubAgents } from "./session-spend.js";
 import type { AgentOwners } from "./spend-ingest.js";
@@ -60,7 +61,15 @@ export function createAgentSpend(deps: {
       });
       if (!ownerSub) return view([]);
 
-      const range = { ownerSub, from, to };
+      const read = query.at
+        ? readRangeOf(query.at, new Date(), startedAt)
+        : { from, to, at: undefined, window: undefined };
+      const range = {
+        ownerSub,
+        from: read.from,
+        to: read.to,
+        ...(read.at && { at: read.at }),
+      };
       const needsTree =
         sessionId !== undefined ||
         (scope === "caller" && query.subAgentLimit !== undefined);
@@ -97,10 +106,8 @@ export function createAgentSpend(deps: {
         ...view(counted),
         ...(query.sessionLimit !== undefined && {
           sessions: await readSessionSpend(deps, {
-            ownerSub,
+            ...range,
             agentId,
-            from,
-            to,
             ...(sessionId !== undefined && { sessionIds: [sessionId] }),
             limit: query.sessionLimit,
           }),
@@ -108,6 +115,7 @@ export function createAgentSpend(deps: {
         ...(query.subAgentLimit !== undefined && {
           subAgents: foldSubAgents(subAgentRows, query.subAgentLimit),
         }),
+        ...(read.window && { window: read.window }),
       };
     },
   };

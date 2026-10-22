@@ -3,7 +3,13 @@ import {
   SPEND_DAILY_MAX_DAYS,
   type SpendAmount,
   type SpendCallCost,
+  type SpendReadWindow,
 } from "api-server-api";
+
+interface SpendAtWindow {
+  fromAt: string;
+  toAt: string;
+}
 
 const DAY_MS = 86_400_000;
 
@@ -32,27 +38,23 @@ function utcDay(at: number): string {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the UTC days that a lookback of `sinceHours`
- * touches, from the measuring start at the earliest; with no lookback, every
- * measured day. One read spans at most the spend read's day limit.
+ * UNIT_BOUNDARY_DESCRIPTION: every measured UTC day, from the measuring start
+ * at the earliest; one read spans at most the spend read's day limit.
  */
-export function spendWindow(input: {
-  sinceHours: number | undefined;
-  startDay: string;
-  now: Date;
-}): DayWindow {
+export function spendWindow(input: { startDay: string; now: Date }): DayWindow {
   const to = utcDay(input.now.getTime());
   const earliest = utcDay(
     input.now.getTime() - (SPEND_DAILY_MAX_DAYS - 1) * DAY_MS,
   );
-  const asked =
-    input.sinceHours === undefined
-      ? input.startDay
-      : utcDay(input.now.getTime() - input.sinceHours * 3_600_000);
-  const from = [asked, input.startDay, earliest].reduce((a, b) =>
-    a > b ? a : b,
-  );
+  const from = input.startDay > earliest ? input.startDay : earliest;
   return { from, to };
+}
+
+export function hourWindow(sinceHours: number, now: Date): SpendAtWindow {
+  return {
+    fromAt: new Date(now.getTime() - sinceHours * 3_600_000).toISOString(),
+    toAt: now.toISOString(),
+  };
 }
 
 function parts(day: string): { d: number; m: string; y: string } {
@@ -70,6 +72,21 @@ export function formatDayWindow({ from, to }: DayWindow): string {
   if (a.y !== b.y) return `${a.d} ${a.m} ${a.y} – ${b.d} ${b.m} ${b.y}`;
   if (a.m !== b.m) return `${a.d} ${a.m} – ${b.d} ${b.m} ${b.y}`;
   return `${a.d}–${b.d} ${b.m} ${b.y}`;
+}
+
+export function formatAt(iso: string): string {
+  const day = parts(iso.slice(0, 10));
+  return `${day.d} ${day.m} ${day.y} ${iso.slice(11, 16)}`;
+}
+
+export function readWindowLabel(
+  read: SpendReadWindow,
+  days: DayWindow,
+  sinceHours: number,
+): string {
+  return read.granularity === "hour"
+    ? `last ${sinceHours} h, ${formatAt(read.fromAt)} – ${formatAt(read.toAt)} UTC`
+    : `${formatDayWindow(days)}, UTC days (whole days: hourly spend is kept for 30 days)`;
 }
 
 export function spendText(amounts: readonly SpendAmount[]): string {

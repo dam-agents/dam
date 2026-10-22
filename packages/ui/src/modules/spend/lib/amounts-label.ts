@@ -7,6 +7,7 @@ import type {
 import {
   bobcoinCell,
   callsAndTokens,
+  callSpanLine,
   coveredCell,
   coveredDetail,
   paidCell,
@@ -56,6 +57,8 @@ export function sessionSpendTitle(row: SpendSessionRow): string {
       .filter((part) => part !== null)
       .join(" · "),
   ];
+  if (row.firstAt && row.lastAt)
+    lines.push(callSpanLine(row.firstAt, row.lastAt));
   const subAgents = amountsList(row.subAgentAmounts);
   if (subAgents) lines.push(subAgentPart(subAgents));
   return lines.join("\n");

@@ -21,6 +21,7 @@ export interface SettledCall extends Pick<
   readonly payer: string;
   readonly sessionId: string;
   readonly connectionId: string;
+  readonly providerTemplate: string;
   readonly model: string;
   readonly startedAt: Date;
   readonly unit: SpendUnit;

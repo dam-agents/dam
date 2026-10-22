@@ -757,6 +757,13 @@
       "when": 1792741121602,
       "tag": "0107_invocation_scripts",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1792686062444,
+      "tag": "0104_spend_call_provider",
+      "breakpoints": true
     }
   ]
 }

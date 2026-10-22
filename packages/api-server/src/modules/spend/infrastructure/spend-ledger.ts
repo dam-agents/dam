@@ -5,6 +5,7 @@ import {
   eq,
   gte,
   inArray,
+  lt,
   lte,
   ne,
   sql,
@@ -21,7 +22,12 @@ import type {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import type { BreakdownRow } from "../domain/breakdown.js";
-import type { CallAmounts, DayCounter, SpendRow } from "../domain/ledger.js";
+import type {
+  CallAmounts,
+  CallWindow,
+  DayCounter,
+  SpendRow,
+} from "../domain/ledger.js";
 import type { AgentLedgerRow } from "../domain/agent-spend.js";
 import type { SessionLedgerRow } from "../domain/sessions.js";
 import type { SettledCall, TurnWindowRow } from "../domain/turns.js";
@@ -53,6 +59,7 @@ export interface SpendLedger {
     callingAgentId?: string;
     from: string;
     to: string;
+    at?: CallWindow;
   }): Promise<BreakdownRow[]>;
   sessionRows(query: {
     ownerSub: string;
@@ -61,6 +68,7 @@ export interface SpendLedger {
     withSessionOnly: boolean;
     from: string;
     to: string;
+    at?: CallWindow;
   }): Promise<SessionLedgerRow[]>;
   agentRows(query: {
     ownerSub: string;
@@ -69,6 +77,7 @@ export interface SpendLedger {
     sessionId?: string;
     from: string;
     to: string;
+    at?: CallWindow;
   }): Promise<AgentLedgerRow[]>;
   putCall(call: SettledCall): Promise<void>;
   turnWindows(query: {
@@ -113,6 +122,102 @@ export function createSpendLedger(db: Db): SpendLedger {
   const sumOf = (key: Counted) =>
     sql<string>`coalesce(sum(${spendDaily[key]}), 0)`;
   const hasCalls = sql`sum(${spendDaily.calls}) > 0`;
+
+  const callsAsDays = (at: CallWindow) =>
+    db
+      .select({
+        day: sql<string>`(${spendCalls.startedAt} at time zone 'UTC')::date::text`.as(
+          "day",
+        ),
+        ownerSub: spendCalls.ownerSub,
+        payerAgentId: spendCalls.payerAgentId,
+        connectionId: spendCalls.connectionId,
+        providerTemplate: spendCalls.providerTemplate,
+        model: spendCalls.model,
+        sessionId: spendCalls.sessionId,
+        callingAgentId: spendCalls.callingAgentId,
+        unit: spendCalls.unit,
+        costMicros: spendCalls.costMicros,
+        calls: sql<number>`1`.as("calls"),
+        estimatedCalls: sql<number>`(${spendCalls.estimated})::int`.as(
+          "estimated_calls",
+        ),
+        uncachedInputTokens: spendCalls.uncachedInputTokens,
+        outputTokens: spendCalls.outputTokens,
+        cacheReadTokens: spendCalls.cacheReadTokens,
+        cacheWrite5mTokens: spendCalls.cacheWrite5mTokens,
+        cacheWrite1hTokens: spendCalls.cacheWrite1hTokens,
+        webSearches: spendCalls.webSearches,
+        durationMs: spendCalls.durationMs,
+      })
+      .from(spendCalls)
+      .where(
+        and(
+          gte(spendCalls.startedAt, at.fromAt),
+          lt(spendCalls.startedAt, at.toAt),
+        ),
+      )
+      .as("call_rows");
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a read over whole UTC days sums the daily
+   * rollup; a read with an exact window sums the call rows inside it, shaped
+   * as rollup rows, so every grouped read serves both.
+   */
+  const sourceOf = (range: { from: string; to: string; at?: CallWindow }) => {
+    if (range.at) {
+      return { t: callsAsDays(range.at), inRange: undefined };
+    }
+    return {
+      t: spendDaily,
+      inRange: and(
+        gte(spendDaily.day, range.from),
+        lte(spendDaily.day, range.to),
+      ),
+    };
+  };
+  type Source = ReturnType<typeof sourceOf>["t"];
+
+  const sessionTimes = async (
+    ownerSub: string,
+    callingAgentIds: readonly string[],
+    sessionIds: readonly string[],
+    at: CallWindow,
+  ) => {
+    if (callingAgentIds.length === 0 || sessionIds.length === 0)
+      return new Map<string, { firstAt: string; lastAt: string }>();
+    const rows = await db
+      .select({
+        callingAgentId: spendCalls.callingAgentId,
+        sessionId: spendCalls.sessionId,
+        firstAt: sql<Date>`min(${spendCalls.startedAt})`,
+        lastAt: sql<Date>`max(${spendCalls.startedAt})`,
+      })
+      .from(spendCalls)
+      .where(
+        and(
+          eq(spendCalls.ownerSub, ownerSub),
+          inArray(spendCalls.callingAgentId, [...callingAgentIds]),
+          inArray(spendCalls.sessionId, [...sessionIds]),
+          gte(spendCalls.startedAt, at.fromAt),
+          lt(spendCalls.startedAt, at.toAt),
+        ),
+      )
+      .groupBy(spendCalls.callingAgentId, spendCalls.sessionId);
+    return new Map(
+      rows.map((r) => [
+        `${r.callingAgentId}\u0000${r.sessionId}`,
+        {
+          firstAt: new Date(r.firstAt).toISOString(),
+          lastAt: new Date(r.lastAt).toISOString(),
+        },
+      ]),
+    );
+  };
+  type Summed = Exclude<Counted, "refusedCalls">;
+  const sumIn = (t: Source, key: Summed) =>
+    sql<string>`coalesce(sum(${t[key]}), 0)`;
+  const hasCallsIn = (t: Source) => sql`sum(${t.calls}) > 0`;
 
   return {
     async add(row, delta, callCostMicros) {
@@ -315,53 +420,51 @@ export function createSpendLedger(db: Db): SpendLedger {
       }));
     },
 
-    async breakdownRows({ ownerSub, agentIds, callingAgentId, from, to }) {
+    async breakdownRows({ ownerSub, agentIds, callingAgentId, from, to, at }) {
+      const { t, inRange } = sourceOf({ from, to, ...(at && { at }) });
       const rows = await db
         .select({
-          day: spendDaily.day,
-          payer: spendDaily.payerAgentId,
-          connectionId: spendDaily.connectionId,
-          providerTemplate: spendDaily.providerTemplate,
-          model: spendDaily.model,
-          sessionId: spendDaily.sessionId,
-          callingAgentId: spendDaily.callingAgentId,
-          unit: spendDaily.unit,
-          costMicros: sumOf("costMicros"),
-          calls: sumOf("calls"),
-          estimatedCalls: sumOf("estimatedCalls"),
-          uncachedInputTokens: sumOf("uncachedInputTokens"),
-          outputTokens: sumOf("outputTokens"),
-          cacheReadTokens: sumOf("cacheReadTokens"),
-          cacheWrite5mTokens: sumOf("cacheWrite5mTokens"),
-          cacheWrite1hTokens: sumOf("cacheWrite1hTokens"),
-          webSearches: sumOf("webSearches"),
-          durationMs: sumOf("durationMs"),
+          day: t.day,
+          payer: t.payerAgentId,
+          connectionId: t.connectionId,
+          providerTemplate: t.providerTemplate,
+          model: t.model,
+          sessionId: t.sessionId,
+          callingAgentId: t.callingAgentId,
+          unit: t.unit,
+          costMicros: sumIn(t, "costMicros"),
+          calls: sumIn(t, "calls"),
+          estimatedCalls: sumIn(t, "estimatedCalls"),
+          uncachedInputTokens: sumIn(t, "uncachedInputTokens"),
+          outputTokens: sumIn(t, "outputTokens"),
+          cacheReadTokens: sumIn(t, "cacheReadTokens"),
+          cacheWrite5mTokens: sumIn(t, "cacheWrite5mTokens"),
+          cacheWrite1hTokens: sumIn(t, "cacheWrite1hTokens"),
+          webSearches: sumIn(t, "webSearches"),
+          durationMs: sumIn(t, "durationMs"),
         })
-        .from(spendDaily)
+        .from(t)
         .where(
           and(
-            eq(spendDaily.ownerSub, ownerSub),
-            gte(spendDaily.day, from),
-            lte(spendDaily.day, to),
-            agentIds
-              ? inArray(spendDaily.payerAgentId, [...agentIds])
-              : undefined,
+            eq(t.ownerSub, ownerSub),
+            inRange,
+            agentIds ? inArray(t.payerAgentId, [...agentIds]) : undefined,
             callingAgentId !== undefined
-              ? eq(spendDaily.callingAgentId, callingAgentId)
+              ? eq(t.callingAgentId, callingAgentId)
               : undefined,
           ),
         )
         .groupBy(
-          spendDaily.day,
-          spendDaily.payerAgentId,
-          spendDaily.connectionId,
-          spendDaily.providerTemplate,
-          spendDaily.model,
-          spendDaily.sessionId,
-          spendDaily.callingAgentId,
-          spendDaily.unit,
+          t.day,
+          t.payerAgentId,
+          t.connectionId,
+          t.providerTemplate,
+          t.model,
+          t.sessionId,
+          t.callingAgentId,
+          t.unit,
         )
-        .having(hasCalls);
+        .having(hasCallsIn(t));
       return rows.map((r) => ({
         day: r.day,
         payer: r.payer,
@@ -391,105 +494,112 @@ export function createSpendLedger(db: Db): SpendLedger {
       withSessionOnly,
       from,
       to,
+      at,
     }) {
       if (callingAgentIds.length === 0) return [];
+      const { t, inRange } = sourceOf({ from, to, ...(at && { at }) });
       const rows = await db
         .select({
-          callingAgentId: spendDaily.callingAgentId,
-          sessionId: spendDaily.sessionId,
-          unit: spendDaily.unit,
-          costMicros: sumOf("costMicros"),
-          calls: sumOf("calls"),
-          durationMs: sumOf("durationMs"),
-          uncachedInputTokens: sumOf("uncachedInputTokens"),
-          outputTokens: sumOf("outputTokens"),
-          cacheReadTokens: sumOf("cacheReadTokens"),
-          cacheWrite5mTokens: sumOf("cacheWrite5mTokens"),
-          cacheWrite1hTokens: sumOf("cacheWrite1hTokens"),
-          firstDay: sql<string>`min(${spendDaily.day})::text`,
-          lastDay: sql<string>`max(${spendDaily.day})::text`,
+          callingAgentId: t.callingAgentId,
+          sessionId: t.sessionId,
+          unit: t.unit,
+          costMicros: sumIn(t, "costMicros"),
+          calls: sumIn(t, "calls"),
+          durationMs: sumIn(t, "durationMs"),
+          uncachedInputTokens: sumIn(t, "uncachedInputTokens"),
+          outputTokens: sumIn(t, "outputTokens"),
+          cacheReadTokens: sumIn(t, "cacheReadTokens"),
+          cacheWrite5mTokens: sumIn(t, "cacheWrite5mTokens"),
+          cacheWrite1hTokens: sumIn(t, "cacheWrite1hTokens"),
+          firstDay: sql<string>`min(${t.day})::text`,
+          lastDay: sql<string>`max(${t.day})::text`,
         })
-        .from(spendDaily)
+        .from(t)
         .where(
           and(
-            eq(spendDaily.ownerSub, ownerSub),
-            inArray(spendDaily.callingAgentId, [...callingAgentIds]),
-            gte(spendDaily.day, from),
-            lte(spendDaily.day, to),
-            withSessionOnly ? ne(spendDaily.sessionId, "") : undefined,
-            sessionIds
-              ? inArray(spendDaily.sessionId, [...sessionIds])
-              : undefined,
+            eq(t.ownerSub, ownerSub),
+            inArray(t.callingAgentId, [...callingAgentIds]),
+            inRange,
+            withSessionOnly ? ne(t.sessionId, "") : undefined,
+            sessionIds ? inArray(t.sessionId, [...sessionIds]) : undefined,
           ),
         )
-        .groupBy(
-          spendDaily.callingAgentId,
-          spendDaily.sessionId,
-          spendDaily.unit,
-        )
-        .having(hasCalls);
-      return rows.map((r) => ({
-        callingAgentId: r.callingAgentId,
-        sessionId: r.sessionId,
-        unit: r.unit as SpendUnit,
-        costMicros: Number(r.costMicros),
-        calls: Number(r.calls),
-        durationMs: Number(r.durationMs),
-        uncachedInputTokens: Number(r.uncachedInputTokens),
-        outputTokens: Number(r.outputTokens),
-        cacheReadTokens: Number(r.cacheReadTokens),
-        cacheWrite5mTokens: Number(r.cacheWrite5mTokens),
-        cacheWrite1hTokens: Number(r.cacheWrite1hTokens),
-        firstDay: r.firstDay,
-        lastDay: r.lastDay,
-      }));
+        .groupBy(t.callingAgentId, t.sessionId, t.unit)
+        .having(hasCallsIn(t));
+      const times = await sessionTimes(
+        ownerSub,
+        callingAgentIds,
+        [...new Set(rows.map((r) => r.sessionId))],
+        at ?? {
+          fromAt: new Date(`${from}T00:00:00Z`),
+          toAt: new Date(Date.parse(`${to}T00:00:00Z`) + 86_400_000),
+        },
+      );
+      return rows.map((r) => {
+        const time = times.get(`${r.callingAgentId}\u0000${r.sessionId}`);
+        return {
+          callingAgentId: r.callingAgentId,
+          sessionId: r.sessionId,
+          unit: r.unit as SpendUnit,
+          costMicros: Number(r.costMicros),
+          calls: Number(r.calls),
+          durationMs: Number(r.durationMs),
+          uncachedInputTokens: Number(r.uncachedInputTokens),
+          outputTokens: Number(r.outputTokens),
+          cacheReadTokens: Number(r.cacheReadTokens),
+          cacheWrite5mTokens: Number(r.cacheWrite5mTokens),
+          cacheWrite1hTokens: Number(r.cacheWrite1hTokens),
+          firstDay: r.firstDay,
+          lastDay: r.lastDay,
+          ...time,
+        };
+      });
     },
 
-    async agentRows({ ownerSub, payer, callingAgentIds, sessionId, from, to }) {
+    async agentRows({
+      ownerSub,
+      payer,
+      callingAgentIds,
+      sessionId,
+      from,
+      to,
+      at,
+    }) {
       if (callingAgentIds?.length === 0) return [];
+      const { t, inRange } = sourceOf({ from, to, ...(at && { at }) });
       const rows = await db
         .select({
-          callingAgentId: spendDaily.callingAgentId,
-          sessionId: spendDaily.sessionId,
-          model: spendDaily.model,
-          unit: spendDaily.unit,
-          costMicros: sumOf("costMicros"),
-          calls: sumOf("calls"),
-          estimatedCalls: sumOf("estimatedCalls"),
-          uncachedInputTokens: sumOf("uncachedInputTokens"),
-          outputTokens: sumOf("outputTokens"),
-          cacheReadTokens: sumOf("cacheReadTokens"),
-          cacheWrite5mTokens: sumOf("cacheWrite5mTokens"),
-          cacheWrite1hTokens: sumOf("cacheWrite1hTokens"),
-          webSearches: sumOf("webSearches"),
-          durationMs: sumOf("durationMs"),
-          firstDay: sql<string>`min(${spendDaily.day})::text`,
-          lastDay: sql<string>`max(${spendDaily.day})::text`,
+          callingAgentId: t.callingAgentId,
+          sessionId: t.sessionId,
+          model: t.model,
+          unit: t.unit,
+          costMicros: sumIn(t, "costMicros"),
+          calls: sumIn(t, "calls"),
+          estimatedCalls: sumIn(t, "estimatedCalls"),
+          uncachedInputTokens: sumIn(t, "uncachedInputTokens"),
+          outputTokens: sumIn(t, "outputTokens"),
+          cacheReadTokens: sumIn(t, "cacheReadTokens"),
+          cacheWrite5mTokens: sumIn(t, "cacheWrite5mTokens"),
+          cacheWrite1hTokens: sumIn(t, "cacheWrite1hTokens"),
+          webSearches: sumIn(t, "webSearches"),
+          durationMs: sumIn(t, "durationMs"),
+          firstDay: sql<string>`min(${t.day})::text`,
+          lastDay: sql<string>`max(${t.day})::text`,
         })
-        .from(spendDaily)
+        .from(t)
         .where(
           and(
-            eq(spendDaily.ownerSub, ownerSub),
-            gte(spendDaily.day, from),
-            lte(spendDaily.day, to),
-            payer !== undefined
-              ? eq(spendDaily.payerAgentId, payer)
-              : undefined,
+            eq(t.ownerSub, ownerSub),
+            inRange,
+            payer !== undefined ? eq(t.payerAgentId, payer) : undefined,
             callingAgentIds
-              ? inArray(spendDaily.callingAgentId, [...callingAgentIds])
+              ? inArray(t.callingAgentId, [...callingAgentIds])
               : undefined,
-            sessionId !== undefined
-              ? eq(spendDaily.sessionId, sessionId)
-              : undefined,
+            sessionId !== undefined ? eq(t.sessionId, sessionId) : undefined,
           ),
         )
-        .groupBy(
-          spendDaily.callingAgentId,
-          spendDaily.sessionId,
-          spendDaily.model,
-          spendDaily.unit,
-        )
-        .having(hasCalls);
+        .groupBy(t.callingAgentId, t.sessionId, t.model, t.unit)
+        .having(hasCallsIn(t));
       return rows.map((r) => ({
         callingAgentId: r.callingAgentId,
         sessionId: r.sessionId,
@@ -520,6 +630,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         costMicros: call.costMicros,
         routerCallId: call.routerCallId,
         connectionId: call.connectionId,
+        providerTemplate: call.providerTemplate,
         model: call.model,
         uncachedInputTokens: call.uncachedInputTokens,
         outputTokens: call.outputTokens,

@@ -6,6 +6,8 @@ export const METRICS_DEFAULT_LIMIT = 100;
 
 export const AGENT_TELEMETRY_MAX_DAYS = 30;
 
+export const AGENT_METRICS_MAX_HOURS = 720;
+
 export const AGENT_TELEMETRY_DEFAULT_DAYS = 7;
 
 export const AGENT_TELEMETRY_MAX_LIMIT = 200;

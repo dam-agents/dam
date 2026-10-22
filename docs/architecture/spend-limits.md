@@ -134,7 +134,7 @@ The check keeps a Session that it found for ten minutes and never keeps a miss, 
 
 **Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
-It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, and the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows; no total and no limit reads it.
+It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows, the reads in hours, and the first and last call time of a Session; no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
 
 **Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
@@ -144,6 +144,7 @@ The screens read T to say since when the spend is measured, to mark the days bef
 The api-server reads T once and keeps it.
 
 **Grouped read.** The screens read the rollup grouped by day, payer, Connection, model, Session, calling agent and unit, for at most 366 days.
+A read with an exact window, from `get_metrics` hours and `dam metrics --since`, sums the call rows that start inside it in the same groups; a window that starts more than 30 days ago widens to its UTC days, and the result names the window it read.
 The api-server folds the rows into totals per unit, the model time, and spend by day, agent, model, Connection, session type and calling agent.
 A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
 The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.
