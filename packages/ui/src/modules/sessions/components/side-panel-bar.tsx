@@ -17,7 +17,6 @@ import {
   RAIL_COLUMN,
   RAIL_GAP,
   RAIL_GLYPH,
-  railIndicator,
   railTile,
 } from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -91,10 +90,6 @@ export function SidePanelTabButtons({
             className={railTile(active === tab)}
             onClick={() => onSelect(tab)}
           >
-            <span
-              aria-hidden
-              className={railIndicator("right", active === tab)}
-            />
             {icons[tab] ?? <Icon size={RAIL_GLYPH} />}
             {shown && (
               <span
@@ -239,7 +234,6 @@ function DocsLink() {
         data-testid="side-panel-docs"
         className={railTile(false)}
       >
-        <span aria-hidden className={railIndicator("right", false)} />
         <Book size={RAIL_GLYPH} />
       </a>
     </Tooltip>

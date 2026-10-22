@@ -174,8 +174,8 @@ it("scrolls the rail when the window cannot hold both clusters", () => {
   expect(nav).toContain("overflow-y-auto");
 });
 
-// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 48 px rounded tiles with 22 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
-it("draws JanUI's tiles, with the bar on the right edge", () => {
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Documentation as a tile between Get started and Approvals.
+it("draws JanUI's tiles at the sidebar strip's size", () => {
   const html = renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -190,19 +190,15 @@ it("draws JanUI's tiles, with the bar on the right edge", () => {
   );
   const buttons = [
     ...html.matchAll(
-      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>(<span[^>]*><\/span>)/g,
+      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>/g,
     ),
   ];
   expect(buttons.length).toBeGreaterThan(1);
-  for (const [, tab, bar] of buttons) {
-    expect(bar).toContain("-right-2.5");
-    expect(bar.includes(" h-6")).toBe(tab === "files");
-  }
+  expect(html).not.toContain("-right-2.5");
   const open = buttons.find(([, tab]) => tab === "files")![0];
   // UNIT_BOUNDARY_DESCRIPTION: the tile is one row high and as wide, so the mark it carries is a square of the same size a row of the tree carries.
   expect(open).toContain("size-10");
   expect(open).toContain("bg-muted");
-  expect(html).toContain('width="22"');
   expect(html).toContain('width="22"');
   const order = ["getting-started", "docs", "approvals"].map((id) =>
     html.indexOf(

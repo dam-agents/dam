@@ -33,17 +33,5 @@ export function railTile(active: boolean): string {
   );
 }
 
-export function railIndicator(
-  side: "left" | "right",
-  active: boolean,
-  current = false,
-): string {
-  return cn(
-    "pointer-events-none absolute w-1 bg-foreground transition-all",
-    side === "left" ? "-left-2.5 rounded-r-full" : "-right-2.5 rounded-l-full",
-    active ? "h-6" : current ? "h-2" : "h-0 group-hover:h-2",
-  );
-}
-
 export const RAIL_BADGE =
   "absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold text-background ring-2 ring-chrome tabular-nums";
