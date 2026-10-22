@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { SidebarEnvironments } from "../../environments/components/sidebar-environments.js";
 import { ActivityFilterMenu } from "../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
@@ -113,6 +114,14 @@ export function SidebarAgents({
           />
         }
       >
+        {open && (
+          <SidebarEnvironments
+            agentId={agent.id}
+            vm={agent.vm}
+            indent="pl-12"
+            onNavigate={onNavigate}
+          />
+        )}
         {open && (
           <SidebarAgentSessions
             agentId={agent.id}

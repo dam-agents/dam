@@ -10,7 +10,6 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useAgentRunState } from "../../agents/api/queries.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import {
   useFeatures,
@@ -238,9 +237,6 @@ function AgentSessionList({
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
-  const runState = useAgentRunState(agentId);
-  const asleep =
-    list.loading && (runState === "hibernated" || runState === "hibernating");
   const openSession = useOpenSession();
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -311,15 +307,9 @@ function AgentSessionList({
       className={LIST_CLASS}
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || (list.loading && !asleep && !list.failed)}
+      aria-busy={list.provisional || (list.loading && !list.failed)}
     >
-      {asleep ? (
-        <ListNote testId="sidebar-agent-asleep">
-          Its sessions show when it wakes.
-        </ListNote>
-      ) : (
-        list.loading && !list.failed && <SessionListSkeleton />
-      )}
+      {list.loading && !list.failed && <SessionListSkeleton />}
       {list.failed && (
         <button
           type="button"
@@ -397,20 +387,9 @@ function emptyText(filtered: boolean, more: boolean): string {
     : "No sessions match the filter.";
 }
 
-function ListNote({
-  testId,
-  children,
-}: {
-  testId?: string;
-  children: ReactNode;
-}) {
+function ListNote({ children }: { children: ReactNode }) {
   return (
-    <p
-      className="py-1.5 pl-12 text-xs text-muted-foreground"
-      data-testid={testId}
-    >
-      {children}
-    </p>
+    <p className="py-1.5 pl-12 text-xs text-muted-foreground">{children}</p>
   );
 }
 

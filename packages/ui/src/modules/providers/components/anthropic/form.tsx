@@ -7,7 +7,11 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import {
+  ProviderFormShell,
+  ProviderKeyLink,
+  stripWhitespace,
+} from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
@@ -84,6 +88,7 @@ export function AnthropicForm({
       )}
 
       {mode === "oauth" && <QuickSetupHint />}
+      {MODES[mode].keyPage && <ProviderKeyLink {...MODES[mode].keyPage} />}
 
       <div className="flex gap-3">
         <Input

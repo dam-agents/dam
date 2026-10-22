@@ -72,10 +72,16 @@ import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
 import { createEnvironmentForward } from "./modules/environment-forward.js";
-import { composeChanges } from "./modules/changes/index.js";
+import {
+  composeChanges,
+  createGitTraceReader,
+  gitTraceEnv,
+  sessionEnvVarsOf,
+} from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
   createTerminalSessionLookup,
+  nonClaudeModelEnv,
   sessionDirectoryEntries,
 } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -103,7 +109,7 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
-import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { leaseSpawnEnv, mergedSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   canonicalModel,
@@ -197,12 +203,29 @@ const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
 );
+const changesLog = (msg: string) => process.stderr.write(`[changes] ${msg}\n`);
 const changes = composeChanges({
   roots: [workDir, homeDir],
   stateBackend,
   githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
-  log: (msg) => process.stderr.write(`[changes] ${msg}\n`),
+  sessionOf: (id) => (sessionMetadata.get(id) !== undefined ? id : undefined),
+  runningSessions: () =>
+    Object.keys(sessionMetadata.all()).filter((id) =>
+      acpRuntime.isSessionRunning(id),
+    ),
+  log: changesLog,
 });
+const gitTraceDir = join(homeDir, ".platform", "git-traces");
+const sessionEnvVars = sessionEnvVarsOf(
+  Object.values(harnessManifests).map((m) => m.sessionEnvVar),
+);
+const gitTraces = createGitTraceReader({
+  dir: gitTraceDir,
+  sessionEnvVars,
+  onCommand: (command) => void changes.onGitCommand(command),
+  log: changesLog,
+});
+
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
@@ -438,6 +461,10 @@ const terminalModelEnv = (lease: {
   return {
     ...unroutedProviderEnv(lease.harness),
     ...routerEnvOf(lease.harness),
+    ...nonClaudeModelEnv(
+      harnessManifests[lease.harness]?.modelRouter?.nonClaudeModelEnv,
+      [lease.model],
+    ),
     ...(lease.model !== null && {
       PLATFORM_MODEL: renderSessionModel(
         lease.model,
@@ -517,6 +544,9 @@ const {
           ...(manifest.harnessState && {
             harnessState: manifest.harnessState,
           }),
+          ...(manifest.modelRouter?.nonClaudeModelEnv && {
+            nonClaudeModelEnv: manifest.modelRouter.nonClaudeModelEnv,
+          }),
           sessionSettings: harnessConfig?.sessionSettings,
           catalog: harnessConfig?.catalog,
           configured: () =>
@@ -533,7 +563,9 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
-  onToolActivity: changes.onToolActivity,
+  onToolActivity: ({ sessionId }) =>
+    void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
   onTurnOutcome: (sessionId, end) =>
     invocationWatch.turnOutcome(sessionId, end),
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
@@ -559,6 +591,13 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+void gitTraces
+  .start()
+  .catch((error: unknown) =>
+    changesLog(
+      `reading git traces could not start: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
 runningSessionsOf = (harness) =>
   Object.entries(sessionMetadata.all())
     .filter(
@@ -575,12 +614,24 @@ sessionState = {
   spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
 };
 
-const { service: processesService, keepMarks } = processes.start({
+const {
+  service: processesService,
+  keepMarks,
+  startupItemEnv,
+} = processes.start({
   agentHome: homeDir,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
+
+function applyStartupItemEnv(): void {
+  startupItemEnv.apply(mergedSpawnEnv(envStore)).catch((err: unknown) => {
+    process.stderr.write(
+      `[processes] Startup Item env not applied: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  });
+}
 
 let recoveryScheduled = false;
 function scheduleRecovery(): void {
@@ -633,6 +684,7 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
+        applyStartupItemEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -954,6 +1006,7 @@ function attachPty(
           ...terminalModelEnv(lease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
+          ...gitTraceEnv(gitTraceDir, sessionEnvVars),
           HARNESS_SESSION_ID: sessionId,
           PLATFORM_TERMINAL_ID: terminalId,
         },
@@ -1315,7 +1368,10 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) podService?.refreshEnv();
+  if (envStore.ready()) {
+    podService?.refreshEnv();
+    applyStartupItemEnv();
+  }
 
   modelCatalog.onChange(() =>
     acpRuntime.applyEnvChange({

@@ -1,15 +1,19 @@
-// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there; an open Environment Link, seen in the same scan, keeps the agent busy. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
+// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there; an open Environment Link, seen in the same scan, keeps the agent busy. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. openrc's own `user.root` supervisor, which runs openrc-user over those services, is no row at all: its processes go, its services are re-parented to the reaper in its place, and a history record of it is left out. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   readlinkSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { FinishedRow } from "agent-runtime-api";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { classifyProcesses } from "../../modules/processes/domain/classify.js";
 import { assembleInventory } from "../../modules/processes/domain/inventory.js";
@@ -21,6 +25,8 @@ import {
 } from "../../modules/processes/domain/startup-items.js";
 import { createProcessTable } from "../../modules/processes/infrastructure/proc-scan.js";
 import { openProcessesDocument } from "../../modules/processes/infrastructure/processes-document.js";
+import { createStartupItemEnvFile } from "../../modules/processes/infrastructure/startup-item-env.js";
+import { createStartupItemEnv } from "../../modules/processes/services/startup-item-env.js";
 import {
   createStartupItemStore,
   type StartupItemStore,
@@ -28,6 +34,8 @@ import {
 import { createProcessesService } from "../../modules/processes/services/processes-service.js";
 
 const RUNTIME = 8;
+const USER_SERVICES_MANAGER =
+  "supervise-daemon user.root --start --retry TERM/60 --respawn-max 3 --respawn-period 5 --notify fd:3 /usr/lib/rc/bin/openrc-user -- root";
 const SUPERVISOR = (name: string) =>
   `supervise-daemon ${name} --start --chdir /home/agent/work /bin/sh -- -c serve`;
 
@@ -162,6 +170,89 @@ describe("Startup Item rows", () => {
         outputPath: "/home/agent/.local/state/rc/off.log",
       },
     ]);
+  });
+});
+
+describe("openrc's user-services manager", () => {
+  // TEST_SCENARIO: openrc's `user.root` service supervises openrc-user, which starts the agent's own services. The manager is no row at all — not in the list, the badge or the history — and the docker service it started is one Startup Item row, as it would be without the manager; a Detached Process beside it still lists.
+  it("drops the manager and lists its services as their own rows", () => {
+    const { trees, running, tracked, finished } = inventory([
+      proc(200, 1, USER_SERVICES_MANAGER),
+      proc(201, 200, "/usr/lib/rc/bin/openrc-user -- root"),
+      proc(300, 201, SUPERVISOR("docker"), "docker"),
+      proc(301, 300, "dockerd", "docker"),
+      proc(400, 1, "sleep 100"),
+    ]);
+
+    expect(running.map((row) => [row.pid, row.kind, row.command])).toEqual([
+      [300, "startup-item", "dockerd"],
+      [400, "detached", "sleep 100"],
+    ]);
+    expect(
+      trees.find((t) => t.key === "300:300")?.members.map((m) => m.pid),
+    ).toEqual([300, 301]);
+    expect(tracked.map((row) => row.command)).toEqual(["sleep 100"]);
+    expect(finished).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a history written before the manager was dropped kept a record of it; the list leaves it out, so the panel never shows work it no longer lists.
+  it("leaves a manager record the history kept out of the list", async () => {
+    const backend = createFileDocumentStoreBackend(
+      mkdtempSync(join(tmpdir(), "state-")),
+    );
+    const document = openProcessesDocument(backend);
+    const finished: FinishedRow = {
+      key: "200:200",
+      kind: "detached",
+      command: USER_SERVICES_MANAGER,
+      startedAt: "2024-01-01T00:00:00.000Z",
+      finishedAt: "2024-01-01T00:00:01.000Z",
+      endedBy: "exit",
+      outputPath: null,
+      keptAwake: false,
+      keepSource: "default",
+      container: null,
+    };
+    document.write({
+      bootId: "boot",
+      lastScanAt: null,
+      lastRunning: [],
+      finished: [
+        finished,
+        { ...finished, key: "400:400", command: "sleep 100" },
+      ],
+      marks: [],
+      overrides: [],
+    });
+    const processes = createProcessesService({
+      table: {
+        scan: async () => ({ scannedAt: Date.now(), processes: [] }),
+        bootId: async () => "boot",
+      },
+      document,
+      outputs: { tail: async () => null },
+      signals: { send: () => true },
+      keep: {
+        setKeptProcesses: () => {},
+        setOpenLinks: () => {},
+        taskKeepChanged: () => {},
+      } as never,
+      runtimePid: RUNTIME,
+      harnessWork: {
+        harnesses: () => [],
+        reportedTasks: () => [],
+        forgetTask: () => {},
+        pendingRestart: () => null,
+        applyPendingRestart: () => false,
+        onChange: () => {},
+      },
+      startupItems: { available: () => false } as never,
+      log: () => {},
+    });
+
+    expect((await processes.list()).finished.map((row) => row.command)).toEqual(
+      ["sleep 100"],
+    );
   });
 });
 
@@ -338,6 +429,126 @@ describe("the agent's services on disk", () => {
     expect(
       createStartupItemStore(mkdtempSync(join(tmpdir(), "empty-"))).list(),
     ).toEqual([]);
+  });
+});
+
+describe("the env a Startup Item starts with", () => {
+  // TEST_SCENARIO: openrc adds every variable of ~/.config/rc/profile.env that its filter left unset to a user service, so the runtime writes its own env there, connection placeholders included, and a GitHub item can use gh. A value openrc's parser would cut at a quote or `#`, or keep whole when it starts with `$`, and a name no shell takes, are left out rather than delivered wrong, and so is the runtime's own PORT, which a service's server would take; the file is root's alone and replaced whole, so a new env drops a variable that went away. A write says whether the file changed, which decides whether items restart.
+  it("writes the runtime's env as openrc reads it, leaving out what its parser would change", () => {
+    const dir = mkdtempSync(join(tmpdir(), "home-"));
+    const file = createStartupItemEnvFile(dir);
+    const path = join(dir, ".config", "rc", "profile.env");
+    const env = {
+      PLATFORM_GH_TOKEN_AVAILABLE: "true",
+      GH_TOKEN: "platform:conn:abc",
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:9/v1?a=b c",
+      QUOTED: 'say "hi"',
+      SINGLE: "it's",
+      HASH: "a#b",
+      DOLLAR: "$HOME",
+      MULTI: "a\nb",
+      "BAD-NAME": "x",
+      UNSET: undefined,
+      PORT: "8080",
+      PWD: "/app",
+    };
+
+    expect(file.write(env)).toBe(true);
+    expect(readFileSync(path, "utf8")).toBe(
+      [
+        "ANTHROPIC_BASE_URL=http://127.0.0.1:9/v1?a=b c",
+        "GH_TOKEN=platform:conn:abc",
+        "PLATFORM_GH_TOKEN_AVAILABLE=true",
+        "",
+      ].join("\n"),
+    );
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(file.write({ ...env, PORT: "9090", QUOTED: "x'y" })).toBe(false);
+
+    expect(file.write({ PLATFORM_GH_TOKEN_AVAILABLE: "false" })).toBe(true);
+    expect(readFileSync(path, "utf8")).toBe(
+      "PLATFORM_GH_TOKEN_AVAILABLE=false\n",
+    );
+    expect(readdirSync(join(dir, ".config", "rc"))).toEqual(["profile.env"]);
+  });
+});
+
+describe("a new env reaches the running Startup Items", () => {
+  function harness(opts: {
+    available?: boolean;
+    running?: string[];
+    failing?: string[];
+  }) {
+    const dir = mkdtempSync(join(tmpdir(), "home-"));
+    const restarted: string[] = [];
+    const logs: string[] = [];
+    const env = createStartupItemEnv({
+      file: createStartupItemEnvFile(dir),
+      available: () => opts.available ?? true,
+      running: async () => opts.running ?? [],
+      restart: async (id) => {
+        restarted.push(id);
+        return opts.failing?.includes(id) ? "rc-service: failed" : null;
+      },
+      log: (msg) => logs.push(msg),
+    });
+    return { dir, env, restarted, logs };
+  }
+
+  // TEST_SCENARIO: a process keeps the env it started with, so a connection added or removed reaches a running item only when it starts again. A changed env restarts every running item through openrc, as the pod service is respawned; the same env, pushed again, restarts nothing. At boot, items start before the runtime from the file of the last run, so the first push restarts them only when the env moved meanwhile.
+  it("restarts the running items when the env changed, and only then", async () => {
+    const { dir, env, restarted, logs } = harness({ running: ["web", "sync"] });
+
+    await env.apply({ GH_TOKEN: "platform:conn:a" });
+    expect(restarted).toEqual(["web", "sync"]);
+    await env.apply({ GH_TOKEN: "platform:conn:a", PORT: "8080" });
+    expect(restarted).toEqual(["web", "sync"]);
+    await env.apply({ GH_TOKEN: "platform:conn:b" });
+    expect(restarted).toEqual(["web", "sync", "web", "sync"]);
+    expect(
+      readFileSync(join(dir, ".config", "rc", "profile.env"), "utf8"),
+    ).toBe("GH_TOKEN=platform:conn:b\n");
+    expect(logs).toContain("restarted Startup Item web for a new env");
+  });
+
+  // TEST_SCENARIO: one item that openrc fails to restart is logged, and the other items still get the new env.
+  it("restarts the other items when one restart fails", async () => {
+    const { env, restarted, logs } = harness({
+      running: ["broken", "web"],
+      failing: ["broken"],
+    });
+
+    await env.apply({ GH_TOKEN: "platform:conn:a" });
+    expect(restarted).toEqual(["broken", "web"]);
+    expect(logs).toContain(
+      "Startup Item broken not restarted for a new env: rc-service: failed",
+    );
+  });
+
+  // TEST_SCENARIO: two pushes close together run one after another, so an item never restarts twice at once, and the file ends with the latest env.
+  it("applies quick pushes in order", async () => {
+    const { dir, env, restarted } = harness({ running: ["web"] });
+
+    await Promise.all([
+      env.apply({ GH_TOKEN: "platform:conn:a" }),
+      env.apply({ GH_TOKEN: "platform:conn:b" }),
+    ]);
+    expect(restarted).toEqual(["web", "web"]);
+    expect(
+      readFileSync(join(dir, ".config", "rc", "profile.env"), "utf8"),
+    ).toBe("GH_TOKEN=platform:conn:b\n");
+  });
+
+  // TEST_SCENARIO: a container agent runs the same image without openrc, so it has no Startup Items: the runtime writes nothing into its home and restarts nothing.
+  it("does nothing where openrc did not boot", async () => {
+    const { dir, env, restarted } = harness({
+      available: false,
+      running: ["web"],
+    });
+
+    await env.apply({ GH_TOKEN: "x" });
+    expect(existsSync(join(dir, ".config"))).toBe(false);
+    expect(restarted).toEqual([]);
   });
 });
 

@@ -172,8 +172,8 @@ rm -f packages/e2e/playwright/.auth/*.json
 e2e_mark "suite started"
 suite_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 suite_rc=0
-PLATFORM_BASE_URL="http://localhost:5555" \
-PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
+PLATFORM_BASE_URL="http://localhost:6555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
   mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
 e2e_mark "suite finished"
 exit "$suite_rc"

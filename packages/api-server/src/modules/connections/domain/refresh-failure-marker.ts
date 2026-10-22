@@ -11,6 +11,7 @@ export interface TokenRejection {
   status: number | undefined;
   oauthShapedBody: boolean;
   ownsClientSecret: boolean;
+  userMessage?: string;
 }
 
 export function isPermanentTokenRejection(r: TokenRejection): boolean {
@@ -26,11 +27,17 @@ export function tokenRejectionOf(
   if (!(err instanceof Error) || err.name !== "OAuthTokenEndpointError")
     return null;
   const e = err as Error &
-    Partial<{ oauthError: string; status: number; oauthShapedBody: boolean }>;
+    Partial<{
+      oauthError: string;
+      status: number;
+      oauthShapedBody: boolean;
+      userMessage: string;
+    }>;
   return {
     oauthError: e.oauthError,
     status: e.status,
     oauthShapedBody: e.oauthShapedBody === true,
+    ...(e.userMessage ? { userMessage: e.userMessage } : {}),
   };
 }
 

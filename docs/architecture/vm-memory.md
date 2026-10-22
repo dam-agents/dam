@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -152,6 +152,12 @@ While the grant is below what one more machine costs and a start waits for it, t
 An agent whose cold boot is still in progress is not hibernated for a refused start or past the 90% threshold, since its last activity is the wake that began a boot which can outlast the idle floor; the runner's pressure signal may still take it, as the kernel's kill would restart its machine too.
 A machine the runner refused frees nothing, so the reclaim passes it over for one that holds memory.
 A refused start is retried once their machines have stopped.
+**A start waits out its runner's restarts.** A machine counts at its warm-up floor until it has warmed, which is above what an idle guest settles at, so a pool that holds only its machines' floors holds every one of them once they have.
+A restart, a roll or a drain brings an owner's machines back together, and each boot is counted that way for two minutes, so the pool reads full until they have all settled.
+For ten minutes after the owner's runner pod started — the time Kubernetes keeps on the pod, the newest of the pod's own start and its containers' — a start the runner refused for room is therefore a start waiting out that wave rather than the owner's memory being full: it is published on `Ready` as `AwaitingWarmUp` instead of `OverBudget`, so a wake waits for it the way it waits for a boot, and the owner's idle agents are left alone.
+The 90% pass holds the same window, so it hibernates nobody for the floors of a wave either; the runner's pressure signal does not hold it, since the kernel's working set is what kills a machine and a machine near the limit is not a wave.
+The window is a bound on how long the platform waits rather than a promise of room: past it a refusal is the refusal it was before, the owner's idle agents are the room the start has left, and the message says what frees it.
+It knows only that the owner's runner restarted, never which machines are warming, so it misses a guest the runner's own health prober restarted on its own, and a wave that outlasts the ten minutes; the runner-reported warm-up it would take to see either is not part of this rule.
 No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, in one usage read for the owner rather than a status read per machine, and that read is what pressure is judged from and what moves the request between reconciles.
 A read that fails leaves the last figures in place, as a failed status read of one machine did, and the pass goes on: a measured machine counts at its last use, and a machine never measured at its warm-up floor, or its size when that is smaller, as it does on any pass; a pass under the runner's pressure signal needs no figures at all, since its need is the kernel's working set.
@@ -184,11 +190,15 @@ The runner reads it at every sample rather than once at start, since a kubelet c
 It says on its console each time it sees the setting set or cleared, reports it as a gauge of its own, and raises a critical alert.
 A gauge no sample has read, or none could read, is NaN, and NaN is not a pass: the critical alert drops an unread sample, so a warning alert fires while a runner cannot say whether it groups.
 A node turns grouping off by setting `singleProcessOOMKill: true` in the kubelet's configuration; until it does, one machine's memory takes every machine of its owner down, which is the state these alerts exist to name rather than prevent.
+The local k3s clusters set it where they launch k3s: the lima dev and e2e VMs in their provision script, and the plain-process launch in a sandbox.
+A lima VM created before that change keeps grouping until it is recreated, since its provision script runs once.
+The plain-process launch writes the setting again whenever it starts k3s, so a restart is enough there.
 The kubelet writes the setting when it creates a container, so a runner pod already running keeps the cgroup it was created with until it is recreated, and restarting the node's kubelet alone changes nothing for it.
-When the killed process is the runner's own container, the owner is told which agents it took down: every agent whose machine was holding memory on that runner when the kill landed names it, whatever reason the restarted runner reports meanwhile — a refused start for room, a reclaim, or a boot the restart broke — since all of them describe that one taking down.
+When the killed process is the runner's own container, the owner is told which agents it took down: every agent whose machine was holding memory on that runner when the kill landed names it, whatever reason the restarted runner reports meanwhile — a refused start for room or a reclaim — since both describe that one taking down.
 The kill and its time are the runner pod's own record of its container: the terminated container's id and the kernel's finished time, which name the same kill before and after that container restarts, and never a reconcile.
 Whether an agent's machine was on the runner then is read from two stamps the controller writes as it watches the machine, the start of the episode it is holding memory in and its last stop: a machine started after the kill is no victim, one still booting at it is, and one a reclaim put to sleep after it is, since its start went before the kill and its end did not.
 A second is all the kernel's finished time carries, and a stamp is written only while a runner answers, so the only runner that answers inside the kill's own second is the one the kill took down: a stamp in that second reads as an event from before the kill, which makes a start there a machine the kill found and a stop there one that had already stopped.
+Those two stamps and the kill's time come from two clocks, so a controller clock seconds away from the node's moves the boundary between victim and bystander by the same: a machine started just after the kill can be named a victim, and one stopped just before it can lose the notice.
 The stop is stamped where the runner answers the halt, not on the agent's next check, so a kill that lands in between does not name a machine that had already stopped.
 A wake after a sleep begins a new episode, so a kill the machine slept through is not named on it.
 An agent asleep before the kill, or one whose start was already refused, was holding nothing when it landed, so it carries nothing.

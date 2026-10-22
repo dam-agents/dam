@@ -76,7 +76,7 @@ Exact field shapes live in the [Connections contract types](../../packages/api-s
 
 An Agent may hold several **provider Connections**, at most one per **provider alias**: the alias names the provider in every qualified model name, so a second Connection behind one alias is refused.
 A session picks its model per turn, and the provider follows from the name.
-Creation grants the one it names, else every provider Connection the owner holds that the harness runs on, the oldest one per alias ([agent-lifecycle](agent-lifecycle.md#create)).
+Creation grants the one it names, else one provider Connection the owner holds that the harness runs on, the first in the harness's provider order ([agent-lifecycle](agent-lifecycle.md#create)).
 The agent's Providers section lists every provider Connection the owner holds with a grant toggle and picks the default pair for new sessions ([harness-config](harness-config.md)).
 A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider gives the install's default harness first.
 A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-pod).
@@ -85,10 +85,17 @@ Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
-A provider that cannot say leaves the key unverified; a provider with no check (Bob, Bedrock) leaves it unchecked.
+A provider that cannot say leaves the key unverified; a provider with no check (Bob) leaves it unchecked.
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, the built-in platform provider excepted, which replaces each result, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
+A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
+The client hands the api-server every input except the secret and gets a single-use link that expires after ten minutes; the request lives in Redis and the link carries only a random id.
+The page and its submit run as the signed-in user and refuse a request another user made, so a link sent to someone else collects nothing.
+Before the user types, the page shows what the save will do — the template, the name, every host the secret is sent to with its header, the env vars agents see, and for a rotation the agents it is granted to — computed by the same builder the create runs, and it warns when a host is not one the template presets.
+The submit then runs the ordinary create or rotation, with its validation; a refused secret leaves the link usable until it expires.
+The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
+The page covers the static and minting kinds; OAuth needs no secret here.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
 A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it.
 A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action.
@@ -103,6 +110,7 @@ One per-Connection Secret holds the client secret, the current access token, and
 
 A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret.
 The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry.
+When GitHub refuses the mint or the installation read, the error names the input at fault — an App ID with no app behind it, a private key of another app, an installation the app does not have — from GitHub's status and message, so the user knows which value to fix.
 The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
 
 A **GitHub sign-in** made through a GitHub App holds a user token rather than an installation token, and narrows the same way: to one account the app is installed on, optionally further to chosen repositories and permissions there.
@@ -330,6 +338,7 @@ Models an organization hosts in AWS Bedrock, authenticated with a **Bedrock API 
 Such a key authenticates as a bearer token on both the Bedrock and Bedrock Runtime APIs, so this is an ordinary header Connection: the gateway overwrites `Authorization` with `Bearer <key>` on the region's runtime host, and the agent holds only a placeholder in `AWS_BEARER_TOKEN_BEDROCK`.
 The region is a required input at connect time and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a Connection serves one region; it also lands in `AWS_REGION`.
 The key is injected on the region's control-plane host too, `bedrock.<region>.amazonaws.com`, which the Connection names in `AWS_ENDPOINT_URL_BEDROCK`: that is where the region's inference profiles are listed, so an agent is offered only models Bedrock can invoke there.
+The key check lists those profiles too, before the key is saved: Bedrock answers a wrong, malformed or expired key with a 403 that says so, which refuses it, and any other answer leaves it unverified, since a key may invoke models without the right to list profiles.
 An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).

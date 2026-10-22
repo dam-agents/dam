@@ -4,6 +4,7 @@ import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { useAutoWakeOnSidebarOpen } from "../hooks/use-auto-wake-on-sidebar-open.js";
 import { useOrderDrag } from "../hooks/use-order-drag.js";
 import type { OrderDrop } from "../lib/sidebar-order.js";
 import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
@@ -52,6 +53,7 @@ export function SidebarAgentRow({
   filtered,
   children,
 }: Props) {
+  useAutoWakeOnSidebarOpen(agent, open);
   const mood = avatarMood(agent.state, agent);
   const drag = useOrderDrag({
     scope: "agents",

@@ -124,9 +124,16 @@ describe("starter kits: git ref resolver", () => {
     );
   });
 
-  // TEST_SCENARIO: a repository that answers 404 is one this reader cannot see — deleted, renamed, or made private — and none of those is the author withdrawing a kit. Reading it as a settled absence prunes every kit of that catalog, so renaming a repository would empty the kit list. It holds instead, like any other unanswered read.
+  // TEST_SCENARIO: a repository that answers 404 is one this reader cannot see — deleted, renamed, or made private — and none of those is the author withdrawing a kit. Reading it as a settled absence prunes every kit of that catalog, so renaming a repository would empty the kit list. It holds instead, like any other unanswered read, and is marked unseen so a Linked Kit can tell the user to check the link. GitHub answers an anonymous read of a missing repository with 401.
   it("holds a repository it cannot see, rather than withdrawing its kits", async () => {
-    for (const status of [404, 410, 502]) {
+    for (const status of [404, 401, 403]) {
+      expect(
+        await resolverReturning(ADVERTISEMENT, status).resolve(
+          "https://github.com/acme/kit",
+        ),
+      ).toEqual({ status: "unreachable", unseen: true });
+    }
+    for (const status of [410, 502]) {
       expect(
         await resolverReturning(ADVERTISEMENT, status).resolve(
           "https://github.com/acme/kit",

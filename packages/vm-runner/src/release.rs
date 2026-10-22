@@ -1,14 +1,21 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::api::{RunnerRelease, HELD_REBOOT, HELD_UNSTAGED};
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner release is the runner and the two guest binaries it copies into every share, staged together on the node so the runner and platform-init stay one version. runtime-id names the VM runtime the release was built against: the smolvm release with its patched libkrun, crane and the base image's libc. The runtime travels with the release, staged once per id beside the releases, because the runner is itself the VMM of every machine it starts and loads that runtime's libraries and guest agent.
+// UNIT_BOUNDARY_DESCRIPTION: a runner release is the runner and the two guest binaries it copies into every share, staged together on the node so the runner and platform-init stay one version. runtime-id names the VM runtime the release was built against: the smolvm release with its patched libkrun, crane and the base image's libc. The runtime travels with the release, staged once per id beside the releases, because the runner is itself the VMM of every machine it starts and loads that runtime's libraries and guest agent. Two more files travel when the release has them: the reboot key it declares, and the loader the loader above it becomes (see REBOOT_ID and LOADER).
 pub const FILES: [&str; 4] = ["vm-runner", "platform-init", "platform-runc", RUNTIME_ID];
 pub const RUNNER: &str = "vm-runner";
 pub const RUNTIME_ID: &str = "runtime-id";
+
+// UNIT_BOUNDARY_DESCRIPTION: the release's own loader, which is the pod's entrypoint and the one process a hand-off used to leave alone: the loader a pod runs is the one its image was built with, so a release that changed the loader alone would otherwise need a pod roll, which reboots every machine of its owner. A release carries it, and the loader that runs the release's runner becomes the release's loader first, which keeps the pid, the subreaper and every machine under it. Only a loader already in the pod's image can become one, since only it reads this file: the release that first ships such a loader declares a reboot key of its own, and that roll delivers it.
+pub const LOADER: &str = "vm-runner-loader";
+
+// UNIT_BOUNDARY_DESCRIPTION: what a release carries besides the files every release has, and which a release staged before either was a file of a release need not have.
+const TRAVELLING: [&str; 2] = [REBOOT_ID, LOADER];
 
 // UNIT_BOUNDARY_DESCRIPTION: the directory a release is staged under, named from the image reference the controller and the stager both know it by. A reference holds characters a file name cannot, so the name is a hash of it.
 pub fn key(release: &str) -> String {
@@ -34,7 +41,7 @@ pub fn reboot_id(release_dir: &Path) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the file a release declares its reboot key in: whatever an older key cannot take in place, so a runner refuses to hand the release's machines over and the pod rolls instead, which reboots them. That is what a machine booted, and it is the pod's loader, which only the pod's own image carries: a hand-off replaces the runner process and never the loader above it, so a release that needs a new loader — one that reaps the machines a hand-off leaves, say — declares a key of its own, and the pods that carry a key roll onto it: a pod built before keys compares nothing and takes the release in place, its new loader arriving with the pod-shape roll its own image change waits for. A release declares the same key as the one before it when it changes neither, and a release built before keys declares none, so nothing compares it and it is handed off as any release was. The image build writes it from this package's `reboot-id`, which the change that needs the reboot bumps, as an agent image declares its root's key.
+// UNIT_BOUNDARY_DESCRIPTION: the file a release declares its reboot key in: whatever an older key cannot take in place, so a runner refuses to hand the release's machines over and the pod rolls instead, which reboots them. That is what a machine booted — the runtime, its guest kernel and platform-init, the loader that runs inside it — and not the pod's own processes, which travel in the release: the runner and the loader above it are the release's, and a hand-off takes both. A release declares the same key as the one before it when it changes none of those, and a release built before keys declares none, so nothing compares it and it is handed off as any release was. The image build writes it from this package's `reboot-id`, which the change that needs the reboot bumps, as an agent image declares its root's key.
 pub const REBOOT_ID: &str = "reboot-id";
 
 // UNIT_BOUNDARY_DESCRIPTION: which binaries and runtime the loader runs for the release the controller asks for. The pod's own image is always there; a staged one only once the stager has put it, and the runtime it names, on this node. A release built against another runtime than the pod's is taken too: machines already running stay on the runtime they booted, and only machines started after the hand-off boot the new one. `runtime` is None for the pod's own runtime.
@@ -138,6 +145,44 @@ pub fn target_file(loader_dir: &Path) -> PathBuf {
     loader_dir.join("target")
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what a loader hands the one that replaces it, across an exec that keeps the process and loses everything it held: the loader binary this process is, by its bytes, so a release's loader is compared with the loader this pod really became and not with whatever sits where that one was staged; the release this process accepted for it to start, which it must start even where the node no longer stages it; and the release this process ran before, so a release that fails right after it takes over gives the machines back to that one rather than to the pod's image. A pod that never became another loader has none, and its loader is the one its image carries.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Handover {
+    pub loader_digest: Vec<u8>,
+    pub start: Option<Snapshot>,
+    pub replaced: Option<Snapshot>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a release the pod runs from its own copy of it: the name it was staged under, the directory the loader copied it into, and the runtime that copy boots from. The pod's copied release outlives the node's staging of it, so this is what a loader passes on rather than a reference to look up again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub name: String,
+    pub dir: PathBuf,
+    pub runtime: PathBuf,
+}
+
+pub fn handover_file(loader_dir: &Path) -> PathBuf {
+    loader_dir.join("handover.json")
+}
+
+pub fn write_handover(path: &Path, handover: &Handover) -> anyhow::Result<()> {
+    replace(path, &serde_json::to_vec(handover)?)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: reads what the loader this process replaced left and removes it, so a runner that restarts later is not handed a handover that named the one exec before it: a handover describes that exec alone, and the release it names has been started by then. A file that cannot be read, or read back as a handover, or removed, is an error and not a default, since a default leaves the pod running its image after a loader became another.
+pub fn take_handover(path: &Path) -> anyhow::Result<Handover> {
+    let raw = match std::fs::read(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Handover::default()),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let handover =
+        serde_json::from_slice(&raw).with_context(|| format!("reading {}", path.display()))?;
+    std::fs::remove_file(path).with_context(|| format!("removing {}", path.display()))?;
+    Ok(handover)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: replaces a file of the loader directory whole, so the side that reads it never reads half of one.
 pub fn replace(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let scratch = path.with_extension("partial");
@@ -201,7 +246,7 @@ fn is_runtime(path: &Path) -> bool {
         .is_some_and(|name| name.starts_with("runtime-"))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: copies a release's own files under its key in `into`, replacing a copy whose bytes differ, and returns where it is. The loader uses it to copy a staged release into the pod.
+// UNIT_BOUNDARY_DESCRIPTION: copies a release's own files under its key in `into`, replacing a copy whose bytes differ, and returns where it is. The loader uses it to copy a staged release into the pod. Every file the release must have is copied or the copy fails; the two it may lack are copied where they are, so a release staged before loaders travelled in releases is copied without one and the pod keeps its own.
 pub fn stage_files(builtin: &Path, into: &Path, release: &str) -> anyhow::Result<PathBuf> {
     let name = key(release);
     let dest = into.join(&name);
@@ -214,7 +259,7 @@ pub fn stage_files(builtin: &Path, into: &Path, release: &str) -> anyhow::Result
         std::fs::create_dir_all(&scratch)
             .with_context(|| format!("creating {}", scratch.display()))?;
         for file in FILES.iter().chain(
-            [REBOOT_ID]
+            TRAVELLING
                 .iter()
                 .filter(|file| builtin.join(file).is_file()),
         ) {
@@ -291,25 +336,37 @@ pub fn prune(dir: &Path, keep: &[&Path]) -> anyhow::Result<()> {
 
 // UNIT_BOUNDARY_DESCRIPTION: whether two release directories hold the same bytes, hashed as streams: the runner binary is tens of MiB and the stager runs in a few.
 fn same_release(a: &Path, b: &Path) -> bool {
-    let digest = |path: PathBuf| -> Option<Vec<u8>> {
-        use std::io::Read;
-        let mut file = std::fs::File::open(path).ok()?;
-        let mut hasher = Sha256::new();
-        let mut chunk = vec![0; 1 << 16];
-        loop {
-            match file.read(&mut chunk).ok()? {
-                0 => return Some(hasher.finalize().to_vec()),
-                n => hasher.update(&chunk[..n]),
-            }
-        }
-    };
     FILES
         .iter()
-        .all(|file| match (digest(a.join(file)), digest(b.join(file))) {
-            (Some(a), Some(b)) => a == b,
-            _ => false,
-        })
-        && reboot_id(a) == reboot_id(b)
+        .chain(&TRAVELLING)
+        .all(|file| same_bytes(&a.join(file), &b.join(file)))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether two files hold the same bytes. A file neither of them has is the same on both sides, which is how a release and a pod that carry no loader — one staged before loaders travelled in releases, one from an image before them — compare. A file one side has and the other does not, and a file either cannot read, are not the same: a required file that cannot be read is a release that is not whole, not one that matches.
+pub fn same_bytes(a: &Path, b: &Path) -> bool {
+    match (digest(a), digest(b)) {
+        (Ok(Some(a)), Ok(Some(b))) => a == b,
+        (Ok(None), Ok(None)) => true,
+        _ => false,
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a file's bytes, or that it is absent, so two loaders can be told apart by what they are rather than by where they were staged: a release staged again under the same name replaces the file a path would name.
+pub fn digest(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    use std::io::Read;
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut hasher = Sha256::new();
+    let mut chunk = vec![0; 1 << 16];
+    loop {
+        match file.read(&mut chunk)? {
+            0 => return Ok(Some(hasher.finalize().to_vec())),
+            n => hasher.update(&chunk[..n]),
+        }
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: sets the SELinux context of one file, or of a link itself rather than what it points at, as `chcon -h` would. Only Linux has one, and the binaries that call it run only from the runner image.
@@ -375,6 +432,32 @@ mod tests {
         std::fs::write(dir.join(RUNTIME_ID), runtime).unwrap();
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: what one loader leaves the loader that replaces it is read once and then gone: a handover names the one exec that followed it, so a runner that restarts later is not handed an old one.
+    #[test]
+    fn a_handover_is_read_once_and_then_gone() {
+        let dir = TempDir::new("handover");
+        let path = handover_file(dir.path());
+        assert_eq!(take_handover(&path).unwrap(), Handover::default());
+        let handover = Handover {
+            loader_digest: b"the loader".to_vec(),
+            start: Some(Snapshot {
+                name: "runner:3".into(),
+                dir: PathBuf::from("/releases/c"),
+                runtime: PathBuf::from("/runtimes/b"),
+            }),
+            replaced: Some(Snapshot {
+                dir: PathBuf::from("/releases/b"),
+                name: "runner:2".into(),
+                runtime: PathBuf::from("/runtimes/a"),
+            }),
+        };
+        write_handover(&path, &handover).unwrap();
+        assert_eq!(take_handover(&path).unwrap(), handover);
+        assert_eq!(take_handover(&path).unwrap(), Handover::default());
+        std::fs::write(&path, b"not a handover").unwrap();
+        assert!(take_handover(&path).is_err());
+    }
+
     fn boots(dir: &Path, key: &str) {
         std::fs::write(dir.join(REBOOT_ID), key).unwrap();
     }
@@ -409,11 +492,39 @@ mod tests {
         stage(&image, &tree, &r.staged, name, 10).unwrap();
     }
 
-    // TEST_SCENARIO: the loader is the pod's own supervisor, and a hand-off replaces the runner process only: a release that needs a new loader reaches a pod that carries a key only by declaring another one, which rolls it — a pod built before keys compares nothing and takes the release in place, as the upgrades page says. The key this package ships is pinned, so dropping the one that carried it is a decision and not an accident.
+    // TEST_SCENARIO: the loader travels in the release, so a release that changes only the loader needs no key of its own — but only a loader that reads the release's own can become it, and a pod's loader is the one its image was built with: a release declaring another key than the pod's is refused, and the pod rolls onto the image carrying both. So the key is bumped by the release that first ships a loader a hand-off can become, and the key this package ships is pinned, so dropping it is a decision and not an accident.
     #[test]
-    fn the_key_this_release_ships_rolls_a_pod_from_before_its_loader() {
+    fn the_key_this_release_ships_rolls_a_pod_onto_the_loader_that_becomes_another() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        assert_eq!(reboot_id(dir).as_deref(), Some("runner-2"));
+        assert_eq!(reboot_id(dir).as_deref(), Some("runner-3"));
+    }
+
+    // TEST_SCENARIO: a release carries its own loader, and the loader copies what the release carries into the pod: the release's loader travels with its runner, its guest binaries and its key. A release built before loaders travelled in releases carries none, and the pod keeps the loader it has.
+    #[test]
+    fn a_release_carries_its_loader_where_it_has_one() {
+        let dir = TempDir::new("release-loader");
+        let image = dir.path().join("image");
+        release(&image, "one", "runtime-a");
+        boots(&image, "runner-3");
+        let into = dir.path().join("into");
+        std::fs::create_dir_all(&into).unwrap();
+        let without = stage_files(&image, &into, "runner:1").unwrap();
+        assert!(
+            !without.join(LOADER).exists(),
+            "a release carries no loader it has not got"
+        );
+
+        std::fs::write(image.join(LOADER), "a loader").unwrap();
+        let with = stage_files(&image, &into, "runner:1").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(with.join(LOADER)).unwrap(),
+            "a loader",
+            "the loader a release carries is copied with it"
+        );
+        assert_eq!(
+            std::fs::read_to_string(with.join(REBOOT_ID)).unwrap(),
+            "runner-3"
+        );
     }
 
     // TEST_SCENARIO: the loader runs a staged release once it, and the runtime it names, are on this node. A release built against the pod's own runtime runs against that runtime; one built against another runs against its own staged runtime.

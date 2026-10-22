@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { partKey } from "../../a2ui/lib/collect-blocks.js";
+import { withoutAgentMarkup } from "../../acp/agent-markup.js";
 import { describeSendError } from "../../acp/errors.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
@@ -144,7 +145,7 @@ export const ChatMessage = memo(function ChatMessage({
   const items = useMemo(
     () =>
       message.role === "assistant"
-        ? activityItems(message.parts, isFanOut)
+        ? activityItems(withoutAgentMarkup(message.parts), isFanOut)
         : activityItems(message.parts, () => true),
     [message.role, message.parts, isFanOut],
   );

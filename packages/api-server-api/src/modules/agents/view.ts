@@ -52,6 +52,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     podTerminationReason: agent.podTerminationReason,
     podTerminationCode: agent.podTerminationCode,
     notReadyMessage: agent.notReadyMessage,
+    ...(agent.startFailure ? { startFailure: agent.startFailure } : {}),
     podRestarts: agent.podRestarts,
     podRestartReason: agent.podRestartReason,
     gatewayFailure: agent.gatewayFailure,

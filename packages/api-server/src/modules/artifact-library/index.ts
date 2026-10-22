@@ -10,7 +10,11 @@ export { createShareViewerApp } from "./viewer/viewer-app.js";
 export { createContentApp } from "./viewer/content-app.js";
 export { createByLinkHostGate } from "./viewer/by-link-host-gate.js";
 export { createArtifactLibraryRoutes } from "./library-routes.js";
-export { composeShareAuth, composeShareRenderTokens } from "./compose.js";
+export {
+  composeShareAuth,
+  composeShareBridge,
+  composeShareRenderTokens,
+} from "./compose.js";
 export { createShareAuthRoutes } from "./viewer/share-auth-routes.js";
 export {
   createKeycloakShareIdentity,

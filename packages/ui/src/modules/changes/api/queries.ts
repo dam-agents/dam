@@ -5,15 +5,18 @@ import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { changesClientFor } from "./client.js";
 import { changesKeys } from "./keys.js";
 
-export function useChangeSets(agentId: string, sessionId: string | null) {
+export function useChangeSets(
+  agentId: string | null,
+  sessionId: string | null,
+) {
   const operable = useIsAgentOperable(agentId);
   return useQuery({
-    queryKey: changesKeys.list(agentId, sessionId),
+    queryKey: changesKeys.list(agentId ?? "_none", sessionId),
     queryFn: () =>
-      changesClientFor(agentId).changes.list.query(
+      changesClientFor(agentId!).changes.list.query(
         sessionId ? { sessionId } : {},
       ),
-    enabled: operable,
+    enabled: !!agentId && operable,
     placeholderData: keepPreviousData,
     staleTime: 2_000,
     retry: 1,

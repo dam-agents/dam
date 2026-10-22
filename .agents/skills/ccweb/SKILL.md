@@ -35,7 +35,7 @@ export IS_SANDBOX=1                        # every cluster:* / e2e:* task reads 
 K3S_LAUNCHER="$PWD/.agents/skills/ccweb/scripts/k3s-launcher" SKIP_IMAGE_BUILD=1 mise run e2e:install
 ```
 
-`e2e:install` is the tested path: mock agents only (no LLM credentials needed), UI at `http://localhost:5555`, user `dev` / `dev`.
+`e2e:install` is the tested path: mock agents only (no LLM credentials needed), UI at `http://localhost:6555`, user `dev` / `dev`.
 A dev install (`cluster:install`, port 4444) renders real harness templates, so pass their components to `pull-images` (e.g. `pull-images claude-code`) and bring provider credentials.
 
 Run the install with a long timeout or in the background (first run about 10 minutes).
@@ -61,7 +61,7 @@ Images are stored twice, as the `dist/oci/` tars the install imports and in k3s 
 ```sh
 npm i -g agent-browser
 AB=.agents/skills/ccweb/scripts/ab     # preinstalled Chromium, *.localhost off the proxy, 1280x1400 viewport
-$AB open http://localhost:5555/ && $AB snapshot -i
+$AB open http://localhost:6555/ && $AB snapshot -i
 ```
 
 - **First login:** Keycloak form (`dev` / `dev`), then "I accept the Terms of Use".
@@ -84,11 +84,11 @@ The mock doesn't render incoming prompts, so a platform-opened session (initiali
 Read what the agent received through the e2e API:
 
 ```sh
-curl -sG http://localhost:5555/api/trpc/e2e.getReceivedPrompts --data-urlencode 'input={"agentId":"agent-1a2b"}' -H "Authorization: Bearer $KEY"
+curl -sG http://localhost:6555/api/trpc/e2e.getReceivedPrompts --data-urlencode 'input={"agentId":"agent-1a2b"}' -H "Authorization: Bearer $KEY"
 ```
 
 `$KEY` is an API key from Settings → API keys; the `dam` CLI reads it from `DAM_TOKEN`.
-Build the CLI with `mise run //packages/cli:build` and pass `--server http://localhost:5555`.
+Build the CLI with `mise run //packages/cli:build` and pass `--server http://localhost:6555`.
 
 ## Running the Playwright suite
 
@@ -97,7 +97,7 @@ Build the CLI with `mise run //packages/cli:build` and pass `--server http://loc
   For 1223 that is `chromium_headless_shell-1223/chrome-headless-shell-linux64/chrome-headless-shell` linking to the 1194 `chrome-linux/headless_shell`, plus empty `INSTALLATION_COMPLETE` and `DEPENDENCIES_VALIDATED` markers.
 - **`*.localhost`:** Chromium resolves it internally, but Node's `fetch` (token minting in the specs) goes through glibc, which does not.
   Add `127.0.0.1 keycloak.localhost` to `/etc/hosts`.
-- **Environment:** set `PLATFORM_BASE_URL=http://localhost:5555` and `PLATFORM_KEYCLOAK_URL=http://keycloak.localhost:5555` for an `e2e:install` cluster, then run `mise exec -- pnpm exec playwright test --project=<name>` from `packages/e2e/playwright`.
+- **Environment:** set `PLATFORM_BASE_URL=http://localhost:6555` and `PLATFORM_KEYCLOAK_URL=http://keycloak.localhost:6555` for an `e2e:install` cluster, then run `mise exec -- pnpm exec playwright test --project=<name>` from `packages/e2e/playwright`.
   The `run` task depends on `install-browsers`, which downloads.
 - **CPU:** 4 cores; one agent already brings requests to about 87%, so a spec creating a second agent waits on `FailedScheduling: Insufficient cpu`.
   Delete idle agents first.
@@ -105,7 +105,7 @@ Build the CLI with `mise run //packages/cli:build` and pass `--server http://loc
 ## Restart and recovery
 
 - **Restart k3s:** `mise run cluster:stop`; under the launcher every pod dies with its PID namespace.
-  The task also clears the mounts and pod iptables rules left in the host netns, as `k3s-killall.sh` would on a supervised host; a stale hostport rule silently sends `:5555` to a dead pod IP.
+  The task also clears the mounts and pod iptables rules left in the host netns, as `k3s-killall.sh` would on a supervised host; a stale hostport rule silently sends `:6555` to a dead pod IP.
   Then re-run the install with `K3S_LAUNCHER` set: with no supervisor, it starts k3s whenever no `k3s-server` process is running.
   Restarting k3s by hand loses the install's `NO_PROXY` export, so `kubectl logs` and `exec` break through the proxy.
 - **Full reset:** `mise run cluster:stop`, then `rm -rf /var/lib/rancher/k3s /etc/rancher/k3s`, then the bring-up from `pull-images` on.

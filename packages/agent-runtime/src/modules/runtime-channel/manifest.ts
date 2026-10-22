@@ -149,6 +149,9 @@ export const modelRouterBinding = z.object({
   defaultModelEnv: z.array(z.string().min(1)).optional(),
   sessionFromRunningTurn: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
+  nonClaudeModelEnv: z
+    .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
+    .optional(),
 });
 export type ModelRouterBinding = z.infer<typeof modelRouterBinding>;
 
@@ -177,6 +180,11 @@ export const runtimeManifestSchema = z.object({
   terminalSessionPins: z.string().min(1).optional(),
 
   sessionMcpEntry: z.boolean().default(true),
+
+  sessionEnvVar: z
+    .string()
+    .regex(/^[A-Z_][A-Z0-9_]*$/)
+    .optional(),
 
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 

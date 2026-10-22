@@ -24,6 +24,9 @@ import {
   connectionSetPreferredConnectionInputSchema,
   connectionStartOAuthInputSchema,
   connectionUpdateInputSchema,
+  connectionRequestSecretInputSchema,
+  secretRequestIdInputSchema,
+  secretRequestSubmitInputSchema,
 } from "./schemas.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: an Environment holds no connection, whoever asks: an API key, which an agent or a script may hold, the CLI and the app are all refused, so the Owning Agent can never pass its connections to the software it runs. Granting the owner's connections on an Environment is not built yet.
@@ -118,6 +121,26 @@ export const connectionsRouter = t.router({
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
+
+  requestSecret: manageCredentialsProcedure
+    .input(connectionRequestSecretInputSchema)
+    .mutation(({ ctx, input }) => ctx.secretRequests.request(input)),
+
+  secretRequestStatus: manageCredentialsProcedure
+    .input(secretRequestIdInputSchema)
+    .query(({ ctx, input }) => ctx.secretRequests.status(input.requestId)),
+
+  getSecretRequest: manageCredentialsProcedure
+    .input(secretRequestIdInputSchema)
+    .query(({ ctx, input }) => ctx.secretRequests.get(input.requestId)),
+
+  submitSecretRequest: manageCredentialsProcedure
+    .input(secretRequestSubmitInputSchema)
+    .mutation(({ ctx, input }) => ctx.secretRequests.submit(input)),
+
+  cancelSecretRequest: manageCredentialsProcedure
+    .input(secretRequestIdInputSchema)
+    .mutation(({ ctx, input }) => ctx.secretRequests.cancel(input.requestId)),
 
   getAgentConnections: readAgentProcedure
     .input(connectionGetAgentConnectionsInputSchema)

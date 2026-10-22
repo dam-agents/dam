@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -57,6 +57,7 @@ The runtime sorts what runs in the pod into four kinds, one row per process tree
 A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-pod), and the runtime reads every one of them the same way.
 
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct children — the chat harnesses, the pod service, terminals, SSH servers.
+Nor is openrc's user-services manager, which starts and stops the agent's [Startup Items](#startup-items).
 
 A row carries the **output file** behind the process's stdout or stderr when that is a regular file, and the user can read its tail.
 The runtime reads only a file a scan recorded, never a path a caller names, with one exception: a Startup Item's log, which it builds from an item id that passed the same id rule as the list, and only for an item the list or a running row names.
@@ -124,10 +125,16 @@ OpenRC itself does the work.
 platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel beside `platform-env`, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
 Its `/etc/conf.d/user.root` keeps their state in the image's `XDG_RUNTIME_DIR`, which the agent's shell and the runtime share, starts them after docker and k3s, and waits up to a minute for them all to stop, each within its own stop timeout.
 The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
-A service gets what the image's own services get of the environment, `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF`, and no credential placeholder.
+A service gets the environment the pod service gets: openrc keeps `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment it starts in, and adds every variable of `~/.config/rc/profile.env` it left unset.
+The runtime writes that file when it starts and whenever the platform changes its env, connection placeholders included, so `gh` and git in a service act as the agent's account; a value openrc's file parser would change, one with a quote, a `#` or a leading `$`, is left out.
+The runtime's own `PORT` is left out too, so a service that serves on `PORT` does not take the runtime's.
+A process keeps the environment it started with, so when the file changes the runtime restarts every running service, as it respawns the pod service: a connection added or removed reaches the services at once, and interrupts what they were doing.
+At boot, services start before the runtime, from the file it wrote before the machine stopped; the platform's first env push restarts them only when the env moved meanwhile.
 User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
 
 The supervisor of a user service carries its name (`RC_USER_SERVICES`, `RC_SVCNAME`), which the process scan reads beside the keep mark, so its tree under the reaper is one **Startup Item** row rather than a Detached Process; a process below another root that only inherited those variables is not.
+The manager that runs those supervisors — `user.root`, the `supervise-daemon` of openrc's own user service, and the `openrc-user` below it — is no row at all: the scan drops both from the table and re-parents their children to the reaper, so the docker or k3s service it supervises lists as its own Startup Item row, as it would without the manager, and nothing of the manager counts in the header or keeps the agent awake.
+A finished history record of it, written before the scan dropped it, is left out of the list too.
 The panel lists every service in a section of its own, running, exited or off, with its log as output and history, and keeps a running service's row out of the background groups, the header count and the finished history.
 A service that runs with no script any more is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
 **A service never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for one.

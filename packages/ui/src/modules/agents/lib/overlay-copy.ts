@@ -41,6 +41,10 @@ export function overlayDescription(
   if (state === "over_budget" && agent.vm) return VM_MEMORY_FULL;
   if (state === "migrating" && agent.runtimeMigration?.phase === "failed")
     return MIGRATION_FAILED;
+  if (state === "hibernated" && agent.startFailure) {
+    const why = agent.startFailure.message;
+    return `The agent is asleep, but its last start never finished: ${why}${why.endsWith(".") ? "" : "."} Start it to try again.`;
+  }
   const reclaimed = reclaimSentence(agent);
   if (state === "hibernated" && reclaimed) return reclaimed;
   if (state === "preparing_workspace") {

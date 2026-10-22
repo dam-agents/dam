@@ -37,12 +37,14 @@ import {
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
+import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on-sidebar-open.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
+import { SidebarEnvironments } from "../../../environments/components/sidebar-environments.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
@@ -82,7 +84,7 @@ const REVEAL =
 /**
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one tree: the pinned
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
- * each opening to its own Sessions. The Agent that is open in the page opens
+ * each opening to its own Environments, if it has any, and Sessions. The Agent that is open in the page opens
  * in the tree too until its row closes it, and stays open on a page with no
  * Agent, such as Home; any other Agent opens and closes from its row. The
  * open state lives in the store, so a page change that remounts the tree
@@ -406,6 +408,7 @@ function AgentNode({
   shownIds: readonly string[];
   onNavigate?: () => void;
 }) {
+  useAutoWakeOnSidebarOpen(agent, expanded);
   const newSessionPage = useStore((s) => current && s.view === "chat");
   const [noSessions, setNoSessions] = useState(false);
   const rowShown = expanded && noSessions;
@@ -556,6 +559,12 @@ function AgentNode({
       </div>
       <Collapse open={expanded}>
         <div className="pt-px pb-3" id={listId}>
+          <SidebarEnvironments
+            agentId={agent.id}
+            vm={agent.vm}
+            indent="pl-[58px]"
+            onNavigate={onNavigate}
+          />
           <AgentSessionList
             agentId={agent.id}
             onNavigate={onNavigate}

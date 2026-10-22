@@ -77,7 +77,8 @@ Examples below are Python; the JS names are the camelCase equivalents (`listImag
 - **Look first** — run `d.list_images()` and `d.list_connections()` and show the human what is available, as with the tools.
 - **What it runs on** — `harness=` one of `claude-code`, `codex`, `pi`, `bob`, `copilot`, on that harness's default image and size.
   `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
-- **Model** — one of your model providers that the harness runs on, and a model you pick (see "Choose the model per spawn"); a spawn with no model is refused.
+- **Model** — one of your model providers that the harness runs on, and a model you pick (see "Choose the model per spawn").
+  A spawn with no model runs on this agent's default model when it is on that default's harness; on any other harness, or with no default, it is refused.
 - **Connections** — only your own grants, for what the task needs beyond the model; its network access follows your egress rules, so what you can reach, it can reach.
 
 ## Quickstart: a sub-agent that returns a single integer

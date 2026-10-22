@@ -311,6 +311,17 @@ const ReasonOverBudget = "OverBudget"
 // while the reason stays this one.
 const ReasonAwaitingAllocation = "AwaitingAllocation"
 
+// ReasonAwaitingWarmUp is stamped on Ready when a vm agent's start was refused
+// for room while its owner's runner was inside the window after a restart, in
+// which the machines the restart is bringing back are counted at their warm-up
+// floors until they have warmed. They settle below those floors, so the pool has
+// room once they have, and nothing the owner does frees it: the start is not
+// ReasonOverBudget, a wake waits for it the way it waits for any start in
+// progress, and no idle agent is put to sleep for the wave it is part of. The
+// window is a bound on that wait rather than proof of room, so a refusal past it
+// is the pool's again, and the owner's idle agents are then the room it has left.
+const ReasonAwaitingWarmUp = "AwaitingWarmUp"
+
 // ReasonAllocationUnreadable is stamped on Ready when a vm agent's start has
 // waited past the point where the node is merely late to report how much memory
 // it granted the owner's VM runner. The start keeps holding and is retried at
@@ -345,13 +356,14 @@ const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 // runner is not running.
 const ReasonMachineRunnerNodeLost = "MachineRunnerNodeLost"
 
-// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent that
-// was running when the kernel OOM-killed the owner's VM runner, for the ten
-// minutes after the kill, from the runner pod's last termination, whatever
-// reason the agent reads until then. Every machine of the owner is a process
-// of that pod, so they all restart at once; an agent woken after the kill
-// carries nothing, since the kill did not take it down. Not a Machine*
-// reason: the agent is starting again, not failed.
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent whose
+// machine was holding memory on the owner's VM runner when the kernel
+// OOM-killed it, for the ten minutes after the kill, from the runner pod's
+// last termination. Every machine of the owner is a process of that pod, so
+// they all restart at once; an agent woken after the kill carries nothing,
+// since the kill did not take it down, and a reason the runner gives for one
+// machine alone outranks the kill. Not a Machine* reason: the agent is
+// starting again, not failed.
 const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container

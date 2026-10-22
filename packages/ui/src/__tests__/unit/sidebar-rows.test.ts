@@ -11,6 +11,9 @@ vi.stubGlobal("window", new EventTarget());
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentsList: () => [],
 }));
+vi.mock("../../modules/agents/hooks/use-auto-wake-on-sidebar-open.js", () => ({
+  useAutoWakeOnSidebarOpen: () => {},
+}));
 vi.mock("../../modules/agents/hooks/use-order-drag.js", () => ({
   useOrderDrag: () => ({ dragProps: {}, indicator: null }),
 }));

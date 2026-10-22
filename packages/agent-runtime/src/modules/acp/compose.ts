@@ -13,6 +13,7 @@ import {
   type SubAgentHarnessConfig,
 } from "agent-runtime-api";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
+import { nonClaudeModelEnv } from "./domain/non-claude-env.js";
 import {
   createExecHistoryProvider,
   createWorkerHistoryProvider,
@@ -100,6 +101,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  gitTraceEnv?: Record<string, string>;
   onTurnOutcome?: (
     sessionId: string,
     end: { stopReason: string | null; error: string | null },
@@ -136,6 +138,7 @@ export interface HarnessRuntime extends SessionHarness {
   sessionModel: boolean;
   initialize?: Record<string, unknown>;
   harnessState?: HarnessStateDialect;
+  nonClaudeModelEnv?: Record<string, string>;
 }
 
 const isModelSetting = (
@@ -352,6 +355,15 @@ export function composeAcp(opts: ComposeAcpOptions): {
     ...(opts.nativeConnectionOf && {
       nativeConnectionOf: opts.nativeConnectionOf,
     }),
+    modelEnvOf: (harness, model, settings) => {
+      const runtime = opts.harnesses[harness];
+      return nonClaudeModelEnv(runtime?.nonClaudeModelEnv, [
+        model,
+        ...Object.entries(settings ?? {}).flatMap(([id, value]) =>
+          isModelSetting(runtime, id) ? [value] : [],
+        ),
+      ]);
+    },
     modelRequired: opts.modelRequired,
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
@@ -436,6 +448,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
                 : {
                     ...opts.unroutedProviderEnv?.(pair.harness),
                     ...opts.routerEnv?.(pair.harness),
+                    ...pair.env,
                   }),
               ...processEnvOf(
                 harness,
@@ -445,6 +458,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
                 },
                 scoped.pair().native !== undefined,
               ),
+              ...opts.gitTraceEnv,
             },
           });
         },

@@ -202,6 +202,23 @@ dashed=$(collide_dir a-b c)
 sliced=$(collide_dir a b-c)
 [ "$dashed" = "/var/lib/platform-images/a-b/c" ] && [ "$sliced" = "/var/lib/platform-images/a/b-c" ] ||
   { echo "the derived cache directory is not one segment per namespace and release name: $dashed, $sliced" >&2; exit 1; }
+# The chart's own SCC admits agent pods alone, for the iptablesInit init
+# container: uid 0 and NET_ADMIN with NET_RAW. Every VM workload mounts a
+# hostPath it refuses, so none runs under it — those take
+# `virtualization.runner.scc` — and it does not carry the runner's DAC_OVERRIDE.
+agent_scc=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  --set virtualization.runner.scc=hostmount-anyuid | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "SecurityContextConstraints"))
+    | map(select(.metadata.name | endswith("-anyuid-cap-net")))) as $scc
+  | (map(select(.kind == "RoleBinding"))
+    | map(select(.roleRef.name | endswith("-anyuid-cap-net-use")))) as $bindings
+  | ($scc | length) == 1
+  and $scc[0].allowedCapabilities == ["NET_ADMIN", "NET_RAW"]
+  and ([$bindings[].subjects[] | select(.kind == "ServiceAccount")] | length) == 0
+  and ([$bindings[].subjects[].kind] | all(. == "Group"))' <<<"$agent_scc" >/dev/null ||
+  { echo "the chart's own SCC allows more than the agent's iptables init asks for, or binds a ServiceAccount to it: $agent_scc" >&2; exit 1; }
 # Moving that directory strands the runner of a busy owner for up to
 # runner.rollout.idleWait: it goes on mounting and dialing the directory the
 # previous release gave it. With the window open, a second cache service

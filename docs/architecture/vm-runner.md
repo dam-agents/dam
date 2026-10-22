@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -191,7 +191,7 @@ A changed token also voids every seed capability minted under the old one, since
 An agent whose runner is not ready is looked at again with a backoff up to a minute, and the controller watches the runner Deployments, so a runner's pod becoming ready requeues its owner's vm agents at once.
 A reconcile reads the runner's Deployment and pods, the agent's StatefulSets, and which nodes are ready, from those watches and its own writes, not from the API server — node readiness included, since an agent whose runner is not ready asks for it on every retry, and on a lost node those retries add up across the owner's agents; a write or a resize sent from a copy that is behind fails on its resourceVersion and is decided again from a live read.
 A pod is force-rolled only after a live read, and the gateway that decides whether a machine the agent no longer runs stays up is read live.
-What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner pod on a node the cluster has lost, under a reason of its own, read as a failed start because no wait outgrows it; a runner the kernel OOM-killed, on every agent that should be running for the ten minutes after the kill, whatever reason its machine reads meanwhile, as still starting with that reason ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
+What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner pod on a node the cluster has lost, under a reason of its own, read as a failed start because no wait outgrows it; a runner the kernel OOM-killed, on every agent whose machine was holding memory on it at the kill, for the ten minutes after the kill, as still starting with that reason ([vm-memory](vm-memory.md)), unless that machine gives a reason of its own; a runner that cannot be reached, described without its in-cluster address.
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
 The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).

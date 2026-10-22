@@ -29,11 +29,13 @@ const HELLO_WAIT_MS = 180_000;
 const LISTING_WAIT_MS = 120_000;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Upgrade path: remove when no Agent on prod has
- * an empty saved default. An Agent from before per-session defaults has
- * none, and once it runs the Model Router its default is converted once from
+ * UNIT_BOUNDARY_DESCRIPTION: An Agent from before per-session defaults has
+ * no saved default, and neither has a new Agent until its runtime first says
+ * hello. Once it runs the Model Router its default is converted once from
  * what is certain about it (its one provider and its harness's model
- * setting) against that provider's listing on the Agent's own runtime. The
+ * setting) against that provider's listing on the Agent's own runtime, so a
+ * new Agent's default is the model its image presets (Claude Code's `opus`),
+ * saved as a normal default the owner sees and can change. The
  * result is saved even when it names no model, as "not set", so the owner is
  * told and nothing converts it again. An Agent still on an older runtime, or
  * whose provider has not listed, or is unsupported only because an older

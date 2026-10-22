@@ -246,3 +246,43 @@ export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   noneCreateInput,
 ]);
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;
+
+export const secretlessConnectionCreateInputSchema = z.discriminatedUnion(
+  "authKind",
+  [
+    headerCreateInput.omit({ value: true }),
+    clientCredentialsCreateInput.omit({ clientSecret: true }),
+    githubAppCreateInput.omit({ privateKey: true }),
+    sigv4CreateInput.omit({ accessKeyId: true, secretAccessKey: true }),
+  ],
+);
+export type SecretlessConnectionCreateInput = z.infer<
+  typeof secretlessConnectionCreateInputSchema
+>;
+
+export const connectionRequestSecretInputSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.object({
+      action: z.literal("create"),
+      connection: secretlessConnectionCreateInputSchema,
+    }),
+    z.object({ action: z.literal("update"), connectionId: z.string().min(1) }),
+  ],
+);
+export type ConnectionRequestSecretInput = z.infer<
+  typeof connectionRequestSecretInputSchema
+>;
+
+export const secretRequestIdInputSchema = z.object({
+  requestId: z.string().min(1).max(128),
+});
+
+export const secretRequestSubmitInputSchema = secretRequestIdInputSchema.extend(
+  {
+    fields: z.record(z.string().max(64), z.string().min(1).max(65_536)),
+  },
+);
+export type SecretRequestSubmitInput = z.infer<
+  typeof secretRequestSubmitInputSchema
+>;

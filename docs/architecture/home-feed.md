@@ -50,7 +50,9 @@ When the new rows come later, from the Agent's own list after its last known Ses
 An open Agent that is not the shown one lists the record's rows; the shown Agent lists its own list, and so does any Agent once the user asks for more.
 It offers more only when rows are hidden or more may exist: a feed shorter than its row limit lists every row filed for the owner.
 An open Agent with no row in a whole, loaded record shows "No sessions yet."; while the record is cut off, loading or unreadable, it lists its own list instead.
-That list says a hibernated Agent's Sessions show when it wakes, instead of loading until then.
+Opening an Agent's Sessions wakes a hibernated Agent once per open, as opening its chat does ([agent-lifecycle](agent-lifecycle.md#wake)), so its own list loads when it answers.
+An open lasts until the Agent's row closes: a sidebar that mounts again, or the mobile drawer's copy of it, does not wake the Agent again.
+When it stays asleep, because its wake failed or is not allowed, and the record holds none of its Sessions, the list offers a retry that wakes it.
 When that list's own first read fails, it offers a retry instead of "No sessions yet."
 View more asks the Agent for one more page of its list only when the loaded rows run out, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 Opening a Session from Activity leaves its Agent's row as it was, closed or open.
@@ -103,9 +105,9 @@ A Session can be **pinned**: a pinned Session moves to a **Pinned** section abov
 Pins are kept in the browser, so they do not follow the user to another device.
 The Pinned section reads a pinned Session from the record, and one the record does not hold by its id from its Agent while that Agent can answer, seeded with the row it was pinned from so it shows at once, and offering a retry when its first lookup fails; the section orders all pins by latest activity; every pinned row has the same actions and spend as in its Agent's list; deleting a Session from the tree drops its pin, and a pin whose Session is gone otherwise shows nowhere but stays stored, since pins live only in the browser and no failed or stale list may count as proof that one is stale.
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
-An asleep Agent whose Sessions the record does not hold shows a note that its Sessions show when it wakes; the tree never reads an empty record as an empty list.
+Opening an Agent's list wakes a hibernated Agent the same way, and a list left waiting on an Agent that stays asleep offers the same retry; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
-An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals, and Changes is one only while the Agent has a git repository.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 An Agent's runtime migration badge reads on its row in the Agents list and in the overlay of an Agent that is not running; the chat header carries it only below the width where the row shows.
 

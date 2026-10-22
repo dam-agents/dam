@@ -120,6 +120,58 @@ const REPOS_PER_PAGE = 100;
 const MAX_REPO_PAGES = 5;
 const MAX_INSTALLATION_PAGES = 3;
 
+async function reachGitHub(
+  apiBaseUrl: string,
+  request: () => Promise<Response>,
+): Promise<Response> {
+  try {
+    return await request();
+  } catch (err) {
+    throw new Error(
+      `Could not reach GitHub at ${apiBaseUrl} (${(err as Error).message}). Check the host name.`,
+    );
+  }
+}
+
+function githubErrorMessage(body: string): string {
+  try {
+    const json = JSON.parse(body) as { message?: unknown };
+    if (typeof json.message === "string") return json.message.trim();
+  } catch {}
+  return body.trim().slice(0, 200);
+}
+
+export function describeAppRejection(
+  status: number,
+  body: string,
+  input: { appId: string; installationId: string; scoped: boolean },
+): string | undefined {
+  const message = githubErrorMessage(body);
+  const said = message ? ` GitHub said: "${message}".` : "";
+  if (status === 404 && /integration not found/i.test(message)) {
+    return `The App ID is wrong: GitHub has no app with App ID ${input.appId}. Copy the App ID from the app's settings page (Settings → Developer settings → GitHub Apps → your app → General).`;
+  }
+  if (status === 404) {
+    return `The Installation ID is wrong: the app with App ID ${input.appId} has no installation ${input.installationId}. Install the app on your organization or account first, then copy the number at the end of the installation's URL (…/settings/installations/<id>).`;
+  }
+  if (status === 401 && /\biss\b|issuer/i.test(message)) {
+    return `The App ID is wrong: "${input.appId}" is not an App ID. The App ID is the number on the app's settings page (General → About), not the app's name.${said}`;
+  }
+  if (status === 401 && /could not be decoded/i.test(message)) {
+    return `The private key does not belong to the app with App ID ${input.appId}. Check the App ID, or generate a private key on that app's settings page (General → Private keys) and paste the whole .pem file.`;
+  }
+  if (status === 401) {
+    return `GitHub rejected the app's credentials. Check that the App ID and the private key come from the same app, and that the key has not been deleted from it.${said}`;
+  }
+  if (status === 403) {
+    return `GitHub refused access to installation ${input.installationId}. Check that the installation is not suspended and that the app is still installed.${said}`;
+  }
+  if (status === 422 && input.scoped) {
+    return `GitHub refused the repositories or permissions this connection is limited to. Choose only repositories the installation can reach and permissions the app has been granted.${said}`;
+  }
+  return undefined;
+}
+
 export function createGitHubAppEngine(
   opts?: CreateGitHubAppEngineOptions,
 ): GitHubAppEngine {
@@ -180,27 +232,35 @@ export function createGitHubAppEngine(
         : {}),
     };
     const scoped = Object.keys(scope).length > 0;
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": userAgent,
-        ...(scoped ? { "Content-Type": "application/json" } : {}),
-      },
-      ...(scoped ? { body: JSON.stringify(scope) } : {}),
-    });
+    const res = await reachGitHub(apiBaseUrl, () =>
+      fetchImpl(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": userAgent,
+          ...(scoped ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(scoped ? { body: JSON.stringify(scope) } : {}),
+      }),
+    );
     if (!res.ok) {
       const txt = await res.text();
       const clientRejected = res.status === 401 || res.status === 404;
       const scopeRejected = scoped && res.status === 422;
+      const userMessage = describeAppRejection(res.status, txt, {
+        appId,
+        installationId,
+        scoped,
+      });
       throw new OAuthTokenEndpointError(
         `GitHub App ${id}: installation-token request failed — ${res.status} ${txt.slice(0, 500)}`,
         {
           status: res.status,
           ...(clientRejected ? { oauthError: "invalid_client" } : {}),
           ...(scopeRejected ? { oauthError: "invalid_grant" } : {}),
+          ...(userMessage ? { userMessage } : {}),
         },
       );
     }
@@ -463,15 +523,22 @@ export function createGitHubAppEngine(
         "User-Agent": userAgent,
       });
 
-      const res = await fetchImpl(
-        `${base}/app/installations/${encodeURIComponent(installationId)}`,
-        { headers: asApp() },
+      const res = await reachGitHub(apiBaseUrl, () =>
+        fetchImpl(
+          `${base}/app/installations/${encodeURIComponent(installationId)}`,
+          { headers: asApp() },
+        ),
       );
       if (!res.ok) {
         const txt = await res.text();
+        const userMessage = describeAppRejection(res.status, txt, {
+          appId,
+          installationId,
+          scoped: false,
+        });
         throw new OAuthTokenEndpointError(
           `GitHub App ${id}: could not read the installation — ${res.status} ${txt.slice(0, 500)}`,
-          { status: res.status },
+          { status: res.status, ...(userMessage ? { userMessage } : {}) },
         );
       }
       const info = (await res.json()) as InstallationResponse;

@@ -25,6 +25,11 @@ initializeCapabilities:
   authMethods: [{"id": "api-key", "name": "API Key", "description": "Use an API key to authenticate", "_meta": {"api-key": {"provider": "openai"}}}, {"id": "chat-gpt", "name": "ChatGPT", "description": "Use ChatGPT to authenticate"}]
   agentInfo: {"name": "@agentclientprotocol/codex-acp", "title": "Codex"}
 
+# Codex sets the thread id on every shell command it runs; codex-acp uses the
+# thread id as the session's id, so git's trace names the session that ran a
+# commit or push.
+sessionEnvVar: CODEX_THREAD_ID
+
 # Codex mints its own thread id for a terminal session's conversation. The
 # SessionStart hook in /etc/codex/requirements.toml pins it here under the
 # platform session id, so the session list shows that conversation once, under

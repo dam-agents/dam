@@ -125,6 +125,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           agent: false,
           artifacts: false,
           canOpenBrowser: true,
+          changes: false,
           processesEnabled: true,
           gettingStarted: true,
         }),

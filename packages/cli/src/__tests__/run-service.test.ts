@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
 
-import { resolvePrompt } from "../modules/chat/commands/run.js";
+import {
+  choicesOrInvalid,
+  resolvePrompt,
+} from "../modules/chat/commands/run.js";
 import { ok } from "../result.js";
 import {
   createRunService,
@@ -526,6 +529,119 @@ describe("run service", () => {
   });
 });
 
+describe("run service: session choices", () => {
+  let relay: FakeRelay | undefined;
+
+  afterEach(() => {
+    relay?.close();
+    relay = undefined;
+  });
+
+  /**
+   * TEST_SCENARIO: `dam run --harness/--model/--setting` is a one-off choice
+   * for the new session: it travels in `session/new` as the web chat's pick
+   * does, and the session keeps its own choice instead of following the
+   * chat default.
+   */
+  it("sends the chosen harness, model and settings in session/new", async () => {
+    let meta: unknown;
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        meta = (frame.params as { _meta: { platform: unknown } })._meta
+          .platform;
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt")
+        reply(ws, frame.id, { stopReason: "end_turn" });
+    });
+    const { service } = serviceFor(relay);
+
+    await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      choices: {
+        harness: "codex",
+        model: "ibm/gpt-5.5",
+        settings: { effort: "high" },
+      },
+      timeoutSeconds: 10,
+    });
+
+    expect(meta).toEqual({
+      mode: "chat",
+      type: "cli_run",
+      harness: "codex",
+      model: "ibm/gpt-5.5",
+      settings: { effort: "high" },
+      follows: null,
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: with no choice the frame names none, so the relay fills
+   * in the agent's chat default and the session follows it.
+   */
+  it("names no harness or model without a choice", async () => {
+    let meta: unknown;
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        meta = (frame.params as { _meta: { platform: unknown } })._meta
+          .platform;
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt")
+        reply(ws, frame.id, { stopReason: "end_turn" });
+    });
+    const { service } = serviceFor(relay);
+
+    await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      timeoutSeconds: 10,
+    });
+
+    expect(meta).toEqual({ mode: "chat", type: "cli_run" });
+  });
+
+  /**
+   * TEST_SCENARIO: the runtime refuses a session with no model and names the
+   * web app's Providers page; the CLI adds the commands that fix it from
+   * the terminal.
+   */
+  it("adds the CLI's way out to a no-model refusal", async () => {
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new")
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: {
+              code: -32001,
+              message: "This session has no model.",
+              data: { platform: { reason: "no-model" } },
+            },
+          }),
+        );
+    });
+    const { service } = serviceFor(relay);
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      timeoutSeconds: 10,
+    });
+
+    expect(result.ok).toBe(false);
+    const reason =
+      !result.ok && "reason" in result.error ? result.error.reason : "";
+    expect(reason).toContain("This session has no model.");
+    expect(reason).toContain("dam agent models <agent>");
+    expect(reason).toContain("dam agent update <agent> --model");
+  });
+});
+
 describe("stallLine", () => {
   /**
    * TEST_SCENARIO: A stall message must name the approval and the command that clears it:
@@ -573,5 +689,22 @@ describe("resolvePrompt", () => {
     expect(resolvePrompt({ prompt: "hi", promptFile: "f", readFile }).ok).toBe(
       false,
     );
+  });
+});
+
+describe("choicesOrInvalid", () => {
+  /**
+   * TEST_SCENARIO: a session from --session already runs on its own pair,
+   * so a choice beside it is refused instead of ignored.
+   */
+  it("takes choices for a new session only", () => {
+    expect(choicesOrInvalid({ setting: [] })).toEqual(ok(undefined));
+    expect(
+      choicesOrInvalid({ model: "ibm/gpt-5.5", setting: ["effort=high"] }),
+    ).toEqual(ok({ model: "ibm/gpt-5.5", settings: { effort: "high" } }));
+    expect(
+      choicesOrInvalid({ session: "s", model: "ibm/gpt-5.5", setting: [] }).ok,
+    ).toBe(false);
+    expect(choicesOrInvalid({ setting: ["effort"] }).ok).toBe(false);
   });
 });

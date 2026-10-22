@@ -64,33 +64,6 @@ export async function locateRepository(
   return toplevel && commonDir ? { toplevel, commonDir } : null;
 }
 
-export async function nearestExistingDir(path: string): Promise<string | null> {
-  let candidate = dirname(path);
-  for (;;) {
-    const info = await stat(candidate).catch(() => null);
-    if (info?.isDirectory()) return candidate;
-    const parent = dirname(candidate);
-    if (parent === candidate) return null;
-    candidate = parent;
-  }
-}
-
-export async function locateFile(
-  git: Git,
-  path: string,
-): Promise<RepositoryLocation | null> {
-  const dir = await nearestExistingDir(path);
-  if (dir === null) return null;
-  const location = await locateRepository(git, dir);
-  if (location === null) return null;
-  const ignored = await git(
-    dir,
-    ["-c", "core.excludesFile=", "check-ignore", "--", path],
-    { okExitCodes: [1] },
-  );
-  return ignored.ok && ignored.value.trim() !== "" ? null : location;
-}
-
 export interface DiscoveredRepository {
   commonDir: string;
   worktrees: WorktreeRecord[];

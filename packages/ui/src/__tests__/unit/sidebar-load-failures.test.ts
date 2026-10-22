@@ -48,7 +48,6 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     answerable: agentState.answerable,
     loading: list.loading,
     provisional: false,
-    recordRead: true,
     failed: list.failed,
     retrying: list.retrying,
     retry: vi.fn(),

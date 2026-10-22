@@ -117,6 +117,11 @@ A few observations the diagram glosses over:
   Nothing but tagging the Agent again brings one in, which is what makes it a new request instead of more of the last.
   A reply inside a thread that tags the Agent joins the turn already answering there, so a correction reaches the Agent while it can still act on it; inside a thread everyone who tags it shares the conversation, whoever is typing.
   An untagged reply reaches the Agent only on an ambient binding, and then as a read-along turn after the running one, never inside it.
+  A reply in a thread **supersedes** the Agent's turn on the thread's opening message running in another session — the channel's read-along session, or a 1:1 DM's — since it is the same request coming back, often the part that matters ("grab it", a correction), and the two turns would otherwise act at the same time.
+  A turn carrying the opener alone is cancelled, one carrying other messages too runs to its end, and the thread's turn starts only once that turn has ended.
+  It is told what the earlier turn ran and posted, and to check that before it acts, because a cancelled turn may already have filed an issue or sent a message.
+  A read-along turn not started yet leaves the opener out for that Agent; other Agents keep their turns.
+  A cancelled read-along turn counts as delivered, so catch-up does not hand the opener back as missed; it is evented with the reason `superseded`.
   The one place several top-level messages still merge is a 1:1 DM, where no tag is needed and a thought really does arrive in pieces — there the queue is per sender, and a turn carrying several of them gives each its own reply target, so a reply naming none is refused.
   On Telegram the conversation is the chat.
 - **A session key is adapter-specific.** Slack pairs the conversation with the thread; Telegram uses the conversation (chat plus optional forum topic).

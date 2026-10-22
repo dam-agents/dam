@@ -207,15 +207,48 @@ export function composePublicAgentPage(deps: {
   };
 }
 
+type ProvisionerConnections = Pick<
+  ConnectionsService,
+  | "validateProviderConnection"
+  | "validateGrantSet"
+  | "setAgentConnections"
+  | "defaultProviderConnections"
+  | "listConnections"
+>;
+
+async function fittingProviders(
+  connections: ProvisionerConnections,
+  catalog: Pick<HarnessCatalog, "harnesses">,
+  connectionIds: string[],
+  { harness, providers }: { harness?: string; providers?: readonly string[] },
+): Promise<string[]> {
+  const chosen = new Set(connectionIds);
+  const holdsProvider = (await connections.listConnections()).some(
+    (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
+  );
+  return holdsProvider
+    ? []
+    : connections.defaultProviderConnections(
+        (type, templateId) =>
+          harness !== undefined &&
+          catalog.harnesses.some((h) => h.name === harness)
+            ? harnessFits(catalog, harness, type, templateId)
+            : !providers || providers.includes(type),
+        harness,
+      );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a new Agent is granted besides the
+ * Connections its create names. With no provider among them it gets one: the
+ * first provider of the owner's its harness runs on, in the harness's alias
+ * order, the order a default provider is resolved in. One provider, not every
+ * fitting one, so the default its runtime saves at its first hello has one
+ * provider to sit on and is the image's preset model, and no call goes to a
+ * provider the owner never chose for this Agent.
+ */
 export function connectionGrantProvisioner(
-  connections: Pick<
-    ConnectionsService,
-    | "validateProviderConnection"
-    | "validateGrantSet"
-    | "setAgentConnections"
-    | "defaultProviderConnections"
-    | "listConnections"
-  >,
+  connections: ProvisionerConnections,
   catalog: Pick<HarnessCatalog, "harnesses">,
 ): NonNullable<AgentsServiceDeps["grantProvisioner"]> {
   return {
@@ -227,19 +260,10 @@ export function connectionGrantProvisioner(
         grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
       };
     },
-    async defaultProviders(connectionIds, { harness, providers }) {
-      const chosen = new Set(connectionIds);
-      const holdsProvider = (await connections.listConnections()).some(
-        (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
-      );
-      return holdsProvider
-        ? []
-        : connections.defaultProviderConnections((type, templateId) =>
-            harness !== undefined &&
-            catalog.harnesses.some((h) => h.name === harness)
-              ? harnessFits(catalog, harness, type, templateId)
-              : !providers || providers.includes(type),
-          );
+    async defaultProviders(connectionIds, template) {
+      return (
+        await fittingProviders(connections, catalog, connectionIds, template)
+      ).slice(0, 1);
     },
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
@@ -258,7 +282,7 @@ export function connectionGrantProvisioner(
  * provider from the rest.
  */
 export async function attachProviderToBareAgents(
-  connections: Parameters<typeof connectionGrantProvisioner>[0] &
+  connections: ProvisionerConnections &
     Pick<ConnectionsService, "getAgentConnections" | "updateAgentConnections">,
   catalog: Pick<HarnessCatalog, "harnesses">,
   agents: readonly {
@@ -267,7 +291,6 @@ export async function attachProviderToBareAgents(
   }[],
   connectionId: string,
 ): Promise<void> {
-  const provisioner = connectionGrantProvisioner(connections, catalog);
   const failed: unknown[] = [];
   for (const agent of agents) {
     if (agent.spec.environmentOf) continue;
@@ -275,7 +298,9 @@ export async function attachProviderToBareAgents(
       const { connections: grants } = await connections.getAgentConnections(
         agent.id,
       );
-      const chosen = await provisioner.defaultProviders(
+      const chosen = await fittingProviders(
+        connections,
+        catalog,
         grants.map((g) => g.connectionId),
         agent.spec.harness ? { harness: agent.spec.harness } : {},
       );

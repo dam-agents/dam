@@ -116,6 +116,11 @@ describe("classifyWakeFailure", () => {
       expected: { kind: "agent-pod-not-ready" },
     },
     {
+      name: "AwaitingWarmUp → progressing (the machines a restart is bringing back hold the pool until they have warmed)",
+      snapshot: { ...base, agentPodNotReadyReason: "AwaitingWarmUp" },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
       name: "MachineAwaitingAllocation → progressing (the runner's own spelling of the same wait)",
       snapshot: {
         ...base,

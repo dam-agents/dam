@@ -207,6 +207,7 @@ The session view shows a framed turn as the person would read it, which makes th
 Frame instructions are hidden by name, so a tag the view does not know stays visible rather than taking real text with it.
 Conversation history handed to the agent is shown collapsed, together with the note that explains it.
 Messages steered into a running turn show as one user message each: the view finds them by their speaker lines and treats everything before the first one as instructions for the agent.
+An agent's reply is cleaned the same way when the agent echoes a frame tag, and a `<thinking>` passage the agent wrote as text shows as a thought; chat forms are keyed by the cleaned reply, so a form keeps its state wherever the reply is split.
 Changing the frame's shape therefore changes what the session view renders.
 
 The view places an agent's output by the turn it belongs to, which the runtime stamps on every frame it relays: the running prompt's turn, or — for work the harness does unprompted, such as resuming when a background task finishes — a turn the runtime opens for it and ends at the harness's next usage report or after a quiet minute, and that a prompt starting meanwhile ends first.

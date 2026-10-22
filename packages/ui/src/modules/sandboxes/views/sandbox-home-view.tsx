@@ -11,6 +11,8 @@ import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-wat
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
+import { EnvironmentsSection } from "../../environments/components/environments-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
@@ -41,6 +43,7 @@ const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
   "network",
   "environment",
   "schedules",
+  "environments",
 ]);
 
 export function SandboxHomeView() {
@@ -61,9 +64,14 @@ export function SandboxHomeView() {
 
   const { summaries, warnings } = useSectionSummaries(agent);
   const chatFormsEnabled = useChatFormsEnabled();
-  const sections = chatFormsEnabled
-    ? SECTIONS
-    : SECTIONS.filter((e) => e.section !== "chat-forms");
+  const environmentsEnabled = useEnvironmentsEnabled();
+  const sections = SECTIONS.filter(
+    (e) =>
+      (chatFormsEnabled || e.section !== "chat-forms") &&
+      (environmentsEnabled && agent?.vm === true
+        ? true
+        : e.section !== "environments"),
+  );
   const sectionEntry = SECTIONS.find((e) => e.section === section);
   const SectionPictogram = sectionEntry?.pictogram;
 
@@ -130,6 +138,8 @@ export function SandboxHomeView() {
                 openAgentSession(agent.id, sessionId)
               }
             />
+          ) : section === "environments" ? (
+            <EnvironmentsSection agentId={agent.id} header={header} />
           ) : section === "usage" ? (
             <SandboxUsageSection agentId={agent.id} />
           ) : (
