@@ -6,7 +6,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
-import type { KcContextExtension } from "../login/KcContext.js";
+import type { I18n } from "../login/i18n.js";
+import type { KcContext, KcContextExtension } from "../login/KcContext.js";
 import LoginOauthGrant from "../login/pages/LoginOauthGrant.js";
 
 const { getKcContextMock } = createGetKcContextMock({
@@ -25,9 +26,9 @@ const i18n = {
   msgStr: (key: string) => key,
   advancedMsg: (key: string) => key,
   advancedMsgStr: (key: string) => key,
-} as never;
+} as unknown as I18n;
 
-function Template({ children }: TemplateProps<never, never>) {
+function Template({ children }: TemplateProps<KcContext, I18n>) {
   return <>{children}</>;
 }
 
