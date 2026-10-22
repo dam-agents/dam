@@ -23,6 +23,7 @@ import {
   RAIL_GAP,
   RAIL_ROW,
   SIDEBAR_GLYPH,
+  SQUIRCLE,
 } from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -416,6 +417,7 @@ function AgentNode({
             aria-describedby={sublineId}
             data-testid="sidebar-agent-row"
             className={cn(
+              SQUIRCLE,
               "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
               RAIL_ROW,
               agentFilter ? "pr-14" : "pr-16",

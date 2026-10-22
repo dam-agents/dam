@@ -7,6 +7,7 @@ import {
   RAIL_GLYPH,
   RAIL_ROW,
   SIDEBAR_GLYPH,
+  SQUIRCLE,
 } from "@/components/ui/rail-tile";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,7 @@ export function AddRow({
       disabled={disabled}
       onClick={onClick}
       className={cn(
+        SQUIRCLE,
         "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground aria-[current=page]:ring-1 aria-[current=page]:ring-border-ui disabled:pointer-events-none disabled:opacity-50",
         avatar ? "pr-2" : "px-2",
         avatar ? RAIL_ROW : "h-[34px]",
@@ -97,6 +99,7 @@ export function NavRow({
       data-testid={testId}
       onClick={onClick}
       className={cn(
+        SQUIRCLE,
         "flex w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
         RAIL_ROW,
         FOCUS_RING,
