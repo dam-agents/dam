@@ -35,7 +35,6 @@ const railExpandTile = () =>
 export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
-  const setView = useStore((s) => s.setView);
   const { width, resizing, setWidthTo, endResize } = useSidebarWidth({
     key: "platform-sidebar-v2-w",
     fallback: 325,
@@ -125,6 +124,7 @@ export function SidebarV2() {
         {contentExpanded || over ? (
           <>
             <SidebarHeader
+              expanded={expanded}
               onCollapse={() => {
                 if (over) {
                   setOverlaid(false);
@@ -132,10 +132,6 @@ export function SidebarV2() {
                 }
                 setPinned(false);
                 collapse();
-              }}
-              onHome={() => {
-                setView("home");
-                if (over) setOverlaid(false);
               }}
             />
             <SidebarContent

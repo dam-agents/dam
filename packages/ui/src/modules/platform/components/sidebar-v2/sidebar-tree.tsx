@@ -1,6 +1,5 @@
 import {
   Add,
-  type CarbonIconType,
   ChevronRight,
   FaceActivatedAdd,
   FaceAdd,
@@ -19,12 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
-import {
-  RAIL_GAP,
-  RAIL_GLYPH,
-  RAIL_ROW,
-  SIDEBAR_GLYPH,
-} from "@/components/ui/rail-tile";
+import { RAIL_GAP, RAIL_ROW, SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -61,7 +55,7 @@ import {
 } from "../../lib/sidebar-tree.js";
 import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
-import { AddRow, TREE_AVATAR, TREE_LEADING } from "./add-row.js";
+import { AddRow, NavRow, TREE_AVATAR, TREE_LEADING } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
@@ -497,41 +491,5 @@ function SettingsFooter({ onNavigate }: { onNavigate?: () => void }) {
         }}
       />
     </div>
-  );
-}
-
-function NavRow({
-  icon: Icon,
-  label,
-  current,
-  testId,
-  onClick,
-}: {
-  icon: CarbonIconType;
-  label: string;
-  current: boolean;
-  testId?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-current={current ? "page" : undefined}
-      data-testid={testId}
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
-        RAIL_ROW,
-        FOCUS_RING,
-        current
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-      )}
-    >
-      <span className={TREE_LEADING}>
-        <Icon size={RAIL_GLYPH} />
-      </span>
-      {label}
-    </button>
   );
 }

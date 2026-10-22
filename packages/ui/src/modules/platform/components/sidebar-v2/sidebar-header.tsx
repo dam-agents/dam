@@ -1,37 +1,26 @@
 import { ChevronLeft } from "@carbon/icons-react";
 
-import { BrandLogo } from "@/components/brand-logo";
-import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
-import { cn } from "@/lib/utils";
-
 import { getBrand } from "../../../../brand.js";
+import { NavRow } from "./add-row.js";
 
 interface Props {
+  expanded: boolean;
   onCollapse: () => void;
-  onHome: () => void;
 }
 
-export function SidebarHeader({ onCollapse, onHome }: Props) {
+// UNIT_BOUNDARY_DESCRIPTION: the row above the tree is a row like Home and Settings, its icon the chevron that collapses the pane and its label the brand, and the whole row is the one target that collapses it; the brand leads nowhere on its own, since Home is a row of its own.
+export function SidebarHeader({ expanded, onCollapse }: Props) {
   return (
-    // UNIT_BOUNDARY_DESCRIPTION: the header's bottom border takes a pixel of its height, so the chevron tile starts at the top rather than centring in what the border leaves, and lands where the rail's first tile does.
-    <div className="flex h-12 shrink-0 items-start border-b border-border px-1">
-      <button
-        type="button"
+    // UNIT_BOUNDARY_DESCRIPTION: the border takes a pixel of the header's height, so the row starts at the top rather than centring in what the border leaves, and its icon lands where the rail's first tile does.
+    <div className="flex h-12 shrink-0 items-start border-b border-border px-2">
+      <NavRow
+        icon={ChevronLeft}
+        label={getBrand().name}
+        testId="sidebar-collapse-row"
+        ariaLabel="Collapse navigation"
+        ariaExpanded={expanded}
         onClick={onCollapse}
-        aria-label="Collapse navigation"
-        className={cn(railTile(false), FOCUS_RING)}
-      >
-        <ChevronLeft size={RAIL_GLYPH} />
-      </button>
-      <button
-        type="button"
-        onClick={onHome}
-        aria-label={getBrand().name}
-        className={`-ml-1 min-w-0 self-center rounded-lg py-1 pr-1.5 pl-0 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
-      >
-        <BrandLogo />
-      </button>
+      />
     </div>
   );
 }

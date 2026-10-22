@@ -69,6 +69,49 @@ export function AddRow({
   );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: Home, Settings and the row above the tree are one row, an icon in the tree's icon column and a label after it, so all three read as the same kind of thing and their labels start at one x.
+export function NavRow({
+  icon: Icon,
+  label,
+  current = false,
+  testId,
+  ariaLabel,
+  ariaExpanded,
+  onClick,
+}: {
+  icon: CarbonIconType;
+  label: string;
+  current?: boolean;
+  testId?: string;
+  ariaLabel?: string;
+  ariaExpanded?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-expanded={ariaExpanded}
+      aria-current={current ? "page" : undefined}
+      data-testid={testId}
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
+        RAIL_ROW,
+        FOCUS_RING,
+        current
+          ? "bg-muted text-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <span className={TREE_LEADING}>
+        <Icon size={RAIL_GLYPH} />
+      </span>
+      {label}
+    </button>
+  );
+}
+
 export function RetryRow({
   label,
   testId,
