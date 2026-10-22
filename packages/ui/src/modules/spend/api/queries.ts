@@ -164,7 +164,9 @@ const byRouterCallId = (data: SpendCalls): Map<string, SpendCallCost> =>
 export function useCallCosts(
   agentId: string | null,
   routerCallIds: readonly string[],
+  turnEndedAt: string,
 ) {
+  const open = Date.now() - Date.parse(turnEndedAt) < OPEN_TURN_MS;
   return useQuery({
     ...trpc.spend.calls.queryOptions(
       agentId && routerCallIds.length > 0
@@ -173,7 +175,7 @@ export function useCallCosts(
     ),
     select: byRouterCallId,
     refetchInterval: (query) =>
-      (query.state.data?.calls.length ?? 0) < routerCallIds.length
+      open && (query.state.data?.calls.length ?? 0) < routerCallIds.length
         ? SPEND_REFRESH_MS
         : false,
   });

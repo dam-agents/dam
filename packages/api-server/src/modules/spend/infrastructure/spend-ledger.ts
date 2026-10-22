@@ -90,6 +90,7 @@ export interface SpendLedger {
     ownerSub: string;
     routerCallIds: readonly string[];
   }): Promise<SpendCallCost[]>;
+  callDetailSince(): Promise<Date | null>;
   deleteCallsBefore(before: Date): Promise<number>;
   meteringStart(): Promise<Date>;
 }
@@ -117,6 +118,7 @@ const ROW_KEY = [
 ];
 
 export function createSpendLedger(db: Db): SpendLedger {
+  let detailSince: Date | null = null;
   const added = (key: Counted) =>
     sql`${spendDaily[key]} + excluded.${sql.identifier(spendDaily[key].name)}`;
   const sumOf = (key: Counted) =>
@@ -703,6 +705,16 @@ export function createSpendLedger(db: Db): SpendLedger {
           ),
         );
       return rows.map((r) => ({ ...r, unit: r.unit as SpendUnit }));
+    },
+
+    async callDetailSince() {
+      if (detailSince) return detailSince;
+      const [row] = await db
+        .select({ at: sql<Date | null>`min(${spendCalls.startedAt})` })
+        .from(spendCalls)
+        .where(ne(spendCalls.model, ""));
+      detailSince = row?.at ? new Date(row.at) : null;
+      return detailSince;
     },
 
     async deleteCallsBefore(before) {

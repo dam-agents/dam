@@ -62,7 +62,12 @@ export function createAgentSpend(deps: {
       if (!ownerSub) return view([]);
 
       const read = query.at
-        ? readRangeOf(query.at, new Date(), startedAt)
+        ? readRangeOf(
+            query.at,
+            new Date(),
+            startedAt,
+            await deps.ledger.callDetailSince(),
+          )
         : { from, to, at: undefined, window: undefined };
       const range = {
         ownerSub,

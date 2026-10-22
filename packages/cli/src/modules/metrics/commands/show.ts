@@ -185,11 +185,21 @@ export function buildMetricsCommand(deps: {
             : (narrowed?.amounts ?? []);
         const byModel = narrowed === undefined ? breakdown.value.byModel : null;
 
+        const read = breakdown.value.window;
+        const shownDays = read
+          ? {
+              from: read.fromAt.slice(0, 10),
+              to: new Date(Date.parse(read.toAt) - 1)
+                .toISOString()
+                .slice(0, 10),
+            }
+          : days;
         if (opts.json) {
           return writeStdoutAndExit(
             `${JSON.stringify({
               agentId: agent.id,
-              window: breakdown.value.window ?? days,
+              window: read ? shownDays : days,
+              ...(read && { readWindow: read }),
               measuredSince: metering.value.startedAt,
               totals,
               byModel,
@@ -200,15 +210,6 @@ export function buildMetricsCommand(deps: {
           );
         }
 
-        const read = breakdown.value.window;
-        const shownDays = read
-          ? {
-              from: read.fromAt.slice(0, 10),
-              to: new Date(Date.parse(read.toAt) - 1)
-                .toISOString()
-                .slice(0, 10),
-            }
-          : days;
         const windowLabel = `${
           read && sinceHours !== undefined
             ? readWindowLabel(read, shownDays, sinceHours)

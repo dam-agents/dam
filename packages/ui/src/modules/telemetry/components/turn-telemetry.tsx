@@ -58,7 +58,7 @@ export function TurnTelemetry({
     () => (loaded ? routerCallIdsOf(loaded) : []),
     [loaded],
   );
-  const callCosts = useCallCosts(agentId, routerCallIds);
+  const callCosts = useCallCosts(agentId, routerCallIds, turn.endedAt);
   const costOf = useMemo(
     () =>
       loaded ? callCostOf(loaded, callCosts.data ?? new Map()) : undefined,

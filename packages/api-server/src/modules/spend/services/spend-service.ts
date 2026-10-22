@@ -241,7 +241,12 @@ export function createSpendService(deps: {
       const { agentId } = input;
       const range: Partial<ReadRange> & { from: string; to: string } =
         "at" in input
-          ? readRangeOf(input.at, new Date(), await deps.meteringStart())
+          ? readRangeOf(
+              input.at,
+              new Date(),
+              await deps.meteringStart(),
+              await deps.ledger.callDetailSince(),
+            )
           : { from: input.from, to: input.to };
       const { from, to, at } = range;
       const payer = agentId ? await deps.payers.payerOf(agentId) : undefined;
@@ -297,7 +302,12 @@ export function createSpendService(deps: {
 
     async sessions({ agentId, from, to, at, sessionIds, limit }) {
       const range = at
-        ? readRangeOf(at, new Date(), await deps.meteringStart())
+        ? readRangeOf(
+            at,
+            new Date(),
+            await deps.meteringStart(),
+            await deps.ledger.callDetailSince(),
+          )
         : null;
       const sessions = await readSessionSpend(deps, {
         ownerSub: deps.ownerSub,

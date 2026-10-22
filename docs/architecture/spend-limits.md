@@ -144,7 +144,7 @@ The screens read T to say since when the spend is measured, to mark the days bef
 The api-server reads T once and keeps it.
 
 **Grouped read.** The screens read the rollup grouped by day, payer, Connection, model, Session, calling agent and unit, for at most 366 days.
-A read with an exact window, from `get_metrics` hours and `dam metrics --since`, sums the call rows that start inside it in the same groups; a window that starts more than 30 days ago widens to its UTC days, and the result names the window it read.
+A read with an exact window, from `get_metrics` hours and `dam metrics --since`, sums the call rows that start inside it in the same groups; a window that starts more than 30 days ago, or before the first call row with a model, widens to its UTC days, and the result names the window it read.
 The api-server folds the rows into totals per unit, the model time, and spend by day, agent, model, Connection, session type and calling agent.
 A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
 The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.
