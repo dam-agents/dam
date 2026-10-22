@@ -1567,7 +1567,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const viewers = [...engagedViewersOf(sid)];
     const finish = (error?: string): void => {
       resetSession(sid, viewers, (loaded) => {
-        cuttingSessions.delete(sid);
+        endCut(sid);
         if (error !== undefined || !loaded) {
           failRewrite(error ?? "the rewound session could not be loaded");
           return;
@@ -1612,13 +1612,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             return;
           }
           if (outcome.refused) {
-            cuttingSessions.delete(sid);
+            endCut(sid);
             failRewrite(outcome.message, REWRITE_REFUSED_CODE);
             return;
           }
           finish(outcome.message);
         });
     });
+  }
+
+  function endCut(sessionId: string): void {
+    cuttingSessions.delete(sessionId);
+    if (
+      harnessColdSessions.has(sessionId) &&
+      !rehydratingSessions.has(sessionId) &&
+      promptScheduler.hasWork(sessionId)
+    )
+      startHarnessRehydrate(sessionId);
   }
 
   function closeInHarness(
