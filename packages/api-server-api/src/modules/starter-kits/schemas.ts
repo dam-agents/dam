@@ -154,7 +154,15 @@ export const starterKitSchema = z
     install: agentSetupShape.install,
     harnesses: z.array(harnessFamilySchema).min(1).optional(),
     providers: providerListSchema.min(1).optional(),
-    defaultModel: z.string().min(1).optional(),
+    defaultModel: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(
+        /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]*$/,
+        "a model id: letters, digits and `.` `_` `-` `/` `:` `[` `]`",
+      )
+      .optional(),
     seed: z
       .object({
         url: z.url().optional(),

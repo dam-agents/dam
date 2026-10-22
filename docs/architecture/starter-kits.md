@@ -100,6 +100,7 @@ flowchart LR
 - **Kit Default Model** — optional `defaultModel`: the model the kit's job needs the Agent itself to run on, named the way the model is known whatever provider serves it (`claude-opus-5` for IBM's `aws/claude-opus-5`).
   The create stamps it on the Agent, and the [conversion](harness-config.md#conversion-of-an-old-default) saves it as the Agent's chat default when the granted provider lists it, so the kit's onboarding turn runs on it; a model that provider does not list leaves the conversion to the image's preset, and the owner changes the default afterwards like any other.
   A kit that names no model gets the conversion alone.
+  The value is a model id — letters, digits and `.` `_` `-` `/` `:` `[` `]`, at most 128 characters — because a kit repository is outside the platform's trust boundary and the value becomes an annotation on the Agent.
 - **Avatar** — optional: the avatar an Agent created from the kit starts with ([agent avatars](agent-avatars.md)).
   `avatar` names a built-in character (`avatar: shield`), an emoji (`avatar: "emoji:🛡️"`), or an image file in the kit repository (`avatar: {path: avatar.png}`, relative to `kit.yaml`).
   The refresh reads the file at the kit's resolved commit, takes it only as a JPG or PNG of at most 2 MB, as the upload does, and stores it as an uploaded avatar; the resolved kit then carries `image:<id>`, and the hourly sweep keeps every image a resolved kit names.
