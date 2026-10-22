@@ -217,15 +217,16 @@ const DROPPED_REQUEST_HEADERS = new Set([
  * issuer is one of the platform's identity provider's addresses, or that
  * names none. The value of a token's `iss` claim is read, not checked: an
  * app's token from any other issuer reaches the app, and a value that may be
- * the platform's is dropped whatever its signature. Anything that is not a
- * bearer token passes.
+ * the platform's is dropped whatever its signature, and so is a bearer value
+ * that is not one token, such as two `Authorization` headers a client joined.
+ * Any other scheme passes.
  */
 export function platformCredential(
   value: string,
   platform: PlatformCredentials,
 ): boolean {
   const match = /^\s*bearer\s+(\S+)\s*$/i.exec(value);
-  if (!match) return false;
+  if (!match) return /^\s*bearer\b/i.test(value);
   const token = match[1]!;
   if (platform.isApiKey(token)) return true;
   const parts = token.split(".");

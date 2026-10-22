@@ -103,9 +103,9 @@ export const noEnvironmentGate: EnvironmentGate = {
  * Environment runtime's forward, which reaches only the declared port on the
  * Environment's loopback. Any other host passes on untouched. A request
  * that another origin's page makes in the visitor's name is refused before
- * any of that, whatever cookie it carries. The relay never passes the platform's own
- * cookies or `Authorization` header to the app, never lets the app set them,
- * marks every response uncacheable, and refreshes the Environment's activity
+ * any of that, whatever cookie it carries. The relay never passes the
+ * platform's own cookies or credentials to the app, never lets the app set
+ * those cookies, marks every response uncacheable, and refreshes the Environment's activity
  * at most once a minute; no connection pins it awake.
  */
 export function createEnvironmentGate(

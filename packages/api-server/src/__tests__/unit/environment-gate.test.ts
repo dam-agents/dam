@@ -1005,7 +1005,7 @@ describe("a sign-in chain", () => {
 });
 
 describe("the platform's own credentials", () => {
-  // TEST_SCENARIO: an Authorization value is the platform's when it is a bearer API key, or a bearer token whose issuer is one of the platform's or that names none or cannot be read; a token from another issuer and any other scheme are the app's.
+  // TEST_SCENARIO: an Authorization value is the platform's when it is a bearer API key, a bearer token whose issuer is one of the platform's or that names none or cannot be read, or a bearer value that is not one token, such as two joined headers; a token from another issuer and any other scheme are the app's.
   it("tells the platform's credentials from an app's", () => {
     const of = (v: string) => platformCredential(v, PLATFORM);
     expect(of("Bearer pk_abc")).toBe(true);
@@ -1014,6 +1014,10 @@ describe("the platform's own credentials", () => {
     );
     expect(of(`bearer   ${jwt(null)}`)).toBe(true);
     expect(of("Bearer not.a-json.token")).toBe(true);
+    expect(
+      of(`Bearer ${jwt("http://keycloak.test/realms/platform")}, Bearer x`),
+    ).toBe(true);
+    expect(of("Bearer")).toBe(true);
     expect(of(`Bearer ${jwt("https://other.example/realms/x")}`)).toBe(false);
     expect(of("Bearer opaque-token")).toBe(false);
     expect(of("Basic dXNlcjpwYXNz")).toBe(false);
