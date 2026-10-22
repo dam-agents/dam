@@ -210,3 +210,41 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(order[1]).toBeGreaterThan(order[0]!);
   expect(order[2]).toBeGreaterThan(order[1]!);
 });
+
+// TEST_SCENARIO: The JanUI rail names a tab through its aria-label and the panel header, not a hover tooltip that would cover the panel, as the left rail does; the classic layout's icon bar keeps its tooltip.
+it("drops the rail's tooltips but keeps the classic bar's", () => {
+  const railHtml = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  const tile =
+    railHtml.match(
+      /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
+    )?.[0] ?? "";
+  expect(tile).toContain('aria-label="Artifacts"');
+  expect(tile).not.toContain("data-state=");
+  const classicHtml = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  const classic =
+    classicHtml.match(
+      /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
+    )?.[0] ?? "";
+  expect(classic).toContain('data-state="closed"');
+});
