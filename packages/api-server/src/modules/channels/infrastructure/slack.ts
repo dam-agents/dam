@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { parseAvatar, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
+import { createTtlMap, type TtlMap } from "../../../core/ttl-map.js";
 import {
   annotateSpan,
   inBackgroundSpan,
@@ -1525,17 +1526,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const botPosts = createBotPostLoopBound();
 
   const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
-  const botMentionsSeen = new Map<string, number>();
+  const botMentionsSeen = createTtlMap<string, true>({
+    ttlMs: BOT_MENTION_SEEN_TTL_MS,
+  });
 
   function firstBotMentionSighting(channel: string, ts: string): boolean {
-    const now = Date.now();
-    for (const [key, expiresAt] of botMentionsSeen) {
-      if (expiresAt > now) break;
-      botMentionsSeen.delete(key);
-    }
     const key = `${channel} ${ts}`;
-    if (botMentionsSeen.has(key)) return false;
-    botMentionsSeen.set(key, now + BOT_MENTION_SEEN_TTL_MS);
+    if (botMentionsSeen.get(key) !== undefined) return false;
+    botMentionsSeen.set(key, true);
     return true;
   }
 
@@ -1842,28 +1840,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
-  const userCache = new Map<
-    string,
-    { user: SlackUserInfo | null; expiresAt: number }
-  >();
-
-  function cacheUser(key: string, user: SlackUserInfo | null) {
-    const now = Date.now();
-    if (userCache.size > 500) {
-      for (const [key, entry] of userCache) {
-        if (entry.expiresAt <= now) userCache.delete(key);
-      }
-    }
-    userCache.set(key, { user, expiresAt: now + USER_CACHE_TTL_MS });
-  }
+  const userCache = createTtlMap<string, SlackUserInfo | null>({
+    ttlMs: USER_CACHE_TTL_MS,
+    maxEntries: 500,
+  });
 
   async function lookupUser(
     gw: SlackGateway,
     workspace: SlackWorkspace,
     id: string,
   ): Promise<SlackUserInfo | null> {
-    const cached = userCache.get(`${workspace}/${id}`);
-    if (cached && cached.expiresAt > Date.now()) return cached.user;
+    const key = `${workspace}/${id}`;
+    const cached = userCache.get(key);
+    if (cached !== undefined) return cached;
     const release = await userLookupSemaphore.acquire();
     let info: SlackUserInfo | null;
     try {
@@ -1871,30 +1860,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } finally {
       release();
     }
-    cacheUser(`${workspace}/${id}`, info);
+    userCache.set(key, info);
     return info;
   }
 
-  const conversationLabelCache = new Map<
+  const conversationLabelCache = createTtlMap<
     string,
-    { label: SlackConversationLabel | null; expiresAt: number }
-  >();
-
-  function cacheConversationLabel(
-    key: string,
-    label: SlackConversationLabel | null,
-  ) {
-    const now = Date.now();
-    if (conversationLabelCache.size > 500) {
-      for (const [stale, entry] of conversationLabelCache) {
-        if (entry.expiresAt <= now) conversationLabelCache.delete(stale);
-      }
-    }
-    conversationLabelCache.set(key, {
-      label,
-      expiresAt: now + CONVERSATION_LABEL_TTL_MS,
-    });
-  }
+    SlackConversationLabel | null
+  >({ ttlMs: CONVERSATION_LABEL_TTL_MS, maxEntries: 500 });
 
   async function directMessagePartner(
     gw: SlackGateway,
@@ -1943,7 +1916,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         .with({ kind: "not-found" }, () => ({ kind: "gone" }) as const)
         .with({ kind: "no-credential" }, () => null)
         .exhaustive();
-      cacheConversationLabel(key, label);
+      conversationLabelCache.set(key, label);
       return label;
     })().finally(() => conversationLabelInFlight.delete(key));
     conversationLabelInFlight.set(key, lookup);
@@ -1997,10 +1970,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   const AGENT_NAME_TTL_MS = 30_000;
-  const agentNameCache = new Map<
+  const agentNameCache = createTtlMap<
     string,
-    { name: string; avatar: string | undefined; expiresAt: number }
-  >();
+    { name: string; avatar: string | undefined }
+  >({ ttlMs: AGENT_NAME_TTL_MS, maxEntries: 500 });
 
   async function resolveAgentName(instanceName: string): Promise<string> {
     return (await resolveAgentIdentity(instanceName)).name;
@@ -2009,9 +1982,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function resolveAgentIdentity(
     instanceName: string,
   ): Promise<{ name: string; avatar: string | undefined }> {
-    const now = Date.now();
+    const readAt = Date.now();
     const cached = agentNameCache.get(instanceName);
-    if (cached && cached.expiresAt > now) return cached;
+    if (cached) return cached;
     let name: string;
     let avatar: string | undefined;
     try {
@@ -2021,21 +1994,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch {
       name = instanceName;
     }
-    if (agentNameCache.size > 500) {
-      for (const [key, entry] of agentNameCache) {
-        if (entry.expiresAt <= now) agentNameCache.delete(key);
-      }
-    }
-    agentNameCache.set(instanceName, {
-      name,
-      avatar,
-      expiresAt: now + AGENT_NAME_TTL_MS,
-    });
+    agentNameCache.set(instanceName, { name, avatar }, readAt);
     return { name, avatar };
   }
 
   const THREAD_SEEN_TTL_MS = 24 * 60 * 60 * 1000;
-  const threadSeen = new Map<string, { ts: string; expiresAt: number }>();
+  const threadSeen = createTtlMap<string, string>({
+    ttlMs: THREAD_SEEN_TTL_MS,
+  });
 
   function threadSeenKey(instanceName: string, threadKey: string): string {
     return `${instanceName} ${threadKey}`;
@@ -2047,29 +2013,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ts: string | null,
   ): void {
     if (!ts) return;
-    const now = Date.now();
-    if (threadSeen.size > 5_000) {
-      for (const [key, entry] of threadSeen) {
-        if (entry.expiresAt <= now) threadSeen.delete(key);
-      }
-    }
-    threadSeen.set(threadSeenKey(instanceName, threadKey), {
-      ts,
-      expiresAt: now + THREAD_SEEN_TTL_MS,
-    });
+    threadSeen.set(threadSeenKey(instanceName, threadKey), ts);
   }
 
   function readThreadSeen(
     instanceName: string,
     threadKey: string,
   ): string | null {
-    const entry = threadSeen.get(threadSeenKey(instanceName, threadKey));
-    if (!entry) return null;
-    if (entry.expiresAt <= Date.now()) return null;
-    return entry.ts;
+    return threadSeen.get(threadSeenKey(instanceName, threadKey)) ?? null;
   }
 
-  const seenAbove = new Map<string, { tss: string[]; expiresAt: number }>();
+  const seenAbove = createTtlMap<string, string[]>({
+    ttlMs: THREAD_SEEN_TTL_MS,
+  });
 
   function replaceSeenAbove(
     instanceName: string,
@@ -2081,20 +2037,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       seenAbove.delete(key);
       return;
     }
-    const now = Date.now();
-    if (seenAbove.size > 5_000) {
-      for (const [stale, entry] of seenAbove) {
-        if (entry.expiresAt <= now) seenAbove.delete(stale);
-      }
-    }
-    seenAbove.set(key, { tss, expiresAt: now + THREAD_SEEN_TTL_MS });
+    seenAbove.set(key, tss);
   }
 
   function readSeenAbove(instanceName: string, threadKey: string): string[] {
-    const entry = seenAbove.get(threadSeenKey(instanceName, threadKey));
-    if (!entry) return [];
-    if (entry.expiresAt <= Date.now()) return [];
-    return entry.tss;
+    return seenAbove.get(threadSeenKey(instanceName, threadKey)) ?? [];
   }
 
   /**
@@ -2135,61 +2082,41 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   const OFFERED_THREAD_TTL_MS = 48 * 60 * 60 * 1000;
-  const offeredThreads = new Map<
-    string,
-    Map<string, { channel: string; expiresAt: number }>
-  >();
+  const offeredThreads = createTtlMap<string, string>({
+    ttlMs: OFFERED_THREAD_TTL_MS,
+  });
 
   function noteOfferedThreads(
     instanceName: string,
     channel: string,
     threadTss: string[],
   ): void {
-    if (threadTss.length === 0) return;
-    const now = Date.now();
-    let offers = offeredThreads.get(instanceName);
-    if (!offers) {
-      offers = new Map();
-      offeredThreads.set(instanceName, offers);
-    }
-    if (offers.size > 5_000) {
-      for (const [ts, entry] of offers) {
-        if (entry.expiresAt <= now) offers.delete(ts);
-      }
-    }
-    for (const ts of threadTss) {
-      offers.set(ts, { channel, expiresAt: now + OFFERED_THREAD_TTL_MS });
-    }
+    for (const ts of threadTss)
+      offeredThreads.set(`${instanceName} ${ts}`, channel);
   }
 
   function readOfferedThread(
     instanceName: string,
     ts: string,
   ): { channel: string } | null {
-    const entry = offeredThreads.get(instanceName)?.get(ts);
-    if (!entry) return null;
-    if (entry.expiresAt <= Date.now()) return null;
-    return { channel: entry.channel };
+    const channel = offeredThreads.get(`${instanceName} ${ts}`);
+    return channel === undefined ? null : { channel };
   }
 
   const AGENT_THREAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  const agentThreads = new Map<string, number>();
-  const untaggedNoticesShown = new Map<string, number>();
+  const agentThreads = createTtlMap<string, true>({
+    ttlMs: AGENT_THREAD_TTL_MS,
+  });
+  const untaggedNoticesShown = createTtlMap<string, true>({
+    ttlMs: AGENT_THREAD_TTL_MS,
+  });
 
-  function noteExpiring(entries: Map<string, number>, key: string): void {
-    const now = Date.now();
-    if (entries.size > 5_000) {
-      for (const [stale, expiresAt] of entries) {
-        if (expiresAt <= now) entries.delete(stale);
-      }
-    }
-    entries.delete(key);
-    entries.set(key, now + AGENT_THREAD_TTL_MS);
+  function noteExpiring(entries: TtlMap<string, true>, key: string): void {
+    entries.set(key, true);
   }
 
-  function isLive(entries: Map<string, number>, key: string): boolean {
-    const expiresAt = entries.get(key);
-    return expiresAt !== undefined && expiresAt > Date.now();
+  function isLive(entries: TtlMap<string, true>, key: string): boolean {
+    return entries.get(key) !== undefined;
   }
 
   function noteAgentThread(
@@ -6747,7 +6674,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     },
 
     async resolveConversationLabels(refs: SlackConversationRef[]) {
-      const now = Date.now();
       const wanted = new Map<string, SlackConversationRef>();
       for (const ref of refs) wanted.set(conversationKey(ref), ref);
 
@@ -6755,8 +6681,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const unresolved: SlackConversationRef[] = [];
       for (const [key, ref] of wanted) {
         const cached = conversationLabelCache.get(key);
-        if (cached && cached.expiresAt > now) {
-          resolved.push({ ...ref, label: cached.label });
+        if (cached !== undefined) {
+          resolved.push({ ...ref, label: cached });
         } else {
           unresolved.push(ref);
         }
