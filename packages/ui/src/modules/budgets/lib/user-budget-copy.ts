@@ -6,7 +6,7 @@ import { formatCores, formatGi } from "./format.js";
 export const USER_BUDGETS_TITLE = "Compute budgets";
 
 export const USER_BUDGETS_HELP =
-  "The CPU and memory a user's running agents may reserve at once, and the memory and storage of the machine their VM agents share. A start that does not fit waits until room frees. Each field a budget leaves empty uses the default.";
+  "The CPU and memory a user's running agents may reserve at once, and the memory and storage of the machine their VM agents share. An agent start that does not fit is refused. Each field a budget leaves empty uses the default.";
 
 export const USER_BUDGETS_EMPTY = "No user has a compute budget of their own.";
 
@@ -18,7 +18,7 @@ export const SET_BUDGET_HINT =
   "Give one user more or less room than the default, by their email.";
 
 export const BUDGET_APPLIES_NEXT_START =
-  "It applies to the user's next agent start. Running agents keep running.";
+  "A change never stops an agent that runs now.";
 
 export const BUDGET_SAVE_FAILED =
   "Couldn't save the compute budget. Try again.";

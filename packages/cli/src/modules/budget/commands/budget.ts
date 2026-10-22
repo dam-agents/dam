@@ -203,7 +203,7 @@ function buildSetCommand(deps: BudgetDeps): Command {
       return writeStdoutAndExit(
         entry === null
           ? `${who} now has the default compute budget.\n`
-          : `The compute budget of ${entry.email ?? entry.ownerSub} is now ${budgetText(entry)}. It applies to their next agent start.\n`,
+          : `The compute budget of ${entry.email ?? entry.ownerSub} is now ${budgetText(entry)}.\n`,
         EXIT_SUCCESS,
       );
     });

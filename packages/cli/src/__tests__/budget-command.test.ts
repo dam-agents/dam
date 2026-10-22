@@ -130,7 +130,7 @@ describe("dam budget", () => {
       memory: null,
     });
     expect(out).toContain(
-      "The compute budget of ada@example.com is now CPU 16, memory default, storage default.",
+      "The compute budget of ada@example.com is now CPU 16, memory default, storage default.\n",
     );
   });
 
