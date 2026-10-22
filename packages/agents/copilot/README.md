@@ -59,6 +59,11 @@ The Config panel stores the agent's default under `platform.mode` in `~/.copilot
 [`platform.instructions.md`](rootfs/etc/copilot/instructions/platform.instructions.md) is a link to `/etc/AGENTS.md`, so each Copilot process gets the instructions of the image it runs in.
 A user's `~/.copilot/copilot-instructions.md` and `work/AGENTS.md` still load beside them.
 
+The agent's own instructions are `~/AGENTS.md` ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+Copilot finds `AGENTS.md` files only from the git root down to the work directory, so it misses `~/AGENTS.md` unless `$HOME` is that root.
+So both launch scripts source [`copilot-agents-md.sh`](rootfs/usr/local/lib/copilot-agents-md.sh), which adds `$HOME` to `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`.
+When `$HOME` is the git root, Copilot finds the file both ways and loads it once.
+
 ## Startup network calls
 
 `COPILOT_OFFLINE=true` turns off GitHub authentication, telemetry, the web tools, the GitHub MCP server and the update check, so a Copilot start asks for no egress approval.

@@ -11,6 +11,13 @@
     ]
   },
   "crossSessionInbound": "refuse",
+  "pluginConfigs": {
+    "cc-plugin-agents-md": {
+      "options": {
+        "instructionFiles": "claude-md-and-agents-md"
+      }
+    }
+  },
   "hooks": {
     "SessionStart": [
       {

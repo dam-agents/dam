@@ -129,10 +129,10 @@ An agent's instructions live in two files, and every harness reads both, so swit
 
 The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it.
 A harness that walks up from the work directory finds it on its own; one that reads only its own global file gets a link to `~/AGENTS.md` placed there at every start, and a regular file an owner put at that path stays theirs.
-Each harness's README names the files it reads ([Claude Code](../../packages/agents/claude-code/README.md#agent-instructions), [Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration)).
+Each harness's README names the files it reads ([Claude Code](../../packages/agents/claude-code/README.md#agent-instructions), [Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration), [Copilot](../../packages/agents/copilot/README.md#platform-instructions)).
 `work/AGENTS.md` still loads beside them on every harness, for a kit whose work directory is its toolkit.
 A harness reads these files when a session starts, so an edit applies from the next session; Codex reads its global file again each turn, so there an edit applies from the next turn.
-Claude Code skips `AGENTS.md` files while a `CLAUDE.md` sits on the same path, so a definition that keeps a `CLAUDE.md` makes it its entry point.
+Claude Code on its own drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere on its walk, so the image's managed settings make it load `AGENTS.md` beside `CLAUDE.md`, and a definition that keeps a `CLAUDE.md` loses neither file.
 
 ## Image updates
 
