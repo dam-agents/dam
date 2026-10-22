@@ -207,7 +207,7 @@ export function OptionPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+        className="w-[var(--radix-dropdown-menu-trigger-width)]"
       >
         <DropdownMenuRadioGroup value={value ?? CLEARED_VALUE}>
           {clearable && (

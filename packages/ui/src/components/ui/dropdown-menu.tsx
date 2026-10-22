@@ -14,25 +14,88 @@ const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
+const fadeClassName =
+  "pointer-events-none sticky z-10 -mx-1 h-6 from-foreground/20 to-transparent";
+
+export function overflowEdges({
+  scrollTop,
+  clientHeight,
+  scrollHeight,
+}: Pick<Element, "scrollTop" | "clientHeight" | "scrollHeight">) {
+  return {
+    above: scrollTop > 0,
+    below: scrollTop + clientHeight < scrollHeight - 1,
+  };
+}
+
 function DropdownMenuContent({
   className,
   align = "end",
   sideOffset = 4,
+  children,
+  ref,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const [el, setEl] = React.useState<HTMLDivElement | null>(null);
+  const [edges, setEdges] = React.useState({ above: false, below: false });
+  const setNode = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      setEl(node);
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
+
+  React.useEffect(() => {
+    if (!el) return;
+    const sync = () => {
+      const next = overflowEdges(el);
+      setEdges((shown) =>
+        next.above === shown.above && next.below === shown.below ? shown : next,
+      );
+    };
+    sync();
+    const resize = new ResizeObserver(sync);
+    resize.observe(el);
+    const added = new MutationObserver(sync);
+    added.observe(el, { childList: true, subtree: true });
+    el.addEventListener("scroll", sync, { passive: true });
+    return () => {
+      resize.disconnect();
+      added.disconnect();
+      el.removeEventListener("scroll", sync);
+    };
+  }, [el]);
+
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        ref={setNode}
         align={align}
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
           menuContentClassName,
-          "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+          "max-h-[var(--radix-dropdown-menu-content-available-height)] scroll-py-6 overflow-y-auto overflow-x-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
           className,
         )}
         {...props}
-      />
+      >
+        {edges.above && (
+          <div
+            aria-hidden
+            className={cn(fadeClassName, "top-0 -mb-6 bg-gradient-to-b")}
+          />
+        )}
+        {children}
+        {edges.below && (
+          <div
+            aria-hidden
+            className={cn(fadeClassName, "bottom-0 -mt-6 bg-gradient-to-t")}
+          />
+        )}
+      </DropdownMenuPrimitive.Content>
     </DropdownMenuPrimitive.Portal>
   );
 }
