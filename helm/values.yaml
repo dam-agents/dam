@@ -355,8 +355,10 @@ virtualization:
     # the controller hibernates the owner's idle agents. `requests.memory` is
     # the floor: the controller keeps the running pod's memory request, in
     # place, at that count plus `reserveMiB`, up to the limit, so the
-    # scheduler reserves what guests use. Set it below the limit for that to
-    # happen; with no request Kubernetes uses the limit and nothing moves.
+    # scheduler reserves what guests use, and at the floor alone while no
+    # machine runs, since an idle runner holds a few MiB. Set it below the
+    # limit for that to happen; with no request Kubernetes uses the limit and
+    # nothing moves.
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
     # set, and the controller logs that once. A node with no room defers or
