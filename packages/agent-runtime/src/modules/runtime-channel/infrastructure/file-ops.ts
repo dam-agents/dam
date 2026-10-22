@@ -145,8 +145,9 @@ async function applyFilesNow(
  * Claude Code itself, a hand edit, a kit that predates the rule — can still be
  * overwritten between our read and our rename. A lock whose writer is gone is
  * broken, so a writer that died inside its section never blocks the file for
- * good; of two waiters that break the same stale lock, the one whose rename
- * took a newer lock puts it back.
+ * good, and one whose text names no live writer at all — a kit that took it and
+ * died — is broken the same way; of two waiters that break the same stale lock,
+ * the one whose rename took a newer lock puts it back.
  */
 async function withLock(target: string, write: () => void): Promise<void> {
   const lockPath = `${target}.lock`;
@@ -168,7 +169,7 @@ async function withLock(target: string, write: () => void): Promise<void> {
     } catch {
       continue;
     }
-    if (age > LOCK_STALE_MS && /^\d+$/.test(holder) && !alive(Number(holder))) {
+    if (age > LOCK_STALE_MS && !alive(holder)) {
       const aside = `${lockPath}.stale.${mine}`;
       try {
         renameSync(lockPath, aside);
@@ -202,9 +203,10 @@ async function withLock(target: string, write: () => void): Promise<void> {
   }
 }
 
-function alive(pid: number): boolean {
+function alive(holder: string): boolean {
+  if (!/^[1-9]\d*$/.test(holder)) return false;
   try {
-    process.kill(pid, 0);
+    process.kill(Number(holder), 0);
     return true;
   } catch (err) {
     return (err as NodeJS.ErrnoException).code !== "ESRCH";

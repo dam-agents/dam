@@ -29,8 +29,10 @@ const sleep = (ms) =>
  * partial file. A writer that takes no lock — Claude Code itself, a hand edit, a
  * kit that predates the rule — can still be overwritten between our read and
  * our rename. A lock whose writer is gone is broken, so a writer that died
- * inside its section never stops the sync for good; of two waiters that break
- * the same stale lock, the one whose rename took a newer lock puts it back.
+ * inside its section never stops the sync for good, and a lock whose text names
+ * no live writer at all — a kit that took it and died — is broken the same way;
+ * of two waiters that break the same stale lock, the one whose rename took a
+ * newer lock puts it back.
  */
 const acquire = (lockPath) => {
   const mine = `${process.pid}:${randomUUID()}`;
@@ -52,7 +54,7 @@ const acquire = (lockPath) => {
     } catch {
       continue;
     }
-    if (age > LOCK_STALE_MS && /^\d+$/.test(holder) && !alive(Number(holder))) {
+    if (age > LOCK_STALE_MS && !alive(holder)) {
       const aside = `${lockPath}.stale.${mine}`;
       try {
         renameSync(lockPath, aside);
@@ -73,9 +75,10 @@ const acquire = (lockPath) => {
   }
 };
 
-const alive = (pid) => {
+const alive = (holder) => {
+  if (!/^[1-9]\d*$/.test(holder)) return false;
   try {
-    process.kill(pid, 0);
+    process.kill(Number(holder), 0);
     return true;
   } catch (err) {
     return err.code !== "ESRCH";

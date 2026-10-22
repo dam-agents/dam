@@ -292,6 +292,16 @@ describe("file-ops settings lock", () => {
     expect(logs.join("\n")).toMatch(/settings\.json\.lock stayed locked/);
   });
 
+  it("breaks an old lock whose text names no live writer", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    writeFileSync(lock(), "kit");
+    const longAgo = new Date(Date.now() - 60_000);
+    utimesSync(lock(), longAgo, longAgo);
+    await apply("mine");
+    expect(read()).toEqual({ theme: "dark", mine: true });
+    expect(existsSync(lock())).toBe(false);
+  });
+
   it("breaks a lock left behind by a writer that died inside its section", async () => {
     writeFileSync(target, JSON.stringify({ theme: "dark" }));
     const dead = spawnSync(process.execPath, ["-e", ""]).pid!;

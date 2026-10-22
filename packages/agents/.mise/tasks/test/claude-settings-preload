@@ -162,6 +162,32 @@ for (const broken of ['{"theme": "dark", "hooks": {', '{"theme": "dark",}\n']) {
   }
 }
 
+// TEST_SCENARIO: A lock a kit took in shell holds text with no pid the platform can look up. Once it is old, it is broken like a dead writer's, so a kit that dies does not stop every later sync.
+{
+  const home = mkdtempSync(join(tmpdir(), "claude-settings-lock-kit-"));
+  try {
+    const settings = join(home, ".claude/settings.json");
+    const lock = `${settings}.lock`;
+    mkdirSync(join(home, ".claude"));
+    writeFileSync(settings, JSON.stringify({ theme: "dark" }));
+    writeFileSync(lock, "$$:kit");
+    const longAgo = new Date(Date.now() - 60_000);
+    utimesSync(lock, longAgo, longAgo);
+    const r = spawnSync(process.execPath, ["--import", script, "-e", ""], {
+      env: { PATH: process.env.PATH, HOME: home, OTEL_EXPORTER_OTLP_ENDPOINT: "http://gateway:4318" },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, "");
+    const after = JSON.parse(readFileSync(settings, "utf8"));
+    assert.equal(after.theme, "dark");
+    assert.equal(after.hooks.Stop.length, 1);
+    assert.deepEqual(readdirSync(join(home, ".claude")), ["settings.json"]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 // TEST_SCENARIO: A run whose own keys are already in the file does not rewrite it, so another writer's keys and formatting are left exactly as they are.
 {
   const home = mkdtempSync(join(tmpdir(), "claude-settings-unchanged-"));
