@@ -38,8 +38,10 @@ const HOVER_CLOSE_MS = 300;
  * characters for an agent. The grid opens like a tooltip when a mouse rests on
  * the trigger or the trigger takes focus, and stays while the pointer moves
  * into it; a click or Enter opens it and moves focus into the grid. A pick
- * closes the grid. The figures are aria-hidden, so every control carries the
- * character's name for screen readers.
+ * closes the grid. An image upload holds it open from the file dialog to the
+ * end of the upload, so the input that receives the file is still there. The
+ * figures are aria-hidden, so every control carries the character's name for
+ * screen readers.
  */
 export function AvatarPicker({
   value,
@@ -57,6 +59,8 @@ export function AvatarPicker({
   const refocusing = useRef(false);
   const focusInside = useRef(false);
   const focusOnMount = useRef(false);
+  const holding = useRef(false);
+  const pointerGone = useRef(false);
   const focusGrid = (grid: HTMLDivElement) =>
     (
       grid.querySelector<HTMLElement>("[aria-pressed=true]") ??
@@ -66,7 +70,7 @@ export function AvatarPicker({
   const later = (next: boolean, ms: number) => {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      if (!next && focusInside.current) return;
+      if (!next && (focusInside.current || holding.current)) return;
       setOpen(next);
     }, ms);
   };
@@ -76,11 +80,20 @@ export function AvatarPicker({
   };
   const hover = {
     onPointerEnter: (e: PointerEvent) => {
-      if (e.pointerType === "mouse") later(true, open ? 0 : HOVER_OPEN_MS);
+      if (e.pointerType !== "mouse") return;
+      pointerGone.current = false;
+      later(true, open ? 0 : HOVER_OPEN_MS);
     },
     onPointerLeave: (e: PointerEvent) => {
-      if (e.pointerType === "mouse") later(false, HOVER_CLOSE_MS);
+      if (e.pointerType !== "mouse") return;
+      pointerGone.current = true;
+      later(false, HOVER_CLOSE_MS);
     },
+  };
+  // A hold that ends after the mouse left closes the grid as leaving would.
+  const hold = (next: boolean) => {
+    holding.current = next;
+    if (!next && pointerGone.current) later(false, HOVER_CLOSE_MS);
   };
   return (
     <Popover open={open} onOpenChange={set}>
@@ -150,6 +163,7 @@ export function AvatarPicker({
               if (character !== value) onChange(character);
             }}
             onLeave={() => set(false)}
+            onHold={hold}
           />
         </div>
       </PopoverContent>
@@ -169,10 +183,12 @@ export function AvatarGrid({
   value,
   onPick,
   onLeave,
+  onHold,
 }: {
   value: string;
   onPick: (avatar: string) => void;
   onLeave: () => void;
+  onHold?: (holding: boolean) => void;
 }) {
   const custom = useFeatures().data?.["custom-avatars"] ?? false;
   const unlocked = useUnlockedAvatars();
@@ -224,7 +240,7 @@ export function AvatarGrid({
           </span>
         ))}
       </div>
-      {custom && <CustomAvatarInputs onPick={onPick} />}
+      {custom && <CustomAvatarInputs onPick={onPick} onHold={onHold} />}
       {locked.length > 0 && (
         <button
           type="button"
@@ -244,8 +260,16 @@ export function AvatarGrid({
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The experimental custom avatars: one emoji typed
  * or pasted, or an uploaded JPG or PNG that the api-server crops to a square.
+ * `onHold` is true from the click that opens the file dialog until the dialog
+ * is cancelled or the upload ends.
  */
-function CustomAvatarInputs({ onPick }: { onPick: (avatar: string) => void }) {
+function CustomAvatarInputs({
+  onPick,
+  onHold,
+}: {
+  onPick: (avatar: string) => void;
+  onHold?: (holding: boolean) => void;
+}) {
   const [emoji, setEmoji] = useState("");
   const [uploading, setUploading] = useState(false);
   const validEmoji = AVATAR_EMOJI_RE.test(`emoji:${emoji.trim()}`);
@@ -273,6 +297,7 @@ function CustomAvatarInputs({ onPick }: { onPick: (avatar: string) => void }) {
       });
     } finally {
       setUploading(false);
+      onHold?.(false);
     }
   };
   return (
@@ -312,10 +337,19 @@ function CustomAvatarInputs({ onPick }: { onPick: (avatar: string) => void }) {
               accept="image/png,image/jpeg"
               className="sr-only"
               disabled={uploading}
+              ref={(el) => {
+                // React has no onCancel for inputs; the file dialog's cancel
+                // is a native event only.
+                const release = () => onHold?.(false);
+                el?.addEventListener("cancel", release);
+                return () => el?.removeEventListener("cancel", release);
+              }}
+              onClick={() => onHold?.(true)}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
                 if (file) void upload(file);
+                else onHold?.(false);
               }}
             />
           </label>
