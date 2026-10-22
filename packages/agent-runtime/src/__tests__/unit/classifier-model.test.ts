@@ -2,8 +2,9 @@
  * TEST_OVERVIEW: Where Claude Code's auto-mode classifier call runs when its
  * session is on another provider: the session provider's preferred
  * classifier, else the session's own model. A call that is not the process's
- * classifier is left alone, and so is one whose session runs server-side auto
- * mode, where the provider itself answers the check.
+ * classifier is left alone, and one whose session runs server-side auto mode
+ * keeps the name the harness sent, since the provider itself answers the
+ * check.
  */
 import { describe, expect, it } from "vitest";
 import type { ProviderAlias } from "api-server-api";
@@ -103,7 +104,7 @@ describe("the classifier's own call", () => {
     );
   });
 
-  /** TEST_SCENARIO: Anthropic and the IBM proxy answer the auto-mode check themselves, so a Claude session there passes the call through unchanged; IBM with a GPT session does not, so it gets IBM's preferred classifier. */
+  /** TEST_SCENARIO: Anthropic and the IBM proxy answer the auto-mode check themselves, so a Claude session there keeps the call exactly as the harness sent it, which also keeps the tier rule off it; IBM with a GPT session does not, so it gets IBM's preferred classifier. */
   it("passes a server-side auto-mode session through, and moves a GPT one", () => {
     const ibm = provider("ibm", [
       "aws/claude-opus-5-5",
@@ -112,10 +113,10 @@ describe("the classifier's own call", () => {
     ]);
     expect(
       where({ sessionModel: "anthropic/claude-opus-5-5", providers: [ibm] }),
-    ).toBeNull();
+    ).toBe(PROCESS_CLASSIFIER);
     expect(
       where({ sessionModel: "ibm/aws/claude-opus-5-5", providers: [ibm] }),
-    ).toBeNull();
+    ).toBe(PROCESS_CLASSIFIER);
     expect(where({ sessionModel: "ibm/gpt-5.5", providers: [ibm] })).toBe(
       "claude/ibm/aws/claude-sonnet-5-5",
     );

@@ -153,9 +153,10 @@ export function tierModelOnSessionProvider(input: {
  * instead of the provider it left. The call is recognized by the exact name
  * the process's classifier variable holds, a string match only; no tier logic
  * applies, since the classifier names its own model rather than a slot. Null
- * when the call is not the classifier's, and when the session runs on a
- * provider whose own service answers the check (hasServerAutoMode) with a
- * Claude model, where the call passes through unchanged.
+ * when the call is not the classifier's. A session on a provider whose own
+ * service answers the check (hasServerAutoMode) with a Claude model keeps the
+ * call where the harness sent it, which returning its own name says, so the
+ * tier rule below never touches it.
  */
 export function classifierModelOnSessionProvider(input: {
   requested: string;
@@ -173,7 +174,7 @@ export function classifierModelOnSessionProvider(input: {
   });
   if (!own) return null;
   if (hasServerAutoMode(own.alias) && isClaudeModel(input.sessionModel))
-    return null;
+    return input.requested;
   const provider = input.providers.find((p) => p.alias === own.alias);
   const ownView = provider
     ? forHarness(provider.entries, input.harness, binding)
