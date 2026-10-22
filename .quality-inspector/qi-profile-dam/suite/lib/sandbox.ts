@@ -1,3 +1,11 @@
+/* UNIT_BOUNDARY_DESCRIPTION: The sandbox test person and test user of the quality-inspector
+ * profile. Slack: post as the person and read the bot's replies in a thread. GitHub:
+ * githubSignIn finishes DAM's "Connect with GitHub" on github.com as the sandbox test user
+ * (the password, a TOTP code computed per RFC 6238 and never reused, the OAuth App's consent
+ * when GitHub asks) and returns once the browser is back on DAM, so a test never names a
+ * sandbox host. The values come from the E2E_SANDBOX_* lines, which the inspector masks in
+ * every run artefact; the install's GitHub OAuth App (overlay @sandbox:github) is on only
+ * while every E2E_SANDBOX_GITHUB_* line is filled. */
 import { createHmac } from 'node:crypto';
 
 const env = process.env;
@@ -5,8 +13,6 @@ const env = process.env;
 export const sandbox = {
   slack: () => !!(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN && env.E2E_SANDBOX_SLACK_BOT_TOKEN && env.E2E_SANDBOX_SLACK_CHANNEL_ID),
   githubRepo: () => (env.E2E_SANDBOX_GITHUB_TOKEN ? JSON.parse(env.QI_PROFILE_CONFIG ?? '{}').sandbox_github_repo ?? '' : ''),
-  // The test user who connects GitHub through DAM's OAuth sign-in; the install's GitHub OAuth App
-  // (overlay @sandbox:github) is on only while every E2E_SANDBOX_GITHUB_* line is filled.
   githubUser: () =>
     !!(env.E2E_SANDBOX_GITHUB_LOGIN && env.E2E_SANDBOX_GITHUB_PASSWORD && env.E2E_SANDBOX_GITHUB_TOTP_SECRET &&
        env.E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID && env.E2E_SANDBOX_GITHUB_OAUTH_CLIENT_SECRET),
@@ -45,9 +51,6 @@ export async function botReplies(ts: string, ms = 300_000): Promise<string[]> {
   }
 }
 
-// --- GitHub sign-in -------------------------------------------------------------------------
-
-// RFC 6238: the current 6-digit code of a base32 secret (SHA-1, 30-second steps).
 function totp(secret: string, at = Date.now()): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   let bits = '';
@@ -64,7 +67,6 @@ function totp(secret: string, at = Date.now()): string {
   return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, '0');
 }
 
-// GitHub accepts each code once: never reuse the last one, and never send one about to expire.
 let lastCode = '';
 async function freshCode(): Promise<string> {
   for (;;) {
@@ -87,18 +89,11 @@ type Brw = { url(): Promise<string>; waitForURL(u: RegExp, o?: { timeout?: numbe
 
 const onGitHub = async (browser: Brw) => /^https:\/\/github\.com\//.test(await browser.url());
 
-/**
- * Finishes DAM's "Connect with GitHub" on github.com as the sandbox test user: the password, the
- * TOTP code, and the OAuth App's consent when GitHub asks for it. Call it right after the step
- * that sends the browser to GitHub; it returns once the browser is back on DAM (`APP_URL`).
- * The values come from the E2E_SANDBOX_GITHUB_* lines, which the inspector masks in every run
- * artefact; the password field is masked on screen, the TOTP code is spent once used.
- */
 export async function githubSignIn({ screen, browser }: { screen: Scr; browser: Brw }, timeout = 60_000): Promise<void> {
   if (!sandbox.githubUser()) throw new Error('the GitHub sandbox test user is not set (E2E_SANDBOX_GITHUB_*)');
   const app = new RegExp('^' + (env.APP_URL ?? 'http://localhost:4444').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
   await browser.waitForURL(/^https:\/\/github\.com\/(login|sessions?)\b/, { timeout }).catch(() => undefined);
-  if (!(await onGitHub(browser))) return; // GitHub remembered the consent and sent the browser straight back
+  if (!(await onGitHub(browser))) return;
   const login = screen.getByLabel(/username or email/i).first();
   if (await login.isVisible()) {
     await login.fill(sandbox.githubLogin());
@@ -108,12 +103,10 @@ export async function githubSignIn({ screen, browser }: { screen: Scr; browser: 
   const code = screen.getByLabel(/authentication code|code from your authenticator/i).first();
   await code.waitFor({ state: 'visible', timeout });
   await code.fill(await freshCode());
-  // The page submits a full code by itself; press Verify when it is still there.
   await browser.waitForURL(/^(?!https:\/\/github\.com\/sessions\/two-factor)/, { timeout: 10_000 }).catch(async () => {
     const verify = screen.getByRole('button', /^verify$/i).first();
     if (await verify.isVisible()) await verify.tap();
   });
-  // The consent, the first time this user authorizes the App; GitHub enables its button after a moment.
   const authorize = screen.getByRole('button', /^authorize\b/i).first();
   if (await onGitHub(browser)) {
     await authorize.waitFor({ state: 'visible', timeout }).catch(() => undefined);

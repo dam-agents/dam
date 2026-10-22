@@ -10,16 +10,21 @@ It holds nothing real and nobody else; never use `dam-agents`, your own account,
      On the QR code page, click **setup key** and keep that text — the TOTP secret (letters A–Z and digits 2–7).
      Add the same key to your own authenticator app as well, so you can sign in as the user yourself; finish the setup with its code and store the recovery codes somewhere safe.
    - Add no passkey or security key: the tests answer only the authenticator code.
+
 2. **The organization.** As the test user: your avatar → **Your organizations** → **New organization**, Free plan.
    Pick a name without `_`, for example `dam-qa-sandbox-<your initials>`.
+
 3. **The repository.** In it, create a **public** repository with a README, for example `e2e-playground` (again no `_`).
    Tell the inspector its name as `<organization>/<repository>` — it becomes `profile.sandbox_github_repo`.
+
 4. **The OAuth App.** The organization → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**.
    - Application name: for example `DAM QA sandbox`.
    - Homepage URL: `http://localhost:4444`.
    - Authorization callback URL: `http://localhost:4444/api/oauth/callback`.
-   - Leave **Enable Device Flow** off. **Register application**.
+   - Leave **Enable Device Flow** off.
+     **Register application**.
    - Keep the **Client ID**, then **Generate a new client secret** and keep it.
+
 5. **The token.** As the test user: your avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
    - Resource owner: the sandbox organization.
    - Repository access: **Only select repositories** → the sandbox repository.
@@ -27,6 +32,7 @@ It holds nothing real and nobody else; never use `dam-agents`, your own account,
      Nothing else.
    - Expiration: the longest the organization allows; a new token later replaces this line.
    - If the organization asks to approve fine-grained tokens, approve this one under the organization's **Settings** → **Personal access tokens**.
+
 6. **The lines.** In the agent's files on the platform, open `/home/agent/work/env/credentials.env` and fill — never paste any of them in chat:
 
    | Line                                      | Value                      |
