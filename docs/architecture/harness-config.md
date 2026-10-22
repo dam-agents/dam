@@ -125,6 +125,7 @@ Only a Claude model answers that check: for any other model the reply carries no
 So the Claude Code manifest declares `nonClaudeModelEnv` (`CLAUDE_CODE_AUTO_MODE_SERVER=0`), which joins the Harness Lease key of a routed session whose model or subagent model is not Claude: such a session runs in a Claude Code process that does not ask for the check, and the Claude sessions keep it in theirs.
 A model is Claude when its upstream id says `claude`; no model, or a bare tier word, counts as Claude.
 Switching between the two sides moves the session between processes once the running turn ends, as a process-scoped setting does.
+A web terminal on a model that is not Claude starts with the same env.
 A routed provider's own env never reaches the harness, so a preset that sets `CLAUDE_CODE_AUTO_MODE_SERVER` (CurveBender) has no effect on it.
 
 ## Provider compatibility
