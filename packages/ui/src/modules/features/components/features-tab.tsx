@@ -70,13 +70,13 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "new-layout",
     label: "JanUI",
     description:
-      "A sidebar of agent avatars beside your conversations, with pinned sessions, a dashboard Home, and one side panel on the right with an icon bar for files, changes, artifacts and the browser. Turn it off to return to the current layout.",
+      "An app shell of its own: a sidebar of agent avatars beside your conversations, pinned sessions, a dashboard Home and the left navigation of your pages. Turn it off to return to the current pages and sidebar; the right toolbar has its own switch.",
   },
   {
     id: "unified-right-toolbar",
     label: "Unified right toolbar",
     description:
-      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, instead of the classic icon column. Independent of JanUI.",
+      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, in an Agent's chat too, and offer Artifacts on every page. Independent of JanUI.",
   },
   {
     id: "environments",

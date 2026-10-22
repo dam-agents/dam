@@ -93,6 +93,7 @@ import { EnvironmentsPanel } from "../../environments/components/environments-pa
 import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
@@ -287,6 +288,7 @@ export function ChatView() {
   );
   const processesEnabled = useProcessesEnabled();
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
@@ -1279,7 +1281,7 @@ export function ChatView() {
         />
       )}
       {}
-      {newLayout ? (
+      {newLayout || rightToolbar ? (
         <SidePanelShell
           mainClassName="@container/chat"
           activeTab={activeTab}
@@ -1338,14 +1340,19 @@ export function ChatView() {
               .join(" · ")}
           </h1>
           {!newLayout && (
-            <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
+            // UNIT_BOUNDARY_DESCRIPTION: the tabbed panel leaves the chat without a bar of its own on a wide window, as JanUI's chat has none, so that bar appears there only while the status has a badge to show; a phone keeps it, because the rail waits for a panel there and the navigation button has nowhere else to go.
+            <header
+              data-testid="chat-top-bar"
+              className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex"
+            >
               <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
                 <MobileMenuButton />
                 <span
                   aria-hidden
                   className={cn(
                     "h-2 w-2 shrink-0 rounded-full",
-                    agentView && "hidden @max-[149px]:block",
+                    // UNIT_BOUNDARY_DESCRIPTION: the avatar already carries the state, so the dot marks only a chat whose Agent has not loaded yet.
+                    agentView && "hidden",
                     dotColor,
                   )}
                 />
@@ -1361,19 +1368,8 @@ export function ChatView() {
                       avatar={agentView.avatar}
                       size={28}
                       mood={avatarMood(agentDisplay?.state, agentView)}
-                      className="@max-[149px]:hidden"
                     />
                   )}
-                  <span className="flex min-w-0 flex-col items-start text-left">
-                    <span className="max-w-full truncate text-sm font-bold text-foreground">
-                      {selectedAgentName}
-                    </span>
-                    {sessionView?.title && (
-                      <span className="max-w-full truncate text-2xs text-muted-foreground">
-                        {sessionView.title}
-                      </span>
-                    )}
-                  </span>
                 </button>
                 {agentView && (
                   <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
@@ -1386,7 +1382,7 @@ export function ChatView() {
               </div>
               <div
                 data-chat-status
-                className="flex shrink-0 items-center gap-2 md:ml-auto"
+                className="flex shrink-0 items-center gap-2"
               >
                 <ChatHeaderStatus
                   selectedAgent={selectedAgent}

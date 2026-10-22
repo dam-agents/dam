@@ -7,6 +7,7 @@ import { useStore } from "../../../store.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useOpenSidePanel } from "../hooks/use-open-side-panel.js";
 import {
@@ -32,13 +33,14 @@ export function AppSidePanelButtons({
   const desktop = useIsDesktop();
   const view = useStore((s) => s.view);
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   if (desktop) return null;
   return (
     <SidePanelTabButtons
       tabs={appSidePanelTabs(
         hiddenSidePanelTabs({
           agent: false,
-          artifacts: newLayout || view === "sandbox-home",
+          artifacts: newLayout || rightToolbar || view === "sandbox-home",
           canOpenBrowser: false,
           changes: false,
           processesEnabled: false,
@@ -61,8 +63,8 @@ export function AppSidePanelButtons({
  * Artifacts, scoped to that Agent with a switch to the whole library. Other
  * pages leave Artifacts to the Artifacts page, whose opened artifact docks
  * here without the interactive bridge, because no chat is open to receive a
- * prompt. With JanUI on, every page offers Artifacts, listing the
- * whole library.
+ * prompt. With JanUI or the Unified right toolbar experiment on, every
+ * page offers Artifacts, listing the whole library.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const openArtifactId = useStore((s) => s.openArtifactId);
@@ -72,10 +74,11 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const view = useStore((s) => s.view);
   const agentId = useStore((s) => s.agentId);
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
   const hidden = hiddenSidePanelTabs({
     agent: false,
-    artifacts: newLayout || view === "sandbox-home",
+    artifacts: newLayout || rightToolbar || view === "sandbox-home",
     canOpenBrowser: false,
     changes: false,
     processesEnabled: false,
@@ -111,7 +114,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
         activeTab === "artifacts" &&
         !hidden.has("artifacts") && (
           <ChatArtifactsPanel
-            agentId={newLayout ? null : agentId}
+            agentId={newLayout || view !== "sandbox-home" ? null : agentId}
             open
             className={cn("flex-1", dockedShown && "hidden")}
           />

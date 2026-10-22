@@ -1,10 +1,13 @@
-// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
+// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals. The tiled rail's Artifacts tile draws the document icon whatever shell the page has, while the classic buttons keep the layout's own artifact icon.
+import { DocumentAttachment } from "@carbon/icons-react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
+import { ArtifactIcon } from "../../modules/artifacts/lib/artifact-icon.js";
 import {
+  SIDE_PANEL_TABS,
   type SidePanelBadge,
   SidePanelBar,
 } from "../../modules/sessions/components/side-panel-bar.js";
@@ -248,4 +251,11 @@ it("drops the rail's tooltips but keeps the classic bar's", () => {
       /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
     )?.[0] ?? "";
   expect(classic).toContain('data-state="closed"');
+});
+
+// TEST_SCENARIO: the tiled rail draws artifacts as the document icon whatever shell the page has, while the classic buttons and the rest of the app keep the layout's own artifact icon, so a page with the flag off draws what it always did.
+it("draws artifacts as the document icon on the rail alone", () => {
+  const artifacts = SIDE_PANEL_TABS.find((t) => t.tab === "artifacts");
+  expect(artifacts?.tileIcon).toBe(DocumentAttachment);
+  expect(artifacts?.icon).toBe(ArtifactIcon);
 });
