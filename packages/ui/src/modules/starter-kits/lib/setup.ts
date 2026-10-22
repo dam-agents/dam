@@ -1,7 +1,6 @@
 import {
   type ConnectionTemplateView,
   PROVIDER_TEMPLATE_IDS,
-  type ProviderPresetType,
   requirementAccepts,
   rruleToText,
   type StarterKitApplyInput,
@@ -11,8 +10,6 @@ import {
   type StarterKitView,
 } from "api-server-api";
 
-import type { ProviderRef } from "../../providers/components/provider-item.js";
-import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import {
   CRON_TIMEZONE,
   cronToText,
@@ -20,7 +17,6 @@ import {
 
 export interface StarterKitSetupDraft {
   name: string;
-  providerRef: ProviderRef | null;
   connectionIds: string[];
   slackChannelId: string;
   skippedSchedules: string[];
@@ -44,12 +40,7 @@ interface RequirementStatus {
 }
 
 function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
-  return [
-    ...new Set([
-      ...draft.connectionIds,
-      ...(draft.providerRef ? [draft.providerRef.id] : []),
-    ]),
-  ];
+  return [...new Set(draft.connectionIds)];
 }
 
 export function ownedMatches(
@@ -152,31 +143,10 @@ export function startupItemCommandLine(
   return [item.command, ...item.args.map(shellWord)].join(" ");
 }
 
-function isProviderTemplate(id: string): id is ProviderPresetType {
-  return PROVIDER_TEMPLATE_IDS.has(id);
-}
-
 export function isProviderRequirement(
   requirement: StarterKitConnectionRequirement,
 ): boolean {
-  return requirement.accepts.some(isProviderTemplate);
-}
-
-export function providerPolicyForKit(
-  kit: Pick<StarterKitView, "connections" | "providers">,
-  base: SetupProviderPolicy,
-): SetupProviderPolicy {
-  const declared =
-    kit.providers ??
-    kit.connections
-      .find(isProviderRequirement)
-      ?.accepts.filter(isProviderTemplate);
-  if (!declared || declared.length === 0) return base;
-  const recommended =
-    base.recommended && declared.includes(base.recommended)
-      ? base.recommended
-      : declared[0];
-  return { allow: declared, recommended };
+  return requirement.accepts.some((id) => PROVIDER_TEMPLATE_IDS.has(id));
 }
 
 export function connectionRequirements(

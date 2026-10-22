@@ -1,10 +1,6 @@
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
-import {
-  defaultHarnessId,
-  imageCatalogue,
-} from "../../sandboxes/lib/image-catalogue.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
@@ -25,7 +21,10 @@ export function useCreateDefaultAgent() {
       AgentView | undefined
     > => {
       if (!list || !templates) return;
-      const templateId = defaultHarnessId(imageCatalogue(templates).harnesses);
+      const harnesses = templates.filter((t) => t.category === "harness");
+      const templateId = harnesses.some((t) => t.id === "default")
+        ? "default"
+        : (harnesses[0]?.id ?? null);
       try {
         const name = nextAgentName(list.map((a) => a.name));
         const agent = await createAgent.mutateAsync({
