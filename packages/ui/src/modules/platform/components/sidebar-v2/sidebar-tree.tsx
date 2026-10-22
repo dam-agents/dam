@@ -4,19 +4,11 @@ import {
   FaceActivatedAdd,
   FaceAdd,
   Home,
-  ListTree,
   Settings,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 
 import { Collapse } from "@/components/ui/collapse";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   ACTIVE_ITEM,
@@ -26,7 +18,6 @@ import {
   SQUIRCLE,
 } from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -59,7 +50,6 @@ import {
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
-import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
 import {
   AddRow,
@@ -71,6 +61,7 @@ import {
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
+import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the flat list pages the owner's attention feed, which holds at most ATTENTION_FEED_LIMIT Sessions; older ones show only under their Agent. Paging the server would lift that ceiling.
 const FLAT_PAGE = 20;
@@ -279,53 +270,6 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <SettingsFooter onNavigate={onNavigate} />
     </div>
-  );
-}
-
-const GROUP_BY_LABELS: Record<SidebarGroupBy, string> = {
-  all: "All sessions",
-  agents: "Group by agents",
-};
-
-function GroupByMenu({
-  value,
-  onChange,
-}: {
-  value: SidebarGroupBy;
-  onChange: (value: SidebarGroupBy) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <Tooltip content="Group by" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={`Group by: ${GROUP_BY_LABELS[value]}`}
-            data-testid="sidebar-group-by"
-            className={cn(
-              "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              FOCUS_RING,
-            )}
-          >
-            <ListTree size={14} />
-          </button>
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup
-          value={value}
-          onValueChange={(next) => {
-            if (next === "all" || next === "agents") onChange(next);
-          }}
-        >
-          {(["all", "agents"] as const).map((option) => (
-            <DropdownMenuRadioItem key={option} value={option}>
-              {GROUP_BY_LABELS[option]}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

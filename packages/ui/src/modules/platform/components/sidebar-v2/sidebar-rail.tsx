@@ -40,12 +40,14 @@ import {
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
+import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { AddRow } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { PinnedList, usePinnedRows } from "./pinned-rows.js";
+import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover; choosing a Session closes the popover; the pin icon opens the Pinned section on click. The rail never leaves the layout, so the page always has a way back to the tree.
@@ -65,6 +67,10 @@ export function SidebarRail({
   const settingsOpen = useStore((s) => s.view === "settings");
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const filters = useStore((s) => s.sidebarActivityFilters);
+  const setFilters = useStore((s) => s.setSidebarActivityFilters);
+  const groupBy = useStore((s) => s.sidebarGroupBy);
+  const setGroupBy = useStore((s) => s.setSidebarGroupBy);
   const [open, setOpen] = useState<string | null>(null);
   // UNIT_BOUNDARY_DESCRIPTION: while one popover is open or within its close grace, the pointer is already inside the rail, so the next tile opens at once; HOVER_CLOSE_MS after the last one shut, a rest on a tile needs the full HOVER_OPEN_MS again.
   const groupUntil = useRef(0);
@@ -133,14 +139,22 @@ export function SidebarRail({
         data-testid="sidebar-rail-agents"
       >
         <div
-          aria-hidden
           className={cn(
-            "flex items-center justify-center",
+            "group/sep relative flex items-center justify-center",
             RAIL_SEPARATOR_SPACE,
           )}
+          data-testid="sidebar-rail-list-menus"
         >
-          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline stands where the tree's Agents label stood, so it fades in as the rail arrives rather than appearing under a word that has gone. */}
-          <span className="h-px w-6 animate-in bg-border fade-in-0 duration-200 motion-reduce:animate-none" />
+          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline stands where the tree's Agents label stood, so it fades in as the rail arrives rather than appearing under a word that has gone; the label's own buttons take its place while the pointer rests on it, which is where the empty space is. */}
+          <span
+            aria-hidden
+            className="h-px w-6 animate-in bg-border fade-in-0 duration-200 group-focus-within/sep:opacity-0 group-has-[[aria-expanded=true]]/sep:opacity-0 group-hover/sep:opacity-0 motion-reduce:animate-none"
+          />
+          {/* UNIT_BOUNDARY_DESCRIPTION: a menu of either button takes the pointer away from the rail, so the pair stays drawn while one is open rather than vanishing under its own menu. */}
+          <div className="absolute inset-0 flex items-center justify-center gap-px opacity-0 transition-opacity duration-150 group-focus-within/sep:opacity-100 group-hover/sep:opacity-100 has-[[aria-expanded=true]]:opacity-100 motion-reduce:transition-none">
+            <ActivityFilterMenu filters={filters} onChange={setFilters} />
+            <GroupByMenu value={groupBy} onChange={setGroupBy} />
+          </div>
         </div>
         {agents.map((agent) => (
           <AgentTile
