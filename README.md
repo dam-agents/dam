@@ -49,7 +49,7 @@ Deploy DAM on your own infrastructure and build with the platform.
 ### IBM hosted deployment
 
 Use DAM through IBM Research without managing your own cluster.
-Sign in with your IBM login to start; there is no approval step.
+Sign in with your IBM login to start.
 
 - [Launch DAM](https://ibm.biz/dam-agents)
 - [IBM documentation](https://ibm.biz/dam-docs)
