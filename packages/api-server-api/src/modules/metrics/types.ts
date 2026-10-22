@@ -70,6 +70,7 @@ export interface SessionRuntime {
 export interface CallContext {
   at: string;
   requestId: string;
+  routerCallId: string;
   agentId: string;
   model: string;
   inputTokens: number;

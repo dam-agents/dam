@@ -1,4 +1,8 @@
-import type { SpendAmount, SpendSessionRow } from "api-server-api";
+import type {
+  SpendAmount,
+  SpendCallCost,
+  SpendSessionRow,
+} from "api-server-api";
 
 import {
   bobcoinCell,
@@ -17,6 +21,11 @@ export function amountsLabel(amounts: readonly SpendAmount[]): string | null {
   if (totals.usd_list > 0) return coveredCell(totals.usd_list);
   if (totals.bobcoin > 0) return bobcoinCell(totals.bobcoin);
   return null;
+}
+
+export function callCostLabel(cost: SpendCallCost): string | null {
+  const text = amountsLabel([cost]);
+  return text && cost.estimated ? `~${text}` : text;
 }
 
 function amountsList(amounts: readonly SpendAmount[]): string {

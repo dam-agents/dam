@@ -307,6 +307,15 @@ export function createSpendService(deps: {
       return foldTurns(windows, rows);
     },
 
+    async calls({ routerCallIds }) {
+      return {
+        calls: await deps.ledger.callCosts({
+          ownerSub: deps.ownerSub,
+          routerCallIds,
+        }),
+      };
+    },
+
     async metering() {
       const now = new Date();
       const startedAt = await deps.meteringStart();

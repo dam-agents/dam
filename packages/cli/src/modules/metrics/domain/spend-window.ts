@@ -2,6 +2,7 @@ import {
   formatSpendAmount,
   SPEND_DAILY_MAX_DAYS,
   type SpendAmount,
+  type SpendCallCost,
 } from "api-server-api";
 
 const DAY_MS = 86_400_000;
@@ -75,6 +76,14 @@ export function spendText(amounts: readonly SpendAmount[]): string {
   const shown = amounts.filter((a) => a.unit !== "free" && a.costMicros > 0);
   if (shown.length === 0) return formatSpendAmount(0, "usd");
   return shown.map((a) => formatSpendAmount(a.costMicros, a.unit)).join("; ");
+}
+
+export function callCostText(
+  cost: Omit<SpendCallCost, "routerCallId"> | null,
+): string {
+  if (!cost) return "—";
+  const text = formatSpendAmount(cost.costMicros, cost.unit);
+  return cost.estimated ? `~${text}` : text;
 }
 
 export const NO_CALL_TELEMETRY =

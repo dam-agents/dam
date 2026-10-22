@@ -7,9 +7,11 @@ import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens } from "../../metrics/lib/format.js";
+import { useCallCosts } from "../../spend/api/queries.js";
 import { amountsLabel } from "../../spend/lib/amounts-label.js";
 import { turnLineHelp } from "../../spend/lib/copy.js";
 import { useTurn } from "../api/queries.js";
+import { callCostOf, routerCallIdsOf } from "../lib/call-costs.js";
 import { RecordDetail, SpanDetail } from "./record-detail.js";
 import { TraceWaterfall } from "./trace-waterfall.js";
 
@@ -52,6 +54,16 @@ export function TurnTelemetry({
     turn.promptId,
   );
   const loaded = detail.data?.available === true ? detail.data.turn : undefined;
+  const routerCallIds = useMemo(
+    () => (loaded ? routerCallIdsOf(loaded) : []),
+    [loaded],
+  );
+  const callCosts = useCallCosts(agentId, routerCallIds);
+  const costOf = useMemo(
+    () =>
+      loaded ? callCostOf(loaded, callCosts.data ?? new Map()) : undefined,
+    [loaded, callCosts.data],
+  );
   const selectedSpan = useMemo(
     () =>
       selectedKey?.startsWith("span:") === true
@@ -109,6 +121,7 @@ export function TurnTelemetry({
             <>
               <TraceWaterfall
                 turn={loaded}
+                costOf={costOf}
                 selectedKey={selectedKey}
                 onSelect={(key) =>
                   setSelectedKey((current) => (current === key ? null : key))
@@ -122,12 +135,24 @@ export function TurnTelemetry({
               )}
               {selectedSpan && (
                 <div className="border-t border-border">
-                  <SpanDetail trace={loaded} span={selectedSpan} />
+                  <SpanDetail
+                    trace={loaded}
+                    span={selectedSpan}
+                    cost={costOf?.span(
+                      selectedSpan,
+                      loaded.logs.filter(
+                        (l) => l.attachedTo === selectedSpan.spanId,
+                      ),
+                    )}
+                  />
                 </div>
               )}
               {selectedLog && (
                 <div className="border-t border-border">
-                  <RecordDetail log={selectedLog} />
+                  <RecordDetail
+                    log={selectedLog}
+                    cost={costOf?.log(selectedLog)}
+                  />
                 </div>
               )}
             </>

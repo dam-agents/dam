@@ -15,6 +15,7 @@ import { renderFittedTable, renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import {
+  callCostText,
   formatDayWindow,
   NO_CALL_TELEMETRY,
   spendText,
@@ -142,9 +143,33 @@ export function buildMetricsCommand(deps: {
           overview.error.kind === "transport" &&
           overview.error.serverCode === "PRECONDITION_FAILED";
         if (!noTelemetry) exitOnServiceError(overview, host);
+        const routerCallIds = overview.ok
+          ? overview.value.contextPerCall.flatMap((call) =>
+              call.routerCallId ? [call.routerCallId] : [],
+            )
+          : [];
+        const costs =
+          routerCallIds.length > 0
+            ? await metrics.calls({ agentId: agent.id, routerCallIds })
+            : null;
+        const costOf = new Map(
+          (costs?.ok ? costs.value.calls : []).map((c) => [c.routerCallId, c]),
+        );
         const calls = overview.ok
           ? overview.value.contextPerCall.map(
-              ({ costUsd: _cost, ...call }) => call,
+              ({ costUsd: _cost, routerCallId, ...call }) => {
+                const cost = costOf.get(routerCallId);
+                return {
+                  ...call,
+                  cost: cost
+                    ? {
+                        unit: cost.unit,
+                        costMicros: cost.costMicros,
+                        estimated: cost.estimated,
+                      }
+                    : null,
+                };
+              },
             )
           : null;
         const sessionRows = sessions.value.rows.map((r) => ({
@@ -249,7 +274,15 @@ export function buildMetricsCommand(deps: {
         );
         const recent = calls
           ? renderTable([
-              ["TIME", "MODEL", "CONTEXT", "INPUT", "CACHE R", "OUTPUT"],
+              [
+                "TIME",
+                "MODEL",
+                "CONTEXT",
+                "INPUT",
+                "CACHE R",
+                "OUTPUT",
+                "COST",
+              ],
               ...calls.map((r) => [
                 r.at,
                 r.model,
@@ -257,6 +290,7 @@ export function buildMetricsCommand(deps: {
                 r.inputTokens.toLocaleString(),
                 r.cacheReadTokens.toLocaleString(),
                 r.outputTokens.toLocaleString(),
+                callCostText(r.cost),
               ]),
             ])
           : `${NO_CALL_TELEMETRY}\n`;

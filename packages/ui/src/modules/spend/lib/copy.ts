@@ -424,6 +424,11 @@ export function subAgentPart(amounts: string): string {
   return `Of this, ${amounts} came from sub-agents.`;
 }
 
+export const ESTIMATED_CALL_HELP =
+  "Estimated: the provider reported no usage for this call.";
+
+export const MEASURED_CALL_HELP = "The measured cost of this call.";
+
 export function turnLineHelp(showsCost: boolean): string {
   const telemetry =
     "The agent reports the time, calls and tokens. The token count leaves out cached tokens.";

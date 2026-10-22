@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { SessionCategory } from "../sessions/types.js";
 import type {
   spendBreakdownInputSchema,
+  spendCallsInputSchema,
   spendCeilingSetInputSchema,
   spendCeilingSourceSchema,
   spendCeilingUserSchema,
@@ -22,6 +23,7 @@ export type SpendBreakdownInput = z.infer<typeof spendBreakdownInputSchema>;
 export type SpendSessionsInput = z.infer<typeof spendSessionsInputSchema>;
 export type SpendSubAgentsInput = z.infer<typeof spendSubAgentsInputSchema>;
 export type SpendTurnsInput = z.infer<typeof spendTurnsInputSchema>;
+export type SpendCallsInput = z.infer<typeof spendCallsInputSchema>;
 export type SpendLimitScope = z.infer<typeof spendLimitScopeSchema>;
 export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
 export type SpendCeilingSource = z.infer<typeof spendCeilingSourceSchema>;
@@ -226,12 +228,22 @@ export interface SpendMetering {
   earlierEstimatesUntil: string | null;
 }
 
+export interface SpendCallCost extends SpendAmount {
+  routerCallId: string;
+  estimated: boolean;
+}
+
+export interface SpendCalls {
+  calls: SpendCallCost[];
+}
+
 export interface SpendService {
   daily(input: SpendDailyInput): Promise<SpendDailyRow[]>;
   breakdown(input: SpendBreakdownInput): Promise<SpendBreakdown>;
   sessions(input: SpendSessionsInput): Promise<SpendSessions>;
   subAgents(input: SpendSubAgentsInput): Promise<SpendSubAgents>;
   turns(input: SpendTurnsInput): Promise<SpendTurns>;
+  calls(input: SpendCallsInput): Promise<SpendCalls>;
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;
   setLimit(input: SpendSetLimitInput): Promise<void>;

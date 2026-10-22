@@ -90,6 +90,16 @@ export const spendSessionsInputSchema = z
     }
   });
 
+export const SPEND_CALLS_MAX = 1000;
+
+export const spendCallsInputSchema = z.object({
+  agentId: z.string().min(1),
+  routerCallIds: z
+    .array(z.string().min(1).max(128))
+    .min(1)
+    .max(SPEND_CALLS_MAX),
+});
+
 export const SPEND_TURNS_MAX_WINDOWS = 200;
 export const SPEND_TURNS_MAX_SPAN_DAYS = 31;
 

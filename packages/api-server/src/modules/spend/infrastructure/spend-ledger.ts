@@ -14,6 +14,7 @@ import {
   type Db,
 } from "db";
 import type {
+  SpendCallCost,
   SpendConnectionTotal,
   SpendDailyRow,
   SpendUnit,
@@ -76,6 +77,10 @@ export interface SpendLedger {
     sessionId?: string;
     windows: readonly { from: string; to: string }[];
   }): Promise<TurnWindowRow[]>;
+  callCosts(query: {
+    ownerSub: string;
+    routerCallIds: readonly string[];
+  }): Promise<SpendCallCost[]>;
   deleteCallsBefore(before: Date): Promise<number>;
   meteringStart(): Promise<Date>;
 }
@@ -568,6 +573,25 @@ export function createSpendLedger(db: Db): SpendLedger {
         costMicros: Number(r.cost_micros),
         calls: Number(r.calls),
       }));
+    },
+
+    async callCosts({ ownerSub, routerCallIds }) {
+      if (routerCallIds.length === 0) return [];
+      const rows = await db
+        .select({
+          routerCallId: spendCalls.routerCallId,
+          unit: spendCalls.unit,
+          costMicros: spendCalls.costMicros,
+          estimated: spendCalls.estimated,
+        })
+        .from(spendCalls)
+        .where(
+          and(
+            eq(spendCalls.ownerSub, ownerSub),
+            inArray(spendCalls.routerCallId, [...routerCallIds]),
+          ),
+        );
+      return rows.map((r) => ({ ...r, unit: r.unit as SpendUnit }));
     },
 
     async deleteCallsBefore(before) {

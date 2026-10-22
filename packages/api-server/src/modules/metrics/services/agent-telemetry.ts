@@ -5,6 +5,7 @@ import {
   type agentMetricsInputSchema,
   type CallContext,
   type SpendAmount,
+  type SpendCallCost,
   type SpendSessionRow,
   type SubAgentSpendRow,
 } from "api-server-api";
@@ -32,6 +33,10 @@ export interface AgentMetricsQuery extends AgentTelemetryQuery {
 
 export interface AgentSpendPort {
   read(query: AgentSpendQuery): Promise<AgentSpend>;
+  callCosts(
+    agentId: string,
+    routerCallIds: readonly string[],
+  ): Promise<SpendCallCost[]>;
 }
 
 interface Measured {
@@ -47,7 +52,9 @@ export interface Unavailable {
 
 type Priced<T extends SpendAmount> = T & { amount: string };
 
-type MeasuredCall = Omit<CallContext, "costUsd">;
+type MeasuredCall = Omit<CallContext, "costUsd" | "routerCallId"> & {
+  cost: (Priced<SpendAmount> & { estimated: boolean }) | null;
+};
 
 export type AgentMetricsResult =
   | (Measured & {
@@ -243,9 +250,25 @@ export function createAgentTelemetry(deps: {
           ),
           query.limit,
         );
+        const costs = new Map(
+          (
+            await deps.spend.callCosts(
+              agentId,
+              rows.flatMap((row) =>
+                row.routerCallId ? [row.routerCallId] : [],
+              ),
+            )
+          ).map(({ routerCallId, unit, costMicros, estimated }) => [
+            routerCallId,
+            { ...priced({ unit, costMicros }), estimated },
+          ]),
+        );
         return {
           ...base,
-          calls: rows.map(({ costUsd: _cost, ...call }) => call),
+          calls: rows.map(({ costUsd: _cost, routerCallId, ...call }) => ({
+            ...call,
+            cost: costs.get(routerCallId) ?? null,
+          })),
           truncated,
         };
       }

@@ -134,7 +134,7 @@ The check keeps a Session that it found for ten minutes and never keeps a miss, 
 
 **Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
-It serves only the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn; no total and no limit reads it.
+It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, and the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows; no total and no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
 
 **Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.

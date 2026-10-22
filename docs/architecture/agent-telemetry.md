@@ -120,6 +120,8 @@ It is bounded by a row cap and says so in the response when the cap binds.
 
 The in-product surface is **inside the conversation**, not beside it.
 Each agent reply carries a one-line summary of how long that exchange took, its calls and tokens, and its measured cost ([spend-limits](spend-limits.md#screens)), which expands in place to the exchange's own timeline.
+A Turn read by its prompt id also takes the Model Router's call records that start inside the Turn, since they carry no prompt id.
+In the timeline, each model call shows its measured cost from its call row, joined by the Model Router's call id on the router's record and by the request id on the harness's record and span of the same call; an estimated cost starts with `~`.
 There is no separate panel and no list of turns to cross-reference against the transcript: the transcript *is* the list, and a row of telemetry belongs to the message above it.
 
 A Turn is matched to its reply **by the prompt id**, which a reply learns when the Session is loaded: the history the harness replays stamps each reply with the prompt id of the message it answered, by position, so the join is authoritative once loaded.

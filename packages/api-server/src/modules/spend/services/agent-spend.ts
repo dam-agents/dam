@@ -1,4 +1,8 @@
-import type { AgentSpend, AgentSpendQuery } from "api-server-api";
+import type {
+  AgentSpend,
+  AgentSpendQuery,
+  SpendCallCost,
+} from "api-server-api";
 import {
   countSessions,
   foldAgentTotals,
@@ -12,6 +16,10 @@ import type { AgentPayers } from "./spend-service.js";
 
 export interface AgentSpendReader {
   read(query: AgentSpendQuery): Promise<AgentSpend>;
+  callCosts(
+    agentId: string,
+    routerCallIds: readonly string[],
+  ): Promise<SpendCallCost[]>;
 }
 
 /**
@@ -28,6 +36,14 @@ export function createAgentSpend(deps: {
   meteringStart(): Promise<Date>;
 }): AgentSpendReader {
   return {
+    async callCosts(agentId, routerCallIds) {
+      if (routerCallIds.length === 0) return [];
+      const ownerSub = await deps.owners.ownerOf(
+        await deps.payers.payerOf(agentId),
+      );
+      return ownerSub ? deps.ledger.callCosts({ ownerSub, routerCallIds }) : [];
+    },
+
     async read(query) {
       const { agentId, from, to, sessionId } = query;
       const [payer, startedAt] = await Promise.all([
