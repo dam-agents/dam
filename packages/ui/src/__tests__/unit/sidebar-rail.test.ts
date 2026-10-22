@@ -45,6 +45,15 @@ vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
     loading: false,
     unreadable: false,
   }),
+  useActivityFeed: () => ({
+    items: env.sessions,
+    openSessionKey: env.openSessionKey,
+    loading: false,
+    failed: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: () => {},
+  }),
 }));
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: () => {} }),

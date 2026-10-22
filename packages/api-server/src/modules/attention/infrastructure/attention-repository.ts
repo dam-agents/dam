@@ -1,3 +1,4 @@
+import type { AttentionListCursor } from "api-server-api";
 import {
   and,
   attentionRecords,
@@ -23,6 +24,10 @@ type RawState = typeof attentionState.$inferSelect;
 export interface AttentionRepository {
   listForAgent(agentId: string): Promise<AttentionRecordRow[]>;
   listForOwner(ownerSub: string, limit: number): Promise<AttentionRecordRow[]>;
+  listForOwnerPage(
+    ownerSub: string,
+    opts: { after?: AttentionListCursor | undefined; limit: number },
+  ): Promise<AttentionRecordRow[]>;
   listForOwnerAgent(
     ownerSub: string,
     agentId: string,
@@ -45,6 +50,17 @@ export interface AttentionRepository {
   deleteOlderThan(days: number): Promise<number>;
   listAgentIds(): Promise<string[]>;
   deleteForAgent(agentId: string): Promise<void>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a Session the owner dismissed at or after its last activity is not on the feed, whether the feed is read in one bounded page or paged; both reads share this rule so one cannot drift from the other.
+function notDismissed(ownerSub: string) {
+  return sql`not exists (select 1 from ${attentionState}
+    where ${attentionState.userSub} = ${ownerSub}
+      and ${attentionState.itemKind} = 'session'
+      and ${attentionState.itemId} =
+        ${attentionRecords.agentId} || ':' || ${attentionRecords.sessionId}
+      and ${attentionState.dismissedAt} >=
+        coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt}))`;
 }
 
 function toRecord(row: RawRecord): AttentionRecordRow {
@@ -88,22 +104,33 @@ export function createAttentionRepository(db: Db): AttentionRepository {
         .select()
         .from(attentionRecords)
         .where(
-          and(
-            eq(attentionRecords.ownerSub, ownerSub),
-            sql`not exists (select 1 from ${attentionState}
-              where ${attentionState.userSub} = ${ownerSub}
-                and ${attentionState.itemKind} = 'session'
-                and ${attentionState.itemId} =
-                  ${attentionRecords.agentId} || ':' || ${attentionRecords.sessionId}
-                and ${attentionState.dismissedAt} >=
-                  coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt}))`,
-          ),
+          and(eq(attentionRecords.ownerSub, ownerSub), notDismissed(ownerSub)),
         )
         .orderBy(
           desc(
             sql`coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt})`,
           ),
         )
+        .limit(limit);
+      return rows.map(toRecord);
+    },
+
+    async listForOwnerPage(ownerSub, { after, limit }) {
+      const at = sql`coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt})`;
+      const rows = await db
+        .select()
+        .from(attentionRecords)
+        .where(
+          and(
+            eq(attentionRecords.ownerSub, ownerSub),
+            notDismissed(ownerSub),
+            // UNIT_BOUNDARY_DESCRIPTION: the pair (activity time, session id) is the page's whole order, so a page starts strictly after the last row the previous one returned and no row is skipped or repeated when several share a time.
+            after
+              ? sql`(${at}, ${attentionRecords.sessionId}) < (${new Date(after.activityAt)}, ${after.sessionId})`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(at), desc(attentionRecords.sessionId))
         .limit(limit);
       return rows.map(toRecord);
     },

@@ -664,7 +664,9 @@ export type {
   AttentionDismissal,
   AttentionItem,
   AttentionList,
+  AttentionListCursor,
   AttentionService,
+  AttentionSessionPage,
   DefaultModelNotice,
   DefaultModelState,
   DismissedEntry,
@@ -672,7 +674,10 @@ export type {
   OutageAlertAgent,
   OutageAlertNotice,
 } from "./modules/attention/types.js";
-export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
+export {
+  ATTENTION_FEED_LIMIT,
+  ATTENTION_PAGE_LIMIT,
+} from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 

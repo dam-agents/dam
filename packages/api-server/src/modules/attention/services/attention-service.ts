@@ -1,9 +1,11 @@
 import {
   ATTENTION_FEED_LIMIT,
+  ATTENTION_PAGE_LIMIT,
   type AttentionDismissal,
   type AttentionItem,
   type AttentionList,
   type AttentionService,
+  type AttentionSessionPage,
   type DefaultModelNotice,
   type OutageAlertNotice,
   type SessionMode,
@@ -93,6 +95,27 @@ export function createAttentionService(deps: {
           id: d.itemId,
           at: d.dismissedAt.toISOString(),
         })),
+      };
+    },
+
+    async listForOwnerPage(input): Promise<AttentionSessionPage> {
+      const limit = input.limit ?? ATTENTION_PAGE_LIMIT;
+      // UNIT_BOUNDARY_DESCRIPTION: one row past the page tells the reader there is another page without a second count query; the row itself is not sent.
+      const rows = await deps.repo.listForOwnerPage(deps.ownerSub, {
+        after: input.after,
+        limit: limit + 1,
+      });
+      const page = rows.slice(0, limit);
+      const last = page.at(-1);
+      return {
+        items: page.map(toItem),
+        nextCursor:
+          rows.length > limit && last
+            ? {
+                activityAt: (last.activityAt ?? last.createdAt).toISOString(),
+                sessionId: last.sessionId,
+              }
+            : null,
       };
     },
 

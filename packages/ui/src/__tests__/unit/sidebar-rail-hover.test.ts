@@ -21,6 +21,9 @@ const env = vi.hoisted(() => ({
   filters: undefined as unknown,
   groupBy: "agents" as "agents" | "all",
   hover: true,
+  feedHasNext: false,
+  feedFetching: false,
+  fetchNextPage: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -123,6 +126,15 @@ vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
     loading: false,
     unreadable: false,
   }),
+  useActivityFeed: () => ({
+    items: env.sessions,
+    openSessionKey: null,
+    loading: false,
+    failed: false,
+    hasNextPage: env.feedHasNext,
+    isFetchingNextPage: env.feedFetching,
+    fetchNextPage: env.fetchNextPage,
+  }),
 }));
 vi.mock("../../modules/sessions/hooks/use-open-session.js", () => ({
   useOpenSession: () => env.openSession,
@@ -143,6 +155,8 @@ beforeEach(() => {
   env.filters = defaultActivityFilters();
   env.sessions = [];
   env.hover = true;
+  env.feedHasNext = false;
+  env.feedFetching = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -405,4 +419,77 @@ it("opens the Session a rail tile stands for", () => {
   expect(env.openSession).toHaveBeenCalledWith("a1", "s9", "chat");
   expect(env.navigated).toHaveBeenCalled();
   expect(env.startSession).not.toHaveBeenCalled();
+});
+
+const sessionTileItem = () => ({
+  id: "a1:s9",
+  agent: env.agents[0],
+  at: "2026-10-02T10:00:00Z",
+  working: false,
+  unread: false,
+  needsApproval: false,
+  session: {
+    agentId: "a1",
+    sessionId: "s9",
+    mode: "chat",
+    type: "regular",
+    title: "Fix the parser",
+    harness: "claude-code",
+    working: false,
+    createdAt: "2026-10-01T10:00:00Z",
+    activityAt: "2026-10-02T10:00:00Z",
+    seenAt: null,
+    scheduleId: null,
+    threadTs: null,
+  },
+});
+
+function scrollRail(scrollTop: number) {
+  const rail = container.querySelector<HTMLElement>(
+    '[data-testid="sidebar-rail"]',
+  )!;
+  Object.defineProperty(rail, "scrollTop", {
+    configurable: true,
+    value: scrollTop,
+  });
+  Object.defineProperty(rail, "clientHeight", {
+    configurable: true,
+    value: 400,
+  });
+  Object.defineProperty(rail, "scrollHeight", {
+    configurable: true,
+    value: 800,
+  });
+  act(() => rail.dispatchEvent(new Event("scroll", { bubbles: true })));
+}
+
+// TEST_SCENARIO: the rail has no room for a Load more button, so nearing the end of its column loads the record's next page once; a page already on its way, the end of the record, and Group by agents all leave the scroll alone.
+it("loads the next page of Session tiles near the end of the rail", () => {
+  env.groupBy = "all";
+  env.sessions = [sessionTileItem()];
+  env.feedHasNext = true;
+  act(() => root.render(element()));
+
+  scrollRail(100);
+  expect(env.fetchNextPage).not.toHaveBeenCalled();
+
+  scrollRail(500);
+  expect(env.fetchNextPage).toHaveBeenCalledTimes(1);
+
+  env.feedFetching = true;
+  act(() => root.render(element()));
+  scrollRail(500);
+  expect(env.fetchNextPage).toHaveBeenCalledTimes(1);
+
+  env.feedFetching = false;
+  env.feedHasNext = false;
+  act(() => root.render(element()));
+  scrollRail(500);
+  expect(env.fetchNextPage).toHaveBeenCalledTimes(1);
+
+  env.feedHasNext = true;
+  env.groupBy = "agents";
+  act(() => root.render(element()));
+  scrollRail(500);
+  expect(env.fetchNextPage).toHaveBeenCalledTimes(1);
 });

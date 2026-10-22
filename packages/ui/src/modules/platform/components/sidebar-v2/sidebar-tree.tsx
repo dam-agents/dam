@@ -6,7 +6,7 @@ import {
   Home,
   Settings,
 } from "@carbon/icons-react";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo } from "react";
 
 import { Collapse } from "@/components/ui/collapse";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
@@ -37,7 +37,10 @@ import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
-import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
+import {
+  useActivityFeed,
+  useActivitySessions,
+} from "../../../home/hooks/use-activity-sessions.js";
 import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
@@ -62,9 +65,6 @@ import { AgentSessionList } from "./agent-session-list.js";
 import { NewAgentMenu } from "./new-agent-menu.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
-
-// UNIT_BOUNDARY_DESCRIPTION: the flat list pages the owner's attention feed, which holds at most ATTENTION_FEED_LIMIT Sessions; older ones show only under their Agent. Paging the server would lift that ceiling.
-const FLAT_PAGE = 20;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one tree: the pinned
@@ -107,19 +107,18 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
 
   const groupBy = useStore((s) => s.sidebarGroupBy);
   const setGroupBy = useStore((s) => s.setSidebarGroupBy);
-  const [flatShown, setFlatShown] = useState(FLAT_PAGE);
+  const feed = useActivityFeed(groupBy === "all");
   const unpinned = useMemo(
     () =>
-      splitPinned(filterActivitySessions(activity.items, filters), (item) =>
+      splitPinned(filterActivitySessions(feed.items, filters), (item) =>
         pins.has(item.id),
       )[1],
-    [activity.items, filters, pins],
+    [feed.items, filters, pins],
   );
-  const flat = useMemo(
-    () => (groupBy === "all" ? unpinned.slice(0, flatShown) : []),
-    [groupBy, unpinned, flatShown],
+  const shownSessions = useMemo(
+    () => unpinned.map((item) => item.session),
+    [unpinned],
   );
-  const shownSessions = useMemo(() => flat.map((item) => item.session), [flat]);
   const conversationOf = useActivityConversations(shownSessions, allAgents);
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
@@ -157,33 +156,22 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
           <ListLabel
             actions={
               <>
-                <ActivityFilterMenu
-                  filters={filters}
-                  onChange={(next) => {
-                    setFilters(next);
-                    setFlatShown(FLAT_PAGE);
-                  }}
-                />
-                <GroupByMenu
-                  value={groupBy}
-                  onChange={(next) => {
-                    setGroupBy(next);
-                    setFlatShown(FLAT_PAGE);
-                  }}
-                />
+                <ActivityFilterMenu filters={filters} onChange={setFilters} />
+                <GroupByMenu value={groupBy} onChange={setGroupBy} />
               </>
             }
           >
             {groupBy === "all" ? "Sessions" : "Agents"}
           </ListLabel>
-          {activity.unreadable && (
+          {(activity.unreadable || (groupBy === "all" && feed.failed)) && (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">
               Recent sessions can't be loaded right now.
             </p>
           )}
           {groupBy === "all" && (
             <>
-              {!activity.loading &&
+              {!feed.loading &&
+                !feed.hasNextPage &&
                 unpinned.length === 0 &&
                 isFiltered(filters) && (
                   <p className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -194,7 +182,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                 className="flex flex-col gap-px"
                 data-testid="sidebar-flat-sessions"
               >
-                {flat.map((item) => (
+                {unpinned.map((item) => (
                   <FeedSessionRow
                     key={item.id}
                     item={item}
@@ -204,27 +192,23 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   />
                 ))}
               </div>
-              {unpinned.length > flatShown && (
+              {feed.hasNextPage && (
                 <button
                   type="button"
                   data-testid="sidebar-flat-more"
-                  onClick={() => setFlatShown(flatShown + FLAT_PAGE)}
+                  aria-disabled={feed.isFetchingNextPage || undefined}
+                  aria-busy={feed.isFetchingNextPage || undefined}
+                  onClick={() => {
+                    if (!feed.isFetchingNextPage) void feed.fetchNextPage();
+                  }}
                   className={cn(
-                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors",
+                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors aria-disabled:cursor-default aria-disabled:opacity-60",
                     HOVER_ITEM,
                     FOCUS_RING,
                   )}
                 >
-                  View more
+                  {feed.isFetchingNextPage ? "Loading…" : "Load more"}
                 </button>
-              )}
-              {unpinned.length <= flatShown && !activity.complete && (
-                <p
-                  className="py-1.5 pr-2 pl-[58px] text-xs text-muted-foreground"
-                  data-testid="sidebar-flat-end"
-                >
-                  Older sessions show under their agent in Group by agents.
-                </p>
               )}
             </>
           )}
