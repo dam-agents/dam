@@ -58,6 +58,16 @@ const cbLayer = {
     OPENAI_PROXY_REASONING: "1",
   },
 };
+const cbDeploymentLayer = {
+  id: "conn-cbd",
+  template: "curve-bender-deployment",
+  env: {
+    OPENAI_BASE_URL: "https://cb.example",
+    OPENAI_API_KEY: "platform:conn:conn-cbd",
+    OPENAI_PROXY_CONTEXT_WINDOW: "256000",
+    OPENAI_PROXY_REASONING: "1",
+  },
+};
 const bobLayer = {
   id: "conn-bob",
   template: "bob",
@@ -254,6 +264,25 @@ describe("the model catalog", () => {
     expect(entry.dialects).toHaveLength(3);
     expect(catalog.providers()[0]?.displayName).toBe("Acme");
   });
+  /** TEST_SCENARIO: the deployment's CurveBender Connection lists through the
+   * same preset and under the same `cb/…` alias as the user-keyed one, and
+   * each shows the name of its own integration. */
+  it("lists the deployment CurveBender like the user-keyed one", async () => {
+    const { catalog } = catalogWith(BOTH, [cbDeploymentLayer]);
+    await catalog.refresh();
+    expect(catalog.entries().map((e) => e.name)).toEqual([
+      "cb/rits/zai-org/glm-5-3",
+      "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra",
+    ]);
+    expect(catalog.providers()[0]?.displayName).toBe("CurveBender");
+
+    const keyed = catalogWith(BOTH, [cbLayer]);
+    await keyed.catalog.refresh();
+    expect(keyed.catalog.providers()[0]?.displayName).toBe(
+      "CurveBender custom key",
+    );
+  });
+
   /** TEST_SCENARIO: Curve Bender's listing fails on a refresh; its last list
    * stays, marked unavailable, and IBM's fresh list is untouched. A Connection
    * that was never listed shows unavailable with no models. */

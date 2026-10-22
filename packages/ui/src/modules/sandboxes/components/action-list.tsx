@@ -91,7 +91,12 @@ export function ActionList({
   );
 }
 
-function RowText({ icon, title, description }: ActionText) {
+function RowText({
+  icon,
+  title,
+  description,
+  className,
+}: ActionText & { className?: string }) {
   return (
     <>
       <span
@@ -100,7 +105,7 @@ function RowText({ icon, title, description }: ActionText) {
       >
         {icon}
       </span>
-      <span className="min-w-0 flex-1">
+      <span className={cn("min-w-0 flex-1", className)}>
         <span className="block text-sm font-semibold text-foreground">
           {title}
         </span>
@@ -167,7 +172,7 @@ function StaticRow({
 }: ActionText & { children: ReactNode }) {
   return (
     <div id={id} className={cn(ROW, "scroll-mt-24 flex-wrap sm:flex-nowrap")}>
-      <RowText {...text} />
+      <RowText {...text} className="min-w-40" />
       {children}
     </div>
   );

@@ -60,20 +60,6 @@ export const ENDED_BY_LABEL: Record<FinishedRow["endedBy"], string> = {
   hibernation: "Ended when the agent slept",
 };
 
-export function keepSourceCaption(
-  row: Pick<ProcessRow, "kind" | "keepSource">,
-): string {
-  return match(row.keepSource)
-    .with("user", () => "Your choice")
-    .with("agent", () => "The agent's choice")
-    .with("default", () =>
-      row.kind === "harness-task"
-        ? "On by default for background tasks"
-        : "Off by default for detached processes",
-    )
-    .exhaustive();
-}
-
 export const ALWAYS_ON_KEEP_HINT =
   "This agent is Always on. Nothing here stops for sleep.";
 

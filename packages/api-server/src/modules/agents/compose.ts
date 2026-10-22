@@ -221,6 +221,7 @@ async function fittingProviders(
   catalog: Pick<HarnessCatalog, "harnesses">,
   connectionIds: string[],
   { harness, providers }: { harness?: string; providers?: readonly string[] },
+  upTo?: string,
 ): Promise<string[]> {
   const chosen = new Set(connectionIds);
   const holdsProvider = (await connections.listConnections()).some(
@@ -235,6 +236,7 @@ async function fittingProviders(
             ? harnessFits(catalog, harness, type, templateId)
             : !providers || providers.includes(type),
         harness,
+        upTo,
       );
 }
 
@@ -274,12 +276,15 @@ export function connectionGrantProvisioner(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Gives a just-connected provider to each of the
- * owner's agents that holds none, when it is the only provider that agent's
+ * owner's agents that holds none, when it is the first provider that agent's
  * default would grant: the agent predates every provider its harness runs
- * on. An agent whose default holds an older provider was detached on purpose
- * and is left without one, and an Environment never gets one: only its owner
- * grants it a connection, in the app. One agent failing does not keep the
- * provider from the rest.
+ * on. Age decides, not the count of the owner's providers, because several
+ * providers created together all exist before this runs: the default is read
+ * as of this connection, and the ones created after it are cut off. An agent
+ * whose default holds an older provider was detached on purpose and is left
+ * without one, and an Environment never gets one: only its owner grants it a
+ * connection, in the app. One agent failing does not keep the provider from
+ * the rest.
  */
 export async function attachProviderToBareAgents(
   connections: ProvisionerConnections &
@@ -303,6 +308,7 @@ export async function attachProviderToBareAgents(
         catalog,
         grants.map((g) => g.connectionId),
         agent.spec.harness ? { harness: agent.spec.harness } : {},
+        connectionId,
       );
       if (chosen.length === 1 && chosen[0] === connectionId)
         await connections.updateAgentConnections(agent.id, {

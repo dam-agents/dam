@@ -1,7 +1,6 @@
 import {
   type ApprovalView,
   type HarnessFamily,
-  isStartRefusal,
   SessionMode,
   SessionType,
   type SessionView,
@@ -9,9 +8,6 @@ import {
 
 import { HARNESS_ICONS } from "@/components/harness-icons";
 
-import type { AgentView } from "../../../types.js";
-import { badgeLabel } from "../../agents/lib/state-label.js";
-import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { acpSessionsKeys } from "../../sessions/api/keys.js";
 import { modelDisplayName } from "../../sessions/lib/model-name.js";
 
@@ -147,12 +143,5 @@ export function awaitsApproval(
   );
 }
 
-const NO_IDS: ReadonlySet<string> = new Set();
-
-export function agentSubline(agent: AgentView): string {
-  return badgeLabel(
-    resolveAgentDisplay(agent, NO_IDS).state,
-    agent.vm,
-    isStartRefusal(agent.podTerminationCode),
-  );
-}
+export const REVEAL =
+  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 group-has-[[data-state=open]]/agent:pointer-events-auto group-has-[[data-state=open]]/agent:opacity-100";

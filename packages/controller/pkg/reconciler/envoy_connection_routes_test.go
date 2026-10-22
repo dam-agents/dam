@@ -1,7 +1,11 @@
 package reconciler
 
 import (
+	"net/url"
+	"regexp"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,11 +47,40 @@ func addressHeaderOf(route ev) string {
 	return headers[0].(ev)["string_match"].(ev)["exact"].(string)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: pathSpecifiers collects every route match specifier in a rendered bootstrap, by kind, so a test can check the shape Envoy accepts rather than only the value it routes on.
+func pathSpecifiers(node any, out map[string][]string) map[string][]string {
+	switch v := node.(type) {
+	case map[string]any:
+		for key, child := range v {
+			if (key == "prefix" || key == "path_separated_prefix") && len(v) <= 2 {
+				if value, ok := child.(string); ok {
+					out[key] = append(out[key], value)
+				}
+			}
+			pathSpecifiers(child, out)
+		}
+	case []any:
+		for _, child := range v {
+			pathSpecifiers(child, out)
+		}
+	}
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: matchPrefix reads a route's path specifier, whether it is a plain prefix or a segment-safe one.
+func matchPrefix(match ev) string {
+	if prefix, ok := match["prefix"].(string); ok {
+		return prefix
+	}
+	prefix, _ := match["path_separated_prefix"].(string)
+	return prefix
+}
+
 func routeNamed(t *testing.T, routes []any, prefix string) ev {
 	t.Helper()
 	for _, r := range routes {
 		route := r.(ev)
-		if route["match"].(ev)["prefix"] == prefix && addressHeaderOf(route) == "" {
+		if matchPrefix(route["match"].(ev)) == prefix && addressHeaderOf(route) == "" {
 			return route
 		}
 	}
@@ -59,7 +92,7 @@ func routeAddressedTo(t *testing.T, routes []any, prefix, connectionID string) e
 	t.Helper()
 	for _, r := range routes {
 		route := r.(ev)
-		if route["match"].(ev)["prefix"] == prefix && addressHeaderOf(route) == connectionID {
+		if matchPrefix(route["match"].(ev)) == prefix && addressHeaderOf(route) == connectionID {
 			return route
 		}
 	}
@@ -84,7 +117,7 @@ func routeMatchPrefixes(routes []any) []string {
 	out := make([]string, 0, len(routes))
 	for _, r := range routes {
 		route := r.(ev)
-		match := route["match"].(ev)["prefix"].(string)
+		match := matchPrefix(route["match"].(ev))
 		if id := addressHeaderOf(route); id != "" {
 			match += "@" + id
 		}
@@ -693,4 +726,228 @@ func TestBuildChainForwardRoutes_SignerBesideAHeaderInjectorLeavesTheInjectorPla
 	catchAll := routes[len(routes)-1].(ev)
 	assert.NotContains(t, catchAll, "direct_response")
 	assert.Equal(t, []string{"conn-key", "conn-cos"}, c.ConnectionIDs())
+}
+
+const curveBenderHost = "litellm.cb.ete.res.ibm.com"
+
+var curveBenderDeploymentPaths = []string{
+	"/v1/models",
+	"/v1/messages",
+	"/v1/chat/completions",
+	"/v1/responses",
+}
+
+func curveBenderDeploymentChain() envoyHostChain {
+	creds := make([]envoyCredential, 0, len(curveBenderDeploymentPaths))
+	for _, p := range curveBenderDeploymentPaths {
+		creds = append(creds, scopedCredential("conn-cbd", "platform-conn-cbd", "Authorization", curveBenderHost, p))
+	}
+	return connectionChain(curveBenderHost, creds...)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: routeForPath picks the first unaddressed route a request path matches, as Envoy does on the path it has normalized.
+func routeForPath(t *testing.T, routes []any, path string) ev {
+	t.Helper()
+	for _, r := range routes {
+		route := r.(ev)
+		if _, addressed := route["match"].(ev)["headers"]; addressed {
+			continue
+		}
+		if prefix, ok := route["match"].(ev)["prefix"].(string); ok && strings.HasPrefix(path, prefix) {
+			return route
+		}
+		if prefix, ok := route["match"].(ev)["path_separated_prefix"].(string); ok && matchesSegments(path, prefix) {
+			return route
+		}
+	}
+	require.FailNow(t, "no route matching "+path)
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: normalizeRequestPath models the HCM of a path-scoped chain — an escaped slash is refused outright, and dot segments and doubled slashes are resolved before routing, as normalize_path and merge_slashes make Envoy do.
+func normalizeRequestPath(raw string) (string, bool) {
+	if strings.Contains(strings.ToLower(raw), "%2f") {
+		return "", false
+	}
+	unescaped, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", false
+	}
+	out := []string{}
+	for _, seg := range strings.Split(unescaped, "/") {
+		switch seg {
+		case "":
+		case ".", "..":
+			if seg == ".." && len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, seg)
+		}
+	}
+	return "/" + strings.Join(out, "/"), true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: matchesSegments models Envoy's path_separated_prefix: the prefix must end at a segment boundary, so /v1/messages admits /v1/messages and /v1/messages/x but not /v1/messagesX.
+func matchesSegments(path, prefix string) bool {
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := path[len(prefix):]
+	return rest == "" || rest[0] == '/'
+}
+
+// TEST_SCENARIO: Envoy validates a route's path_separated_prefix against `^[^?#]+[^?#/]$` and refuses the whole bootstrap when a value fails it, so every one it emits is checked on a render that carries each route shape: an exact scoped path, a scope that ends in a separator, the host-wide scope, and a rewrite.
+func TestRenderEnvoyBootstrap_MatchSpecifiersPassEnvoyValidation(t *testing.T) {
+	exact := connectionChain(curveBenderHost,
+		scopedCredential("conn-cbd", "platform-conn-cbd", "Authorization", curveBenderHost, "/v1/messages"))
+	trailing := connectionChain("api.openai.com",
+		scopedCredential("conn-oai", "platform-conn-oai", "Authorization", "api.openai.com", "/v1/*"))
+	bob := connectionChain("bob.example.com",
+		connectionCredential("conn-bob", "platform-conn-bob", "Authorization", "bob.example.com"))
+	bob.PathRewrites = []envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}}
+
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{exact, trailing, bob}, false)
+	require.NoError(t, err)
+	specs := pathSpecifiers(mustParseBootstrap(t, got), map[string][]string{})
+
+	segmentPrefix := regexp.MustCompile(`^[^?#]+[^?#/]$`)
+	require.NotEmpty(t, specs["path_separated_prefix"], "an exact scoped path needs a segment-safe match")
+	for _, value := range specs["path_separated_prefix"] {
+		assert.Regexp(t, segmentPrefix, value, "Envoy refuses the bootstrap for this value")
+	}
+
+	// TEST_SCENARIO: a scope that already ends at a boundary stays a plain prefix, as does the host-wide scope and every rewrite.
+	assert.Contains(t, specs["prefix"], "/v1/", "the OpenAI scope ends in a separator")
+	assert.Contains(t, specs["prefix"], "/", "the catch-all of a host-wide chain")
+	assert.Contains(t, specs["prefix"], "/inference/v1/", "Bob's rewrite happens before the catch-all")
+	assert.NotContains(t, specs["path_separated_prefix"], "/v1/")
+	assert.NotContains(t, specs["path_separated_prefix"], "/inference/v1/")
+
+	// TEST_SCENARIO: the exact scoped path is segment-matched both unaddressed and under the egress prefix, so a longer path cannot borrow the key.
+	assert.Contains(t, specs["path_separated_prefix"], "/v1/messages")
+	assert.Contains(t, specs["path_separated_prefix"], "/__platform_conn/conn-cbd/v1/messages")
+}
+
+func TestBuildChainForwardRoutes_DeploymentKeyCoversItsOwnPathsOnly(t *testing.T) {
+	c := curveBenderDeploymentChain()
+	routes := buildChainForwardRoutes(c)
+	creds := c.Credentials
+	keyed := func(path string) bool {
+		disabled := perFilterKeys(routeForPath(t, routes, path))
+		for _, cred := range creds {
+			if !slices.Contains(disabled, cred.FilterName()) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// TEST_SCENARIO: the listing, both dialect routes and the token count under /v1/messages carry the deployment key.
+	for _, path := range []string{
+		"/v1/models",
+		"/v1/messages",
+		"/v1/messages/count_tokens",
+		"/v1/chat/completions",
+		"/v1/responses",
+	} {
+		assert.True(t, keyed(path), "%s is called by the runtime and must carry the deployment key", path)
+	}
+
+	// TEST_SCENARIO: the proxy's management routes, its shared-identity routes (one identity for every user), Bob's prefix and the root carry no deployment key.
+	for _, path := range []string{
+		"/key/generate",
+		"/user/info",
+		"/spend/logs",
+		"/v1/files",
+		"/v1/batches",
+		"/v1/vector_stores",
+		"/v1/assistants",
+		"/v1/threads",
+		"/v1/memory",
+		"/v1/mcp/servers",
+		"/v1/traces",
+		"/inference/v1/chat/completions",
+		"/",
+	} {
+		assert.False(t, keyed(path), "%s must never carry the deployment key", path)
+	}
+
+	// TEST_SCENARIO: the scopes match whole path segments, so a path that only starts with one — no LiteLLM route serves either today — carries no key.
+	for _, path := range []string{"/v1/messagesX", "/v1/models-foo"} {
+		assert.False(t, keyed(path), "%s only begins with a scoped path, not a segment", path)
+	}
+}
+
+func TestRenderEnvoyBootstrap_PathScopedChainNormalizesPaths(t *testing.T) {
+	unscoped := connectionChain("api.example.com",
+		connectionCredential("conn-api", "platform-conn-api", "Authorization", "api.example.com"))
+	scoped := curveBenderDeploymentChain()
+
+	for _, tc := range []struct {
+		name   string
+		chain  envoyHostChain
+		fields bool
+	}{
+		{name: "the deployment CurveBender's scoped chain", chain: scoped, fields: true},
+		{name: "a host-wide chain", chain: unscoped, fields: false},
+	} {
+		got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{tc.chain}, false)
+		require.NoError(t, err)
+		chain := filterChainNamed(t, mustParseBootstrap(t, got), "terminate_"+tc.chain.ChainID)
+		require.NotNil(t, chain)
+		hcm := chain["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+
+		if !tc.fields {
+			// TEST_SCENARIO: a chain whose credentials are host-wide keeps the raw path, since an API can address an object with an encoded slash at any path.
+			assert.NotContains(t, hcm, "normalize_path", tc.name)
+			assert.NotContains(t, hcm, "merge_slashes", tc.name)
+			assert.NotContains(t, hcm, "path_with_escaped_slashes_action", tc.name)
+			continue
+		}
+		// TEST_SCENARIO: a chain that routes on a path scope normalizes the path, merges slashes and refuses an escaped slash before the match, as the harness guard does.
+		assert.Equal(t, true, hcm["normalize_path"], tc.name)
+		assert.Equal(t, true, hcm["merge_slashes"], tc.name)
+		assert.Equal(t, "REJECT_REQUEST", hcm["path_with_escaped_slashes_action"], tc.name)
+	}
+}
+
+func TestBuildChainForwardRoutes_DotSegmentsCannotReachAManagementRouteKeyed(t *testing.T) {
+	c := curveBenderDeploymentChain()
+	routes := buildChainForwardRoutes(c)
+	keyed := func(path string) bool {
+		disabled := perFilterKeys(routeForPath(t, routes, path))
+		for _, cred := range c.Credentials {
+			if !slices.Contains(disabled, cred.FilterName()) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// TEST_SCENARIO: a path that steps out of a scoped prefix lands on the host-wide route once the chain's HCM has normalized it, and carries no key; a dot segment that rides inside a scoped prefix still selects the scoped route on the raw path, so normalization is what keeps the key off it.
+	for _, tc := range []struct {
+		raw        string
+		keyedOnRaw bool
+	}{
+		{raw: "/v1/messages/../../../key/generate", keyedOnRaw: true},
+		{raw: "/v1/chat/completions/../../../spend/logs", keyedOnRaw: true},
+		{raw: "/v1/models/../../key/delete", keyedOnRaw: true},
+		{raw: "/v1/responses/%2e%2e/%2e%2e/key/generate", keyedOnRaw: true},
+		{raw: "/v1/../key/generate"},
+		{raw: "/v1/%2e%2e/key/generate"},
+		{raw: "/inference/v1/../../key/delete"},
+		{raw: "/v1//../../spend/logs"},
+	} {
+		norm, accepted := normalizeRequestPath(tc.raw)
+		require.True(t, accepted, "%s carries no escaped slash", tc.raw)
+		assert.NotEqual(t, tc.raw, norm, "%s has a dot segment to resolve", tc.raw)
+		assert.False(t, keyed(norm), "%s resolves to %s and must carry no key", tc.raw, norm)
+		assert.Equal(t, tc.keyedOnRaw, keyed(tc.raw),
+			"%s: whether the raw path already selects a scoped route", tc.raw)
+	}
+
+	// TEST_SCENARIO: a path with an escaped slash is refused before it is routed, so it never reaches the proxy keyed.
+	_, accepted := normalizeRequestPath("/v1/..%2Fkey%2Fgenerate")
+	assert.False(t, accepted)
 }

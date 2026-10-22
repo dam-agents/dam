@@ -40,7 +40,10 @@ export function inheritedEnvs({
   for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
     const provider = providerTypeForTemplateId(a.templateId);
     const source = provider
-      ? { label: providerName(provider), kind: "provider" as const }
+      ? {
+          label: providerName(provider, a.templateId),
+          kind: "provider" as const,
+        }
       : { label: a.name, kind: "connection" as const };
     for (const c of a.contributions)
       if (c.kind === "env")

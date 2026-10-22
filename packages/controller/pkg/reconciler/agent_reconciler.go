@@ -82,8 +82,10 @@ type AgentReconciler struct {
 	resizeNotices         sync.Map
 	claimNotices          sync.Map
 	runnerCapacity        sync.Map
+	runnerUnavailable     sync.Map
 	nodeLostNotices       sync.Map
 	nodeLostLast          atomic.Int64
+	unavailableLast       atomic.Int64
 	poolLevels            sync.Map
 	notReadyPolls         sync.Map
 	vmStartClocks         sync.Map

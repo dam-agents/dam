@@ -1,6 +1,7 @@
 import { Renew } from "@carbon/icons-react";
 import {
   BALANCE_PROVIDER_TYPES,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   harnessFits,
   hasKeyCheck,
 } from "api-server-api";
@@ -12,12 +13,17 @@ import { Spinner } from "@/components/ui/spinner";
 import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
+import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
-import { PROVIDER_ROWS } from "../lib/provider-rows.js";
+import {
+  PROVIDER_ROWS,
+  type ProviderRowDef,
+  providerRowName,
+} from "../lib/provider-rows.js";
 import { ProviderBalance } from "./provider-balance.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import type { ProviderItem } from "./provider-item.js";
@@ -28,15 +34,27 @@ export function ProviderSection({
 }: {
   onConnected?: (connectionId: string) => void;
 } = {}) {
-  const { itemByType, isPending } = useProviderItems();
+  const { itemByType, itemByTemplateId, isPending } = useProviderItems();
   const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
   const { data: flags, isPending: flagsPending } = useFeatures();
-  const rows = PROVIDER_ROWS.filter(
-    (row) =>
-      row.type !== "platform" ||
-      (flags?.["platform-provider"] &&
-        (!onConnected || itemByType.has("platform"))),
-  );
+  const { data: templates, isPending: templatesPending } =
+    useConnectionTemplates();
+  const itemOf = (row: ProviderRowDef) =>
+    row.templateId
+      ? itemByTemplateId.get(row.templateId)
+      : itemByType.get(row.type);
+  const configured = (templateId: string) =>
+    !!templates?.some((t) => t.id === templateId);
+  const rows = PROVIDER_ROWS.filter((row) => {
+    const item = itemOf(row);
+    if (row.type === "platform")
+      return (
+        !!flags?.["platform-provider"] && (!onConnected || item !== undefined)
+      );
+    if (row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)
+      return configured(row.templateId) && (!onConnected || item !== undefined);
+    return true;
+  });
   const { data: status } = useProviderStatus();
   const degradedTemplate = (templateId: string | undefined) =>
     !!status &&
@@ -45,9 +63,10 @@ export function ProviderSection({
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
   const recheck = useRecheckProviderKeys();
-  const loading = isPending || catalogPending || flagsPending;
+  const loading =
+    isPending || catalogPending || flagsPending || templatesPending;
   const checkable = rows.some((row) => {
-    const item = itemByType.get(row.type);
+    const item = itemOf(row);
     return !!item && hasKeyCheck(item.conn.templateId);
   });
   const [dialog, setDialog] = useState<{
@@ -85,18 +104,26 @@ export function ProviderSection({
           </div>
         )}
         {loading
-          ? rows.map((row) => <ProviderRow.Skeleton key={row.type} />)
+          ? rows.map((row) => (
+              <ProviderRow.Skeleton
+                key={`${row.type}:${row.templateId ?? ""}`}
+              />
+            ))
           : rows.map((row) => {
-              const item = itemByType.get(row.type);
-              const builtIn = row.type === "platform";
+              const item = itemOf(row);
+              const managed =
+                row.type === "platform" ||
+                row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
               return (
                 <ProviderRow
-                  key={row.type}
+                  key={`${row.type}:${row.templateId ?? ""}`}
                   type={row.type}
+                  templateId={row.templateId}
+                  name={providerRowName(row)}
                   connected={!!item}
                   degraded={!!item && degradedTemplate(item.conn.templateId)}
                   keyCheck={
-                    item && !builtIn ? (item.conn.keyCheck ?? null) : undefined
+                    item && !managed ? (item.conn.keyCheck ?? null) : undefined
                   }
                   checking={
                     recheck.isPending &&
@@ -115,13 +142,14 @@ export function ProviderSection({
                     .map((h) => h.name)}
                   balance={
                     item &&
+                    !managed &&
                     BALANCE_PROVIDER_TYPES.has(row.type) && (
                       <ProviderBalance connectionId={item.id} />
                     )
                   }
                   connectedAction={onConnected && "Use"}
                   onOpen={
-                    builtIn
+                    managed
                       ? item && onConnected && (() => onConnected(item.id))
                       : () =>
                           item && onConnected

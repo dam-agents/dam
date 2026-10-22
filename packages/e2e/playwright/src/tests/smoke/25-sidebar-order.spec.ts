@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The sidebar lists Agents newest created first, in one manual order per user that the user changes by drag and drop, in a real browser against a real api-server, and lists the Sessions of each Agent by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent goes to the top of the list, and a click or activity never moves an Agent: a click opens and closes the Agent's Sessions in place. Hibernated Agents show after See all. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of its Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
+// TEST_OVERVIEW: The sidebar lists Agents newest created first, in one manual order per user that the user changes by drag and drop, in a real browser against a real api-server, and lists the Sessions of each Agent by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent joins the foot of the list, and a click or activity never moves an Agent: a click opens and closes the Agent's Sessions in place. Hibernated Agents show after See all. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of its Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -171,8 +171,8 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that goes to the top. A click on an Agent opens and closes its Sessions and moves nothing.
-test("drag reorders Agents, and a new Agent goes to the top", async ({
+// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that joins the foot of the list, under the Agents the user has arranged. A click on an Agent opens and closes its Sessions and moves nothing.
+test("drag reorders Agents, and a new Agent joins the foot", async ({
   page,
   browser,
 }) => {
@@ -223,11 +223,11 @@ test("drag reorders Agents, and a new Agent goes to the top", async ({
     }
   });
 
-  await test.step("a new Agent goes to the top", async () => {
+  await test.step("a new Agent joins the foot", async () => {
     await createSleeping(LATE_AGENT);
     await expect
       .poll(() => shownAgents(page))
-      .toEqual([LATE_AGENT, third, second, first]);
+      .toEqual([third, second, first, LATE_AGENT]);
   });
 
   await test.step("a click opens and closes an Agent's Sessions in place", async () => {

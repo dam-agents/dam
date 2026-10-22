@@ -7,7 +7,7 @@ import {
   orderAfterStep,
 } from "../../modules/agents/lib/sidebar-order.js";
 
-// TEST_OVERVIEW: The sidebar lists Agents newest created first, and the user moves them by drag and drop or with Alt+Up and Alt+Down. Agents the stored order does not name yet, a new Agent, go to the top, newest first, so a click or activity never moves anything. A move stores the whole list as the user sees it, so the order stays put when new Agents arrive.
+// TEST_OVERVIEW: The sidebar lists Agents oldest created first, so a new Agent joins the list at its foot, and the user moves them by drag and drop or with Alt+Up and Alt+Down. Agents the stored order does not name yet keep to its foot, oldest first, so a click or activity never moves anything. A move stores the whole list as the user sees it, so the order stays put when new Agents arrive.
 
 interface Item {
   id: string;
@@ -38,25 +38,25 @@ describe("manualOrder", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a new Agent is not in the stored order yet. It goes to the top, and the Agents already there keep their places.
-  it("puts items the order does not name at the top, newest first", () => {
+  // TEST_SCENARIO: a new Agent is not in the stored order yet. It joins the list at its foot, and the Agents already there keep their places.
+  it("puts items the order does not name at the foot, oldest first", () => {
     const items = [
       item("new", "2026-10-16T12:00:00Z"),
       item("b", "2026-10-01T00:00:00Z"),
       item("older", "2026-10-15T12:00:00Z"),
       item("a", "2026-10-02T00:00:00Z"),
     ];
-    expect(order(items, ["b", "a"])).toEqual(["new", "older", "b", "a"]);
+    expect(order(items, ["b", "a"])).toEqual(["b", "a", "older", "new"]);
   });
 
-  // TEST_SCENARIO: a user who never moved an Agent sees the newest Agent at the top and the oldest at the bottom.
-  it("lists items newest created first while no order is stored", () => {
+  // TEST_SCENARIO: a user who never moved an Agent sees the oldest Agent at the top and the newest at the bottom.
+  it("lists items oldest created first while no order is stored", () => {
     const items = [
       item("old", "2026-10-01T00:00:00Z"),
       item("new", "2026-10-16T12:00:00Z"),
       item("mid", "2026-10-10T00:00:00Z"),
     ];
-    expect(order(items, [])).toEqual(["new", "mid", "old"]);
+    expect(order(items, [])).toEqual(["old", "mid", "new"]);
   });
 
   // TEST_SCENARIO: an item with no creation time, or one that does not parse, goes after the dated ones, by id, so the order is the same on every render.

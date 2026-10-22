@@ -73,6 +73,7 @@ export function listingForTemplate(templateId: string): ProviderListing | null {
   switch (templateId) {
     case "ibm-litellm":
     case "curve-bender":
+    case "curve-bender-deployment":
       return {
         spec: {
           urlEnv: ["OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"],

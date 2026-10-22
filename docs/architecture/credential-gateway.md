@@ -100,6 +100,12 @@ The prefix and marker are dropped on the way upstream.
 A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first.
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
 
+**Path-scoped chains and the request path.** A route carrying a path-scoped credential matches whole path segments, so a scope of `/v1/messages` admits `/v1/messages/count_tokens` and not `/v1/messagesX`.
+A scope that already ends in a separator matches as a plain path prefix, which ends at a boundary anyway — Envoy refuses a segment prefix whose last character is a separator.
+Such a chain also normalizes the request path before it routes: dot segments and doubled slashes are resolved, and a path carrying an escaped slash is refused with a 400, so `/v1/messages/../../key/generate` cannot step out of the scope it matched.
+A chain whose credentials are host-wide keeps the raw path, since an API that addresses objects with encoded slashes holds them at any path, and so does a signer's path scope.
+A rewrite route keeps its plain prefix: it adds only the rewrite.
+
 **Model-provider chains.** A chain whose credential comes from a model-provider Connection also carries the spend meter, directly after the address step and before the gate.
 On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, records the session and harness that the Model Router stamped, and sends a spend record per call to the api-server.
 On every chain, the gateway removes that stamp before the request leaves.
