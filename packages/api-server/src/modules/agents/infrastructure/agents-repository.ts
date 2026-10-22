@@ -1,5 +1,10 @@
 import { err, ok, type Result } from "../../../core/result.js";
-import { isConflict, isNotFound, type K8sClient } from "./k8s.js";
+import {
+  isConflict,
+  isNotFound,
+  type K8sClient,
+  type KubeObject,
+} from "./k8s.js";
 import type { AgentStateCache } from "./agent-state-cache.js";
 import {
   ACTIVE_SESSION_KEY,
@@ -170,6 +175,45 @@ export function createAgentsRepository(
     }
   };
 
+  async function ownedObject(
+    id: string,
+    owner: string | undefined,
+  ): Promise<KubeObject | null> {
+    const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+    if (!obj) return null;
+    return owner && !agentIsOwnedBy(obj, owner) ? null : obj;
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read.
+  async function stopAgent(
+    id: string,
+    opts: { stamp?: string; disabledStamp?: string; idle?: boolean } = {},
+    live?: KubeObject,
+  ): Promise<{ agent: InfraAgent; stamp: string } | null> {
+    const obj = live ?? (await k8s.getCustomObject(AGENTS_PLURAL, id));
+    if (!obj) return null;
+    const stamp = opts.stamp ?? new Date().toISOString();
+    await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+      metadata: {
+        annotations: {
+          ...(opts.disabledStamp !== undefined && {
+            [DISABLED_KEY]: opts.disabledStamp,
+          }),
+          [STOP_REQUESTED_KEY]: stamp,
+          [ACTIVE_SESSION_KEY]: "",
+          [INVOCATIONS_ACTIVE_KEY]: "",
+          ...(opts.idle && {
+            [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
+            [RECLAIMED_AT_KEY]: "",
+          }),
+        },
+      },
+    });
+    const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
+    const agent = reread ? parseInfraAgent(reread) : null;
+    return agent ? { agent, stamp } : null;
+  }
+
   async function bumpLastActivity(id: string): Promise<void> {
     await k8s.patchCustomObject(AGENTS_PLURAL, id, {
       metadata: {
@@ -209,9 +253,8 @@ export function createAgentsRepository(
 
     async updateSpec(id, owner, patch) {
       assertBackendUntouched(patch);
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await ownedObject(id, owner);
       if (!obj) return null;
-      if (owner && !agentIsOwnedBy(obj, owner)) return null;
       const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         spec: patch,
       });
@@ -226,17 +269,13 @@ export function createAgentsRepository(
     },
 
     async getLive(id, owner) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      if (owner && !agentIsOwnedBy(obj, owner)) return null;
-      return parseInfraAgent(obj);
+      const obj = await ownedObject(id, owner);
+      return obj ? parseInfraAgent(obj) : null;
     },
 
     async writeRuntimeMigration(id, owner, patch) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await ownedObject(id, owner);
       if (!obj) return { ok: false, reason: "not-found" };
-      if (owner && !agentIsOwnedBy(obj, owner))
-        return { ok: false, reason: "not-found" };
       if (!patch.resourceVersion) return { ok: false, reason: "conflict" };
       try {
         const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
@@ -255,17 +294,15 @@ export function createAgentsRepository(
     },
 
     async delete(id, owner?) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await ownedObject(id, owner);
       if (!obj) return false;
-      if (owner && !agentIsOwnedBy(obj, owner)) return false;
       await k8s.deleteCustomObject(AGENTS_PLURAL, id);
       return true;
     },
 
     async restart(id, owner?) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await ownedObject(id, owner);
       if (!obj) return false;
-      if (owner && !agentIsOwnedBy(obj, owner)) return false;
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: { annotations: { [ANN_ROLL_REV]: new Date().toISOString() } },
       });
@@ -285,39 +322,17 @@ export function createAgentsRepository(
     },
 
     async setDisabled(id, disabled) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
       const stamp = disabled ? new Date().toISOString() : "";
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [DISABLED_KEY]: stamp,
-            [STOP_REQUESTED_KEY]: stamp,
-            [ACTIVE_SESSION_KEY]: "",
-            [INVOCATIONS_ACTIVE_KEY]: "",
-            [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
-            [RECLAIMED_AT_KEY]: "",
-          },
-        },
+      const stopped = await stopAgent(id, {
+        stamp,
+        disabledStamp: stamp,
+        idle: true,
       });
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      return reread ? parseInfraAgent(reread) : null;
+      return stopped?.agent ?? null;
     },
 
     async requestStop(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [STOP_REQUESTED_KEY]: new Date().toISOString(),
-            [ACTIVE_SESSION_KEY]: "",
-            [INVOCATIONS_ACTIVE_KEY]: "",
-          },
-        },
-      });
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      return reread ? parseInfraAgent(reread) : null;
+      return (await stopAgent(id))?.agent ?? null;
     },
 
     async requestSleep(id) {
@@ -325,21 +340,9 @@ export function createAgentsRepository(
       if (!obj) return null;
       if (obj.metadata?.annotations?.[DISABLED_KEY])
         return parseInfraAgent(obj);
-      const sleepStamp = new Date().toISOString();
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [STOP_REQUESTED_KEY]: sleepStamp,
-            [ACTIVE_SESSION_KEY]: "",
-            [INVOCATIONS_ACTIVE_KEY]: "",
-            [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
-            [RECLAIMED_AT_KEY]: "",
-          },
-        },
-      });
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      const infra = reread ? parseInfraAgent(reread) : null;
-      if (!infra) return null;
+      const stopped = await stopAgent(id, { idle: true }, obj);
+      if (!stopped) return null;
+      const { agent: infra, stamp: sleepStamp } = stopped;
       void (async () => {
         const settled = await pollUntilReady(
           async () => (await repo.get(id))?.hibernated ?? true,
