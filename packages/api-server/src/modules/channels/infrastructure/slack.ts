@@ -1667,15 +1667,26 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ]);
   }
 
+  function addTo<K, T>(sets: Map<K, Set<T>>, key: K, item: T): void {
+    let set = sets.get(key);
+    if (!set) {
+      set = new Set();
+      sets.set(key, set);
+    }
+    set.add(item);
+  }
+
+  function removeFrom<K, T>(sets: Map<K, Set<T>>, key: K, item: T): void {
+    const set = sets.get(key);
+    if (!set) return;
+    set.delete(item);
+    if (set.size === 0) sets.delete(key);
+  }
+
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
   function beginTurn(instanceName: string, ref: TurnRef) {
-    let live = inFlightTurns.get(instanceName);
-    if (!live) {
-      live = new Set();
-      inFlightTurns.set(instanceName, live);
-    }
-    live.add(ref);
+    addTo(inFlightTurns, instanceName, ref);
     ref.releaseAttendance ??= attendance.openChannelTurn(instanceName);
     if (!ref.whisper) noteAgentThread(instanceName, ref.channel, ref.threadTs);
   }
@@ -1685,11 +1696,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     ref: TurnRef,
     opts?: { harnessMayStillRun?: boolean },
   ) {
-    const live = inFlightTurns.get(instanceName);
-    if (live) {
-      live.delete(ref);
-      if (live.size === 0) inFlightTurns.delete(instanceName);
-    }
+    removeFrom(inFlightTurns, instanceName, ref);
     ref.releaseAttendance?.();
     ref.releaseAttendance = undefined;
     if (opts?.harnessMayStillRun) {
@@ -1717,36 +1724,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     turn: StoppableTurn,
   ): () => void {
     const key = `${channel} ${threadTs}`;
-    let held = stoppableTurns.get(key);
-    if (!held) {
-      held = new Set();
-      stoppableTurns.set(key, held);
-    }
-    held.add(turn);
-    return () => {
-      const live = stoppableTurns.get(key);
-      if (!live) return;
-      live.delete(turn);
-      if (live.size === 0) stoppableTurns.delete(key);
-    };
+    addTo(stoppableTurns, key, turn);
+    return () => removeFrom(stoppableTurns, key, turn);
   }
 
   const watchedTurnRefs = new Map<string, Set<TurnRef>>();
 
   function holdWatchedRefs(instanceName: string, refs: TurnRef[]) {
-    let held = watchedTurnRefs.get(instanceName);
-    if (!held) {
-      held = new Set();
-      watchedTurnRefs.set(instanceName, held);
-    }
-    for (const ref of refs) held.add(ref);
+    for (const ref of refs) addTo(watchedTurnRefs, instanceName, ref);
   }
 
   function releaseWatchedRefs(instanceName: string, refs: TurnRef[]) {
-    const held = watchedTurnRefs.get(instanceName);
-    if (!held) return;
-    for (const ref of refs) held.delete(ref);
-    if (held.size === 0) watchedTurnRefs.delete(instanceName);
+    for (const ref of refs) removeFrom(watchedTurnRefs, instanceName, ref);
   }
 
   function lingeringFor(instanceName: string): TurnRef[] {
@@ -1815,10 +1804,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         )?.teamId;
       }
       const workspaces = new Set(
-        [
-          ...(inFlightTurns.get(instanceName) ?? []),
-          ...lingeringFor(instanceName),
-        ].map((ref) => ref.teamId),
+        liveTurnRefs(instanceName).map((ref) => ref.teamId),
       );
       return workspaces.size === 1 ? [...workspaces][0] : undefined;
     };
