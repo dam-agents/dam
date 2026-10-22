@@ -92,6 +92,7 @@ export function composeAgentsModule(deps: {
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   resolveSlackConversationLabels?: AgentsServiceDeps["resolveSlackConversationLabels"];
+  readSlackLoopGuardDrops?: AgentsServiceDeps["readSlackLoopGuardDrops"];
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
 }): {
   agents: AgentsService;
@@ -146,6 +147,7 @@ export function composeAgentsModule(deps: {
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
       resolveSlackConversationLabels: deps.resolveSlackConversationLabels,
+      readSlackLoopGuardDrops: deps.readSlackLoopGuardDrops,
     }),
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),

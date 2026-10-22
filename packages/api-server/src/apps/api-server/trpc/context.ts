@@ -15,6 +15,7 @@ import {
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
+import { createSlackLoopGuardDropsRepository } from "../../../modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -210,6 +211,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
       resolveSlackConversationLabels: (refs) =>
         channelManager.resolveSlackConversationLabels(refs),
+      readSlackLoopGuardDrops: (slackChannelIds) =>
+        createSlackLoopGuardDropsRepository(db).readMany(slackChannelIds),
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
