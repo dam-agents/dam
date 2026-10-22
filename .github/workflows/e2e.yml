@@ -144,8 +144,8 @@ jobs:
         name: Provision k3s in the background
         run: |
           sudo sysctl -w net.ipv6.conf.default.addr_gen_mode=1
-          nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
-            > /tmp/k3s-provision.log 2>&1 &
+          nohup bash -c ".mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo \$? > '$RUNNER_TEMP/k3s-provision.status'" \
+            > "$RUNNER_TEMP/k3s-provision.log" 2>&1 &
       # See build.yml's build-images. Before setup-mise, like check-test's.
       - &e2e-keycloak-theme-cache
         if: inputs.verify
@@ -236,8 +236,8 @@ jobs:
           # build; see image:resolve.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
           EVENT: ${{ github.event_name }}
-          CI_BUILD_READY_DIR: /tmp/ci-images.status.ready
-        run: CI_IMAGES_FAMILY=platform nohup .mise/tasks/e2e/ci-images /tmp/ci-images-platform.status > /tmp/ci-images.log 2>&1 &
+          CI_BUILD_READY_DIR: ${{ runner.temp }}/ci-images.status.ready
+        run: CI_IMAGES_FAMILY=platform nohup .mise/tasks/e2e/ci-images "$RUNNER_TEMP/ci-images-platform.status" > "$RUNNER_TEMP/ci-images.log" 2>&1 &
       # A run that builds the mock or the default image builds it here, the
       # mock onto a default image built here too, which installs every
       # harness's tools. Main's agent-tools entry holds them, so a hit reaches
@@ -265,7 +265,7 @@ jobs:
         env: *e2e-ci-images-env
         # The family and the status file it also reports go on the command,
         # over the env block the platform run uses as it is.
-        run: CI_IMAGES_FAMILY=agents CI_IMAGES_WAIT=/tmp/ci-images-platform.status nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status >> /tmp/ci-images.log 2>&1 &
+        run: CI_IMAGES_FAMILY=agents CI_IMAGES_WAIT="$RUNNER_TEMP/ci-images-platform.status" nohup .mise/tasks/e2e/ci-images "$RUNNER_TEMP/ci-images.status" >> "$RUNNER_TEMP/ci-images.log" 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.
       - &e2e-playwright-version
@@ -295,12 +295,12 @@ jobs:
       - &e2e-provision-wait
         name: Wait for the background k3s provision
         run: |
-          if ! timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done'; then
-            tail -n 100 /tmp/k3s-provision.log
+          if ! timeout 180 bash -c "until [ -s '$RUNNER_TEMP/k3s-provision.status' ]; do sleep 1; done"; then
+            tail -n 100 "$RUNNER_TEMP/k3s-provision.log"
             echo "::error::the background k3s provision wrote no status within 3 minutes; its log is above"
             exit 1
           fi
-          status="$(cat /tmp/k3s-provision.status)"
+          status="$(cat "$RUNNER_TEMP/k3s-provision.status")"
           if [ "$status" != 0 ]; then
             echo "::warning::the background k3s provision exited $status; mise run e2e nukes and provisions again"
           else
@@ -314,7 +314,7 @@ jobs:
         timeout-minutes: 35
         env: &e2e-run-env
           SKIP_IMAGE_BUILD: "1"
-          CI_IMAGES_STATUS: /tmp/ci-images.status
+          CI_IMAGES_STATUS: ${{ runner.temp }}/ci-images.status
       - &e2e-playwright-save
         if: ${{ inputs.save-caches && steps.playwright-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -326,12 +326,12 @@ jobs:
         if: ${{ !cancelled() }}
         # A build that never finished never printed its own log there.
         run: |
-          cat /tmp/ci-images.log
-          [ "$(cat /tmp/ci-images.status 2>/dev/null)" = ok ] || tail -n 200 /tmp/ci-build/logs/*.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/ci-images.log"
+          [ "$(cat "$RUNNER_TEMP/ci-images.status" 2>/dev/null)" = ok ] || tail -n 200 "$RUNNER_TEMP"/ci-build/logs/*.log 2>/dev/null || true
       - &e2e-provision-log
         name: k3s provision log
         if: ${{ !cancelled() }}
-        run: cat /tmp/k3s-provision.log
+        run: cat "$RUNNER_TEMP/k3s-provision.log"
       # The background provision and image fetch each end by writing their
       # status file, so its mtime is when they finished.
       - &e2e-timing-summary
@@ -339,7 +339,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           set -o pipefail
-          for mark in "k3s provisioned:/tmp/k3s-provision.status" "platform images ready:/tmp/ci-images-platform.status" "images ready:/tmp/ci-images.status"; do
+          for mark in "k3s provisioned:$RUNNER_TEMP/k3s-provision.status" "platform images ready:$RUNNER_TEMP/ci-images-platform.status" "images ready:$RUNNER_TEMP/ci-images.status"; do
             [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
           done
           # The task never fails the job by design: a summary that did not print
