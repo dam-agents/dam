@@ -412,9 +412,10 @@ export {
   ONCE_DELIVERY_WINDOW_MS,
   OnceResult,
   isOnceFinished,
+  localDateTimeIn,
   onceState,
 } from "./modules/schedules/once.js";
-export type { OnceState } from "./modules/schedules/once.js";
+export type { LocalDateTime, OnceState } from "./modules/schedules/once.js";
 export {
   ALL_DAYS,
   buildRRule,

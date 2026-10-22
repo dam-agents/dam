@@ -1,9 +1,8 @@
 import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
-import { detectTimezone } from "api-server-api";
+import { detectTimezone, localDateTimeIn } from "api-server-api";
 import { z } from "zod";
 
 import type { Schedule } from "../../../types.js";
-import { localDateTimeIn } from "../lib/once-schedule.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 
