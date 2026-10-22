@@ -62,14 +62,13 @@ jobs:
           stale="$(.mise/tasks/image/bump-bases --check)" || code=$?
           if [ "$code" -ne 0 ] && [ -z "$stale" ]; then exit "$code"; fi
           title="Base image pins are behind (automated)"
-          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-            --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
           if [ -z "$stale" ]; then
-            [ -z "$existing" ] || gh issue close "$existing" --repo "$GITHUB_REPOSITORY" \
-              --comment "Every base image pin matches its tag again."
+            .mise/tasks/github/issue-upsert --title "$title" \
+              --close-comment "Every base image pin matches its tag again."
             exit 0
           fi
-          body="$(printf '%s\n' "$stale" | awk -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" '
+          body="$(mktemp)"
+          printf '%s\n' "$stale" | awk -v run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" '
             BEGIN {
               print "A base image tag moved past its pin, so the images built on it miss its updates."
               print "Re-pin with `mise run image:bump-bases`. Last checked: [run](" run ")."
@@ -77,13 +76,8 @@ jobs:
               print "| Variable | Tag | Pinned | Current |"
               print "| --- | --- | --- | --- |"
             }
-            { printf "| `%s` | `%s` | `%s` | `%s` |\n", $1, $2, substr($3, 1, 19), substr($4, 1, 19) }')"
-          if [ -n "$existing" ]; then
-            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" \
-              --label "security,vulnerability"
-          fi
+            { printf "| `%s` | `%s` | `%s` | `%s` |\n", $1, $2, substr($3, 1, 19), substr($4, 1, 19) }' > "$body"
+          .mise/tasks/github/issue-upsert --title "$title" --body-file "$body"
 
   go-vuln:
     name: govulncheck
@@ -124,13 +118,10 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::govulncheck: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+      - if: always()
+        uses: ./.github/actions/report-findings # zizmor: ignore[self-repository]
         with:
           name: findings-go-vuln
-          path: findings.json
-          if-no-files-found: ignore
-          retention-days: 1
 
   cargo-audit:
     name: cargo audit
@@ -165,13 +156,10 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::cargo audit: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+      - if: always()
+        uses: ./.github/actions/report-findings # zizmor: ignore[self-repository]
         with:
           name: findings-cargo-audit
-          path: findings.json
-          if-no-files-found: ignore
-          retention-days: 1
 
   npm-audit:
     name: pnpm audit
@@ -203,13 +191,10 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::pnpm audit: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+      - if: always()
+        uses: ./.github/actions/report-findings # zizmor: ignore[self-repository]
         with:
           name: findings-npm-audit
-          path: findings.json
-          if-no-files-found: ignore
-          retention-days: 1
 
   mend-sca:
     name: Mend SCA
@@ -258,13 +243,10 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::Mend SCA: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+      - if: always()
+        uses: ./.github/actions/report-findings # zizmor: ignore[self-repository]
         with:
           name: findings-mend-sca
-          path: findings.json
-          if-no-files-found: ignore
-          retention-days: 1
 
   trivy-images:
     name: image:resolve list-components, list-third-party
@@ -400,13 +382,10 @@ jobs:
           jq -s 'add' findings.json <(printf '%s\n' "${out:-[]}") > merged.json
           mv merged.json findings.json
           echo "::notice::Trivy (${IMAGE} harness tools): $(echo "${out:-[]}" | jq length) finding(s)"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+      - if: always()
+        uses: ./.github/actions/report-findings # zizmor: ignore[self-repository]
         with:
           name: ${{ steps.scan.outputs.artifact }}
-          path: findings.json
-          if-no-files-found: ignore
-          retention-days: 1
 
   manage-security-issues:
     name: File security issues
@@ -418,10 +397,17 @@ jobs:
       issues: write
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: findings-*
           path: findings
+      # The issue upsert is .mise/tasks/github/issue-upsert, which needs usage.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: usage
       - name: Reconcile summary issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -443,22 +429,13 @@ jobs:
           fi
 
           title="Security vulnerabilities (automated scan)"
-          existing=$(gh issue list \
-            --repo "${GITHUB_REPOSITORY}" \
-            --state open \
-            --search "in:title \"$title\"" \
-            --json number \
-            --jq '.[0].number // empty')
 
           count=$(jq -s 'add // [] | unique_by([.id, .scope, .pkg]) | length' "${files[@]}")
           echo "::notice::$count finding(s) across all scanners"
 
           if [ "$count" -eq 0 ]; then
-            if [ -n "$existing" ]; then
-              gh issue close "$existing" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --comment "All vulnerabilities resolved — no findings in the latest scan."
-            fi
+            .mise/tasks/github/issue-upsert --title "$title" \
+              --close-comment "All vulnerabilities resolved — no findings in the latest scan."
             exit 0
           fi
 
@@ -484,12 +461,6 @@ jobs:
             body="${body:0:65000}"$'\n\n---\n**Truncated** — full findings in the workflow run artifacts.'
           fi
 
-          if [ -n "$existing" ]; then
-            gh issue edit "$existing" --repo "${GITHUB_REPOSITORY}" --body "$body"
-          else
-            gh issue create \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "$title" \
-              --body "$body" \
-              --label "security,vulnerability"
-          fi
+          body_file="$(mktemp)"
+          printf '%s' "$body" > "$body_file"
+          .mise/tasks/github/issue-upsert --title "$title" --body-file "$body_file"

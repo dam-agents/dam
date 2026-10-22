@@ -1,0 +1,32 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Keep one open issue per automated scan: write its body, or close it when the scan has nothing to report"
+#MISE raw=true
+#USAGE flag "--title <title>" help="The issue's title; one open issue is found by it"
+#USAGE flag "--body-file <path>" help="The body to write: the open issue is edited, or the issue is created. Without it the issue is closed"
+#USAGE flag "--close-comment <text>" help="The comment a close leaves; required to close"
+#USAGE flag "--label <labels>" help="Comma-separated labels a new issue carries" default="security,vulnerability"
+# The security scans own two issues this way: the nightly base-pin check, and
+# the vulnerability summary every scan run rewrites. Both find their issue by
+# title, close it when there is nothing left to report, and create it with the
+# same labels otherwise, so the sequence lives here once.
+#
+# By path too (security.yml), with gh on PATH and GITHUB_REPOSITORY set.
+set -euo pipefail
+title="${usage_title:?--title is required}"
+repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
+existing=$(gh issue list --repo "$repo" --state open \
+  --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+
+if [ -z "${usage_body_file:-}" ]; then
+  [ -n "$existing" ] || exit 0
+  [ -n "${usage_close_comment:-}" ] || { echo "issue-upsert: --close-comment is required to close $existing" >&2; exit 1; }
+  gh issue close "$existing" --repo "$repo" --comment "$usage_close_comment"
+  exit 0
+fi
+
+if [ -n "$existing" ]; then
+  gh issue edit "$existing" --repo "$repo" --body-file "$usage_body_file"
+else
+  gh issue create --repo "$repo" --title "$title" --body-file "$usage_body_file" \
+    --label "$usage_label"
+fi
