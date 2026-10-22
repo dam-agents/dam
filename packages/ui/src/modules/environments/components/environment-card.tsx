@@ -177,8 +177,7 @@ export function EnvironmentCard({
   );
 }
 
-// One item of the status line after the first: its separator travels with it,
-// so the line wraps between items and never inside one.
+// UNIT_BOUNDARY_DESCRIPTION: One item of the status line after the first: its separator travels with it, so the line wraps between items and never inside one.
 function StatusItem({ children }: { children: ReactNode }) {
   return (
     <span className="whitespace-nowrap">
