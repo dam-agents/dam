@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
-import { getCookie } from "hono/cookie";
 import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
@@ -222,6 +221,7 @@ import {
   createContentApp,
   createShareAuthRoutes,
   loginPath,
+  readShareSignIn,
   createShareViewerApp,
   shareSessionCookie,
   type ArtifactLibraryFor,
@@ -562,13 +562,14 @@ export async function bootstrap() {
       shareBaseUrl: config.shareBaseUrl,
       share: {
         visitor: async (c) => {
-          const id = getCookie(c, shareCookie.name);
-          const session = id ? await shareAuth.getSession(id) : null;
-          return id && session
+          const signIn = await readShareSignIn(c, shareAuth, shareCookie);
+          return signIn
             ? {
-                sub: session.sub,
-                email: session.emailVerified ? session.email : null,
-                shareSession: id,
+                sub: signIn.session.sub,
+                email: signIn.session.emailVerified
+                  ? signIn.session.email
+                  : null,
+                shareSession: signIn.id,
               }
             : null;
         },

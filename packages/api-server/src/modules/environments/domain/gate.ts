@@ -175,9 +175,14 @@ export function decideAccess(
   return { allow: false, reason: "not-allowed" };
 }
 
+const SAME_ORIGIN_BASE = "https://address.invalid";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A sign-in's return path on the address it began
- * on: a path of that origin, never another host.
+ * on: a path of that origin, never another host. A browser drops a tab or a
+ * newline from a URL and reads a backslash as a slash, so `/<tab>/evil` would
+ * go to another host; every control character and backslash is refused, and
+ * the path must still name the same origin once a URL parser has read it.
  */
 export function safeNext(path: string | undefined): string {
   if (
@@ -185,7 +190,8 @@ export function safeNext(path: string | undefined): string {
     !path.startsWith("/") ||
     path.startsWith("//") ||
     path.startsWith(RESERVED_PREFIX) ||
-    /[\r\n\\]/.test(path)
+    /[\u0000-\u001f\u007f\\]/.test(path) ||
+    new URL(path, SAME_ORIGIN_BASE).origin !== SAME_ORIGIN_BASE
   )
     return "/";
   return path;

@@ -36,7 +36,7 @@ The share host is the front door of every Environment; this replaces only how AD
 - **Keep a sign-in of the Environments' own** — two sign-ins and two clients for one person, and the refusal on an untrusted origin.
 - **The app's own client and session** — its tokens are valid on the platform API, which no host that untrusted code shares may hold.
 - **A session cookie for the whole environments domain** — every Environment app could read or set it.
-- **A short-lived token in each page, sent with every request**, as [#5706](https://github.com/dam-agents/dam/issues/5706) proposes for the share relay — an Environment's pages are the app's own, which the platform cannot change, so only the `Origin` the browser sends is left to tell them from another site's.
+- **A token only the page holds, sent with every request**, as ADR-118 gives the share relay — an Environment's pages are the app's own, which the platform cannot change, so only the `Origin` the browser sends is left to tell them from another site's.
 - **An unbound code** — anyone who reads the code from a log, the history or a referrer before it is used would get the visitor's session.
 
 ## Consequences

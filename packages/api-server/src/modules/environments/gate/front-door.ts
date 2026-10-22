@@ -98,11 +98,11 @@ export function createEnvironmentFrontDoor(deps: FrontDoorDeps): Hono {
         "This link names no Environment, or one that was deleted.",
       );
 
-    if (!isSignInToken(binding))
-      return c.redirect(
-        new URL(safeNext(next), deps.addressUrl(parsed.address)).href,
-        302,
-      );
+    if (!isSignInToken(binding)) {
+      const origin = new URL(deps.addressUrl(parsed.address)).origin;
+      const back = new URL(safeNext(next), origin);
+      return c.redirect(back.origin === origin ? back.href : `${origin}/`, 302);
+    }
     const visitor = await deps.share.visitor(c);
     if (!visitor) return c.redirect(deps.share.loginPath(here), 302);
 

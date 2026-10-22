@@ -12,6 +12,7 @@ import {
   parseAddress,
   relayHeaders,
   requestAllowed,
+  safeNext,
 } from "../../modules/environments/domain/gate.js";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
 import { createEnvironmentGate } from "../../modules/environments/gate/environment-gate.js";
@@ -402,6 +403,11 @@ describe("the Environment gate", () => {
       cookie: "share=share-1",
     });
     expect(unbound.location).toBe(`http://app-pr-1-abcdef.${DOMAIN}/page`);
+    const offSite = await w.request(
+      SHARE,
+      `/e/app-pr-1-abcdef?next=${encodeURIComponent("/\t/evil.example")}`,
+    );
+    expect(offSite.location).toBe(`http://app-pr-1-abcdef.${DOMAIN}/`);
 
     const signedIn = await w.frontDoor("app-pr-1-abcdef");
     expect(signedIn.status).toBe(302);
@@ -634,6 +640,26 @@ describe("the Environment gate", () => {
 });
 
 describe("Environment addresses", () => {
+  // TEST_SCENARIO: a sign-in's return path stays on the address: a path of it passes, and a path a browser would read as another host — two slashes, a backslash, or a tab, newline or other control character it drops — becomes the root, as do the reserved paths and anything that is no path.
+  it("keeps a return path on the address", () => {
+    expect(safeNext("/page?x=1")).toBe("/page?x=1");
+    for (const path of [
+      "//evil.example",
+      "/\\evil.example",
+      "/\t/evil.example",
+      "/\n/evil.example",
+      "/\r/evil.example",
+      "/\u000b/evil.example",
+      "/\u0000/evil.example",
+      "/\u007f/evil.example",
+      "/.platform/session",
+      "https://evil.example/",
+      "page",
+      undefined,
+    ])
+      expect(safeNext(path)).toBe("/");
+  });
+
   // TEST_SCENARIO: an address is the first label under the environments domain, split at its first hyphen into the endpoint and the Environment's host label; a deeper name, another domain, a label with no hyphen or one with characters a DNS label cannot hold is no address.
   it("parses an address from the Host header", () => {
     expect(parseAddress(`app-pr-42-abcdef.${DOMAIN}:443`, DOMAIN)).toEqual({

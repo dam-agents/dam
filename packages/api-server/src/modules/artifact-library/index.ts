@@ -19,6 +19,7 @@ export {
 export {
   createShareAuthRoutes,
   loginPath,
+  readShareSignIn,
 } from "./viewer/share-auth-routes.js";
 export {
   createKeycloakShareIdentity,
