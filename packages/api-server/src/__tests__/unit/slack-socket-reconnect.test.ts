@@ -139,8 +139,9 @@ describe("Slack Socket Mode reconnect", () => {
 
   /**
    * TEST_SCENARIO: Slack refuses the app token twice on reconnect, as in a
-   * short Slack auth outage. Each refusal is retried after a longer delay,
-   * 1 s and then 5 s and then 15 s, and the third reconnect opens the socket.
+   * short Slack auth outage. The first reconnect runs 1 s after the drop, each
+   * refusal is retried after a longer delay, 5 s and then 15 s, and the third
+   * reconnect opens the socket.
    */
   it("retries a reconnect refused with invalid_auth until Slack accepts it", async () => {
     const gateway = createGateway();
