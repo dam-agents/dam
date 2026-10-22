@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -121,6 +121,11 @@ A runtime with a harness that has a harness config but no `sessionSettings` pred
 For such an agent the chat shows an update notice instead of the picker, and new sessions, schedule fires and channel turns name no Session Pair, so they run on the agent's defaults.
 
 The ETE LiteLLM proxy answers Claude Code's auto-mode permission check on the model call itself, through the beta header the proxy accepts.
+Only a Claude model answers that check: for any other model the reply carries no verdict, and Claude Code then warns that the session is not eligible and pays for classifier calls of its own.
+So the Claude Code manifest declares `nonClaudeModelEnv` (`CLAUDE_CODE_AUTO_MODE_SERVER=0`), which joins the Harness Lease key of a routed session whose model or subagent model is not Claude: such a session runs in a Claude Code process that does not ask for the check, and the Claude sessions keep it in theirs.
+A model is Claude when its upstream id says `claude`; no model, or a bare tier word, counts as Claude.
+Switching between the two sides moves the session between processes once the running turn ends, as a process-scoped setting does.
+A routed provider's own env never reaches the harness, so a preset that sets `CLAUDE_CODE_AUTO_MODE_SERVER` (CurveBender) has no effect on it.
 
 ## Provider compatibility
 
