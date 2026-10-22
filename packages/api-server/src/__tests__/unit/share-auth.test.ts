@@ -85,6 +85,7 @@ function setup(identity: IdentityFn = alice, shareBaseUrl = SHARE) {
       brandName: "Acme",
       sessionCookie: shareSessionCookie(shareBaseUrl),
     }),
+    environments: null,
   });
   const get = (path: string, cookie?: string) =>
     host.fetch(
