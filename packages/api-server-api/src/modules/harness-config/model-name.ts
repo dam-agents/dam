@@ -47,3 +47,15 @@ export function isQualifiedModel(
 ): boolean {
   return parseQualifiedModel(name, opts) !== null;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether a model is Claude, by the `claude` in its
+ * upstream id after the harness's own prefix: Claude Code asks for the
+ * server-side auto-mode check on every model call, and only a Claude model
+ * answers it. A bare name, a tier word, is no provider's model and counts as
+ * Claude, and so does no model at all.
+ */
+export function isClaudeModel(model: string | null | undefined): boolean {
+  const parsed = parseQualifiedModel(model, { claudePrefix: true });
+  return parsed === null || /claude/i.test(parsed.upstreamId);
+}

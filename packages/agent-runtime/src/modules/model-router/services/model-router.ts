@@ -22,6 +22,7 @@ import { anthropicBetaFor } from "../domain/anthropic-beta.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
 import { processClassifierName } from "../domain/harness-env.js";
 import {
+  isAuxiliaryCall,
   isSideCall,
   SESSION_HEADER,
   type SessionHandle,
@@ -227,16 +228,20 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
    * subagent's, for a tier slot of another provider, or one its own provider
    * no longer lists, runs on the session provider's model of that tier; a
    * main-conversation turn is never moved, since it names the model the
-   * session was given. The auto-mode classifier's own call, recognized by the
-   * exact name the process's classifier variable holds, runs on the session
-   * provider's preferred classifier instead of a tier, and passes through
-   * when the session runs on a provider whose own service answers the check.
+   * session was given. The auto-mode classifier's own call, one Claude Code
+   * classes as auxiliary and stamps with no subagent id, is recognized by the
+   * exact name the process's classifier variable holds and runs on the session
+   * provider's preferred classifier instead of a tier; it passes through when
+   * the session runs on a provider whose own service answers the check. A
+   * subagent's or a workflow agent's call that names the same model is work
+   * and keeps the tier rule.
    */
   const modelFor = (
     requested: string,
     binding: ModelRouterBinding | undefined,
     handle: SessionHandle | null,
     side: boolean,
+    auxiliary: boolean,
     harness: string,
   ): string => {
     if (!handle) return requested;
@@ -251,14 +256,21 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     if (binding?.modelFromSession || tier) return choice.model;
     if (!binding?.claudeTiers || !side) return requested;
     const providers = deps.catalog.providers();
-    const classifier = classifierModelOnSessionProvider({
-      requested,
-      sessionModel: choice.model,
-      harness,
-      binding,
-      providers,
-      processClassifier: processClassifierName({ harness, binding, providers }),
-    });
+    const classifier = auxiliary
+      ? classifierModelOnSessionProvider({
+          requested,
+          sessionModel: choice.model,
+          subagentModel: choice.subagentModel,
+          harness,
+          binding,
+          providers,
+          processClassifier: processClassifierName({
+            harness,
+            binding,
+            providers,
+          }),
+        })
+      : null;
     if (classifier) return classifier;
     return (
       tierModelOnSessionProvider({
@@ -300,7 +312,14 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       : null;
     const binding = deps.harnesses[harness];
     const target = resolveTarget({
-      model: modelFor(body.model, binding, handle, isSideCall(req), harness),
+      model: modelFor(
+        body.model,
+        binding,
+        handle,
+        isSideCall(req),
+        isAuxiliaryCall(req),
+        harness,
+      ),
       dialect,
       harness: binding,
       harnessName: harness,

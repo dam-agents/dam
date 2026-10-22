@@ -12,6 +12,7 @@ import type {
   CatalogEntry,
   CatalogProvider,
 } from "../../modules/model-catalog/index.js";
+import { nonClaudeModelEnv } from "../../modules/acp/domain/non-claude-env.js";
 import { classifierModelOnSessionProvider } from "../../modules/model-router/index.js";
 import type { ModelRouterBinding } from "../../modules/runtime-channel/manifest.js";
 
@@ -61,12 +62,14 @@ const provider = (alias: ProviderAlias, ids: string[]): CatalogProvider => ({
 const where = (input: {
   requested?: string;
   sessionModel: string;
+  subagentModel?: string | null;
   providers: readonly CatalogProvider[];
   processClassifier?: string | null;
 }) =>
   classifierModelOnSessionProvider({
     requested: input.requested ?? PROCESS_CLASSIFIER,
     sessionModel: input.sessionModel,
+    subagentModel: input.subagentModel,
     harness: "claude-code",
     binding,
     providers: input.providers,
@@ -97,6 +100,32 @@ describe("the classifier's own call", () => {
     ).toBe(`claude/cb/${CB_WORK.toLowerCase()}`);
   });
 
+  /** TEST_SCENARIO: Claude Code runs client-side classification when the process runs any non-Claude model, its subagent setting included, because the process env that turns server-side auto mode off reads every model the process may run. A Claude session on IBM with a GPT subagent model is therefore not server-side, and its classifier goes to IBM's preferred classifier like any other session there. */
+  it("does not call a session server-side when its subagent model is not Claude", () => {
+    const ibm = provider("ibm", [
+      "aws/claude-opus-5-5",
+      "aws/claude-sonnet-5-5",
+      "gpt-5.5",
+    ]);
+    expect(
+      where({ sessionModel: "ibm/aws/claude-opus-5-5", providers: [ibm] }),
+    ).toBe(PROCESS_CLASSIFIER);
+    expect(
+      where({
+        sessionModel: "ibm/aws/claude-opus-5-5",
+        subagentModel: "ibm/gpt-5.5",
+        providers: [ibm],
+      }),
+    ).toBe("claude/ibm/aws/claude-sonnet-5-5");
+    expect(
+      where({
+        sessionModel: "ibm/aws/claude-opus-5-5",
+        subagentModel: "ibm/aws/claude-sonnet-5-5",
+        providers: [ibm],
+      }),
+    ).toBe(PROCESS_CLASSIFIER);
+  });
+
   /** TEST_SCENARIO: A session provider with no listing at all still answers with the session's own model rather than the provider it left. */
   it("falls back to the session's own model without a listing", () => {
     expect(where({ sessionModel: `cb/${CB_WORK}`, providers: [] })).toBe(
@@ -120,6 +149,29 @@ describe("the classifier's own call", () => {
     expect(where({ sessionModel: "ibm/gpt-5.5", providers: [ibm] })).toBe(
       "claude/ibm/aws/claude-sonnet-5-5",
     );
+  });
+
+  /** TEST_SCENARIO: The new predicate reads the same inputs as the process env, so the two cannot disagree about a session: whenever the env turns server-side auto mode off, the classifier is moved, and whenever it leaves it on, the classifier passes through. */
+  it("agrees with the process env about a session", () => {
+    const ibm = provider("ibm", [
+      "aws/claude-opus-5-5",
+      "aws/claude-sonnet-5-5",
+      "gpt-5.5",
+    ]);
+    const env = { CLAUDE_CODE_AUTO_MODE_SERVER: "0" };
+    for (const [sessionModel, subagentModel] of [
+      ["ibm/aws/claude-opus-5-5", null],
+      ["ibm/aws/claude-opus-5-5", "ibm/aws/claude-sonnet-5-5"],
+      ["ibm/aws/claude-opus-5-5", "ibm/gpt-5.5"],
+      ["ibm/gpt-5.5", null],
+    ] as const) {
+      const clientSide =
+        nonClaudeModelEnv(env, [sessionModel, subagentModel]) !== undefined;
+      expect(
+        where({ sessionModel, subagentModel, providers: [ibm] }) ===
+          PROCESS_CLASSIFIER,
+      ).toBe(!clientSide);
+    }
   });
 
   /** TEST_SCENARIO: Only the exact name the process's classifier variable holds is the classifier's call; another call stays where the harness sent it, and so does one when no provider named a classifier at all. */

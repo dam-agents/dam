@@ -9,10 +9,10 @@ import {
 import {
   CLAUDE_MODEL_NAME_PREFIX,
   hasServerAutoMode,
+  isClaudeModel,
   parseQualifiedModel,
   preferredModelOf,
 } from "api-server-api";
-import { isClaudeModel } from "../../acp/domain/non-claude-env.js";
 import type { CatalogProvider } from "../../model-catalog/index.js";
 import { forHarness, renderName } from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
@@ -150,17 +150,24 @@ export function tierModelOnSessionProvider(input: {
  * UNIT_BOUNDARY_DESCRIPTION: where the auto-mode classifier runs when its
  * session is on another provider: the session provider's preferred classifier,
  * else the session's own model, so a session moved elsewhere follows itself
- * instead of the provider it left. The call is recognized by the exact name
- * the process's classifier variable holds, a string match only; no tier logic
- * applies, since the classifier names its own model rather than a slot. Null
- * when the call is not the classifier's. A session on a provider whose own
- * service answers the check (hasServerAutoMode) with a Claude model keeps the
- * call where the harness sent it, which returning its own name says, so the
- * tier rule below never touches it.
+ * instead of the provider it left. The caller passes only a call Claude Code
+ * classes as auxiliary and stamps with no subagent id, since a subagent or a
+ * workflow agent naming the same model is work, and it keeps the side-call
+ * rule; the call is then recognized by the exact name the process's
+ * classifier variable holds, a string match only, and no tier logic applies.
+ * Null when the call is not the classifier's. A session on a provider whose
+ * own service answers the check keeps the call where the harness sent it,
+ * which returning its own name says, so the tier rule below never touches it;
+ * that needs the preset flag, a Claude session model and no non-Claude
+ * subagent model, the same inputs the process env reads. The name is compared
+ * with the catalog as it is when the call arrives, while the process holds the
+ * value it read at spawn, so a replaced listing reaches a running process only
+ * when it recycles.
  */
 export function classifierModelOnSessionProvider(input: {
   requested: string;
   sessionModel: string;
+  subagentModel?: string | null;
   harness: string;
   binding: ModelRouterBinding;
   providers: readonly CatalogProvider[];
@@ -173,7 +180,11 @@ export function classifierModelOnSessionProvider(input: {
     claudePrefix: binding.namePrefix === CLAUDE_MODEL_NAME_PREFIX,
   });
   if (!own) return null;
-  if (hasServerAutoMode(own.alias) && isClaudeModel(input.sessionModel))
+  if (
+    hasServerAutoMode(own.alias) &&
+    isClaudeModel(input.sessionModel) &&
+    isClaudeModel(input.subagentModel)
+  )
     return input.requested;
   const provider = input.providers.find((p) => p.alias === own.alias);
   const ownView = provider

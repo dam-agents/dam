@@ -52,6 +52,21 @@ const SIDE_CLASSES = new Set([
 ]);
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: whether Claude Code marked a call as auxiliary
+ * and stamped no subagent id, the class its auto-mode classifier arrives in
+ * and which its titles, WebFetch summaries and side replies share. A
+ * subagent's and a workflow agent's work is never this class, so the router
+ * keeps such a call on the side-call rules even when it names the same model
+ * the classifier does.
+ */
+export function isAuxiliaryCall(req: IncomingMessage): boolean {
+  return (
+    header(req, REQUEST_CLASS_HEADER) === "auxiliary" &&
+    header(req, CLAUDE_AGENT_HEADER) === null
+  );
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: whether Claude Code marked a call as one beside
  * the conversation: an auxiliary call (a session title, a WebFetch summary,
  * the auto-mode classifier), a subagent's, a workflow agent's or a side

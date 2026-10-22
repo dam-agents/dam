@@ -64,6 +64,7 @@ export {
 export {
   CLAUDE_MODEL_NAME_PREFIX,
   formatQualifiedModel,
+  isClaudeModel,
   isQualifiedModel,
   parseQualifiedModel,
   type QualifiedModel,

@@ -102,8 +102,11 @@ export function routerEnvFor(input: {
  * UNIT_BOUNDARY_DESCRIPTION: the name the classifier variable holds, which is
  * the call the router recognizes and sends to the session's provider: the
  * platform's preferred classifier among the entries the default provider
- * serves the harness, rendered as the router resolves it. One name here and
- * one check there, so the two never disagree.
+ * serves the harness, rendered as the router resolves it. The env and the
+ * router read one function, so they agree about one catalog snapshot; the
+ * router reads the listing as it is when a call arrives while the process
+ * keeps the value it read at spawn, so a replaced listing reaches a running
+ * process only when it recycles.
  */
 export function processClassifierName(input: {
   harness: string;
