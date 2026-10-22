@@ -202,6 +202,53 @@ describe("convertedDefaultModel", () => {
   });
 });
 
+describe("convertedDefaultModel on several fitting providers", () => {
+  const both = (setting: string | null, ran: string[] = []) =>
+    convertedDefaultModel({
+      setting,
+      ran,
+      providers: [
+        { alias: "anthropic", listed: ["claude-opus-4-8", "claude-opus-5-5"] },
+        {
+          alias: "cb",
+          listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+        },
+      ],
+    });
+
+  // TEST_SCENARIO: an id the setting or the history names is the person's own pick, and it names the same model whichever provider is asked, so it wins over the platform's preferred model; only a tier word, which names nothing on several providers, goes to the list, which is why the image's opus still lands on CurveBender.
+  it("keeps the person's own model and gives only a tier word to the list", () => {
+    expect(both("claude-opus-4-8")).toBe("anthropic/claude-opus-4-8");
+    expect(both("default", ["claude-opus-4-8"])).toBe(
+      "anthropic/claude-opus-4-8",
+    );
+    expect(both(null, ["claude-opus-5-5"])).toBe("anthropic/claude-opus-5-5");
+    expect(both("opus")).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017");
+    expect(both("default", [])).toBe(
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    );
+  });
+
+  // TEST_SCENARIO: an id no provider lists is still the owner's call, not a reason to run the platform's preferred model in its place.
+  it("drops an id no provider lists rather than substituting one", () => {
+    expect(both("claude-opus-3")).toBeNull();
+  });
+
+  // TEST_SCENARIO: the providers are asked in alias order, so two of them listing the same recorded model resolve the way a default provider always has.
+  it("asks the providers in alias order", () => {
+    expect(
+      convertedDefaultModel({
+        setting: "default",
+        ran: ["claude-sonnet-5-5"],
+        providers: [
+          { alias: "anthropic", listed: ["claude-sonnet-5-5"] },
+          { alias: "ibm", listed: ["aws/claude-sonnet-5-5"] },
+        ],
+      }),
+    ).toBe("anthropic/claude-sonnet-5-5");
+  });
+});
+
 describe("convertedDefaultModel on a provider that prefixes its ids", () => {
   // TEST_SCENARIO: Claude Code on IBM records a call's model without IBM's route prefix, so the harness default matches the one listed id ending in that name, and none when two routes list it.
   it("matches the recorded name to the one listed id ending in it", () => {
@@ -403,6 +450,19 @@ describe("the one-time default conversion", () => {
         provider: "anth",
         model: "anthropic/claude-opus-5-5",
       },
+    ]);
+  });
+
+  // TEST_SCENARIO: with one provider and nothing that resolves, the save keeps that provider so the picker remembers which one the agent holds, and only the model is left for the owner.
+  it("keeps the one provider when no model resolves", async () => {
+    const options = {
+      setting: "claude-opus-3",
+      catalog: view("listed", ["claude-opus-4-8"]),
+    };
+    const { c, writes } = converter(options);
+    expect(await c.convert("a")).toBe("not-set");
+    expect(writes).toEqual([
+      { harness: "claude-code", provider: "anth", model: null },
     ]);
   });
 

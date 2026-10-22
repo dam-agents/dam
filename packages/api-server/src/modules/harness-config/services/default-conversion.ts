@@ -151,7 +151,8 @@ export function createDefaultConverter(deps: {
       {
         harness,
         provider:
-          providers.find((p) => p.alias === alias)?.connectionId ?? null,
+          providers.find((p) => p.alias === alias)?.connectionId ??
+          (providers.length === 1 ? providers[0]!.connectionId : null),
         model,
       },
       converted?.changedFrom
