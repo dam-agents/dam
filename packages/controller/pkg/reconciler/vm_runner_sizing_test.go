@@ -594,6 +594,15 @@ func TestTheRunnerRequestStaysBetweenTheInstallsRequestAndTheLimit(t *testing.T)
 	assert.Equal(t, "8Gi", high.String())
 }
 
+// TEST_SCENARIO: an owner whose machines all sleep reserves the install's request and nothing else. The reserve is what admission keeps free beside running machines, so with nothing running it would only round an idle runner up to a whole 512 MiB step the node then cannot lend to anyone; the first machine to run brings the reserve back with it.
+func TestAnIdleRunnerRequestsOnlyTheInstallsFloor(t *testing.T) {
+	floor, limit, current := resource.MustParse("32Mi"), resource.MustParse("8Gi"), resource.MustParse("1Gi")
+	idle := runnerMemoryRequest(0, 512, current, floor, limit)
+	assert.Equal(t, "32Mi", idle.String(), "nothing runs, so the reserve is not counted and the request falls to the floor")
+	first := runnerMemoryRequest(1, 512, idle, floor, limit)
+	assert.Equal(t, "1Gi", first.String(), "the first machine brings the reserve back, rounded up to a step")
+}
+
 // TEST_SCENARIO: a guest whose use sits on a 512 MiB step boundary must not flip the request between two steps at every pass. The request rises as soon as the need passes the current step, and falls only once the need is a quarter step below the step under it.
 func TestTheRunnerRequestFallsOnlyClearlyBelowTheCurrentStep(t *testing.T) {
 	floor, limit, current := resource.MustParse("1Gi"), resource.MustParse("8Gi"), resource.MustParse("2Gi")

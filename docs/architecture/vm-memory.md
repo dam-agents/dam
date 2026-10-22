@@ -142,6 +142,7 @@ The trade-off is that a restart wave — a roll, or a CA rotation across an inst
 Without that bound, machines on a node whose runners requested a fraction of their limits would grow into memory the node had promised elsewhere, and the kubelet, or the kernel, would then take the pod furthest over its own request: one owner's whole set of machines for one pod.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.
+With no machine to run, the request is the install's request alone: the reserve is what admission keeps free beside running machines, and an idle runner holds a few MiB, so an owner whose agents all sleep reserves only that floor rather than a step of the reserve.
 That request is also what the runner may admit machines against, so the pod the scheduler has not enlarged starts nothing more than it reserved (above).
 The request rises a step as soon as the counts need it, but falls only once they are a quarter step below the step under it, so use that sits on a step boundary does not resize the pod at every pass; admission and the metric stay exact.
 A cluster without in-place resize keeps the install's request.
