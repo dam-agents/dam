@@ -7,6 +7,8 @@ import (
 	"sort"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -364,10 +366,36 @@ func roundedMiB(mib int) int {
 	return (mib + memoryRequestStepMiB - 1) / memoryRequestStepMiB * memoryRequestStepMiB
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: puts the agents a reclaim chose to sleep. The
+// UNIT_BOUNDARY_DESCRIPTION: idle probe they were chosen on takes time, and the
+// UNIT_BOUNDARY_DESCRIPTION: api-server writes pins and activity without taking
+// UNIT_BOUNDARY_DESCRIPTION: the owner's lock, so each victim is read again just
+// UNIT_BOUNDARY_DESCRIPTION: before its stamp: one that gained a pin, fresh
+// UNIT_BOUNDARY_DESCRIPTION: activity, a stop request or a migration since
+// UNIT_BOUNDARY_DESCRIPTION: selection is left running, and so is one whose
+// UNIT_BOUNDARY_DESCRIPTION: version moved between that read and the stamp. The
+// UNIT_BOUNDARY_DESCRIPTION: other victims are still reclaimed, since the room the
+// UNIT_BOUNDARY_DESCRIPTION: start needs is freed by whichever of them holds it.
 func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []reclaimCandidate, owner, forName, why string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, c := range chosen {
-		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
+		live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, c.name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("re-reading reclaimed agent %s: %w", c.name, err)
+		}
+		peer, err := FromCacheObject[apiv1.Agent](live)
+		if err != nil {
+			return err
+		}
+		if _, ok := reclaimEligible(peer.Annotations, effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase), time.Now().UTC()); !ok {
+			slog.InfoContext(ctx, "left an agent running: it stopped being idle while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
+			continue
+		}
+		if err := r.stampReclaimed(ctx, c.name, now, live.GetResourceVersion()); err != nil {
+			if apierrors.IsConflict(err) {
+				slog.InfoContext(ctx, "left an agent running: it changed while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
+				continue
+			}
 			return err
 		}
 		if c.vmMiB > 0 {
