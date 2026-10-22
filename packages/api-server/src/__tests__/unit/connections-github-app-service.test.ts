@@ -36,6 +36,8 @@ function makeRepoFake() {
       const c = rows.get(id);
       return c && c.ownerId === ownerId ? c : null;
     },
+    getById: async (id) => rows.get(id) ?? null,
+    listDue: async () => [],
     updateAuth: async (id, auth) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });

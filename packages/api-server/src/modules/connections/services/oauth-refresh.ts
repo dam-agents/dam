@@ -1,18 +1,5 @@
-import {
-  and,
-  eq,
-  inArray,
-  sql,
-  type Db,
-  connections as connectionsTable,
-} from "db";
-import {
-  connectionAuthConfigSchema as authConfigSchema,
-  contribution as contributionSchema,
-  type Connection,
-  type ConnectionAuthConfig,
-  type Contribution,
-} from "api-server-api";
+import { and, eq, sql, type Db, connections as connectionsTable } from "db";
+import type { Connection, ConnectionAuthConfig } from "api-server-api";
 import type {
   OAuthEngine,
   OAuthProvider,
@@ -31,6 +18,7 @@ import { mintClientCredentialsToken } from "./client-credentials.js";
 import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
 import { createXactLock, type XactLock } from "../../../core/xact-lock.js";
+import { createConnectionsRepository } from "../infrastructure/connections-repository.js";
 
 export interface OAuthRefreshLoop {
   tickOnce(): Promise<{ refreshed: number; failed: number; skipped: number }>;
@@ -80,7 +68,7 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
     let skipped = 0;
     const startedAt = now();
     try {
-      const due = await dueConnections(deps.db, skewSec);
+      const due = await createConnectionsRepository(deps.db).listDue(skewSec);
       for (const conn of due) {
         if (conn.auth.kind === "oauth" && !conn.auth.refreshTokenRef) continue;
         const state =
@@ -128,38 +116,6 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
   }
 
   return { tickOnce: tick };
-}
-
-async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
-  const rows = (await db
-    .select()
-    .from(connectionsTable)
-    .where(
-      and(
-        inArray(sql`${connectionsTable.auth} ->> 'kind'`, [
-          "oauth",
-          "client-credentials",
-          "github-app",
-        ]),
-        sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
-        sql`
-          (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
-          AND ((${connectionsTable.auth} ->> 'expiresAt')::int - extract(epoch from now())::int) <= ${skewSec}
-        `,
-      ),
-    )) as {
-    id: string;
-    owner: string;
-    templateId: string;
-    name: string;
-    inputs: unknown;
-    auth: unknown;
-    contributions: unknown;
-  }[];
-
-  return rows
-    .map((r) => parseConnectionRow(r))
-    .filter((c): c is Connection => c !== null);
 }
 
 async function recordBackoff(
@@ -282,33 +238,6 @@ async function markRefreshFailure(
   return true;
 }
 
-export function parseConnectionRow(row: {
-  id: string;
-  owner: string;
-  templateId: string;
-  name: string;
-  inputs: unknown;
-  auth: unknown;
-  contributions: unknown;
-}): Connection | null {
-  const auth = authConfigSchema.safeParse(row.auth);
-  if (!auth.success) return null;
-  const contributions: Contribution[] = Array.isArray(row.contributions)
-    ? row.contributions
-        .map((c) => contributionSchema.safeParse(c))
-        .flatMap((r) => (r.success ? [r.data] : []))
-    : [];
-  return {
-    id: row.id,
-    ownerId: row.owner,
-    templateId: row.templateId,
-    name: row.name,
-    inputs: (row.inputs as Record<string, unknown>) ?? {},
-    auth: auth.data,
-    contributions,
-  };
-}
-
 export function connectionRefreshLockKey(connectionId: string): string {
   return `connection:refresh:${connectionId}`;
 }
@@ -327,7 +256,7 @@ async function refreshOne(
 ): Promise<void> {
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
   await withLock(connectionRefreshLockKey(conn.id), async () => {
-    const fresh = await readConnection(deps.db, conn.id);
+    const fresh = await createConnectionsRepository(deps.db).getById(conn.id);
     if (
       !fresh ||
       fresh.auth.kind !== "oauth" ||
@@ -362,7 +291,7 @@ export async function remintOne(
 ): Promise<void> {
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
   await withLock(connectionRefreshLockKey(conn.id), async () => {
-    const fresh = await readConnection(deps.db, conn.id);
+    const fresh = await createConnectionsRepository(deps.db).getById(conn.id);
     if (
       !fresh ||
       fresh.auth.kind !== "client-credentials" ||
@@ -420,7 +349,7 @@ export async function remintGitHubAppOne(
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
   await withLock(gitHubAppMintLockKey(conn.id), async () => {
-    const fresh = await readConnection(deps.db, conn.id);
+    const fresh = await createConnectionsRepository(deps.db).getById(conn.id);
     if (
       !fresh ||
       fresh.auth.kind !== "github-app" ||
@@ -456,20 +385,4 @@ export async function remintGitHubAppOne(
       })
       .where(eq(connectionsTable.id, conn.id));
   });
-}
-
-async function readConnection(db: Db, id: string): Promise<Connection | null> {
-  const rows = (await db
-    .select()
-    .from(connectionsTable)
-    .where(eq(connectionsTable.id, id))) as {
-    id: string;
-    owner: string;
-    templateId: string;
-    name: string;
-    inputs: unknown;
-    auth: unknown;
-    contributions: unknown;
-  }[];
-  return rows[0] ? parseConnectionRow(rows[0]) : null;
 }
