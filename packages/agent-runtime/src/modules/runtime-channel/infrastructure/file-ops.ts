@@ -17,6 +17,9 @@ export interface FileDesired {
   mergeMode: MergeMode;
   content: unknown;
   keyPath?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: a path whose segments are taken literally,
+   * for a key a dotted `keyPath` cannot carry. */
+  keyPathArray?: string[];
   keys?: string[];
   delete?: boolean;
 }
@@ -163,11 +166,12 @@ function mergeKeyTargeted(
   const next: Record<string, unknown> = { ...base };
 
   for (const f of fragments) {
+    const path = f.keyPathArray ?? (f.keyPath ? f.keyPath.split(".") : null);
     if (f.delete) {
-      if (f.keyPath) deleteNested(next, f.keyPath.split("."));
+      if (path) deleteNested(next, path);
       for (const key of f.keys ?? []) delete next[key];
-    } else if (f.keyPath) {
-      setNested(next, f.keyPath.split("."), f.content);
+    } else if (path) {
+      setNested(next, path, f.content);
     } else if (f.content && typeof f.content === "object") {
       Object.assign(next, f.content as Record<string, unknown>);
     }

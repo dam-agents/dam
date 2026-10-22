@@ -176,25 +176,17 @@ export function createHarnessConfigPlugin(deps: {
   ) => {
     const windows = binding?.modelAutoCompactWindow;
     if (!windows || models.length === 0) return;
-    const content = Object.fromEntries(
-      models.map((m) => [
-        m.name,
-        { [windows.field]: m.contextWindow ?? windows.unknownWindow },
-      ]),
-    );
     const targetPath = expandHome(binding.file, agentHome);
     await applyFiles(
       new Map([
         [
           targetPath,
-          [
-            {
-              format: binding.format,
-              mergeMode: "key-targeted" as const,
-              keyPath: windows.keyPath,
-              content,
-            },
-          ],
+          models.map((m) => ({
+            format: binding.format,
+            mergeMode: "key-targeted" as const,
+            keyPathArray: [windows.keyPath, m.name, windows.field],
+            content: m.contextWindow ?? windows.unknownWindow,
+          })),
         ],
       ]),
       { agentHome, log, onUnparseable: "throw" },

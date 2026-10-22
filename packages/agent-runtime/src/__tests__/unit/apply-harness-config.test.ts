@@ -301,6 +301,33 @@ describe("the per-model auto-compact windows", () => {
     expect(JSON.stringify(parsed)).not.toContain("AUTO_COMPACT_WINDOW");
   });
 
+  /** TEST_SCENARIO: Claude Code writes its own per-model settings into the same object (/effort saves under modelSettings), from another process, so the map merges entry by entry: an entry's other fields and an entry for a model the platform does not serve both survive. */
+  it("merges into each model's entry instead of replacing the object", async () => {
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        modelSettings: {
+          "claude/cb/x": { effortLevel: "low", maxEffortLevel: "high" },
+          "claude-opus-4-8": { effortLevel: "xhigh" },
+        },
+      }),
+    );
+    await pluginWith(WINDOWS).writeModelWindows([
+      { name: "claude/cb/x", contextWindow: 1_048_576 },
+    ]);
+    expect(
+      JSON.parse(readFileSync(settingsPath, "utf8")).modelSettings,
+    ).toEqual({
+      "claude/cb/x": {
+        effortLevel: "low",
+        maxEffortLevel: "high",
+        autoCompactWindow: 1_048_576,
+      },
+      "claude-opus-4-8": { effortLevel: "xhigh" },
+    });
+  });
+
   /** TEST_SCENARIO: A harness whose manifest does not ask for the map gets no file written at all, and a binding that does ask for it writes nothing when the agent has no listed model to map. */
   it("writes nothing unless asked, and nothing for an empty listing", async () => {
     await pluginWith(BINDING).writeModelWindows([
