@@ -92,6 +92,7 @@ Where that file names none, the runtime derives one from the catalog — the opt
 A harness that keeps its own sources of a start mode does not opt in: Pi's ACP mode is its thinking level, which it takes from the resumed session, then a per-model value, then the global default, and Bob's is the persona a Connection pins.
 Claude Code opts in, and its catalog defaults to `auto`, so a chat session starts in auto as its terminal does, and a session on a model that cannot use auto, such as Haiku, starts asking instead.
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.
+Copilot opts in too, and its catalog defaults to Autopilot, since its ACP sessions start in Agent whatever the command line says; its terminal passes `--autopilot`.
 A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
 The derived mode is the runtime's, not the session's: it never replaces a mode the owner or the session picked, and a change of the session's model derives it again, since the new model may allow another mode than the old one.
 A mode the harness reports is the runtime's own doing while the runtime still owes the harness an answer that produced it: a derived mode in flight, or the model a mode is read against, whose answer carries the mode the harness reconciled.
