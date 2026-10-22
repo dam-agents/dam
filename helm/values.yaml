@@ -1388,6 +1388,11 @@ apiServer:
   # timeouts are an external ceiling.
   approvalHoldSeconds: 1800
 
+  # -- How long a provider outage lasts before the owners of the affected
+  # agents get a message (a Go duration). Detection already takes up to about
+  # two minutes, and most overload bursts end within ten.
+  outageAlertDelay: "15m"
+
   # -- Frame silence (seconds) on a channel turn before the relay asks the
   # agent runtime whether the turn is still running; a turn the runtime
   # reports alive is never abandoned, however long it takes. A value below
