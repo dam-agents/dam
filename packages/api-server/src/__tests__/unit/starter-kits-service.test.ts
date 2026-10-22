@@ -1343,6 +1343,35 @@ describe("starter kits: startup items", () => {
         false,
       );
   });
+
+  // TEST_SCENARIO: a kit repository is outside the api-server's trust boundary and its declared model becomes a Kubernetes annotation, so the field takes a model id and not an arbitrary string: an oversized value would fail the create, and a value with a newline would be stored as written.
+  it("takes a declared model as a model id, bounded", () => {
+    const parse = (defaultModel: string) =>
+      starterKitSchema.safeParse({
+        schemaVersion: "v1",
+        id: "k",
+        name: "K",
+        description: "d",
+        category: "software",
+        backend: "vm",
+        defaultModel,
+      }).success;
+    for (const model of [
+      "claude-opus-5",
+      "ibm/aws/claude-opus-5",
+      "claude-opus-5[1m]",
+      "ibm/azure/gpt-5.5",
+    ])
+      expect(parse(model)).toBe(true);
+    for (const model of [
+      "",
+      "claude opus",
+      "claude-opus-5\nname: x",
+      "../../etc/passwd",
+      "a".repeat(129),
+    ])
+      expect(parse(model)).toBe(false);
+  });
 });
 
 describe("starter kits: a kit from a link", () => {
