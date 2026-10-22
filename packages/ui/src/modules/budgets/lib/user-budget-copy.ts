@@ -1,7 +1,8 @@
 import type { UserBudgetDefaults, UserBudgetEntry } from "api-server-api";
 
+import { formatGi } from "../../../lib/format-size.js";
 import { parseCpuMilli } from "../../sandboxes/lib/quantity.js";
-import { formatCores, formatGi } from "./format.js";
+import { formatCores } from "./format.js";
 
 export const USER_BUDGETS_TITLE = "Compute budgets";
 
@@ -50,7 +51,7 @@ export function noMatchLine(query: string): string {
 export function reservedLine(entry: UserBudgetEntry): string {
   const { cpuMilli, memoryBytes } = entry.reserved;
   if (cpuMilli === 0 && memoryBytes === 0) return "Reserves nothing now";
-  return `Reserves ${formatCores(cpuMilli)} CPU, ${formatGi(memoryBytes)}Gi now`;
+  return `Reserves ${formatCores(cpuMilli)} CPU, ${formatGi(memoryBytes)} GiB now`;
 }
 
 export function pageLine(
