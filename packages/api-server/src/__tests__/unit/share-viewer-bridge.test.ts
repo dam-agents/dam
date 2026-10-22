@@ -3,7 +3,8 @@
  * page as the owner does. The share page relays the page's requests and
  * prompts to the share host, which checks on every call that the visitor is
  * signed in and on the viewer list, that the call comes from the share page
- * itself, and that the artifact is still interactive, restricted,
+ * itself, by the relay token only that page holds and by its origin, and
+ * that the artifact is still interactive, restricted,
  * agent-published and has its feature on. A request reaches the publishing
  * Agent's Artifact API server; a prompt starts or continues the viewer's own
  * Session on that Agent. Every call is in the security log under the viewer.
@@ -20,6 +21,7 @@ import {
 } from "../../modules/artifact-library/domain/viewer-bridge.js";
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import { createViewerPromptDelivery } from "../../modules/artifact-library/infrastructure/viewer-prompt-delivery.js";
+import { createRelayTokenService } from "../../modules/artifact-library/services/relay-token-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
 import {
   createShareBridgeService,
@@ -78,6 +80,16 @@ const bob: ShareSession = {
   email: "bob@example.com",
 };
 
+const SESSIONS = new Map([
+  ["sid-alice", alice],
+  ["sid-alice-earlier", alice],
+  ["sid-bob", bob],
+]);
+
+const relayTokens = createRelayTokenService({
+  grants: createMemoryTtlStore(60_000, () => 0),
+});
+
 interface World {
   artifact: ArtifactRow;
   viewers: string[];
@@ -125,10 +137,6 @@ function world(overrides: Partial<World> = {}) {
     contentStream: () => Promise.resolve(null),
     recordView: () => {},
   };
-  const sessions = new Map([
-    ["sid-alice", alice],
-    ["sid-bob", bob],
-  ]);
   const bridge = createShareBridgeService({
     featureOn: () => Promise.resolve(w.featureOn),
     ensureReady: () => {
@@ -156,11 +164,12 @@ function world(overrides: Partial<World> = {}) {
   });
   const app = createShareViewerApp({
     viewer,
-    auth: { getSession: (id) => Promise.resolve(sessions.get(id) ?? null) },
+    auth: { getSession: (id) => Promise.resolve(SESSIONS.get(id) ?? null) },
     sessionCookie: shareSessionCookie(SHARE),
     renderTokens: createRenderTokenService({
       grants: createMemoryTtlStore(60_000, () => 0),
     }),
+    relayTokens,
     brandName: "Platform",
     uiBaseUrl: "http://app.localhost",
     contentBaseUrl: "https://content.example.com",
@@ -170,11 +179,27 @@ function world(overrides: Partial<World> = {}) {
   return { w, app };
 }
 
-function call(
+function relayTokenFor(
+  sid: string,
+  artifact: Pick<ArtifactRow, "id" | "version"> = artifactRow(),
+) {
+  return relayTokens.mint({
+    artifactId: artifact.id,
+    version: artifact.version,
+    viewerSub: SESSIONS.get(sid)?.sub ?? "nobody",
+    shareSessionId: sid,
+  });
+}
+
+async function call(
   app: ReturnType<typeof world>["app"],
   path: string,
   body: unknown,
-  opts: { sid?: string | null; origin?: string | null } = {},
+  opts: {
+    sid?: string | null;
+    origin?: string | null;
+    token?: string | null;
+  } = {},
 ) {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -183,6 +208,11 @@ function call(
   if (sid !== null) headers.cookie = `__Host-share_session=${sid}`;
   const origin = opts.origin === undefined ? SHARE : opts.origin;
   if (origin !== null) headers.origin = origin;
+  const token =
+    opts.token === undefined
+      ? await relayTokenFor(sid ?? "sid-alice")
+      : opts.token;
+  if (token !== null) headers.authorization = `Bearer ${token}`;
   return app.request(path, {
     method: "POST",
     headers,
@@ -387,6 +417,131 @@ describe("a viewer's request on a shared interactive page", () => {
   });
 });
 
+describe("the relay token", () => {
+  const sharePage = (app: ReturnType<typeof world>["app"]) =>
+    app.request("/a/slug-a", {
+      headers: { cookie: "__Host-share_session=sid-alice" },
+    });
+
+  const tokenIn = (html: string) =>
+    /authorization: "Bearer ([A-Za-z0-9_-]+)"/.exec(html)?.[1];
+
+  /**
+   * TEST_SCENARIO: The share cookie rides every request to the share host,
+   * and any page on the same site can forge one with the share origin, if
+   * the origin check ever lets it through. Such a call carries the viewer's
+   * real cookie and the share origin, but not the token that only the share
+   * page holds, so it is refused before any Agent wakes, and logged.
+   */
+  it("refuses a forged call that carries the viewer's cookie and the share origin", async () => {
+    const { w, app } = world();
+    for (const path of ["/a/slug-a/request", "/a/slug-a/prompt"]) {
+      const res = await call(
+        app,
+        path,
+        path.endsWith("/prompt") ? { prompt: "Delete it all." } : getState,
+        { token: null },
+      );
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ ok: false, reason: "not-allowed" });
+    }
+    expect(w.agentAwake).toBe(false);
+    expect(w.appRequests).toEqual([]);
+    expect(w.delivered).toEqual([]);
+    expect(loggedEvents()).toEqual([
+      expect.objectContaining({
+        event: "artifact.viewer_request",
+        actor: "alice-sub",
+        decision: "deny",
+        reason: "no-relay-token",
+      }),
+      expect.objectContaining({
+        event: "artifact.viewer_prompt",
+        actor: "alice-sub",
+        decision: "deny",
+        reason: "no-relay-token",
+      }),
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A token proves one share page: the one this viewer opened,
+   * in this sign-in, for this artifact at its current version. A token minted
+   * for another viewer, an earlier sign-in, another artifact or the previous
+   * version is refused, so a token that leaks, or outlives a sign-out or a
+   * new version, opens nothing.
+   */
+  it.each([
+    ["another viewer", () => relayTokenFor("sid-bob")],
+    ["an earlier sign-in", () => relayTokenFor("sid-alice-earlier")],
+    [
+      "another artifact",
+      () => relayTokenFor("sid-alice", { id: "a2", version: 1 }),
+    ],
+    [
+      "the previous version",
+      () => relayTokenFor("sid-alice", { id: "a1", version: 1 }),
+      { version: 2 },
+    ],
+    ["no artifact at all", () => Promise.resolve("x".repeat(43))],
+  ])(
+    "refuses a token minted for %s",
+    async (_name, token, row: Partial<ArtifactRow> = {}) => {
+      const { w, app } = world({ artifact: artifactRow(row) });
+      const res = await call(app, "/a/slug-a/request", getState, {
+        token: await token(),
+      });
+      expect(res.status).toBe(403);
+      expect(w.appRequests).toEqual([]);
+    },
+  );
+
+  it("reads the token only as a bearer credential", async () => {
+    const { w, app } = world();
+    const token = await relayTokenFor("sid-alice");
+    for (const authorization of [token, `Basic ${token}`, `Bearer  ${token}`]) {
+      const res = await app.request("/a/slug-a/request", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "__Host-share_session=sid-alice",
+          origin: SHARE,
+          authorization,
+        },
+        body: JSON.stringify(getState),
+      });
+      expect(res.status).toBe(403);
+    }
+    expect(w.appRequests).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The share page is what holds the token. Opening it mints
+   * one for the viewer and writes it into the page's relay, and the relay's
+   * calls with it go through; a reload mints a fresh one.
+   */
+  it("is minted by the share page, and its relay's calls go through", async () => {
+    const { w, app } = world();
+    const first = tokenIn(await (await sharePage(app)).text());
+    const second = tokenIn(await (await sharePage(app)).text());
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+    const res = await call(app, "/a/slug-a/request", getState, {
+      token: first!,
+    });
+    expect(res.status).toBe(200);
+    expect(w.appRequests).toHaveLength(1);
+  });
+
+  it("is not minted for a page with no relay", async () => {
+    const { app } = world({ artifact: artifactRow({ interactive: false }) });
+    const html = await (await sharePage(app)).text();
+    expect(tokenIn(html)).toBeUndefined();
+    expect(html).not.toContain("/request");
+  });
+});
+
 describe("a viewer's prompt on a shared interactive page", () => {
   /**
    * TEST_SCENARIO: A viewer clicks a button that asks the Agent to do
@@ -463,7 +618,7 @@ describe("the share page relay", () => {
       slug: "slug-a",
       version: 1,
       downloadName: "dashboard.html",
-      relay,
+      ...(relay ? { relayToken: "relay-token-1234567890" } : {}),
     });
 
   it("relays only for a page that has one, to its own routes", () => {
@@ -472,6 +627,7 @@ describe("the share page relay", () => {
     expect(html).toContain('"/a/slug-a"');
     expect(html).toContain("event.source !== page");
     expect(html).toContain('credentials: "same-origin"');
+    expect(html).toContain('authorization: "Bearer relay-token-1234567890"');
   });
 
   /**
