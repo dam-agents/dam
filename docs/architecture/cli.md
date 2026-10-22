@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -59,6 +59,7 @@ A field it could not learn is `null`, with the reason beside it; `upToDate` is `
 
 `dam auth login` authenticates against the active host's Keycloak realm ([security-and-credentials.md](security-and-credentials.md)) via the OAuth 2.0 Device Authorization Grant ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)).
 The realm advertises a public `platform-cli` client (device grant only, no secret); the CLI discovers its id from the server rather than hardcoding it, then drives the standard device flow — print (and optionally open) a verification URL, poll the token endpoint — and on success persists a per-host credential record under `$XDG_STATE_HOME/dam/` with restrictive permissions and an atomic write.
+A user who refuses the grant in the browser ends the poll with `access_denied`: login exits non-zero, says the user refused the sign-in, and saves nothing.
 
 Credentials are keyed by host URL, so switching between deployments never clobbers state.
 A host that moved redirects its `/api/auth/config` to the new host; login follows that redirect, keys the credential under the new host, and saves the new host as the active one.
