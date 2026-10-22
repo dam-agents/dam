@@ -1351,7 +1351,8 @@ export function ChatView() {
                   aria-hidden
                   className={cn(
                     "h-2 w-2 shrink-0 rounded-full",
-                    agentView && "hidden @max-[149px]:block",
+                    // UNIT_BOUNDARY_DESCRIPTION: the avatar already carries the state, so the dot marks only a chat whose Agent has not loaded yet.
+                    agentView && "hidden",
                     dotColor,
                   )}
                 />

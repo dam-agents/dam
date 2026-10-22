@@ -140,7 +140,8 @@ The tiled bar adds the Documentation tile, and it offers the Artifacts tab on ev
 The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.
 The rest of the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.
-The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; only a phone keeps a bar, carrying the navigation button, the running count and the buttons that open the panel, since the rail waits for a panel there.
+The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
+A phone keeps that bar, carrying the navigation button, the running count and the buttons that open the panel, since the rail waits for a panel there.
 JanUI decides only the shell around it: whether the navigation is the tree or the classic sidebar, whether a page outside a chat has a bar above it, and whether a narrow screen's overlay starts at the left rail or at the screen's edge — a page with no rail there shows the overlay at its own edge, with the rail inside the panel.
 With the toolbar off, a chat without JanUI keeps its classic column of sections and opens the browser, changes, Get started and Approvals from its top bar.
 While JanUI is on as well, the navigation counts the bar this flag draws when it decides whether the page has room for the pane.
