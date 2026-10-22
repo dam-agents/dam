@@ -132,15 +132,15 @@ describe("curve-bender connection template", () => {
     ).toEqual([expect.objectContaining({ host })]);
   });
 
-  // TEST_SCENARIO: Curve Bender serves open models only, so Bob — like Codex and Pi — has to start on GLM rather than on a Claude model this proxy does not know.
-  it("pins Bob to GLM", async () => {
+  // TEST_SCENARIO: Curve Bender serves open models only, so Bob — like Codex and Pi — has to start on DeepSeek V4.1 Flash rather than on a Claude model this proxy does not know.
+  it("pins Bob to DeepSeek", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
     expect(envOf(contributions, "BOB_SHELL_MODEL")).toMatchObject({
-      placeholder: "rits/zai-org/glm-5-3",
+      placeholder: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
     });
   });
 
-  it("reserves Sonnet for the classifier and pins work slots to GLM", async () => {
+  it("reserves Sonnet for the classifier and pins work slots to DeepSeek", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
     for (const name of [
       "ANTHROPIC_MODEL",
@@ -150,7 +150,7 @@ describe("curve-bender connection template", () => {
       "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     ]) {
       expect(envOf(contributions, name)).toMatchObject({
-        placeholder: "rits/zai-org/glm-5-3",
+        placeholder: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
       });
     }
     expect(
@@ -173,10 +173,11 @@ describe("curve-bender connection template", () => {
     ).toBeUndefined();
   });
 
-  it("backfills existing connections with the same defaults as new ones", async () => {
+  // TEST_SCENARIO: a stored Connection keeps the preset it was created with, so this backfill rewrites its whole env from the preset as it stands — the preset is that env's only writer — and the list must be the preset's list, name for name, or a preset change leaves stored Connections on the old model and window.
+  it("backfills existing connections with the preset's whole env", async () => {
     const migration = readFileSync(
       new URL(
-        "../../../../db/drizzle/0063_curve_bender_classifier_defaults.sql",
+        "../../../../db/drizzle/0103_curve_bender_deepseek_defaults.sql",
         import.meta.url,
       ),
       "utf8",
@@ -189,29 +190,30 @@ describe("curve-bender connection template", () => {
         ),
       );
     const { contributions } = await buildIbmLitellm("curve-bender");
-    expect(defaults).toHaveLength(10);
-    for (const contribution of defaults)
-      expect(contributions).toContainEqual(contribution);
+    const env = contributions.filter((c) => c.kind === "env");
+    expect(defaults).toHaveLength(env.length);
+    for (const contribution of env)
+      expect(defaults).toContainEqual(contribution);
   });
 
   // TEST_SCENARIO: Pi applies one model config to every model the endpoint lists, so it must be told these are reasoning models with a context no larger than the supported deployment window — otherwise it drops their thinking and compacts too late.
-  it("tells Pi the endpoint serves reasoning models with a 256k context", async () => {
+  it("tells Pi the endpoint serves reasoning models with the deployment's 1M context", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
 
     expect(envOf(contributions, "OPENAI_PROXY_REASONING")).toMatchObject({
       placeholder: "1",
     });
     expect(envOf(contributions, "OPENAI_PROXY_CONTEXT_WINDOW")).toMatchObject({
-      placeholder: "256000",
+      placeholder: "1048576",
     });
   });
 
-  // TEST_SCENARIO: Claude Code knows nothing about the endpoint's models and assumes a window for them, so it must be told the real one — otherwise it compacts too late and the endpoint refuses the request.
-  it("tells Claude Code the endpoint's 256k context", async () => {
+  // TEST_SCENARIO: Claude Code reads one window per process and knows nothing about the endpoint's models, so it must be told the deployment's real 1M — a smaller number compacts long sessions far below the ceiling the operator measured.
+  it("tells Claude Code the endpoint's 1M context", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
 
     expect(
       envOf(contributions, "CLAUDE_CODE_MAX_CONTEXT_TOKENS"),
-    ).toMatchObject({ placeholder: "256000" });
+    ).toMatchObject({ placeholder: "1048576" });
   });
 });

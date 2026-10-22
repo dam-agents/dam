@@ -304,9 +304,10 @@ An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
 This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender custom key` so it cannot be confused with the deployment's own.
 
-Work runs on GLM.
+Work runs on DeepSeek V4.1 Flash.
 Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
-The endpoint's model list names models but does not describe them, so the Connection supplies the supported deployment window to both Claude Code and Pi.
+The endpoint's model list names models but does not describe them, so the Connection supplies the deployment's window to both Claude Code and Pi: 1,048,576 tokens, the `max_model_len` its own RITS router reports, which a live 270k-token prompt confirmed.
+A smaller number is not harmless, since Claude Code reads one window per process and compacts well below the real ceiling, and a larger one makes it compact too late and the endpoint refuses the call.
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.

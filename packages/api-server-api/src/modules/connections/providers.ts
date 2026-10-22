@@ -74,7 +74,15 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   );
 }
 
-const CURVE_BENDER_WORK_MODEL = "rits/zai-org/glm-5-3";
+const CURVE_BENDER_WORK_MODEL = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the window the RITS deployment of the work model
+ * serves, measured against its own vLLM router (max_model_len 1048576, a live
+ * 270k-token prompt accepted, max_tokens refused above the same figure, so
+ * input and output share it). Claude Code reads one window per process, so a
+ * smaller number here compacts long sessions far below the real ceiling.
+ */
+const CURVE_BENDER_CONTEXT_WINDOW = "1048576";
 
 export function curveBenderEnvMappings(): EnvMapping[] {
   return [
@@ -84,7 +92,7 @@ export function curveBenderEnvMappings(): EnvMapping[] {
       CURVE_BENDER_WORK_MODEL,
       {
         MODEL: CURVE_BENDER_WORK_MODEL,
-        CONTEXT_WINDOW: "256000",
+        CONTEXT_WINDOW: CURVE_BENDER_CONTEXT_WINDOW,
         MAX_TOKENS: "32768",
         REASONING: "1",
       },
@@ -103,7 +111,10 @@ export function curveBenderEnvMappings(): EnvMapping[] {
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "CLAUDE_CODE_AUTO_MODE_SERVER", placeholder: "0" },
     { envName: "ENABLE_TOOL_SEARCH", placeholder: "false" },
-    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "256000" },
+    {
+      envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+      placeholder: CURVE_BENDER_CONTEXT_WINDOW,
+    },
   ];
 }
 
