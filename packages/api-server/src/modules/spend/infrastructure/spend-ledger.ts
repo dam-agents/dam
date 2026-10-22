@@ -513,6 +513,17 @@ export function createSpendLedger(db: Db): SpendLedger {
         startedAt: call.startedAt,
         unit: call.unit,
         costMicros: call.costMicros,
+        routerCallId: call.routerCallId,
+        connectionId: call.connectionId,
+        model: call.model,
+        uncachedInputTokens: call.uncachedInputTokens,
+        outputTokens: call.outputTokens,
+        cacheReadTokens: call.cacheReadTokens,
+        cacheWrite5mTokens: call.cacheWrite5mTokens,
+        cacheWrite1hTokens: call.cacheWrite1hTokens,
+        webSearches: call.webSearches,
+        durationMs: call.durationMs,
+        estimated: call.estimated,
       };
       await db
         .insert(spendCalls)

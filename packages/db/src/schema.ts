@@ -1244,6 +1244,27 @@ export const spendCalls = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     unit: text("unit").notNull(),
     costMicros: bigint("cost_micros", { mode: "number" }).notNull(),
+    routerCallId: text("router_call_id").notNull().default(""),
+    connectionId: text("connection_id").notNull().default(""),
+    model: text("model").notNull().default(""),
+    uncachedInputTokens: bigint("uncached_input_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    outputTokens: bigint("output_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    cacheReadTokens: bigint("cache_read_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    cacheWrite5mTokens: bigint("cache_write_5m_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    cacheWrite1hTokens: bigint("cache_write_1h_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    webSearches: integer("web_searches").notNull().default(0),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
+    estimated: boolean("estimated").notNull().default(false),
   },
   (table) => [
     primaryKey({
@@ -1256,6 +1277,10 @@ export const spendCalls = pgTable(
       table.startedAt,
     ),
     index("spend_calls_started_idx").on(table.startedAt),
+    index("spend_calls_router_call_idx").on(
+      table.ownerSub,
+      table.routerCallId,
+    ),
   ],
 );
 

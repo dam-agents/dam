@@ -246,7 +246,7 @@ func buildOuterRouteConfig(p bootstrapParams) ev {
 		applyAttributionMutations(routeConfig, p)
 		remove, _ = routeConfig["request_headers_to_remove"].([]any)
 	}
-	remove = append(remove, sessionStampHeader, harnessStampHeader)
+	remove = append(remove, sessionStampHeader, harnessStampHeader, callStampHeader)
 	if p.HarnessGuardAgent != "" {
 		remove = append(remove, harnessGuardHeader)
 	}
@@ -465,7 +465,7 @@ func leafTLSContext(p bootstrapParams) ev {
 }
 
 func chainHeadersToRemove(p bootstrapParams) []any {
-	headers := []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader}
+	headers := []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader, callStampHeader}
 	if p.HarnessGuardAgent != "" {
 		headers = append(headers, harnessGuardHeader)
 	}

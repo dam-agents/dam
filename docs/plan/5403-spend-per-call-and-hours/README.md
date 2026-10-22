@@ -80,7 +80,7 @@ export interface TelemetryCallCost {
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Call rows carry the router call id and the call's detail | Router stamp + export, meter copy, migration, ingest writes | — |
+| 01 | ✅ Call rows carry the router call id and the call's detail | Router stamp + export, meter copy, migration, ingest writes | — |
 | 02 | Cost of each model call | Telemetry turn + `get_metrics`/CLI call rows read cost by call id; timeline shows it | 01 |
 | 03 | Spend windows in hours | `hours` in `get_metrics`, exact window in `spend.breakdown`/`spend.sessions`, CLI `--since`, session start/end times | 01 |
 
