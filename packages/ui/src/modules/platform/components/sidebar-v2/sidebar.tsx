@@ -38,9 +38,15 @@ export function SidebarV2() {
   const [overlaid, setOverlaid] = useState(false);
 
   const railed = useRef(false);
-  // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so the drag never changes the mode; only a viewport or a rail that no longer fits it does.
+  const maxWidth = sidebarMaxWidth({
+    viewport,
+    rightRailWidth: RIGHT_RAIL_W,
+    contentMinWidth: MIN_CONTENT_WIDTH,
+  });
+  // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so a drag never collapses the pane; a window with no room for a pane keeps the rail whatever the drag does.
+  const paneFits = viewport - RIGHT_RAIL_W - MIN_CONTENT_WIDTH >= SIDEBAR_MIN_W;
   const mode = resizing
-    ? pinned
+    ? pinned && paneFits
       ? "layout"
       : "rail"
     : navigationMode({
@@ -51,17 +57,10 @@ export function SidebarV2() {
       });
   railed.current = mode === "rail";
   const expanded = pinned && mode === "layout";
-  const maxWidth = sidebarMaxWidth({
-    viewport,
-    rightRailWidth: RIGHT_RAIL_W,
-    contentMinWidth: MIN_CONTENT_WIDTH,
-  });
   // UNIT_BOUNDARY_DESCRIPTION: a drag is read from where it started and how far it has gone, so the edge stays under the pointer whatever the pane was clamped to on the way.
   const dragFrom = useRef<number | null>(null);
   const dragBy = useRef(0);
   const over = overlaid && mode === "rail";
-  // UNIT_BOUNDARY_DESCRIPTION: the edge is offered only where a pane fits beside the page at its narrowest, so a window too narrow for one opens the pane over the page instead.
-  const canResize = maxWidth >= SIDEBAR_MIN_W;
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
   useFocusTrap(navRef, over);
@@ -74,6 +73,8 @@ export function SidebarV2() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector('[role="menu"][data-state="open"]')) return;
+      // UNIT_BOUNDARY_DESCRIPTION: a dialog the pane opened takes the Escape for itself, and closing the pane under it would unmount the row that holds it.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       setOverlaid(false);
     };
     document.addEventListener("keydown", onKeyDown);
@@ -127,7 +128,8 @@ export function SidebarV2() {
         )}
       </nav>
       {/* UNIT_BOUNDARY_DESCRIPTION: one handle serves the rail and the pane, so a drag that crosses between them keeps its grip instead of being cut short when the other handle would have taken over. */}
-      {!over && canResize && (
+      {/* UNIT_BOUNDARY_DESCRIPTION: the edge is offered only where a pane fits beside the page at its narrowest, so a window too narrow for one opens the pane over the page instead. */}
+      {!over && paneFits && (
         <div
           className="flex"
           data-testid={
@@ -146,7 +148,7 @@ export function SidebarV2() {
                 dragFrom.current + dragBy.current,
                 maxWidth,
               );
-              if (snapped === "rail") setPinned(false);
+              if (snapped === "rail" || !paneFits) setPinned(false);
               else {
                 setPinned(true);
                 setWidthTo(snapped, maxWidth);
