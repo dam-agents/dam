@@ -366,6 +366,14 @@ Custom impl names may not collide with a built-in name — registration rejects 
 | `file`          | `file` kind directly, and `mcp-entry` via composition | A format × merge-mode matrix, the substrate for every file-shaped write.                                                                        |
 | `skill-install` | `skill-ref` kind                                      | Materializes a source's skill onto the PVC at the pinned version and reaps ones that leave the snapshot. Owned in depth by [skills](skills.md). |
 
+### Writing a file
+
+Every file the `file` impl applies a contribution to is staged in a temporary file of the writing process's own and renamed into place, so a reader sees either the old file or the new one and never a partial one.
+Every write takes `<file>.lock` for the whole of its read-modify-write and reads the file again once the lock is held, so a change one writer lands is never written over by a copy another read before it; the Claude Code image's own settings sync takes the same lock on the `~/.claude/settings.json` it writes before the adapter starts ([Claude Code harness](../../packages/agents/claude-code/README.md#user-settings)).
+The lock is advisory and covers only the writers that take it: a starter kit's install, Claude Code itself and a hand edit take none, so a change one of them lands inside another writer's section is still lost, and a change that section landed is lost in turn when one of them renames a copy it read before the section over it; nothing in user space makes either direction atomic unless every writer takes the lock.
+A lock whose writer is gone is broken once it is older than any write takes, so a writer that died inside its section never blocks the file for good, and a writer that cannot take the lock in time fails instead of writing without it.
+A file the write cannot parse is never treated as empty: the `harness-config` and `mcp-entry` drivers fail and report it, leaving the file as it was, and the `file` driver on its own moves it aside to `<file>.broken-<ts>` before rewriting its own contributions.
+
 ### Driver reconciliation
 
 `applyState` delivers the full Contribution snapshot.

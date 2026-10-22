@@ -1,11 +1,14 @@
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { dump as stringifyYaml } from "js-yaml";
 import { loadYamlDocument } from "../../../core/yaml-document.js";
@@ -34,6 +37,9 @@ export interface FileOpsContext {
  * into the same file cannot each read it before the other writes and lose a
  * key. */
 let queue: Promise<void> = Promise.resolve();
+
+const LOCK_WAIT_MS = 2000;
+const LOCK_STALE_MS = 30_000;
 
 export function applyFiles(
   desired: Map<string, FileDesired[] | null>,
@@ -74,53 +80,134 @@ async function applyFilesNow(
       continue;
     }
 
-    const existed = existsSync(target);
-    if (!existed && fragments.every((f) => f.delete)) {
+    if (!existsSync(target) && fragments.every((f) => f.delete)) {
       ctx.log(`[file-ops] ${target}: nothing to remove, not present`);
       continue;
     }
-    let existing = existed ? readFileSync(target, "utf8") : "";
-    if (existing && needsParse(fragments)) {
-      const parseErr = probeParse(fragments[0]!.format, existing);
-      if (parseErr && ctx.onUnparseable === "throw") {
-        throw new Error(
-          `[file-ops] ${target} is unparseable as ${fragments[0]!.format} (${parseErr}); refusing to overwrite`,
-        );
-      }
-      if (parseErr) {
-        const sidecar = `${target}.broken-${Date.now()}`;
-        ctx.log(
-          `[file-ops] ${target}: existing content is unparseable (${parseErr}); moving aside to ${sidecar} and rewriting from contributions`,
-        );
+    try {
+      await withLock(target, () => {
+        const existed = existsSync(target);
+        let existing = existed ? readFileSync(target, "utf8") : "";
+        if (existing && needsParse(fragments)) {
+          const parseErr = probeParse(fragments[0]!.format, existing);
+          if (parseErr && ctx.onUnparseable === "throw") {
+            throw new Error(
+              `[file-ops] ${target} is unparseable as ${fragments[0]!.format} (${parseErr}); refusing to overwrite`,
+            );
+          }
+          if (parseErr) {
+            const sidecar = `${target}.broken-${Date.now()}`;
+            ctx.log(
+              `[file-ops] ${target}: existing content is unparseable (${parseErr}); moving aside to ${sidecar} and rewriting from contributions`,
+            );
+            try {
+              renameSync(target, sidecar);
+            } catch (err) {
+              ctx.log(
+                `[file-ops] could not move ${target} → ${sidecar}: ${(err as Error).message}; overwriting in place`,
+              );
+            }
+            existing = "";
+          }
+        }
+        let merged: string;
         try {
-          renameSync(target, sidecar);
+          merged = mergeFragments(existing, fragments);
         } catch (err) {
           ctx.log(
-            `[file-ops] could not move ${target} → ${sidecar}: ${(err as Error).message}; overwriting in place`,
+            `[file-ops] merge failed for ${target}: ${(err as Error).message}`,
           );
+          return;
         }
-        existing = "";
-      }
-    }
-    let merged: string;
-    try {
-      merged = mergeFragments(existing, fragments);
+        if (merged === existing) {
+          ctx.log(
+            `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B merged unchanged — skip`,
+          );
+          return;
+        }
+        atomicWrite(target, merged);
+        ctx.log(
+          `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B → merged=${merged.length}B (${existed ? "updated" : "created"})`,
+        );
+      });
     } catch (err) {
-      ctx.log(
-        `[file-ops] merge failed for ${target}: ${(err as Error).message}`,
-      );
+      if ((err as NodeJS.ErrnoException).code !== "ELOCKED") throw err;
+      if (ctx.onUnparseable === "throw") throw err;
+      ctx.log(`[file-ops] ${(err as Error).message}`);
+    }
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: every writer of a file that has more than one holds
+ * `<file>.lock` across its read-modify-write, so no writer's change is written
+ * over by a copy another writer read before it. A writer that takes no lock —
+ * Claude Code itself, a hand edit, a kit that predates the rule — can still be
+ * overwritten between our read and our rename. A lock whose writer is gone is
+ * broken, so a writer that died inside its section never blocks the file for
+ * good; of two waiters that break the same stale lock, the one whose rename
+ * took a newer lock puts it back.
+ */
+async function withLock(target: string, write: () => void): Promise<void> {
+  const lockPath = `${target}.lock`;
+  mkdirSync(dirname(target), { recursive: true });
+  const mine = `${process.pid}:${randomUUID()}`;
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      writeFileSync(lockPath, mine, { flag: "wx" });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
+    let holder: string;
+    let age: number;
+    try {
+      holder = readFileSync(lockPath, "utf8").split(":")[0]!;
+      age = Date.now() - statSync(lockPath).mtimeMs;
+    } catch {
       continue;
     }
-    if (merged === existing) {
-      ctx.log(
-        `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B merged unchanged — skip`,
-      );
+    if (age > LOCK_STALE_MS && /^\d+$/.test(holder) && !alive(Number(holder))) {
+      const aside = `${lockPath}.stale.${mine}`;
+      try {
+        renameSync(lockPath, aside);
+        if (readFileSync(aside, "utf8").split(":")[0] !== holder) {
+          try {
+            linkSync(aside, lockPath);
+          } catch {}
+        }
+      } catch {}
+      try {
+        unlinkSync(aside);
+      } catch {}
       continue;
     }
-    atomicWrite(target, merged);
-    ctx.log(
-      `[file-ops] ${target}: fragments=${fragments.length} existing=${existing.length}B → merged=${merged.length}B (${existed ? "updated" : "created"})`,
-    );
+    if (Date.now() >= deadline) {
+      throw Object.assign(
+        new Error(
+          `[file-ops] ${lockPath} stayed locked for ${LOCK_WAIT_MS} ms; leaving ${target} as it is`,
+        ),
+        { code: "ELOCKED" },
+      );
+    }
+    await new Promise((done) => setTimeout(done, 5));
+  }
+  try {
+    write();
+  } finally {
+    try {
+      if (readFileSync(lockPath, "utf8") === mine) unlinkSync(lockPath);
+    } catch {}
+  }
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ESRCH";
   }
 }
 

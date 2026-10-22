@@ -4,8 +4,10 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { load } from "js-yaml";
@@ -197,5 +199,107 @@ describe("file-ops removal of what the platform wrote", () => {
       ctx(),
     );
     expect(existsSync(target)).toBe(false);
+  });
+});
+
+describe("file-ops settings lock", () => {
+  let home: string;
+  let target: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "file-ops-lock-"));
+    target = join(home, "settings.json");
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+  const lock = () => `${target}.lock`;
+  const apply = (
+    key: string,
+    content: unknown = true,
+    onUnparseable?: FileOpsContext["onUnparseable"],
+  ) =>
+    applyFiles(
+      new Map([
+        [
+          target,
+          [
+            {
+              format: "json" as const,
+              mergeMode: "key-targeted" as const,
+              keyPath: key,
+              content,
+            },
+          ],
+        ],
+      ]),
+      { agentHome: home, log: () => {}, onUnparseable },
+    );
+  const read = () =>
+    JSON.parse(readFileSync(target, "utf8")) as Record<string, unknown>;
+
+  it("reads the file after it takes the lock, so a change another writer lands while it waits survives", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    writeFileSync(lock(), String(process.pid));
+    const pending = apply("permissions.defaultMode", "plan");
+    await new Promise((done) => setTimeout(done, 50));
+    writeFileSync(
+      target,
+      JSON.stringify({
+        theme: "dark",
+        modelSettings: { opus: { autoCompactWindow: 1000 } },
+      }),
+    );
+    rmSync(lock());
+    await pending;
+    expect(read()).toEqual({
+      theme: "dark",
+      modelSettings: { opus: { autoCompactWindow: 1000 } },
+      permissions: { defaultMode: "plan" },
+    });
+    expect(existsSync(lock())).toBe(false);
+  });
+
+  it("refuses to write while another living writer holds the lock, and says why", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    const holder = `${process.pid}:theirs`;
+    writeFileSync(lock(), holder);
+    await expect(apply("mine", true, "throw")).rejects.toThrow(
+      /settings\.json\.lock stayed locked/,
+    );
+    expect(read()).toEqual({ theme: "dark" });
+    expect(readFileSync(lock(), "utf8")).toBe(holder);
+  });
+
+  it("logs a lock it cannot take instead of failing a caller that is not strict", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    writeFileSync(lock(), `${process.pid}:theirs`);
+    const logs: string[] = [];
+    await applyFiles(
+      new Map([
+        [
+          target,
+          [
+            {
+              format: "json" as const,
+              mergeMode: "key-targeted" as const,
+              keyPath: "mine",
+              content: true,
+            },
+          ],
+        ],
+      ]),
+      { agentHome: home, log: (line) => logs.push(line) },
+    );
+    expect(read()).toEqual({ theme: "dark" });
+    expect(logs.join("\n")).toMatch(/settings\.json\.lock stayed locked/);
+  });
+
+  it("breaks a lock left behind by a writer that died inside its section", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    const dead = spawnSync(process.execPath, ["-e", ""]).pid!;
+    writeFileSync(lock(), `${dead}:gone`);
+    const longAgo = new Date(Date.now() - 60_000);
+    utimesSync(lock(), longAgo, longAgo);
+    await apply("mine");
+    expect(read()).toEqual({ theme: "dark", mine: true });
+    expect(existsSync(lock())).toBe(false);
   });
 });
