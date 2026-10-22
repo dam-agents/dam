@@ -5,6 +5,7 @@ const SOCKET_RECONNECT_DELAYS_MS = [1_000, 5_000, 15_000, 30_000, 60_000];
 export interface ReconnectableSocket {
   on(event: "disconnected", listener: () => void): unknown;
   start(): Promise<unknown>;
+  disconnect(): Promise<unknown>;
 }
 
 /**
@@ -15,7 +16,8 @@ export interface ReconnectableSocket {
  * ends the api-server process. Here every reconnect is awaited: a refused one
  * is logged and tried again after the next delay, up to the last delay, so a
  * Slack outage takes down only Slack and the socket comes back once Slack
- * accepts the app token again. A reconnect that succeeds resets the delays.
+ * accepts the app token again. A reconnect that succeeds resets the delays,
+ * and one that succeeds after the gateway stopped is closed again.
  */
 export function keepSocketModeConnected(
   socket: ReconnectableSocket,
@@ -40,13 +42,17 @@ export function keepSocketModeConnected(
     try {
       await socket.start();
       failures = 0;
+      if (stopped) {
+        await socket.disconnect();
+        return;
+      }
       process.stderr.write("[slack] Socket Mode reconnected\n");
     } catch (err) {
       failures += 1;
       if (stopped) return;
       const delayMs = schedule();
       process.stderr.write(
-        `[slack] Socket Mode reconnect failed, retrying in ${delayMs / 1000}s: ${formatError(err)}\n`,
+        `[slack] Socket Mode reconnect failed, retrying in ${delayMs / 1000}s: ${formatError(err ?? "the socket closed before Slack's hello")}\n`,
       );
     } finally {
       reconnecting = false;
