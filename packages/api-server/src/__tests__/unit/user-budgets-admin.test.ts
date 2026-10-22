@@ -126,9 +126,18 @@ describe("operator list of compute budgets", () => {
     const second = await admin.list({ sort: "cpu", offset: 10, limit: 10 });
     expect(second.total).toBe(30);
     expect(second.offset).toBe(10);
-    expect(second.entries.map((e) => e.cpu)).toEqual(
-      ["20", "19", "18", "17", "16", "15", "14", "13", "12", "11"],
-    );
+    expect(second.entries.map((e) => e.cpu)).toEqual([
+      "20",
+      "19",
+      "18",
+      "17",
+      "16",
+      "15",
+      "14",
+      "13",
+      "12",
+      "11",
+    ]);
     expect(emailsBySub).toHaveBeenCalledTimes(1);
     expect(emailsBySub.mock.calls[0]?.[0]).toHaveLength(10);
   });
@@ -202,10 +211,22 @@ describe("operator changes to compute budgets", () => {
     expect(store.write).not.toHaveBeenCalled();
   });
 
+  it("removes a budget by email", async () => {
+    const { admin, budgets } = setup([row("bob", { cpu: "4" })]);
+    expect(await admin.remove({ user: { email: "bob@example.com" } })).toEqual({
+      removed: true,
+    });
+    expect(budgets.has("bob")).toBe(false);
+  });
+
   it("removes a budget, and says when there was none", async () => {
     const { admin } = setup([row("ada", { cpu: "4" })]);
-    expect(await admin.remove({ ownerSub: "ada" })).toEqual({ removed: true });
-    expect(await admin.remove({ ownerSub: "ada" })).toEqual({ removed: false });
+    expect(await admin.remove({ user: { ownerSub: "ada" } })).toEqual({
+      removed: true,
+    });
+    expect(await admin.remove({ user: { ownerSub: "ada" } })).toEqual({
+      removed: false,
+    });
   });
 });
 
@@ -246,7 +267,7 @@ describe("compute budgets router", () => {
       call.budgets.users.set({ user: { email: "a@example.com" }, cpu: "4" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
-      call.budgets.users.remove({ ownerSub: "ada" }),
+      call.budgets.users.remove({ user: { ownerSub: "ada" } }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(userBudgets.list).not.toHaveBeenCalled();
     expect(userBudgets.set).not.toHaveBeenCalled();

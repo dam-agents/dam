@@ -13,10 +13,7 @@ const POSITIVE = (v: string) => Number.parseFloat(v) > 0;
 export const budgetCpuSchema = z
   .string()
   .trim()
-  .regex(
-    /^(\d+(\.\d{1,3})?|\d+m)$/,
-    "a CPU amount looks like 8, 2.5 or 500m",
-  )
+  .regex(/^(\d+(\.\d{1,3})?|\d+m)$/, "a CPU amount looks like 8, 2.5 or 500m")
   .refine(POSITIVE, "a CPU amount must be more than 0");
 
 export const budgetSizeSchema = z
@@ -66,5 +63,5 @@ export const userBudgetSetInputSchema = z
   );
 
 export const userBudgetRemoveInputSchema = z.object({
-  ownerSub: z.string().min(1),
+  user: userBudgetUserSchema,
 });

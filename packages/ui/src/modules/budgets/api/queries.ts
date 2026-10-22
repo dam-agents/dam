@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { UserBudgetsListInput } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
 
@@ -17,5 +18,12 @@ export function usePoolUsage() {
     staleTime: 5000,
     refetchInterval: POOL_USAGE_REFRESH_MS,
     select: (budget) => budget.vm ?? null,
+  });
+}
+
+export function useUserBudgets(input: UserBudgetsListInput) {
+  return useQuery({
+    ...trpc.budgets.users.list.queryOptions(input),
+    placeholderData: keepPreviousData,
   });
 }

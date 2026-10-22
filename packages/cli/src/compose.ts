@@ -12,6 +12,7 @@ import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
+import { composeBudgetModule } from "./modules/budget/index.js";
 import { composeSpendModule } from "./modules/spend/compose.js";
 import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
@@ -84,6 +85,7 @@ export function compose(): Command {
     composeChannelModule(base),
     composeMetricsModule(base),
     spend,
+    composeBudgetModule(base),
     composeTelemetryModule({
       ...base,
       createSpendService: spend.exports.createService,

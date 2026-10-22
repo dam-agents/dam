@@ -117,7 +117,7 @@ The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an
 The api-server reads the role from the token's realm roles, so only an interactive sign-in acts as an operator; an API key never does.
 Every operator action checks the role on each call, and a client asks the api-server whether the caller is an operator before it shows such an action.
 An install with no operator role has no operators, and every operator action is refused.
-Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)).
+Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)) and compute Budget ([budgets](budgets.md#the-ceiling)).
 
 ## Keycloak event logging
 

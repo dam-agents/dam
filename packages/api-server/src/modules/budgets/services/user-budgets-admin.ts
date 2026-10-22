@@ -127,16 +127,8 @@ export function createUserBudgetsAdmin(deps: {
     );
   };
 
-  const resolveSub = async (user: UserBudgetUser): Promise<string> => {
-    if ("ownerSub" in user) {
-      if (!(await deps.store.get(user.ownerSub))) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `No user with the id ${user.ownerSub} has a budget of their own. Name a new user by their email.`,
-        });
-      }
-      return user.ownerSub;
-    }
+  const subOf = async (user: UserBudgetUser): Promise<string> => {
+    if ("ownerSub" in user) return user.ownerSub;
     const sub = await deps.users.subByEmail(user.email);
     if (!sub) {
       throw new TRPCError({
@@ -147,14 +139,23 @@ export function createUserBudgetsAdmin(deps: {
     return sub;
   };
 
+  const resolveSub = async (user: UserBudgetUser): Promise<string> => {
+    if ("ownerSub" in user) {
+      if (!(await deps.store.get(user.ownerSub))) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `No user with the id ${user.ownerSub} has a budget of their own. Name a new user by their email.`,
+        });
+      }
+      return user.ownerSub;
+    }
+    return subOf(user);
+  };
+
   return (operatorSub) => ({
     async list({ query, sort, offset, limit }) {
       const all = await deps.store.list();
-      const found = sortRows(
-        await matching(all, query),
-        sort,
-        deps.defaults,
-      );
+      const found = sortRows(await matching(all, query), sort, deps.defaults);
       return {
         defaults: deps.defaults,
         total: all.length,
@@ -180,7 +181,8 @@ export function createUserBudgetsAdmin(deps: {
       return entry ?? null;
     },
 
-    async remove({ ownerSub }) {
+    async remove({ user }) {
+      const ownerSub = await subOf(user);
       const from = await deps.store.remove(ownerSub);
       if (from === null) return { removed: false };
       getLogger().info(

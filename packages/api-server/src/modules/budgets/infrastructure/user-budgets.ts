@@ -32,7 +32,9 @@ export async function readUserBudgetSizes(
   k8s: K8sClient,
   owner: string,
 ): Promise<UserBudgetSizes> {
-  return sizesOf(await k8s.getCustomObject(USERBUDGETS_PLURAL, budgetName(owner)));
+  return sizesOf(
+    await k8s.getCustomObject(USERBUDGETS_PLURAL, budgetName(owner)),
+  );
 }
 
 export async function readUserBudgetCeiling(
@@ -47,7 +49,9 @@ export async function readUserBudgetCeiling(
   };
 }
 
-export async function listUserBudgets(k8s: K8sClient): Promise<UserBudgetRow[]> {
+export async function listUserBudgets(
+  k8s: K8sClient,
+): Promise<UserBudgetRow[]> {
   const objs = await k8s.listCustomObjects(USERBUDGETS_PLURAL);
   return objs.flatMap((obj) => {
     const row = rowOf(obj);

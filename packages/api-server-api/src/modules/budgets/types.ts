@@ -92,7 +92,9 @@ export interface UserBudgetPage {
 }
 
 export interface UserBudgetsService {
-  list(input: z.output<typeof userBudgetsListInputSchema>): Promise<UserBudgetPage>;
+  list(
+    input: z.output<typeof userBudgetsListInputSchema>,
+  ): Promise<UserBudgetPage>;
   set(input: UserBudgetSetInput): Promise<UserBudgetEntry | null>;
   remove(input: UserBudgetRemoveInput): Promise<{ removed: boolean }>;
 }
