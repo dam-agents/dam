@@ -111,10 +111,13 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 
 {{- /* An Environment endpoint's address, with {host} for its
-       `<endpoint>-<environment>` label; empty without environments.domain. */ -}}
+       `<endpoint>-<environment>` label; empty without environments.domain.
+       `urls.environments` overrides, like the other `urls.*`. */ -}}
 {{- define "platform.url.environments" -}}
 {{- with .Values.environments.domain }}
-{{- if $.Values.port }}
+{{- if $.Values.urls.environments }}
+{{- $.Values.urls.environments }}
+{{- else if $.Values.port }}
 {{- printf "%s://{host}.%s:%v" $.Values.scheme . $.Values.port }}
 {{- else }}
 {{- printf "%s://{host}.%s" $.Values.scheme . }}

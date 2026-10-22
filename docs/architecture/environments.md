@@ -68,6 +68,7 @@ Each endpoint an Environment declares (`app` → 4444) gets an address of its ow
 The **host label** is the Environment's name with a random suffix, so two Agents can both create `pr-42`, and is short enough that the longest endpoint name still fits the 63 characters of a DNS label.
 Endpoint names carry no hyphen, so the first hyphen of an address splits the endpoint from the host.
 Without `environments.domain` Environments have no addresses.
+Their URL, `<scheme>://{host}.<environments.domain>`, takes the install's `scheme` and `port` like the other public URLs, unless `urls.environments` sets it whole; the chart refuses a `urls.environments` whose host is not `{host}.<environments.domain>`, since the api-server reads the domain from the URL and the wildcard Ingress from `environments.domain`.
 
 **One wildcard Ingress** for `*.<environments.domain>`, which the chart renders with the domain, sends every address to the api-server.
 It carries one wildcard certificate, from `environments.ingress.tls.secretName`, which cert-manager can issue through an issuer with a DNS-01 solver named in `environments.ingress.annotations`; on OpenShift the Ingress becomes a wildcard Route, which the cluster allows once with `WildcardsAllowed`.

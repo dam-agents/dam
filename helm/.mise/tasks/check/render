@@ -484,3 +484,29 @@ jq -e 'length == 1 and .[0].valueFrom.secretKeyRef == {"name": "cb-deployment", 
 defaulted=$(curve_key_env --set apiServer.curveBenderDeployment.apiKeySecret.name=cb-deployment)
 jq -e 'length == 1 and .[0].valueFrom.secretKeyRef == {"name": "cb-deployment", "key": "api-key"}' <<<"$defaulted" >/dev/null ||
   { echo "a named CurveBender Secret without a key did not default to the api-key entry: $defaulted" >&2; exit 1; }
+# The Environments URL takes scheme and port from the values, like every other
+# public URL, unless urls.environments sets it whole; an install without an
+# environments domain gets none and no wildcard Ingress. A URL naming another
+# host than {host}.<environments.domain> fails the render, since the api-server
+# reads the domain from the URL and the Ingress from environments.domain.
+environments_url() {
+  helm template platform . "${COMMON[@]}" --show-only templates/apiserver/app.yaml "$@" |
+    yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "ENVIRONMENTS_URL") | .value'
+}
+[ "$(environments_url --set environments.domain=env.example.com)" = "http://{host}.env.example.com:4444" ] &&
+  [ "$(environments_url --set environments.domain=env.example.com --set port=)" = "http://{host}.env.example.com" ] ||
+  { echo "the Environments URL does not take scheme and port from the values" >&2; exit 1; }
+[ "$(environments_url --set environments.domain=env.example.com \
+  --set-json 'urls.environments="https://{host}.env.example.com"')" = "https://{host}.env.example.com" ] ||
+  { echo "urls.environments did not reach the api-server as written" >&2; exit 1; }
+[ -z "$(environments_url)" ] && ! helm template platform . "${COMMON[@]}" | grep -q 'component: environments$' ||
+  { echo "an install without environments.domain got an Environments URL or a wildcard Ingress" >&2; exit 1; }
+for refused in '"https://{host}.env.example.com"' '"https://{host}.other.example.com"' '"{host}.env.example.com"' '"https://app.env.example.com"'; do
+  domain=env.example.com
+  [ "$refused" = '"https://{host}.env.example.com"' ] && domain=
+  if helm template platform . "${COMMON[@]}" --set "environments.domain=$domain" \
+    --set-json "urls.environments=$refused" >/dev/null 2>&1; then
+    echo "a render with urls.environments=$refused and environments.domain=$domain succeeded, but no address would reach its Environment" >&2
+    exit 1
+  fi
+done
