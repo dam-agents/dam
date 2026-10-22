@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  type Connection,
-} from "api-server-api";
+import type { Connection } from "api-server-api";
 
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -19,8 +16,7 @@ import { configureLogger } from "../../core/logger.js";
  * work; a provider that cannot be reached does not block the save. The result
  * and its time are kept on the connection and listed with it, and a recheck
  * probes every stored provider key again, records the new result, and logs a
- * refused or unverified one; a provider the deployment manages is never
- * probed, so it keeps no check. A Bedrock key is checked in the region its
+ * refused or unverified one. A Bedrock key is checked in the region its
  * Connection serves.
  */
 
@@ -50,9 +46,7 @@ function makeService(
     platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner",
-    templates: createConnectionTemplateRegistry(
-      buildCatalog({}, { curveBenderDeployment: true }),
-    ),
+    templates: createConnectionTemplateRegistry(buildCatalog()),
     repo: unused<ConnectionsRepository>({
       insert: async (c) => void rows.set(c.id, c),
       get: async (id) => rows.get(id) ?? null,
@@ -171,20 +165,13 @@ describe("provider key recheck", () => {
     expect(Date.parse(view!.keyCheck!.checkedAt)).not.toBeNaN();
   });
 
-  // TEST_SCENARIO: each stored provider key is probed again with the stored value, and the result per connection is ok, refused with the HTTP detail or unverified with its detail; the new result replaces the stored one, and a provider the deployment manages is not probed and keeps no check.
+  // TEST_SCENARIO: each stored provider key is probed again with the stored value, and the result per connection is ok, refused with the HTTP detail or unverified with its detail; the new result replaces the stored one.
   it("probes every stored provider key and records each result", async () => {
-    const saved = makeService(
-      { ok: true },
-      { [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: { ok: true, unchecked: true } },
-    );
+    const saved = makeService({ ok: true });
     const anthropic = await connect(saved.svc, "anthropic-oauth", "sk-ant-oat");
     const openai = await connect(saved.svc, "openai", "sk-openai");
     const litellm = await connect(saved.svc, "ibm-litellm", "sk-litellm");
-    const deployment = await connect(
-      saved.svc,
-      CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-      "sk-deployment",
-    );
+    const bob = await connect(saved.svc, "bob", "bob-key");
 
     const later = makeService(
       { ok: true },
@@ -199,7 +186,6 @@ describe("provider key recheck", () => {
           reason: "unverified",
           detail: "HTTP 503",
         },
-        [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: { ok: true, unchecked: true },
       },
     );
     for (const [id, row] of saved.rows) later.rows.set(id, row);
@@ -210,6 +196,7 @@ describe("provider key recheck", () => {
 
     expect(later.probed.sort()).toEqual([
       "anthropic-oauth:sk-ant-oat",
+      "bob:bob-key",
       "ibm-litellm:sk-litellm",
       "openai:sk-openai",
     ]);
@@ -222,7 +209,7 @@ describe("provider key recheck", () => {
       result: "unverified",
       detail: "HTTP 503",
     });
-    expect(byId.get(deployment)).toBeUndefined();
+    expect(byId.get(bob)).toMatchObject({ result: "ok" });
 
     const views = new Map(
       (await later.svc.listConnections()).map((v) => [v.id, v.keyCheck]),
@@ -230,7 +217,7 @@ describe("provider key recheck", () => {
     expect(views.get(anthropic)?.result).toBe("refused");
     expect(views.get(litellm)?.result).toBe("unverified");
     expect(views.get(openai)?.result).toBe("ok");
-    expect(views.get(deployment)).toBeUndefined();
+    expect(views.get(bob)?.result).toBe("ok");
   });
 
   // TEST_SCENARIO: a refused or unverified recheck writes the same security log line the save path writes, naming the connection and the reason.
