@@ -9,7 +9,7 @@ export const SIDEBAR_GLYPH = 14;
 export const RAIL_GAP = "gap-1.5";
 export const RAIL_COLUMN = `flex flex-col items-center ${RAIL_GAP} py-2`;
 
-// UNIT_BOUNDARY_DESCRIPTION: an expanded row is one tile high and its list leaves one rail gap after it, so a row and a tile are the same distance apart (54) and every icon keeps its place when the pane swaps between its tree and its rail.
+// UNIT_BOUNDARY_DESCRIPTION: an expanded row is one tile high and its list leaves one rail gap after it, so a row and a tile are the same distance apart (54) and every icon keeps its place when the pane swaps between its tree and its rail; a tile is as wide as the mark a row draws, the pane's padding short of the pane, so the mark a tile carries is the size of the mark a row carries.
 export const RAIL_ROW = "h-12";
 // UNIT_BOUNDARY_DESCRIPTION: the rows and tiles of both rails draw one corner shape, a squircle where the browser knows corner-shape and the round corner of border-radius where it does not, which is what every browser drew before.
 export const SQUIRCLE = "[corner-shape:squircle]";
@@ -22,7 +22,7 @@ export const RAIL_SEPARATOR_SPACE = "h-7";
 
 export function railTile(active: boolean): string {
   return cn(
-    "group relative flex size-12 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "group relative flex h-12 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     SQUIRCLE,
     active ? ACTIVE_ITEM : "hover:bg-muted/60 hover:text-foreground",
   );
