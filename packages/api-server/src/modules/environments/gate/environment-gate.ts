@@ -172,10 +172,10 @@ export function createEnvironmentGate(
   function allowed(
     record: EnvironmentRecord,
     host: string | undefined,
-    origin: string | undefined,
+    source: { origin: string | undefined; site: string | undefined },
   ) {
     return requestAllowed(
-      origin,
+      source,
       environmentOrigins(record, {
         scheme: deps.scheme,
         domain: deps.domain,
@@ -315,7 +315,12 @@ export function createEnvironmentGate(
         "This address names no Environment, or one that was deleted.",
       );
     const { record, address } = resolved;
-    if (!allowed(record, c.req.header("host"), c.req.header("origin"))) {
+    if (
+      !allowed(record, c.req.header("host"), {
+        origin: c.req.header("origin"),
+        site: c.req.header("sec-fetch-site"),
+      })
+    ) {
       deny(record, null, address, "cross-origin");
       return page(
         c,
@@ -431,7 +436,13 @@ export function createEnvironmentGate(
       const url = new URL(req.url ?? "/", "http://x");
       if (url.pathname.startsWith(RESERVED_PREFIX))
         return refuseUpgrade(socket, "404 Not Found");
-      if (!allowed(resolved.record, req.headers.host, req.headers.origin)) {
+      const site = req.headers["sec-fetch-site"];
+      if (
+        !allowed(resolved.record, req.headers.host, {
+          origin: req.headers.origin,
+          site: Array.isArray(site) ? site[0] : site,
+        })
+      ) {
         deny(resolved.record, null, resolved.address, "cross-origin");
         return refuseUpgrade(socket, "403 Forbidden");
       }

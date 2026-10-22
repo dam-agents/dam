@@ -537,7 +537,7 @@ describe("the Environment gate", () => {
     expect(elsewhere.cookies).toEqual([]);
   });
 
-  // TEST_SCENARIO: a request another origin's page makes in the visitor's name — a script's call, a form post, a WebSocket from a page of another Environment — is refused before it reaches the app, though the browser sent the session cookie; a link from anywhere, the address's own calls and calls between endpoints of one Environment pass.
+  // TEST_SCENARIO: a request another origin's page makes in the visitor's name — a script's call, a form post (an opaque-origin one too), a WebSocket from a page of another Environment — is refused before it reaches the app, though the browser sent the session cookie; a link from anywhere, the address's own calls (its form post under no-referrer too) and calls between endpoints of one Environment pass.
   it("refuses a request another origin makes in the visitor's name", async () => {
     const w = await world();
     w.records[0]!.endpoints.push({ name: "api", port: 5555 });
@@ -566,6 +566,20 @@ describe("the Environment gate", () => {
       { method: "POST", data: "a=1" },
     );
     expect(own.status).toBe(200);
+    const noReferrer = await w.request(
+      host,
+      "/form",
+      { cookie, origin: "null", "sec-fetch-site": "same-origin" },
+      { method: "POST", data: "a=1" },
+    );
+    expect(noReferrer.status).toBe(200);
+    const forgedNull = await w.request(
+      host,
+      "/form",
+      { cookie, origin: "null", "sec-fetch-site": "same-site" },
+      { method: "POST", data: "a=1" },
+    );
+    expect(forgedNull.status).toBe(403);
     const sibling = await w.request(host, "/data", {
       cookie,
       origin: `http://api-pr-1-abcdef.${DOMAIN}`,
@@ -690,16 +704,21 @@ describe("Environment addresses", () => {
 });
 
 describe("where a request to an address came from", () => {
-  // TEST_SCENARIO: a request with no origin (a link, a typed address, a frame, an image) and one from an endpoint of the same Environment pass; one from any other origin, an opaque one included, is refused.
-  it("serves no origin and the Environment's own endpoints only", () => {
+  // TEST_SCENARIO: a request with no origin (a link, a typed address, a frame, an image) and one from an endpoint of the same Environment pass; the opaque origin a no-referrer page sends with its own form post passes only when the browser marks it same-origin; any other origin, and an opaque one from anywhere else or with no fetch metadata, is refused.
+  it("serves no origin, the Environment's own endpoints, and its own opaque form posts only", () => {
     const own = new Set([
       "https://app-pr-1-abcdef.env.test",
       "https://api-pr-1-abcdef.env.test",
     ]);
-    expect(requestAllowed(undefined, own)).toBe(true);
-    expect(requestAllowed("https://api-pr-1-abcdef.env.test", own)).toBe(true);
-    expect(requestAllowed("https://app-pr-2-abcdef.env.test", own)).toBe(false);
-    expect(requestAllowed("https://share.test", own)).toBe(false);
-    expect(requestAllowed("null", own)).toBe(false);
+    const from = (origin: string | undefined, site?: string) =>
+      requestAllowed({ origin, site }, own);
+    expect(from(undefined)).toBe(true);
+    expect(from("https://api-pr-1-abcdef.env.test", "same-site")).toBe(true);
+    expect(from("null", "same-origin")).toBe(true);
+    expect(from("https://app-pr-2-abcdef.env.test", "same-site")).toBe(false);
+    expect(from("https://share.test", "same-site")).toBe(false);
+    expect(from("null", "same-site")).toBe(false);
+    expect(from("null", "cross-site")).toBe(false);
+    expect(from("null")).toBe(false);
   });
 });

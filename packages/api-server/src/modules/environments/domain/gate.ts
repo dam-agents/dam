@@ -263,12 +263,16 @@ export function environmentOrigins(
  * origin with every request that can act or read the answer — a script's
  * call, a form post, a WebSocket — and with none of a link, a typed address,
  * a frame or an image. Served: a request with no origin, or from an endpoint
- * of the address's own Environment. Refused: one from any other origin, an
- * opaque `null` included.
+ * of the address's own Environment. A page whose `Referrer-Policy` is
+ * `no-referrer` sends its form posts with the opaque origin `null`; such a
+ * request is served only when the browser also marks it `Sec-Fetch-Site:
+ * same-origin`, which no page can set. Refused: any other origin, and `null`
+ * from anywhere else.
  */
 export function requestAllowed(
-  origin: string | undefined,
+  source: { origin: string | undefined; site: string | undefined },
   own: ReadonlySet<string>,
 ): boolean {
-  return origin === undefined || own.has(origin);
+  if (source.origin === undefined || own.has(source.origin)) return true;
+  return source.origin === "null" && source.site === "same-origin";
 }

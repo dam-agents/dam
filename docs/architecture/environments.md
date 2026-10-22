@@ -88,6 +88,7 @@ The api-server names the declared ports on every request, so a port the Environm
   Every address reserves `/.platform/` for the hand-off and sign-out, which never reach the app.
 - **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
   The address refuses every request whose `Origin` is not one of its own Environment's endpoints — a script's call, a form post, a WebSocket — before it reaches the app; a link, a typed address, a frame and an image carry no origin and pass.
+  A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
 - **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret) or an `Authorization` header, passes on every cookie the app set itself, and never lets the app set the platform's.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
