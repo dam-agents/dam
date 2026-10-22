@@ -1,4 +1,4 @@
-import { BUTLER_NAMES } from "./butler-names.js";
+import { HOUSEHOLD_STAFF_NAMES } from "./household-staff-names.js";
 
 const AGENT_NAME_PREFIX = "agent";
 
@@ -33,7 +33,9 @@ export function nextAgentName(
 ): string {
   const taken = new Set(Array.from(takenNames, normalizedName));
   const { random = Math.random } = options;
-  const free = BUTLER_NAMES.filter((name) => !taken.has(normalizedName(name)));
+  const free = HOUSEHOLD_STAFF_NAMES.filter(
+    (name) => !taken.has(normalizedName(name)),
+  );
   if (free.length === 0) return nextSandboxName(AGENT_NAME_PREFIX, taken);
   return free[Math.floor(random() * free.length)];
 }
