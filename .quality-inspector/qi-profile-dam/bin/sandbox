@@ -22,6 +22,9 @@ else
   elif [ "$(jq -r .fork <<<"$r")" = true ]; then bad "github $repo is a fork — use a repository of its own"
   elif [ "$(jq -r '.has_issues' <<<"$r")" != true ]; then bad "github $repo has issues turned off"
   else ok "github token of $login sees $repo"; fi
+  # The pull requests the agent opens: the token reads them (Pull requests permission).
+  if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$(gh_get "repos/$repo/pulls?state=all&per_page=1")"; then ok "github the token reads $repo's pull requests"
+  else bad "github the token cannot read $repo's pull requests — give it Contents and Pull requests: Read and write"; fi
   # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32,
   # and GitHub knows the OAuth App (a made-up code is refused as a bad code, not as a bad client).
   if [ -n "$login" ] && [ "$(tr 'A-Z' 'a-z' <<<"$login")" != "$(tr 'A-Z' 'a-z' <<<"${E2E_SANDBOX_GITHUB_LOGIN:-}")" ]; then
