@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { OidcDiscoveryError } from "../domain/errors.js";
-import { errorMessage } from "../../shared/error-message.js";
+import { errorMessage, zodIssuesMessage } from "../../shared/error-message.js";
 
 export interface OidcMetadata {
   deviceAuthorizationEndpoint: string;
@@ -61,9 +61,7 @@ export function createOidcDiscovery(): OidcDiscovery {
         return err({
           kind: "oidc-discovery",
           code: "malformed-response",
-          message: parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; "),
+          message: zodIssuesMessage(parsed.error),
         });
       }
 

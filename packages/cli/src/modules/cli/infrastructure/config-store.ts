@@ -1,10 +1,13 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { parse, stringify, type TomlTable } from "smol-toml";
 import { configSchema, type Config } from "../domain/config.js";
 import { err, ok, type Result } from "../../../result.js";
 import type { FileWriteError, MalformedConfigError } from "../domain/errors.js";
-import { errnoCode, errorMessage } from "../../shared/error-message.js";
+import { stringify } from "smol-toml";
+import {
+  describeTomlReadProblem,
+  readTomlTable,
+  writeTomlContents,
+} from "../../shared/toml-file.js";
+import { zodIssuesMessage } from "../../shared/error-message.js";
 
 export interface ConfigStore {
   read(): Promise<Result<Partial<Config>, MalformedConfigError>>;
@@ -16,67 +19,43 @@ const partialConfigSchema = configSchema.partial();
 export function createTomlConfigStore(filePath: string): ConfigStore {
   return {
     async read() {
-      let contents: string;
-      try {
-        contents = await readFile(filePath, "utf-8");
-      } catch (e) {
-        if (errnoCode(e) === "ENOENT") return ok({});
+      const raw = await readTomlTable(filePath);
+      if (!raw.ok) {
         return err({
           kind: "malformed-config",
-          reason: `cannot read ${filePath}: ${errorMessage(e)}`,
+          reason: describeTomlReadProblem(filePath, raw.error),
         });
       }
-      let raw: unknown;
-      try {
-        raw = parse(contents);
-      } catch (e) {
-        return err({
-          kind: "malformed-config",
-          reason: `invalid TOML in ${filePath}: ${errorMessage(e)}`,
-        });
-      }
-      const parsed = partialConfigSchema.safeParse(raw);
+      const parsed = partialConfigSchema.safeParse(raw.value);
       if (!parsed.success) {
         return err({
           kind: "malformed-config",
-          reason: `invalid config in ${filePath}: ${parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; ")}`,
+          reason: `invalid config in ${filePath}: ${zodIssuesMessage(parsed.error)}`,
         });
       }
       return ok(parsed.data);
     },
 
     async write(partial) {
-      let existing: TomlTable = {};
-      try {
-        existing = parse(await readFile(filePath, "utf-8"));
-      } catch (e) {
-        if (errnoCode(e) !== "ENOENT") {
-          return err({
-            kind: "file-write",
-            path: filePath,
-            reason: `cannot read existing config: ${errorMessage(e)}`,
-          });
-        }
-      }
-
-      const merged = { ...existing, ...partial };
-      const serialized = stringify(merged);
-
-      try {
-        await mkdir(dirname(filePath), { recursive: true });
-        const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-        await writeFile(tmp, serialized, "utf-8");
-        await rename(tmp, filePath);
-        return ok(undefined);
-      } catch (e) {
+      const raw = await readTomlTable(filePath);
+      if (!raw.ok) {
         return err({
           kind: "file-write",
           path: filePath,
-          reason: errorMessage(e),
+          reason: `cannot read existing config: ${raw.error.message}`,
         });
       }
+
+      const serialized = stringify({ ...raw.value, ...partial });
+      const written = await writeTomlContents(filePath, serialized);
+      if (!written.ok) {
+        return err({
+          kind: "file-write",
+          path: filePath,
+          reason: written.error,
+        });
+      }
+      return ok(undefined);
     },
   };
 }
