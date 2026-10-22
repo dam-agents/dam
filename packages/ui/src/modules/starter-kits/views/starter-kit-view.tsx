@@ -657,7 +657,7 @@ function KitDetail({
                   code={startupItemCommandLine(item)}
                   tag={
                     <Badge variant="muted" size="sm">
-                      {item.enabled ? "starts at every boot" : "off"}
+                      {item.enabled ? "starts at every boot" : "off at boot"}
                     </Badge>
                   }
                 />

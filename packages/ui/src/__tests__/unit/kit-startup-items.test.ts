@@ -24,7 +24,7 @@ const item = (name: string): StarterKitView["startupItems"][number] => ({
 });
 
 describe("startupItemCommandLine", () => {
-  // TEST_SCENARIO: the modal shows the program and its arguments on one line; an argument with a space or a quote is quoted, so the line reads as the single words the program gets.
+  // TEST_SCENARIO: the modal shows the program and its arguments on one line; an argument with a space or a quote is quoted, so the line reads as the single words the program gets, and so is one that starts with `~`, which the program gets as written, never as the home; the command's own `~/` is the agent's home, so it shows as is.
   test("quotes only the words a shell would split", () => {
     expect(
       startupItemCommandLine({
@@ -35,6 +35,9 @@ describe("startupItemCommandLine", () => {
     expect(
       startupItemCommandLine({ command: "sh", args: ["-c", "it's on"] }),
     ).toBe(`sh -c 'it'\\''s on'`);
+    expect(
+      startupItemCommandLine({ command: "~/bin/watch", args: ["~/inbox"] }),
+    ).toBe(`~/bin/watch '~/inbox'`);
   });
 });
 
