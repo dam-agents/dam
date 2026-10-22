@@ -68,7 +68,11 @@ So `codex-app-server` and `harness-terminal` read the file at every start and pa
 A Codex process therefore always gets the instructions of the image it runs in, also in an agent that existed before an image update.
 
 `~/.codex/AGENTS.md` is not used for this: it is the user's own global instructions file, and it lives in the persistent home, so the image cannot keep it current.
-A user's `~/.codex/AGENTS.md` and `work/AGENTS.md` still load beside the platform instructions.
+
+The agent's own instructions are `~/AGENTS.md` ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+Codex finds project `AGENTS.md` files only from the git root down to the work directory, so it misses `~/AGENTS.md` unless `$HOME` is that root.
+So both launch scripts source [`codex-agents-md.sh`](rootfs/usr/local/lib/codex-agents-md.sh), which links `~/.codex/AGENTS.md` to `~/AGENTS.md` when the home has that file and no `~/.codex/AGENTS.md` of its own.
+Codex reads the global file again every turn, and `work/AGENTS.md` still loads beside it.
 
 ## Startup network calls
 

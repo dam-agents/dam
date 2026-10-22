@@ -242,6 +242,7 @@ export {
   subAgentOutcomeEventPayload,
   sessionMessageEventPayload,
   workspaceCommandEventPayload,
+  agentInstructionsEventPayload,
   workspaceSeedEventPayload,
   helloInput,
 } from "./modules/runtime/types.js";

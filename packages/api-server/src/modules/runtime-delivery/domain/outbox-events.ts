@@ -36,6 +36,19 @@ export const workspaceCommandEvent = (
 ): OutboxEvent =>
   workspaceEvent("workspace-command", idPrefix, agentId, { command }, at);
 
+export const agentInstructionsEvent = (
+  agentId: string,
+  content: string,
+  at: Date,
+): OutboxEvent =>
+  workspaceEvent(
+    "agent-instructions",
+    "agent-instructions",
+    agentId,
+    { content },
+    at,
+  );
+
 export function sessionPairFields(
   pair: SessionPair | null | undefined,
 ): Record<string, unknown> {

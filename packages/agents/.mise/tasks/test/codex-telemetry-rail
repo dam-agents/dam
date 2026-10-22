@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 //MISE description="Test that the Codex launch scripts pass the platform instructions as text, render the telemetry rail into -c otel flags, and pass Codex nothing else while the rail is off"
-//MISE sources=["codex/rootfs/usr/local/lib/codex-otel.sh", "codex/rootfs/usr/local/bin/codex-app-server", "codex/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/codex-telemetry-rail"]
+//MISE sources=["codex/rootfs/usr/local/lib/codex-otel.sh", "codex/rootfs/usr/local/lib/codex-agents-md.sh", "codex/rootfs/usr/local/bin/codex-app-server", "codex/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/codex-telemetry-rail"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootfs = fileURLToPath(new URL("../../../codex/rootfs/", import.meta.url));
 const lib = join(rootfs, "usr/local/lib/codex-otel.sh");
+const agentsMdLib = join(rootfs, "usr/local/lib/codex-agents-md.sh");
 const home = mkdtempSync(join(tmpdir(), "codex-telemetry-rail-"));
 const argvFile = join(home, "argv");
 mkdirSync(join(home, "bin"));
@@ -19,13 +20,18 @@ const agentsMd = join(home, "AGENTS.md");
 const instructions = '# Platform\n\nKeep "long" jobs alive with \\`platform-keep\\`.\n\ttab, \'quote\', ü\n';
 writeFileSync(agentsMd, instructions);
 
-// TEST_SCENARIO: both launch scripts source the one helper, so the test runs the scripts as shipped with only its path moved.
+// TEST_SCENARIO: both launch scripts source the two helpers, so the test runs the scripts as shipped with only their paths moved.
 const script = (name) => {
   const body = readFileSync(join(rootfs, "usr/local/bin", name), "utf8");
   assert.ok(body.includes(". /usr/local/lib/codex-otel.sh\n"), `${name} sources the rail helper`);
+  assert.ok(body.includes(". /usr/local/lib/codex-agents-md.sh\n"), `${name} sources the agent instructions helper`);
   const path = join(home, name);
   assert.ok(body.includes("/etc/AGENTS.md"), `${name} reads the platform instructions`);
-  writeFileSync(path, body.replace("/usr/local/lib/codex-otel.sh", lib).replace("/etc/AGENTS.md", agentsMd), { mode: 0o755 });
+  const moved = body
+    .replace("/usr/local/lib/codex-otel.sh", lib)
+    .replace("/usr/local/lib/codex-agents-md.sh", agentsMdLib)
+    .replace("/etc/AGENTS.md", agentsMd);
+  writeFileSync(path, moved, { mode: 0o755 });
   return path;
 };
 const appServer = script("codex-app-server");
@@ -60,6 +66,8 @@ try {
     "-c", traces,
     "app-server",
   ]);
+  // TEST_SCENARIO: the home's AGENTS.md reaches Codex as its global instructions file, so the first start links it there.
+  assert.equal(readlinkSync(join(home, ".codex/AGENTS.md")), agentsMd);
 
   // TEST_SCENARIO: with the rail off, the app-server gets exactly what it got before the rail existed.
   assert.deepEqual(run(appServer, ["app-server"], {}), ["app-server"]);
