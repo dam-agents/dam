@@ -43,7 +43,7 @@ sessionEnvVar: CLAUDE_CODE_SESSION_ID
 # Declared so the runtime answers initialize before any harness process runs.
 # Re-captured from the image pin by test:harness-initialize-capabilities.
 initializeCapabilities:
-  agentCapabilities: {"_meta": {"claudeCode": {"promptQueueing": true}, "authStatus": {}}, "promptCapabilities": {"image": true, "embeddedContext": true}, "mcpCapabilities": {"http": true, "sse": true}, "auth": {"logout": {}}, "providers": {}, "loadSession": true, "sessionCapabilities": {"additionalDirectories": {}, "close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "subagents": {}}}
+  agentCapabilities: {"_meta": {"claudeCode": {"promptQueueing": true}, "authStatus": {}}, "promptCapabilities": {"image": true, "embeddedContext": true}, "mcpCapabilities": {"http": true, "sse": true}, "auth": {"logout": {}}, "providers": {}, "loadSession": true, "sessionCapabilities": {"additionalDirectories": {}, "close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "systemPrompt": {"mode": {"override": {}}}}}
   authMethods: []
   agentInfo: {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent"}
 
