@@ -76,7 +76,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "unified-right-toolbar",
     label: "Unified right toolbar",
     description:
-      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, instead of the classic icon column. Independent of JanUI.",
+      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, instead of the classic icon column, and offer Artifacts on every page. Independent of JanUI.",
   },
   {
     id: "environments",

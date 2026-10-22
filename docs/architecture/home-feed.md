@@ -136,7 +136,8 @@ Its tiles carry no tooltips: the accessible name stays on the button and the ope
 A count badge keeps its place on the icon's top-right corner.
 The panel's top bar becomes a 40 px row 8 px below the top of the panel, with no rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the panel's other controls keep their size.
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
-The tiled bar adds the Documentation tile; the rest of the rail's tab list, what each tab shows and the panel's own behavior do not depend on this flag.
+The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page outside an Agent's chat, whether or not JanUI is on: that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
+The rest of the rail's tab list and what each tab shows do not depend on this flag.
 JanUI decides the shell around it, including the phone overlay from the left rail up to this bar, and a chat with JanUI off keeps its own column of sections instead of a rail.
 While JanUI is on as well, the navigation counts the bar this flag draws when it decides whether the page has room for the pane.
 With both experiments on, the page reads as one surface: the sidebar rail and the right rail draw the same tile.

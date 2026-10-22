@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and with the Unified right toolbar experiment on, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and with the Unified right toolbar experiment on, the right rail draws tiles with Documentation and Artifacts among them, and it draws Artifacts from its own flag alone while JanUI is off, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -88,14 +88,16 @@ test("keeps the current layout while the experiment is off", async ({
   await openHome(page);
   await expect(page.getByTestId("agent-row").first()).toBeVisible();
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
+  await expect(page.getByTestId("side-panel-tab-artifacts")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation.
+// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation and Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation.
 test("draws the right toolbar from its own flag", async ({ page }) => {
   await setNewLayout(false);
   await setUnifiedRightToolbar(true);
   await openHome(page);
   await expect(page.getByTestId("side-panel-docs")).toBeVisible();
+  await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
     56,
   );
@@ -104,6 +106,7 @@ test("draws the right toolbar from its own flag", async ({ page }) => {
   await setUnifiedRightToolbar(false);
   await openHome(page);
   await expect(page.getByTestId("side-panel-docs")).toHaveCount(0);
+  await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
     49,
   );
