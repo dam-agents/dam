@@ -62,6 +62,14 @@ A pasted credential bypasses the platform and either gets lost or leaks.
 `platform-github` and `platform-s3` describe each integration's placeholder and how to pick between several accounts or profiles.
 
 When a credential fails, report what you can see — the tool has no credential at all, or the service answered 401 or 403 — and stop there: the owner connects the integration in the app and grants it on the agent's Connections page.
+Two greps say which of the two it is, and neither prints a secret:
+
+```sh
+env | grep 'platform:conn:'
+grep -r 'platform:conn:' ~/.aws/credentials ~/.config/gh/hosts.yml
+```
+
+A placeholder for the integration means the grant is there and the service is refusing the real credential; no placeholder at all means this agent holds nothing for it, so the platform has nothing to inject.
 
 ## Docs and source
 
