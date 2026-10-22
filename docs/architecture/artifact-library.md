@@ -197,7 +197,7 @@ flowchart LR
 
 ## UI surfaces
 
-- The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
+- The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens except while the Unified right toolbar offers that tab on every page; an artifact opened there docks in the side panel on the right.
   The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
   On a phone, the configuration page's top bar has the Artifacts button that opens that tab.
   With the `new-layout` or `unified-right-toolbar` experiment on, every page offers the tab, with the whole library, and Home's Artifacts card opens it; the toolbar draws it whatever shell the page has.
