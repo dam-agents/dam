@@ -63,7 +63,13 @@ export function SidebarV2() {
   const over = overlaid && mode === "rail";
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
-  useFocusTrap(navRef, over);
+  useFocusTrap(navRef, over, () =>
+    document.querySelector<HTMLElement>('[data-testid="sidebar-rail-expand"]'),
+  );
+  // UNIT_BOUNDARY_DESCRIPTION: the overlay belongs to the rail, so a window that widens enough for a pane drops it rather than opening the pane over the page again the next time the window narrows.
+  useEffect(() => {
+    if (mode !== "rail") setOverlaid(false);
+  }, [mode]);
   useEffect(() => {
     if (!over) return;
     const release = holdBackEntry(() => {

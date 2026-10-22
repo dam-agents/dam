@@ -273,6 +273,7 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
 export function useFocusTrap(
   containerRef: RefObject<HTMLElement | null>,
   active = true,
+  fallback?: () => HTMLElement | null,
 ) {
   // UNIT_BOUNDARY_DESCRIPTION: the element to hand the keyboard back to is the one focused as the trap closes over the page, read on the render that closes it because the trap's own first effect moves focus inside itself.
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -328,9 +329,11 @@ export function useFocusTrap(
     return () => {
       cancelAnimationFrame(grabRaf);
       container.removeEventListener("keydown", onKey);
-      previouslyFocused.current?.focus?.();
+      const back = previouslyFocused.current;
+      // UNIT_BOUNDARY_DESCRIPTION: the opener may be gone by the time the trap closes, as the rail's Expand tile is when the pane it opened replaces the rail, so the caller names what takes the keyboard then.
+      (back?.isConnected ? back : fallback?.())?.focus?.();
     };
-  }, [containerRef, active]);
+  }, [containerRef, active, fallback]);
 }
 
 const openModalIds: string[] = [];
