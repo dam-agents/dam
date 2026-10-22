@@ -4,6 +4,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
+vi.stubGlobal("window", new EventTarget());
+
 const seen = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const env = vi.hoisted(() => ({ telemetry: true, operable: true }));
 const cost = vi.hoisted(() => ({ sessionId: "s1", amounts: [] }));
@@ -132,7 +134,7 @@ it("gates export and prefetch the same way as the Agent's list", () => {
   expect(props.cost).toBe(cost);
 });
 
-// TEST_SCENARIO: the Pinned section mixes Sessions of many Agents, so a pinned row leads with its Agent's avatar and the Session's activity dot over it, shows the harness icon in place of the harness name in its context line, not before its title, and keeps the Session's kind icons while its own dot replaces the activity ones. Its pin mark shows only with the row's actions, on hover or keyboard focus.
+// TEST_SCENARIO: the Pinned section mixes Sessions of many Agents, so a pinned row leads with its Agent's avatar and the Session's activity dot over it, names its Agent before the last-activity time on the bottom line, and shows the harness icon among the row's top-right icons, not in its context line; it keeps the Session's kind icons while its own dot replaces the activity ones. Its pin mark shows only with the row's actions, on hover or keyboard focus.
 it("leads a pinned row with its Agent's avatar under the activity dot", () => {
   const props = renderFeedPin();
   const leading = renderToStaticMarkup(props.leading as never);
@@ -141,21 +143,23 @@ it("leads a pinned row with its Agent's avatar under the activity dot", () => {
     /<svg[\s\S]*data-testid="session-activity-dot" data-tone="idle"/,
   );
   expect(props.titleIcon).toBeUndefined();
+  expect(props.metaLead).toBe("dam · ");
   const context = renderToStaticMarkup(props.conversation as never);
-  expect(context).toMatch(
-    /^dam · <span[^>]*><span role="img" aria-label="Claude"/,
-  );
-  expect(context).not.toContain("Claude ·");
+  expect(context).not.toContain("dam");
+  expect(context).not.toContain("Claude");
   expect(context).toContain("Chat");
+  expect(renderToStaticMarkup(props.harnessIcon as never)).toContain(
+    'aria-label="Claude"',
+  );
   expect(props.activityIndicators).toBe(false);
   expect(props.quietPin).toBe(true);
 });
 
-// TEST_SCENARIO: grouped as all sessions, the flat list draws each Session with the same row as the Pinned section, its Agent's avatar and name included, but unpinned, so its action offers to pin it.
+// TEST_SCENARIO: grouped as all sessions, the flat list draws each Session with the same row as the Pinned section, its Agent's name before the time, but unpinned, so its action offers to pin it.
 it("draws a flat-list row like a pinned row, unpinned", () => {
   const props = renderFeedPin(false);
   expect(props.pinned).toBe(false);
-  expect(renderToStaticMarkup(props.conversation as never)).toMatch(/^dam · /);
+  expect(props.metaLead).toBe("dam · ");
 });
 
 // TEST_SCENARIO: a Session read in full from its Agent, as an open Agent's list and an off-feed pin read it, can carry the repositories it touched; its sidebar row still stays on two lines, so it draws no repository line, the same as a feed row that has none.

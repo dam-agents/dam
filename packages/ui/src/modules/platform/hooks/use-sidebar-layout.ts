@@ -18,18 +18,23 @@ export function useSidebarWidth({
   const widthRef = useRef(width);
   const [resizing, setResizing] = useState(false);
 
+  const setWidthTo = useCallback((next: number, max?: number) => {
+    const clamped = clampSidebarWidth(next, max);
+    widthRef.current = clamped;
+    setResizing(true);
+    setWidth(clamped);
+  }, []);
+
   const resize = useCallback(
-    (delta: number) => {
-      const next = clampSidebarWidth(widthRef.current + delta);
-      widthRef.current = next;
-      writePersistedNumber(key, next);
-      setResizing(true);
-      setWidth(next);
-    },
-    [key],
+    (delta: number, max?: number) => setWidthTo(widthRef.current + delta, max),
+    [setWidthTo],
   );
 
-  const endResize = useCallback(() => setResizing(false), []);
+  // UNIT_BOUNDARY_DESCRIPTION: a drag writes the width it ends on once, rather than on every pointer move, so the pane follows the pointer without a storage write on the way.
+  const endResize = useCallback(() => {
+    writePersistedNumber(key, widthRef.current);
+    setResizing(false);
+  }, [key]);
 
-  return { width, resizing, resize, endResize };
+  return { width, resizing, resize, setWidthTo, endResize };
 }

@@ -77,7 +77,7 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, only the header's plus to create one, not a New agent row, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and the row's New session plus opens the Agent's chat; the New session row, shown only while the Agent has no Sessions, or else that plus, not the Agent row, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent is asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves that Agent open, and once it answers, with only Home shown, its list shows only its New session row; and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
@@ -87,8 +87,8 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   const tree = page.getByTestId("sidebar-tree");
   await expect(tree).toBeVisible();
   for (const name of AGENTS) await expect(agentNode(page, name)).toBeVisible();
-  await expect(tree.getByTestId("sidebar-create-agent")).toBeVisible();
-  await expect(tree.getByTestId("sidebar-new-agent-row")).toHaveCount(0);
+  await expect(tree.getByTestId("sidebar-create-agent")).toHaveCount(0);
+  await expect(tree.getByTestId("sidebar-new-agent-row")).toBeVisible();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(page.getByTestId("agent-row")).toHaveCount(0);
   await expect(page.getByTestId("side-panel-docs")).toBeVisible();
@@ -97,14 +97,13 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   const row = node.getByTestId("sidebar-agent-row");
   await row.click();
   await expect(row).toHaveAttribute("aria-expanded", "true");
-  await row.hover();
-  await node.getByTestId("sidebar-agent-new-session").click();
+  await node.getByTestId("sidebar-new-session-row").click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}`),
   );
   await expect(
     node.locator(
-      '[data-testid="sidebar-new-session-row"][aria-current="page"], [data-testid="sidebar-agent-new-session"][aria-current="page"]',
+      '[data-testid="sidebar-new-session-row"][aria-current="page"]',
     ),
   ).toHaveCount(1);
   await expect(row).not.toHaveAttribute("aria-current");
@@ -203,7 +202,7 @@ test("switches the chat between the sections and the side panel", async ({
   await expect(page.getByTestId("chat-sections")).toBeVisible();
 });
 
-// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent. Done from the keyboard, focus follows the Session to its new row, or lands on its Agent's row when that Agent is closed.
+// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent. The pin is one of the row's menu actions, and focus follows the Session to its new row, or lands on its Agent's row when that Agent is closed.
 test("pins a Session above every Agent", async ({ page }) => {
   test.setTimeout(240_000);
   await setNewLayout(true);
@@ -228,35 +227,49 @@ test("pins a Session above every Agent", async ({ page }) => {
     `[data-testid="session-row"][data-session-id="${sessionId}"]`,
   );
   await row.hover();
-  await row.getByTestId("session-pin-button").click();
+  await row.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Pin to top" }).click();
   await expect(inPinned).toBeVisible({ timeout: 30_000 });
   await expect(inAgent).toHaveCount(0);
 
   await page.reload();
   await expect(inPinned).toBeVisible({ timeout: 30_000 });
   await inPinned.hover();
-  await inPinned.getByTestId("session-pin-button").click();
+  await inPinned.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Unpin session" }).click();
   await expect(pinnedSection).toHaveCount(0);
   await expect(inAgent).toBeVisible();
 
-  await inAgent.getByTestId("session-pin-button").focus();
+  await inAgent.hover();
+  await inAgent.getByTestId("session-menu-button").focus();
   await page.keyboard.press("Enter");
-  await expect(inPinned.getByTestId("session-pin-button")).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(inAgent.getByTestId("session-pin-button")).toBeFocused();
+  await expect(inPinned.locator("[data-row-main]")).toBeFocused();
 
+  await inPinned.hover();
+  await inPinned.getByTestId("session-menu-button").focus();
   await page.keyboard.press("Enter");
-  await expect(inPinned.getByTestId("session-pin-button")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(inAgent.locator("[data-row-main]")).toBeFocused();
+
+  await inAgent.hover();
+  await inAgent.getByTestId("session-menu-button").focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(inPinned.locator("[data-row-main]")).toBeFocused();
+
   const agentRow = node.getByTestId("sidebar-agent-row");
   await agentRow.click();
   await expect(agentRow).toHaveAttribute("aria-expanded", "false");
-  await inPinned.getByTestId("session-pin-button").focus();
+  await inPinned.hover();
+  await inPinned.getByTestId("session-menu-button").focus();
+  await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await expect(pinnedSection).toHaveCount(0);
   await expect(agentRow).toBeFocused();
 });
 
-// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list and marks the control filtered; putting Chat back returns it to the Pinned section. Pins live in this browser's storage, so the delete runs in the same page: deleting the Session from its Pinned row removes it from the tree and drops its pin.
+// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list, which keeps only its New session row, and marks the control filtered; putting Chat back returns it to the Pinned section. Pins live in this browser's storage, so the delete runs in the same page: deleting the Session from its Pinned row removes it from the tree and drops its pin.
 test("filters, then deletes, a pinned Session", async ({ page }) => {
   test.setTimeout(120_000);
   await setNewLayout(true);
@@ -267,7 +280,8 @@ test("filters, then deletes, a pinned Session", async ({ page }) => {
   await expect(row).toBeVisible({ timeout: 30_000 });
   const sessionId = await row.getAttribute("data-session-id");
   await row.hover();
-  await row.getByTestId("session-pin-button").click();
+  await row.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Pin to top" }).click();
   const pinnedSection = page.getByRole("region", { name: "Pinned" });
   const inPinned = pinnedSection.locator(
     `[data-testid="session-row"][data-session-id="${sessionId}"]`,
@@ -283,7 +297,7 @@ test("filters, then deletes, a pinned Session", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(pinnedSection).toHaveCount(0);
   await expect(node.getByTestId("session-row")).toHaveCount(0);
-  await expect(node.getByText("No sessions match the filter.")).toBeVisible();
+  await expect(node.getByTestId("sidebar-new-session-row")).toBeVisible();
   await expect(filter).toHaveAccessibleName("Filter sessions (filtered)");
 
   await filter.click();

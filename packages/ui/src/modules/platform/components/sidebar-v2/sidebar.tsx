@@ -1,167 +1,175 @@
-import { ChevronLeft, Home, Settings } from "@carbon/icons-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { useFocusTrap } from "@/components/modal";
 import { ResizeHandle } from "@/components/resize-handle";
-import { FOCUS_RING } from "@/components/ui/focus-ring";
+import {
+  MIN_CONTENT_WIDTH,
+  navigationMode,
+  useNarrowShell,
+} from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
-import { useAgentsList } from "../../../agents/api/queries.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../../agents/components/avatar/agent-avatar.js";
-import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
+import { holdBackEntry } from "../../lib/back-entry.js";
+import {
+  RIGHT_RAIL_W,
+  SIDEBAR_COLLAPSED_W,
+  SIDEBAR_MIN_W,
+  sidebarMaxWidth,
+  snapSidebarWidth,
+} from "../../lib/sidebar-layout.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
-
-const SLIDE =
-  "transition-[translate] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none";
+import { SidebarRail } from "./sidebar-rail.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane. Pinned, it holds its
- * place beside the page and can be resized. Unpinned, it leaves the layout and
- * slides over the page when the pointer reaches the left edge or the floating
- * button is hovered or pressed, which is the only way in on a touch screen.
- * While it is away, an inset shadow marks the edge it will slide back from.
+ * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane, in two states: expanded, it holds its place beside the page at the width the user resizes, or collapsed, it stays at one icon's width as a rail of Agent avatars, each opening that Agent's Sessions beside it, with the Pinned section under its pin icon. The rail is what a narrow viewport gets whatever the user last chose, and expanding it there opens the pane over the page, from the left edge up to the right rail, until a Session is picked, Escape is pressed or the browser goes back; the user's own choice of expanded or collapsed is left as it was.
  */
+// UNIT_BOUNDARY_DESCRIPTION: the tile the overlaid pane replaced, named once so the focus trap's dependencies stay still across renders; a new function each render would tear the trap down and grasp the pane's first row again.
+const railExpandTile = () =>
+  document.querySelector<HTMLElement>('[data-testid="sidebar-rail-expand"]');
+
 export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
   const setView = useStore((s) => s.setView);
-  const { width, resize, endResize } = useSidebarWidth({
+  const { width, resizing, setWidthTo, endResize } = useSidebarWidth({
     key: "platform-sidebar-v2-w",
     fallback: 325,
   });
-  const peek = useStore((s) => s.sidebarPeek);
-  const setPeek = useStore((s) => s.setSidebarPeek);
-  const shown = pinned || peek;
+  const { viewport } = useNarrowShell();
+  const [overlaid, setOverlaid] = useState(false);
+
+  const railed = useRef(false);
+  const maxWidth = sidebarMaxWidth({
+    viewport,
+    rightRailWidth: RIGHT_RAIL_W,
+    contentMinWidth: MIN_CONTENT_WIDTH,
+  });
+  // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so a drag never collapses the pane; a window with no room for a pane keeps the rail whatever the drag does.
+  const paneFits = viewport - RIGHT_RAIL_W - MIN_CONTENT_WIDTH >= SIDEBAR_MIN_W;
+  const mode = resizing
+    ? pinned && paneFits
+      ? "layout"
+      : "rail"
+    : navigationMode({
+        viewport,
+        sidebarWidth: width,
+        rightRailWidth: RIGHT_RAIL_W,
+        railed: railed.current,
+      });
+  railed.current = mode === "rail";
+  const expanded = pinned && mode === "layout";
+  // UNIT_BOUNDARY_DESCRIPTION: a drag is read from where it started and how far it has gone, so the edge stays under the pointer whatever the pane was clamped to on the way.
+  const dragFrom = useRef<number | null>(null);
+  const dragBy = useRef(0);
+  const over = overlaid && mode === "rail";
+  // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
-  const focusOnOpen = useRef(false);
+  useFocusTrap(navRef, over, railExpandTile);
+  // UNIT_BOUNDARY_DESCRIPTION: the overlay belongs to the rail, so a window that widens enough for a pane drops it rather than opening the pane over the page again the next time the window narrows.
   useEffect(() => {
-    if (!peek || !focusOnOpen.current) return;
-    focusOnOpen.current = false;
-    navRef.current?.querySelector<HTMLElement>("button")?.focus();
-  }, [peek]);
+    if (mode !== "rail") setOverlaid(false);
+  }, [mode]);
+  useEffect(() => {
+    if (!over) return;
+    const release = holdBackEntry(() => {
+      setOverlaid(false);
+      return true;
+    });
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[role="menu"][data-state="open"]')) return;
+      // UNIT_BOUNDARY_DESCRIPTION: a dialog the pane opened takes the Escape for itself, and closing the pane under it would unmount the row that holds it.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      setOverlaid(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      release();
+    };
+  }, [over]);
 
   return (
     <>
-      {!pinned && (
-        <div
-          aria-hidden
-          className="fixed inset-y-0 left-0 z-nav hidden w-[18px] md:block"
-          onMouseEnter={() => setPeek(true)}
-        />
-      )}
-      {peek && !pinned && (
-        <div
-          aria-hidden
-          className="fixed inset-0 z-nav hidden md:block"
-          onClick={() => setPeek(false)}
-        />
-      )}
       <nav
         ref={navRef}
         className={cn(
-          "hidden md:flex relative flex-col h-full shrink-0 bg-chrome border-r border-border",
-          !pinned && ["fixed inset-y-0 left-0 z-overlay", SLIDE],
-          !pinned &&
-            shown &&
-            "shadow-[4px_0_16px_-4px_rgb(0_0_0/0.18)] dark:shadow-[6px_0_20px_-4px_rgb(0_0_0/0.6)]",
-          !shown && "-translate-x-full",
+          "flex flex-col border-r border-border bg-chrome",
+          over
+            ? "fixed inset-y-0 left-0 z-overlay"
+            : "relative h-full shrink-0",
+          !over &&
+            "transition-[width] duration-200 ease-out motion-reduce:transition-none",
+          resizing && "transition-none",
+          !expanded && !over && "w-14 overflow-visible",
         )}
-        style={{ width }}
-        inert={!shown}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !pinned) setPeek(false);
-        }}
-        onMouseLeave={(e) => {
-          if (e.clientX > e.currentTarget.getBoundingClientRect().right)
-            setPeek(false);
-        }}
+        style={
+          // UNIT_BOUNDARY_DESCRIPTION: the pane reaches one pixel into the right rail so its own right border lands on the bar's left border, rather than beside it, and the two read as one line.
+          over ? { right: RIGHT_RAIL_W - 1 } : expanded ? { width } : undefined
+        }
         data-testid="app-sidebar"
-        data-pinned={pinned || undefined}
+        data-pinned={expanded || undefined}
+        data-collapsed={!expanded || undefined}
       >
-        <SidebarHeader
-          pinned={pinned}
-          onTogglePin={() => {
-            setPinned(!pinned);
-            setPeek(false);
-          }}
-          onHome={() => setView("home")}
-        />
-        <SidebarContent />
-      </nav>
-      {pinned && (
-        <div className="hidden md:flex" data-testid="app-sidebar-resize">
-          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
-        </div>
-      )}
-      {!shown && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none fixed inset-y-0 left-0 z-nav hidden w-6 bg-gradient-to-r from-black/[0.08] to-transparent md:block dark:from-black/50"
+        {expanded || over ? (
+          <>
+            <SidebarHeader
+              onCollapse={() => (over ? setOverlaid(false) : setPinned(false))}
+              onHome={() => {
+                setView("home");
+                if (over) setOverlaid(false);
+              }}
+            />
+            <SidebarContent
+              onNavigate={over ? () => setOverlaid(false) : undefined}
+            />
+          </>
+        ) : (
+          <SidebarRail
+            onExpand={() =>
+              mode === "rail" ? setOverlaid(true) : setPinned(true)
+            }
           />
-          <PeekButton
-            onPeek={() => setPeek(true)}
-            onOpen={() => {
-              focusOnOpen.current = true;
-              setPeek(true);
+        )}
+      </nav>
+      {/* UNIT_BOUNDARY_DESCRIPTION: one handle serves the rail and the pane, so a drag that crosses between them keeps its grip instead of being cut short when the other handle would have taken over. */}
+      {/* UNIT_BOUNDARY_DESCRIPTION: the edge is offered only where a pane fits beside the page at its narrowest, so a window too narrow for one opens the pane over the page instead. */}
+      {!over && paneFits && (
+        <div
+          className="flex"
+          data-testid={
+            expanded ? "app-sidebar-resize" : "app-sidebar-resize-rail"
+          }
+        >
+          <ResizeHandle
+            side="left"
+            label="Resize navigation"
+            value={expanded ? width : SIDEBAR_COLLAPSED_W}
+            onResize={(delta) => {
+              // UNIT_BOUNDARY_DESCRIPTION: the snap reads the drag as the user made it rather than the width the drag was last held to, so pulling the edge most of the way down gives the navigation up instead of resting at its narrowest.
+              dragFrom.current ??= expanded ? width : SIDEBAR_COLLAPSED_W;
+              dragBy.current += delta;
+              const snapped = snapSidebarWidth(
+                dragFrom.current + dragBy.current,
+                maxWidth,
+              );
+              if (snapped === "rail" || !paneFits) setPinned(false);
+              else {
+                setPinned(true);
+                setWidthTo(snapped, maxWidth);
+              }
+            }}
+            onDragEnd={() => {
+              dragBy.current = 0;
+              dragFrom.current = null;
+              endResize();
             }}
           />
-        </>
+        </div>
       )}
     </>
-  );
-}
-
-function PeekButton({
-  onOpen,
-  onPeek,
-}: {
-  onOpen: () => void;
-  onPeek: () => void;
-}) {
-  const hasUnread = useActivitySessions().items.some((item) => item.unread);
-  const view = useStore((s) => s.view);
-  const openAgentId = useStore((s) =>
-    s.view === "chat"
-      ? s.selectedAgent
-      : s.view === "sandbox-home"
-        ? s.agentId
-        : null,
-  );
-  const agent = useAgentsList().find((a) => a.id === openAgentId);
-  return (
-    <button
-      type="button"
-      aria-label="Show navigation"
-      onClick={onOpen}
-      onMouseEnter={onPeek}
-      data-testid="sidebar-peek-button"
-      className={`fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex ${FOCUS_RING}`}
-    >
-      <ChevronLeft size={16} className="text-muted-foreground" />
-      {agent ? (
-        <AgentAvatar
-          name={agent.name}
-          avatar={agent.avatar}
-          size={22}
-          mood={avatarMood(agent.state, agent)}
-        />
-      ) : view === "settings" ? (
-        <Settings size={18} />
-      ) : (
-        <Home size={18} />
-      )}
-      <span className="ml-0.5 max-w-48 truncate text-sm font-medium text-foreground">
-        {agent ? agent.name : view === "settings" ? "Settings" : "Home"}
-      </span>
-      {hasUnread && (
-        <span className="absolute top-1 right-1 size-2 rounded-full bg-success ring-2 ring-chrome" />
-      )}
-    </button>
   );
 }

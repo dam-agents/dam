@@ -76,7 +76,7 @@ export function AgentUsageActions({
       icon: <Terminal />,
       kind: "control",
       title: "Web terminal",
-      description: "Open the harnesses' terminal UI in this browser.",
+      description: "Pick a harness:",
       control: (
         <TerminalHarnessButtons
           agentId={agent.id}
