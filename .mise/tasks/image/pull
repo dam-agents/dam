@@ -6,7 +6,9 @@
 #USAGE arg "<tar>"
 #USAGE arg "<name>" help="The name it imports as, e.g. platform-mock:latest"
 set -euo pipefail
-l="$(mktemp -d)"
+# A whole image lands here first; in CI that is the runner's main disk, not
+# the ubuntu-26.04 image's small /tmp.
+l="$(TMPDIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}" mktemp -d)"
 trap 'rm -rf "$l"' EXIT
 platform="linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
 # A registry can cut a layer download short ("error writing layer: unexpected
