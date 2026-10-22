@@ -4,8 +4,9 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
+
 const env = vi.hoisted(() => ({
-  pins: new Set<string>(),
   agents: [
     { id: "a1", name: "dam", state: "running" },
     { id: "a2", name: "other", state: "running" },
@@ -14,6 +15,10 @@ const env = vi.hoisted(() => ({
   navigated: vi.fn(),
   filtered: vi.fn(),
   createAgent: vi.fn(),
+  openSession: vi.fn(),
+  sessions: [] as unknown[],
+  filters: undefined as unknown,
+  groupBy: "agents" as "agents" | "all",
   hover: true,
 }));
 
@@ -24,6 +29,8 @@ vi.mock("../../store.js", () => ({
       setView: () => {},
       navigateToSettings: () => {},
       navigateToSandboxHome: () => {},
+      sidebarGroupBy: env.groupBy,
+      sidebarActivityFilters: env.filters,
     }),
 }));
 vi.mock("../../modules/agents/hooks/use-sidebar-agents.js", () => ({
@@ -35,9 +42,6 @@ vi.mock("../../modules/agents/hooks/use-sidebar-agents.js", () => ({
 }));
 vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForOwner: () => ({ data: [] }),
-}));
-vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
-  usePinnedSessions: () => env.pins,
 }));
 vi.mock("../../modules/sessions/hooks/use-start-session.js", () => ({
   useStartSession: () => env.startSession,
@@ -109,12 +113,17 @@ vi.mock(
   "../../modules/platform/components/sidebar-v2/agent-session-list.js",
   () => ({ AgentSessionList: () => null }),
 );
-vi.mock("../../modules/platform/components/sidebar-v2/pinned-rows.js", () => ({
-  PinnedList: () => null,
-  usePinnedRows: () => ({
-    rows: env.pins.size > 0 ? [{ key: [...env.pins][0] }] : [],
-    conversationOf: () => undefined,
+vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
+  useActivitySessions: () => ({
+    items: env.sessions,
+    openSessionKey: null,
+    complete: true,
+    loading: false,
+    unreadable: false,
   }),
+}));
+vi.mock("../../modules/sessions/hooks/use-open-session.js", () => ({
+  useOpenSession: () => env.openSession,
 }));
 
 const { SidebarRail } =
@@ -123,9 +132,14 @@ const { SidebarRail } =
 let root: Root;
 let container: HTMLDivElement;
 
+const element = () =>
+  createElement(SidebarRail, { onExpand: () => {}, onNavigate: env.navigated });
+
 beforeEach(() => {
   vi.clearAllMocks();
-  env.pins = new Set(["a1:s1"]);
+  env.groupBy = "agents";
+  env.filters = defaultActivityFilters();
+  env.sessions = [];
   env.hover = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.defineProperty(window, "matchMedia", {
@@ -141,14 +155,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() =>
-    root.render(
-      createElement(SidebarRail, {
-        onExpand: () => {},
-        onNavigate: env.navigated,
-      }),
-    ),
-  );
+  act(() => root.render(element()));
 });
 
 afterEach(() => {
@@ -335,29 +342,34 @@ it("creates an agent from the rail's New agent tile", () => {
   expect(env.navigated).toHaveBeenCalled();
 });
 
-const pinnedTile = () =>
-  container.querySelector<HTMLButtonElement>(
-    '[data-testid="sidebar-rail-pinned"]',
+// TEST_SCENARIO: with the grouping on All sessions the rail lists Sessions rather than Agents, and a click on one opens that Session where the tree's own row would, with no popover in the way.
+it("opens the Session a rail tile stands for", () => {
+  env.groupBy = "all";
+  env.sessions = [
+    {
+      id: "a1:s9",
+      agent: env.agents[0],
+      working: false,
+      unread: false,
+      needsApproval: false,
+      session: {
+        agentId: "a1",
+        sessionId: "s9",
+        mode: "chat",
+        type: "regular",
+        title: "Fix the parser",
+        harness: "claude-code",
+        working: false,
+      },
+    },
+  ];
+  act(() => root.render(element()));
+  const sessionTile = container.querySelector<HTMLButtonElement>(
+    '[data-testid="sidebar-rail-session"]',
   )!;
-
-// TEST_SCENARIO: the Pinned tile has no page behind it, so a click names no navigation; what it opens is the popover, and a pointer resting on the tile or keyboard focus opens it as an Agent's tile does.
-it("opens the Pinned popover on hover, and a click navigates nowhere", () => {
-  expect(pinnedTile()).not.toBeNull();
-  act(() => {
-    pinnedTile().dispatchEvent(
-      new PointerEvent("pointerover", {
-        bubbles: true,
-        relatedTarget: document.body,
-      }),
-    );
-  });
-  act(() => void vi.advanceTimersByTime(200));
-  expect(popover()).not.toBeNull();
-  expect(popover()!.textContent).toContain("Pinned");
-
-  vi.clearAllMocks();
-  act(() => pinnedTile().click());
+  expect(sessionTile.getAttribute("aria-label")).toBe("dam — Fix the parser");
+  act(() => sessionTile.click());
+  expect(env.openSession).toHaveBeenCalledWith("a1", "s9", "chat");
+  expect(env.navigated).toHaveBeenCalled();
   expect(env.startSession).not.toHaveBeenCalled();
-  expect(env.navigated).not.toHaveBeenCalled();
-  expect(popover()).not.toBeNull();
 });
