@@ -2,6 +2,9 @@ import type { IncomingMessage } from "node:http";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 
 export const SESSION_HEADER = "x-platform-session";
+export const REQUEST_CLASS_HEADER = "x-claude-code-request-class";
+const CLAUDE_SESSION_HEADER = "x-claude-code-session-id";
+const CLAUDE_AGENT_HEADER = "x-claude-code-agent-id";
 
 export interface SessionHandle {
   sessionId: string;
@@ -12,8 +15,9 @@ const CLAUDE_SESSION_IN_USER_ID = /_session_([0-9a-f-]{36})$/i;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code 2.1 stamps `metadata.user_id` with
- * a JSON object (`session_id`, `parent_session_id` for a forked subagent,
- * device and account ids); older releases stamped
+ * a JSON object (`session_id`, `parent_session_id` on a forked conversation,
+ * which a fork subagent is and a rewound Session's copy is too, device and
+ * account ids); older releases stamped
  * `user_<hash>_account_<uuid>_session_<uuid>`. Both name the session.
  */
 const claudeUserId = (
@@ -39,14 +43,44 @@ const header = (req: IncomingMessage, name: string): string | null => {
   return first?.trim() || null;
 };
 
+const SIDE_CLASSES = new Set([
+  "auxiliary",
+  "subagent",
+  "workflow",
+  "side_reply",
+]);
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether Claude Code marked a call as one beside
+ * the conversation: an auxiliary call (a session title, a WebFetch summary,
+ * the auto-mode classifier), a subagent's, a workflow agent's or a side
+ * reply, in the class it sends once the image turns its gateway hint
+ * headers on, or any call stamped with a subagent's id, which covers a
+ * subagent's compaction. A main-conversation turn, its compaction and a
+ * call without the class are not side calls.
+ */
+export function isSideCall(req: IncomingMessage): boolean {
+  const cls = header(req, REQUEST_CLASS_HEADER);
+  return (
+    (cls !== null && SIDE_CLASSES.has(cls)) ||
+    header(req, CLAUDE_AGENT_HEADER) !== null
+  );
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: which Session a model call belongs to, read from
  * what each harness stamps on its calls: Bob's `X-Task-Id` with
  * `X-Parent-Task-Id` on a subagent's calls, Codex's `session-id` header with
- * a subagent's own `thread-id`, Claude Code's request metadata `user_id`,
- * which ends in `_session_<uuid>`, Pi's `x-platform-session` from its
- * extension. The root ids equal the ACP session id, except in a Codex or Bob
- * terminal, whose own id the caller maps back.
+ * a subagent's own `thread-id`, Claude Code's request metadata `user_id`
+ * (its `session_id`, or the `_session_<uuid>` an older release ends it
+ * with) or its `x-claude-code-session-id` header, with
+ * `x-claude-code-agent-id` on a subagent's call, whose Session is the
+ * metadata's `parent_session_id` when the subagent is a fork of the
+ * conversation; a rewound Session's copy carries a parent too and is a
+ * Session of its own, so the parent alone marks no subagent. Pi's
+ * `x-platform-session` from its extension. The root ids equal the ACP
+ * session id, except in a Codex or Bob terminal, whose own id the caller
+ * maps back.
  */
 export function sessionOf(
   req: IncomingMessage,
@@ -85,17 +119,20 @@ function harnessSessionOf(
     metadata && typeof metadata === "object"
       ? (metadata as Record<string, unknown>).user_id
       : undefined;
-  if (typeof userId !== "string") return null;
-  const stamped = claudeUserId(userId);
-  if (stamped?.session_id) {
-    const parent = stamped.parent_session_id;
-    return parent && parent !== stamped.session_id
-      ? { sessionId: stamped.session_id, parentSessionId: parent }
-      : { sessionId: stamped.session_id };
-  }
-  const legacy = CLAUDE_SESSION_IN_USER_ID.exec(userId);
-  if (legacy?.[1]) return { sessionId: legacy[1] };
-  return null;
+  const stamped = typeof userId === "string" ? claudeUserId(userId) : null;
+  const own =
+    stamped?.session_id ??
+    (typeof userId === "string"
+      ? CLAUDE_SESSION_IN_USER_ID.exec(userId)?.[1]
+      : undefined) ??
+    header(req, CLAUDE_SESSION_HEADER);
+  if (!own) return null;
+  const agent = header(req, CLAUDE_AGENT_HEADER);
+  if (!agent) return { sessionId: own };
+  return {
+    sessionId: agent,
+    parentSessionId: stamped?.parent_session_id ?? own,
+  };
 }
 
 /**
