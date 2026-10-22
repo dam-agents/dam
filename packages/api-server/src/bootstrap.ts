@@ -525,6 +525,7 @@ export async function bootstrap() {
       jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       audience: config.keycloakApiAudience,
       requiredRole: config.keycloakRequiredRole,
+      operatorRole: config.keycloakOperatorRole,
     },
     {
       verifyApiKey: apiKeysModule.validator,

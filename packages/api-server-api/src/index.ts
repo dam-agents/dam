@@ -360,6 +360,8 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type { OperatorStatus } from "./modules/operator/types.js";
+export { operatorStatusSchema } from "./modules/operator/schemas.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,

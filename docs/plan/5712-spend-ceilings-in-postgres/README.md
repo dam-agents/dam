@@ -137,7 +137,7 @@ Clients parse an amount that a person types with the existing `spendCeilingUsdTe
 
 | #   | Title                                                                  | Scope                                                                                                                                          | Depends on |
 | --- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Platform operator role](./01-platform-operator-role.md)               | Realm role and group in the chart, the operator flag on the principal, `operatorProcedure`, `operator.status`, Identity docs                   | —          |
+| 01  | ✅ [Platform operator role](./01-platform-operator-role.md)            | Realm role and group in the chart, the operator flag on the principal, `operatorProcedure`, `operator.status`, Identity docs                   | —          |
 | 02  | [Ceilings in Postgres, set by operators](./02-ceilings-in-postgres.md) | `spend_ceilings` table and migration, the gate and status read it, `spend.ceilings.list/set`, email lookup, audit log line, Spend ceiling docs | 01         |
 | 03  | [CLI ceiling commands](./03-cli-ceiling-commands.md)                   | `dam spend ceiling list\|set\|clear`, cli.md                                                                                                   | 02         |
 | 04  | [Settings › Operator tab](./04-ui-operator-tab.md)                     | Operator-only Settings tab with the Spend ceilings section and dialog, Screens docs, screenshots                                               | 02         |

@@ -373,6 +373,10 @@ spec:
             - name: KEYCLOAK_INSPECTOR_ROLE
               value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
+            {{- if .Values.keycloak.operatorRole }}
+            - name: KEYCLOAK_OPERATOR_ROLE
+              value: {{ .Values.keycloak.operatorRole | quote }}
+            {{- end }}
             {{- end }}
             # The agent home is fixed at /home/agent (templateDefaults.agentHome
             # is retired). The controller substitutes `$HOME` mount paths with

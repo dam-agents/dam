@@ -15,6 +15,7 @@ import { environmentsRouter } from "./modules/environments/router.js";
 import { eventsRouter } from "./modules/events/router.js";
 import { invocationsRouter } from "./modules/invocations/router.js";
 import { kbSharesRouter } from "./modules/kb-shares/router.js";
+import { operatorRouter } from "./modules/operator/router.js";
 import { providerStatusRouter } from "./modules/provider-status/router.js";
 import { satellitesRouter } from "./modules/satellites/router.js";
 import { linksRouter } from "./modules/links/router.js";
@@ -66,6 +67,7 @@ export const appRouter = t.router({
   satellites: satellitesRouter,
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
+  operator: operatorRouter,
   spend: spendRouter,
   providerStatus: providerStatusRouter,
   events: eventsRouter,

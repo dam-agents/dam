@@ -52,6 +52,16 @@ export const serveSatellitesProcedure = t.procedure
   .use(requireScope("satellites:serve"))
   .use(requireWildcardBinding);
 
+export const operatorProcedure = t.procedure.use(({ ctx, next }) => {
+  if (ctx.user.isOperator !== true) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This needs the platform operator role.",
+    });
+  }
+  return next();
+});
+
 export const browserOnlyProcedure = t.procedure.use(({ ctx, next }) => {
   if (ctx.user.keyId !== undefined) {
     throw new TRPCError({

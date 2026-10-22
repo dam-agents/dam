@@ -73,6 +73,7 @@ export interface AuthConfig {
   jwksUrl: string;
   audience?: string;
   requiredRole?: string;
+  operatorRole?: string;
 }
 
 export interface AuthDeps {
@@ -120,6 +121,8 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
           (claims.preferred_username as string) ?? payload.sub!,
         scopes: ALL_SCOPES,
         agentIds: "*",
+        isOperator:
+          !!config.operatorRole && roles.includes(config.operatorRole),
       },
       azp: typeof claims.azp === "string" ? claims.azp : "",
       roles,

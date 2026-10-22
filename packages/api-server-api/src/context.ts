@@ -54,6 +54,7 @@ export interface UserIdentity {
   scopes: readonly Scope[];
   agentIds: readonly string[] | "*";
   keyId?: string;
+  isOperator?: boolean;
 }
 
 export interface ApiContext {
