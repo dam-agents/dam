@@ -175,6 +175,8 @@ import {
 } from "../domain/thread-catch-up.js";
 import {
   createConversationQueue,
+  getOrCreateQueue,
+  steerChannelTurn,
   type ConversationQueue,
 } from "./conversation-queue.js";
 import {
@@ -5329,22 +5331,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             threadTs: conversation.threadTs,
           });
       },
-      steer: async (sessionId, batch) => {
-        const outcome = await makeAcpClient(conversation.instanceName).steer(
+      steer: (sessionId, batch) =>
+        steerChannelTurn(
+          makeAcpClient(conversation.instanceName),
           sessionId,
           steerFrame(conversation, batch),
-        );
-        if (outcome === "injected") return "injected";
-        getLogger().debug(
           {
-            agentId: conversation.instanceName,
-            channelId: conversation.channelId,
-            outcome,
+            surface: "slack",
+            fields: {
+              agentId: conversation.instanceName,
+              channelId: conversation.channelId,
+            },
           },
-          "slack.turn.steer_declined",
-        );
-        return outcome === "unsupported" ? "unsupported" : "refused";
-      },
+        ),
       onSteered: (batch) => {
         for (const msg of batch) {
           const ref: TurnRef = {
@@ -5408,12 +5407,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     msg: AddressedPending,
   ): Promise<void> {
     const key = addressedQueueKey(conversation, slackUserId);
-    let queue = addressedQueues.get(key);
-    if (!queue) {
-      queue = createAddressedQueue(key, conversation);
-      addressedQueues.set(key, queue);
-    }
-    return queue.submit(msg);
+    return getOrCreateQueue(addressedQueues, key, () =>
+      createAddressedQueue(key, conversation),
+    ).submit(msg);
   }
 
   const handleAppMention = (event: SlackMentionEvent) =>
@@ -6006,12 +6002,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     msg: PendingMessage,
   ) {
     const key = ambientQueueKey(channelId, threadTs);
-    let queue = ambientQueues.get(key);
-    if (!queue) {
-      queue = createAmbientQueue(key, channelId, threadTs);
-      ambientQueues.set(key, queue);
-    }
-    void queue.submit(msg);
+    void getOrCreateQueue(ambientQueues, key, () =>
+      createAmbientQueue(key, channelId, threadTs),
+    ).submit(msg);
   }
 
   async function noticeUntaggedReply(

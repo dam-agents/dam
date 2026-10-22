@@ -50,6 +50,8 @@ import {
 } from "./spend-hold-copy.js";
 import {
   createConversationQueue,
+  getOrCreateQueue,
+  steerChannelTurn,
   type ConversationQueue,
 } from "./conversation-queue.js";
 import {
@@ -807,16 +809,12 @@ export function createTelegramWorker(deps: {
       },
       steer: async (sessionId, batch) => {
         if (ambientTurnRunning) return "refused";
-        const outcome = await makeAcpClient(agentId).steer(
+        return steerChannelTurn(
+          makeAcpClient(agentId),
           sessionId,
           steerFrame(batch),
+          { surface: "telegram", fields: { agentId, threadId } },
         );
-        if (outcome === "injected") return "injected";
-        getLogger().debug(
-          { agentId, threadId, outcome },
-          "telegram.turn.steer_declined",
-        );
-        return outcome === "unsupported" ? "unsupported" : "refused";
       },
       onEmpty: () => {
         telegramQueues.delete(key);
@@ -838,12 +836,9 @@ export function createTelegramWorker(deps: {
     ambient: boolean,
   ): void {
     const key = `${agentId}|${thread.id}`;
-    let queue = telegramQueues.get(key);
-    if (!queue) {
-      queue = createChatQueue(key, agentId, thread.id);
-      telegramQueues.set(key, queue);
-    }
-    void queue.submit({ text, author, thread, ambient });
+    void getOrCreateQueue(telegramQueues, key, () =>
+      createChatQueue(key, agentId, thread.id),
+    ).submit({ text, author, thread, ambient });
   }
 
   function emitTurn(
