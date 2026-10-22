@@ -58,7 +58,7 @@ export interface WrapperInput {
   slug: string;
   version: number;
   downloadName: string;
-  relay?: boolean;
+  relayToken?: string;
 }
 
 const FRAME_SANDBOX =
@@ -75,7 +75,7 @@ export const VIEWER_PROMPT_NOTICES = {
   "invalid-request": "The page sent a prompt the agent cannot take.",
 } as const;
 
-function renderViewerRelay(slug: string): string {
+function renderViewerRelay(slug: string, relayToken: string): string {
   const base = `/a/${encodeURIComponent(slug)}`;
   return `<script>
 (() => {
@@ -94,7 +94,10 @@ function renderViewerRelay(slug: string): string {
     fetch(${jsStringLiteral(base)} + path, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        authorization: ${jsStringLiteral(`Bearer ${relayToken}`)},
+      },
       body: JSON.stringify(body),
     }).then((res) => res.json()).catch(() => ({ ok: false, reason: "agent-unreachable" }));
   window.addEventListener("message", (event) => {
@@ -128,7 +131,7 @@ function renderViewerRelay(slug: string): string {
 }
 
 export function renderWrapper(input: WrapperInput): string {
-  const { slug, version } = input;
+  const { slug, version, relayToken } = input;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -157,8 +160,8 @@ export function renderWrapper(input: WrapperInput): string {
   <span class="spacer"></span>
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="${input.relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
-${input.relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug)}` : ""}
+<iframe sandbox="${relayToken ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+${relayToken ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, relayToken)}` : ""}
 </body>
 </html>`;
 }

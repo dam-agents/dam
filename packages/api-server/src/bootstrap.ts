@@ -212,6 +212,7 @@ import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
   composeShareAuth,
+  composeShareRelayTokens,
   composeShareRenderTokens,
   composeShareBridge,
   composeShareViewer,
@@ -539,6 +540,7 @@ export async function bootstrap() {
   };
   const shareViewer = composeShareViewer({ db, artifacts });
   const shareRenderTokens = composeShareRenderTokens({ redis: sharedRedis });
+  const shareRelayTokens = composeShareRelayTokens({ redis: sharedRedis });
   const shareAuth = composeShareAuth({
     redis: sharedRedis,
     keycloak: {
@@ -1346,6 +1348,7 @@ export async function bootstrap() {
           auth: shareAuth,
           sessionCookie: shareCookie,
           renderTokens: shareRenderTokens,
+          relayTokens: shareRelayTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
           contentBaseUrl: config.contentBaseUrl,
