@@ -356,13 +356,14 @@ const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 // runner is not running.
 const ReasonMachineRunnerNodeLost = "MachineRunnerNodeLost"
 
-// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent that
-// was running when the kernel OOM-killed the owner's VM runner, for the ten
-// minutes after the kill, from the runner pod's last termination, whatever
-// reason the agent reads until then. Every machine of the owner is a process
-// of that pod, so they all restart at once; an agent woken after the kill
-// carries nothing, since the kill did not take it down. Not a Machine*
-// reason: the agent is starting again, not failed.
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent whose
+// machine was holding memory on the owner's VM runner when the kernel
+// OOM-killed it, for the ten minutes after the kill, from the runner pod's
+// last termination. Every machine of the owner is a process of that pod, so
+// they all restart at once; an agent woken after the kill carries nothing,
+// since the kill did not take it down, and a reason the runner gives for one
+// machine alone outranks the kill. Not a Machine* reason: the agent is
+// starting again, not failed.
 const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
