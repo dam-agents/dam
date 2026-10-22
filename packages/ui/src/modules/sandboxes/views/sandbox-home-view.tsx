@@ -13,12 +13,14 @@ import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-d
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
+import { AgentUpdateRow } from "../components/agent-update-row.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
@@ -60,6 +62,7 @@ export function SandboxHomeView() {
   usePublicAgentFallback(agentId, agentInaccessible);
 
   const display = useResolvedAgentDisplay(agent);
+  const newLayout = useNewLayout();
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
@@ -83,6 +86,7 @@ export function SandboxHomeView() {
         description={sectionEntry?.description}
         pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
         actions={actions}
+        showUpdate={!(newLayout && section === "setup")}
       />
     );
 
@@ -114,6 +118,7 @@ export function SandboxHomeView() {
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>
+              {newLayout && <AgentUpdateRow agent={agent} />}
               <AgentUsageActions agent={agent} />
               <SandboxSetupSection agent={agent} />
               <AgentManagementActions agent={agent} display={display} />
