@@ -77,10 +77,16 @@ async function writeTestingMode(path: string, on: boolean): Promise<void> {
   await rename(next, path);
 }
 
+export function missingDisplayTools(
+  exists: (path: string) => boolean = existsSync,
+): string[] {
+  return DISPLAY_TOOLS.filter((path) => !exists(path));
+}
+
 export function displayAvailable(
   exists: (path: string) => boolean = existsSync,
 ): boolean {
-  return DISPLAY_TOOLS.every((path) => exists(path));
+  return missingDisplayTools(exists).length === 0;
 }
 
 export function browserOffered(env = process.env): boolean {
