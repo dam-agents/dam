@@ -51,6 +51,7 @@ import {
 import type { EventOutcomeHandler } from "./services/hello-handler.js";
 import {
   createEventLifecycleNotifier,
+  ownerForEvent,
   type EventLifecycleListener,
 } from "./services/event-lifecycle.js";
 import { createEventOutcomeRegistry } from "./services/event-outcome-registry.js";
@@ -191,12 +192,12 @@ export function composeRuntimeDelivery(
   const eventOutcomes = createEventOutcomeRegistry({ log });
   for (const kind of workspaceMutationEventKinds)
     eventOutcomes.add(kind, async (event) => {
-      const ownerSub = await opts.resolveOwner(event.agentId).catch((err) => {
-        log(
-          `${event.agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
-        );
-        return null;
-      });
+      const ownerSub = await ownerForEvent(
+        event.agentId,
+        opts.resolveOwner,
+        log,
+        `${event.agentId}: workspace-mutation hint failed`,
+      );
       emit({
         type: EventType.AgentUpdated,
         agentId: event.agentId,

@@ -5,7 +5,10 @@ import type {
 import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.js";
 import type { StateBuilder } from "./state-builder.js";
 import { deliveryCapabilities } from "../domain/capability-filter.js";
-import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
+import {
+  mergeReportedSnapshot,
+  type HarnessConfigSnapshotWriter,
+} from "./snapshot-writer.js";
 import type { DriverFailure, HelloInput } from "api-server-api";
 import {
   isWorkspaceMutationEventKind,
@@ -13,7 +16,10 @@ import {
   type HarnessConfigCurrent,
 } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
-import type { EventLifecycleNotifier } from "./event-lifecycle.js";
+import {
+  ownerForEvent,
+  type EventLifecycleNotifier,
+} from "./event-lifecycle.js";
 
 export interface IsAgentRunning {
   isRunning(agentId: string): Promise<boolean>;
@@ -56,28 +62,26 @@ function attemptedEventIds(
 
 export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
   async function emitWorkspaceMutationSettled(agentId: string): Promise<void> {
-    try {
-      const ownerSub = await deps.resolveOwner(agentId);
-      if (ownerSub) {
-        emit({ type: EventType.WorkspaceMutationSettled, agentId, ownerSub });
-      }
-    } catch (err) {
-      deps.log(
-        `[runtime-worker] ${agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
-      );
+    const ownerSub = await ownerForEvent(
+      agentId,
+      deps.resolveOwner,
+      deps.log,
+      `[runtime-worker] ${agentId}: workspace-mutation hint failed`,
+    );
+    if (ownerSub) {
+      emit({ type: EventType.WorkspaceMutationSettled, agentId, ownerSub });
     }
   }
 
   async function emitContributionGapChanged(agentId: string): Promise<void> {
-    try {
-      const ownerSub = await deps.resolveOwner(agentId);
-      if (ownerSub) {
-        emit({ type: EventType.ContributionGapChanged, agentId, ownerSub });
-      }
-    } catch (err) {
-      deps.log(
-        `[runtime-worker] ${agentId}: capability-gap hint failed: ${(err as Error).message}`,
-      );
+    const ownerSub = await ownerForEvent(
+      agentId,
+      deps.resolveOwner,
+      deps.log,
+      `[runtime-worker] ${agentId}: capability-gap hint failed`,
+    );
+    if (ownerSub) {
+      emit({ type: EventType.ContributionGapChanged, agentId, ownerSub });
     }
   }
 
@@ -220,25 +224,16 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       await emitWorkspaceMutationSettled(agentId);
     }
 
-    if (reported || outcome.harnessConfigCurrentByHarness) {
-      try {
-        if (reported)
-          await deps.snapshotWriter.merge(agentId, reported, {
-            confirmed: true,
-          });
-        for (const [harness, current] of Object.entries(
-          outcome.harnessConfigCurrentByHarness ?? {},
-        ))
-          await deps.snapshotWriter.merge(agentId, current, {
-            confirmed: true,
-            harness,
-          });
-      } catch (err) {
-        deps.log(
-          `[runtime-worker] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,
-        );
-      }
-    }
+    await mergeReportedSnapshot(
+      deps.snapshotWriter,
+      agentId,
+      {
+        current: reported,
+        byHarness: outcome.harnessConfigCurrentByHarness,
+      },
+      deps.log,
+      "[runtime-worker]",
+    );
 
     for (const f of newlyFailed) {
       emit({

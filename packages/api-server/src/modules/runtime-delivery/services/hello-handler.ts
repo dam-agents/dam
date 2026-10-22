@@ -10,7 +10,10 @@ import type {
   PendingEventRow,
 } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
-import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
+import {
+  mergeReportedSnapshot,
+  type HarnessConfigSnapshotWriter,
+} from "./snapshot-writer.js";
 import type { StateBuilder } from "./state-builder.js";
 import { emit, EventType } from "../../../events.js";
 import {
@@ -91,27 +94,16 @@ export function createHelloHandler(deps: {
         return deps.outboxRepo.bumpVersion(agentId, tx);
       });
 
-      if (input.harnessConfigCurrent || input.harnessConfigCurrentByHarness) {
-        try {
-          if (input.harnessConfigCurrent)
-            await deps.snapshotWriter.merge(
-              agentId,
-              input.harnessConfigCurrent,
-              { confirmed: true },
-            );
-          for (const [harness, current] of Object.entries(
-            input.harnessConfigCurrentByHarness ?? {},
-          ))
-            await deps.snapshotWriter.merge(agentId, current, {
-              confirmed: true,
-              harness,
-            });
-        } catch (err) {
-          deps.log(
-            `[runtime-hello] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,
-          );
-        }
-      }
+      await mergeReportedSnapshot(
+        deps.snapshotWriter,
+        agentId,
+        {
+          current: input.harnessConfigCurrent,
+          byHarness: input.harnessConfigCurrentByHarness,
+        },
+        deps.log,
+        "[runtime-hello]",
+      );
 
       const ownerSub = await deps.resolveOwner(agentId);
       if (ownerSub) {
