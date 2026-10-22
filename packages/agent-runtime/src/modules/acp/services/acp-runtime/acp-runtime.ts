@@ -35,14 +35,10 @@ import {
 } from "api-server-api";
 
 import {
-  artifactTouchIn,
+  toolCallOutcomeIn,
   type ArtifactTouch,
-} from "../../infrastructure/artifact-touch.js";
-import {
-  subAgentSpawnIn,
   type SubAgentSpawn,
-} from "../../infrastructure/sub-agent-spawn.js";
-import { resultAcceptedIn } from "../../infrastructure/result-accepted.js";
+} from "../../infrastructure/tool-call-outcome.js";
 import {
   createToolActivityReader,
   type ToolActivity,
@@ -2126,13 +2122,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ) {
         return;
       }
-      const accepted = resultAcceptedIn(frame);
-      if (accepted) deps.onResultAccepted?.(accepted);
+      const outcome = toolCallOutcomeIn(frame);
+      if (outcome?.accepted) deps.onResultAccepted?.(outcome.sessionId);
       if (!bootstrap.has(sessionId)) {
-        const touch = artifactTouchIn(frame);
-        if (touch) deps.onArtifactTouch(touch);
-        const spawn = subAgentSpawnIn(frame);
-        if (spawn) deps.onSubAgentSpawn?.(spawn);
+        if (outcome?.artifactTouch) deps.onArtifactTouch(outcome.artifactTouch);
+        if (outcome?.subAgentSpawn)
+          deps.onSubAgentSpawn?.(outcome.subAgentSpawn);
         const activity = deps.onToolActivity && toolActivityIn(frame);
         if (activity) deps.onToolActivity?.(activity);
       }

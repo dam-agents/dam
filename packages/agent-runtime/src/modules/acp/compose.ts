@@ -1,7 +1,7 @@
 import { parseQualifiedModel } from "api-server-api";
 import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
+import type { ArtifactTouch } from "./infrastructure/tool-call-outcome.js";
 import type { ToolActivity } from "../changes/index.js";
 import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
