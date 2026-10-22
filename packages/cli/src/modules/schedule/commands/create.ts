@@ -6,13 +6,10 @@ import {
 } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   buildPresetFromFlags,
@@ -181,14 +178,7 @@ export function buildCreateCommand(deps: {
           ...(at ? { at } : {}),
           ...choices,
         });
-        if (!created.ok) {
-          if (created.error.kind === "invalid-input") {
-            process.stderr.write(`error: ${created.error.message}\n`);
-            process.exit(EXIT_INVALID_INPUT);
-          }
-          printServiceError(created.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(created, host, describeScheduleError);
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(created.value)}\n`);
         } else {
@@ -236,14 +226,7 @@ export function buildCreateCommand(deps: {
         ...(opts.precheck ? { precheck: opts.precheck } : {}),
         ...choices,
       });
-      if (!result.ok) {
-        if (result.error.kind === "invalid-input") {
-          process.stderr.write(`error: ${result.error.message}\n`);
-          process.exit(EXIT_INVALID_INPUT);
-        }
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host, describeScheduleError);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
