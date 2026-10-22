@@ -90,11 +90,6 @@ function fail(e: RunError): void {
   process.exitCode = exitCodeFor(e);
 }
 
-/**
- * `dam run --json`: a finished run is `done` with its answer; one that is
- * still running on the agent (`--async`, or past `--timeout`) is `pending`,
- * the statuses `dam run get --json` reads it back with.
- */
 export function runJson(outcome: RunOutcome): Record<string, unknown> {
   if (outcome.kind === "completed")
     return {

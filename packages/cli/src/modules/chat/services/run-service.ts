@@ -78,7 +78,6 @@ export interface RunService {
     sessionId?: string;
     choices?: SessionChoices;
     async?: boolean;
-    /** Hold the answer back for the outcome's `text` instead of streaming it. */
     quiet?: boolean;
     timeoutSeconds: number;
   }): Promise<Result<RunOutcome, RunError>>;
