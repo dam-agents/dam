@@ -87,6 +87,7 @@ import {
   type KeycloakOAuthConfig,
 } from "./identity-oauth.js";
 import { formatError } from "../../../core/format-error.js";
+import { channelDeny } from "./channel-authz.js";
 import type { AgentIconUrl } from "./agent-avatar-icons.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -2296,13 +2297,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const invoker = await identityLinks.resolve("slack", userId);
     const owner = invoker ? await getInstanceOwner(agentId) : null;
     if (invoker && invoker === owner) return { ok: true, invoker };
-    securityLog("warn", "channel.authz_deny", {
-      category: "channel",
+    channelDeny("slack", {
       actor: invoker,
-      actorKind: invoker ? "user" : "external",
-      surface: "slack",
       agentId,
-      decision: "deny",
       reason: invoker ? "not-owner" : "unlinked",
       detail: {
         slackUserId: userId,
@@ -3598,13 +3595,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       (allowed[0] ?? running[0]!).instanceName,
     );
     if (allowed.length === 0) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
+      channelDeny("slack", {
         actor: invoker,
-        actorKind: invoker ? "user" : "external",
-        surface: "slack",
         agentId: running[0]!.instanceName,
-        decision: "deny",
         reason: "not-starter-or-owner",
         detail: { slackUserId: user, channelId: channel, trigger: "stop" },
       });
@@ -3773,49 +3766,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           return;
         }
         const binding = picked.entry;
+        let agentOwner: string | null = null;
 
-        const invoker = await identityLinks.resolve("slack", command.userId);
-        if (!invoker) {
-          securityLog("warn", "channel.authz_deny", {
-            category: "channel",
-            actor: null,
-            actorKind: "external",
-            surface: "slack",
-            agentId: binding.instanceName,
-            decision: "deny",
-            reason: "unlinked",
-            detail: {
-              slackUserId: command.userId,
-              channelId: command.channelId,
-            },
-          });
-          await ack({
-            text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} unbind\` again.`,
-          });
-          return;
-        }
-
-        const agentOwner = await getInstanceOwner(binding.instanceName);
-        const allowed = invoker === binding.owner || invoker === agentOwner;
-        if (!allowed) {
-          securityLog("warn", "channel.authz_deny", {
-            category: "channel",
-            actor: invoker,
-            actorKind: "user",
-            surface: "slack",
-            agentId: binding.instanceName,
-            decision: "deny",
-            reason: "not-binder-or-owner",
-            detail: {
-              slackUserId: command.userId,
-              channelId: command.channelId,
-            },
-          });
-          await ack({
-            text: "Only the person who connected this channel, or the agent's owner, can disconnect it.",
-          });
-          return;
-        }
+        const invoker = await authorizeActor(command, ack, {
+          agentId: binding.instanceName,
+          subcommand: "unbind",
+          allowed: async (invoker) => {
+            agentOwner = await getInstanceOwner(binding.instanceName);
+            return invoker === binding.owner || invoker === agentOwner;
+          },
+          denyReason: "not-binder-or-owner",
+          denyCopy:
+            "Only the person who connected this channel, or the agent's owner, can disconnect it.",
+        });
+        if (!invoker) return;
 
         await unbindSlackChannel(binding.instanceName, command.channelId);
         securityLog("info", "channel.chat_unbound", {
@@ -3942,13 +3906,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
     if (!takes) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
+      channelDeny("slack", {
         actor: null,
-        actorKind: "external",
-        surface: "slack",
         agentId: target.instanceName,
-        decision: "deny",
         reason: "whisper-off",
         detail: { slackUserId: command.userId, channelId: command.channelId },
       });
@@ -4117,13 +4077,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         event.teamId,
       );
     const deny = (reason: string) =>
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
+      channelDeny("slack", {
         actor: null,
-        actorKind: "external",
-        surface: "slack",
         agentId: session.agentId,
-        decision: "deny",
         reason,
         detail: {
           slackUserId,
@@ -4295,13 +4251,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     const agentOwner = await getInstanceOwner(target.instanceName);
     if (invoker !== target.owner && invoker !== agentOwner) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
+      channelDeny("slack", {
         actor: invoker,
-        actorKind: "user",
-        surface: "slack",
         agentId: target.instanceName,
-        decision: "deny",
         reason: "not-agent-owner",
         detail: {
           slackUserId: command.userId,
@@ -4348,56 +4300,62 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
-  async function authorizeBindingSwitch(
+  const isBinderOrOwner = async (
+    binding: RosterEntry,
+    invoker: string,
+  ): Promise<boolean> => {
+    const owner = await getInstanceOwner(binding.instanceName);
+    return invoker === binding.owner || invoker === owner;
+  };
+
+  function anyRosterOwner(roster: RosterEntry[]) {
+    return async (invoker: string): Promise<boolean> => {
+      for (const entry of roster) {
+        if (entry.owner === invoker) return true;
+        if ((await getInstanceOwner(entry.instanceName)) === invoker)
+          return true;
+      }
+      return false;
+    };
+  }
+
+  async function authorizeActor(
     command: SlackSlashCommand,
     ack: SlackAck,
-    binding: RosterEntry,
-    subcommand: string,
-    setting: string,
+    opts: {
+      agentId: string | null;
+      subcommand: string;
+      allowed: (invoker: string) => Promise<boolean>;
+      denyReason: string;
+      denyCopy: string;
+    },
   ): Promise<string | null> {
     const invoker = await identityLinks.resolve("slack", command.userId);
+    const detail = {
+      slackUserId: command.userId,
+      channelId: command.channelId,
+    };
     if (!invoker) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
+      channelDeny("slack", {
         actor: null,
-        actorKind: "external",
-        surface: "slack",
-        agentId: binding.instanceName,
-        decision: "deny",
+        agentId: opts.agentId,
         reason: "unlinked",
-        detail: {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-        },
+        detail,
       });
       await ack({
-        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${opts.subcommand}\` again.`,
       });
       return null;
     }
-
-    const agentOwner = await getInstanceOwner(binding.instanceName);
-    const allowed = invoker === binding.owner || invoker === agentOwner;
-    if (!allowed) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: invoker,
-        actorKind: "user",
-        surface: "slack",
-        agentId: binding.instanceName,
-        decision: "deny",
-        reason: "not-binder-or-owner",
-        detail: {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-        },
-      });
-      await ack({
-        text: `Only the person who connected this channel, or the agent's owner, can change ${setting}.`,
-      });
-      return null;
-    }
-    return invoker;
+    if (await opts.allowed(invoker)) return invoker;
+    channelDeny("slack", {
+      actor: invoker,
+      agentId: opts.agentId,
+      reason: opts.denyReason,
+      detail,
+    });
+    await ack({ text: opts.denyCopy });
+    return null;
   }
 
   function parseSwitchArgs(rest: string): {
@@ -4408,54 +4366,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const tail = words.at(-1)?.toLowerCase();
     const action = tail === "on" || tail === "off" ? tail : null;
     return { action, nameArg: (action ? words.slice(0, -1) : words).join(" ") };
-  }
-
-  async function authorizeChannelSetting(
-    command: SlackSlashCommand,
-    ack: SlackAck,
-    roster: RosterEntry[],
-    subcommand: string,
-  ): Promise<string | null> {
-    const invoker = await identityLinks.resolve("slack", command.userId);
-    const detail = {
-      slackUserId: command.userId,
-      channelId: command.channelId,
-    };
-    if (!invoker) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: null,
-        actorKind: "external",
-        surface: "slack",
-        agentId: roster[0]?.instanceName ?? null,
-        decision: "deny",
-        reason: "unlinked",
-        detail,
-      });
-      await ack({
-        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
-      });
-      return null;
-    }
-    for (const entry of roster) {
-      if (entry.owner === invoker) return invoker;
-      if ((await getInstanceOwner(entry.instanceName)) === invoker)
-        return invoker;
-    }
-    securityLog("warn", "channel.authz_deny", {
-      category: "channel",
-      actor: invoker,
-      actorKind: "user",
-      surface: "slack",
-      agentId: roster[0]?.instanceName ?? null,
-      decision: "deny",
-      reason: "not-binder-or-owner-here",
-      detail,
-    });
-    await ack({
-      text: "Only someone who connected an agent here, or owns one connected here, can change which apps the agents here ignore.",
-    });
-    return null;
   }
 
   function appLabel(app: SlackIgnoredApp): string {
@@ -4523,12 +4433,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await ack({ text: resolved.text });
       return;
     }
-    const invoker = await authorizeChannelSetting(
-      command,
-      ack,
-      roster,
-      "ignore <message link>",
-    );
+    const invoker = await authorizeActor(command, ack, {
+      agentId: roster[0]?.instanceName ?? null,
+      subcommand: "ignore <message link>",
+      allowed: anyRosterOwner(roster),
+      denyReason: "not-binder-or-owner-here",
+      denyCopy:
+        "Only someone who connected an agent here, or owns one connected here, can change which apps the agents here ignore.",
+    });
     if (!invoker) return;
     const added = await ignoredApps.ignore(
       command.channelId,
@@ -4593,12 +4505,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
       app = matches[0]!;
     }
-    const invoker = await authorizeChannelSetting(
-      command,
-      ack,
-      roster,
-      `unignore ${wanted}`,
-    );
+    const invoker = await authorizeActor(command, ack, {
+      agentId: roster[0]?.instanceName ?? null,
+      subcommand: `unignore ${wanted}`,
+      allowed: anyRosterOwner(roster),
+      denyReason: "not-binder-or-owner-here",
+      denyCopy:
+        "Only someone who connected an agent here, or owns one connected here, can change which apps the agents here ignore.",
+    });
     if (!invoker) return;
     const removed = await ignoredApps.unignore(command.channelId, app.botId);
     if (removed)
@@ -4678,12 +4592,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const usage = `/${brandShort} whisper <agent> ${action}`;
     const invoker = await identityLinks.resolve("slack", command.userId);
     if (!invoker) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
+      channelDeny("slack", {
         actor: null,
-        actorKind: "external",
-        surface: "slack",
-        decision: "deny",
         reason: "unlinked",
         detail: { slackUserId: command.userId, channelId: command.channelId },
       });
@@ -4817,13 +4727,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const enable = action === "on";
 
-    const invoker = await authorizeBindingSwitch(
-      command,
-      ack,
-      binding,
+    const invoker = await authorizeActor(command, ack, {
+      agentId: binding.instanceName,
       subcommand,
-      "ambient mode",
-    );
+      allowed: (invoker) => isBinderOrOwner(binding, invoker),
+      denyReason: "not-binder-or-owner",
+      denyCopy:
+        "Only the person who connected this channel, or the agent's owner, can change ambient mode.",
+    });
     if (!invoker) return;
 
     if (enable === isAmbient) {

@@ -26,6 +26,7 @@ import {
 } from "../../../core/acp-client.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
+import { channelDeny } from "./channel-authz.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
@@ -289,12 +290,8 @@ export function createTelegramMessageHandler(deps: {
       telegramUserId,
     );
     if (isAdmin) return false;
-    securityLog("warn", "channel.authz_deny", {
-      category: "channel",
+    channelDeny("telegram", {
       actor: null,
-      actorKind: "external",
-      surface: "telegram",
-      decision: "deny",
       reason: "not-group-admin",
       detail: { telegramUserId, threadId: thread.id, command: action },
     });
