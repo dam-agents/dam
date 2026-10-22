@@ -184,8 +184,28 @@ describe("dam agent get / update / models (integration)", () => {
                 listedAt: new Date(0).toISOString(),
                 native: false,
                 models: [
+                  ...(harness === "claude-code"
+                    ? [
+                        {
+                          name: "claude/ibm/aws/claude-opus-4-8",
+                          upstreamId: "aws/claude-opus-4-8",
+                          contextWindow: 1000000,
+                          maxOutputTokens: null,
+                          reasoning: true,
+                          vision: true,
+                          prices: null,
+                          source: {
+                            limits: "table" as const,
+                            prices: "none" as const,
+                          },
+                        },
+                      ]
+                    : []),
                   {
-                    name: "ibm/gpt-5.5",
+                    name:
+                      harness === "claude-code"
+                        ? "claude/ibm/gpt-5.5"
+                        : "ibm/gpt-5.5",
                     upstreamId: "gpt-5.5",
                     contextWindow: 400000,
                     maxOutputTokens: null,
@@ -512,5 +532,52 @@ describe("dam agent get / update / models (integration)", () => {
     expect(json.exitCode, json.stderr).toBe(0);
     expect(catalogHarness).toBe("codex");
     expect(JSON.parse(json.stdout)).toMatchObject({ harness: "codex" });
+  });
+
+  /**
+   * TEST_SCENARIO: Claude Code's catalog spells every model
+   * `claude/<alias>/<id>` for its gateway discovery, while a saved default
+   * and `--model` use `<alias>/<id>`. An agent copies a name from
+   * `dam agent models` into `--model` and compares it with the default, so
+   * the list shows the default's spelling, in the table and under `--json`.
+   */
+  it("agent models names every saved default the way the default does", async () => {
+    const r = await dam(
+      "agent",
+      "models",
+      AGENT_ID,
+      "--harness",
+      "claude-code",
+    );
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).not.toContain("claude/");
+    const json = await dam(
+      "agent",
+      "models",
+      AGENT_ID,
+      "--harness",
+      "claude-code",
+      "--json",
+    );
+    expect(json.exitCode, json.stderr).toBe(0);
+    const catalog = JSON.parse(json.stdout) as HarnessCatalogView;
+    const names = catalog.providers.flatMap((p) => p.models.map((m) => m.name));
+    expect(names).toEqual(["ibm/aws/claude-opus-4-8", "ibm/gpt-5.5"]);
+
+    for (const pair of Object.values(defaults)) {
+      if (pair === null || pair.model === null) continue;
+      const listed = await dam(
+        "agent",
+        "models",
+        AGENT_ID,
+        "--harness",
+        pair.harness,
+        "--json",
+      );
+      const offered = (
+        JSON.parse(listed.stdout) as HarnessCatalogView
+      ).providers.flatMap((p) => p.models.map((m) => m.name));
+      expect(offered).toContain(pair.model);
+    }
   });
 });
