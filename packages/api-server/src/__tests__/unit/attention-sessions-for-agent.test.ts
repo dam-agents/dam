@@ -50,7 +50,6 @@ function service(ownerSub: string, owned: readonly string[]) {
       ownsApproval: async () => false,
       ownsAgent: async (agentId) => owned.includes(agentId),
       defaultModelNotices: async () => [],
-      outageAlerts: async () => [],
       log: () => {},
     }),
   };

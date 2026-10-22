@@ -5,7 +5,6 @@ import type {
   ConnectionRequestSecretInput,
   ConnectionTemplateView,
   ConnectionView,
-  CredentialCheck,
   GitHubAppInstallationProbe,
   GitHubUserTokenProbe,
   SecretRequestState,
@@ -38,7 +37,6 @@ export interface ConnectionService {
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
   probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
-  checkCredential(id: string): Promise<ConnResult<CredentialCheck | null>>;
   agentConnectionIds(agentId: string): Promise<ConnResult<readonly string[]>>;
   grant(
     agentId: string,
@@ -113,11 +111,6 @@ export function createConnectionService(deps: {
     },
     async getConnection(id) {
       return trpcCall(() => deps.trpc.connections.get.query({ id }));
-    },
-    async checkCredential(id) {
-      return trpcCall(() =>
-        deps.trpc.connections.checkCredential.mutate({ id }),
-      );
     },
     async agentConnectionIds(agentId) {
       return trpcCall(() => readIds(agentId));

@@ -63,10 +63,6 @@ export const connectionsRouter = t.router({
     ctx.connections.recheckProviderKeys(),
   ),
 
-  checkCredential: manageCredentialsProcedure
-    .input(connectionIdInputSchema)
-    .mutation(({ ctx, input }) => ctx.connections.checkCredential(input.id)),
-
   create: manageCredentialsProcedure
     .input(connectionCreateInputSchema)
     .mutation(({ ctx, input }) =>

@@ -1,5 +1,4 @@
 import type {
-  CredentialCheck,
   ConnectionAuthKind,
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
@@ -39,7 +38,7 @@ export type PendingSecretRequest =
 
 export type SecretRequestOutcome = { ownerId: string } & (
   | { status: "saving" }
-  | { status: "saved"; connectionId: string; check?: CredentialCheck }
+  | { status: "saved"; connectionId: string }
   | { status: "cancelled" }
 );
 

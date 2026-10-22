@@ -1,7 +1,6 @@
 import type {
   ConnectionAuthKind,
   ConnectionRequestSecretInput,
-  CredentialCheck,
 } from "api-server-api";
 import type { BrowserOpener } from "../../auth/index.js";
 import { EXIT_RUNTIME_FAILURE } from "../../shared/exit-codes.js";
@@ -20,8 +19,7 @@ export const PAGE_SECRET_FIELDS: Partial<
 };
 
 export type SecretPageResult =
-  | { kind: "saved"; connectionId: string; check?: CredentialCheck }
-  | { kind: "unsupported" };
+  { kind: "saved"; connectionId: string } | { kind: "unsupported" };
 
 export async function enterSecretOnPage(args: {
   svc: ConnectionService;
@@ -64,11 +62,7 @@ export async function enterSecretOnPage(args: {
     switch (state.status) {
       case "saved":
         if (state.connectionId) {
-          return {
-            kind: "saved",
-            connectionId: state.connectionId,
-            ...(state.check ? { check: state.check } : {}),
-          };
+          return { kind: "saved", connectionId: state.connectionId };
         }
         break;
       case "cancelled":

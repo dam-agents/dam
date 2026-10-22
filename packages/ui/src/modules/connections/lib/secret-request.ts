@@ -1,4 +1,4 @@
-import type { CredentialCheck, SecretRequestDestination } from "api-server-api";
+import type { SecretRequestDestination } from "api-server-api";
 
 export function readSecretRequestId(search: string): string | null {
   const id = new URLSearchParams(search).get("request");
@@ -38,35 +38,4 @@ export function secretRequestErrorCopy(code: string | undefined): {
         hint: "Run the command again to get a new link.",
       };
   }
-}
-
-export function credentialCheckDetails(check: CredentialCheck): string[] {
-  const details: string[] = [];
-  if (check.account) details.push(`Account: ${check.account}`);
-  if (check.expiresAt) {
-    details.push(
-      `Expires: ${new Date(check.expiresAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`,
-    );
-  }
-  if (check.scopes) {
-    details.push(
-      `Scopes: ${check.scopes.length > 0 ? check.scopes.join(", ") : "none"}`,
-    );
-  }
-  return details;
-}
-
-export function heldCheckCopy(check: CredentialCheck): {
-  title: string;
-  hint: string;
-} {
-  return check.status === "failed"
-    ? {
-        title: "This secret did not pass the check",
-        hint: "Agents that use it will be refused. Fix the secret above, or save it anyway.",
-      }
-    : {
-        title: "The secret could not be checked",
-        hint: "The service did not say whether the secret works. Try again, or save it anyway.",
-      };
 }

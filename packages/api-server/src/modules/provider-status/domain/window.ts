@@ -33,14 +33,6 @@ export function hasSucceededCalls(buckets: readonly WindowBucket[]): boolean {
   return calls > failures;
 }
 
-export function answeringTemplates(
-  calls: ReadonlyMap<string, readonly WindowBucket[]>,
-): string[] {
-  return [...calls]
-    .filter(([, buckets]) => hasSucceededCalls(buckets))
-    .map(([templateId]) => templateId);
-}
-
 export function isDegraded(buckets: readonly WindowBucket[]): boolean {
   let calls = 0;
   let failures = 0;

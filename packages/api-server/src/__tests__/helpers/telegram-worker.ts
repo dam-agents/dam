@@ -106,7 +106,6 @@ export function telegramWorkerHarness(
       }),
       bind: async () => "bound" as const,
       listByAgent: async () => [],
-      listAuthorizedBy: async () => [],
       unbind: async () => {},
       setAmbient: async () => {},
     },

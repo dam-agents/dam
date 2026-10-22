@@ -68,6 +68,23 @@ data:
             proxy_send_timeout 86400s;
         }
 
+        # What an AI agent given only this URL reads, without running the app's
+        # JavaScript: /llms.txt and the Agent Skills discovery index, which
+        # the api-server builds from the dam skill it ships with.
+        location ~ ^/(llms\.txt|\.well-known/(agent-skills|skills)/.*)$ {
+            proxy_pass http://{{ $apiserverName }}:{{ .Values.apiServer.port }};
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # A file nobody serves answers 404, not the app's shell, so an agent
+        # looking for robots.txt or another well-known file sees it is absent.
+        location ~ ^/(\.well-known/.*|[^/]+\.txt)$ {
+            return 404;
+        }
+
         # The app ships as one 654KB entry chunk plus a 1.9MB lazily-loaded
         # chunk. The public agent page is the one surface where a stranger on a
         # phone pays that cost, arriving from a Slack link.
@@ -92,6 +109,8 @@ data:
             # those render arbitrary HTML, so any fetch restriction here breaks them.
             add_header Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
             add_header Cache-Control $static_cache_control always;
+            # The shell names the deployment before its JavaScript runs.
+            sub_filter '<title></title>' '<title>{{ include "platform.ui.shellTitle" . }}</title>';
             try_files $uri $uri/ /index.html;
         }
     }

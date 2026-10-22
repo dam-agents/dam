@@ -18,7 +18,6 @@ export {
   GH_HOST_ENV,
   GH_TOKEN_ENV,
   githubHostOf,
-  isGitHubEnterpriseServer,
 } from "./github-host.js";
 export const GH_HOSTS_FILE_PATH = "$HOME/.config/gh/hosts.yml";
 export const GITCONFIG_FILE_PATH = "$HOME/.gitconfig";

@@ -1,6 +1,5 @@
 import type { ProviderOutageReason, ProviderStatusView } from "api-server-api";
 import {
-  clearedTemplates,
   nextStreaks,
   signalsOf,
   STATUS_PAGES,
@@ -8,8 +7,8 @@ import {
   type SourceStreaks,
 } from "./public-signals.js";
 import {
-  answeringTemplates,
   failedAgentsOf,
+  hasSucceededCalls,
   isDegraded,
   type WindowBucket,
 } from "./window.js";
@@ -18,7 +17,6 @@ export interface DegradedTemplate {
   readonly templateId: string;
   readonly reason: ProviderOutageReason;
   readonly since: string;
-  readonly failedPayers: readonly string[];
 }
 
 export interface StatusSnapshot {
@@ -52,28 +50,24 @@ export function nextSnapshot(
 ): StatusSnapshot {
   const at = now.toISOString();
   const streaks = nextStreaks(previous?.streaks ?? {}, signals.readings, at);
-  const answering = new Set(answeringTemplates(signals.calls));
+  const answering = (templateId: string) => {
+    const buckets = signals.calls.get(templateId);
+    return buckets !== undefined && hasSucceededCalls(buckets);
+  };
   const publicSignals = signals.readings
     .flatMap((reading) => signalsOf(reading, streaks[reading.source], at))
     .filter(
       (signal) =>
-        signal.reason !== "unreachable" || !answering.has(signal.templateId),
+        signal.reason !== "unreachable" || !answering(signal.templateId),
     );
   const firstSince = new Map<string, string>();
   for (const signal of publicSignals)
     if (!firstSince.has(signal.templateId))
       firstSince.set(signal.templateId, signal.since);
-  const previousOf = (templateId: string) =>
-    previous?.degraded.find((d) => d.templateId === templateId);
   const sinceOf = (templateId: string) =>
-    previousOf(templateId)?.since ?? firstSince.get(templateId) ?? at;
-  const failedPayersOf = (templateId: string) =>
-    [
-      ...new Set([
-        ...(previousOf(templateId)?.failedPayers ?? []),
-        ...failedAgentsOf(signals.calls.get(templateId) ?? []),
-      ]),
-    ].sort();
+    previous?.degraded.find((d) => d.templateId === templateId)?.since ??
+    firstSince.get(templateId) ??
+    at;
   const failing = new Set(
     [...signals.calls]
       .filter(([, buckets]) => isDegraded(buckets))
@@ -97,7 +91,6 @@ export function nextSnapshot(
         templateId,
         reason,
         since: sinceOf(templateId),
-        failedPayers: failedPayersOf(templateId),
       })),
     damSide: damSide ? { since: previous?.damSide?.since ?? at } : null,
     streaks,
@@ -113,50 +106,9 @@ export function statusView(
     outages: snapshot.degraded
       .filter((d) => !(snapshot.damSide && d.reason === "failing-calls"))
       .map((d) => ({
-        templateId: d.templateId,
-        reason: d.reason,
-        since: d.since,
+        ...d,
         statusPageUrl: STATUS_PAGES[d.templateId] ?? null,
       })),
     checkedAt: snapshot.checkedAt,
-  };
-}
-
-export interface EvaluatedOutage {
-  readonly templateId: string;
-  readonly reason: ProviderOutageReason;
-  readonly since: Date;
-  readonly statusPageUrl: string | null;
-  readonly failedPayers: readonly string[];
-}
-
-export interface Evaluation {
-  readonly outages: readonly EvaluatedOutage[];
-  readonly damSide: { readonly since: Date } | null;
-  readonly answering: readonly string[];
-  readonly cleared: readonly string[];
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the state that one evaluation hands to the
- * outage alerts. Unlike the status query, it lists every degraded template,
- * also while the fault is on the platform's side, with its failed payers.
- * `answering` and `cleared` are the evidence that a template works again.
- */
-export function evaluationOf(
-  snapshot: StatusSnapshot,
-  signals: StatusSignals,
-): Evaluation {
-  return {
-    outages: snapshot.degraded.map((d) => ({
-      templateId: d.templateId,
-      reason: d.reason,
-      since: new Date(d.since),
-      statusPageUrl: STATUS_PAGES[d.templateId] ?? null,
-      failedPayers: d.failedPayers,
-    })),
-    damSide: snapshot.damSide && { since: new Date(snapshot.damSide.since) },
-    answering: answeringTemplates(signals.calls),
-    cleared: clearedTemplates(signals.readings, snapshot.checkedAt),
   };
 }

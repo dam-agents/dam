@@ -50,6 +50,16 @@ To update, install `@dam-agents/cli@latest` the same way, then match this skill 
 
 ### Match this skill to the CLI
 
+The user's DAM deployment serves the skill that matches its server.
+When you know the server's address, install the skill from it, and read it again:
+
+```sh
+npx skills add https://dam.example.com -g
+```
+
+Then install the CLI version that `dam version --json` gives as `recommendedClientVersion`.
+If it finds no skill there, the server is older than that; compare versions instead.
+
 Compare the version at the top of this page with what `dam --version` prints:
 
 - **The same**: this page describes your CLI.
@@ -105,9 +115,6 @@ For `dam connection connect` and `dam connection update`, the user types the sec
    Tell the user to sign in as themselves, check what the page shows — the connection, its type and every host the secret is sent to — and enter the secret there.
 3. The command ends when the user saves (exit `0`; `--json` gives the connection's ID), cancels, or lets the link expire after ten minutes (exit `1`).
    Run it again for a new link.
-4. Read the `check` in the `--json` output before you tell the user the connection is ready.
-   A GitHub token is checked when it is saved: `"status": "passed"` names the `account`, so tell the user which account it is.
-   `"failed"` or `"unchecked"` means the user saved it anyway after a warning: tell them the `reason` and that agents using it may be refused, and offer `dam connection update` to replace it.
 
 The page takes a multi-line key (a GitHub App private key in PEM) as well, so don't build a `--private-key "$(cat …)"` command.
 If the page warns that the secret will go to a host the template does not use, tell the user to cancel unless they asked for that host.
@@ -283,15 +290,6 @@ dam connection scope github --clear
 A flag you leave out keeps that part of the scope; `--clear` removes the limit.
 A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
 `dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
-
-When a DAM agent's calls with a connection fail, for example GitHub answers `401 Bad credentials`, check the stored credential before you look elsewhere:
-
-```sh
-dam connection test github-pat --json
-```
-
-It exits `0` when the check passed and `1` when it failed or could not run, with the `reason` in `check`; the result also shows in `dam connection list --json`.
-A token or key that expired or was revoked is replaced with `dam connection update`.
 
 ### Network rules and approvals
 

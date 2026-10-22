@@ -50,7 +50,6 @@ function fakeTelegramWorker(): TelegramWorker {
     botUsername: vi.fn(() => null),
     listConversations: vi.fn(async () => []),
     postMessage: vi.fn(async () => ({ ok: true as const })),
-    notifyPerson: vi.fn(async () => ({ sent: 0 })),
   };
 }
 

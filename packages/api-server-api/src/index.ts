@@ -471,7 +471,6 @@ export {
   composeGitHubAccounts,
   githubAccountGroups,
   githubHostOf,
-  isGitHubEnterpriseServer,
 } from "./modules/connections/github-accounts.js";
 export type {
   GitHubAccountGroup,
@@ -567,8 +566,6 @@ export type {
   ProviderBalance,
   ProviderKeyCheck,
   ProviderKeyRecheck,
-  CredentialCheck,
-  CredentialCheckPolicy,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,
@@ -580,13 +577,11 @@ export type {
   SecretRequestStatus,
   SecretRequestTicket,
   SecretRequestView,
-  SecretRequestSubmitResult,
   SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
   authConfig as connectionAuthConfigSchema,
   providerKeyCheck as providerKeyCheckSchema,
-  credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";
 export {
   CONNECTION_ENV_NAME_HINT,
@@ -623,9 +618,6 @@ export type {
   DefaultModelNotice,
   DefaultModelState,
   DismissedEntry,
-  OutageAlertAffectedBy,
-  OutageAlertAgent,
-  OutageAlertNotice,
 } from "./modules/attention/types.js";
 export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";

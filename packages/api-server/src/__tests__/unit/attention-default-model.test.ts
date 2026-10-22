@@ -43,7 +43,6 @@ function service(
       ownsApproval: async () => false,
       ownsAgent: async () => true,
       defaultModelNotices: notices,
-      outageAlerts: async () => [],
       log: () => {},
     }),
   };

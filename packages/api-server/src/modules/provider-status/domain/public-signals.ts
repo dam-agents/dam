@@ -180,23 +180,3 @@ export function signalsOf(
     .with({ source: "bob" }, (r) => bobSignals(r.services, at))
     .exhaustive();
 }
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the templates whose public source answered in
- * this run and did not report them. A source that gave no answer clears
- * nothing. An answered reading has no streak, because `nextStreaks` counts
- * only the runs that failed.
- */
-export function clearedTemplates(
-  readings: readonly SourceReading[],
-  at: string,
-): string[] {
-  return readings.filter(answered).flatMap((reading) => {
-    const reported = new Set(
-      signalsOf(reading, undefined, at).map((signal) => signal.templateId),
-    );
-    return SOURCE_TEMPLATES[reading.source].filter(
-      (templateId) => !reported.has(templateId),
-    );
-  });
-}

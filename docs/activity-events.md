@@ -44,13 +44,12 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ApprovalResolved` | _elsewhere_ | approvals |
 | `SpendLimitsChanged` | _elsewhere_ | spend |
 | `GatewayCallEnded` | _elsewhere_ | spend |
-| `ProviderStatusEvaluated` | _elsewhere_ | provider-status |
 | `ScheduleCreated` | _elsewhere_ | schedules |
 | `ScheduleUpdated` | _elsewhere_ | schedules |
 | `ScheduleDeleted` | _elsewhere_ | schedules |
 | `SchedulePrecheckReported` | _elsewhere_ | schedules |
 | `HarnessConfigChanged` | `harness_config_changed` | harness-config |
-| `AttentionChanged` | _elsewhere_ | attention, harness-config, outage-alerts |
+| `AttentionChanged` | _elsewhere_ | attention, harness-config |
 | `ArtifactCreated` | _elsewhere_ | artifact-library |
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |

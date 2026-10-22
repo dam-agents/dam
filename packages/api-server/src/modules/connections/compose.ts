@@ -27,7 +27,6 @@ import type { S3CredentialProbe } from "./domain/s3-credential-probe.js";
 import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
 import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
-import { createCredentialProbe } from "./infrastructure/credential-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import {
   buildCatalog,
@@ -270,7 +269,6 @@ export function composeConnectionsForOwner(opts: {
     s3CredentialProbe: opts.s3CredentialProbe,
     providerBalance: createProviderBalanceSource(),
     providerKeyProbe: opts.providerKeyProbe,
-    credentialProbe: createCredentialProbe(),
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,
@@ -293,10 +291,7 @@ export function composeSecretRequestsForOwner(opts: {
   uiBaseUrl: string;
   stores: SecretRequestStores;
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
-  connections: Pick<
-    ConnectionsService,
-    "createFromTemplate" | "update" | "getConnection"
-  >;
+  connections: Pick<ConnectionsService, "createFromTemplate" | "update">;
   agentName: (agentId: string) => Promise<string | null>;
 }): SecretRequestsService {
   return createSecretRequestsService({

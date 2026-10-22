@@ -13,13 +13,6 @@ export function isTelegramDirectConversation(conversationId: string): boolean {
   return first !== undefined && first !== "" && !first.startsWith("-");
 }
 
-export function isTelegramPrivateChat(conversationId: string): boolean {
-  return (
-    isTelegramDirectConversation(conversationId) &&
-    conversationId.split(":")[1] !== "biz"
-  );
-}
-
 export function telegramChatOf(conversationId: string): string {
   const [surface, chatId, topicId] = conversationId.split(":");
   return chatId === "biz" || topicId === undefined

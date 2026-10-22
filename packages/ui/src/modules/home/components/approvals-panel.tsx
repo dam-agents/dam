@@ -13,12 +13,10 @@ import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useFeed } from "../api/queries.js";
 import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
-import { useOutageAlerts } from "../hooks/use-outage-alerts.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
-import { FeedOutageAlertCard } from "./feed-outage-alert-card.js";
 
 const MINUTE_MS = 60_000;
 
@@ -28,7 +26,6 @@ export function ApprovalsPanel({ className }: { className?: string }) {
   const sticky = useStickyResolved();
   const { denyAll, denying } = useDenyApprovals();
   const defaultModels = useDefaultModelNotices();
-  const outageAlerts = useOutageAlerts();
   const now = useNow(MINUTE_MS);
 
   const approvals = sticky
@@ -66,19 +63,6 @@ export function ApprovalsPanel({ className }: { className?: string }) {
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        {outageAlerts.waiting.length > 0 && (
-          <div className="mb-1 flex flex-col gap-1">
-            {outageAlerts.waiting.map((alert) => (
-              <FeedOutageAlertCard
-                key={alert.id}
-                alert={alert}
-                agentOf={agentOf}
-                now={now}
-                onDismiss={() => outageAlerts.dismiss(alert)}
-              />
-            ))}
-          </div>
-        )}
         {defaultModels.waiting.length > 0 && (
           <div className="mb-1 flex flex-col gap-1">
             {defaultModels.waiting.map((notice) => {
@@ -99,8 +83,7 @@ export function ApprovalsPanel({ className }: { className?: string }) {
         {loadingFeed && approvals.length === 0 ? (
           <FeedCardSkeleton rows={3} />
         ) : approvals.length === 0 ? (
-          defaultModels.waiting.length === 0 &&
-          outageAlerts.waiting.length === 0 && (
+          defaultModels.waiting.length === 0 && (
             <EmptyState bordered={false}>No approvals waiting.</EmptyState>
           )
         ) : (

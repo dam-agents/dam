@@ -4,7 +4,6 @@ import type {
   ConnectionAuthKind,
   ConnectionCredentialUpdate,
   ConnectionView,
-  CredentialCheck,
 } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
@@ -13,7 +12,6 @@ import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
-import { credentialCheckWarning } from "../domain/credential-check.js";
 import type { ConnectionService } from "../services/connection-service.js";
 import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
 
@@ -71,10 +69,7 @@ export function buildUpdateCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option(
-      "--json",
-      "emit { ok, id, name, check? } as JSON; check is the token check, as in `dam connection test`",
-    )
+    .option("--json", "emit { ok, id, name } as JSON")
     .option("--no-browser", "print the secret-entry link instead of opening it")
     .option(
       "--prompt",
@@ -142,7 +137,7 @@ export function buildUpdateCommand(deps: {
           timeoutSeconds,
         });
         if (entered.kind === "saved") {
-          emitUpdated(match, opts, entered.check);
+          emitUpdated(match, opts);
           process.exit(EXIT_SUCCESS);
         }
         process.stderr.write(
@@ -158,35 +153,19 @@ export function buildUpdateCommand(deps: {
       const result = await svc.update(match.id, credential);
       exitOnServiceError(result, host);
 
-      const updated = await svc.getConnection(match.id);
-      emitUpdated(match, opts, updated.ok ? updated.value?.check : undefined);
+      emitUpdated(match, opts);
       process.exit(EXIT_SUCCESS);
     });
 }
 
-function emitUpdated(
-  match: ConnectionView,
-  opts: UpdateOptions,
-  check: CredentialCheck | undefined,
-): void {
+function emitUpdated(match: ConnectionView, opts: UpdateOptions): void {
   if (opts.json) {
     process.stdout.write(
-      `${JSON.stringify({
-        ok: true,
-        id: match.id,
-        name: match.name,
-        ...(check ? { check } : {}),
-      })}\n`,
+      `${JSON.stringify({ ok: true, id: match.id, name: match.name })}\n`,
     );
   } else {
-    process.stdout.write(
-      `✓ Updated ${match.name} (${match.id})` +
-        (check?.account ? ` as ${check.account}` : "") +
-        ".\n",
-    );
+    process.stdout.write(`✓ Updated ${match.name} (${match.id}).\n`);
   }
-  const warning = credentialCheckWarning(match.name, check);
-  if (warning && !opts.json) process.stderr.write(warning);
 }
 
 function parseTimeout(raw: string | undefined): number {

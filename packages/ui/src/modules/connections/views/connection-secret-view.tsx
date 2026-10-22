@@ -1,6 +1,6 @@
 import { CheckmarkFilled, WarningAlt } from "@carbon/icons-react";
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
-import type { CredentialCheck, SecretRequestView } from "api-server-api";
+import type { SecretRequestView } from "api-server-api";
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,8 @@ import { trpc } from "../../../trpc.js";
 import { ConnectionIcon } from "../components/connection-icon.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import {
-  credentialCheckDetails,
   destinationDetail,
   destinationLabel,
-  heldCheckCopy,
   readSecretRequestId,
   secretRequestErrorCopy,
 } from "../lib/secret-request.js";
@@ -35,7 +33,7 @@ export function ConnectionSecretView() {
     staleTime: Infinity,
     retry: false,
   });
-  const [done, setDone] = useState<Outcome | null>(null);
+  const [done, setDone] = useState<"saved" | "cancelled" | null>(null);
 
   if (!requestId) {
     return (
@@ -45,10 +43,17 @@ export function ConnectionSecretView() {
       </Terminal>
     );
   }
-  if (done?.kind === "saved") {
-    return <SavedPage check={done.check} />;
+  if (done === "saved") {
+    return (
+      <Terminal
+        title="Secret saved"
+        icon={<CheckmarkFilled size={24} className="text-success" />}
+      >
+        You can close this page. The command that opened it reports the result.
+      </Terminal>
+    );
   }
-  if (done?.kind === "cancelled") {
+  if (done === "cancelled") {
     return (
       <Terminal title="Cancelled">
         Nothing was saved. You can close this page.
@@ -67,41 +72,6 @@ export function ConnectionSecretView() {
   );
 }
 
-type Outcome =
-  { kind: "saved"; check?: CredentialCheck } | { kind: "cancelled" };
-
-function SavedPage({ check }: { check?: CredentialCheck }) {
-  if (check && check.status !== "passed") {
-    return (
-      <Terminal
-        title="Secret saved without a passing check"
-        icon={<WarningAlt size={24} className="text-warning-fg" />}
-      >
-        {check.reason ? `${check.reason}. ` : ""}The command that opened this
-        page reports it too. Replace the secret once you have a working one.
-      </Terminal>
-    );
-  }
-  const details = check ? credentialCheckDetails(check) : [];
-  return (
-    <Terminal
-      title={check ? "Secret checked and saved" : "Secret saved"}
-      icon={<CheckmarkFilled size={24} className="text-success" />}
-    >
-      {details.length > 0 && (
-        <span className="mb-3 block" data-testid="secret-request-check">
-          {details.map((d) => (
-            <span key={d} className="block font-mono text-foreground">
-              {d}
-            </span>
-          ))}
-        </span>
-      )}
-      You can close this page. The command that opened it reports the result.
-    </Terminal>
-  );
-}
-
 function SecretForm({
   requestId,
   view,
@@ -109,10 +79,9 @@ function SecretForm({
 }: {
   requestId: string;
   view: SecretRequestView;
-  onDone: (outcome: Outcome) => void;
+  onDone: (outcome: "saved" | "cancelled") => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
-  const [held, setHeld] = useState<CredentialCheck | null>(null);
   const submit = useMutation(
     trpc.connections.submitSecretRequest.mutationOptions(),
   );
@@ -124,27 +93,13 @@ function SecretForm({
   );
   const pending = submit.isPending || cancel.isPending;
 
-  const save = (saveAnyway: boolean) =>
-    submit.mutate(
-      { requestId, fields: values, ...(saveAnyway ? { saveAnyway } : {}) },
-      {
-        onSuccess: (result) => {
-          if (result.status === "check-not-passed") {
-            setHeld(result.check);
-            return;
-          }
-          onDone({
-            kind: "saved",
-            ...(result.check ? { check: result.check } : {}),
-          });
-        },
-      },
-    );
-
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!complete || pending) return;
-    save(false);
+    submit.mutate(
+      { requestId, fields: values },
+      { onSuccess: () => onDone("saved") },
+    );
   };
 
   return (
@@ -201,31 +156,17 @@ function SecretForm({
               field.multiline ? "-----BEGIN RSA PRIVATE KEY-----\n…" : "•••••"
             }
             value={values[field.name] ?? ""}
-            onChange={(v) => {
-              setHeld(null);
-              setValues((prev) => ({ ...prev, [field.name]: v }));
-            }}
+            onChange={(v) =>
+              setValues((prev) => ({ ...prev, [field.name]: v }))
+            }
             error={i === 0 ? submit.error?.message : undefined}
             autoFocus={i === 0}
-            disabled={pending}
           />
         ))}
-        {held && <HeldCheck check={held} />}
         <div className="flex gap-3">
           <Button type="submit" disabled={!complete || pending}>
-            {submit.isPending && !held ? "Checking…" : "Save secret"}
+            Save secret
           </Button>
-          {held && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending}
-              onClick={() => save(true)}
-              data-testid="secret-request-save-anyway"
-            >
-              Save anyway
-            </Button>
-          )}
           <Button
             type="button"
             variant="outline"
@@ -233,7 +174,7 @@ function SecretForm({
             onClick={() =>
               cancel.mutate(
                 { requestId },
-                { onSuccess: () => onDone({ kind: "cancelled" }) },
+                { onSuccess: () => onDone("cancelled") },
               )
             }
           >
@@ -246,25 +187,6 @@ function SecretForm({
         </p>
       </form>
     </Page>
-  );
-}
-
-function HeldCheck({ check }: { check: CredentialCheck }) {
-  const copy = heldCheckCopy(check);
-  return (
-    <Callout
-      tone="warning"
-      role="alert"
-      className="flex gap-2.5 text-sm"
-      data-testid="secret-request-held"
-    >
-      <WarningAlt size={16} className="mt-0.5 shrink-0 text-warning-fg" />
-      <div>
-        <p className="font-semibold text-warning-fg">{copy.title}</p>
-        {check.reason && <p className="mt-1">{check.reason}.</p>}
-        <p className="mt-1 text-muted-foreground">{copy.hint}</p>
-      </div>
-    </Callout>
   );
 }
 

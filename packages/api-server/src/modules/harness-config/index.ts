@@ -8,7 +8,6 @@ export {
   composeHarnessConfigReset,
   composeInitializationPairResolver,
   composeSessionChoicesValidator,
-  composeUnattendedAgentsReader,
   type FirePair,
 } from "./compose.js";
 export {

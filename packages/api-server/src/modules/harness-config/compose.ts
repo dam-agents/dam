@@ -36,10 +36,6 @@ import type { OutboxRepo } from "../runtime-delivery/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { emit, EventType } from "../../events.js";
 import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
-import {
-  createUnattendedAgentsReader,
-  type UnattendedAgent,
-} from "./infrastructure/unattended-agents.js";
 import { createInitializationPairResolver } from "./services/initialization-pair.js";
 
 export const ETE_BYPASS_RESET = {
@@ -231,12 +227,6 @@ export function composeScheduleModelForFire(deps: {
     getCapabilities: deps.getCapabilities,
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
   });
-}
-
-export function composeUnattendedAgentsReader(
-  db: Db,
-): (templateId: string) => Promise<UnattendedAgent[]> {
-  return createUnattendedAgentsReader(db);
 }
 
 export function composeDefaultModelNotices(

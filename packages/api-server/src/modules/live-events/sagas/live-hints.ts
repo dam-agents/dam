@@ -120,7 +120,6 @@ export function hintFor(
     case EventType.AgentResourceRemoved:
     case EventType.SpendLimitsChanged:
     case EventType.GatewayCallEnded:
-    case EventType.ProviderStatusEvaluated:
       return null;
     default: {
       const unhandled: never = event;

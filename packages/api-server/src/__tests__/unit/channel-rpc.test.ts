@@ -486,9 +486,7 @@ describe("platform notices across replicas", () => {
     });
     await leader.bootstrap(new Map());
 
-    expect(
-      await follower.notifyPerson("kc|a", { slack: "storage is full" }),
-    ).toEqual({
+    expect(await follower.notifyPerson("kc|a", "storage is full")).toEqual({
       sent: 1,
     });
     expect(leaderWorker.notifyPerson).toHaveBeenCalledWith(

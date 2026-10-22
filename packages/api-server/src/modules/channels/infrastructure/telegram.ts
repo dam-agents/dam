@@ -34,7 +34,6 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
-  isTelegramPrivateChat,
   telegramChatOf,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
@@ -88,12 +87,6 @@ export interface TelegramConversationsPort {
   setAmbient(conversationId: string, ambient: boolean): Promise<void>;
 }
 
-export interface TelegramOwnerChatsPort {
-  listAuthorizedBy(
-    keycloakSub: string,
-  ): Promise<{ conversationId: string; agentId: string }[]>;
-}
-
 export interface ChannelConversation {
   id: string;
   title: string;
@@ -111,7 +104,6 @@ export interface TelegramWorker {
     text: string,
     options?: PostMessageOptions,
   ): Promise<{ ok: true } | { error: string }>;
-  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 async function isTelegramChatAdmin(
@@ -593,7 +585,7 @@ export function createTelegramWorker(deps: {
   makeAcpClient: AcpClientFactory;
   state: StateAdapter;
   agents: () => AgentsService;
-  conversations: TelegramConversationsPort & TelegramOwnerChatsPort;
+  conversations: TelegramConversationsPort;
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
@@ -865,7 +857,7 @@ export function createTelegramWorker(deps: {
     });
   }
 
-  const worker: TelegramWorker = {
+  return {
     type: ChannelType.Telegram,
 
     botUsername() {
@@ -1032,26 +1024,5 @@ export function createTelegramWorker(deps: {
         return { error: err instanceof Error ? err.message : String(err) };
       }
     },
-
-    async notifyPerson(keycloakSub, text) {
-      if (!bot) return { sent: 0 };
-      const chats = (
-        await deps.conversations.listAuthorizedBy(keycloakSub)
-      ).filter((chat) => isTelegramPrivateChat(chat.conversationId));
-      let sent = 0;
-      for (const chat of chats) {
-        const result = await worker.postMessage(chat.agentId, text, {
-          conversationId: chat.conversationId,
-        });
-        if ("ok" in result) sent++;
-        else
-          getLogger().warn(
-            { conversationId: chat.conversationId, error: result.error },
-            "telegram.notify_failed",
-          );
-      }
-      return { sent };
-    },
   };
-  return worker;
 }

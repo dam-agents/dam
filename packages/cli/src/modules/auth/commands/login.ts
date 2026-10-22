@@ -180,7 +180,7 @@ function printLoginError(e: LoginError): void {
       switch (e.reason) {
         case "access-denied":
           process.stderr.write(
-            `error: the user refused the sign-in; no credentials were saved${e.detail ? ` (${e.detail})` : ""}\n`,
+            `error: authorization was denied${e.detail ? ` (${e.detail})` : ""}\n`,
           );
           return;
         case "expired-token":

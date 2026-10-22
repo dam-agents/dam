@@ -146,20 +146,6 @@ export const providerKeyCheck = z.object({
 });
 export type ProviderKeyCheck = z.infer<typeof providerKeyCheck>;
 
-export const credentialCheck = z.object({
-  status: z.enum(["passed", "failed", "unchecked"]),
-  account: z.string().optional(),
-  expiresAt: z.string().optional(),
-  scopes: z.array(z.string()).optional(),
-  reason: z.string().optional(),
-  at: z.string(),
-});
-export type CredentialCheck = z.infer<typeof credentialCheck>;
-
-export interface CredentialCheckPolicy {
-  holdUnlessPassed?: boolean;
-}
-
 export interface ProviderKeyRecheck {
   connectionId: string;
   check: ProviderKeyCheck | null;
@@ -185,7 +171,6 @@ export const connectionView = z.object({
   host: z.string().min(1).optional(),
   accountLabel: z.string().min(1).optional(),
   keyCheck: providerKeyCheck.optional(),
-  check: credentialCheck.optional(),
   appSlug: z.string().min(1).optional(),
   hasClientSecret: z.boolean().optional(),
   githubAppScope: z
@@ -314,7 +299,6 @@ export interface ConnectionsService {
 
   createFromTemplate(
     input: ConnectionCreateInput & { id?: string },
-    opts?: CredentialCheckPolicy,
   ): Promise<string>;
 
   discoverMcp(input: { url: string }): Promise<{
@@ -358,13 +342,7 @@ export interface ConnectionsService {
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
-  update(
-    id: string,
-    credential: ConnectionCredentialUpdate,
-    opts?: CredentialCheckPolicy,
-  ): Promise<void>;
-
-  checkCredential(id: string): Promise<CredentialCheck | null>;
+  update(id: string, credential: ConnectionCredentialUpdate): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
 
@@ -427,17 +405,12 @@ export interface SecretRequestTicket {
 export interface SecretRequestState {
   status: SecretRequestStatus;
   connectionId?: string;
-  check?: CredentialCheck;
 }
-
-export type SecretRequestSubmitResult =
-  | { status: "saved"; connectionId: string; check?: CredentialCheck }
-  | { status: "check-not-passed"; check: CredentialCheck };
 
 export interface SecretRequestsService {
   request(input: ConnectionRequestSecretInput): Promise<SecretRequestTicket>;
   status(requestId: string): Promise<SecretRequestState>;
   get(requestId: string): Promise<SecretRequestView | null>;
-  submit(input: SecretRequestSubmitInput): Promise<SecretRequestSubmitResult>;
+  submit(input: SecretRequestSubmitInput): Promise<{ connectionId: string }>;
   cancel(requestId: string): Promise<void>;
 }

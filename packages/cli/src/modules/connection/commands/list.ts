@@ -44,12 +44,6 @@ function providerCell({ provider, templateId }: ConnectionView): string {
   return `${provider.alias} (${harnesses})${provider.preferred ? " preferred" : ""}`;
 }
 
-function statusCell({ status, check }: ConnectionView): string {
-  return check && check.status !== "passed"
-    ? `${status} (check ${check.status})`
-    : status;
-}
-
 function tableFor(views: readonly ConnectionView[]): string {
   return renderTable([
     HEADER,
@@ -57,7 +51,7 @@ function tableFor(views: readonly ConnectionView[]): string {
       c.id,
       c.name,
       c.category,
-      statusCell(c),
+      c.status,
       providerCell(c),
       c.hosts.join(","),
       formatScope(scopeOf(c)),
@@ -105,8 +99,7 @@ export function buildListCommand(deps: {
     )
     .option(
       "--json",
-      "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, account?, repositories?, repositoryIds?, permissions? }, " +
-        "and a checked credential its last check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at }",
+      "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, account?, repositories?, repositoryIds?, permissions? }",
     )
     .addHelpText(
       "after",

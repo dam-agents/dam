@@ -6,7 +6,6 @@ import {
   type ConnectionTemplateInput,
   type ConnectionTemplateView,
 } from "api-server-api";
-import type { CredentialCheckKind } from "./credential-check.js";
 import { applyCallbackAlias } from "./oauth-callback-url.js";
 
 export type ConnectionTemplate =
@@ -83,7 +82,6 @@ export interface HeaderConnectionTemplate extends TemplateCommon {
   headerName?: string;
   valueFormat?: string;
   configInputs?: ConfigInputSpec[];
-  credentialCheck?: CredentialCheckKind;
 }
 
 export interface Sigv4ConnectionTemplate extends TemplateCommon {

@@ -49,7 +49,6 @@ export {
   satelliteGrants,
   satelliteJobs,
   resourceAlerts,
-  outageAlerts,
   avatarImages,
   spendCalls,
   spendAgentNames,

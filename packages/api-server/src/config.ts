@@ -273,7 +273,6 @@ const configSchema = z.object({
     container: z.number().int().min(0),
     vm: z.number().int().min(0),
   }),
-  outageAlertDelayMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
   agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
@@ -309,6 +308,7 @@ const configSchema = z.object({
   recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
+  agentSkillPath: z.string().default("./skills/dam/SKILL.md"),
   harnesses: harnessesSchema,
   spendPriceOverrides: spendPriceOverridesSchema,
   spendDefaultUserCeilingMicros: spendCeilingUsdTextSchema
@@ -494,9 +494,6 @@ export function loadConfig(): Config {
       ),
       vm: durationToMinutesStrict(process.env.AGENT_VM_IDLE_TIMEOUT ?? "5m"),
     },
-    outageAlertDelayMinutes: durationToMinutesStrict(
-      process.env.OUTAGE_ALERT_DELAY ?? "15m",
-    ),
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
     agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,
@@ -531,6 +528,7 @@ export function loadConfig(): Config {
     recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
+    agentSkillPath: process.env.AGENT_SKILL_PATH,
     harnesses: process.env.HARNESSES,
     spendPriceOverrides: process.env.SPEND_PRICE_OVERRIDES,
     spendDefaultUserCeilingMicros: process.env.SPEND_DEFAULT_USER_CEILING_USD,

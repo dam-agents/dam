@@ -174,11 +174,6 @@ interface Worker {
   notifyPerson?(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
-export interface PersonNotice {
-  slack: string;
-  telegram?: string;
-}
-
 export interface ChannelManager {
   availableChannels(): Partial<Record<ChannelType, boolean>>;
   telegramBotUsername(): string | null;
@@ -245,10 +240,7 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
-  notifyPerson(
-    keycloakSub: string,
-    notice: PersonNotice,
-  ): Promise<{ sent: number }>;
+  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -298,10 +290,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
-  notifyPerson: z.tuple([
-    z.string(),
-    z.object({ slack: z.string(), telegram: z.string().optional() }),
-  ]),
+  notifyPerson: z.tuple([z.string(), z.string()]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -634,23 +623,9 @@ export function createChannelManager(deps: {
         });
       return worker.fetchAttachment(instanceName, query);
     },
-    notifyPerson: async (keycloakSub: string, notice: PersonNotice) => {
-      const { telegram } = notice;
-      const results = await Promise.all([
-        slackWorker?.notifyPerson(keycloakSub, notice.slack) ?? { sent: 0 },
-        telegram !== undefined && telegramWorker
-          ? telegramWorker
-              .notifyPerson(keycloakSub, telegram)
-              .catch((err: unknown) => {
-                process.stderr.write(
-                  `[channels] could not notify ${keycloakSub} in Telegram: ${err instanceof Error ? err.message : String(err)}\n`,
-                );
-                return { sent: 0 };
-              })
-          : { sent: 0 },
-      ]);
-      return { sent: results.reduce((sum, r) => sum + r.sent, 0) };
-    },
+    notifyPerson: (keycloakSub: string, text: string) =>
+      slackWorker?.notifyPerson(keycloakSub, text) ??
+      Promise.resolve({ sent: 0 }),
   } as const;
 
   subscriptions.push(
@@ -845,9 +820,9 @@ export function createChannelManager(deps: {
       );
     },
 
-    notifyPerson(keycloakSub, notice) {
-      return dispatch("notifyPerson", [keycloakSub, notice], () =>
-        localHandlers.notifyPerson(keycloakSub, notice),
+    notifyPerson(keycloakSub, text) {
+      return dispatch("notifyPerson", [keycloakSub, text], () =>
+        localHandlers.notifyPerson(keycloakSub, text),
       ).catch((err: unknown) => {
         process.stderr.write(
           `[channels] could not notify ${keycloakSub}: ${err instanceof Error ? err.message : String(err)}\n`,
