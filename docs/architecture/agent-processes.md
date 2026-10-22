@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -120,6 +120,8 @@ Marks and user choices live in the processes document, keyed so a reused pid nev
 A **Startup Item** is a command a vm agent's machine starts at every boot, so it comes back after a hibernation, a restart and a new image, like a Mac's login items; the UI calls them **Login items**.
 It is an openrc **user service** of root, the agent's account: a script in `~/.config/rc/init.d/<name>` with a `command`, started at boot when `~/.config/rc/runlevels/default` links it, and controlled with `rc-service --user`.
 The agent writes them as plain openrc scripts, and they live in the home, the one place every boot and every image keep.
+A [starter kit](starter-kits.md) may declare some: the platform sends them once at create as a `startup-items` event, and the runtime writes each script the same way, with a comment naming the kit, links the ones that are on and starts them; it never replaces a script already there, so a name the agent took stays the agent's.
+openrc evaluates `command_args` once more when it starts the service, so each declared argument is quoted for that pass and reaches the program as the kit wrote it.
 
 OpenRC itself does the work.
 platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel beside `platform-env`, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.

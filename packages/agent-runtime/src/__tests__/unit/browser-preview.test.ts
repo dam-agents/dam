@@ -16,6 +16,7 @@ import {
   commandTimeoutMs,
   createCommandQueue,
   displayAvailable,
+  missingDisplayTools,
   isPreviewProcess,
   killablePreviewPids,
   createBrowserPreview,
@@ -754,6 +755,13 @@ describe("display stack", () => {
     expect(displayAvailable((p) => p !== "/opt/selkies/bin/selkies")).toBe(
       false,
     );
+  });
+
+  // TEST_SCENARIO: a display stack that will not start names the parts it lacks, such as a Chromium link left dangling.
+  it("names the parts of the display stack that are missing", () => {
+    expect(
+      missingDisplayTools((p) => p !== "/opt/ms-playwright/chromium"),
+    ).toEqual(["/opt/ms-playwright/chromium"]);
   });
 });
 

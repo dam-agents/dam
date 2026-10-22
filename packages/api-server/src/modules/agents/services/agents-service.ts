@@ -74,8 +74,13 @@ import type { AgentSecretRefPort } from "../infrastructure/agent-secret-ref-port
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import {
   type RuntimeMutator,
+  agentInstructionsEvent,
   workspaceSeedEvent,
 } from "../../runtime-delivery/index.js";
+import {
+  AGENT_INSTRUCTIONS_TEMPLATE,
+  seedsAgentInstructions,
+} from "../domain/agent-instructions.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { ok, err } from "../../../core/result.js";
 import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
@@ -1226,19 +1231,28 @@ export function createAgentsService(deps: {
         );
       }
 
-      await deps.runtimeMutator.bump(
-        infra.id,
-        input.gitRepo
+      const createdAt = new Date();
+      await deps.runtimeMutator.bump(infra.id, [
+        ...(input.gitRepo
           ? [
               workspaceSeedEvent(
                 "workspace-seed",
                 infra.id,
                 input.gitRepo,
-                new Date(),
+                createdAt,
               ),
             ]
-          : [],
-      );
+          : []),
+        ...(seedsAgentInstructions(input)
+          ? [
+              agentInstructionsEvent(
+                infra.id,
+                AGENT_INSTRUCTIONS_TEMPLATE,
+                createdAt,
+              ),
+            ]
+          : []),
+      ]);
 
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);

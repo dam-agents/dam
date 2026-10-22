@@ -7,6 +7,10 @@ import { openProcessesDocument } from "./infrastructure/processes-document.js";
 import { createProcessSignals } from "./infrastructure/signals.js";
 import { createStartupItemEnvFile } from "./infrastructure/startup-item-env.js";
 import { createStartupItemStore } from "./infrastructure/startup-items.js";
+import {
+  createDeclaredStartupItems,
+  type DeclareStartupItems,
+} from "./services/declared-startup-items.js";
 import { createKeepState, type KeepPolicy } from "./services/keep-state.js";
 import {
   createProcessesService,
@@ -30,6 +34,7 @@ export interface PreparedProcesses {
     service: ProcessesService;
     keepMarks: KeepMarkSink;
     startupItemEnv: StartupItemEnv;
+    declareStartupItems: DeclareStartupItems;
   };
 }
 
@@ -62,6 +67,11 @@ export function prepareProcesses(
               .filter((item) => item.running && item.listed)
               .map((item) => item.id),
           restart: (id) => startupItems.run("restart", id),
+          log: opts.log,
+        }),
+        declareStartupItems: createDeclaredStartupItems({
+          store: startupItems,
+          agentHome,
           log: opts.log,
         }),
       };

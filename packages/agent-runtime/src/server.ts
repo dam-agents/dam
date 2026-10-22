@@ -60,7 +60,7 @@ import {
   agentBrowserCommand,
   createBrowserPreview,
   DISPLAY_COMMAND,
-  displayAvailable,
+  missingDisplayTools,
   fileLog,
   LAUNCH_MODE_FILE,
 } from "./modules/browser-preview.js";
@@ -619,6 +619,7 @@ const {
   service: processesService,
   keepMarks,
   startupItemEnv,
+  declareStartupItems,
 } = processes.start({
   agentHome: homeDir,
   runtimePid: process.pid,
@@ -661,6 +662,7 @@ const reconcileOnState = imageSkillReconciler
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
   onSessionDefaults: (defaults) => acpRuntime.receiveDefaults(defaults),
+  onStartupItems: declareStartupItems,
   onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
   manifests: harnessManifests,
   defaultHarness,
@@ -1265,10 +1267,17 @@ const browserLog = (source: string) => (msg: string) => {
   browserLogFile(`${source}: ${msg}`);
 };
 const DISPLAY_IDLE_START_MS = 10_000;
-const hasDisplayStack = displayAvailable();
 let browserDisplay: DisplaySupervisor | null = null;
+let loggedMissingDisplay = "";
 function startDisplay(): void {
-  if (browserDisplay || !hasDisplayStack) return;
+  if (browserDisplay) return;
+  const missing = missingDisplayTools().join(", ");
+  if (missing) {
+    if (missing !== loggedMissingDisplay)
+      browserLog("browser-display")(`not started, missing ${missing}`);
+    loggedMissingDisplay = missing;
+    return;
+  }
   browserDisplay = startDisplaySupervisor({
     command: DISPLAY_COMMAND,
     envReader: envStore,

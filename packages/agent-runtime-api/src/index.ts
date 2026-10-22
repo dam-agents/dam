@@ -164,6 +164,7 @@ export type {
   ProcessOutput,
   ProcessRow,
   StartupItem,
+  StartupItemDeclaration,
 } from "./modules/processes/types.js";
 export {
   finishedRowSchema,
@@ -175,6 +176,7 @@ export {
   processOutputSchema,
   processRowSchema,
   setKeepInputSchema,
+  startupItemDeclarationSchema,
   startupItemIdSchema,
   startupItemSchema,
 } from "./modules/processes/schemas.js";
@@ -241,7 +243,9 @@ export {
   satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
   sessionMessageEventPayload,
+  startupItemsEventPayload,
   workspaceCommandEventPayload,
+  agentInstructionsEventPayload,
   workspaceSeedEventPayload,
   helloInput,
 } from "./modules/runtime/types.js";
@@ -270,6 +274,7 @@ export type {
   SubAgentOutcomeEventPayload,
   SessionMessageEventPayload,
   ScheduleResetEventPayload,
+  StartupItemsEventPayload,
   WorkspaceSeedEventPayload,
   HarnessConfigEventPayload,
   ApplyStateInput,

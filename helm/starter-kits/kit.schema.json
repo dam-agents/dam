@@ -514,6 +514,47 @@
     },
     "requireConnectionAddress": {
       "type": "boolean"
+    },
+    "startupItems": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "command": {
+            "type": "string",
+            "pattern": "^(?:(?!\\.\\.?$)[A-Za-z0-9._+-]+|~?(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._+-]+)+)$"
+          },
+          "args": {
+            "default": [],
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^\\r\\n\\0]*$"
+            }
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "command"
+        ]
+      }
     }
   },
   "required": [

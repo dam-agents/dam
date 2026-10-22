@@ -1,5 +1,6 @@
 #!/bin/sh
 . /usr/local/lib/copilot-router.sh
+. /usr/local/lib/copilot-agents-md.sh
 # --session-id resumes the conversation of that id or starts one under it, so
 # a terminal session keeps the platform session's id and needs no pin.
 # --autopilot matches the start mode of a chat session.

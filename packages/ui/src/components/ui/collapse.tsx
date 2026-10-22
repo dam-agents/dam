@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const CLOSE_MS = 250;
 
-function prefersReducedMotion(): boolean {
+export function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 

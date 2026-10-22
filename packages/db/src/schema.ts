@@ -1285,3 +1285,15 @@ export const spendLimitExtensions = pgTable(
   },
   (table) => [primaryKey({ columns: [table.limitId, table.day] })],
 );
+
+export const spendCeilings = pgTable("spend_ceilings", {
+  ownerSub: text("owner_sub").primaryKey(),
+  amountMicros: bigint("amount_micros", { mode: "number" }).notNull(),
+  setBySub: text("set_by_sub").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});

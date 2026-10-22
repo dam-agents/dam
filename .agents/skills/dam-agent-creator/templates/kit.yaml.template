@@ -124,6 +124,16 @@ egressPreset: trusted
 egressRules:
   - host: TODO(creator).example.com
 
+# TODO(creator): keep only when the agent runs a program at every boot — a
+# dashboard, a local API, a watcher — and the kit declares `backend: vm`: each is a
+# Login item (an openrc user service) written at create, never an onboarding step.
+# `command` is a program on PATH, an absolute path, or ~/… — never a shell line.
+startupItems:
+  - name: TODO-creator-item
+    description: TODO(creator) — what it serves, one line
+    command: ~/bin/TODO-creator
+    args: [serve]
+
 # TODO(creator): keep only when a heartbeat fires finer than the install's idle
 # timeout — otherwise the agent is paid for a wake-up round trip every tick.
 hibernationTimeoutMin: 30

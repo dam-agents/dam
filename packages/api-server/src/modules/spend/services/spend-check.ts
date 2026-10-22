@@ -32,7 +32,7 @@ import { payingProvider, unitOf, type SpendUnit } from "../domain/units.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
-import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
+import type { SpendCeilings } from "../infrastructure/spend-ceilings.js";
 import {
   checkedSession,
   type AgentOwners,

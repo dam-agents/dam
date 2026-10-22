@@ -156,6 +156,15 @@ export const spendLimitAmountTextSchema = z
   .transform(decimalToMicros)
   .pipe(spendLimitAmountSchema);
 
+const CENT_MICROS = MICROS_PER_UNIT / 100;
+
+const spendCeilingAmountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(10_000_000 * MICROS_PER_UNIT - CENT_MICROS)
+  .multipleOf(CENT_MICROS);
+
 export const spendCeilingUsdTextSchema = z
   .string()
   .trim()
@@ -163,7 +172,8 @@ export const spendCeilingUsdTextSchema = z
     /^\d{1,7}(\.\d{1,2})?$/,
     "a ceiling looks like 50 or 12.50: dollars with at most 7 digits and 2 decimals",
   )
-  .transform(decimalToMicros);
+  .transform(decimalToMicros)
+  .pipe(spendCeilingAmountSchema);
 
 export const spendStatusInputSchema = z
   .object({ agentId: z.string().min(1).optional() })
@@ -176,4 +186,16 @@ export const spendSetLimitInputSchema = z.object({
 
 export const spendLimitStateSchema = z.enum(["ok", "warn", "reached"]);
 
-export const spendCeilingSourceSchema = z.enum(["default", "UserSpendLimit"]);
+export const spendCeilingSourceSchema = z.enum(["default", "operator"]);
+
+export const spendCeilingUserSchema = z.union([
+  z.object({
+    email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
+  }),
+  z.object({ ownerSub: z.string().min(1) }),
+]);
+
+export const spendCeilingSetInputSchema = z.object({
+  user: spendCeilingUserSchema,
+  amountMicros: spendCeilingAmountSchema.nullable(),
+});

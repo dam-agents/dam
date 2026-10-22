@@ -127,12 +127,12 @@ A sharing change — visibility, retention date, and the viewer allowlist — is
 User-generated content is never served from the app origin.
 Two dedicated by-link hosts (separate subdomains, both mandatory, wired through the cluster ingress and configured via Helm) carry it:
 
-- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), and the read-only knowledge-base MCP endpoint — never an app route.
+- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint and the front door of [Environments](environments.md#addresses) (`/e/<address>`) — never an app route.
 - The **content host** serves *only* the framed artifact document and its raw bytes.
   It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
   The one frame whose bridge reaches an Agent — a restricted interactive page on its share page — does not run on that origin at all: its sandbox gives it an opaque origin, so artifact code on the content origin cannot script it.
 
-The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, plus the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` — requests for the content host go to the content app, and everything else falls through to the platform surface.
+The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` and the [Environments](environments.md#addresses) front door under `/e` — requests for the content host go to the content app, and everything else falls through to the platform surface.
 The app origin shares nothing with either by-link origin — no cookie, no token — so a malicious artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies, because none of them exist on its origin.
 
 **Share session.** A restricted artifact needs a viewer identity on the share host, and that identity is deliberately not the app's.

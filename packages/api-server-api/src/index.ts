@@ -154,8 +154,10 @@ export {
   SPEND_TURNS_MAX_SPAN_DAYS,
   SPEND_TURNS_MAX_WINDOWS,
   spendBreakdownInputSchema,
+  spendCeilingSetInputSchema,
   spendCeilingSourceSchema,
   spendCeilingUsdTextSchema,
+  spendCeilingUserSchema,
   spendDailyInputSchema,
   spendLimitAmountSchema,
   spendLimitAmountTextSchema,
@@ -204,6 +206,11 @@ export type {
   SpendSessions,
   SpendSessionsInput,
   SpendSetLimitInput,
+  SpendCeilingEntry,
+  SpendCeilingList,
+  SpendCeilingSetInput,
+  SpendCeilingsService,
+  SpendCeilingUser,
   SpendSubAgents,
   SpendSubAgentsInput,
   SubAgentSpendRow,
@@ -360,6 +367,8 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type { OperatorStatus } from "./modules/operator/types.js";
+export { operatorStatusSchema } from "./modules/operator/schemas.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,
@@ -876,6 +885,7 @@ export type {
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
+  StartupItemsEventPayload,
 } from "agent-runtime-api";
 
 export {

@@ -22,6 +22,15 @@ Files a user attaches to a message, and files a channel brings in, land under `~
 `managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
 The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
 
+## Agent instructions
+
+The platform instructions reach Claude Code as its managed memory file: the image links `/etc/claude-code/CLAUDE.md` to `/etc/AGENTS.md`, so an owner's file cannot replace them.
+Claude Code walks up from the work directory, so it finds the agent's own `~/AGENTS.md` and `work/AGENTS.md` with no link ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+On its own, Claude Code drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere on that walk, `~/CLAUDE.md` or a repository's included.
+So `managed-settings.json` sets its built-in AGENTS.md plugin (`agents-md@builtin`) to `instructionFiles: claude-md-and-agents-md`, which loads every `AGENTS.md` beside the `CLAUDE.md` files.
+A file that a `CLAUDE.md` already imports or links to, or that holds the same text, is not loaded twice.
+Managed settings win over the owner's settings, so an owner cannot turn `~/AGENTS.md` off.
+
 ## Model Router
 
 Every provider but Bedrock (the LiteLLM proxies, the Anthropic key and subscription) reaches Claude Code through the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): [`model-gateway.sh`](rootfs/usr/local/lib/model-gateway.sh), sourced by `harness-chat`, `harness-terminal` and the login profile, repoints `ANTHROPIC_BASE_URL` at the router, names the harness with `ANTHROPIC_CUSTOM_HEADERS`, turns on gateway model discovery and drops a provider's `ANTHROPIC_MODEL` pin, since the session's model is a per-turn choice the runtime sends over ACP.

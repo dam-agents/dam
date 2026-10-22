@@ -248,6 +248,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "workspace-command" },
     defaultOn: true,
   },
+  "agent-instructions": {
+    binding: { impl: "agent-instructions" },
+    defaultOn: true,
+  },
   "harness-config": { binding: { impl: "harness-config" }, defaultOn: false },
   "satellite-outcome": {
     binding: { impl: "satellite-outcome" },
@@ -263,6 +267,10 @@ const BUILTIN_DRIVERS: Record<
   },
   "session-defaults": {
     binding: { impl: "session-defaults" },
+    defaultOn: true,
+  },
+  "startup-items": {
+    binding: { impl: "startup-items" },
     defaultOn: true,
   },
 };

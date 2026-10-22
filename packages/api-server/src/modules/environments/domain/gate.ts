@@ -1,49 +1,69 @@
+import crypto from "node:crypto";
 import type { EnvironmentRecord } from "./environment.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the path every Environment address reserves for the platform's own sign-in and sign-out; the relay never forwards it to the app.
+// UNIT_BOUNDARY_DESCRIPTION: the path every Environment address reserves for the hand-off of its session and its sign-out; the relay never forwards it to the app.
 export const RESERVED_PREFIX = "/.platform/";
 
 // UNIT_BOUNDARY_DESCRIPTION: a visitor's session on one Environment address, in a `__Host-` cookie (https) that the browser sends to that exact origin only, so no other Environment or platform host can set or read it. Over plain http (the local cluster) the prefix cannot be used, and the cookie is host-only anyway.
 export const SESSION_COOKIE_SECURE = "__Host-platform-env";
 export const SESSION_COOKIE_PLAIN = "platform-env";
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-export const LOGIN_TTL_MS = 5 * 60 * 1000;
+
+// UNIT_BOUNDARY_DESCRIPTION: the secret of a sign-in the address started, in a cookie of the same kind, which only the browser that started it holds; the front door binds its hand-off code to the secret's hash, so the code opens nothing in another browser.
+export const SIGNIN_COOKIE_SECURE = "__Host-platform-env-signin";
+export const SIGNIN_COOKIE_PLAIN = "platform-env-signin";
+export const SIGNIN_TTL_MS = 10 * 60 * 1000;
 
 export interface EnvironmentSession {
   sub: string;
   email: string | null;
   address: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's session the visitor was handed from; the address's session lasts only while it does.
+  shareSession: string;
   createdAt: number;
 }
 
-export interface PendingEnvironmentLogin {
-  codeVerifier: string;
-  nonce: string;
-  address: string;
-  next: string;
-  createdAt: number;
-}
+const PLATFORM_COOKIES = new Set([
+  SESSION_COOKIE_SECURE,
+  SESSION_COOKIE_PLAIN,
+  SIGNIN_COOKIE_SECURE,
+  SIGNIN_COOKIE_PLAIN,
+]);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Whether a cookie, as one `name=value` pair of a
  * `Cookie` header or the start of a `Set-Cookie` header, is one of the
- * platform's session cookies. The name is compared once trimmed, as a browser
- * stores it, so a padded name (`platform-env =x`) is the session cookie too.
+ * platform's own cookies on an address: its session or its sign-in secret.
+ * The name is compared once trimmed, as a browser stores it, so a padded name
+ * (`platform-env =x`) is the platform's cookie too.
  */
-export function isSessionCookie(cookie: string): boolean {
-  const name = cookie.split("=", 1)[0]!.trim();
-  return name === SESSION_COOKIE_SECURE || name === SESSION_COOKIE_PLAIN;
+export function isPlatformCookie(cookie: string): boolean {
+  return PLATFORM_COOKIES.has(cookie.split("=", 1)[0]!.trim());
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The value a hand-off code is bound to: the
+ * SHA-256 of the sign-in secret, base64url. The front door sees only this,
+ * and the address checks the secret against it when the code comes back.
+ */
+export function signInBinding(secret: string): string {
+  return crypto.createHash("sha256").update(secret).digest("base64url");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a value has the shape of a sign-in secret or of its binding: 32 bytes, base64url.
+export function isSignInToken(value: string | undefined): value is string {
+  return value !== undefined && /^[A-Za-z0-9_-]{43}$/.test(value);
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An app's `Set-Cookie` as the visitor gets it, or
- * null when it may not pass: the platform's session cookie never does, and
+ * null when it may not pass: the platform's own cookies never do, and
  * any other loses its `Domain` attribute, so the cookie stays on the address
  * that set it. Every address shares the environments domain, and a cookie
  * set for that domain would reach every other Environment's app.
  */
 export function appSetCookie(cookie: string): string | null {
-  if (isSessionCookie(cookie)) return null;
+  if (isPlatformCookie(cookie)) return null;
   return cookie
     .split(";")
     .filter((part, i) => i === 0 || !/^\s*domain\s*=/i.test(part))
@@ -155,9 +175,14 @@ export function decideAccess(
   return { allow: false, reason: "not-allowed" };
 }
 
+const SAME_ORIGIN_BASE = "https://address.invalid";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A sign-in's return path on the address it began
- * on: a path of that origin, never another host.
+ * on: a path of that origin, never another host. A browser drops a tab or a
+ * newline from a URL and reads a backslash as a slash, so `/<tab>/evil` would
+ * go to another host; every control character and backslash is refused, and
+ * the path must still name the same origin once a URL parser has read it.
  */
 export function safeNext(path: string | undefined): string {
   if (
@@ -165,7 +190,8 @@ export function safeNext(path: string | undefined): string {
     !path.startsWith("/") ||
     path.startsWith("//") ||
     path.startsWith(RESERVED_PREFIX) ||
-    /[\r\n\\]/.test(path)
+    /[\u0000-\u001f\u007f\\]/.test(path) ||
+    new URL(path, SAME_ORIGIN_BASE).origin !== SAME_ORIGIN_BASE
   )
     return "/";
   return path;
@@ -199,7 +225,7 @@ export function relayHeaders(
       const kept = value
         .split(";")
         .map((c) => c.trim())
-        .filter((c) => c !== "" && !isSessionCookie(c));
+        .filter((c) => c !== "" && !isPlatformCookie(c));
       if (kept.length > 0) out.set("cookie", kept.join("; "));
       continue;
     }
@@ -208,4 +234,45 @@ export function relayHeaders(
   out.set("x-forwarded-host", opts.publicHost);
   out.set("x-forwarded-proto", opts.scheme);
   return out;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The origins of one Environment's endpoints, as a
+ * browser names them: every one of its addresses, with the scheme and the
+ * port the visitor used. The endpoints of one Environment may call each
+ * other; any other origin is another site to them.
+ */
+export function environmentOrigins(
+  record: Pick<EnvironmentRecord, "host" | "endpoints">,
+  opts: { scheme: string; domain: string; hostHeader: string | undefined },
+): Set<string> {
+  const port = /:\d+$/.exec(opts.hostHeader ?? "")?.[0] ?? "";
+  return new Set(
+    record.endpoints.map(
+      (e) => `${opts.scheme}://${e.name}-${record.host}.${opts.domain}${port}`,
+    ),
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether an address serves a request, by the
+ * origin the browser says asked for it. Every page under the platform's
+ * parent domain is the same site as the address, so the browser sends the
+ * visitor's session cookie with a request any of them makes; the cookie alone
+ * never says the visitor's own page asked. A browser names the asking page's
+ * origin with every request that can act or read the answer — a script's
+ * call, a form post, a WebSocket — and with none of a link, a typed address,
+ * a frame or an image. Served: a request with no origin, or from an endpoint
+ * of the address's own Environment. A page whose `Referrer-Policy` is
+ * `no-referrer` sends its form posts with the opaque origin `null`; such a
+ * request is served only when the browser also marks it `Sec-Fetch-Site:
+ * same-origin`, which no page can set. Refused: any other origin, and `null`
+ * from anywhere else.
+ */
+export function requestAllowed(
+  source: { origin: string | undefined; site: string | undefined },
+  own: ReadonlySet<string>,
+): boolean {
+  if (source.origin === undefined || own.has(source.origin)) return true;
+  return source.origin === "null" && source.site === "same-origin";
 }

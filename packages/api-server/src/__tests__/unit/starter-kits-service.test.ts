@@ -1259,6 +1259,92 @@ describe("starter kits: backend", () => {
   });
 });
 
+describe("starter kits: startup items", () => {
+  const DASHBOARD = {
+    name: "control-room",
+    description: "Operator dashboard on 127.0.0.1:5555",
+    command: "~/bin/sd",
+    args: ["control-room"],
+  };
+
+  // TEST_SCENARIO: a kit declares the programs its agent runs at every boot, and each is written once at create, so the apply queues one startup-items event naming the kit at the version it applied, with every item on at boot unless the kit says otherwise, after the install command it may need and before the onboarding turn.
+  it("queues the kit's startup items after its install and before its first session", async () => {
+    const withItems = kit({
+      backend: "vm",
+      install: { command: "make" },
+      startupItems: [
+        DASHBOARD,
+        { name: "watcher", command: "/usr/bin/watch", enabled: false },
+      ],
+    } as never);
+    const { service, calls } = makeHarness({ ...LOADED, kit: withItems });
+    await service.apply(APPLY);
+
+    const events = calls.bumped.flatMap((b) => b.events);
+    expect(events.map((e) => e.kind)).toEqual([
+      "workspace-command",
+      "startup-items",
+      "initialization",
+    ]);
+    expect(events[1]!.id).toMatch(/^kit-startup-items:agent-1:\d+$/);
+    expect(events[1]!.payload).toEqual({
+      kit: "platform/code-reviewer@abc123",
+      items: [
+        { ...DASHBOARD, enabled: true },
+        {
+          name: "watcher",
+          command: "/usr/bin/watch",
+          args: [],
+          enabled: false,
+        },
+      ],
+    });
+  });
+
+  // TEST_SCENARIO: a kit that declares none queues no startup-items event, so an agent the runtime of before this change runs is never sent a kind it does not know.
+  it("queues nothing for a kit without startup items", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply(APPLY);
+    expect(
+      calls.bumped.flatMap((b) => b.events).map((e) => e.kind),
+    ).not.toContain("startup-items");
+  });
+
+  // TEST_SCENARIO: a Startup Item is an openrc service, which only a machine runs, so a kit that declares one and no `backend: vm` fails validation and is never offered; two items of one name would write one script, so that fails too; a command is a program, never a shell line, so a kit cannot hide a pipeline in it.
+  it("refuses items a machine could not run as declared", () => {
+    const parse = (overrides: Record<string, unknown>) =>
+      starterKitSchema.safeParse({
+        schemaVersion: "v1",
+        id: "k",
+        name: "K",
+        description: "d",
+        category: "software",
+        backend: "vm",
+        ...overrides,
+      });
+    expect(parse({ startupItems: [DASHBOARD] }).success).toBe(true);
+    expect(
+      parse({ backend: undefined, startupItems: [DASHBOARD] }).success,
+    ).toBe(false);
+    expect(parse({ startupItems: [DASHBOARD, DASHBOARD] }).success).toBe(false);
+    for (const command of [
+      "sd control-room",
+      "a;b",
+      "$HOME/x",
+      "~/../x",
+      "bin/sd",
+      "",
+    ])
+      expect(parse({ startupItems: [{ name: "x", command }] }).success).toBe(
+        false,
+      );
+    for (const name of ["../x", "-x", "a b"])
+      expect(parse({ startupItems: [{ name, command: "x" }] }).success).toBe(
+        false,
+      );
+  });
+});
+
 describe("starter kits: a kit from a link", () => {
   const URL = "https://github.com/acme/shared-kit";
   const COMMIT = "c".repeat(40);

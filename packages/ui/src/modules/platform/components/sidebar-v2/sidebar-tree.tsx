@@ -1,27 +1,24 @@
 import {
   Add,
-  type CarbonIconType,
   ChevronRight,
   FaceActivatedAdd,
   FaceAdd,
   Home,
-  ListTree,
   Settings,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 
 import { Collapse } from "@/components/ui/collapse";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { RAIL_GLYPH, SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
+import {
+  ACTIVE_ITEM,
+  HOVER_ITEM,
+  RAIL_GAP,
+  RAIL_ROW,
+  SIDEBAR_GLYPH,
+  SQUIRCLE,
+} from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +31,6 @@ import {
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
 import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on-sidebar-open.js";
-import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
@@ -54,12 +50,19 @@ import {
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
-import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
-import { AddRow, TREE_AVATAR, TREE_LEADING } from "./add-row.js";
+import {
+  AddRow,
+  NavRow,
+  TREE_AGENT_NAME_MAX,
+  TREE_AVATAR,
+  TREE_LEADING,
+} from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
+import { NewAgentMenu } from "./new-agent-menu.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
+import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the flat list pages the owner's attention feed, which holds at most ATTENTION_FEED_LIMIT Sessions; older ones show only under their Agent. Paging the server would lift that ceiling.
 const FLAT_PAGE = 20;
@@ -120,14 +123,13 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const conversationOf = useActivityConversations(shownSessions, allAgents);
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
-  const defaultAgent = useCreateDefaultAgent();
   const homeOpen = useStore((s) => s.view === "home");
   const setView = useStore((s) => s.setView);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-2 pb-3"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-3.5 pb-3"
         data-testid="sidebar-tree"
       >
         <div className="mb-2">
@@ -208,7 +210,8 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   data-testid="sidebar-flat-more"
                   onClick={() => setFlatShown(flatShown + FLAT_PAGE)}
                   className={cn(
-                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors",
+                    HOVER_ITEM,
                     FOCUS_RING,
                   )}
                 >
@@ -226,7 +229,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </>
           )}
           {groupBy === "agents" && (
-            <ul className="flex flex-col gap-px">
+            <ul className={cn("flex flex-col", RAIL_GAP)}>
               {agents.map((agent) => (
                 <AgentNode
                   key={agent.id}
@@ -252,69 +255,22 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </ul>
           )}
           {groupBy === "agents" && (
-            <div className="mt-px">
-              <AddRow
-                icon={FaceAdd}
-                hoverIcon={FaceActivatedAdd}
-                label="New agent"
-                avatar
-                testId="sidebar-new-agent-row"
-                disabled={!defaultAgent.ready}
-                onClick={() => void defaultAgent.create()}
-              />
+            <div className="mt-1.5">
+              <NewAgentMenu onNavigate={onNavigate}>
+                <AddRow
+                  icon={FaceAdd}
+                  hoverIcon={FaceActivatedAdd}
+                  label="New agent"
+                  avatar
+                  testId="sidebar-new-agent-row"
+                />
+              </NewAgentMenu>
             </div>
           )}
         </section>
       </div>
       <SettingsFooter onNavigate={onNavigate} />
     </div>
-  );
-}
-
-const GROUP_BY_LABELS: Record<SidebarGroupBy, string> = {
-  all: "All sessions",
-  agents: "Group by agents",
-};
-
-function GroupByMenu({
-  value,
-  onChange,
-}: {
-  value: SidebarGroupBy;
-  onChange: (value: SidebarGroupBy) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <Tooltip content="Group by" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={`Group by: ${GROUP_BY_LABELS[value]}`}
-            data-testid="sidebar-group-by"
-            className={cn(
-              "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              FOCUS_RING,
-            )}
-          >
-            <ListTree size={14} />
-          </button>
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup
-          value={value}
-          onValueChange={(next) => {
-            if (next === "all" || next === "agents") onChange(next);
-          }}
-        >
-          {(["all", "agents"] as const).map((option) => (
-            <DropdownMenuRadioItem key={option} value={option}>
-              {GROUP_BY_LABELS[option]}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -384,7 +340,7 @@ function AgentNode({
           {...drag.dragProps}
           className={cn(
             "group/agent relative flex items-center rounded-lg transition-colors",
-            current && !newSessionPage ? "bg-muted" : "hover:bg-muted",
+            current && !newSessionPage ? ACTIVE_ITEM : HOVER_ITEM,
           )}
         >
           <button
@@ -397,7 +353,9 @@ function AgentNode({
             aria-describedby={sublineId}
             data-testid="sidebar-agent-row"
             className={cn(
-              "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
+              SQUIRCLE,
+              "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
+              RAIL_ROW,
               agentFilter ? "pr-14" : "pr-16",
               "group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
               FOCUS_RING,
@@ -423,7 +381,12 @@ function AgentNode({
                 )}
               />
             </span>
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span
+              className={cn(
+                "flex min-w-0 flex-1 flex-col gap-0.5",
+                TREE_AGENT_NAME_MAX,
+              )}
+            >
               <span title={agent.name} className="truncate text-sm font-medium">
                 {agent.name}
               </span>
@@ -491,40 +454,5 @@ function SettingsFooter({ onNavigate }: { onNavigate?: () => void }) {
         }}
       />
     </div>
-  );
-}
-
-function NavRow({
-  icon: Icon,
-  label,
-  current,
-  testId,
-  onClick,
-}: {
-  icon: CarbonIconType;
-  label: string;
-  current: boolean;
-  testId?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-current={current ? "page" : undefined}
-      data-testid={testId}
-      onClick={onClick}
-      className={cn(
-        "flex h-[34px] w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
-        FOCUS_RING,
-        current
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-      )}
-    >
-      <span className={TREE_LEADING}>
-        <Icon size={RAIL_GLYPH} />
-      </span>
-      {label}
-    </button>
   );
 }

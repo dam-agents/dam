@@ -21,7 +21,7 @@ import type { SpendService } from "../services/spend-service.js";
 
 const CEILING_SOURCES: Readonly<Record<SpendCeilingSource, string>> = {
   default: "the platform default",
-  UserSpendLimit: "set for you by your operator",
+  operator: "set for you by your operator",
 };
 
 const STATE_LABELS: Readonly<Record<SpendLimitState, string>> = {

@@ -208,8 +208,8 @@ environments:
   # -- Furthest ahead an Environment's expiry may be set, in days.
   expiryMaxDays: 30
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
-  # Environment address and the sign-in host `signin.<domain>` to the
-  # api-server. Rendered only with a domain. On OpenShift it becomes a
+  # Environment address to the api-server; visitors sign in on the share
+  # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
   # wildcard Route, which the cluster must allow once:
   # `oc patch ingresscontroller/default -n openshift-ingress-operator --type=merge -p '{"spec":{"routeAdmission":{"wildcardPolicy":"WildcardsAllowed"}}}'`.
   ingress:
@@ -1000,6 +1000,13 @@ keycloak:
   # to disable the install surface entirely (neither route is mounted);
   # workspaces already connected keep working either way.
   slackInstallerRole: "platform-slack-installer"
+  # -- Realm role of the platform operators: the people who run this install
+  # for all its users, for example by setting each user's spend ceiling. Only
+  # an interactive sign-in counts; an API key never acts as an operator. The chart auto-creates this role plus an `operators` group mapped
+  # to it; grant it by adding users to the group via the Keycloak admin UI, or
+  # map your upstream SSO group to the `operators` group. Leave empty for an
+  # install with no operators: every operator action is then refused.
+  operatorRole: "platform-operator"
   # -- Confidential client for API server
   apiClientId: platform-api
   apiClientSecret: ""
@@ -1012,10 +1019,6 @@ keycloak:
   # `{urls.share}/auth/login`. No api audience mapper: its tokens are
   # rejected by the api-server on purpose.
   shareClientId: platform-share
-  # -- Public client for Environment sign-in (authorization code + PKCE) on
-  # the fixed sign-in host `signin.<environments.domain>`. No api audience
-  # mapper: its tokens are rejected by the api-server on purpose.
-  environmentsClientId: platform-environments
 
   # -- Additional redirect URIs and web origins to register on the public
   # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite
@@ -1096,8 +1099,8 @@ keycloak:
   # -- More test users bootstrapped via realm import, for QA installs that need
   # more than one account. Empty by default — the same rule as `testUser`.
   # Each entry: `username`, `password`, optional `firstName`/`lastName`, and
-  # `groups` — any of `inspectors`, `slack-installers` (ignored when that role
-  # is disabled). The email is `<username>@platform.local`; `requiredRole`,
+  # `groups` — any of `inspectors`, `slack-installers`, `operators` (ignored
+  # when that role is disabled). The email is `<username>@platform.local`; `requiredRole`,
   # when set, is granted as for `testUser`.
   extraTestUsers: []
 
@@ -1417,8 +1420,8 @@ apiServer:
     # paid providers that one user's Agents may spend in a UTC day. At the
     # ceiling the gateway refuses the next model call and asks nothing. A
     # quoted decimal string with at most two decimals, e.g. "50" or "12.50";
-    # null turns the default ceiling off. A UserSpendLimit object overrides it
-    # for one user.
+    # null turns the default ceiling off. A platform operator overrides it for
+    # one user, with `dam spend ceiling` or in the Operator tab of Settings.
     defaultUserCeilingUsd: null
     # -- Operator prices: dollars per million tokens, and dollars per web
     # search (`webSearch`). They win over every other price. A row can add a

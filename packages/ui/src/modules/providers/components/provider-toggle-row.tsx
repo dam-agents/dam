@@ -31,13 +31,13 @@ export function ProviderToggleRow({
           <span className="block truncate text-base font-medium text-foreground">
             {provider.name}
           </span>
-          <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             supports:
             {harnesses?.length ? (
               <HarnessIcons
                 harnesses={harnesses}
                 size="sm"
-                className="opacity-70"
+                className="flex-wrap opacity-70"
               />
             ) : (
               <span>{harnesses ? "None" : "Compatibility unavailable"}</span>

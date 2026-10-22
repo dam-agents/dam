@@ -16,7 +16,11 @@ export {
   composeShareRelayTokens,
   composeShareRenderTokens,
 } from "./compose.js";
-export { createShareAuthRoutes } from "./viewer/share-auth-routes.js";
+export {
+  createShareAuthRoutes,
+  loginPath,
+  readShareSignIn,
+} from "./viewer/share-auth-routes.js";
 export {
   createKeycloakShareIdentity,
   keycloakShareJwksUrl,

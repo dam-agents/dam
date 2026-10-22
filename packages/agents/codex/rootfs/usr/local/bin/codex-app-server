@@ -3,6 +3,7 @@
 # Router, fixed in /etc/codex/config.toml, so every thread (also the title thread
 # codex-acp starts without CODEX_CONFIG) reaches it without a -c override.
 . /usr/local/lib/codex-otel.sh
+. /usr/local/lib/codex-agents-md.sh
 # developer_instructions takes the text, not a path, and Codex has no file
 # option for it; jq's JSON string is a valid TOML basic string.
 exec codex -c "developer_instructions=$(jq -Rs . /etc/AGENTS.md)" "$@"

@@ -1,20 +1,23 @@
 import {
   Add,
+  Chat,
   ChevronRight,
   FaceActivatedAdd,
   FaceAdd,
   Home,
-  Pin,
   Settings,
+  Terminal,
 } from "@carbon/icons-react";
 import {
   type FocusEvent,
   type PointerEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 
+import { HARNESS_ICONS, HarnessIcons } from "@/components/harness-icons";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   Popover,
@@ -26,9 +29,10 @@ import {
   RAIL_COLUMN,
   RAIL_GAP,
   RAIL_GLYPH,
-  RAIL_SEPARATOR,
+  RAIL_SEPARATOR_SPACE,
   railTile,
 } from "@/components/ui/rail-tile";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -37,18 +41,26 @@ import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
-import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
+import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
+import {
+  type AgentActivitySession,
+  useActivitySessions,
+} from "../../../home/hooks/use-activity-sessions.js";
+import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
+import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
+import { sessionTitleLabel } from "../../../sessions/lib/session-title.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { AddRow } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
-import { PinnedList, usePinnedRows } from "./pinned-rows.js";
+import { NewAgentMenu } from "./new-agent-menu.js";
+import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover; choosing a Session closes the popover; the pin icon opens the Pinned section on click. The rail never leaves the layout, so the page always has a way back to the tree.
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, Settings, and between them what the tree lists under its Agents label — one avatar per Agent in the same manual order, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
  */
 export function SidebarRail({
   onExpand,
@@ -58,13 +70,21 @@ export function SidebarRail({
   onNavigate?: () => void;
 }) {
   const { agents, openAgentId, unreadAgentIds } = useSidebarAgents();
-  const defaultAgent = useCreateDefaultAgent();
   const approvals = useApprovalsForOwner().data;
-  const { rows: pinnedRows } = usePinnedRows();
+  const activity = useActivitySessions();
   const homeOpen = useStore((s) => s.view === "home");
   const settingsOpen = useStore((s) => s.view === "settings");
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const filters = useStore((s) => s.sidebarActivityFilters);
+  const setFilters = useStore((s) => s.setSidebarActivityFilters);
+  const groupBy = useStore((s) => s.sidebarGroupBy);
+  const setGroupBy = useStore((s) => s.setSidebarGroupBy);
+  const sessions = useMemo(
+    () =>
+      groupBy === "all" ? filterActivitySessions(activity.items, filters) : [],
+    [activity.items, filters, groupBy],
+  );
   const [open, setOpen] = useState<string | null>(null);
   // UNIT_BOUNDARY_DESCRIPTION: while one popover is open or within its close grace, the pointer is already inside the rail, so the next tile opens at once; HOVER_CLOSE_MS after the last one shut, a rest on a tile needs the full HOVER_OPEN_MS again.
   const groupUntil = useRef(0);
@@ -89,6 +109,8 @@ export function SidebarRail({
       className={cn(
         "min-h-0 flex-1 overflow-x-visible overflow-y-auto",
         RAIL_COLUMN,
+        // UNIT_BOUNDARY_DESCRIPTION: the pane's right border takes one of the four pixels either side of a tile, so the tiles centre where the tree's rows do; the top padding is the header's, so neither state's first mark touches the top of the screen.
+        "pl-px",
       )}
       data-testid="sidebar-rail"
     >
@@ -114,69 +136,91 @@ export function SidebarRail({
       >
         <Home size={RAIL_GLYPH} />
       </button>
-      {pinnedRows.length > 0 && (
-        <PinnedTile
-          skipDelay={skipDelay}
-          open={open === "pinned"}
-          onOpenChange={(next) =>
-            setOpen((prev) =>
-              next ? "pinned" : prev === "pinned" ? null : prev,
-            )
-          }
-          onNavigate={navigate}
-        />
-      )}
       <div
-        className={cn("relative flex min-h-0 flex-col items-center", RAIL_GAP)}
+        className={cn(
+          "relative flex min-h-0 w-full flex-col items-center",
+          RAIL_GAP,
+        )}
         data-testid="sidebar-rail-agents"
       >
-        <div aria-hidden className={cn(RAIL_SEPARATOR, "-top-[3px]")}>
-          <span className="h-px w-6 bg-border" />
-        </div>
-        {agents.map((agent) => (
-          <AgentTile
-            key={agent.id}
-            agent={agent}
-            current={agent.id === openAgentId}
-            cue={
-              awaitsApproval(approvals ?? [], agent.id)
-                ? "approval"
-                : unreadAgentIds.has(agent.id)
-                  ? "unread"
-                  : null
-            }
-            skipDelay={skipDelay}
-            open={open === agent.id}
-            onOpenChange={(next) =>
-              setOpen((prev) =>
-                next ? agent.id : prev === agent.id ? null : prev,
-              )
-            }
-            onNavigate={navigate}
-          />
-        ))}
-        <button
-          type="button"
-          aria-label="New agent"
-          data-testid="sidebar-rail-new-agent"
-          disabled={!defaultAgent.ready}
-          onClick={() => {
-            navigate();
-            void defaultAgent.create();
-          }}
-          className={cn(railTile(false), FOCUS_RING)}
+        <div
+          className={cn(
+            "group/sep relative flex w-full items-center justify-center",
+            RAIL_SEPARATOR_SPACE,
+          )}
+          data-testid="sidebar-rail-list-menus"
         >
-          <FaceAdd
-            size={RAIL_GLYPH}
+          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline stands where the tree's Agents label stood, arriving with the rail that carries it rather than under a word that has gone; the label's own buttons take its place while the pointer rests on it, which is where the empty space is. */}
+          <span
             aria-hidden
-            className="group-hover:hidden"
+            className="h-px w-6 bg-border group-focus-within/sep:opacity-0 group-has-[[aria-expanded=true]]/sep:opacity-0 group-hover/sep:opacity-0"
           />
-          <FaceActivatedAdd
-            size={RAIL_GLYPH}
-            aria-hidden
-            className="hidden group-hover:block"
-          />
-        </button>
+          {/* UNIT_BOUNDARY_DESCRIPTION: a menu of either button takes the pointer away from the rail, so the pair stays drawn while one is open rather than vanishing under its own menu. */}
+          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline's own space is the label's less the two gaps around it, too short for two buttons, so they reach into the empty gaps above and below it rather than growing the column. */}
+          <div className="absolute inset-x-0 -inset-y-1.5 flex items-center gap-px opacity-0 transition-opacity duration-150 group-focus-within/sep:opacity-100 group-hover/sep:opacity-100 has-[[aria-expanded=true]]:opacity-100 motion-reduce:transition-none">
+            <ActivityFilterMenu
+              filters={filters}
+              onChange={setFilters}
+              className="h-6 flex-1"
+            />
+            <GroupByMenu
+              value={groupBy}
+              onChange={setGroupBy}
+              className="h-6 flex-1"
+            />
+          </div>
+        </div>
+        {groupBy === "all"
+          ? sessions.map((item) => (
+              <SessionTile
+                key={item.id}
+                item={item}
+                current={item.id === activity.openSessionKey}
+                onNavigate={navigate}
+              />
+            ))
+          : agents.map((agent) => (
+              <AgentTile
+                key={agent.id}
+                agent={agent}
+                current={agent.id === openAgentId}
+                cue={
+                  awaitsApproval(approvals ?? [], agent.id)
+                    ? "approval"
+                    : unreadAgentIds.has(agent.id)
+                      ? "unread"
+                      : null
+                }
+                skipDelay={skipDelay}
+                open={open === agent.id}
+                onOpenChange={(next) =>
+                  setOpen((prev) =>
+                    next ? agent.id : prev === agent.id ? null : prev,
+                  )
+                }
+                onNavigate={navigate}
+              />
+            ))}
+        <NewAgentMenu side="right" onNavigate={navigate}>
+          <button
+            type="button"
+            aria-label="New agent"
+            aria-haspopup="menu"
+            data-testid="sidebar-rail-new-agent"
+            className={cn(railTile(false), FOCUS_RING)}
+          >
+            <FaceAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="group-hover:hidden"
+            />
+            <FaceActivatedAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="hidden group-hover:block"
+            />
+          </button>
+        </NewAgentMenu>
       </div>
       <button
         type="button"
@@ -399,51 +443,56 @@ function AgentTile({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The rail's Pinned tile, which has no page behind it: a click does nothing but open the popover, and a pointer resting on the tile or keyboard focus opens it as it does for an Agent's tile, listing the Pinned Sessions.
+ * UNIT_BOUNDARY_DESCRIPTION: A Session's tile in the rail, drawn as the tree draws the Session's own icon: the harness it runs on, or the shape of a Session that names none, with a dot while it awaits an approval or holds something unread. The rail has no room for a title, so the name waits in a tooltip beside the tile, and the tile opens that Session.
  */
-function PinnedTile({
-  open,
-  skipDelay,
-  onOpenChange,
+function SessionTile({
+  item,
+  current,
   onNavigate,
 }: {
-  open: boolean;
-  skipDelay: () => boolean;
-  onOpenChange: (open: boolean) => void;
+  item: AgentActivitySession;
+  current: boolean;
   onNavigate: () => void;
 }) {
-  const rail = useRailPopover(onOpenChange, skipDelay);
+  const openSession = useOpenSession();
+  const { session } = item;
+  const name = `${item.agent.name} — ${sessionTitleLabel(session)}`;
+  const cue = item.needsApproval ? "approval" : item.unread ? "unread" : null;
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverAnchor asChild>
-        <button
-          type="button"
-          aria-label="Pinned sessions"
-          aria-current={open ? "page" : undefined}
-          data-testid="sidebar-rail-pinned"
-          className={cn(railTile(open), FOCUS_RING)}
-          onClick={() => {
-            if (rail.hovered()) rail.keepOpen();
-            else onOpenChange(!open);
-          }}
-          {...rail.trigger}
-        >
-          <Pin size={RAIL_GLYPH} />
-        </button>
-      </PopoverAnchor>
-      <PopoverContent
-        side="right"
-        align="start"
-        className="max-h-[70vh] w-[320px] overflow-y-auto p-2"
-        {...rail.content}
+    <Tooltip content={name} side="right">
+      <button
+        type="button"
+        aria-label={name}
+        aria-current={current ? "page" : undefined}
+        data-testid="sidebar-rail-session"
+        data-session-id={session.sessionId}
+        className={cn(railTile(current), FOCUS_RING)}
+        onClick={() => {
+          onNavigate();
+          openSession(session.agentId, session.sessionId, session.mode);
+        }}
       >
-        <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">
-          Pinned
-        </div>
-        <div className="flex flex-col gap-px">
-          <PinnedList onNavigate={onNavigate} />
-        </div>
-      </PopoverContent>
-    </Popover>
+        {session.harness && session.harness in HARNESS_ICONS ? (
+          <HarnessIcons
+            harnesses={[session.harness]}
+            size="md"
+            focusable={false}
+          />
+        ) : session.mode === "terminal" ? (
+          <Terminal size={RAIL_GLYPH} />
+        ) : (
+          <Chat size={RAIL_GLYPH} />
+        )}
+        {cue && (
+          <span
+            aria-hidden
+            className={cn(
+              "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
+              cue === "approval" ? "bg-warning" : "bg-success",
+            )}
+          />
+        )}
+      </button>
+    </Tooltip>
   );
 }

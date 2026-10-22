@@ -14,10 +14,7 @@ import {
 import { createLastKnownNames } from "./infrastructure/last-known-names.js";
 import { createSpendLedger } from "./infrastructure/spend-ledger.js";
 import { createSpendLimits } from "./infrastructure/spend-limits.js";
-import {
-  createUserSpendCeilings,
-  type CustomObjectReader,
-} from "./infrastructure/user-spend-ceilings.js";
+import { createSpendCeilingStore } from "./infrastructure/spend-ceilings.js";
 import {
   startExtendOnContinueSaga,
   type SpendQuestions,
@@ -50,6 +47,11 @@ import {
   createAgentSpend,
   type AgentSpendReader,
 } from "./services/agent-spend.js";
+import {
+  createSpendCeilingsAdmin,
+  type CeilingUsers,
+  type SpendCeilingsForOperator,
+} from "./services/spend-ceilings-admin.js";
 
 const CALL_ROWS_RETENTION_DAYS = 30;
 
@@ -74,6 +76,7 @@ export interface SpendSystem {
     agentBinding: readonly string[] | "*";
     isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   }): SpendService;
+  ceilingsForOperator: SpendCeilingsForOperator;
 }
 
 export function composeSpendSystem(deps: {
@@ -84,7 +87,7 @@ export function composeSpendSystem(deps: {
   payers: AgentPayers;
   questions: SpendQuestions & SpendQuestionCloser;
   connections: GrantedConnections;
-  k8s: CustomObjectReader;
+  users: CeilingUsers;
   defaultCeilingMicros: number | null;
   brandName: string;
   connectionNames: ConnectionNames;
@@ -99,8 +102,8 @@ export function composeSpendSystem(deps: {
   const counters = createRedisDayCounters(deps.redis);
   const limits = createSpendLimits(deps.db);
   const lastKnownNames = createLastKnownNames(deps.db);
-  const ceilings = createUserSpendCeilings({
-    k8s: deps.k8s,
+  const ceilings = createSpendCeilingStore({
+    db: deps.db,
     defaultMicros: deps.defaultCeilingMicros,
   });
   const totals = createDayTotals({ counters, ledger });
@@ -176,6 +179,11 @@ export function composeSpendSystem(deps: {
         telemetryStoreOn: deps.telemetryStoreOn,
         ...owner,
       }),
+    ceilingsForOperator: createSpendCeilingsAdmin({
+      store: ceilings,
+      users: deps.users,
+      defaultMicros: deps.defaultCeilingMicros,
+    }),
   };
 }
 
