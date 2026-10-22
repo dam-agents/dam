@@ -12,6 +12,58 @@ export const REWRITE_REFUSED_CODE = "REWRITE_REFUSED";
 
 export const REWRITE_BUSY_CODE = "REWRITE_BUSY";
 
+export type JsonRpcId = string | number;
+
+export interface JsonRpcRequest<P = unknown> {
+  jsonrpc?: string;
+  id: JsonRpcId;
+  method: string;
+  params?: P;
+}
+
+export interface JsonRpcResponse {
+  jsonrpc?: string;
+  id: JsonRpcId;
+  result?: unknown;
+  error?: unknown;
+}
+
+export interface JsonRpcNotification {
+  jsonrpc?: string;
+  method: string;
+  params?: unknown;
+}
+
+export type JsonRpcFrame =
+  JsonRpcRequest | JsonRpcResponse | JsonRpcNotification;
+
+export function isNonNullObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+export function parseFrame(line: string): JsonRpcFrame | null {
+  try {
+    const f = JSON.parse(line);
+    return f && typeof f === "object" ? (f as JsonRpcFrame) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isRequest<P = unknown>(msg: unknown): msg is JsonRpcRequest<P> {
+  if (!isNonNullObject(msg)) return false;
+  const m = msg as Partial<JsonRpcRequest>;
+  return m.id !== undefined && typeof m.method === "string";
+}
+
+export function isResponse(msg: unknown): msg is JsonRpcResponse {
+  if (!isNonNullObject(msg)) return false;
+  const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
+  if (m.id === undefined) return false;
+  if (m.method !== undefined) return false;
+  return m.result !== undefined || m.error !== undefined;
+}
+
 export const STEER_METHOD = "_session/steering";
 
 export const steerResponseSchema = z.object({

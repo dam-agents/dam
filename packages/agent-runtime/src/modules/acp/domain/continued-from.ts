@@ -1,6 +1,6 @@
 import type { PlatformContinuedFrom } from "api-server-api";
 
-import { isNonNullObject } from "./frames.js";
+import { isNonNullObject } from "api-server-api";
 
 const TAG = "continued-from";
 const BLOCK = new RegExp(`<${TAG}(?:\\s[^>]*)?>[\\s\\S]*?</${TAG}>\\s*`, "g");

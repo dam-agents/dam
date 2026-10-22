@@ -58,7 +58,7 @@ import {
   isResponse,
   parseFrame,
   type JsonRpcId,
-} from "../../domain/frames.js";
+} from "api-server-api";
 import {
   harnessLostSession,
   rewriteAuthError,

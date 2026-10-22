@@ -844,8 +844,17 @@ export {
   STEER_METHOD,
   steerResponseSchema,
   steeringSupported,
+  isNonNullObject,
+  isRequest,
+  isResponse,
+  parseFrame,
 } from "./modules/acp/types.js";
 export type {
+  JsonRpcFrame,
+  JsonRpcId,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
   PlatformTurnEndedParams,
   PlatformRunEndedParams,
   PlatformPromptAcceptedParams,

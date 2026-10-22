@@ -1,7 +1,7 @@
 import type { PlatformReplayTurnMeta } from "api-server-api";
 import { match } from "ts-pattern";
 
-import type { JsonRpcId } from "../../domain/frames.js";
+import type { JsonRpcId } from "api-server-api";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";

@@ -7,7 +7,7 @@ import {
   isResponse,
   parseFrame,
   type JsonRpcFrame,
-} from "../domain/frames.js";
+} from "api-server-api";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import type { SessionDefaultsStore } from "../infrastructure/session-defaults-store.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
