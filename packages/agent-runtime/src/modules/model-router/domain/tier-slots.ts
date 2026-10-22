@@ -8,9 +8,11 @@ import {
 } from "agent-runtime-api";
 import {
   CLAUDE_MODEL_NAME_PREFIX,
+  hasServerAutoMode,
   parseQualifiedModel,
   preferredModelOf,
 } from "api-server-api";
+import { isClaudeModel } from "../../acp/domain/non-claude-env.js";
 import type { CatalogProvider } from "../../model-catalog/index.js";
 import { forHarness, renderName } from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
@@ -81,15 +83,13 @@ function tierOf(
  * of the same tier, else the session's own model. The slots are filled per
  * process from the agent's default provider, and Claude Code resolves its
  * built-in aliases through them, so a session moved to another provider
- * would otherwise send its titles, summaries, classifier calls and
- * alias-named subagents to the provider it left.
+ * would otherwise send its titles, summaries and alias-named subagents to
+ * the provider it left.
  * A provider whose models carry no tier word has no tiers to answer with,
  * so there every slot call runs on the session's own model, whichever
  * provider filled the slot.
- * The auto-mode classifier's own model comes from its knob rather than a
- * slot (classifierModelEnv), but a name carrying a tier word is a side call
- * like any other and moves by that tier; one without a tier word moves
- * nowhere and stays on the default provider's model.
+ * The auto-mode classifier is not one of these calls: its own name is
+ * answered first, by classifierModelOnSessionProvider.
  * A call on the session's own provider for a
  * model it no longer lists, a slot the process holds from before a listing
  * change, is read by its tier the same way. Null when the call names a
@@ -144,4 +144,43 @@ export function tierModelOnSessionProvider(input: {
   const askedSlots = tierModels(askedView.map((e) => e.upstreamId));
   const tier = tierOf(asked.upstreamId, askedSlots);
   return tier ? toOwnTier(tier) : null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: where the auto-mode classifier runs when its
+ * session is on another provider: the session provider's preferred classifier,
+ * else the session's own model, so a session moved elsewhere follows itself
+ * instead of the provider it left. The call is recognized by the exact name
+ * the process's classifier variable holds, a string match only; no tier logic
+ * applies, since the classifier names its own model rather than a slot. Null
+ * when the call is not the classifier's, and when the session runs on a
+ * provider whose own service answers the check (hasServerAutoMode) with a
+ * Claude model, where the call passes through unchanged.
+ */
+export function classifierModelOnSessionProvider(input: {
+  requested: string;
+  sessionModel: string;
+  harness: string;
+  binding: ModelRouterBinding;
+  providers: readonly CatalogProvider[];
+  processClassifier: string | null;
+}): string | null {
+  if (!input.processClassifier || input.requested !== input.processClassifier)
+    return null;
+  const { binding } = input;
+  const own = parseQualifiedModel(input.sessionModel, {
+    claudePrefix: binding.namePrefix === CLAUDE_MODEL_NAME_PREFIX,
+  });
+  if (!own) return null;
+  if (hasServerAutoMode(own.alias) && isClaudeModel(input.sessionModel))
+    return null;
+  const provider = input.providers.find((p) => p.alias === own.alias);
+  const ownView = provider
+    ? forHarness(provider.entries, input.harness, binding)
+    : [];
+  const classifier = preferredModelOf("classifier", [
+    { alias: own.alias, listed: ownView.map((e) => e.upstreamId) },
+  ]);
+  const entry = ownView.find((e) => e.upstreamId === classifier?.upstreamId);
+  return entry ? renderName(entry, binding) : renderName(own, binding);
 }

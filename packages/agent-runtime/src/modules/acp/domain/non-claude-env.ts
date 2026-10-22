@@ -5,6 +5,10 @@ const isNonClaude = (model: string | null | undefined): boolean => {
   return parsed !== null && !/claude/i.test(parsed.upstreamId);
 };
 
+/** UNIT_BOUNDARY_DESCRIPTION: a model is Claude when its upstream id says so; no model or a tier word counts as Claude. */
+export const isClaudeModel = (model: string | null | undefined): boolean =>
+  !isNonClaude(model);
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the env a harness declares for a process whose
  * session runs any model that is not Claude, the session's own or one a

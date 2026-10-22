@@ -9,9 +9,11 @@ manifestVersion: 1
 # claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables.
 # The slots are the default provider's, so the router moves a side call on one
 # (a title, a WebFetch summary, an alias-named subagent) to the session's
-# provider by tier. The classifier names its own model through
-# classifierModelEnv below, so it moves only when that name carries a tier
-# word of its own.
+# provider by tier. The classifier's model comes from
+# classifierModelEnv below, which is the name Claude Code sends; the router
+# sends that call to the session provider's classifier, unless the session
+# runs server-side auto mode (a Claude model on Anthropic or IBM), so a
+# session moved elsewhere follows itself.
 # The context window takes two mechanisms, because Claude Code keeps no window
 # from /v1/models: discovery parses each model as {id, display_name,
 # description} and throws the rest away, and the per-model modelConfig route is
@@ -41,10 +43,10 @@ modelRouter:
     CLAUDE_CODE_AUTO_MODE_SERVER: "0"
   # Auto mode's classifier model, which Claude Code takes from its own knob
   # (inert below 2.1.302): a routed process is told the platform's preferred
-  # classifier on the agent's default provider. The knob is one value per
-  # process, so a session moved elsewhere keeps that provider's classifier
-  # unless the name carries a tier word, which the side-call rule moves by
-  # tier like any other.
+  # classifier on the agent's default provider, so Claude Code has a name to
+  # send. That one name is the call the router recognizes and sends to the
+  # session provider's classifier, or to the session's own model where that
+  # provider lists none; a session in server-side auto mode keeps the call.
   # The Sonnet slot stays what it says, so a sonnet-aliased subagent still
   # runs where the person put it.
   classifierModelEnv: CLAUDE_CODE_AUTO_MODE_MODEL
