@@ -8,7 +8,7 @@ function memoryRepo(): SidebarOrderRepository {
   const agents = new Map<string, string[]>();
   return {
     async find(owner) {
-      return { agents: [...(agents.get(owner) ?? [])], sessions: {} };
+      return { agents: [...(agents.get(owner) ?? [])] };
     },
     async replaceAgents(owner, agentIds) {
       agents.set(owner, [...agentIds]);
@@ -26,7 +26,7 @@ describe("sidebar order", () => {
       repo: memoryRepo(),
       owner: "u1",
     });
-    expect(await order.get()).toEqual({ agents: [], sessions: {} });
+    expect(await order.get()).toEqual({ agents: [] });
   });
 
   // TEST_SCENARIO: a drag and drop sends the whole new order. The stored order is that order, and an id sent twice is kept once, at its first place.
@@ -49,6 +49,6 @@ describe("sidebar order", () => {
     const mine = createSidebarOrderService({ repo, owner: "u1" });
     const theirs = createSidebarOrderService({ repo, owner: "u2" });
     await mine.setAgents(["a"]);
-    expect(await theirs.get()).toEqual({ agents: [], sessions: {} });
+    expect(await theirs.get()).toEqual({ agents: [] });
   });
 });
