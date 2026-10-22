@@ -11,7 +11,10 @@ import {
   PROVIDER_LIMITS_TITLE,
   spentOfLimit,
 } from "../lib/copy.js";
+import { connectionDisplayName } from "../lib/level-labels.js";
+import type { LevelConnection } from "../lib/limit-levels.js";
 import { HelpTip } from "./help-tip.js";
+import { LevelIcon } from "./level-icon.js";
 import { LimitBar } from "./limit-bar.js";
 
 export function ProviderLimitsSummary({
@@ -25,8 +28,17 @@ export function ProviderLimitsSummary({
     (limit) => limit.scope.kind === "owner-connection",
   );
   if (providerLimits.length === 0) return null;
-  const nameOf = (connectionId: string) =>
-    connections?.find((c) => c.id === connectionId)?.name ?? connectionId;
+  const connectionOf = (connectionId: string) => {
+    const found = connections?.find((c) => c.id === connectionId);
+    return {
+      id: connectionId,
+      name: connectionDisplayName(
+        found?.name ?? connectionId,
+        found?.templateId ?? "",
+      ),
+      templateId: found?.templateId ?? "",
+    };
+  };
 
   return (
     <div className="flex flex-col gap-2.5 border-t border-border pt-3">
@@ -44,15 +56,15 @@ export function ProviderLimitsSummary({
           {EDIT_IN_PROVIDERS}
         </Button>
       </div>
-      <ul className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+      <ul className="grid grid-cols-[20px_auto_1fr] items-center gap-x-2.5 gap-y-2">
         {providerLimits.map((limit) => (
           <ProviderLimitRow
             key={limit.id}
             limit={limit}
-            name={
+            connection={
               limit.scope.kind === "owner-connection"
-                ? nameOf(limit.scope.connectionId)
-                : ""
+                ? connectionOf(limit.scope.connectionId)
+                : null
             }
           />
         ))}
@@ -63,11 +75,12 @@ export function ProviderLimitsSummary({
 
 function ProviderLimitRow({
   limit,
-  name,
+  connection,
 }: {
   limit: SpendLimitView;
-  name: string;
+  connection: LevelConnection | null;
 }) {
+  const name = connection?.name ?? "";
   const amounts = spentOfLimit(
     limit.spentMicros,
     limit.amountMicros,
@@ -75,6 +88,22 @@ function ProviderLimitRow({
   );
   return (
     <li className="contents">
+      <LevelIcon
+        level={{
+          key: limit.id,
+          kind: "all-connection",
+          connection,
+          unit: limit.unit,
+          amountMicros: limit.amountMicros,
+          effectiveMicros: limit.effectiveMicros,
+          spentMicros: limit.spentMicros,
+          leftMicros: limit.leftMicros,
+          state: limit.state,
+          mineMicros: null,
+          stopsFirst: false,
+        }}
+        agent={null}
+      />
       <span className="text-xs text-foreground">{name}</span>
       <div className="flex flex-col gap-0.5">
         <LimitBar

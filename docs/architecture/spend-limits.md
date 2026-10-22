@@ -328,23 +328,30 @@ With a limit, it gives the spend against the limit, and a meter with the share o
 A line under the meter shows only when it matters: when the spend is close to the limit, when the limit is reached and until when paid calls stop, and how often the owner continued today.
 The last line gives the local time at which the day resets.
 A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
+Every place that shows a limit follows one pattern.
+It shows the limit that the place owns, which the user sets there, and under it one line, "Also counted by", for the other limits that count the same calls.
+Each limit has its own icon on every screen: the provider's for an agent's Connection limit, the same with a people badge for a Connection limit for all agents, the agent's avatar for the agent limit, a sum sign for the own limit (the total daily limit) and a lock for the spend ceiling.
+Closed, the line shows each other limit's icon and share used; open, it lists them muted, each with its meter, its spend against the limit and where it is set.
+The limit with the least left today, when it is not the place's own, is marked "stops first", closed and open.
+The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's page:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units and how many calls are high estimates.
-  When the own limit or the ceiling stops the agent first, it says so.
-  It tells the user which of the agent's providers the agent limit does not count.
+  Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
-  It explains the subscription value and Bobcoins, and that the user's limit for all agents on the Connection counts the same calls; a Connection that takes no limit says why.
-- **Settings, Providers tab:** under each connected Connection that takes a limit, the user sets the Connection limit for all agents, in the Connection's unit, next to all agents' spend on it today; a Connection that takes no limit says why.
+- **The agent's Providers section:** each granted Connection that takes a limit has one line for the agent's limit on it, in the Connection's unit: a meter, the share used, the spend against the limit, and the button.
+  Clicking the line opens the other limits that count those calls: the Connection limit for all agents and, on a dollar Connection, the agent limit, the total daily limit and the ceiling; a line that nothing else counts does not open.
+  The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
+  A Connection that takes no limit says why.
+- **Settings, Providers tab:** under each connected Connection that takes a limit, one line for the Connection limit for all agents, the same as in the agent's Providers section; on a dollar Connection it opens to the total daily limit and the ceiling.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
-  When the user has a ceiling, the card also shows it as the spend ceiling, without a button, and says until when paid calls stop when it is reached.
-  When the user has Connection limits for all agents, the card lists them below, read only: each with a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
+  Its "Also counted by" line holds the spend ceiling, when the operator has set one.
+  When the user has Connection limits for all agents, the card lists them below, read only: each with its icon, a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
   Below the card, a period picker keeps its period in the URL.
   It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
   The calendar gives the local time at which a day starts.

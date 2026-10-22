@@ -86,7 +86,7 @@ export function ProviderRow({
       </div>
     </>
   );
-  const layout = "flex w-full items-center gap-3 p-4";
+  const layout = "flex w-full items-start gap-3 p-4";
   const label = connected
     ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
     : `Connect ${name}`;

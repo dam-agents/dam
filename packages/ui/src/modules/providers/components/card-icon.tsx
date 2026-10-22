@@ -38,10 +38,14 @@ const STYLES: Record<
   platform: { Icon: DataCenter, bg: "bg-icon-blue" },
 };
 
-const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
-  lg: "size-[68px]",
-  md: "size-[38px]",
+type CardIconSize = "lg" | "md" | "sm" | "tile-sm" | "tile-xs";
+
+const TILE_SIZE_CLASS: Record<CardIconSize, string> = {
+  lg: "size-[68px] rounded-lg",
+  md: "size-[38px] rounded-lg",
   sm: "size-5",
+  "tile-sm": "size-5 rounded-[5px]",
+  "tile-xs": "size-3.5 rounded-[3px]",
 };
 
 /**
@@ -60,7 +64,7 @@ export function CardIcon({
 }: {
   provider: ProviderPresetType;
   templateId?: string;
-  size?: "lg" | "md" | "sm";
+  size?: CardIconSize;
 }) {
   const { Icon: OutlineIcon, bg } = STYLES[provider];
   const tileBg = (templateId && TEMPLATE_BG[templateId]) || bg;
@@ -72,7 +76,7 @@ export function CardIcon({
       className={cn(
         "shrink-0 flex items-center justify-center",
         TILE_SIZE_CLASS[size],
-        size !== "sm" && ["rounded-lg text-white", tileBg],
+        size !== "sm" && ["text-white", tileBg],
       )}
     >
       <Icon

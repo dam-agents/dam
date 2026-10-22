@@ -4,13 +4,17 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { limitButtonLabel, limitButtonText } from "../lib/copy.js";
-import { SpendLimitDialog } from "./spend-limit-dialog.js";
+import {
+  type LimitComparison,
+  SpendLimitDialog,
+} from "./spend-limit-dialog.js";
 
 interface Props {
   scope: SpendLimitScope;
   subject: string;
   amountMicros: number | null;
   unit?: SpendUnit;
+  compare?: LimitComparison;
 }
 
 export function SpendLimitButton({
@@ -18,6 +22,7 @@ export function SpendLimitButton({
   subject,
   amountMicros,
   unit = "usd",
+  compare,
 }: Props) {
   const [open, setOpen] = useState(false);
   const hasLimit = amountMicros !== null;
@@ -39,6 +44,7 @@ export function SpendLimitButton({
           unit={unit}
           subject={subject}
           amountMicros={amountMicros}
+          {...(compare && { compare })}
           onClose={() => setOpen(false)}
         />
       )}

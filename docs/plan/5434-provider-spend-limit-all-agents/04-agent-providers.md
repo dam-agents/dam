@@ -1,98 +1,68 @@
-# 04 — Agent › Providers: every limit at a glance
+# 04 — The limit ladder in all four places
 
 **Depends on:** 02-binding, 03-meter
 **Part of:** Provider spend limit for all agents — see [README](./README.md)
 
 ## Context
 
-On the agent's Providers page, each provider shows what this agent may still spend on it today and
-every limit behind that figure ([`mockup.html`](./mockup.html), section 3, trimmed).
-The limit dialog says which limit stops first before saving, and the agent's Usage card reads the
-same server answer instead of computing it in the browser.
+The operator replaced the agent card of v11 with one pattern for every place a limit shows
+([`ladder.html`](./ladder.html), approved v2).
+Each place shows the limit it owns, settable there;
+the other limits that count the same calls show muted, each with its own icon, in a list that the
+place's line opens and closes.
+The limit dialog says which limit stops first before saving.
+
+| Place                | Owns                       | Also counted by                                             |
+| -------------------- | -------------------------- | ----------------------------------------------------------- |
+| Settings › Usage     | total daily limit          | ceiling                                                     |
+| Settings › Providers | one provider, all agents   | total, ceiling (dollar providers)                           |
+| Agent › Usage        | agent limit                | each provider's agent and all-agents limits, total, ceiling |
+| Agent › Providers    | this agent on one provider | all agents on it; agent limit, total, ceiling (dollar)      |
 
 ## Implementation plan
 
 Apply **/react-ui-engineering**.
 
-1. **Provider limit block** — rework `packages/ui/src/modules/spend/components/connection-spend-limit.tsx`.
-   Read the agent's `binding` row for this Connection from `useAgentSpendStatus(agentId)`, the
-   agent's `connection` limit and the owner's `owner-connection` limit from `status.limits`.
-   - Title "Daily limit" + help tip ("What this agent can spend on this provider today, and the
-     limits that count it.
-     Resets at ‹time› your time.").
-     The reset time lives only here — no reset
-     line.
-     The existing `SpendLimitButton` for the agent's own limit.
-   - **Summary, one line** (`flex items-baseline gap-2`): this agent's own spend and limit in
-     `text-[15px] font-semibold` — "‹spent› of ‹limit› today" — or, without an agent limit,
-     "‹spent› today · No limit for this agent".
-     Then, **only from this agent's own limit's state**,
-     `·` and inline "Close to the limit" (warning) / "Stopped until ‹time›" (danger, the figure
-     turns danger too).
-     The all-agents and total limits never set this state; their bars do.
-     When the owner has no all-agents limit on this Connection, a right-aligned small
-     `text-accent` link "Set for all agents" (`navigateToSettings("providers")`).
-   - **Up to three rows**, a 3-column grid (label `w-[76px]` · bar · percentage `w-10 text-right`,
-     `gap-x-2.5 gap-y-2.5`):
-     - **This agent** — the agent's `connection` limit; bar = this agent's spend on the Connection.
-     - **All agents** — the owner's `owner-connection` limit; bar = this agent's part, then the
-       other agents' part.
-       Label links to Settings › Providers (tooltip "Set in Settings ›
-       Providers").
-     - **Total** — the owner's `owner` dollar limit ("total daily limit"), **dollar Connections
-       only**; bar = this agent's paid spend on all providers, then the other agents'.
-       Label links
-       to Settings › Usage (tooltip "Total daily limit: all your agents, every paid provider").
-       The ceiling has no row.
-       Each row: label small muted; the bar 12 px (`h-3`, the 03 track); the percentage small,
-       tabular, in the row's state colour (muted when ok).
-       Under the bar, in `text-[11px] text-muted-foreground/80 tabular-nums`: "‹spent› of ‹limit›" (Total: "… on all paid
-       providers").
-   - **Shared bars** (All agents, Total): this agent's part in the state's fill, a 2 px gap
-     (`gap-0.5` on the flex track), then the other agents' part in a **lighter shade of the same
-     fill** (`LIMIT_STATE_SHARE`: ok `bg-foreground/45`, warn `bg-warning/45`, reached
-     `bg-danger/45`).
-   - **Interactive bar parts**: every part, and the empty track, is focusable with a tooltip (the
-     existing `Tooltip`, as `budgets/components/pool-bar.tsx` does per segment): "This agent: ‹x›",
-     "Other agents: ‹y›", "Left: ‹z›".
-     Data: this agent on the Connection —
-     `status.spentByConnection`; all agents on it — `status.ownerSpentByConnection`; this agent's
-     paid spend — `status.spent` (usd); the owner's — the `owner` limit's `spentMicros`.
-     Split it into small components in `spend/components/` (`LimitSummary`, `LimitRow`,
-     `SharedLimitBar`) per **/react-ui-engineering**; keep copy in `lib/copy.ts`.
-2. **Dialog line** — `components/spend-limit-dialog.tsx`: take an optional `compare` prop
-   `{ spentMicros, otherLeftMicros, otherName } | null`.
-   Under the field, show "‹spent› spent
-   today."
-   and, as the user types, one `aria-live="polite"` line: already reached → danger
-   "This limit is already reached: ‹spent› spent today.
-   Calls stop as soon as you save.";
-   `otherLeft < amount − spent` → "‹otherName› has ‹x› left today, so it stops this agent first.";
-   else "This limit stops this agent first: ‹x› left today."
-   Never disables Save.
-   The provider
-   block passes the all-agents limit; the Settings › Providers block passes nothing but `spent`.
-3. **Usage card** — `components/agent-spend-limit-card.tsx`: replace `nearerOwnerWideLimit` with the
-   `connectionId: null` binding row; delete `lib/nearer-limit.ts`.
-   `agent-limit-coverage-note.tsx`:
-   the subscription and Bob are no longer "only" stopped by the agent's provider limit — say their
-   limits are in Providers, for this agent or for all agents.
-4. **Docs** — `docs/architecture/spend-limits.md` **Screens** → the agent's Providers section and
-   the dialog.
+1. **Model** — `spend/lib/limit-levels.ts`: pure builders from `SpendStatus` to `{ current, others }`
+   per place (`totalLevels`, `allAgentsConnectionLevels`, `agentConnectionLevels`, `agentLevels`);
+   each `Level` carries kind, Connection, unit, amounts, state, this agent's part of a shared limit
+   and `stopsFirst` (least left, when it is not the current one).
+   `lib/level-labels.ts` names each
+   level and the place that sets it.
+2. **Pieces** — `LevelIcon` (provider tile; provider tile with a people badge for all agents; the
+   agent's avatar for the agent limit; ∑ for the total; a lock for the ceiling), `LevelList`
+   (muted rows, thin shared bar, %, "‹spent› of ‹limit› today", "Set in ‹place›", "stops first"),
+   `AlsoCountedBy` (the Usage cards' toggle line with small icon chips while closed) and
+   `LimitLine` (the provider lists' compact line: bar, %, Change, chevron; the whole line toggles;
+   "‹name› stops first" under the bar while closed).
+3. **Places** — Settings › Usage: `AlsoCountedBy` under the total; the provider summary rows get
+   their icon.
+   Settings › Providers and Agent › Providers: `LimitLine` (no label: the page says
+   whose limit it is; the Change tooltip says it too).
+   Agent › Usage: `AlsoCountedBy` grouped
+   "On one provider" / "Every provider"; the old "stops this agent first" sentence and
+   `nearer-limit.ts` go.
+4. **Dialog line** — `components/spend-limit-dialog.tsx`: optional `compare`
+   `{ spentMicros, other: { name, leftMicros } | null }`; under the field "‹spent› spent today."
+   and, while typing, one `aria-live` line: already reached / "‹other› has ‹x› left today, so it
+   stops this agent first."
+   / "This limit stops this agent first: ‹x› left today."
+   Never blocks
+   Save.
+   The agent's provider line passes its all-agents limit.
+5. **Docs** — `docs/architecture/spend-limits.md` **Screens**.
    `/doc-drift`.
 
 ## Acceptance criteria
 
-- [ ] Each of the six mockup states renders as in the mockup, with and without a total daily limit:
-  both provider limits (either one binding), only all-agents, only the agent's, all-agents
-  reached, no limits.
-- [ ] The summary shows this agent's own spend and limit; its state follows only that limit.
-- [ ] Every row shows its percentage to the right and "‹spent› of ‹limit›" small under the bar;
-  the Total row shows only on dollar Connections.
-- [ ] On shared bars this agent's part is solid and the other agents' part a lighter shade after a
-  2 px gap; each part and the empty track show a tooltip on hover and keyboard focus.
+- [ ] All four places show their own limit first, settable there, and the others muted with
+  their icons; the ceiling shows only when the operator set one.
+- [ ] Settings › Providers and Agent › Providers: one line per provider; the whole line opens
+  and closes the list; no chevron when nothing else counts the calls.
+- [ ] Agent › Usage lists the provider limits by provider, then the total and the ceiling.
+- [ ] "stops first" marks the limit with the least left when it is not the place's own, both
+  closed (chip or line under the bar) and open (badge).
 - [ ] The dialog's line updates while typing and never blocks Save.
-- [ ] The agent's Usage card names the same stopping limit as `dam spend status <agent>`.
 - [ ] `nearer-limit.ts` is gone; `mise run check` and `mise run test` pass.
 
 ## Smoke test

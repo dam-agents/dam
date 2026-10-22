@@ -1,24 +1,30 @@
-import type { SpendStatus, SpendUnit } from "api-server-api";
+import {
+  connectionLimitRule,
+  type SpendStatus,
+  type SpendUnit,
+} from "api-server-api";
 
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
+import type { ProviderConnectionRef } from "../../sessions/lib/session-pair-options.js";
 import { useAgentSpendStatus } from "../api/queries.js";
+import { useLevelAgent } from "../hooks/use-level-agent.js";
 import { agentLimitOf } from "../lib/agent-limit.js";
 import {
   AGENT_LIMIT_HELP,
   alsoSpent,
   highEstimates,
-  nearerLimitLine,
   usedToday,
 } from "../lib/copy.js";
 import {
   type AgentLimitCoverage,
   agentLimitCoverage,
 } from "../lib/coverage.js";
+import { agentLevels, type LevelConnection } from "../lib/limit-levels.js";
 import { unitTotals } from "../lib/measured-spend.js";
-import { nearerOwnerWideLimit } from "../lib/nearer-limit.js";
 import { AgentLimitCoverageNote } from "./agent-limit-coverage-note.js";
+import { AlsoCountedBy } from "./also-counted-by.js";
 import { DailyLimitCard, DailyLimitCardPending } from "./daily-limit-card.js";
 import { DailyLimitMeter } from "./daily-limit-meter.js";
 import { RootDriverSpendNote } from "./root-driver-spend-note.js";
@@ -46,6 +52,7 @@ function DriverSpendLimitCard({ agentId }: { agentId: string }) {
   return (
     <DriverSpendLimitBody
       agentId={agentId}
+      granted={granted}
       status={status}
       coverage={agentLimitCoverage(granted.map((p) => p.templateId))}
       coverageKnown={loaded}
@@ -55,6 +62,7 @@ function DriverSpendLimitCard({ agentId }: { agentId: string }) {
 
 interface BodyProps {
   agentId: string;
+  granted: readonly ProviderConnectionRef[];
   status: SpendStatus;
   coverage: AgentLimitCoverage;
   coverageKnown: boolean;
@@ -62,6 +70,7 @@ interface BodyProps {
 
 function DriverSpendLimitBody({
   agentId,
+  granted,
   status,
   coverage,
   coverageKnown,
@@ -73,7 +82,8 @@ function DriverSpendLimitBody({
     ? "usd"
     : (coverage.uncountedUnits[0] ?? "usd");
   const totals = unitTotals(status.spent);
-  const nearer = coverage.paid ? nearerOwnerWideLimit(status, agentId) : null;
+  const agent = useLevelAgent(agentId);
+  const view = agentLevels(status, agentId, levelConnections(granted));
 
   return (
     <DailyLimitCard
@@ -102,16 +112,17 @@ function DriverSpendLimitBody({
         </p>
       )}
       <OtherSpendLine status={status} primary={primary} />
-      {nearer && (
-        <p className="text-sm text-muted-foreground">
-          {nearerLimitLine(nearer.kind, nearer.leftMicros)}
-        </p>
-      )}
-      {coverageKnown && (
+      <AlsoCountedBy
+        levels={view.others}
+        agentId={agentId}
+        agent={agent}
+        grouped
+      />
+      {coverageKnown && !coverage.paid && limit === undefined && (
         <AgentLimitCoverageNote
           agentId={agentId}
           coverage={coverage}
-          hasLimit={limit !== undefined}
+          hasLimit={false}
         />
       )}
     </DailyLimitCard>
@@ -141,4 +152,23 @@ function OtherSpendLine({
   if (!text) return null;
 
   return <p className="text-sm text-muted-foreground">{text}</p>;
+}
+
+function levelConnections(
+  granted: readonly ProviderConnectionRef[],
+): (LevelConnection & { unit: SpendUnit })[] {
+  return granted.flatMap((ref) => {
+    if (!ref.templateId) return [];
+    const rule = connectionLimitRule(ref.templateId);
+    return rule.limitable
+      ? [
+          {
+            id: ref.id,
+            name: ref.name,
+            templateId: ref.templateId,
+            unit: rule.unit,
+          },
+        ]
+      : [];
+  });
 }

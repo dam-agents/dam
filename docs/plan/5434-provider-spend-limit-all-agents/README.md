@@ -95,12 +95,12 @@ interface SpendBinding {
 
 ## Sub-issues
 
-| #     | Title                                                                 | Scope                                                                                                                                                 | Depends on |
-| ----- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01 ✅ | [All-agents provider limit in the gate](./01-gate.md)                 | New scope, counter, gate check, `setLimit`, `dam spend limit --me --connection`, cleanup on Connection removal, Home question text, architecture page | —          |
-| 02    | [Which limit stops first, from the server](./02-binding.md)           | `binding` in `spend.status`; the agent's tool and `dam spend status` show it                                                                          | 01         |
-| 03    | [Limit meters: black, thin, one family](./03-meter.md)                | `DailyLimitMeter` and Home's memory bars restyled; Settings › Providers block; Settings › Usage summary                                               | 02         |
-| 04    | [Agent › Providers: every limit at a glance](./04-agent-providers.md) | Headline + one meter per limit, gap for this agent's part, dialog line, agent Usage card on `binding`                                                 | 02, 03     |
+| #     | Title                                                          | Scope                                                                                                                                                         | Depends on |
+| ----- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01 ✅ | [All-agents provider limit in the gate](./01-gate.md)          | New scope, counter, gate check, `setLimit`, `dam spend limit --me --connection`, cleanup on Connection removal, Home question text, architecture page         | —          |
+| 02    | [Which limit stops first, from the server](./02-binding.md)    | `binding` in `spend.status`; the agent's tool and `dam spend status` show it                                                                                  | 01         |
+| 03    | [Limit meters: black, thin, one family](./03-meter.md)         | `DailyLimitMeter` and Home's memory bars restyled; Settings › Providers block; Settings › Usage summary                                                       | 02         |
+| 04 ✅ | [The limit ladder in all four places](./04-agent-providers.md) | One pattern on Settings › Usage, Settings › Providers, Agent › Usage and Agent › Providers: own limit first, others muted with icons, expandable; dialog line | 02, 03     |
 
 ```mermaid
 graph LR
@@ -129,39 +129,19 @@ graph LR
 
 ### Approved UI design
 
-[`mockup.html`](./mockup.html) (open it in a browser) is the design the operator approved.
-Its
-purple boxes are design notes.
-Decisions taken there:
+[`mockup.html`](./mockup.html) set the bar's look (03); [`ladder.html`](./ladder.html), approved
+after it, sets how limits show on every page (04).
+Open them in a browser; purple boxes are notes.
 
-- **Meters are black** on a light tint of the same colour; orange at 80 %, red when reached.
-  No grey,
-  no brand blue on bars; links stay `text-accent`.
-- **Bar height**: 12 px (`h-3`) for every limit meter (Settings › Usage, Settings › Providers, the
-  agent's Usage card and Providers section) and for Home's memory/CPU pool bars, which take the same
-  black fill.
-  The provider summary in Settings › Usage stays 4 px (`h-1`).
-- **Percentages next to bars**: every limit bar has its percentage of the limit to its right, in the
-  state's colour.
-  On the settings pages "‹spent› of ‹limit› today" stays above the bar and the
-  "‹x› left" figure is gone.
-  The Usage summary shows the percentage and "‹spent› of ‹limit›" small under each bar.
-- **A shared bar** (all agents on a provider, total daily limit): this agent's part is solid, a
-  2 px gap, then the other agents' part in a lighter shade of the same colour.
-  Every part, and the
-  empty track, has a tooltip with its amount.
-- **Settings › Providers** is where the all-agents limit is set.
-  **Settings › Usage** shows only a
-  small read-only summary inside the existing "Daily spend limit" card.
-- **Agent › Providers**: the summary line is this agent's own spend and limit ("$1.10 of $5.00
-  today"; "$1.10 today · No limit for this agent" without one).
-  "Close to the limit" / "Stopped
-  until ‹time›" follows this agent's own limit only.
-  Below it, up to three bars — This agent, All
-  agents (this provider), Total (the total daily limit, dollar Connections only) — each with its
-  percentage on the right and "‹spent› of ‹limit›" small and muted under the bar.
-  "All agents" and
-  "Total" link to where they are set; the reset time is in the help tip on "Daily limit".
+- **Meters are black** on a light tint of the same colour; orange at 80 %, red when reached; the
+  share used beside the bar; "‹spent› of ‹limit› today" with it.
+  12 px (`h-3`); the muted rows of
+  the ladder and the Usage provider summary 4–6 px.
+  Home's resource bars take the same fill.
+- **A shared limit's bar**: this agent's part solid, a 2 px gap, the other agents' part lighter;
+  each part and the empty track name their amount on hover or focus.
+- **The ladder** (04): each place shows its own limit first and the others muted, each with its
+  icon, in an expandable list; a limit set by the operator (the ceiling) shows only when set.
 
 ## Progress notes
 
@@ -182,6 +162,14 @@ Decisions taken there:
   runs, which this cluster could not do.
   `ProviderRow` takes a `footer`, rendered below a header
   button, so the limit button is never nested in the row's button.
+- **04** is committed: the ladder (`ladder.html`, approved v2) on all four places, replacing the
+  three-row agent card of v11.
+  Settings › Usage and Settings › Providers now use it too, so 03's
+  Settings screens changed again here.
+  Checked in the browser on the cluster, and a real turn on
+  the subscription counted in this agent's and all agents' limits.
+  The cluster's VM runner works
+  again after moving its folders onto an idmap-capable disk (sandbox only).
 
 ## Whole-feature smoke test
 
