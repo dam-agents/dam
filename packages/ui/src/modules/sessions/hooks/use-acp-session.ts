@@ -375,7 +375,9 @@ export function useAcpSession(
         setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
         useStore.getState().setRewriting(null);
       }
-      useStore.getState().setRewritePending(live.sessionId);
+      useStore
+        .getState()
+        .setRewritePending({ sessionId: live.sessionId, takeBack: false });
       const result = (await live.connection.agent
         .request("platform/rewriteFrom", {
           sessionId: live.sessionId,

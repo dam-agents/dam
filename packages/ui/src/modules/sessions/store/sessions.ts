@@ -43,6 +43,11 @@ export interface Rewriting {
   mode: RewriteMode;
 }
 
+export interface PendingRewrite {
+  sessionId: string;
+  takeBack: boolean;
+}
+
 export interface SessionError {
   sessionId: string;
   kind: SessionFailureKind;
@@ -58,8 +63,7 @@ export interface SessionsSlice {
   harnessForks: boolean;
   harnessSteers: boolean;
   rewriting: Rewriting | null;
-  rewritePending: string | null;
-  takingBack: string | null;
+  rewritePending: PendingRewrite | null;
   nextSessionPair: Record<string, SessionPair>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
@@ -88,8 +92,7 @@ export interface SessionsSlice {
   setHarnessForks: (forks: boolean) => void;
   setHarnessSteers: (steers: boolean) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
-  setRewritePending: (sessionId: string | null) => void;
-  setTakingBack: (sessionId: string | null) => void;
+  setRewritePending: (pending: PendingRewrite | null) => void;
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   clearNextSessionPair: (agentId: string) => void;
@@ -180,7 +183,6 @@ export const createSessionsSlice: StateCreator<
     harnessSteers: false,
     rewriting: null,
     rewritePending: null,
-    takingBack: null,
     nextSessionPair: {},
     sessionMode: null,
     messages: [],
@@ -222,8 +224,7 @@ export const createSessionsSlice: StateCreator<
     setHarnessForks: (forks) => set({ harnessForks: forks }),
     setHarnessSteers: (steers) => set({ harnessSteers: steers }),
     setRewriting: (rewriting) => set({ rewriting }),
-    setRewritePending: (sessionId) => set({ rewritePending: sessionId }),
-    setTakingBack: (sessionId) => set({ takingBack: sessionId }),
+    setRewritePending: (pending) => set({ rewritePending: pending }),
     setNextSessionPair: (agentId, pair) =>
       set((state) => ({
         nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
@@ -338,7 +339,6 @@ export const createSessionsSlice: StateCreator<
         queuedPrompts: [],
         rewriting: null,
         rewritePending: null,
-        takingBack: null,
         sessionError: null,
         terminalPaused: false,
         dock: null,
