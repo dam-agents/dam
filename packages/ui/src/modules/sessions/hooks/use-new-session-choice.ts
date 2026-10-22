@@ -1,5 +1,4 @@
 import { type HarnessCapability, routesSessionPairs } from "agent-runtime-api";
-import type { SessionPair } from "api-server-api";
 
 import type { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import type { useAgentSession } from "../api/queries.js";
@@ -77,7 +76,6 @@ export function newSessionChoice(input: {
 export interface NewSessionChoiceResult {
   choice: NewSessionChoice;
   newSessionAgent: string | null;
-  pair: SessionPair | null;
   noProviders: boolean;
   noGrantedProvider: boolean;
   needsModel: boolean;
@@ -128,7 +126,6 @@ export function useNewSessionChoice({
   return {
     choice,
     newSessionAgent,
-    pair,
     noProviders:
       !!newSessionAgent &&
       providerConnections.loaded &&
