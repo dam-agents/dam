@@ -145,35 +145,42 @@ Host:port string for URLs (includes port if non-empty)
         name: http
 {{- end }}
 
-{{- /* Single app URL — UI and API share a host (path-based ingress).
-       `urls.ui` overrides; `urls.api` is honored as a back-compat fallback. */ -}}
-{{- define "platform.url.ui" -}}
-{{- if .Values.urls.ui }}
-{{- .Values.urls.ui }}
-{{- else if .Values.urls.api }}
-{{- .Values.urls.api }}
-{{- else }}
-{{- printf "%s://%s" .Values.scheme (include "platform.hostport" .) }}
+{{- /* The public URL of one host of this deployment: an explicit
+       `urls.<key>` wins, else `{scheme}://{sub.}{hostport}`. No `sub` means
+       the app host, whose override key is `ui`, with `urls.api` as a
+       back-compat fallback. The override key is the subdomain, so a new public
+       host costs one call, not one template.
+       Pass `dict "root" $ "sub" "share"`. */ -}}
+{{- define "platform.url.derived" -}}
+{{- $key := ternary "ui" .sub (empty .sub) -}}
+{{- $urls := .root.Values.urls -}}
+{{- $url := index $urls $key -}}
+{{- if and (empty $url) (eq $key "ui") -}}
+{{- $url = $urls.api -}}
+{{- end -}}
+{{- if $url -}}
+{{- $url -}}
+{{- else -}}
+{{- $hostport := include "platform.hostport" .root -}}
+{{- $host := ternary (printf "%s.%s" .sub $hostport) $hostport (not (empty .sub)) -}}
+{{- printf "%s://%s" .root.Values.scheme $host -}}
+{{- end -}}
 {{- end }}
+
+{{- /* Single app URL (path-based ingress): UI and API share a host. */ -}}
+{{- define "platform.url.ui" -}}
+{{- include "platform.url.derived" (dict "root" .) -}}
 {{- end }}
 
 {{- define "platform.url.keycloak" -}}
-{{- if .Values.urls.keycloak }}
-{{- .Values.urls.keycloak }}
-{{- else }}
-{{- printf "%s://keycloak.%s" .Values.scheme (include "platform.hostport" .) }}
-{{- end }}
+{{- include "platform.url.derived" (dict "root" . "sub" "keycloak") -}}
 {{- end }}
 
 {{- /* Public share host serving artifact-library content. A dedicated origin
        by design: user-generated content must never share the app origin's
        cookies/tokens. Routed to the api-server (host-gated there). */ -}}
 {{- define "platform.url.share" -}}
-{{- if .Values.urls.share }}
-{{- .Values.urls.share }}
-{{- else }}
-{{- printf "%s://share.%s" .Values.scheme (include "platform.hostport" .) }}
-{{- end }}
+{{- include "platform.url.derived" (dict "root" . "sub" "share") -}}
 {{- end }}
 
 {{- /* Content host framed by the share host: artifact documents and raw
@@ -181,11 +188,7 @@ Host:port string for URLs (includes port if non-empty)
        the browser keeps artifact code away from the share host. Routed to
        the api-server (host-gated there). */ -}}
 {{- define "platform.url.content" -}}
-{{- if .Values.urls.content }}
-{{- .Values.urls.content }}
-{{- else }}
-{{- printf "%s://content.%s" .Values.scheme (include "platform.hostport" .) }}
-{{- end }}
+{{- include "platform.url.derived" (dict "root" . "sub" "content") -}}
 {{- end }}
 
 {{/*
