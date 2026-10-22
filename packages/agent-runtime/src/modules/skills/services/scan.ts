@@ -1,3 +1,4 @@
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type {
   Result,
@@ -86,6 +87,7 @@ async function scanGithub(
   }
   if (!head.ok) return head;
   const version = head.value.sha;
+  const fixedVersion = () => Promise.resolve(ok(version));
 
   if (dirPath) {
     return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
@@ -94,7 +96,7 @@ async function scanGithub(
         return sourcePathError("path-missing", source, dirPath, version);
       }
       if (!fetched.ok) return fetched;
-      return collectSkills(deps, source, tmp, version, dirPath);
+      return collectSkills(deps, source, tmp, dirPath, version, fixedVersion);
     });
   }
 
@@ -105,7 +107,6 @@ async function scanGithub(
 
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     await deps.repo.extractTarball(tarball.value, tmp, {});
-    const fs = await import("node:fs/promises");
     const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
       (e) => e.isDirectory(),
     );
@@ -118,7 +119,7 @@ async function scanGithub(
     }
     const repoDir = path.join(tmp, extracted[0].name);
 
-    return collectSkills(deps, source, repoDir, version, subPath);
+    return collectSkills(deps, source, repoDir, subPath, version, fixedVersion);
   });
 }
 
@@ -140,28 +141,9 @@ async function scanGitClone(
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     const cloned = await deps.git.cloneShallow(source, tmp, 50);
     if (!cloned.ok) return cloned;
-
-    const outcome = await deps.repo.findSkillDirsInClone(tmp, subPath);
-    if (outcome.kind !== "found") {
-      return sourcePathError(outcome.kind, source, outcome.subPath);
-    }
-    const out: ScannedSkill[] = [];
-    for (const rel of outcome.dirs) {
-      const absDir = path.join(tmp, rel);
-      const fm = await deps.repo.readSkillManifest(absDir);
-      const versionRes = await deps.git.lastTouchingSha(tmp, rel);
-      if (!versionRes.ok) return versionRes;
-      const contentHash = await deps.repo.hashSkillDir(absDir);
-      out.push({
-        source,
-        name: fm.name?.trim() || path.basename(rel),
-        description: fm.description?.trim() || "",
-        version: versionRes.value,
-        contentHash,
-        dir: rel,
-      });
-    }
-    return ok(out.sort((a, b) => a.name.localeCompare(b.name)));
+    return collectSkills(deps, source, tmp, subPath, undefined, (rel) =>
+      deps.git.lastTouchingSha(tmp, rel),
+    );
   });
 }
 
@@ -169,27 +151,34 @@ async function collectSkills(
   deps: ScanDeps,
   source: string,
   repoDir: string,
-  version: string,
-  subPath?: string,
+  subPath: string | undefined,
+  version: string | undefined,
+  versionOf: (rel: string) => Promise<Result<string, SkillsDomainError>>,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const outcome = await deps.repo.findSkillDirsInClone(repoDir, subPath);
   if (outcome.kind !== "found") {
     return sourcePathError(outcome.kind, source, outcome.subPath, version);
   }
-  const out = await Promise.all(
+  const rows = await Promise.all(
     outcome.dirs.map(async (rel) => {
       const absDir = path.join(repoDir, rel);
       const fm = await deps.repo.readSkillManifest(absDir);
-      const contentHash = await deps.repo.hashSkillDir(absDir);
-      return {
+      const found = await versionOf(rel);
+      if (!found.ok) return found;
+      return ok({
         source,
         name: fm.name?.trim() || path.basename(rel),
         description: fm.description?.trim() || "",
-        version,
-        contentHash,
+        version: found.value,
+        contentHash: await deps.repo.hashSkillDir(absDir),
         dir: rel,
-      };
+      });
     }),
   );
+  const out: ScannedSkill[] = [];
+  for (const row of rows) {
+    if (!row.ok) return row;
+    out.push(row.value);
+  }
   return ok(out.sort((a, b) => a.name.localeCompare(b.name)));
 }
