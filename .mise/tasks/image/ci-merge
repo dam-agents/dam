@@ -108,16 +108,16 @@ merge_one() {
   for t in "${uniq[@]:1}"; do crane tag "$IMAGE_PREFIX/$c:${uniq[0]}" "$t" || return 1; done
 }
 
-mkdir -p /tmp/ci-merge
+mkdir -p "${RUNNER_TEMP:-/tmp}/ci-merge"
 pids=() failed=()
 for c in "$@"; do
-  merge_one "$c" > "/tmp/ci-merge/$c.log" 2>&1 &
+  merge_one "$c" > "${RUNNER_TEMP:-/tmp}/ci-merge/$c.log" 2>&1 &
   pids+=($!)
 done
 names=("$@")
 for i in "${!pids[@]}"; do wait "${pids[$i]}" || failed+=("${names[$i]}"); done
 for c in "$@"; do
-  echo "::group::$c"; cat "/tmp/ci-merge/$c.log"; echo "::endgroup::"
+  echo "::group::$c"; cat "${RUNNER_TEMP:-/tmp}/ci-merge/$c.log"; echo "::endgroup::"
 done
 
 if [ "${#failed[@]}" -gt 0 ]; then echo "::error::failed to merge: ${failed[*]}"; exit 1; fi
