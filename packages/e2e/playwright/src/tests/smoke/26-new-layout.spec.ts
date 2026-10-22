@@ -90,6 +90,25 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
+// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation.
+test("draws the right toolbar from its own flag", async ({ page }) => {
+  await setNewLayout(false);
+  await setUnifiedRightToolbar(true);
+  await openHome(page);
+  await expect(page.getByTestId("side-panel-docs")).toBeVisible();
+  expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
+    56,
+  );
+
+  await setNewLayout(true);
+  await setUnifiedRightToolbar(false);
+  await openHome(page);
+  await expect(page.getByTestId("side-panel-docs")).toHaveCount(0);
+  expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
+    49,
+  );
+});
+
 // TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
