@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -154,6 +154,7 @@ A vm start refusal read while the Agent still shows hibernated does not count, s
 An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up; a node the cluster has lost is the opposite case, and no wait brings it back.
 So does a start waiting for the node to grant its runner the memory it needs ([vm-memory](vm-memory.md)): the Agent carries `AwaitingAllocation`, not `OverBudget`, and the next retry, seconds later, admits it or re-denies the wake.
 A start held back by the machines a runner restart is still bringing back reads the same way under `AwaitingWarmUp`: it is a pool the machines hold at their warm-up floors for as long as the controller's window after the runner pod started says, so the wake takes it for a wait rather than for the owner's memory being full.
+A start whose own reclaim has just put one of the owner's idle agents to sleep reads that way under `AwaitingMemory`, which keeps the wait rather than failing it on a pool whose room is already being freed, and so does one refused with nothing yet to reclaim, for the twenty seconds it is given before the refusal is published.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -276,6 +277,7 @@ Disabling is refused while a [runtime migration](vm-runtime-migration.md) holds 
 A sleep asked of a disabled Agent writes nothing, so its settle-watcher never runs and cannot clear the standing stop request.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.
+The floor it reads is half a minute rather than the three the background passes keep — none at all for an Agent whose machine began holding memory inside that half minute, since a machine woken to answer one request and left idle is the room it holds — and an Agent whose machine is booting or is itself waiting for room is never its victim.
 Eligibility is deliberately narrower than the idle checker's, since reclaim takes down a pod whose own timeout still permits it to run: session and Invocation pins, sweepable Invocation targets, and never-hibernate Agents are all excluded, and survivors are probed more strictly: only an Agent whose runtime answers `idle` is reclaimed, and an unreachable pod is spared.
 A reclaimed Agent is marked as having **spent** the activity stamp it was reclaimed under, so `shouldRun` keeps it down until a *newer* bump arrives — otherwise its own next reconcile, still inside its timeout, would reclaim the room right back.
 It is otherwise an ordinary hibernated Agent: the mark self-clears when a deliberate touch outdates it, and the next use wakes it back through the gate.

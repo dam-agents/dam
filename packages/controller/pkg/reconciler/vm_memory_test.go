@@ -2,16 +2,25 @@
 package reconciler
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -75,9 +84,9 @@ func TestRunnerMemoryIsReclaimedOnlyWhenIdlePeersCoverTheNeed(t *testing.T) {
 		require.NoError(t, err)
 		r.noteMachineUse("idle-peer", measured(700))
 
-		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return tc.need, nil }, tc.partial)
+		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return tc.need, nil }, tc.partial, false)
 		require.NoError(t, err)
-		assert.Equal(t, tc.hibernated, freed, "need %d MiB (partial %v) against a peer counted at 956 MiB", tc.need, tc.partial)
+		assert.Equal(t, tc.hibernated, freed > 0, "need %d MiB (partial %v) against a peer counted at 956 MiB", tc.need, tc.partial)
 		peer, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, tc.hibernated, peer.GetAnnotations()[annReclaimedAt] != "", "need %d MiB", tc.need)
@@ -362,9 +371,9 @@ func TestASilentPeerIsReclaimedForMemoryOnlyAsAPressureLastResort(t *testing.T) 
 		require.NoError(t, err)
 		r.noteMachineUse("silent-peer", measured(700))
 
-		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return 800, nil }, tc.partial)
+		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return 800, nil }, tc.partial, false)
 		require.NoError(t, err)
-		assert.Equal(t, tc.hibernated, freed, "partial=%v answered=%v", tc.partial, tc.answered)
+		assert.Equal(t, tc.hibernated, freed > 0, "partial=%v answered=%v", tc.partial, tc.answered)
 	}
 }
 
@@ -419,9 +428,9 @@ func TestAPeerStillBootingIsNotReclaimedForAnotherStart(t *testing.T) {
 			require.NoError(t, err)
 			r.noteMachineUse("peer", measured(700))
 
-			freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return 800, nil }, tc.partial)
+			freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return 800, nil }, tc.partial, false)
 			require.NoError(t, err)
-			assert.Equal(t, tc.hibernated, freed)
+			assert.Equal(t, tc.hibernated, freed > 0)
 		})
 	}
 }
@@ -466,7 +475,8 @@ func TestAReclaimAfterAnotherDoesNotCountItsVictimsAgain(t *testing.T) {
 		return n
 	}
 
-	require.NoError(t, r.reclaimForRefusedStart(ctx, agent, testOwner, func() (int, error) { return r.runnerLimitMiB(ctx, testOwner) }))
+	_, err := r.reclaimForRefusedStart(ctx, agent, testOwner, func() (int, error) { return r.runnerLimitMiB(ctx, testOwner) })
+	require.NoError(t, err)
 	require.Equal(t, 2, reclaimed(), "the start needs 992 MiB, two agents counted at 956 MiB each")
 
 	r.ownerMemoryPass(ctx, testOwner, peers, nil)
@@ -622,7 +632,8 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 		metav1.PatchOptions{})
 	require.NoError(t, err)
 
-	require.NoError(t, r.reclaimForRefusedStart(ctx, cachedAgent(t, r, refused.Name), testOwner, func() (int, error) { return r.runnerLimitMiB(ctx, testOwner) }))
+	_, err = r.reclaimForRefusedStart(ctx, cachedAgent(t, r, refused.Name), testOwner, func() (int, error) { return r.runnerLimitMiB(ctx, testOwner) })
+	require.NoError(t, err)
 
 	assert.False(t, reclaimedAgent(t, r, "refused-peer"), "a machine that holds nothing was hibernated for room it could not give")
 	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
@@ -643,7 +654,7 @@ func TestARefusedStartWaitsOutItsRunnersWarmUpWindow(t *testing.T) {
 	assert.False(t, reclaimedAgent(t, r, "idle-peer-2"), "the start hibernated an agent the wave is bringing back")
 }
 
-// TEST_SCENARIO: the window is a bound on how long the platform waits, not a promise of room: past it the pool is the owner's to free, and a refused start is the refusal it was before the window existed, with the message that says what frees it.
+// TEST_SCENARIO: the window is a bound on how long the platform waits, not a promise of room: past it the pool is the owner's to free, so the start hibernates the idlest agent that covers the room it lacks, and reads as a start waiting for room it has just freed rather than as a refusal that asks the owner to disable an agent.
 func TestAStartRefusedAfterItsRunnersWarmUpWindowFreesRoom(t *testing.T) {
 	r, _ := reconcilerWithAWarmUpWindow(t, runnerWarmUpWindow+time.Minute)
 
@@ -651,8 +662,8 @@ func TestAStartRefusedAfterItsRunnersWarmUpWindowFreesRoom(t *testing.T) {
 
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
-	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason, "the wave was over, so the pool was the owner's to free")
-	assert.Contains(t, cond.Message, "can't start yet")
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, cond.Reason, "the wave was over, so the pool was the owner's to free")
+	assert.Equal(t, vmAwaitingMemoryMessage, cond.Message)
 	assert.True(t, reclaimedAgent(t, r, "idle-peer"), "the idlest agent frees the room the start lacks")
 }
 
@@ -676,7 +687,7 @@ func TestTheWarmUpWindowIsThePodsAndNotTheControllers(t *testing.T) {
 	*now = now.Add(runnerWarmUpWindow)
 	forget()
 	refuse()
-	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "the pod's own window was over, whatever this controller remembered")
+	assert.NotEqual(t, apiv1.ReasonAwaitingWarmUp, readyCondition(t, r, "my-agent").Reason, "the pod's own window was over, whatever this controller remembered")
 	assert.True(t, reclaimedAgent(t, r, "idle-peer"))
 }
 
@@ -791,6 +802,7 @@ func TestARefusedStartDoesNotRaiseTheRunnerRequestForItself(t *testing.T) {
 	runnerPod(t, r, "1Gi", "3Gi")
 	peerVMAgent(t, r, "peer-up", "2Gi", "20Gi", true)
 	r.noteMachineUse("peer-up", measured(600))
+	spendTheMemoryGrace(t, r, agent)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"})
 
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -820,4 +832,514 @@ func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
 	kept, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
 	assert.Equal(t, 3072+600+256, kept.memoryMiB, "the demand that sizes a start keeps counting it for its retry")
+}
+
+// TEST_SCENARIO: a start the runner refused for room frees that room from the owner's idle agents, and the machine a reclaim hibernated takes a moment to stop. Until it has, a retry is still refused and frees nothing more, so a refusal that reads as a refusal would tell the owner their memory is full for the seconds the platform is already making room: the start reads as one waiting for room it has freed, and is asked for again at the machine watch's cadence rather than at the parked tick. The wait is bounded: a retry that nothing has freed room for inside memoryReclaimWait is the pool's refusal again, with the message that says what frees it.
+func TestAMemoryWaitHoldsWhileRoomFreesAndEndsAsARefusalAfterItsBound(t *testing.T) {
+	ctx := context.Background()
+	r, node, requeued := reconcilerWithARefusedStart(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, cond.Reason, "the start freed the room it lacked instead of asking the owner to")
+	assert.Equal(t, vmAwaitingMemoryMessage, cond.Message)
+	assert.True(t, reclaimedAgent(t, r, "idle-peer"), "the idlest agent frees the room the start lacks")
+	assert.Equal(t, vmReadinessPoll, requeued.last(), "a start waiting for room just freed is asked for at the machine watch's cadence")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason,
+		"the retry read as a refusal while the machine the reclaim hibernated was still stopping")
+
+	now = now.Add(memoryReclaimWait)
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	cond = readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason, "nothing freed room for it inside the bound, so it is the pool's refusal again")
+	assert.Contains(t, cond.Message, "can't start yet")
+}
+
+// TEST_SCENARIO: the room a refused start frees is an agent idle *now*, not one that has reached its own hibernation timeout: a peer idle for a few minutes of an auto-sleep it would take half an hour to reach is the cheapest room there is, and waiting for that timeout would leave the start parked for the half hour. The floor under that is the reclaim's own, which keeps an agent whose turn just ended out of it.
+func TestAStartFreesRoomFromAPeerIdleOnlyBriefly(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := reconcilerWithARefusedStart(t)
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "idle-peer", "application/merge-patch+json",
+		[]byte(`{"spec":{"hibernationTimeout":"30m"}}`), metav1.PatchOptions{})
+	require.NoError(t, err)
+	setIdlePeer(t, r, "idle-peer", 4*time.Minute)
+	annotatePeer(t, r, "idle-peer-2", annActiveSession, "true")
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+
+	assert.True(t, reclaimedAgent(t, r, "idle-peer"), "a peer idle four minutes of its thirty was left to its own hibernation timeout")
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason)
+}
+
+// TEST_SCENARIO: the peers a memory refusal may hibernate are only the ones that say they are idle when asked. A peer with a session attached, one with invocations in flight, and one the runtime answers as busy are all work in progress, and hibernating any of them loses it for a start that is not yet running: none is chosen, and with no room freed the start reads as the refusal it is.
+func TestAMemoryRefusalSparesAPeerWithWorkInFlight(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		busy        bool
+	}{
+		{name: "attached session", annotations: map[string]string{annActiveSession: "true"}},
+		{name: "invocations in flight", annotations: map[string]string{annInvocationsActive: "true"}},
+		{name: "busy when asked", busy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _, _ := reconcilerWithARefusedStart(t)
+			if tc.busy {
+				r.podStatus = func(context.Context, string) (bool, bool) { return false, true }
+			}
+			for k, v := range tc.annotations {
+				for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+					annotatePeer(t, r, peer, k, v)
+				}
+			}
+
+			spendTheMemoryGrace(t, r, cachedAgent(t, r, "my-agent"))
+			require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+
+			for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+				assert.False(t, reclaimedAgent(t, r, peer), "a peer with work in flight was hibernated for a start that is not running")
+			}
+			assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "no room was freed, so the start reads as the refusal it is")
+		})
+	}
+}
+
+// TEST_SCENARIO: a start that got its room reads ready like any other, and the wait recorded for it goes with the room it waited for. A later refusal of the same agent is a refusal of the pool, not the wait of a start whose room was freed minutes ago.
+func TestAMemoryWaitDoesNotOutliveTheStartThatWaited(t *testing.T) {
+	ctx := context.Background()
+	r, node, _ := reconcilerWithARefusedStart(t)
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	require.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason, "precondition: the start waited on the room it freed")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 600})
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	require.NotEqual(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason, "precondition: the start went through")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	spendTheMemoryGrace(t, r, cachedAgent(t, r, "my-agent"))
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "a wait outlived the start it was for")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose two measured idle peers fill the pool beside a start its runner refuses for room, outside any warm-up window: the room the start lacks is one peer's, so one of them is enough to free it.
+func reconcilerWithARefusedStart(t *testing.T) (*AgentReconciler, *fakeNode, *requeueLog) {
+	t.Helper()
+	r, node, requeued := setupVMReconciler(t, vmAgentCR())
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")}}
+	peerVMAgent(t, r, "idle-peer", "4Gi", "20Gi", true)
+	labelPeerGateway(t, r, "idle-peer")
+	setIdlePeer(t, r, "idle-peer", 12*time.Minute)
+	r.vmRunning.Store("idle-peer", true)
+	r.noteMachineUse("idle-peer", measured(700))
+	peerVMAgent(t, r, "idle-peer-2", "4Gi", "20Gi", true)
+	labelPeerGateway(t, r, "idle-peer-2")
+	setIdlePeer(t, r, "idle-peer-2", 11*time.Minute)
+	r.vmRunning.Store("idle-peer-2", true)
+	r.noteMachineUse("idle-peer-2", measured(700))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "this machine's 768 MiB does not fit"})
+	r.vmRunning.Store("my-agent", true)
+	return r, node, requeued
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the label a gateway carries in production, which is what the pair's scale-down looks its StatefulSets up by: without it a test's peer machine is never scaled down, and its gateway reads as one that should run however idle its agent is.
+func labelPeerGateway(t *testing.T, r *AgentReconciler, name string) {
+	t.Helper()
+	_, err := r.client.AppsV1().StatefulSets("test-agents").Patch(context.Background(), GatewayName(name), "application/merge-patch+json",
+		[]byte(`{"metadata":{"labels":{"`+LabelAgent+`":"`+name+`"}}}`), metav1.PatchOptions{})
+	require.NoError(t, err)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a start refused a moment ago is given a grace before the refusal is read as the pool's, so a test of the refusal itself is one whose grace is behind it.
+func spendTheMemoryGrace(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
+	t.Helper()
+	past := time.Now().UTC().Add(-time.Second).Format(time.RFC3339)
+	if agent.Annotations == nil {
+		agent.Annotations = map[string]string{}
+	}
+	agent.Annotations[annMemoryWaitUntil] = past
+	annotatePeer(t, r, agent.Name, annMemoryWaitUntil, past)
+	r.markMemoryGraced(agent.Name, agent.Annotations[annLastActivity])
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a stamp a peer carries, such as the session attached to it or the invocations in flight, which no reclaim may hibernate it under however idle its own clock reads.
+func annotatePeer(t *testing.T, r *AgentReconciler, name, key, value string) {
+	t.Helper()
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(context.Background(), name, "application/merge-patch+json",
+		[]byte(`{"metadata":{"annotations":{"`+key+`":"`+value+`"}}}`), metav1.PatchOptions{})
+	require.NoError(t, err)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an awake peer, ready as a running machine's Agent is, idle for `for` — the stamp a reclaim measures its idleness by, and the readiness that tells the boot guard this is no cold boot still coming up.
+func setIdlePeer(t *testing.T, r *AgentReconciler, name string, idleFor time.Duration) {
+	t.Helper()
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(context.Background(), name, "application/merge-patch+json",
+		[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-idleFor).Format(time.RFC3339)+`"}},`+
+			`"status":{"conditions":[{"type":"`+apiv1.ConditionReady+`","status":"True","reason":"Ready","lastTransitionTime":"`+time.Now().UTC().Add(-idleFor).Format(time.RFC3339)+`"}]}}`),
+		metav1.PatchOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: the stamp of a memory wait is on the Agent, so a controller that restarts while the machine its predecessor put to sleep still stops keeps the wait it earned: the agents left to choose are already down, and a reconciler that remembered the reclaim only in its own process would read the same refusal as the pool's and fail a wake on memory already being handed back. The stamp is the deadline, so the restart reads the time left rather than starting the minute again.
+func TestAMemoryWaitSurvivesAControllerRestart(t *testing.T) {
+	ctx := context.Background()
+	r, node, _ := reconcilerWithARefusedStart(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	node.mu.Lock()
+	node.stopsSlowly = true
+	node.mu.Unlock()
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	require.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason, "precondition: the start waited on the room it freed")
+
+	// UNIT_BOUNDARY_DESCRIPTION: the reconciler before it, gone with everything it held in memory, on the same clients and the same runner.
+	stopMachineWatches(r)
+	fresh := NewAgentReconciler(r.client, r.dynamic, r.config)
+	fresh.runnerEndpoint, fresh.podStatus, fresh.clock = r.runnerEndpoint, r.podStatus, r.clock
+	fresh.WithRequeue(t.Context(), func(string, time.Duration) {})
+	t.Cleanup(func() { stopMachineWatches(fresh) })
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	require.NoError(t, fresh.Reconcile(ctx, cachedAgent(t, fresh, "my-agent")))
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, fresh, "my-agent").Reason,
+		"a restart turned room already being freed into an immediate refusal")
+
+	now = now.Add(memoryReclaimWait)
+	require.NoError(t, fresh.Reconcile(ctx, cachedAgent(t, fresh, "my-agent")))
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, fresh, "my-agent").Reason,
+		"the deadline the stamp carries was not the one the wait started with")
+}
+
+// TEST_SCENARIO: a reclaim that needs two agents can put the first to sleep and fail on the second's stamp. The agent that slept is gone whatever the failure did to the pass, so the start is waiting for room it freed: a wait recorded only after the whole reclaim answered would leave it reading as a refusal, with nothing left to choose on the retry.
+func TestAMemoryWaitKeepsTheAgentsASplitReclaimDidSleep(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := reconcilerWithARefusedStart(t)
+	peerVMAgent(t, r, "idle-peer-3", "4Gi", "20Gi", true)
+	labelPeerGateway(t, r, "idle-peer-3")
+	setIdlePeer(t, r, "idle-peer-3", 10*time.Minute)
+	r.vmRunning.Store("idle-peer-3", true)
+	r.noteMachineUse("idle-peer-3", measured(700))
+	failing := true
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("patch", "agents", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if failing && a.(k8stesting.PatchAction).GetName() == "idle-peer-2" {
+			return true, nil, fmt.Errorf("the second victim's stamp was refused")
+		}
+		return false, nil, nil
+	})
+
+	require.Error(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")), "precondition: the second victim's stamp failed")
+	failing = false
+	require.True(t, reclaimedAgent(t, r, "idle-peer"), "precondition: the first victim was already put to sleep")
+	require.NotEmpty(t, cachedAgent(t, r, "my-agent").Annotations[annMemoryWaitUntil], "the room that agent freed was forgotten because a later one failed")
+
+	for _, name := range []string{"idle-peer-2", "idle-peer-3"} {
+		annotatePeer(t, r, name, annActiveSession, "true")
+	}
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason,
+		"a later reclaim error discarded the room already being freed")
+}
+
+// TEST_SCENARIO: the hibernation is what earns the wait, so a write that records it failing once is retried rather than read as a pool with nothing freed: a controller write refused by an apiserver under load is not a start that must be refused, and the deadline it retries is the one earned rather than a fresh minute.
+func TestAMemoryWaitSurvivesAFailedDeadlineWrite(t *testing.T) {
+	for name, writeErr := range map[string]error{
+		"conflict":    k8serrors.NewConflict(AgentsGVR.GroupResource(), "my-agent", assert.AnError),
+		"unavailable": k8serrors.NewServiceUnavailable("the apiserver is busy"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _, _ := reconcilerWithARefusedStart(t)
+			refused := false
+			r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("patch", "agents", func(a k8stesting.Action) (bool, runtime.Object, error) {
+				if !refused && a.(k8stesting.PatchAction).GetName() == "my-agent" && bytes.Contains(a.(k8stesting.PatchAction).GetPatch(), []byte(annMemoryWaitUntil)) {
+					refused = true
+					return true, nil, writeErr
+				}
+				return false, nil, nil
+			})
+
+			r.Reconcile(ctx, cachedAgent(t, r, "my-agent"))
+			require.True(t, refused, "precondition: the write that records the wait failed")
+			require.True(t, reclaimedAgent(t, r, "idle-peer"), "precondition: the victim was already put to sleep")
+
+			require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+			assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason,
+				"a failed write of the deadline turned the room already freed into a refusal")
+			assert.NotEmpty(t, cachedAgent(t, r, "my-agent").Annotations[annMemoryWaitUntil], "the earned deadline was never written")
+		})
+	}
+}
+
+// TEST_SCENARIO: a victim counts as room made once its machine stopped and its gateway went down, which is before its status write: a status refused after that has not brought the machine back, and the start waits for the room rather than reading a refusal of it.
+func TestAVictimsFailedStatusWriteCountsTheStopItAlreadyMade(t *testing.T) {
+	ctx := context.Background()
+	r, node, _ := reconcilerWithARefusedStart(t)
+	node.set("idle-peer", measured(700))
+	refused := false
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("update", "agents", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if !refused && a.(k8stesting.UpdateAction).GetObject().(metav1.Object).GetName() == "idle-peer" && a.GetSubresource() == "status" {
+			refused = true
+			return true, nil, k8serrors.NewServiceUnavailable("the apiserver is busy")
+		}
+		return false, nil, nil
+	})
+
+	require.Error(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	require.True(t, refused, "precondition: the victim's status write failed")
+	assert.False(t, node.spec("idle-peer").Running, "precondition: the machine stopped")
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("idle-peer")), "precondition: the gateway was scaled down")
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason,
+		"a refused status write discarded the stop that had already freed the room")
+}
+
+// TEST_SCENARIO: a victim the late re-read leaves running holds its room, so it counts for nothing: a start that reads a skip as room made would publish a wait for memory nothing freed, and the owner would wait a minute for a machine still running.
+func TestAVictimTheReReadSkipsCountsNoRoom(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		breaks func(t *testing.T, r *AgentReconciler, ctx context.Context)
+	}{
+		{
+			name: "it stopped being idle",
+			breaks: func(t *testing.T, r *AgentReconciler, ctx context.Context) {
+				probe := r.podStatus
+				r.podStatus = func(ctx context.Context, name string) (bool, bool) {
+					_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, "application/merge-patch+json",
+						[]byte(`{"metadata":{"annotations":{"`+annActiveSession+`":"true"}}}`), metav1.PatchOptions{})
+					require.NoError(t, err)
+					return probe(ctx, name)
+				}
+			},
+		},
+		{
+			name: "its stamp conflicts",
+			breaks: func(t *testing.T, r *AgentReconciler, ctx context.Context) {
+				r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("patch", "agents", func(a k8stesting.Action) (bool, runtime.Object, error) {
+					name := a.(k8stesting.PatchAction).GetName()
+					if !strings.HasPrefix(name, "idle-peer") {
+						return false, nil, nil
+					}
+					return true, nil, k8serrors.NewConflict(AgentsGVR.GroupResource(), name, fmt.Errorf("the object has been modified"))
+				})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, node, _ := reconcilerWithARefusedStart(t)
+			for _, name := range []string{"idle-peer", "idle-peer-2"} {
+				node.set(name, measured(700))
+			}
+			spendTheMemoryGrace(t, r, cachedAgent(t, r, "my-agent"))
+			tc.breaks(t, r, ctx)
+
+			require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+
+			for _, name := range []string{"idle-peer", "idle-peer-2"} {
+				assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName(name)), "precondition: the skipped victim kept its gateway")
+				assert.False(t, reclaimedAgent(t, r, name), "precondition: the skipped victim was not stamped")
+			}
+			assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason,
+				"a victim left running was counted as room the start could wait for")
+		})
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent whose machine began holding memory the given time ago, as the controller's own watcher of the machine stamps it, and the readiness that start produced.
+func wokeUp(t *testing.T, r *AgentReconciler, name string, ago time.Duration) {
+	t.Helper()
+	annotatePeer(t, r, name, annMachineUp, time.Now().UTC().Add(-ago).Format(time.RFC3339Nano))
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(context.Background(), name, "application/merge-patch+json",
+		[]byte(`{"status":{"conditions":[{"type":"`+apiv1.ConditionAgentPodReady+`","status":"True","reason":"PodReady","lastTransitionTime":"`+
+			time.Now().UTC().Add(-ago).Format(time.RFC3339)+`"}]}}`),
+		metav1.PatchOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: a start the runner refused for room is an owner asking for a machine now, so the peer that has been idle half a minute is the room it frees rather than one the three-minute floor protects; a peer used ten seconds ago is not, unless it woke ten seconds ago and answered idle, which is a machine left holding room by a wake that only listed sessions.
+func TestARefusedStartFreesAPeerThatWentIdleHalfAMinuteAgo(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		idleFor   time.Duration
+		woke      time.Duration
+		reclaimed bool
+	}{
+		{name: "idle half a minute", idleFor: 40 * time.Second, reclaimed: true},
+		{name: "idle ten seconds", idleFor: 10 * time.Second},
+		{name: "idle ten seconds and just woke", idleFor: 10 * time.Second, woke: 5 * time.Second, reclaimed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _, _ := reconcilerWithARefusedStart(t)
+			for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+				setIdlePeer(t, r, peer, tc.idleFor)
+				if tc.woke > 0 {
+					wokeUp(t, r, peer, tc.woke)
+				}
+			}
+
+			require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+
+			assert.Equal(t, tc.reclaimed, reclaimedAgent(t, r, "idle-peer") || reclaimedAgent(t, r, "idle-peer-2"),
+				"the room a refused start frees is the peer the floor it holds admits")
+			assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason,
+				"a start whose room is being freed, or may be, reads as one in progress rather than as a refusal")
+		})
+	}
+}
+
+// TEST_SCENARIO: the floor a refused start is given does not reach the passes that free room on their own initiative: the runner's pressure signal takes a machine nothing is waiting for, so it keeps the three-minute floor that leaves a peer used a minute ago alone.
+func TestThePassesThatFreeRoomOnTheirOwnKeepTheirFloor(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := reconcilerWithARefusedStart(t)
+	for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+		setIdlePeer(t, r, peer, 40*time.Second)
+	}
+	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{cachedAgent(t, r, "my-agent")}, nil)
+	assert.False(t, reclaimedAgent(t, r, "idle-peer") || reclaimedAgent(t, r, "idle-peer-2"),
+		"the 90% pass took a peer the refused start would have taken")
+
+	pressure := &vmrunner.RunnerPressure{Version: 2, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000}
+	require.True(t, r.beginMemoryPass(testOwner))
+	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{cachedAgent(t, r, "my-agent")}, pressure)
+	r.endMemoryPass(testOwner)
+	assert.False(t, reclaimedAgent(t, r, "idle-peer") || reclaimedAgent(t, r, "idle-peer-2"),
+		"the runner's pressure signal took a peer the refused start would have taken")
+}
+
+// TEST_SCENARIO: two agents that each need the other's room do not trade it in a loop: the peer a start slept wakes to a refusal of its own, and the start that displaced it holds nothing while it waits — its gateway is down and it is not a machine the runner holds — so the peer finds no room to free there and is refused rather than evicting the start that woke it.
+func TestAPeerFreedForOneStartDoesNotEvictTheStartThatDisplacedIt(t *testing.T) {
+	ctx := context.Background()
+	r, node, _ := reconcilerWithARefusedStart(t)
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	require.True(t, reclaimedAgent(t, r, "idle-peer"), "precondition: the first start slept the peer")
+	require.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason, "precondition: the first start waits for its room")
+
+	leaf := leafSecret()
+	leaf.Name = EnvoyLeafSecretName("idle-peer")
+	_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, leaf, metav1.CreateOptions{})
+	require.NoError(t, err)
+	setIdlePeer(t, r, "idle-peer", 0)
+	r.vmRunning.Store("idle-peer", true)
+	node.set("idle-peer", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "this machine's 768 MiB does not fit"})
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "idle-peer")))
+
+	assert.False(t, reclaimedAgent(t, r, "my-agent"), "the peer freed itself by evicting the start that displaced it")
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason,
+		"the start that displaced it lost the room it was waiting for")
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "idle-peer").Reason,
+		"the peer read as refused rather than waiting for a room that is not there")
+}
+
+// TEST_SCENARIO: a start refused for room with nothing yet to reclaim is given a moment's grace, so the page shows the loader before it shows the refusal; the grace is spent once, so a retry of the same refusal reads as the refusal it is rather than restarting the loader forever.
+func TestAStartRefusedWithNothingToReclaimWaitsItsGraceThenReadsTheRefusal(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := reconcilerWithARefusedStart(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+		setIdlePeer(t, r, peer, 10*time.Second)
+		annotatePeer(t, r, peer, annActiveSession, "true")
+	}
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason, "the refusal was published before the loader")
+	assert.False(t, reclaimedAgent(t, r, "idle-peer") || reclaimedAgent(t, r, "idle-peer-2"), "nothing was reclaimed")
+
+	now = now.Add(memoryGraceWait + time.Second)
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "the grace outlived the moment it was for")
+
+	now = now.Add(time.Second)
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "the grace restarted itself on the retry of the same refusal")
+}
+
+// TEST_SCENARIO: the grace is a wait for a peer, so a peer that goes idle inside it is reclaimed and the start takes the minute a reclaim earns rather than the moment the grace had left.
+func TestAReclaimInsideTheGraceTakesOverTheWait(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := reconcilerWithARefusedStart(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+		setIdlePeer(t, r, peer, 10*time.Second)
+	}
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	require.Equal(t, apiv1.ReasonAwaitingMemory, readyCondition(t, r, "my-agent").Reason, "precondition: the start is inside its grace")
+
+	now = now.Add(10 * time.Second)
+	for _, peer := range []string{"idle-peer", "idle-peer-2"} {
+		setIdlePeer(t, r, peer, time.Minute)
+	}
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+
+	assert.True(t, reclaimedAgent(t, r, "idle-peer") || reclaimedAgent(t, r, "idle-peer-2"),
+		"the peer that went idle inside the grace was not reclaimed")
+	until, err := time.Parse(time.RFC3339, cachedAgent(t, r, "my-agent").Annotations[annMemoryWaitUntil])
+	require.NoError(t, err)
+	assert.True(t, until.After(now.Add(30*time.Second)), "the wait was not the minute a reclaim earns")
+}
+
+// TEST_SCENARIO: a readiness that went false for one failed request and true again on the next is not a wake: the machine never stopped holding its room, so a peer used ten seconds ago keeps the half minute rather than being read as one that just came up and taken for it.
+func TestAReadinessRecoveryIsNoWake(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := reconcilerWithARefusedStart(t)
+	for _, name := range []string{"idle-peer", "idle-peer-2"} {
+		setIdlePeer(t, r, name, 10*time.Second)
+		annotatePeer(t, r, name, annMachineUp, time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano))
+		require.Error(t, r.setMachineError(ctx, cachedAgent(t, r, name), fmt.Errorf("one runner request failed without stopping the guest")))
+		require.NoError(t, r.publishVMReadiness(ctx, cachedAgent(t, r, name), vmrunner.MachineStatus{
+			State: vmrunner.StateRunning, Ready: true, MemoryMiB: 4096, UsedMiB: 700,
+		}, true))
+		ready := apimeta.FindStatusCondition(cachedAgent(t, r, name).Status.Conditions, apiv1.ConditionAgentPodReady)
+		require.NotNil(t, ready, "precondition: the recovery moved the readiness")
+		require.Less(t, time.Since(ready.LastTransitionTime.Time), 5*time.Second, "precondition: the readiness reads as new")
+		require.Equal(t, refusedStartFloor, r.reclaimFloor(cachedAgent(t, r, name), time.Now(), true), "the recovery was read as a wake")
+	}
+
+	require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	for _, name := range []string{"idle-peer", "idle-peer-2"} {
+		assert.False(t, reclaimedAgent(t, r, name), "a peer used ten seconds ago was taken for a machine that had just come up")
+	}
+}
+
+// TEST_SCENARIO: activity carries milliseconds, so the stamp a reclaim writes to spend it must carry them too: a reclaim inside the same second as the activity it spends would otherwise write a stamp before that activity and the victim would wake itself again.
+func TestAReclaimStampSpendsSubsecondActivity(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		time.Sleep(500 * time.Millisecond)
+		r, _ := setupReconciler(t, vmAgentCR())
+		peerVMAgent(t, r, "peer", "4Gi", "20Gi", true)
+		labelPeerGateway(t, r, "peer")
+		activity := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+		annotatePeer(t, r, "peer", annLastActivity, activity)
+		wokeUp(t, r, "peer", time.Millisecond)
+		peer := cachedAgent(t, r, "peer")
+		floor := r.reclaimFloor(peer, time.Now(), true)
+		require.Zero(t, floor, "precondition: a machine up inside the half minute is held to no floor")
+		_, eligible := reclaimEligible(peer, time.Hour, time.Now(), floor)
+		require.True(t, eligible, "precondition: its fresh activity passes the floor")
+
+		time.Sleep(100 * time.Millisecond)
+		freed, err := r.hibernateReclaimed(ctx, []reclaimCandidate{{name: "peer", vmMiB: 956, forRefusedStart: true}}, testOwner, "my-agent", "a refused start")
+		require.NoError(t, err)
+		require.Equal(t, 1, freed)
+
+		peer = cachedAgent(t, r, "peer")
+		assert.False(t, shouldRun(peer.Annotations, time.Hour, time.Now()),
+			"the reclaim stamp fell before the activity it was meant to spend, so the victim wakes itself again")
+	})
 }

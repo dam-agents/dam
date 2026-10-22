@@ -68,6 +68,14 @@ describe("computeAgentState with a machine reason", () => {
     expect(computeAgentState(notReady("AwaitingWarmUp"))).toBe("starting");
   });
 
+  // TEST_SCENARIO: a start refused for room that already hibernated an idle agent of the owner's is a start in progress too, and reads as a loader rather than as an error with an action panel: the room that agent holds frees within seconds, and asking the owner to disable an agent would be asking them to free room the platform is making. A refusal nothing has freed room for stays OverBudget and reads as one.
+  it("leaves a start waiting for room its own reclaim freed as starting", () => {
+    expect(computeAgentState(notReady("AwaitingMemory"))).toBe("starting");
+    expect(
+      computeAgentState({ ...notReady("OverBudget"), overBudget: true }),
+    ).toBe("over_budget");
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");
