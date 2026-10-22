@@ -16,6 +16,13 @@ const state = vi.hoisted(() => ({
       conn: { templateId: string; keyCheck?: ProviderKeyCheck };
     }
   >(),
+  itemsByTemplate: new Map<
+    string,
+    {
+      id: string;
+      conn: { templateId: string; keyCheck?: ProviderKeyCheck };
+    }
+  >(),
 }));
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
@@ -33,7 +40,10 @@ vi.mock("../../modules/connections/api/mutations.js", () => ({
   useDeleteConnection: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("../../modules/connections/api/queries.js", () => ({
-  useConnectionTemplates: () => ({ data: [], isPending: false }),
+  useConnectionTemplates: () => ({
+    data: [{ id: "curve-bender-deployment" }],
+    isPending: false,
+  }),
 }));
 vi.mock("../../modules/providers/api/mutations.js", () => ({
   useRecheckProviderKeys: () => ({
@@ -59,7 +69,7 @@ vi.mock("../../modules/provider-status/api/queries.js", () => ({
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({
     itemByType: state.items,
-    itemByTemplateId: new Map(),
+    itemByTemplateId: state.itemsByTemplate,
     isPending: false,
   }),
 }));
@@ -84,6 +94,7 @@ describe("provider key recheck", () => {
     state.pending = false;
     state.flags = {};
     state.items = new Map();
+    state.itemsByTemplate = new Map();
   });
 
   // TEST_SCENARIO: with no provider connected there is no key to check, so no Recheck button shows.
@@ -178,11 +189,13 @@ describe("provider key recheck", () => {
     expect(row).toContain("Key not checked");
   });
 
-  // TEST_SCENARIO: the built-in provider's key is not the user's to check, so an install that serves only it gets no Recheck button, since a recheck could never change its row.
+  // TEST_SCENARIO: the deployment CurveBender's key is not the user's to check, so an install holding only it gets no Recheck button, since a recheck could never change its row.
   it("offers no recheck when no connected provider has a key check", () => {
-    state.flags = { "platform-provider": true };
-    state.items = new Map([
-      ["platform", { id: "c3", conn: { templateId: "platform-llm" } }],
+    state.itemsByTemplate = new Map([
+      [
+        "curve-bender-deployment",
+        { id: "c3", conn: { templateId: "curve-bender-deployment" } },
+      ],
     ]);
     expect(render()).not.toContain("Recheck");
   });

@@ -10,8 +10,6 @@ import {
   signUpsSchema,
   spendCeilingUsdTextSchema,
 } from "api-server-api";
-import { X509Certificate } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import { getLogger } from "./core/logger.js";
@@ -172,35 +170,6 @@ const spendPriceOverridesSchema = z
       }),
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider, the key the gateway sends it, and optionally the CA the gateway validates it against. The gateway injects the key only into TLS it terminates, so a base URL that is not https, or a CA file that is set but holds no readable certificate, leaves the feature off, logged rather than failing the boot, so values written for an earlier release cannot crash-loop the api-server. An empty base URL or key means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
-const platformProviderSchema = z
-  .object({
-    baseUrl: z.string().default(""),
-    model: z.string().default(""),
-    apiKey: z.string().default(""),
-    caFile: z.string().default(""),
-  })
-  .transform(({ baseUrl, model, apiKey, caFile }) => {
-    if (baseUrl === "" || apiKey === "") return null;
-    if (!z.url({ protocol: /^https$/ }).safeParse(baseUrl).success) {
-      getLogger().error(
-        "platform provider off: PLATFORM_PROVIDER_BASE_URL must be an https URL, the gateway meters only TLS it terminates",
-      );
-      return null;
-    }
-    let ca: string | undefined;
-    try {
-      ca = caFile === "" ? undefined : readFileSync(caFile, "utf8").trim();
-      if (ca !== undefined) new X509Certificate(ca);
-    } catch (err) {
-      getLogger().error(
-        { caFile, err },
-        "platform provider off: PLATFORM_PROVIDER_CA_FILE does not hold a readable PEM certificate",
-      );
-      return null;
-    }
-    return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey, ca };
-  });
 // UNIT_BOUNDARY_DESCRIPTION: the key the deployment offers CurveBender to its users, sent by the gateway on every CurveBender call. An empty key means the deployment offers no shared CurveBender, so no template exists and every user keeps their own key.
 const curveBenderDeploymentSchema = z
   .object({ apiKey: z.string().default("") })
@@ -248,7 +217,6 @@ const configSchema = z.object({
   vmPoolStorage: z.string().default("100Gi"),
   vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
-  platformProvider: platformProviderSchema,
   curveBenderDeployment: curveBenderDeploymentSchema,
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
@@ -374,13 +342,7 @@ const validatedConfigSchema = configSchema
         "ACP_TURN_STALL_PROBE_SECONDS is below APPROVAL_HOLD_SECONDS and was raised to it, so a turn blocked on an approval is never probed before the hold resolves",
       );
     }
-    return {
-      ...c,
-      acpTurnStallProbeSeconds: stall,
-      featureModes: c.platformProvider
-        ? c.featureModes
-        : { ...c.featureModes, "platform-provider": "off" as const },
-    };
+    return { ...c, acpTurnStallProbeSeconds: stall };
   })
   .refine(
     (c) =>
@@ -460,12 +422,6 @@ export function loadConfig(): Config {
     featureModes: {
       named: process.env.FEATURE_MODES,
       fallback: process.env.FEATURE_DEFAULT_MODE,
-    },
-    platformProvider: {
-      baseUrl: process.env.PLATFORM_PROVIDER_BASE_URL,
-      model: process.env.PLATFORM_PROVIDER_MODEL,
-      apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
-      caFile: process.env.PLATFORM_PROVIDER_CA_FILE,
     },
     curveBenderDeployment: {
       apiKey: process.env.CURVE_BENDER_DEPLOYMENT_API_KEY,

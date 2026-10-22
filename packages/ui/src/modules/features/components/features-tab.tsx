@@ -2,7 +2,6 @@ import { ErlenmeyerFlask } from "@carbon/pictograms-react";
 import type { FeatureId } from "api-server-api";
 import { type ReactNode, useId } from "react";
 
-import { getBrand } from "@/brand";
 import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -24,12 +23,6 @@ interface FeatureRow {
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
-  {
-    id: "platform-provider",
-    label: `${getBrand().name} LLM provider`,
-    description:
-      "Add a built-in LLM provider, served by this installation and needing no API key, to Settings → Providers.",
-  },
   {
     id: "interactive-artifacts",
     label: "Interactive artifacts",

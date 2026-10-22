@@ -3,7 +3,6 @@ import {
   displayNameForTemplate,
 } from "api-server-api";
 
-import { getBrand } from "../../../brand.js";
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 
 export interface ProviderRowDef {
@@ -19,16 +18,14 @@ export const CURVE_BENDER_DESCRIPTION =
   "Open-source models hosted internally in IBM.";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the built-in provider is named by the brand, not
- * by the codename its preset carries; any other preset takes its template's
- * name when it has one, so a user-keyed provider and the deployment's read
- * differently.
+ * UNIT_BOUNDARY_DESCRIPTION: one preset can offer a user-keyed template and
+ * the deployment's under different names, so a row takes its template's name
+ * when that template has one of its own.
  */
 export function providerName(
   type: ProviderPresetType,
   templateId?: string,
 ): string {
-  if (type === "platform") return getBrand().name;
   return (
     (templateId ? displayNameForTemplate(templateId) : null) ??
     PROVIDERS[type].displayName
@@ -40,10 +37,6 @@ export function providerRowName(row: ProviderRowDef): string {
 }
 
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
-  {
-    type: "platform",
-    description: "Models this install serves itself, with no API key.",
-  },
   {
     type: "curve-bender",
     templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,

@@ -32,8 +32,6 @@ describe("connection create with an invalid input", () => {
   it("refuses a bad bucket name as BAD_REQUEST", async () => {
     const svc = createConnectionsService({
       harnesses: { default: "claude-code", harnesses: [] },
-      platformProviderEnabled: async () => false,
-      platformProviderKey: null,
       ownerId: "owner",
       templates: createConnectionTemplateRegistry(buildCatalog()),
       repo: unused(),

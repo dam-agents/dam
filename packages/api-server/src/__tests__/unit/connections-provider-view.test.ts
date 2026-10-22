@@ -82,8 +82,6 @@ function makeService(
 ) {
   return createConnectionsService({
     harnesses: { default: defaultHarness, harnesses: CATALOG },
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),

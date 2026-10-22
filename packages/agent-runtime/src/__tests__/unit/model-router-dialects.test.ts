@@ -883,7 +883,7 @@ describe("replay rules", () => {
   it("maps an effort level onto the DeepSeek template's own", () => {
     const deepseek = {
       dialect: "anthropic-messages" as const,
-      alias: "platform" as const,
+      alias: "cb" as const,
       upstreamId: "deepseek-v4.1-flash",
     };
     expect(

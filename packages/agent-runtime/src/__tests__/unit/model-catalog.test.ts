@@ -96,7 +96,6 @@ function discoveryFor(listing: Listing): ModelDiscovery & { calls: string[] } {
   const calls: string[] = [];
   const discover = (async (_spec, env) => {
     const base =
-      env.PLATFORM_LLM_BASE_URL ??
       env.OPENAI_BASE_URL ??
       env.BOB_DEFAULT_GATEWAY_URL ??
       env.ANTHROPIC_BASE_URL;
@@ -240,48 +239,6 @@ describe("the model catalog", () => {
     });
   });
 
-  /** TEST_SCENARIO: The platform's vLLM serves a smaller window than the price
-   * table's row for the same family; the listing's window wins, and its
-   * self-hosted models cost nothing. */
-  it("takes the platform's window from its listing and prices it at zero", async () => {
-    expect(
-      lookupPrice(VENDORED_PRICE_TABLE, "deepseek-v4.1-flash")
-        ?.max_input_tokens,
-    ).toBe(1_000_000);
-    const { catalog } = catalogWith(
-      {
-        "http://vllm.example:8000": {
-          ids: ["deepseek-v4.1-flash"],
-          info: { "deepseek-v4.1-flash": { contextWindow: 262_144 } },
-        },
-      },
-      [
-        {
-          id: "conn-platform",
-          template: "platform-llm",
-          env: {
-            PLATFORM_LLM_BASE_URL: "http://vllm.example:8000",
-            PLATFORM_LLM_NAME: "Acme",
-          },
-        },
-      ],
-    );
-    await catalog.refresh();
-    const entry = catalog.resolve("platform/deepseek-v4.1-flash")!;
-    expect(entry.metadata.contextWindow).toBe(262_144);
-    expect(entry.metadata.prices).toEqual({
-      inputPerToken: 0,
-      outputPerToken: 0,
-      cacheReadPerToken: 0,
-      cacheWritePerToken: 0,
-    });
-    expect(entry.metadata.source).toEqual({
-      limits: "provider",
-      prices: "provider",
-    });
-    expect(entry.dialects).toHaveLength(3);
-    expect(catalog.providers()[0]?.displayName).toBe("Acme");
-  });
   /** TEST_SCENARIO: the deployment's CurveBender Connection lists through the
    * same preset and under the same `cb/…` alias as the user-keyed one, and
    * each shows the name of its own integration. */

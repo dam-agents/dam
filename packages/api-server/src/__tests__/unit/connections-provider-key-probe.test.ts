@@ -42,8 +42,6 @@ function makeService(
   const regions: (string | undefined)[] = [];
   const svc = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),

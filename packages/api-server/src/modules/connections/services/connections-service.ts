@@ -5,7 +5,6 @@ import {
   parseKbShareString,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   displayNameForTemplate,
-  PLATFORM_LLM_TEMPLATE_ID,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   type ConnectionStatus,
@@ -160,16 +159,29 @@ function assertNoUnaddressableRival(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a provider Connection the deployment owns: the
  * template exists only while the deployment configures it, its key is the
- * deployment's, and the user never enters or changes it.
+ * deployment's, and the user never enters or changes it. A key of null means
+ * the install no longer serves it, so the only reconcile left is to remove
+ * the Connections it left behind.
  */
 export interface ManagedProvider {
   templateId: string;
   name: string;
   key: string | null;
-  ca: string | null;
   refusal: string;
-  enabled: () => Promise<boolean>;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the provider templates this release only removes.
+ * DAM inference is gone from the catalog, the config and the chart, but a user
+ * who held one keeps its Connection, its grants, its egress rules and its copy
+ * of the operator's key, and its env would keep pointing the Agent's sessions
+ * at a server that nothing prices or lists. As a keyless managed provider it
+ * is deleted on each user's next boot sweep or listing. Drop it after that
+ * release has rolled out everywhere.
+ */
+export const REMOVED_PROVIDER_TEMPLATE_IDS: readonly string[] = [
+  "platform-llm",
+];
 
 export interface ManagedProviderConnections {
   reconcileManagedConnections(): Promise<void>;
@@ -201,9 +213,6 @@ export function createConnectionsService(deps: {
     reachable: boolean;
   } | null>;
   maxSharedKbConnections?: number;
-  platformProviderEnabled: () => Promise<boolean>;
-  platformProviderKey: string | null;
-  platformProviderCa?: string | null;
   curveBenderDeploymentKey?: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
 }): ConnectionsService & ManagedProviderConnections {
@@ -1133,10 +1142,7 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
       if (conn.auth.kind !== "header") return null;
-      if (
-        PROVIDER_TEMPLATE_IDS.has(conn.templateId) &&
-        conn.templateId !== PLATFORM_LLM_TEMPLATE_ID
-      ) {
+      if (PROVIDER_TEMPLATE_IDS.has(conn.templateId)) {
         const keyCheck = await recheckProviderKey(conn);
         return keyCheck ? fromKeyCheck(keyCheck) : null;
       }
@@ -1869,23 +1875,19 @@ export function createConnectionsService(deps: {
 
   const managedProviders: readonly ManagedProvider[] = [
     {
-      templateId: PLATFORM_LLM_TEMPLATE_ID,
-      name: deps.brandName,
-      key: deps.platformProviderKey,
-      ca: deps.platformProviderCa ?? null,
-      refusal:
-        "The built-in provider is managed by its feature. Turn the feature on or off in Settings instead.",
-      enabled: deps.platformProviderEnabled,
-    },
-    {
       templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
       name: displayNameForTemplate(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!,
       key: deps.curveBenderDeploymentKey ?? null,
-      ca: null,
       refusal:
         "This provider is managed by the deployment, so it can be neither connected nor changed by hand.",
-      enabled: async () => true,
     },
+    ...REMOVED_PROVIDER_TEMPLATE_IDS.map((templateId): ManagedProvider => ({
+      templateId,
+      name: templateId,
+      key: null,
+      refusal:
+        "This provider is no longer part of the platform, so it can be neither connected nor changed by hand.",
+    })),
   ];
 
   const isManaged = (c: Connection) =>
@@ -1893,9 +1895,8 @@ export function createConnectionsService(deps: {
 
   async function managedState(provider: ManagedProvider) {
     const template = deps.templates.get(provider.templateId);
-    const { key, ca } = provider;
-    const wanted =
-      template !== null && key !== null && (await provider.enabled());
+    const { key } = provider;
+    const wanted = template !== null && key !== null;
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const held = owned.filter((c) => c.templateId === provider.templateId);
     const [keep] = wanted ? held.filter((c) => c.auth.kind === "header") : [];
@@ -1914,8 +1915,7 @@ export function createConnectionsService(deps: {
         : null;
     const rotated =
       keep?.auth.kind === "header" &&
-      (stored?.[keep.auth.valueRef.field] !== key ||
-        (stored?.[UPSTREAM_CA_SECRET_FIELD] ?? null) !== ca);
+      stored?.[keep.auth.valueRef.field] !== key;
     const stale =
       keep !== undefined &&
       (keep.name !== name ||
@@ -1925,7 +1925,6 @@ export function createConnectionsService(deps: {
       owned,
       template: wanted ? template : null,
       key,
-      ca,
       keep,
       remove,
       name,
@@ -1936,19 +1935,14 @@ export function createConnectionsService(deps: {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a deployment-owned provider is one Connection
-   * per user: it exists while the deployment configures it (and, for the
-   * built-in provider, while the feature flag is on), follows the
+   * per user: it exists while the deployment configures it, follows the
    * deployment's current key and name, and is removed otherwise, never
-   * through the user's own create or delete. The flag and the key are read
-   * rather than taken from the change event, because a user can record a flag
-   * that the install's mode overrides. Flag changes, listings and the boot
-   * sweep can all reconcile at once, on any replica, so the flag and the
-   * user's Connections are read only under one per-owner lock: whichever runs
-   * last sees the last flag. Its Secret holds a copy of the deployment's key,
-   * and its CA when one is configured, and is rewritten whole when the key,
-   * the CA or the endpoint changes, since the endpoint names the hosts the
-   * gateway injects on. A keyless one from before the provider was metered has
-   * no Secret to rewrite, so it is replaced.
+   * through the user's own create or delete. A listing and the boot sweep can
+   * reconcile at once, on any replica, so the key and the user's Connections
+   * are read only under one per-owner lock: whichever runs last sees the last
+   * key. Its Secret holds a copy of the deployment's key and is rewritten
+   * whole when the key changes or when the template's Contributions move,
+   * since those name the hosts the gateway injects on.
    */
   async function reconcileManagedProvider(
     provider: ManagedProvider,
@@ -1956,7 +1950,7 @@ export function createConnectionsService(deps: {
     await deps.connectionLock(
       `${provider.templateId}:${deps.ownerId}`,
       async () => {
-        const { owned, template, key, ca, keep, remove, name, rotated } =
+        const { owned, template, key, keep, remove, name, rotated } =
           await managedState(provider);
         for (const conn of remove) await service.deleteConnection(conn.id);
         if (!template || key === null) return;
@@ -1966,7 +1960,6 @@ export function createConnectionsService(deps: {
             name,
             authKind: "header",
             value: key,
-            ...(ca ? { caData: ca } : {}),
           });
           return;
         }
@@ -1982,7 +1975,6 @@ export function createConnectionsService(deps: {
             keep.auth.valueRef.path,
             {
               value: key,
-              ...(ca ? { [UPSTREAM_CA_SECRET_FIELD]: ca } : {}),
               ...buildConnectionSdsFields(template.contributions, key),
             },
             template.contributions,
@@ -2026,7 +2018,7 @@ export function createConnectionsService(deps: {
           break;
         }
       } catch (err) {
-        securityLog("warn", "connection.platform_provider_reconcile_failed", {
+        securityLog("warn", "connection.managed_provider_reconcile_failed", {
           category: "credential",
           actor: deps.ownerId,
           actorKind: "user",
@@ -2067,10 +2059,10 @@ export function createConnectionsService(deps: {
  * provider followed by "LLM", then that numbered from 2, so every replica
  * picks the same.
  */
-function managedConnectionName(brand: string, taken: Set<string>): string {
-  if (!taken.has(brand)) return brand;
+function managedConnectionName(base: string, taken: Set<string>): string {
+  if (!taken.has(base)) return base;
   for (let n = 1; ; n++) {
-    const name = n === 1 ? `${brand} LLM` : `${brand} LLM ${n}`;
+    const name = n === 1 ? `${base} LLM` : `${base} LLM ${n}`;
     if (!taken.has(name)) return name;
   }
 }

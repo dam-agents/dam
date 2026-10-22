@@ -55,8 +55,6 @@ function makeService(
     templates: templates(opts.configured ?? true),
     ...(opts.store ? { store: opts.store } : {}),
     brandName: "Acme",
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     curveBenderDeploymentKey:
       opts.key === undefined ? DEPLOYMENT_KEY : opts.key,
   });
@@ -223,6 +221,30 @@ describe("deployment CurveBender connection", () => {
       ).toBe(true);
   });
 
+  // TEST_SCENARIO: DAM inference is gone from the catalog, but a user who held it keeps its Connection, grants and key copy; the deployment-owned reconcile, and so the boot sweep, removes it rather than leaving its env to point sessions at a server nothing prices.
+  it("removes a DAM inference Connection left from before the removal", async () => {
+    const store = newConnectionsStore();
+    store.rows.set("conn-old", {
+      id: "conn-old",
+      ownerId: "owner",
+      templateId: "platform-llm",
+      name: "Acme",
+      inputs: {},
+      auth: {
+        kind: "header",
+        valueRef: { storeId: "test", path: "old-secret", field: "" },
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+      contributions: [],
+    });
+    const { svc, rows } = makeService({ store });
+
+    await svc.listAndReconcileConnections();
+
+    expect(rows.has("conn-old")).toBe(false);
+  });
+
   // TEST_SCENARIO: a listing checks a settled connection by reading its Secret once, not once for the key and again for a CA CurveBender never has.
   it("reads the connection's Secret once per listing", async () => {
     const { svc, secretReads } = makeService();
@@ -265,7 +287,7 @@ describe("deployment CurveBender connection", () => {
     expect(noKeyIn(await svc.listTemplates())).toBe(true);
   });
 
-  // TEST_SCENARIO: the user's own create, update and delete refuse the deployment provider with its own words, not the built-in provider's feature hint, so its Secret keeps the deployment's key.
+  // TEST_SCENARIO: the user's own create, update and delete refuse the deployment provider with its own words, so its Secret keeps the deployment's key.
   it("refuses to change the connection by hand", async () => {
     const { svc, rows } = makeService();
     await svc.listAndReconcileConnections();
