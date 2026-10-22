@@ -39,10 +39,10 @@ function ShownWhereItCloses({
  * behind a vertical border so it does not read as one of the panel's own
  * actions. It closes the whole panel and hands focus to the rail's open tab,
  * which stays on screen; with no rail, as in the classic chat, to the top
- * bar's open tab, or to the main region; a phone hides it, because the full-screen panel
- * there has its own back button, unless JanUI draws no such bar. Under the
- * Unified right toolbar experiment it is a 40 px tile of the rail's size
- * rather than the small ghost button.
+ * bar's open tab, or to the main region; a phone hides it, because the
+ * full-screen panel there has its own back button, unless the panel keeps a
+ * top bar of its own instead. Under the Unified right toolbar experiment it
+ * is a 40 px tile of the rail's size rather than the small ghost button.
  */
 export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
   const tiles = useContext(RightToolbarTiles);
@@ -57,7 +57,7 @@ export function PanelCloseButton({
   onClose?: () => void;
   tiles: boolean;
 }) {
-  // UNIT_BOUNDARY_DESCRIPTION: JanUI draws no bar of its own over a narrow panel, so its views keep the X; the layout is read off the root, which does not change without a reload.
+  // UNIT_BOUNDARY_DESCRIPTION: JanUI, and any shell whose panel keeps a top bar of its own under the Unified right toolbar experiment, draw no back button over a narrow panel, so those panels keep the X; the layout is read off the root, which does not change without a reload.
   const newLayout =
     typeof document !== "undefined" &&
     document.documentElement.dataset.layout === "new";
@@ -80,7 +80,7 @@ export function PanelCloseButton({
       <div
         className={cn(
           "flex shrink-0 items-center self-stretch border-l border-border pl-2",
-          !newLayout && "max-md:hidden",
+          !newLayout && !tiles && "max-md:hidden",
         )}
       >
         {tiles ? (

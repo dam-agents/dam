@@ -93,6 +93,7 @@ import { EnvironmentsPanel } from "../../environments/components/environments-pa
 import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
@@ -287,6 +288,7 @@ export function ChatView() {
   );
   const processesEnabled = useProcessesEnabled();
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
@@ -1279,7 +1281,7 @@ export function ChatView() {
         />
       )}
       {}
-      {newLayout ? (
+      {newLayout || rightToolbar ? (
         <SidePanelShell
           mainClassName="@container/chat"
           activeTab={activeTab}
@@ -1338,8 +1340,8 @@ export function ChatView() {
               .join(" · ")}
           </h1>
           {!newLayout && (
-            <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
-              <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
+            <header className="@container flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-4">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <MobileMenuButton />
                 <span
                   aria-hidden
@@ -1364,7 +1366,7 @@ export function ChatView() {
                       className="@max-[149px]:hidden"
                     />
                   )}
-                  <span className="flex min-w-0 flex-col items-start text-left">
+                  <span className="flex min-w-0 flex-col items-start text-left @max-[430px]:hidden">
                     <span className="max-w-full truncate text-sm font-bold text-foreground">
                       {selectedAgentName}
                     </span>
@@ -1386,8 +1388,11 @@ export function ChatView() {
               </div>
               <div
                 data-chat-status
-                className="flex shrink-0 items-center gap-2 md:ml-auto"
+                className="flex shrink-0 items-center gap-2"
               >
+                {processesEnabled && (
+                  <ProcessesIndicator agentId={selectedAgent} />
+                )}
                 <ChatHeaderStatus
                   selectedAgent={selectedAgent}
                   agents={agents}
@@ -1398,9 +1403,6 @@ export function ChatView() {
                 />
               </div>
               <div className="flex shrink-0 items-center gap-1 md:hidden">
-                {processesEnabled && (
-                  <ProcessesIndicator agentId={selectedAgent} />
-                )}
                 <SidePanelTabButtons
                   tabs={SIDE_PANEL_TABS.filter(
                     ({ tab }) => tab === "artifacts" || tab === "files",

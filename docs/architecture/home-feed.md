@@ -6,7 +6,7 @@ Home answers one question: what has happened since you last looked, and what sti
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
-In an Agent's chat with the JanUI experiment off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
+In an Agent's chat with the JanUI and Unified right toolbar experiments both off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads
 
@@ -136,9 +136,11 @@ Its tiles carry no tooltips: the accessible name stays on the button and the ope
 A count badge keeps its place on the icon's top-right corner.
 The panel's top bar becomes a 40 px row 8 px below the top of the panel, with no rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the panel's other controls keep their size.
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
-The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page outside an Agent's chat, whether or not JanUI is on: that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
+The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
 The rest of the rail's tab list and what each tab shows do not depend on this flag.
-JanUI decides the shell around it, including the phone overlay from the left rail up to this bar, and a chat with JanUI off keeps its own column of sections instead of a rail.
+The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to; the chat keeps a top bar of its own with the Agent's identity and the status, and the Browser and Changes buttons it had there are tiles of the rail.
+JanUI decides only the shell around it: whether the navigation is the tree or the classic sidebar, whether a page outside a chat has a bar above it, and whether a narrow screen's overlay starts at the left rail or at the screen's edge — a page with no rail there shows the overlay at its own edge, with the rail inside the panel.
+With the toolbar off, a chat without JanUI keeps its classic column of sections and opens the browser, changes, Get started and Approvals from its top bar.
 While JanUI is on as well, the navigation counts the bar this flag draws when it decides whether the page has room for the pane.
 With both experiments on, the page reads as one surface: the sidebar rail and the right rail draw the same tile.
 

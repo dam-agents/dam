@@ -112,6 +112,21 @@ it("ends the panel's top bar with the X, behind a border", () => {
   expect(headerClass.split(" ")).toContain("border-b");
 });
 
+// TEST_SCENARIO: A phone hides the X, because the full-screen panel there has its own back button, except where the panel keeps a top bar with the X instead, which the Unified right toolbar experiment draws.
+it.each([
+  ["the tiled panel", true, false],
+  ["the classic column", false, true],
+])("in %s the X is hidden on a phone: %s", (_, tiles, hidden) => {
+  const html = renderToStaticMarkup(
+    createElement(TooltipProvider, null, PanelCloseButton({ tiles })),
+  );
+  const container =
+    html.match(
+      /class="([^"]*self-stretch border-l border-border[^"]*)"/,
+    )?.[1] ?? "";
+  expect(container.split(" ").includes("max-md:hidden")).toBe(hidden);
+});
+
 // TEST_SCENARIO: Clicking the X closes the open panel.
 it("closes the side panel", () => {
   store.current.getState().setSidePanelTab("approvals");

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and with the Unified right toolbar experiment on, the right rail draws tiles with Documentation and Artifacts among them, and it draws Artifacts from its own flag alone while JanUI is off, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and with the Unified right toolbar experiment on, the right rail draws tiles with Documentation and Artifacts among them, and it draws Artifacts, and an Agent's chat with its rail, from its own flag alone while JanUI is off, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -235,6 +235,57 @@ test("switches the chat between the sections and the side panel", async ({
   ).toBeVisible();
 
   await switchLayout(false);
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+  await expect(page.getByTestId("chat-sections")).toBeVisible();
+});
+
+// TEST_SCENARIO: the Unified right toolbar alone gives an Agent's chat, with JanUI off, the tiled rail in place of the classic column of Files and Artifacts sections, and the chat keeps a top bar naming the Agent; the rail's Artifacts tab opens the panel, and turning the flag off brings the sections back.
+test("gives the chat the tiled rail without JanUI", async ({ page }) => {
+  test.setTimeout(240_000);
+  await setNewLayout(false);
+  await setUnifiedRightToolbar(false);
+  const agentId = agentIds.get(AGENTS[1])!;
+  const chatPath = `/chat/${encodeURIComponent(agentId)}`;
+  const navigateInApp = (path: string) =>
+    page.evaluate((to) => {
+      history.pushState(null, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+
+  await openHome(page);
+  await page.evaluate(() =>
+    localStorage.setItem("platform-debug:features-menu", "true"),
+  );
+  await page.goto(`${baseUrl}${chatPath}`);
+  await waitForAgentRunning(api, AGENTS[1]);
+  await expect(page.getByTestId("chat-sections")).toBeVisible();
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+
+  const toolbarSwitch = page.getByRole("switch", {
+    name: "Unified right toolbar",
+  });
+  const switchToolbar = async (on: boolean) => {
+    await navigateInApp("/settings/features");
+    await toolbarSwitch.click();
+    await expect(toolbarSwitch).toHaveAttribute("aria-checked", String(on));
+    await navigateInApp(chatPath);
+    await expect(chatInput(page)).toBeVisible();
+  };
+
+  await switchToolbar(true);
+  const bar = page.getByTestId("side-panel-bar");
+  await expect(bar).toBeVisible();
+  expect((await bar.boundingBox())?.width).toBe(56);
+  await expect(page.getByTestId("chat-sections")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: `Configure ${AGENTS[1]}` }),
+  ).toBeVisible();
+  await bar.getByTestId("side-panel-tab-artifacts").click();
+  await expect(
+    page.getByTestId("side-panel").getByRole("heading", { name: "Artifacts" }),
+  ).toBeVisible();
+
+  await switchToolbar(false);
   await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
   await expect(page.getByTestId("chat-sections")).toBeVisible();
 });
