@@ -2,7 +2,7 @@
  * profile. Slack: post as the person, read the bot's replies in a thread, and wait for the
  * bot's own top-level posts in the channel after a slackNow() timestamp (channelPosts). GitHub:
  * sandboxPull finds the newest pull request of the sandbox repository whose title holds the
- * run's id, and closeSandboxPull closes it and deletes its branch — the cleanup a test calls
+ * run's id, and closeSandboxPull closes it and deletes its branch (a branch already gone is no error) — the cleanup a test calls
  * last, after its last criterion, so a failed run keeps both; neither reads the repository's
  * files. githubSignIn finishes DAM's "Connect with GitHub" on github.com as the sandbox test user
  * (the password, a TOTP code computed per RFC 6238 and never reused, the OAuth App's consent
@@ -74,7 +74,7 @@ export async function channelPosts(
   }
 }
 
-async function github(method: string, path: string, body?: unknown): Promise<unknown> {
+async function github(method: string, path: string, body?: unknown, gone = false): Promise<unknown> {
   const repo = sandbox.githubRepo();
   if (!repo) throw new Error('the GitHub sandbox is not set (E2E_SANDBOX_GITHUB_TOKEN, profile.sandbox_github_repo)');
   const r = await fetch(`https://api.github.com/repos/${repo}/${path}`, {
@@ -86,6 +86,7 @@ async function github(method: string, path: string, body?: unknown): Promise<unk
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (gone && (r.status === 404 || r.status === 422)) return null;
   if (!r.ok) throw new Error(`github ${method} ${path.split('?')[0]}: HTTP ${r.status}`);
   return r.status === 204 ? null : r.json();
 }
@@ -101,7 +102,7 @@ export async function sandboxPull(id: string): Promise<SandboxPull | null> {
 
 export async function closeSandboxPull(p: SandboxPull): Promise<void> {
   if (p.state === 'open') await github('PATCH', `pulls/${p.number}`, { state: 'closed' });
-  if (p.branch) await github('DELETE', `git/refs/heads/${p.branch.split('/').map(encodeURIComponent).join('/')}`);
+  if (p.branch) await github('DELETE', `git/refs/heads/${p.branch.split('/').map(encodeURIComponent).join('/')}`, undefined, true);
 }
 
 function totp(secret: string, at = Date.now()): string {
