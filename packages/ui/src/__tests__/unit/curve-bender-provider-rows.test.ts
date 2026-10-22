@@ -15,6 +15,9 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
+vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
+  AllAgentsProviderLimit: () => null,
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: { showConfirm: () => void }) => unknown) =>
     select({ showConfirm: vi.fn() }),

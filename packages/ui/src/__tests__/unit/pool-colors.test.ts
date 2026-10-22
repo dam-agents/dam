@@ -8,9 +8,9 @@ import { segmentFill } from "../../modules/budgets/lib/pool-colors.js";
  */
 
 describe("segmentFill", () => {
-  // TEST_SCENARIO: at ok the rest of the bar stays neutral grey.
-  it("keeps the rest grey at ok", () => {
-    expect(segmentFill("ok", false)).toContain("slate");
+  // TEST_SCENARIO: at ok the rest of the bar stays a neutral tint of the foreground colour.
+  it("keeps the rest neutral at ok", () => {
+    expect(segmentFill("ok", false)).toContain("foreground");
     expect(segmentFill("ok", false)).not.toContain("amber");
   });
 

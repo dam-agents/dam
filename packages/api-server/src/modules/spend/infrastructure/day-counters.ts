@@ -31,6 +31,10 @@ function counterKey(counter: DayCounter): string {
       { scope: "connection" },
       (c) => `spend:${c.day}:conn:${c.agentId}:${c.connectionId}`,
     )
+    .with(
+      { scope: "owner-connection" },
+      (c) => `spend:${c.day}:ownerconn:${c.ownerSub}:${c.connectionId}`,
+    )
     .exhaustive();
 }
 

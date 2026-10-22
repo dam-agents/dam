@@ -62,7 +62,7 @@ export function PoolBar({
       <div
         role="group"
         aria-label={`${title} by agent`}
-        className="flex h-3 w-full gap-px overflow-hidden rounded-sm bg-muted"
+        className="flex h-3 w-full gap-px overflow-hidden rounded-sm bg-foreground/10"
       >
         {bar.segments.map((segment) => (
           <Segment

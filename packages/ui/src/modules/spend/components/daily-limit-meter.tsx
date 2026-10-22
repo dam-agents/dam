@@ -2,16 +2,17 @@ import type { SpendLimitView, SpendUnit } from "api-server-api";
 
 import { cn } from "@/lib/utils";
 
-import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
 import {
   continuedToday,
   limitMeterLabel,
   limitStateText,
-  spentOfLimit,
+  percentOfLimit,
+  spentOfLimitToday,
   spentWithoutLimit,
 } from "../lib/copy.js";
 import { localResetTime } from "../lib/format.js";
-import { LIMIT_STATE_FILL, LIMIT_STATE_TEXT } from "../lib/state-colors.js";
+import { LIMIT_STATE_TEXT } from "../lib/state-colors.js";
+import { LimitBar } from "./limit-bar.js";
 
 interface Props {
   spentMicros: number;
@@ -35,25 +36,16 @@ export function DailyLimitMeter({
       </p>
     );
   }
-  const pct =
-    limit.effectiveMicros > 0
-      ? Math.min(100, (limit.spentMicros / limit.effectiveMicros) * 100)
-      : 100;
-  const continued = limit.extensions > 0;
+  const pct = percentOfLimit(limit.spentMicros, limit.effectiveMicros);
 
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-sm text-foreground tabular-nums">
-        {spentOfLimit(
-          limit.spentMicros,
-          limit.amountMicros,
-          continued || limit.leftMicros === 0 ? null : limit.leftMicros,
-          unit,
-        )}
+        {spentOfLimitToday(limit.spentMicros, limit.amountMicros, unit)}
       </p>
-      <SpendBarTrack
+      <LimitBar
         pct={pct}
-        fillClassName={LIMIT_STATE_FILL[limit.state]}
+        state={limit.state}
         label={limitMeterLabel(subject, pct)}
       />
       <LimitStateLine limit={limit} resetsAt={resetsAt} />

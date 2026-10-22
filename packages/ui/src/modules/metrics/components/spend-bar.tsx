@@ -17,6 +17,7 @@ export function SpendBarTrack({
   color,
   fillClassName,
   className,
+  trackClassName = "h-5 rounded bg-muted",
   extraPct = 0,
   extraFillClassName,
 }: {
@@ -25,13 +26,14 @@ export function SpendBarTrack({
   color?: string;
   fillClassName?: string;
   className?: string;
+  trackClassName?: string;
   extraPct?: number;
   extraFillClassName?: string;
 }) {
   const hasExtra = extraPct > 0;
   return (
     <div
-      className={cn("flex h-5 overflow-hidden rounded bg-muted", className)}
+      className={cn("flex overflow-hidden", trackClassName, className)}
       role="img"
       aria-label={label}
     >

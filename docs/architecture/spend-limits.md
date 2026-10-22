@@ -159,7 +159,7 @@ A sub-agent row carries the first 1,000 characters of its task for the hover tex
 **Spend per Session.** For one agent, the api-server sums the calls that the agent made per Session, newest first, and adds to each Session the calls of the sub-agents spawned from it at any depth, also as a part of its own.
 A sub-agent whose spawn recorded no Session ([invocations](invocations.md)) adds its spend to no Session.
 
-**Day counters.** Redis keeps the day's totals per payer and unit, per owner and unit, and per payer and Connection, so the limit check reads no database.
+**Day counters.** Redis keeps the day's totals per payer and unit, per owner and unit, per payer and Connection, and per owner and Connection, so the limit check reads no database.
 A missing counter, for example after a Redis restart, is rebuilt from the rollup, and a counter that fails to update is dropped so that the next read rebuilds it.
 
 **One call, many records.** Each periodic record and the final record carry the call's counts so far, not increments.
@@ -187,10 +187,10 @@ An estimated call keeps the Session and the calling agent of its stamp, and the 
 
 ## Limits
 
-The owner sets three kinds of daily limit.
+The owner sets four kinds of daily limit.
 Each one counts the spend of the current UTC day.
 Only the owner sets or removes a limit, from an unrestricted login: an agent, and an API key bound to an agent, cannot change or continue it.
-A sub-agent takes no agent limit and no Connection limit, because its calls count for its root driver: the api-server refuses to set one.
+A sub-agent takes no agent limit and no Connection limit of its own, because its calls count for its root driver: the api-server refuses to set one.
 A limit of zero refuses every call that it counts.
 
 **Agent limit.** A dollar limit for one agent.
@@ -199,7 +199,16 @@ It counts the agent's metered dollar spend on paid providers, sub-agents include
 **Own limit.** One dollar limit for all agents of the owner together.
 It counts the same spend as the agent limit, summed over every agent of the owner.
 
-**Connection limits.** A limit for the calls of one agent on one of its Connections, in that Connection's unit:
+**Connection limits.** A limit for the calls of one agent on one of its Connections, in that Connection's unit.
+
+**Connection limits for all agents.** A limit for the calls of all agents of the owner on one of the owner's Connections, in that Connection's unit.
+It counts every call on that Connection that the owner pays for, so sub-agents count, and so do agents deleted that day, because their rollup rows stay.
+An agent that the owner creates later falls under it at once.
+It applies to every Connection that takes a Connection limit, dollar Connections included: a user with two dollar Connections on separate budgets caps each one, which the own limit cannot do.
+When an agent has a Connection limit too, the first one reached stops the agent's calls on that Connection.
+It is deleted with its Connection, with every agent's Connection limit on it.
+
+Both kinds of Connection limit use the Connection's unit:
 
 | Connection                         | Unit               | Counts in the agent limit, own limit and ceiling |
 | ---------------------------------- | ------------------ | ------------------------------------------------ |
@@ -211,8 +220,8 @@ It counts the same spend as the agent limit, summed over every agent of the owne
 | OpenAI, Bedrock                    | dollars, unpriced  | only with an operator price; no Connection limit |
 | Any Connection that is not metered | —                  | no limit applies                                 |
 
-So the Claude subscription and Bob are limited only by their Connection limits.
-A Connection limit needs a Connection that is granted to the agent.
+So the Claude subscription and Bob are limited only by their Connection limits, for one agent or for all agents.
+An agent's Connection limit needs a Connection that is granted to the agent; a limit for all agents needs a Connection that the owner holds.
 OpenAI and Bedrock calls take no Connection limit yet, because DAM does not price them.
 
 **Soft.** At a limit, the gate refuses the call and asks the owner whether to continue; it never holds the call.
@@ -268,8 +277,9 @@ A refusal by the ceiling asks nothing.
 There is one question per limit, day and extension count, so further refusals at the same level add no question.
 "Continue" is any allow verdict on it: it adds one extension for that day, so the effective limit is the amount times one plus the extensions, and the gate asks again at the new level.
 A deny stops the agent for the day: the limit stays reached, and the gate does not ask again that day.
+A limit that counts all agents, the own limit or a Connection limit for all agents, asks once for all of them, on the agent whose call reached it first, and says so: a continue lets every agent go on, and a deny stops every agent that it counts.
 A question expires at the next UTC midnight, when the limit starts again, and no verdict on it writes an egress rule.
-Setting or removing a limit closes its pending question, so a new refusal asks again.
+Setting or removing a limit closes its pending question, so a new refusal asks again, and so does removing the Connection of a Connection limit.
 
 ## Unattended work
 
@@ -293,6 +303,12 @@ The ceiling asks nothing.
 **The agent's view.** Through a platform tool, an agent reads the limits that count its calls, today's spend, what is left, the state of each limit, and when the day resets.
 It has no tool to set, clear or continue a limit.
 
+**Which limit stops first.** Several limits can count one call, and the first one reached stops it.
+For an agent, the api-server works out which one that is, so every surface says the same: the agent's screens, `dam spend status <agent>` and the agent's own tool.
+It answers per Connection that the agent holds, and once more for the agent's dollar spend across Connections.
+A dollar Connection is counted by its own limits, the agent limit, the own limit and the ceiling; a subscription or Bob Connection only by its own limits, because the others count dollars alone.
+The limit with the least left today stops first; on a tie, the one set closest to the agent: the agent's Connection limit, then the agent limit, then the Connection limit for all agents, then the own limit, then the ceiling.
+
 ## Screens
 
 The owner sets each limit where the work happens.
@@ -300,24 +316,34 @@ The agent limit and the own limit each show in a "Daily spend limit" card.
 A help tip on its title tells which calls the limit counts.
 A button opens a small dialog to set the limit or remove it: "Set a limit" when no limit is set, else "Change".
 Without a limit, the card gives today's paid spend and "No limit".
-With a limit, it gives the spend against the limit, what is left, and a meter.
+With a limit, it gives the spend against the limit, and a meter with the share of the limit used beside it.
 A line under the meter shows only when it matters: when the spend is close to the limit, when the limit is reached and until when paid calls stop, and how often the owner continued today.
 The last line gives the local time at which the day resets.
 A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
+Every place that shows a limit follows one pattern.
+It shows the limit that the place owns, which the user sets there, and under it one line, "Also counted by", for the other limits that count the same calls.
+Each limit has its own icon on every screen: the provider's for an agent's Connection limit, the same with a people badge for a Connection limit for all agents, the agent's avatar for the agent limit, a sum sign for the own limit (the total daily limit) and a lock for the spend ceiling.
+Closed, the line shows each other limit's icon and share used; open, it lists them muted, each with its meter, its spend against the limit and where it is set.
+The limit with the least left today, when it is not the place's own, is marked "stops first", closed and open.
+The spend ceiling shows only when the operator has set one.
 The screens:
 
 - **The agent's page:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units and how many calls are high estimates.
-  When the own limit or the ceiling stops the agent first, it says so.
-  It tells the user which of the agent's providers the agent limit does not count.
+  Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
   An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
-  It explains the subscription value and Bobcoins, and that only this limit stops calls on such a Connection; a Connection that takes no limit says why.
+- **The agent's Providers section:** each granted Connection that takes a limit has one line for the agent's limit on it, in the Connection's unit: a meter, the share used, the spend against the limit, and the button.
+  Clicking the line opens the other limits that count those calls: the Connection limit for all agents and, on a dollar Connection, the agent limit, the total daily limit and the ceiling; a line that nothing else counts does not open.
+  The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
+  A Connection that takes no limit says why.
+- **Settings, Providers tab:** under each connected Connection that takes a limit, one line for the Connection limit for all agents, the same as in the agent's Providers section; on a dollar Connection it opens to the total daily limit and the ceiling.
+  The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
-  When the user has a ceiling, the card also shows it as the spend ceiling, without a button, and says until when paid calls stop when it is reached.
+  Its "Also counted by" line holds the spend ceiling, when the operator has set one.
+  When the user has Connection limits for all agents, the card lists them below, read only: each with its icon, a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
   Below the card, a period picker keeps its period in the URL.
   It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
   The calendar gives the local time at which a day starts.
@@ -349,10 +375,10 @@ The screens:
   When the user hides it, it goes from both places, in that browser only.
   The tooltip of its close button says so, and says that the earlier estimates stay on Settings › Usage while they are open.
 
-A meter takes the warning colour at 80% of its limit and the danger colour when the limit is reached.
+A meter is the foreground colour on a light tint of it, takes the warning colour at 80% of its limit and the danger colour when the limit is reached, and shows the share of the limit used beside it; the resource meters on Home use the same fill.
 A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
 A spend-limit question shows on Home with "Continue" and "Stop for today"; Home's "Deny all" leaves it out, because a deny there stops the agent for the day.
-The surfaces name four limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, and the spend ceiling that the operator sets.
+The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.
 Every surface calls the ceiling the spend ceiling; its help tip says that the operator sets it.
 The Claude subscription's unit shows in dollars as "covered", for example "covered by subscriptions today" in a Connection limit; the help tips call it the subscription value at API prices.
 In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.

@@ -9,7 +9,8 @@ export type LimitScope =
       readonly kind: "connection";
       readonly agentId: string;
       readonly connectionId: string;
-    };
+    }
+  | { readonly kind: "owner-connection"; readonly connectionId: string };
 
 export type LimitState = "ok" | "warn" | "reached";
 
@@ -107,6 +108,12 @@ export function limitCounter(limit: SpendLimit, day: string): DayCounter {
       agentId: scope.agentId,
       connectionId: scope.connectionId,
     }))
+    .with({ kind: "owner-connection" }, (scope): DayCounter => ({
+      scope: "owner-connection",
+      day,
+      ownerSub: limit.ownerSub,
+      connectionId: scope.connectionId,
+    }))
     .exhaustive();
 }
 
@@ -133,6 +140,12 @@ export function limitsOnCall(
           { kind: "connection" },
           (scope) =>
             scope.agentId === call.payer &&
+            scope.connectionId === call.connectionId,
+        )
+        .with(
+          { kind: "owner-connection" },
+          (scope) =>
+            limit.ownerSub === call.ownerSub &&
             scope.connectionId === call.connectionId,
         )
         .exhaustive(),

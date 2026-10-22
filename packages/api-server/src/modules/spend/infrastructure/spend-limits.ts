@@ -27,6 +27,7 @@ export interface SpendLimits {
   clear(ownerSub: string, scope: LimitScope): Promise<string | null>;
   extend(limitId: string, day: string, extensions: number): Promise<void>;
   deleteForAgent(agentId: string): Promise<void>;
+  deleteForConnection(connectionId: string): Promise<string[]>;
   listAgentIds(): Promise<string[]>;
 }
 
@@ -42,6 +43,10 @@ function scopeColumns(scope: LimitScope): {
     .with({ kind: "owner" }, () => ({ agentId: null, connectionId: null }))
     .with({ kind: "connection" }, (s) => ({
       agentId: s.agentId,
+      connectionId: s.connectionId,
+    }))
+    .with({ kind: "owner-connection" }, (s) => ({
+      agentId: null,
       connectionId: s.connectionId,
     }))
     .exhaustive();
@@ -62,6 +67,9 @@ function scopeOf(row: {
       agentId: row.agentId,
       connectionId: row.connectionId,
     };
+  }
+  if (row.scope === "owner-connection" && row.connectionId) {
+    return { kind: "owner-connection", connectionId: row.connectionId };
   }
   return null;
 }
@@ -92,9 +100,9 @@ export function createSpendLimits(db: Db): SpendLimits {
           and(
             eq(spendLimits.ownerSub, ownerSub),
             agentId === null
-              ? eq(spendLimits.scope, "owner")
+              ? isNull(spendLimits.agentId)
               : or(
-                  eq(spendLimits.scope, "owner"),
+                  isNull(spendLimits.agentId),
                   eq(spendLimits.agentId, agentId),
                 ),
           ),
@@ -173,6 +181,14 @@ export function createSpendLimits(db: Db): SpendLimits {
 
     async deleteForAgent(agentId) {
       await db.delete(spendLimits).where(eq(spendLimits.agentId, agentId));
+    },
+
+    async deleteForConnection(connectionId) {
+      const rows = await db
+        .delete(spendLimits)
+        .where(eq(spendLimits.connectionId, connectionId))
+        .returning({ id: spendLimits.id });
+      return rows.map((row) => row.id);
     },
 
     async listAgentIds() {

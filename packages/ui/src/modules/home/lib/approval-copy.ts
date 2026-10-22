@@ -7,6 +7,7 @@ import { match } from "ts-pattern";
 
 import {
   AGENT_LIMIT_NAME,
+  allAgentsConnectionLimitName,
   connectionLimitName,
   OWN_LIMIT_NAME,
 } from "../../spend/lib/copy.js";
@@ -30,6 +31,9 @@ function spendLimitName(
     .with({ kind: "connection" }, ({ connectionId }) =>
       connectionLimitName(connectionName(connectionId) ?? "Provider"),
     )
+    .with({ kind: "owner-connection" }, ({ connectionId }) =>
+      allAgentsConnectionLimitName(connectionName(connectionId) ?? "provider"),
+    )
     .exhaustive();
 }
 
@@ -42,8 +46,16 @@ function spendLimitDetail(
     .with({ kind: "agent" }, () => "Its paid model calls stop")
     .with({ kind: "owner" }, () => "Paid model calls of all your agents stop")
     .with({ kind: "connection" }, () => "Its calls on this provider stop")
+    .with(
+      { kind: "owner-connection" },
+      () => "Calls of all your agents on this provider stop",
+    )
     .exhaustive();
-  return `${spendLimitName(payload.scope, connectionName)}: ${formatSpendOf(reached, reached, payload.unit)} today. ${stopped} until you continue or the day ends.`;
+  const shared =
+    payload.scope.kind === "owner-connection"
+      ? " Continue lets all of them go on."
+      : "";
+  return `${spendLimitName(payload.scope, connectionName)}: ${formatSpendOf(reached, reached, payload.unit)} today. ${stopped} until you continue or the day ends.${shared}`;
 }
 
 export function approvalDetail(

@@ -17,6 +17,7 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
+import { AllAgentsProviderLimit } from "../../spend/components/all-agents-provider-limit.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import {
@@ -145,6 +146,16 @@ export function ProviderSection({
                     !managed &&
                     BALANCE_PROVIDER_TYPES.has(row.type) && (
                       <ProviderBalance connectionId={item.id} />
+                    )
+                  }
+                  footer={
+                    item &&
+                    !onConnected && (
+                      <AllAgentsProviderLimit
+                        connectionId={item.id}
+                        connectionName={item.conn.name}
+                        templateId={item.conn.templateId}
+                      />
                     )
                   }
                   connectedAction={onConnected && "Use"}

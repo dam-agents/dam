@@ -58,6 +58,23 @@ export interface SpendLimitView {
   state: SpendLimitState;
 }
 
+export type SpendBindingKind = SpendLimitScope["kind"] | "ceiling";
+
+export interface SpendBindingCandidate {
+  kind: SpendBindingKind;
+  limitId: string | null;
+  leftMicros: number;
+}
+
+export interface SpendBinding {
+  connectionId: string | null;
+  connectionName: string | null;
+  unit: SpendUnit;
+  leftMicros: number;
+  stopsFirst: SpendBindingCandidate;
+  others: SpendBindingCandidate[];
+}
+
 export interface SpendCeilingView {
   amountMicros: number;
   spentMicros: number;
@@ -82,6 +99,8 @@ export interface SpendStatus {
   ceiling: SpendCeilingView | null;
   spent: SpendTotal[];
   spentByConnection: SpendConnectionTotal[];
+  ownerSpentByConnection: SpendConnectionTotal[];
+  binding: SpendBinding[];
 }
 
 export interface SpendAmount {

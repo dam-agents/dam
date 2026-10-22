@@ -28,8 +28,8 @@ export function AgentLimitCoverageNote({
   return (
     <p className="text-sm text-muted-foreground">
       {coverage.paid
-        ? `Calls on ${names} count only toward ${several ? "their own limits" : "its own limit"} in `
-        : `This agent uses only ${names}, so only a limit in `}
+        ? `Calls on ${names} count only toward ${several ? "their own limits" : "its own limits"}, for this agent or for all agents, in `
+        : `This agent uses only ${names}, so only a limit for this agent or for all agents in `}
       <Button
         variant="link"
         size="inline"

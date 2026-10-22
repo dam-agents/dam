@@ -13,17 +13,31 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 import { useSetSpendLimit } from "../api/mutations.js";
-import { resetsAtLine } from "../lib/copy.js";
+import {
+  alreadyReachedLine,
+  otherStopsFirstLine,
+  resetsAtLine,
+  spentTodayLine,
+  thisStopsFirstLine,
+} from "../lib/copy.js";
 import { amountText, localDayStart, UNIT_NAMES } from "../lib/format.js";
 import { utcDayOf } from "../lib/utc-day.js";
+
+export interface LimitComparison {
+  spentMicros: number;
+  extensions: number;
+  other: { name: string; leftMicros: number } | null;
+}
 
 interface Props {
   scope: SpendLimitScope;
   unit: SpendUnit;
   subject: string;
   amountMicros: number | null;
+  compare?: LimitComparison;
   onClose: () => void;
 }
 
@@ -32,6 +46,7 @@ export function SpendLimitDialog({
   unit,
   subject,
   amountMicros,
+  compare,
   onClose,
 }: Props) {
   const id = useId();
@@ -84,6 +99,13 @@ export function SpendLimitDialog({
             </span>
           </div>
           {error && <p className="text-xs text-danger">{error}</p>}
+          {compare && (
+            <ComparisonLines
+              compare={compare}
+              amountMicros={parsed.success ? parsed.data : null}
+              unit={unit}
+            />
+          )}
         </form>
       </DialogBody>
       <DialogActions
@@ -108,5 +130,51 @@ export function SpendLimitDialog({
         onSubmit={() => parsed.success && save(parsed.data)}
       />
     </Modal>
+  );
+}
+
+function ComparisonLines({
+  compare,
+  amountMicros,
+  unit,
+}: {
+  compare: LimitComparison;
+  amountMicros: number | null;
+  unit: SpendUnit;
+}) {
+  const left =
+    amountMicros === null
+      ? null
+      : Math.max(
+          0,
+          amountMicros * (compare.extensions + 1) - compare.spentMicros,
+        );
+  const line =
+    left === null
+      ? null
+      : left === 0
+        ? alreadyReachedLine(compare.spentMicros, unit)
+        : compare.other && compare.other.leftMicros < left
+          ? otherStopsFirstLine(
+              compare.other.name,
+              compare.other.leftMicros,
+              unit,
+            )
+          : thisStopsFirstLine(left, unit);
+  return (
+    <>
+      <p className="text-xs text-muted-foreground tabular-nums">
+        {spentTodayLine(compare.spentMicros, unit)}
+      </p>
+      <p
+        aria-live="polite"
+        className={cn(
+          "min-h-8 text-xs",
+          left === 0 ? "text-danger" : "text-muted-foreground",
+        )}
+      >
+        {line}
+      </p>
+    </>
   );
 }

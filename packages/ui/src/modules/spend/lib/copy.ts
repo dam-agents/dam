@@ -21,13 +21,20 @@ export const CEILING_NAME = "Your spend ceiling (set by your operator)";
 export const DAILY_LIMIT_TITLE = "Daily spend limit";
 
 export const OWN_LIMIT_HELP =
-  "Counts the paid API calls of all your agents. Subscriptions and Bob do not count: set those limits in each agent's Providers section.";
+  "Counts the paid API calls of all your agents. Subscriptions and Bob do not count: set their limits in Settings › Providers, or for one agent in its Providers section.";
+
+export const PROVIDER_LIMITS_TITLE = "Provider limits for all agents";
+
+export const PROVIDER_LIMITS_HELP =
+  "Each one counts the calls of all your agents on one provider. Set them in Settings › Providers.";
+
+export const EDIT_IN_PROVIDERS = "Edit in Providers";
 
 export const CONNECTION_LIMIT_TITLE = "Daily limit";
 
 export function connectionLimitHelp(unitExplanation: string | null): string {
   return unitExplanation
-    ? `${unitExplanation} Only this limit stops calls on this provider. The agent's limit and your limit for all agents do not count them.`
+    ? `${unitExplanation} Your limit for all agents on this provider counts these calls too; the agent's limit and your total daily limit do not.`
     : "Counts this agent's paid API calls on this provider.";
 }
 
@@ -71,17 +78,29 @@ export function spentWithoutLimit(micros: number, unit: SpendUnit): string {
 export function spentOfLimit(
   spentMicros: number,
   amountMicros: number,
-  leftMicros: number | null,
   unit: SpendUnit,
 ): string {
   const limit =
     unit === "bobcoin"
       ? formatSpend(amountMicros, unit)
       : bareSpend(amountMicros, unit);
-  const of = `${bareSpend(spentMicros, unit)} of ${limit} today`;
-  return leftMicros === null
-    ? of
-    : `${of} · ${bareSpend(leftMicros, unit)} left`;
+  return `${bareSpend(spentMicros, unit)} of ${limit}`;
+}
+
+export function spentOfLimitToday(
+  spentMicros: number,
+  amountMicros: number,
+  unit: SpendUnit,
+): string {
+  return `${spentOfLimit(spentMicros, amountMicros, unit)} today`;
+}
+
+export function percentOfLimit(
+  spentMicros: number,
+  effectiveMicros: number,
+): number {
+  if (effectiveMicros <= 0) return 100;
+  return Math.min(100, Math.round((spentMicros / effectiveMicros) * 100));
 }
 
 export function limitStateText(
@@ -108,13 +127,6 @@ export function continuedToday(extensions: number): string {
 export function resetsAtLine(resetTime: string): string {
   return `Resets at ${resetTime} your time.`;
 }
-
-export function ceilingLine(spentMicros: number, amountMicros: number): string {
-  return `Spend ceiling: ${bareSpend(spentMicros, "usd")} of ${bareSpend(amountMicros, "usd")} today`;
-}
-
-export const CEILING_HELP =
-  "Your operator sets this ceiling for you. You cannot change it.";
 
 export const CEILINGS_TITLE = "Spend ceilings";
 
@@ -148,16 +160,6 @@ export const CEILING_SAVE_FAILED =
 
 export const CEILING_REMOVED_MEANWHILE =
   "Someone removed this spend ceiling, so there is nothing to change. The list now shows the current ceilings.";
-
-export function nearerLimitLine(
-  kind: "owner" | "ceiling",
-  leftMicros: number,
-): string {
-  const left = bareSpend(leftMicros, "usd");
-  return kind === "owner"
-    ? `Your limit for all agents has ${left} left today, so it stops this agent first.`
-    : `Your spend ceiling has ${left} left today, so it stops this agent first.`;
-}
 
 const ALSO_SPENT: Readonly<Record<SpendUnit, (micros: number) => string>> = {
   usd: (micros) => `${bareSpend(micros, "usd")} on paid API calls`,
@@ -259,6 +261,10 @@ export const USAGE_DETAILS = "Usage details";
 
 export function connectionLimitName(connectionName: string): string {
   return `${connectionName} spend limit`;
+}
+
+export function allAgentsConnectionLimitName(connectionName: string): string {
+  return `Your ${connectionName} spend limit (all agents)`;
 }
 
 export function continueLabel(amountMicros: number, unit: SpendUnit): string {
@@ -434,4 +440,97 @@ export function turnLineHelp(showsCost: boolean): string {
   return showsCost
     ? `${telemetry} ${getBrand().name} measures the cost, cached tokens included. The cost leaves out sub-agents.`
     : telemetry;
+}
+
+export function partThisAgent(amount: string): string {
+  return `This agent: ${amount}`;
+}
+
+export function partSpent(amount: string): string {
+  return `Spent: ${amount}`;
+}
+
+export function partOtherAgents(amount: string): string {
+  return `Other agents: ${amount}`;
+}
+
+export function partLeft(amount: string): string {
+  return `Left: ${amount}`;
+}
+
+export function spentTodayLine(spentMicros: number, unit: SpendUnit): string {
+  return `${bareSpend(spentMicros, unit)} spent today.`;
+}
+
+export function alreadyReachedLine(
+  spentMicros: number,
+  unit: SpendUnit,
+): string {
+  return `This limit is already reached: ${bareSpend(spentMicros, unit)} spent today. Calls stop as soon as you save.`;
+}
+
+export function otherStopsFirstLine(
+  otherName: string,
+  leftMicros: number,
+  unit: SpendUnit,
+): string {
+  return `${otherName} has ${bareSpend(leftMicros, unit)} left today, so it stops this agent first.`;
+}
+
+export function thisStopsFirstLine(
+  leftMicros: number,
+  unit: SpendUnit,
+): string {
+  return `This limit stops this agent first: ${bareSpend(leftMicros, unit)} left today.`;
+}
+
+export const ALSO_COUNTED_BY = "Also counted by";
+
+export const LEVEL_GROUP_NAMES = {
+  provider: "On one provider",
+  every: "Every provider",
+} as const;
+
+export const STOPS_FIRST = "stops first";
+
+export function setIn(place: string): string {
+  return `Set in ${place}`;
+}
+
+export const LEVEL_NAMES = {
+  agent: "Agent limit",
+  total: "Total daily limit",
+  ceiling: "Spend ceiling",
+} as const;
+
+export const LEVEL_SHORT = {
+  agent: "The agent limit",
+  total: "The total daily limit",
+  ceiling: "The spend ceiling",
+} as const;
+
+export const LEVEL_SCOPES = {
+  agent: "every paid provider",
+  total: "all agents, every paid provider",
+  ceiling: "set by your operator",
+} as const;
+
+export function allAgentsOn(connectionName: string): string {
+  return `${connectionName}, all agents`;
+}
+
+export const THIS_AGENT = "this agent";
+
+export function stopsFirstShort(name: string): string {
+  return `${name} stops first`;
+}
+
+export const ALL_AGENTS_LIMIT_BUTTON_TIP =
+  "Daily limit for all your agents on this provider";
+
+export const AGENT_PROVIDER_LIMIT_BUTTON_TIP =
+  "This agent's daily limit on this provider";
+
+export function amountToday(text: string): string {
+  return `${text} today`;
 }

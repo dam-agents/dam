@@ -19,6 +19,7 @@ import {
   startExtendOnContinueSaga,
   type SpendQuestions,
 } from "./sagas/extend-on-continue.js";
+import { startDropConnectionLimitsSaga } from "./sagas/drop-connection-limits.js";
 import { startKeepLastKnownNameSaga } from "./sagas/keep-last-known-name.js";
 import {
   createDayTotals,
@@ -69,6 +70,7 @@ export interface SpendSystem {
   check: SpendCheck;
   extendSaga: Subscription;
   lastKnownNameSaga: Subscription;
+  connectionLimitsSaga: Subscription;
   agentSpend: AgentSpendReader;
   callRowsRetentionTick(): Promise<void>;
   forOwner(deps: {
@@ -156,6 +158,10 @@ export function composeSpendSystem(deps: {
       limits,
     }),
     lastKnownNameSaga: startKeepLastKnownNameSaga({ names: lastKnownNames }),
+    connectionLimitsSaga: startDropConnectionLimitsSaga({
+      limits,
+      questions: deps.questions,
+    }),
     forOwner: (owner) =>
       createSpendService({
         ledger,

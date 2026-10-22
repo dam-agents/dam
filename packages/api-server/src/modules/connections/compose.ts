@@ -169,12 +169,34 @@ export function listConnectionTemplateIds(db: Db): () => Promise<string[]> {
 
 export function createGrantedConnectionTemplates(db: Db): {
   templateOf(agentId: string, connectionId: string): Promise<string | null>;
+  ownedTemplateOf(
+    ownerSub: string,
+    connectionId: string,
+  ): Promise<string | null>;
+  grantedTo(
+    agentId: string,
+  ): Promise<readonly { connectionId: string; templateId: string }[]>;
 } {
   const repo = createConnectionsRepository(db);
   return {
     async templateOf(agentId, connectionId) {
       const granted = await repo.listConnectionsForAgent(agentId);
       return granted.find((c) => c.id === connectionId)?.templateId ?? null;
+    },
+    async ownedTemplateOf(ownerSub, connectionId) {
+      const owned = await repo.get(connectionId, ownerSub);
+      const pending =
+        owned?.auth.kind === "oauth" &&
+        !owned.auth.connectedAt &&
+        !owned.auth.expiresAt;
+      return owned && !pending ? owned.templateId : null;
+    },
+    async grantedTo(agentId) {
+      const granted = await repo.listConnectionsForAgent(agentId);
+      return granted.map((c) => ({
+        connectionId: c.id,
+        templateId: c.templateId,
+      }));
     },
   };
 }

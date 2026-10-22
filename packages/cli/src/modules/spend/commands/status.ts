@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
   formatLocalResetTime,
   formatSpendAmount,
+  type SpendBindingKind,
   type SpendCeilingSource,
   type SpendCeilingView,
   type SpendLimitState,
@@ -31,7 +32,7 @@ const STATE_LABELS: Readonly<Record<SpendLimitState, string>> = {
 };
 
 const UNITS_NOTE =
-  "The Agent spend limit, your spend limit (all Agents) and the spend ceiling count paid API spend in US dollars only. The Claude subscription and Bob count only in their Connection limits.";
+  "The Agent spend limit, your spend limit (all Agents) and the spend ceiling count paid API spend in US dollars only. The Claude subscription and Bob count only in their Connection limits, for one Agent or for all your Agents.";
 
 function limitName(
   limit: SpendLimitView,
@@ -45,6 +46,8 @@ function limitName(
       return "Your spend limit (all Agents)";
     case "connection":
       return `${connectionNames.get(scope.connectionId) ?? scope.connectionId} spend limit`;
+    case "owner-connection":
+      return `Your ${connectionNames.get(scope.connectionId) ?? scope.connectionId} spend limit (all Agents)`;
   }
 }
 
@@ -69,6 +72,22 @@ function ceilingLine(ceiling: SpendCeilingView | null): string {
   return (
     `Spend ceiling (${CEILING_SOURCES[ceiling.source]}): ${formatSpendAmount(ceiling.spentMicros, "usd")} of ` +
     `${formatSpendAmount(ceiling.amountMicros, "usd")} today, ${STATE_LABELS[ceiling.state]}.`
+  );
+}
+
+const BINDING_NAMES: Readonly<Record<SpendBindingKind, string>> = {
+  agent: "the Agent spend limit",
+  owner: "your spend limit (all Agents)",
+  connection: "the Agent's limit on it",
+  "owner-connection": "your limit for all Agents on it",
+  ceiling: "the spend ceiling",
+};
+
+function stopsFirstLines(status: SpendStatus): string[] {
+  return status.binding.map(
+    (binding) =>
+      `Stops first on ${binding.connectionName ?? "all paid providers"}: ` +
+      `${BINDING_NAMES[binding.stopsFirst.kind]}, ${formatSpendAmount(binding.leftMicros, binding.unit)} left.`,
   );
 }
 
@@ -115,6 +134,9 @@ function renderStatus(
       ],
       ...status.limits.map((limit) => limitRow(limit, connectionNames)),
     ]) +
+    (status.binding.length > 0
+      ? `\n${stopsFirstLines(status).join("\n")}\n`
+      : "") +
     `\n${UNITS_NOTE}\n`
   );
 }
@@ -123,7 +145,7 @@ async function connectionNamesOf(
   status: SpendStatus,
   connections: ConnectionService,
 ): Promise<ReadonlyMap<string, string>> {
-  if (!status.limits.some((limit) => limit.scope.kind === "connection")) {
+  if (!status.limits.some((limit) => "connectionId" in limit.scope)) {
     return new Map();
   }
   const listed = await connections.list();
