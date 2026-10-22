@@ -97,6 +97,7 @@ export interface ApiServerDeps {
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   spendForOwner: SpendSystem["forOwner"];
+  spendCeilingsForOperator: SpendSystem["ceilingsForOperator"];
   providerStatus: ProviderStatusService;
   outageAlerts: OutageAlertNotices;
   approvalsRelay: ApprovalsRelayService;

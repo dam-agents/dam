@@ -3,6 +3,7 @@ import type { AgentService } from "../agent/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { ConnectionService } from "../connection/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
+import { buildCeilingCommand } from "./commands/ceiling.js";
 import { buildDailyCommand } from "./commands/daily.js";
 import { buildLimitCommand } from "./commands/limit.js";
 import { buildStatusCommand } from "./commands/status.js";
@@ -35,10 +36,11 @@ export function composeSpendModule(opts: SpendModuleOptions): SpendModule {
     createSpendService: createService,
   };
   const parent = new Command("spend").description(
-    "Show the spend that each Agent's gateway measured, and set Spend Limits",
+    "Show the spend that each Agent's gateway measured, set Spend Limits, and, for platform operators, Spend Ceilings",
   );
   parent.addCommand(buildStatusCommand(deps));
   parent.addCommand(buildDailyCommand(deps));
   parent.addCommand(buildLimitCommand(deps));
+  parent.addCommand(buildCeilingCommand(deps));
   return { commands: [parent], exports: { createService } };
 }

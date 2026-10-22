@@ -24,7 +24,7 @@ export interface SpendLimit {
 
 export interface SpendCeiling {
   readonly amountMicros: number;
-  readonly source: "default" | "UserSpendLimit";
+  readonly source: "default" | "operator";
 }
 
 export interface LimitReading {

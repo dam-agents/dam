@@ -112,6 +112,13 @@ Keys cannot mint or revoke other keys: the management surface rejects any reques
 A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
 The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
 
+**Platform operators** run the install for all its users.
+The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.
+The api-server reads the role from the token's realm roles, so only an interactive sign-in acts as an operator; an API key never does.
+Every operator action checks the role on each call, and a client asks the api-server whether the caller is an operator before it shows such an action.
+An install with no operator role has no operators, and every operator action is refused.
+Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)).
+
 ## Keycloak event logging
 
 Keycloak is also an audit event source.

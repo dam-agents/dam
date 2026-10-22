@@ -2,10 +2,12 @@ import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
   manageAgentsProcedure,
+  operatorProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
   spendBreakdownInputSchema,
+  spendCeilingSetInputSchema,
   spendDailyInputSchema,
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
@@ -62,4 +64,12 @@ export const spendRouter = t.router({
   setLimit: manageAgentsProcedure
     .input(spendSetLimitInputSchema)
     .mutation(({ ctx, input }) => ctx.spend.setLimit(input)),
+
+  ceilings: t.router({
+    list: operatorProcedure.query(({ ctx }) => ctx.spendCeilings.list()),
+
+    set: operatorProcedure
+      .input(spendCeilingSetInputSchema)
+      .mutation(({ ctx, input }) => ctx.spendCeilings.set(input)),
+  }),
 });

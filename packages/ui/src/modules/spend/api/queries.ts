@@ -31,6 +31,10 @@ export function useOwnerSpendStatus() {
   });
 }
 
+export function useSpendCeilings() {
+  return useQuery(trpc.spend.ceilings.list.queryOptions());
+}
+
 export function useAgentSpendStatus(agentId: string | null) {
   return useQuery({
     ...trpc.spend.status.queryOptions(agentId ? { agentId } : skipToken),

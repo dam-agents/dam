@@ -528,6 +528,7 @@ export async function bootstrap() {
       jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       audience: config.keycloakApiAudience,
       requiredRole: config.keycloakRequiredRole,
+      operatorRole: config.keycloakOperatorRole,
     },
     {
       verifyApiKey: apiKeysModule.validator,
@@ -1216,7 +1217,10 @@ export async function bootstrap() {
     payers: { payerOf },
     questions: createSpendQuestionStore(db),
     connections: createGrantedConnectionTemplates(db),
-    k8s: k8sClient,
+    users: {
+      subByEmail: (email) => userDirectory.resolveByEmail(email),
+      emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
+    },
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
     connectionNames: createConnectionNames(db),
@@ -2164,6 +2168,7 @@ export async function bootstrap() {
     seedSources,
     redisBus,
     spendForOwner: spend.forOwner,
+    spendCeilingsForOperator: spend.ceilingsForOperator,
     providerStatus: providerStatus.service,
     outageAlerts: outageAlerts.notices,
     approvalsRelay,

@@ -37,7 +37,7 @@ import { foldTurns } from "../domain/turns.js";
 import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
-import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
+import type { SpendCeilings } from "../infrastructure/spend-ceilings.js";
 import { readSessionSpend, type SpawnedSubAgents } from "./session-spend.js";
 import type { DayTotals, GrantedConnections } from "./spend-check.js";
 

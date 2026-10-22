@@ -125,7 +125,7 @@ data:
           }
         }
       ],
-      {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
+      {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole .Values.keycloak.operatorRole }}
       "roles": {
         "realm": [
           {{- $first := true }}
@@ -150,11 +150,19 @@ data:
             "name": {{ .Values.keycloak.slackInstallerRole | quote }},
             "description": {{ printf "Allows connecting another Slack workspace to %s" .Values.brand.name | quote }}
           }
+          {{- $first = false }}
+          {{- end }}
+          {{- if .Values.keycloak.operatorRole }}
+          {{- if not $first }},{{ end }}
+          {
+            "name": {{ .Values.keycloak.operatorRole | quote }},
+            "description": {{ printf "Lets a person manage %s for all users, such as their spend ceilings" .Values.brand.name | quote }}
+          }
           {{- end }}
         ]
       },
       {{- end }}
-      {{- if or .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
+      {{- if or .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole .Values.keycloak.operatorRole }}
       "groups": [
         {{- $firstGroup := true }}
         {{- if .Values.keycloak.inspectorRole }}
@@ -169,6 +177,14 @@ data:
         {
           "name": "slack-installers",
           "realmRoles": [{{ .Values.keycloak.slackInstallerRole | quote }}]
+        }
+        {{- $firstGroup = false }}
+        {{- end }}
+        {{- if .Values.keycloak.operatorRole }}
+        {{- if not $firstGroup }},{{ end }}
+        {
+          "name": "operators",
+          "realmRoles": [{{ .Values.keycloak.operatorRole | quote }}]
         }
         {{- end }}
       ],
@@ -192,12 +208,18 @@ data:
           {{- if .Values.keycloak.requiredRole }}
           ,"realmRoles": [{{ .Values.keycloak.requiredRole | quote }}]
           {{- end }}
-          {{- if and .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
-          ,"groups": ["/inspectors", "/slack-installers"]
-          {{- else if .Values.keycloak.inspectorRole }}
-          ,"groups": ["/inspectors"]
-          {{- else if .Values.keycloak.slackInstallerRole }}
-          ,"groups": ["/slack-installers"]
+          {{- $devGroups := list }}
+          {{- if .Values.keycloak.inspectorRole }}
+          {{- $devGroups = append $devGroups "/inspectors" }}
+          {{- end }}
+          {{- if .Values.keycloak.slackInstallerRole }}
+          {{- $devGroups = append $devGroups "/slack-installers" }}
+          {{- end }}
+          {{- if .Values.keycloak.operatorRole }}
+          {{- $devGroups = append $devGroups "/operators" }}
+          {{- end }}
+          {{- if $devGroups }}
+          ,"groups": {{ toJson $devGroups }}
           {{- end }}
         },
         {{- end }}
@@ -211,8 +233,10 @@ data:
         {{- $groups = append $groups "/inspectors" }}
         {{- else if and (eq . "slack-installers") $.Values.keycloak.slackInstallerRole }}
         {{- $groups = append $groups "/slack-installers" }}
-        {{- else if not (has . (list "inspectors" "slack-installers")) }}
-        {{- fail (printf "keycloak.extraTestUsers: unknown group %q (inspectors, slack-installers)" .) }}
+        {{- else if and (eq . "operators") $.Values.keycloak.operatorRole }}
+        {{- $groups = append $groups "/operators" }}
+        {{- else if not (has . (list "inspectors" "slack-installers" "operators")) }}
+        {{- fail (printf "keycloak.extraTestUsers: unknown group %q (inspectors, slack-installers, operators)" .) }}
         {{- end }}
         {{- end }}
         {

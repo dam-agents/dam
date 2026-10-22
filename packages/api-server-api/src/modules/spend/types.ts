@@ -2,7 +2,9 @@ import type { z } from "zod";
 import type { SessionCategory } from "../sessions/types.js";
 import type {
   spendBreakdownInputSchema,
+  spendCeilingSetInputSchema,
   spendCeilingSourceSchema,
+  spendCeilingUserSchema,
   spendDailyInputSchema,
   spendLimitScopeSchema,
   spendLimitStateSchema,
@@ -25,6 +27,8 @@ export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
 export type SpendCeilingSource = z.infer<typeof spendCeilingSourceSchema>;
 export type SpendStatusInput = z.infer<typeof spendStatusInputSchema>;
 export type SpendSetLimitInput = z.infer<typeof spendSetLimitInputSchema>;
+export type SpendCeilingUser = z.infer<typeof spendCeilingUserSchema>;
+export type SpendCeilingSetInput = z.infer<typeof spendCeilingSetInputSchema>;
 
 export interface SpendDailyRow {
   day: string;
@@ -212,4 +216,23 @@ export interface SpendService {
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;
   setLimit(input: SpendSetLimitInput): Promise<void>;
+}
+
+export interface SpendCeilingEntry {
+  ownerSub: string;
+  email: string | null;
+  amountMicros: number;
+  setBySub: string;
+  setByEmail: string | null;
+  updatedAt: string;
+}
+
+export interface SpendCeilingList {
+  defaultMicros: number | null;
+  ceilings: SpendCeilingEntry[];
+}
+
+export interface SpendCeilingsService {
+  list(): Promise<SpendCeilingList>;
+  set(input: SpendCeilingSetInput): Promise<SpendCeilingEntry | null>;
 }
