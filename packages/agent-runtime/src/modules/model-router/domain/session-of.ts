@@ -9,6 +9,7 @@ const CLAUDE_AGENT_HEADER = "x-claude-code-agent-id";
 export interface SessionHandle {
   sessionId: string;
   parentSessionId?: string;
+  forkedFrom?: string;
 }
 
 const CLAUDE_SESSION_IN_USER_ID = /_session_([0-9a-f-]{36})$/i;
@@ -74,13 +75,13 @@ export function isSideCall(req: IncomingMessage): boolean {
  * a subagent's own `thread-id`, Claude Code's request metadata `user_id`
  * (its `session_id`, or the `_session_<uuid>` an older release ends it
  * with) or its `x-claude-code-session-id` header, with
- * `x-claude-code-agent-id` on a subagent's call, whose Session is the
- * metadata's `parent_session_id` when the subagent is a fork of the
- * conversation; a rewound Session's copy carries a parent too and is a
- * Session of its own, so the parent alone marks no subagent. Pi's
- * `x-platform-session` from its extension. The root ids equal the ACP
- * session id, except in a Codex or Bob terminal, whose own id the caller
- * maps back.
+ * `x-claude-code-agent-id` on a subagent's call, which belongs to the
+ * conversation it runs in, and carries as `forkedFrom` the conversation
+ * that one was forked from, for the caller to pick between (a rewound
+ * Session's copy is a Session, a fork subagent's conversation is none); the
+ * parent alone marks no subagent. Pi's `x-platform-session` from its
+ * extension. The root ids equal the ACP session id, except in a Codex or
+ * Bob terminal, whose own id the caller maps back.
  */
 export function sessionOf(
   req: IncomingMessage,
@@ -129,10 +130,32 @@ function harnessSessionOf(
   if (!own) return null;
   const agent = header(req, CLAUDE_AGENT_HEADER);
   if (!agent) return { sessionId: own };
+  const forkedFrom = stamped?.parent_session_id;
   return {
     sessionId: agent,
-    parentSessionId: stamped?.parent_session_id ?? own,
+    parentSessionId: own,
+    ...(forkedFrom && forkedFrom !== own && { forkedFrom }),
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Session a subagent's call belongs to, among
+ * the conversation it runs in and the one that conversation was forked from.
+ * Both stamp the same shape: a rewound Session's copy is a Session of its
+ * own whose parent is the deleted original, and Claude Code's fork subagent
+ * runs in a private conversation of its own whose parent is the Session.
+ * The conversation that is a Session wins; one that is none books to what
+ * it was forked from, when that is a Session.
+ */
+export function subagentSessionOf(
+  handle: SessionHandle,
+  isSession: (id: string) => boolean,
+): string | undefined {
+  const { parentSessionId, forkedFrom } = handle;
+  if (parentSessionId === undefined) return undefined;
+  if (forkedFrom === undefined || isSession(parentSessionId))
+    return parentSessionId;
+  return isSession(forkedFrom) ? forkedFrom : parentSessionId;
 }
 
 /**

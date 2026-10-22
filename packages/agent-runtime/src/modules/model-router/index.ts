@@ -4,6 +4,7 @@ export {
   SESSION_HEADER,
   sessionOf,
   sessionOfRunningTurn,
+  subagentSessionOf,
   type SessionHandle,
 } from "./domain/session-of.js";
 export {

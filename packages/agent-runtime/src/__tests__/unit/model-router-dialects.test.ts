@@ -490,7 +490,8 @@ describe("session handles", () => {
    * a JSON object since 2.1 and a `_session_` suffix before. A Claude Code
    * parent in the metadata marks a forked conversation, which a rewound
    * Session's copy is too, so it is a Session of its own; only the agent id
-   * header marks a subagent's call. */
+   * header marks a subagent's call, which then carries both ids for the
+   * caller to pick the Session between. */
   it("reads the session from each harness's own marker", () => {
     const req = (headers: Record<string, string>) => ({ headers }) as never;
     expect(sessionOf(req({ "x-task-id": "s1" }), {})).toEqual({
@@ -538,7 +539,8 @@ describe("session handles", () => {
     expect(sessionOf(req({}), forked)).toEqual({ sessionId: "child" });
     expect(sessionOf(req({ "x-claude-code-agent-id": "a1" }), forked)).toEqual({
       sessionId: "a1",
-      parentSessionId: "33333333-3333-3333-3333-333333333333",
+      parentSessionId: "child",
+      forkedFrom: "33333333-3333-3333-3333-333333333333",
     });
     expect(sessionOf(req({}), { metadata: { user_id: "nothing" } })).toBeNull();
   });

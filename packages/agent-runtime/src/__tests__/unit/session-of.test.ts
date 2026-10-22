@@ -8,7 +8,11 @@
  */
 import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
-import { isSideCall, sessionOf } from "../../modules/model-router/index.js";
+import {
+  isSideCall,
+  sessionOf,
+  subagentSessionOf,
+} from "../../modules/model-router/index.js";
 
 const req = (headers: Record<string, string>): IncomingMessage =>
   ({ headers }) as unknown as IncomingMessage;
@@ -40,20 +44,33 @@ describe("sessionOf for Claude Code", () => {
   });
 
   /** TEST_SCENARIO: A subagent run inside the session stamps the session
-   * itself and its own agent id; a fork subagent runs as a forked
-   * conversation that names the session as its parent. Both are the
-   * session's subagent calls. */
-  it("marks a subagent's call by its agent id, on the session it runs in", () => {
+   * itself and its own agent id. A fork subagent runs in a forked
+   * conversation that names the session as its parent, and so does a
+   * subagent inside a rewound Session's copy, whose parent is the deleted
+   * original: the handle carries both ids, and the Session among them wins.
+   */
+  it("marks a subagent's call by its agent id, with the conversation it was forked from", () => {
     expect(sessionOf(req(agent), userId({ session_id: "s1" }))).toEqual({
       sessionId: "a1",
       parentSessionId: "s1",
     });
-    expect(
-      sessionOf(
-        req(agent),
-        userId({ session_id: "fork", parent_session_id: "s1" }),
-      ),
-    ).toEqual({ sessionId: "a1", parentSessionId: "s1" });
+    const forked = sessionOf(
+      req(agent),
+      userId({ session_id: "fork", parent_session_id: "s1" }),
+    );
+    expect(forked).toEqual({
+      sessionId: "a1",
+      parentSessionId: "fork",
+      forkedFrom: "s1",
+    });
+    const sessions = new Set(["s1", "copy"]);
+    expect(subagentSessionOf(forked!, (id) => sessions.has(id))).toBe("s1");
+    const inCopy = sessionOf(
+      req(agent),
+      userId({ session_id: "copy", parent_session_id: "s1" }),
+    );
+    expect(subagentSessionOf(inCopy!, (id) => sessions.has(id))).toBe("copy");
+    expect(subagentSessionOf({ sessionId: "s1" }, () => true)).toBeUndefined();
   });
 
   /** TEST_SCENARIO: A call whose metadata names no session is still the
