@@ -41,8 +41,17 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
+import {
+  TOOLS_DEMO_BROWSER_URL,
+  TOOLS_DEMO_CHANGES,
+  TOOLS_DEMO_TASKS,
+} from "../../../mock/data/mock-tools-demo.js";
 import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
+import { MockBackgroundChip } from "../../../mock/mock-background-chip.js";
+import { MockBrowserLinkChip } from "../../../mock/mock-browser-link-chip.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
+import { MockChangesCard } from "../../../mock/mock-changes-card.js";
+import { MockDockedChangesPanel } from "../../../mock/mock-docked-changes-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -226,10 +235,20 @@ export function ChatView() {
 
   const isMock = import.meta.env.VITE_MOCK === "true";
 
+  const isToolsDemo = isMock && sessionId === MOCK_SESSION_IDS.toolsDemo;
+  const mockTasks = isToolsDemo ? TOOLS_DEMO_TASKS : [];
+
+  useEffect(() => {
+    if (!isToolsDemo) setOpenMockChanges(false);
+  }, [isToolsDemo]);
+
   useEffect(() => {
     if (!isMock || !selectedAgent) return;
     if (sessionId === MOCK_SESSION_IDS.browser) {
       void openBrowser(selectedAgent);
+    }
+    if (sessionId === MOCK_SESSION_IDS.toolsDemo) {
+      void openBrowser(selectedAgent, TOOLS_DEMO_BROWSER_URL);
     }
   }, [isMock, sessionId, selectedAgent, openBrowser]);
 
@@ -255,6 +274,8 @@ export function ChatView() {
     );
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
+
+  const [openMockChanges, setOpenMockChanges] = useState(false);
 
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
   const toggleNotifications = useStore((s) => s.toggleNotifications);
@@ -584,7 +605,8 @@ export function ChatView() {
       openFilePath ||
       openArtifactId ||
       dockedExperiment ||
-      openProcessOutputKey
+      openProcessOutputKey ||
+      openMockChanges
     ) || !!(openBrowserAgentId && canOpenBrowser);
 
   const browserFullscreen =
@@ -776,6 +798,26 @@ export function ChatView() {
                         onLoadOlder={loadOlderKeepingScroll}
                       />
                     ))}
+                    {isToolsDemo && messages.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <MockBrowserLinkChip
+                            url={TOOLS_DEMO_BROWSER_URL}
+                            onOpen={() => {
+                              if (selectedAgent)
+                                void openBrowser(
+                                  selectedAgent,
+                                  TOOLS_DEMO_BROWSER_URL,
+                                );
+                            }}
+                          />
+                        </div>
+                        <MockChangesCard
+                          changes={TOOLS_DEMO_CHANGES}
+                          onViewChanges={() => setOpenMockChanges(true)}
+                        />
+                      </>
+                    )}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>
@@ -796,6 +838,15 @@ export function ChatView() {
                   <div className="px-4 md:px-8">
                     <ChatColumn>
                       <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
+                    </ChatColumn>
+                  </div>
+                )}
+                {mockTasks.length > 0 && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <div className="flex justify-end">
+                        <MockBackgroundChip tasks={mockTasks} />
+                      </div>
                     </ChatColumn>
                   </div>
                 )}
@@ -903,6 +954,11 @@ export function ChatView() {
                   key={openProcessOutputKey}
                   agentId={selectedAgent}
                   outputKey={openProcessOutputKey}
+                />
+              ) : openMockChanges && isToolsDemo ? (
+                <MockDockedChangesPanel
+                  changes={TOOLS_DEMO_CHANGES}
+                  onClose={() => setOpenMockChanges(false)}
                 />
               ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />

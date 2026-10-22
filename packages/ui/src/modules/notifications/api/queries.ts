@@ -33,9 +33,7 @@ export function useNotifications(): Notifications {
 
   const runningAgents = useMemo(
     () =>
-      mockFn
-        ? agents
-        : agents.filter((agent) => agent.state === "running"),
+      mockFn ? agents : agents.filter((agent) => agent.state === "running"),
     [agents, mockFn],
   );
   const sessions = useQueries({

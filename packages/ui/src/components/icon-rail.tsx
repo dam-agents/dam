@@ -625,7 +625,11 @@ export function IconRail({
                                 if (clickVariant === 0) {
                                   if (expandedAgentIds.has(agent.id)) {
                                     setAgentSessionCounts((c) =>
-                                      Object.fromEntries(Object.entries(c).filter(([k]) => k !== agent.id)),
+                                      Object.fromEntries(
+                                        Object.entries(c).filter(
+                                          ([k]) => k !== agent.id,
+                                        ),
+                                      ),
                                     );
                                   }
                                   toggleSidebarAgent(agent.id);
@@ -643,7 +647,11 @@ export function IconRail({
                                   if (clickVariant === 0) {
                                     if (expandedAgentIds.has(agent.id)) {
                                       setAgentSessionCounts((c) =>
-                                        Object.fromEntries(Object.entries(c).filter(([k]) => k !== agent.id)),
+                                        Object.fromEntries(
+                                          Object.entries(c).filter(
+                                            ([k]) => k !== agent.id,
+                                          ),
+                                        ),
                                       );
                                     }
                                     toggleSidebarAgent(agent.id);

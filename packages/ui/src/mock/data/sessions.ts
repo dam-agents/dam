@@ -58,6 +58,8 @@ export const MOCK_SESSION_IDS = {
   artifact: "sess-artifact-example",
   browser: "sess-browser-example",
   longChat: "sess-long-chat-example",
+  toolsDemo: "sess-tools-demo",
+  emptyState: "sess-empty-state",
 };
 
 export const KIT_SESSION_TO_PACK: Record<string, string> = {};
@@ -81,6 +83,19 @@ const ciPipelineSessions = [
     AGENT_IDS.codexResearch,
     "Browser session",
     3 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.toolsDemo,
+    AGENT_IDS.codexResearch,
+    "Fix auth redirect and run build",
+    5 * min,
+    { unread: true },
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.emptyState,
+    AGENT_IDS.codexResearch,
+    "Quick question about config",
+    1 * hr,
   ),
   makeSession(
     "sess-ci-004",
