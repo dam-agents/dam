@@ -16,5 +16,6 @@ export {
   sessionPairFields,
   startupItemsEvent,
   workspaceCommandEvent,
+  agentInstructionsEvent,
   workspaceSeedEvent,
 } from "./domain/outbox-events.js";

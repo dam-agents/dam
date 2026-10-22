@@ -4,6 +4,7 @@ import type {
   PlatformPromptStartedParams,
   PlatformQueueChangedParams,
   PlatformRunStartedParams,
+  PlatformSessionResetParams,
   PlatformTurnEndedParams,
 } from "api-server-api";
 
@@ -16,6 +17,7 @@ export type AcpUpdate =
   | ({ sessionUpdate: "platform_prompt_started" } & PlatformPromptStartedParams)
   | ({ sessionUpdate: "platform_run_started" } & PlatformRunStartedParams)
   | ({ sessionUpdate: "platform_queue_changed" } & PlatformQueueChangedParams)
+  | ({ sessionUpdate: "platform_session_reset" } & PlatformSessionResetParams)
   | { sessionUpdate: "platform_clipped_replay"; older?: string };
 
 export interface FrameMeta {

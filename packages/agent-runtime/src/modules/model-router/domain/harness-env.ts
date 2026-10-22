@@ -1,9 +1,3 @@
-import {
-  CLAUDE_TIERS,
-  chatModels,
-  compareModelVersions,
-  newestOfTier,
-} from "agent-runtime-api";
 import { aliasOrder, HARNESS_HOME_PROVIDERS } from "api-server-api";
 import type {
   CatalogEntry,
@@ -15,32 +9,9 @@ import {
   servesHarness,
 } from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
+import { tierModels } from "./tier-slots.js";
 
 const ROUTER_PLACEHOLDER = "platform:conn:router";
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Claude Code's tier slots, which its picker and
- * `/model` offer, each filled with the newest model carrying the tier word,
- * so a provider that serves no Claude model still answers every slot with
- * one of its own.
- */
-export function tierModels(
-  candidates: readonly string[],
-): Record<(typeof CLAUDE_TIERS)[number], string> | null {
-  const ids = chatModels(candidates);
-  if (ids.length === 0) return null;
-  const [fable, opus, sonnet, haiku] = CLAUDE_TIERS.map((t) =>
-    newestOfTier(ids, t),
-  );
-  const fallback =
-    opus ?? sonnet ?? haiku ?? [...ids].sort(compareModelVersions).at(-1)!;
-  return {
-    fable: fable ?? fallback,
-    opus: fallback,
-    sonnet: sonnet ?? fallback,
-    haiku: haiku ?? sonnet ?? fallback,
-  };
-}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the env a harness process gets so it runs on the

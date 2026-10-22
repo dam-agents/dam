@@ -101,9 +101,12 @@ export default function LoginOauthGrant(
           className="flex gap-3"
           action={url.oauthAction}
           method="POST"
-          onSubmit={() => {
+          onSubmit={(event) => {
+            if (isSubmitting) {
+              event.preventDefault();
+              return;
+            }
             setIsSubmitting(true);
-            return true;
           }}
         >
           <input type="hidden" name="code" value={oauth.code} />
@@ -113,7 +116,7 @@ export default function LoginOauthGrant(
             id="kc-login"
             size="lg"
             className="flex-1"
-            disabled={isSubmitting}
+            aria-disabled={isSubmitting}
           >
             {msgStr("doYes")}
           </Button>
@@ -124,7 +127,7 @@ export default function LoginOauthGrant(
             variant="outline"
             size="lg"
             className="flex-1"
-            disabled={isSubmitting}
+            aria-disabled={isSubmitting}
           >
             {msgStr("doNo")}
           </Button>

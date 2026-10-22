@@ -24,7 +24,7 @@ Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi
 usr/local/bin/
   harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
-  pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image
+  pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image, and links the platform instructions
 usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp patch")
   extensions/pi-dynamic-providers/
@@ -40,12 +40,23 @@ app/
       APPEND_SYSTEM.md   ← appended to the system prompt (global)
 ```
 
+## Platform instructions
+
+`pi-platform` links `~/.pi/agent/AGENTS.md`, Pi's global context file, to `/etc/AGENTS.md` at every start, so the platform instructions never sit in a file the owner edits.
+Pi reads the global file first, then one file in each directory from `/` down to the work directory, the first of `AGENTS.override.md`, `AGENTS.md` and `CLAUDE.md` it finds there, so the agent's own `~/AGENTS.md` and `work/AGENTS.md` load after it ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+A regular file the owner put at `~/.pi/agent/AGENTS.md` is kept, and then replaces the platform instructions for that agent.
+
 ## MCP servers
 
 MCP servers arrive the platform way, as runtime-channel contributions written to `~/.pi/agent/mcp.json` (see [`runtime-manifest.yaml`](rootfs/app/runtime-manifest.yaml)), not through `session/new.mcpServers`: pi-acp advertises no MCP capabilities, so the file is the only path.
 Every entry carries `"exposure": "direct"`, so Pi declares its tools to the model like a built-in tool instead of hiding them behind codemode.
 Pi names them `mcp__<server>__<tool>` with `-` replaced by `_`, e.g. `mcp__platform_outbound__report_result`.
 `pi mcp list` in the terminal connects to each server and lists its tools.
+
+The platform server learns which session calls it from the `x-platform-session-ref` header, which other harnesses get on the entry `session/new`, `session/load` and `session/resume` carry.
+Pi's entry in `mcp.json` names the variable instead, `"x-platform-session-ref": "${PLATFORM_SESSION_REF}"` (the `sessionRef` of the manifest's `mcp-entry` binding), and Pi fills it in when it connects.
+The [pi-acp patch](#pi-acp-patch) starts each session's pi with `PLATFORM_SESSION_REF` set to the ref of that session's `session/new` or `session/load`, and a pi it starts again for a later prompt keeps the session's ref, so two sessions running at once each send their own and a reloaded session sends the one it had.
+A pi that serves no chat session, as in the terminal, starts on the image's blank `PLATFORM_SESSION_REF`: Pi does not connect a server whose header names an unset variable, and the platform reads a blank ref as none.
 
 ## Providers and models
 
@@ -233,7 +244,7 @@ pi-acp also ends every turn with `end_turn`, even when the reply stopped at the 
 
 Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads.
 `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it.
-It patches seven things:
+It patches eight things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
@@ -243,11 +254,13 @@ It patches seven things:
   The platform pins the Pi version, so the user cannot act on that notice.
 - A turn whose last reply stopped at the output limit (Pi's `length`) ends with `max_tokens`.
 - On `session/load`, the replayed text of such a reply carries `_meta.platform.stopReason: "max_tokens"`, so a reopened chat still marks the cut.
+- Each session's pi starts with `PLATFORM_SESSION_REF` set to the session ref of its `session/new` or `session/load` (see [MCP servers](#mcp-servers)).
+  pi-acp advertises no MCP capabilities, so without this a Pi session calls the platform tools anonymously.
 
 The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly.
 Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log.
-**To remove it** once a pi-acp release fixes #152 and #72 and reports `max_tokens`: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
-A release that fixes only some of the three lets you drop just their edits.
+**To remove it** once a pi-acp release fixes #152 and #72, reports `max_tokens` and hands pi the session ref (or takes HTTP MCP servers): bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
+A release that fixes only some of the four lets you drop just their edits.
 That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Session cost

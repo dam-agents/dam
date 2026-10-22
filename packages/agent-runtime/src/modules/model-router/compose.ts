@@ -12,6 +12,7 @@ import {
   sessionOf,
   sessionOfRunningTurn,
   sessionStampOf,
+  subagentSessionOf,
 } from "./domain/session-of.js";
 import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
 import {
@@ -65,10 +66,14 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
         );
       if (!found) return null;
       const stamp = sessionStampOf(req);
-      return found.parentSessionId
+      const parent = subagentSessionOf(
+        found,
+        (id) => !opts.isSession || opts.isSession(id),
+      );
+      return parent !== undefined
         ? {
-            ...found,
-            parentSessionId: platformSessionOf(found.parentSessionId, stamp),
+            sessionId: found.sessionId,
+            parentSessionId: platformSessionOf(parent, stamp),
           }
         : { sessionId: platformSessionOf(found.sessionId, stamp) };
     },

@@ -28,13 +28,16 @@ export const compareModelVersions = (a: string, b: string): number => {
 export const chatModels = (ids: readonly string[]): string[] =>
   ids.filter((id) => !NOT_A_CHAT_MODEL.test(id));
 
+export const tierWordOf = (id: string): ClaudeTier | null => {
+  const lowered = id.toLowerCase();
+  return CLAUDE_TIERS.find((tier) => lowered.includes(tier)) ?? null;
+};
+
 export const newestOfTier = (
   ids: readonly string[],
   tier: ClaudeTier,
 ): string | null => {
-  const tiered = chatModels(ids).filter((id) =>
-    id.toLowerCase().includes(tier),
-  );
+  const tiered = chatModels(ids).filter((id) => tierWordOf(id) === tier);
   const sorted = [...tiered].sort(compareModelVersions);
   return sorted[sorted.length - 1] ?? null;
 };

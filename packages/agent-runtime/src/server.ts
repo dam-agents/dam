@@ -520,6 +520,7 @@ const {
         name,
         {
           sessionHistory: manifest.sessionHistory,
+          ...(manifest.sessionCut && { sessionCut: manifest.sessionCut }),
           ...(manifest.terminalSessionPins && {
             terminalSessionPins: expandHome(
               manifest.terminalSessionPins,

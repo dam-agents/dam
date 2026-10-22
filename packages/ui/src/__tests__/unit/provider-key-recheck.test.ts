@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. After it, each row shows the stored result of its last key check: a check mark with the time when the key worked, a refused state in place of the green Connected badge that asks for a new key and is named in the row's accessible name, a neutral warning with the detail when the provider could not say, and "not checked" for a template with no check.
+// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. After it, each row shows the stored result of its last key check: a check mark with the time when the key worked, a refused state in place of the green Connected badge that asks for a new key and is named in the row's accessible name, a neutral warning with the detail when the provider could not say, and "not checked" for a Connection that carries no result.
 import type { ProviderKeyCheck } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,6 +8,7 @@ import { ProviderSection } from "../../modules/providers/components/provider-sec
 
 const state = vi.hoisted(() => ({
   pending: false,
+  flags: {} as Record<string, boolean>,
   items: new Map<
     string,
     {
@@ -23,7 +24,7 @@ vi.mock("../../store.js", () => ({
     select({ showConfirm: vi.fn() }),
 }));
 vi.mock("../../modules/features/api/queries.js", () => ({
-  useFeatures: () => ({ data: {}, isPending: false }),
+  useFeatures: () => ({ data: state.flags, isPending: false }),
 }));
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useDeleteConnection: () => ({ mutate: vi.fn() }),
@@ -78,6 +79,7 @@ const CHECKED_AT = "2026-10-20T09:15:00.000Z";
 describe("provider key recheck", () => {
   beforeEach(() => {
     state.pending = false;
+    state.flags = {};
     state.items = new Map();
   });
 
@@ -166,31 +168,20 @@ describe("provider key recheck", () => {
     expect(row).toContain("HTTP 503");
   });
 
-  // TEST_SCENARIO: a provider with no stored check, such as Bob whose template has no model-list check, says its key is not checked.
+  // TEST_SCENARIO: a Connection stored before its key was ever checked carries no result, so its row says the key is not checked.
   it("says a key with no check is not checked", () => {
     state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
     const row = rowOf(render(), "Edit Bob");
     expect(row).toContain("Key not checked");
   });
 
-  // TEST_SCENARIO: a provider whose template has no key check, such as Bob, gets no Recheck button of its own, since a recheck could never change its row.
+  // TEST_SCENARIO: the built-in provider's key is not the user's to check, so an install that serves only it gets no Recheck button, since a recheck could never change its row.
   it("offers no recheck when no connected provider has a key check", () => {
-    state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
-    expect(render()).not.toContain("Recheck");
-  });
-
-  // TEST_SCENARIO: while the recheck runs, a row with no key check keeps saying Key not checked rather than showing progress the server never makes.
-  it("shows no progress on a row the recheck cannot check", () => {
-    state.pending = true;
+    state.flags = { "platform-provider": true };
     state.items = new Map([
-      ["openai", { id: "c2", conn: { templateId: "openai" } }],
-      ["bob", { id: "c3", conn: { templateId: "bob" } }],
+      ["platform", { id: "c3", conn: { templateId: "platform-llm" } }],
     ]);
-    const html = render();
-    expect(rowOf(html, "Edit OpenAI")).toContain("Checking the key…");
-    const bob = rowOf(html, "Edit Bob");
-    expect(bob).toContain("Key not checked");
-    expect(bob).not.toContain("Checking the key…");
+    expect(render()).not.toContain("Recheck");
   });
 
   // TEST_SCENARIO: while the recheck runs, the button is disabled and reads Rechecking, and each checkable row shows progress in place of its last result line; the badge keeps the last known state, so a refused key never flips to Connected.

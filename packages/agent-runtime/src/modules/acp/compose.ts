@@ -19,6 +19,10 @@ import {
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
+import {
+  createWorkerSessionCutProvider,
+  type SessionCutProvider,
+} from "./infrastructure/session-cut-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
 import {
   createPlatformMcpEntryStore,
@@ -133,6 +137,10 @@ export interface HarnessRuntime extends SessionHarness {
     module?: string;
     exportName?: string;
     command?: string[];
+  };
+  sessionCut?: {
+    module: string;
+    exportName?: string;
   };
   terminalSessionPins?: string;
   sessionModel: boolean;
@@ -324,6 +332,23 @@ export function composeAcp(opts: ComposeAcpOptions): {
       historyProviderOf(opts, h.sessionHistory),
     ]),
   );
+  const sessionCuts = new Map(
+    Object.entries(opts.harnesses).flatMap(
+      ([name, h]): [string, SessionCutProvider][] =>
+        h.sessionCut
+          ? [
+              [
+                name,
+                createWorkerSessionCutProvider({
+                  modulePath: h.sessionCut.module,
+                  exportName: h.sessionCut.exportName,
+                  log: opts.log,
+                }),
+              ],
+            ]
+          : [],
+    ),
+  );
   const pinDirs = Object.values(opts.harnesses).flatMap((h) =>
     h.terminalSessionPins ? [h.terminalSessionPins] : [],
   );
@@ -410,6 +435,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     createRuntime: (pair, scoped) => {
       const harness = opts.harnesses[pair.harness];
       const ownHistory = historyProviders.get(pair.harness);
+      const ownCut = sessionCuts.get(pair.harness);
       const ownPins = harness?.terminalSessionPins;
       const settingInput = (sessionId: string) => {
         const model = runtime.sessionChoice(sessionId).model;
@@ -485,6 +511,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),
+        ...(ownCut ? { sessionCut: ownCut } : {}),
         ...(ownPins
           ? { terminalSessionPins: terminalSessionPinsOf([ownPins]) }
           : {}),

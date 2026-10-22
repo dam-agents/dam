@@ -177,6 +177,13 @@ export const runtimeManifestSchema = z.object({
     })
     .optional(),
 
+  sessionCut: z
+    .object({
+      module: z.string().min(1),
+      exportName: z.string().min(1).optional(),
+    })
+    .optional(),
+
   terminalSessionPins: z.string().min(1).optional(),
 
   sessionMcpEntry: z.boolean().default(true),
@@ -239,6 +246,10 @@ const BUILTIN_DRIVERS: Record<
   "workspace-seed": { binding: { impl: "workspace-seed" }, defaultOn: true },
   "workspace-command": {
     binding: { impl: "workspace-command" },
+    defaultOn: true,
+  },
+  "agent-instructions": {
+    binding: { impl: "agent-instructions" },
     defaultOn: true,
   },
   "harness-config": { binding: { impl: "harness-config" }, defaultOn: false },

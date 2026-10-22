@@ -7,11 +7,11 @@ The harness ships in the default image every harness Template boots, built by `/
 
 ## Stack
 
-| Component          | Source                                                                                | Purpose                                                                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Harness            | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                 |
-| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)                                     | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform instructions rules link and the terminal-session pin hook; runs before either surface starts |
-| Storage            | `/home/agent` PVC                                                                     | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts                                                                                     |
+| Component          | Source                                                                                | Purpose                                                                                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Harness            | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
+| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)                                     | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
+| Storage            | `/home/agent` PVC                                                                     | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts                                                                                                |
 
 ## ACP
 
@@ -173,6 +173,10 @@ Bob reads `telemetry.enabled` from `~/.bob/settings/settings.json`, and the boot
 Gone, and silently ignored if an old agent still sets them: `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there), `BOB_RESUME_MAX_MESSAGES` and `BOB_SHIM_TRACE` (both belonged to the bridge — resume is native and there are no shim frames to trace).
 
 The settings bootstrap also **prunes** the keys the bridge used to write into `approval` — `autoApprovalEnabled`, `allowed_permissions`, `allowedExecutors` — so an agent upgraded in place stops carrying a deleted component's posture and falls back to Bob's own defaults, with the auto-approve flag as the single source of truth.
+
+Bob reads `AGENTS.md` only in the session's `cwd`, the work directory, and never in a parent, so it would miss the agent's own `~/AGENTS.md` ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+The settings bootstrap links it as the global rule `~/.bob/rules/agent.md` while the home has that file, and removes the link when it does not, since a dangling rule warns on every task.
+A regular file of that name is the owner's and stays.
 
 The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins the version, and a self-update inside the pod would both fail against the egress rules and print onto stdout.
 

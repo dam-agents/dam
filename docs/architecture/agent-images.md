@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -114,6 +114,26 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
   A tool pin in the home applies whenever the home holds it; a pinned tool the home has not installed shows as missing until `mise install`.
+
+## Agent instructions
+
+An agent's instructions live in two files, and every harness reads both, so switching harness keeps them.
+
+- **Platform instructions**: `/etc/AGENTS.md` in the image.
+  Each harness gets them at an image-owned path or flag, or through a link the image places in the home at every start, so a new image reaches existing agents.
+  Only Pi reads them through a path an owner can fill: a regular file there is kept and replaces them for that agent.
+- **Agent instructions**: `~/AGENTS.md`, the owner's own file beside the agent's definition.
+  The work directory stays data: in a kit like Code Guardian the definition is `$HOME` and `work/` is its git-ignored data.
+  An Agent created without a kit gets a short template there, so its owner knows where to write; an Agent from a kit, a home seed or a sub-agent gets none, because its definition brings its own, and an Environment gets none, because it runs no harness.
+  The template rides an `agent-instructions` runtime event that writes the file only when the home has none.
+
+The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it.
+A harness that walks up from the work directory finds it on its own; where a harness's walk stops short of the home, at the work directory or at a git root, it gets a link to `~/AGENTS.md` in its own global instructions at start, and a regular file an owner put at that path stays theirs.
+Each harness's README names the files it reads ([Claude Code](../../packages/agents/claude-code/README.md#agent-instructions), [Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration), [Copilot](../../packages/agents/copilot/README.md#platform-instructions)).
+`work/AGENTS.md` still loads beside them on every harness, for a kit whose work directory is its toolkit.
+Pi and Codex read an `AGENTS.override.md` in place of the `AGENTS.md` beside it, and the other harnesses ignore it, so an override in the home splits what the harnesses read: the agent's instructions belong in `~/AGENTS.md` alone.
+A harness reads these files when a session starts, so an edit applies from the next session; Codex reads its global file again each turn, so there an edit applies from the next turn.
+Claude Code on its own drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere on its walk, so the image's managed settings make it load `AGENTS.md` beside `CLAUDE.md`, and a definition that keeps a `CLAUDE.md` loses neither file.
 
 ## Image updates
 

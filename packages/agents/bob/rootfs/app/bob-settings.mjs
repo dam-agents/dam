@@ -19,6 +19,8 @@ const SETTINGS_PATH = process.env.BOB_SETTINGS_FILE || SHARED_SETTINGS_PATH;
 const RULES_DIR = join(HOME, ".bob", "rules");
 const PLATFORM_RULE_PATH = join(RULES_DIR, "platform.md");
 const PLATFORM_INSTRUCTIONS = "/etc/AGENTS.md";
+const OWNER_INSTRUCTIONS = join(HOME, "AGENTS.md");
+const OWNER_RULE_PATH = join(RULES_DIR, "agent.md");
 const MODES = ["agent", "plan", "ask"];
 const LEGACY_MODES = { code: "agent", advanced: "agent" };
 const APPROVALS = ["auto", "ask"];
@@ -160,6 +162,19 @@ function ensureRules() {
   }
 }
 
+function ensureOwnerRule() {
+  const rule = lstatSync(OWNER_RULE_PATH, { throwIfNoEntry: false });
+  if (rule && !rule.isSymbolicLink()) return;
+  if (!existsSync(OWNER_INSTRUCTIONS)) {
+    if (rule) rmSync(OWNER_RULE_PATH);
+    return;
+  }
+  if (rule && readlinkSync(OWNER_RULE_PATH) === OWNER_INSTRUCTIONS) return;
+  mkdirSync(RULES_DIR, { recursive: true });
+  rmSync(OWNER_RULE_PATH, { force: true });
+  symlinkSync(OWNER_INSTRUCTIONS, OWNER_RULE_PATH);
+}
+
 function run(step, { required }) {
   try {
     step();
@@ -173,3 +188,4 @@ function run(step, { required }) {
 
 run(writeSettings, { required: true });
 run(ensureRules, { required: false });
+run(ensureOwnerRule, { required: false });

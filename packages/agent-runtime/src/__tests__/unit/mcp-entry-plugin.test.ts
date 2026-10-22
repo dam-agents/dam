@@ -113,6 +113,38 @@ describe("mcp-entry plugin", () => {
     });
   });
 
+  /**
+   * TEST_SCENARIO: Pi takes no MCP servers through ACP, so the session ref of
+   * the platform entry reaches it only as a header in its own file, written
+   * as the variable each pi process is started with. Other servers must not
+   * carry it: the ref is for the platform server alone.
+   */
+  it("adds the session-ref header to the platform entry only, after its own headers", async () => {
+    await bind({ sessionRef: "${PLATFORM_SESSION_REF}" })(
+      [
+        {
+          kind: "mcp-entry",
+          name: "platform-outbound",
+          url: "http://hs/mcp",
+          headers: { "X-A": "1" },
+        },
+        entry("linear", "https://mcp.linear.app/mcp"),
+      ],
+      ctx,
+    );
+    expect(readConfig(".bob/settings/mcp.json").mcpServers).toEqual({
+      "platform-outbound": {
+        type: "http",
+        url: "http://hs/mcp",
+        headers: {
+          "X-A": "1",
+          "x-platform-session-ref": "${PLATFORM_SESSION_REF}",
+        },
+      },
+      linear: { type: "http", url: "https://mcp.linear.app/mcp" },
+    });
+  });
+
   it("preserves user-added servers and drops only its own stale entries", async () => {
     const handler = bind({ urlKey: "httpUrl" });
     await handler([entry("outbound", "http://hs/mcp")], ctx);

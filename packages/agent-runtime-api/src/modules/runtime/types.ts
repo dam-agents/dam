@@ -19,6 +19,7 @@ export const eventKind = z.enum([
   "schedule-reset",
   "workspace-seed",
   "workspace-command",
+  "agent-instructions",
   "initialization",
   "harness-config",
   "satellite-outcome",
@@ -296,6 +297,18 @@ export const startupItemsEvent = z.object({
   payload: startupItemsEventPayload,
 });
 
+export const agentInstructionsEventPayload = z.object({
+  content: z.string(),
+});
+
+export const agentInstructionsEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("agent-instructions"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: agentInstructionsEventPayload,
+});
+
 export const initializationEventPayload = z.object({
   task: z.string().min(1),
   harness: z.string().min(1).optional(),
@@ -411,6 +424,7 @@ export const event = z.discriminatedUnion("kind", [
   scheduleResetEvent,
   workspaceSeedEvent,
   workspaceCommandEvent,
+  agentInstructionsEvent,
   initializationEvent,
   harnessConfigEvent,
   satelliteOutcomeEvent,

@@ -8,6 +8,9 @@ export const keycloakRealm = process.env.PLATFORM_KEYCLOAK_REALM ?? "platform";
 export const keycloakClientId =
   process.env.PLATFORM_KEYCLOAK_CLIENT_ID ?? "platform-ui";
 
+export const keycloakCliClientId =
+  process.env.PLATFORM_KEYCLOAK_CLI_CLIENT_ID ?? "platform-cli";
+
 export const testUser = {
   username: process.env.PLATFORM_E2E_USERNAME ?? "dev",
   password: process.env.PLATFORM_E2E_PASSWORD ?? "dev",

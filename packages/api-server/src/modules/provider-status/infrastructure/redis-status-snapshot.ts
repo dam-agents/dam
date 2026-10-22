@@ -17,6 +17,7 @@ const snapshotSchema = z.object({
       templateId: z.string(),
       reason: z.enum(["failing-calls", "unreachable", "provider-reported"]),
       since: z.string(),
+      failedPayers: z.array(z.string()).default([]),
     }),
   ),
   damSide: z.object({ since: z.string() }).nullable(),

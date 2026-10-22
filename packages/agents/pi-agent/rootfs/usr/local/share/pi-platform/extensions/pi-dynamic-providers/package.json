@@ -2,10 +2,11 @@
   "name": "pi-dynamic-providers-extension",
   "private": true,
   "version": "0.0.0",
-  "description": "Local-only types for the pi-dynamic-providers extension. Not installed at runtime; @earendil-works/pi-coding-agent is provided globally by the agent image. Keep this version pinned to the same version installed in the pi-agent workspace mise config so the extension type-checks against the runtime it actually loads against.",
+  "description": "Local-only types for the pi-dynamic-providers extension, and the pi-acp the image pins for the tests that drive Pi through it. Not installed at runtime; @earendil-works/pi-coding-agent and pi-acp are provided globally by the agent image. Keep these versions pinned to the ones in the pi-agent image.toml so the extension type-checks, and the tests run, against what the image actually loads.",
   "devDependencies": {
     "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
-    "@types/node": "^26.6.5"
+    "@types/node": "^26.6.5",
+    "pi-acp": "0.0.34"
   }
 }

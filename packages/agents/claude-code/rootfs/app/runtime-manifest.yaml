@@ -8,7 +8,9 @@ manifestVersion: 1
 # lowercased, so every catalog name reaches it as claude/<alias>/<id>.
 # claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables
 # and caps CLAUDE_CODE_MAX_CONTEXT_TOKENS, since Claude Code reads no
-# per-model window from /v1/models.
+# per-model window from /v1/models. The slots are the default provider's, so
+# the router moves a side call on one (a title, a WebFetch summary, the
+# classifier, an alias-named subagent) to the session's provider by tier.
 modelRouter:
   dialects: [anthropic-messages]
   sessionModel: { configOption: model }
@@ -55,6 +57,14 @@ harnessState: claude-code
 sessionHistory:
   module: "/usr/local/lib/harness-history-lib.mjs"
   exportName: "loadHistory"
+
+# A rewind or a take-back cuts the closed session's on-disk conversation in
+# place, under the same id, instead of forking it. Through the adapter a cut
+# would be replayed whenever it rebuilds the session's query, so the module
+# drives the bundled SDK itself, in a runtime worker of its own.
+sessionCut:
+  module: "/usr/local/lib/harness-cut-lib.mjs"
+  exportName: "cutSession"
 
 # claude-agent-acp is an adapter: each session's conversation runs in a
 # `claude` process under it, usually the pod's largest. The memory reaper must

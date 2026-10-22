@@ -9,6 +9,7 @@ if [ -n "$PLATFORM_MODEL" ]; then
   set -- "$@" -c "model=\"$PLATFORM_MODEL\""
 fi
 . /usr/local/lib/codex-otel.sh
+. /usr/local/lib/codex-agents-md.sh
 # the platform instructions, as codex-app-server passes them
 set -- "$@" -c "developer_instructions=$(jq -Rs . /etc/AGENTS.md)"
 

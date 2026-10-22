@@ -16,6 +16,7 @@ import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/
 import type { RenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
 import type { ShareBridgeService } from "../../modules/artifact-library/services/share-bridge-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
+import { createRelayTokenService } from "../../modules/artifact-library/services/relay-token-service.js";
 import {
   shareSessionCookie,
   type ShareSession,
@@ -110,6 +111,9 @@ function appWith(
     auth,
     sessionCookie: shareSessionCookie("https://share.example.com"),
     renderTokens: tokens,
+    relayTokens: createRelayTokenService({
+      grants: createMemoryTtlStore(60_000, () => clock),
+    }),
     brandName: "Platform",
     uiBaseUrl: "http://app.localhost",
     contentBaseUrl: "https://content.example.com",
