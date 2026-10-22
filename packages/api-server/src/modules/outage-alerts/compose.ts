@@ -1,6 +1,7 @@
 import type { Db } from "db";
 import type { Subscription } from "rxjs";
 
+import type { AlertNotice } from "./domain/messages.js";
 import { createOutageAlertsRepository } from "./infrastructure/outage-alerts-repository.js";
 import { startAlertOnOutageSaga } from "./sagas/alert-on-outage.js";
 import {
@@ -24,7 +25,7 @@ export interface OutageAlertsModule {
 
 export function composeOutageAlerts(deps: {
   db: Db;
-  notify: (ownerSub: string, text: string) => Promise<{ sent: number }>;
+  notify: (ownerSub: string, notice: AlertNotice) => Promise<{ sent: number }>;
   describeAgent: (agentId: string) => Promise<AgentFacts | null>;
   unattendedCandidates: (templateId: string) => Promise<UnattendedCandidate[]>;
   enabledSchedules: (agentIds: readonly string[]) => Promise<EnabledSchedule[]>;

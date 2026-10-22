@@ -108,6 +108,7 @@ import {
   findAgentByConversation,
   bindConversation,
   listConversationsByAgent,
+  listConversationsAuthorizedBy,
   unbindConversation,
   setConversationAmbient,
   allConversationAgentIds,
@@ -1397,6 +1398,7 @@ export async function bootstrap() {
             findAgentByConversation: findAgentByConversation(db),
             bind: bindConversation(db),
             listByAgent: listConversationsByAgent(db),
+            listAuthorizedBy: listConversationsAuthorizedBy(db),
             unbind: unbindConversation(db),
             setAmbient: setConversationAmbient(db),
           },
@@ -1443,7 +1445,8 @@ export async function bootstrap() {
 
   const resourceAlerts = composeResourceAlerts({
     db,
-    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    notify: (ownerSub, text) =>
+      channelManager.notifyPerson(ownerSub, { slack: text }),
     listStorageOwners: () => listRunnerUsageOwners(k8sClient),
     readStorage: async (ownerSub) =>
       (await readRunnerUsage(k8sClient, ownerSub))?.storage ?? null,
@@ -1592,7 +1595,7 @@ export async function bootstrap() {
   const grantedTemplates = createGrantedConnectionTemplates(db);
   const outageAlerts = composeOutageAlerts({
     db,
-    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    notify: (ownerSub, notice) => channelManager.notifyPerson(ownerSub, notice),
     describeAgent: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
       return agent?.owner

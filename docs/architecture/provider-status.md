@@ -148,4 +148,5 @@ A told alert recovers only on evidence that the template answers again: a call i
 A proxy's readiness does not say that its models answer, so it never ends an outage that failed calls showed.
 Provider Status drops a template that nobody calls, and that alone does not end an alert: when no agent calls the provider again, the alert stays told and no recovery message goes out.
 One outage sends one message and one recovery message, with no reminders.
-A user who never linked Slack gets no message; every owner also sees the alert as a card in the Approvals panel ([home-feed](home-feed.md#outage-alerts)).
+The same messages also go to each private Telegram chat that the owner bound to one of their own agents, with times in UTC, and never to a group or a business chat ([channels](channels.md)).
+A user who never linked Slack and bound no private chat gets no message; every owner also sees the alert as a card in the Approvals panel ([home-feed](home-feed.md#outage-alerts)).

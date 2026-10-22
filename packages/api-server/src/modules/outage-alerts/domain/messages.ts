@@ -36,16 +36,36 @@ export function utcLabel(at: Date): string {
   return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${hours}:${minutes} UTC`;
 }
 
-function slackTime(at: Date): string {
-  const seconds = Math.floor(at.getTime() / 1000);
-  return `<!date^${seconds}^{date_short_pretty} at {time}|${utcLabel(at)}>`;
+export interface AlertNotice {
+  slack: string;
+  telegram: string;
 }
 
-function slackEscape(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+interface TextStyle {
+  time(at: Date): string;
+  text(value: string): string;
+}
+
+const SLACK: TextStyle = {
+  time: (at) =>
+    `<!date^${Math.floor(at.getTime() / 1000)}^{date_short_pretty} at {time}|${utcLabel(at)}>`,
+  text: (value) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;"),
+};
+
+const TELEGRAM: TextStyle = {
+  time: utcLabel,
+  text: (value) => value,
+};
+
+function noticeOf(write: (style: TextStyle) => string[]): AlertNotice {
+  return {
+    slack: write(SLACK).join("\n"),
+    telegram: write(TELEGRAM).join("\n"),
+  };
 }
 
 function affectedByLabel(reason: OutageAlertAffectedBy): string {
@@ -57,12 +77,15 @@ function affectedByLabel(reason: OutageAlertAffectedBy): string {
     .exhaustive();
 }
 
-function agentLines(agents: readonly AffectedAgent[]): string[] {
+function agentLines(
+  agents: readonly AffectedAgent[],
+  style: TextStyle,
+): string[] {
   const lines = agents
     .slice(0, MAX_AGENT_LINES)
     .map(
       (agent) =>
-        `• ${slackEscape(agent.name)} — ${agent.affectedBy.map(affectedByLabel).join(", ")}`,
+        `• ${style.text(agent.name)} — ${agent.affectedBy.map(affectedByLabel).join(", ")}`,
     );
   const more = agents.length - lines.length;
   return more > 0 ? [...lines, `and ${more} more`] : lines;
@@ -72,15 +95,18 @@ export function outageMessage(
   alert: OutageAlert,
   providerName: string,
   homeUrl: string,
-): string {
-  return [
-    `${providerName} has had problems since ${slackTime(alert.since)}. These agents of yours use it, and they can fail until it works again:`,
-    ...agentLines(alert.agents),
-    `Wait, or switch an agent to another provider: ${homeUrl}`,
-    ...(alert.statusPageUrl
-      ? [`${providerName} status: ${alert.statusPageUrl}`]
-      : []),
-  ].join("\n");
+): AlertNotice {
+  return noticeOf((style) => {
+    const provider = style.text(providerName);
+    return [
+      `${provider} has had problems since ${style.time(alert.since)}. These agents of yours use it, and they can fail until it works again:`,
+      ...agentLines(alert.agents, style),
+      `Wait, or switch an agent to another provider: ${homeUrl}`,
+      ...(alert.statusPageUrl
+        ? [`${provider} status: ${alert.statusPageUrl}`]
+        : []),
+    ];
+  });
 }
 
 export function recoveryMessage(
@@ -88,10 +114,10 @@ export function recoveryMessage(
   recoveredAt: Date,
   providerName: string,
   homeUrl: string,
-): string {
-  return [
-    `${providerName} works again. It had problems from ${slackTime(alert.since)} to ${slackTime(recoveredAt)}. Runs that failed in that time do not run again, so check the last runs of:`,
-    ...agentLines(alert.agents),
+): AlertNotice {
+  return noticeOf((style) => [
+    `${style.text(providerName)} works again. It had problems from ${style.time(alert.since)} to ${style.time(recoveredAt)}. Runs that failed in that time do not run again, so check the last runs of:`,
+    ...agentLines(alert.agents, style),
     homeUrl,
-  ].join("\n");
+  ]);
 }

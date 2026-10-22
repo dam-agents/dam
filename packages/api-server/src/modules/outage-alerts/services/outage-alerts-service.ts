@@ -18,6 +18,7 @@ import {
   outageMessage,
   providerNameOf,
   recoveryMessage,
+  type AlertNotice,
 } from "../domain/messages.js";
 import { noticeOf } from "../domain/notices.js";
 import type {
@@ -41,7 +42,7 @@ export interface OutageAlertsService {
 
 export function createOutageAlertsService(deps: {
   repo: OutageAlertsRepository;
-  notify: (ownerSub: string, text: string) => Promise<{ sent: number }>;
+  notify: (ownerSub: string, notice: AlertNotice) => Promise<{ sent: number }>;
   describeAgent: (agentId: string) => Promise<AgentFacts | null>;
   unattendedAgentsOn: (templateId: string) => Promise<UnattendedAgentOn[]>;
   homeUrl: string;
@@ -52,7 +53,7 @@ export function createOutageAlertsService(deps: {
   const providerName = (templateId: string) =>
     providerNameOf(templateId, deps.brandName);
 
-  const send = async (alert: OutageAlert, text: string) => {
+  const send = async (alert: OutageAlert, notice: AlertNotice) => {
     const [first] = alert.agents;
     if (first)
       emit({
@@ -60,7 +61,7 @@ export function createOutageAlertsService(deps: {
         ownerSub: alert.ownerSub,
         agentId: first.agentId,
       });
-    const { sent } = await deps.notify(alert.ownerSub, text);
+    const { sent } = await deps.notify(alert.ownerSub, notice);
     if (sent === 0)
       log().info(
         { ownerSub: alert.ownerSub, templateId: alert.templateId },

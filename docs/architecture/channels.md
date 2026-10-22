@@ -348,6 +348,11 @@ The agent persona above is the one exception and fails closed: the cost of guess
   Ambient mode works as on Slack: off by default, it adds every other message of the chat as a read-along turn, which posts nothing on failure and is never steered into a running turn.
   Bare `/ambient` reports the mode to anyone, and `/ambient on|off` switches it for chat admins only, the same gate as `/bind`; Telegram has no private reply, so the chat sees the answer.
   Telegram hides ordinary group messages from a bot with **Group Privacy** on, its default, unless the bot is an admin there: such a bot gets only commands and replies to its messages, so the api-server warns at boot and `/ambient on` says so in the chat.
+- **The platform can message an owner in their own private chat.** A notice the platform raises itself, such as an outage alert, also goes from the bot to each private chat that the owner bound to one of their own Agents, with times in UTC, because a Telegram message carries no reader's time zone.
+  It never goes to a group or a business chat: a business chat is one-to-one with a customer of the business, not with the owner.
+  The binding flow makes the binder the Agent's owner, so the platform trusts that the person in such a chat is the owner, as the binding already does; there is still no per-person link.
+  A reply there is a turn of the bound Agent.
+  Only the channel leader sends, as for Slack.
 - **Lifecycle.** There is none per Agent — bindings are rows, not runtime state.
   Agent deletion clears the Agent's rows, on any deletion path.
 
