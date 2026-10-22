@@ -1,31 +1,17 @@
-import {
-  Chat,
-  Pause,
-  Play,
-  Restart,
-  Stop,
-  TrashCan,
-} from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { AlwaysOnTag } from "../../../components/status-indicator.js";
-import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useDeleteAgent } from "../../agents/api/mutations.js";
+import { AgentRuntimeStatus } from "../../agents/components/agent-runtime-status.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
-import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
-import { useConfirmStopAgent } from "../../agents/hooks/use-confirm-stop-agent.js";
-import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
-import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
-import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { useFeed } from "../../home/api/queries.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 
 interface Props {
   agent: AgentView;
@@ -33,18 +19,14 @@ interface Props {
 }
 
 export function SandboxIdentity({ agent, display }: Props) {
-  const working = useFeed().workingByAgent.get(agent.id);
+  const newLayout = useNewLayout();
   return (
     <div className="mb-4 flex flex-col gap-2 px-3">
       <div className="flex min-w-0 items-center gap-3">
         <EditableAgentIdentity
           agent={agent}
           avatarSize={36}
-          mood={avatarMood(
-            display.state,
-            agent.stopRequested,
-            working ?? false,
-          )}
+          mood={avatarMood(display.state, agent)}
           nameClassName="text-lg font-semibold text-foreground"
           nameTag="h2"
         />
@@ -53,47 +35,32 @@ export function SandboxIdentity({ agent, display }: Props) {
         <GatewayFailureBadge agent={agent} />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
       </div>
+      {!newLayout && <AgentRuntimeStatus agent={agent} />}
     </div>
   );
 }
 
+export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
+
 export function SandboxHomeHeader({
   agent,
-  display,
   title,
   description,
-}: Props & { title: string; description?: string }) {
-  const setView = useStore((s) => s.setView);
-  const selectAgent = useStore((s) => s.selectAgent);
-  const confirmDelete = useConfirmDeleteAgent();
-  const wakeAgent = useWakeAgent();
-  const { restart } = useRestartAgent();
-  const deleteAgent = useDeleteAgent();
-  const suspend = useSuspendAgent();
-  const confirmStop = useConfirmStopAgent();
+  pictogram,
+  actions,
+}: {
+  agent: AgentView;
+  title: string;
+  description?: string;
+  pictogram?: ReactNode;
+  actions?: ReactNode;
+}) {
   const { updateOne, updatingId } = useUpdateSandbox();
-
-  const openChat = () => selectAgent(agent.id);
-
-  const onStop = async () => {
-    if (!(await confirmStop(agent))) return;
-    suspend.stop(agent.id);
-  };
-
-  const onDelete = async () => {
-    if (!(await confirmDelete(agent))) return;
-    deleteAgent.mutate({ id: agent.id });
-    setView("home");
-  };
-
-  const running = display.state === "running";
-  const neverHibernates = agent.hibernationTimeoutMin === 0;
-  const separator = <span aria-hidden className="mx-1 h-6 w-px bg-border" />;
-
   return (
     <PageHeader
       title={title}
       description={description}
+      pictogram={pictogram}
       actions={
         <>
           <UpdateAvailableAction
@@ -102,71 +69,7 @@ export function SandboxHomeHeader({
             busy={updatingId !== null}
             onUpdate={() => void updateOne(agent)}
           />
-          <Button variant="outline" onClick={openChat}>
-            <Chat />
-            Chat
-          </Button>
-          {separator}
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Pause"
-            disabled={!running || neverHibernates}
-            tooltip={
-              neverHibernates
-                ? "This agent never sleeps, so pausing it would wake itself. Change its idle timeout in Sandbox."
-                : "Pause: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
-            }
-            onClick={() => suspend.pause(agent.id)}
-            data-testid="agent-pause"
-          >
-            <Pause />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Stop"
-            tooltip="Stop: wakes only when a schedule fires or you start it"
-            disabled={!running}
-            onClick={() => void onStop()}
-            data-testid="agent-stop"
-          >
-            <Stop />
-          </Button>
-          {display.powerAction === "start" ? (
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Wake"
-              tooltip="Wake"
-              onClick={() => wakeAgent.wake(agent.id)}
-            >
-              <Play />
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Restart"
-              tooltip="Restart"
-              disabled={display.powerAction === null}
-              onClick={() => restart(agent.id)}
-            >
-              <Restart />
-            </Button>
-          )}
-          {separator}
-          <Button
-            variant="outline"
-            size="icon"
-            tone="danger"
-            aria-label="Delete agent"
-            tooltip="Delete agent"
-            disabled={deleteAgent.isPending}
-            onClick={() => void onDelete()}
-          >
-            <TrashCan />
-          </Button>
+          {actions}
         </>
       }
     />

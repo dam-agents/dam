@@ -1,0 +1,717 @@
+name: Build
+
+# mise check and the images: builds every stale image and, on a run that
+# publishes, tags and publishes them, then hands what it published to
+# security.yml. cd.yml calls it with the policy of the event that started the
+# run; the github context is the calling run's. Its jobs report as
+# `build / <name>`, which e2e:ci-images waits on.
+#
+# One file, as each job here needs a job of the others: check-test gates
+# every merge, the merges gate publishing, and security reads them all. A
+# called workflow is one node in its caller's graph, so a split would make
+# each part wait for the whole of the one before. Local actions are `./`
+# and cache keys YAML anchors, for the reasons cd.yml gives; e2e.yml
+# restores some of these caches and spells their keys the same.
+
+on:
+  workflow_call:
+    inputs:
+      verify:
+        description: >-
+          A PR or a merge group: build to prove it builds, and tag, publish
+          and save nothing, except a merge group's cache tags (build-images).
+        type: boolean
+        required: true
+      fresh:
+        description: >-
+          Build and publish every image afresh, reusing none: a tag, the
+          nightly run and a dispatch.
+        type: boolean
+        required: true
+      main-push:
+        description: >-
+          The push to main: save the caches and publish the dev chart.
+        type: boolean
+        required: true
+      release:
+        description: >-
+          The push of a v* tag: mirror the third-party images for the release
+          cd.yml publishes.
+        type: boolean
+        required: true
+    # For cd.yml's publish job.
+    outputs:
+      source_shas:
+        value: ${{ jobs.changes.outputs.source_shas }}
+      composite:
+        value: ${{ jobs.appversion.outputs.composite }}
+    secrets:
+      QUAY_USERNAME:
+        required: false
+      QUAY_PASSWORD:
+        required: false
+      MEND_USER_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_PREFIX: quay.io/dam-agents
+  MISE_LOCKED: "1"
+
+jobs:
+  check-test:
+    name: mise check
+    # `mise run check` and `mise run test` side by side in one job: each took
+    # about three minutes, most of it the same setup, and each held its own
+    # runner slot and turn in the queue. A tag runs only `check`.
+    runs-on: ubuntu-latest
+    # Thirty minutes. A cold run installs its tools, compiles smolvm from
+    # source and then has caches to write back, and a run measured at 10m04s
+    # for `check` alone was killed in that tail after it had already passed —
+    # which reports as cancelled and reads as a red PR. Since #3857 a PR run
+    # never saves, so a branch cannot warm itself: if main's entry is missing or
+    # its key has moved, every PR pays the full cold cost until the next main
+    # push rewrites it. That run is the one this budget has to fit.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # The caches restore before setup-mise: its cold install of the go:
+      # tools fills ~/go/pkg/mod with read-only files the go cache's tar then
+      # cannot overwrite, and that restore fails.
+      - id: task-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &task-artifacts ~/.cache/mise/task-artifacts
+          key: &task-artifacts-key mise-task-artifacts-${{ runner.os }}-check-test-${{ github.sha }}
+          restore-keys: |
+            mise-task-artifacts-${{ runner.os }}-check-test-
+            mise-task-artifacts-${{ runner.os }}-
+      # The Rust target is only compiled into when a vm-runner task misses the
+      # task cache, which takes a change to its crate or its tools since the
+      # commit that cache was saved at.
+      - id: rust-needed
+        env:
+          MATCHED: ${{ steps.task-cache.outputs.cache-matched-key }}
+        run: |
+          sha="${MATCHED##*-}"
+          if [ -n "$sha" ] && git cat-file -e "$sha" 2>/dev/null &&
+            git diff --quiet "$sha" HEAD -- packages/vm-runner mise.lock .mise/config.toml; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Cargo's downloads keep their own entry: mr boxington's objects payload
+      # carries compiled output alone, and its target payload carries these but
+      # restores no objects.
+      - id: cargo-cache
+        if: steps.rust-needed.outputs.needed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &cargo-paths |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: &cargo-key cargo-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-check-test-
+            cargo-${{ runner.os }}-
+      # build-images and e2e.yml's lanes restore the Go and pnpm caches too,
+      # read-only.
+      - id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &go-paths |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: &go-key go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum', 'packages/controller/.mise/tasks/test', 'packages/controller/.mise/tasks/check/lint') }}
+          restore-keys: &go-restore-keys |
+            go-${{ runner.os }}-check-test-
+            go-${{ runner.os }}-
+      - id: pnpm-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &pnpm-store ~/.local/share/pnpm/store
+          key: &pnpm-key pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: &pnpm-restore-keys pnpm-store-${{ runner.os }}-
+      # pnpm's record that it checked this lockfile against the supply-chain
+      # policies in pnpm-workspace.yaml (minimumReleaseAge, trustPolicy). pnpm
+      # matches it by the lockfile's hash and the policy, and skips the check,
+      # which took 12-18s of every install, looking up each of the 1393
+      # entries in the registry. Only main saves it, and only an exact key is
+      # of any use: a changed lockfile is checked again.
+      - id: pnpm-verified
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
+          key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      # mr boxington keeps the vm-runner crates this job compiled as objects in
+      # its store, and the objects payload moves the ones the build used or
+      # produced: a push to main saves them, and every other run only restores,
+      # as the step it replaces did. Per-crate objects are what let a pull
+      # request restore the crates a change did not touch, which the archive the
+      # target payload carries cannot do. It must come after setup-mise, which
+      # installs the mbx the action reuses and the rustc its cache key follows;
+      # the wrapper in `.mise/config.toml` is what puts the build's `cargo`
+      # through it. Releases keep their own cache: a release must not read one
+      # it did not build (see rust-release, and e2e's lane).
+      - id: mbx
+        if: steps.rust-needed.outputs.needed == 'true'
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        with:
+          github-cache-mode: objects
+          working-directory: packages/vm-runner
+      # Every artifact's atime goes back to the epoch, so the ones this run
+      # reads stand out afterwards; see the prune below.
+      - run: |
+          find ~/.cache/mise/task-artifacts -type f -exec touch -a -d @0 {} + 2>/dev/null || true
+          touch "$RUNNER_TEMP/check-start"
+      - env:
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          if [ "$TAG" = true ]; then mise run check; else mise run --continue-on-error check ::: test; fi
+      # platform-init's tests that need root (loop-mounted btrfs and ext4),
+      # which the sandboxed, cached `test` cannot run. Only when the Rust cache
+      # was needed: otherwise `test` replays, and this step alone would fill
+      # the target that the main push then saves as the cache entry.
+      - if: steps.rust-needed.outputs.needed == 'true'
+        run: mise run //packages/vm-runner:test:root
+      # Main saves only what this run compiled or read. A Go cache saved after
+      # every task came from the task cache would hold nothing under the new
+      # key, and the next miss would compile from scratch. The task cache
+      # otherwise keeps every artifact it ever held.
+      - id: built
+        if: ${{ inputs.main-push }}
+        run: |
+          set -o pipefail
+          newer() { [ -n "$(find "$1" -newer "$RUNNER_TEMP/check-start" -type f -print -quit 2>/dev/null)" ]; }
+          newer ~/.cache/go-build && echo "go=true" >> "$GITHUB_OUTPUT"
+          cd ~/.cache/mise/task-artifacts
+          find . -type f -anewer "$RUNNER_TEMP/check-start" | sed 's|.*/||; s|\..*||' | sort -u > "$RUNNER_TEMP/used"
+          find . -type f | while read -r f; do b="${f##*/}"; grep -qxF "${b%%.*}" "$RUNNER_TEMP/used" || rm -f "$f"; done
+          du -sh .
+      - if: ${{ inputs.main-push }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *task-artifacts
+          key: *task-artifacts-key
+      - if: ${{ inputs.main-push && steps.go-cache.outputs.cache-hit != 'true' && steps.built.outputs.go == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *go-paths
+          key: *go-key
+      - if: ${{ inputs.main-push && steps.cargo-cache.outputs.cache-hit != 'true' && steps.rust-needed.outputs.needed == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *cargo-paths
+          key: *cargo-key
+      - if: ${{ inputs.main-push && steps.pnpm-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-store
+          key: *pnpm-key
+      - if: ${{ inputs.main-push && steps.pnpm-verified.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
+
+  # appversion and the merge-* jobs only tag images, and nothing on a PR reads
+  # a tag: e2e pulls by digest, and publishing and scanning run on main and
+  # tags. A PR skips them. Runner slots are what a PR waits on: run
+  # 35789042417 queued its builds for up to 9m44s while the builds themselves
+  # took seconds.
+  appversion:
+    name: derive app version
+    if: ${{ !inputs.verify }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      composite: ${{ steps.c.outputs.composite }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: c
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:12}"
+          if [ "$REF_TYPE" = "tag" ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
+            composite="${REF_NAME#v}"
+          else
+            appver="$(grep -E '^appVersion:' helm/Chart.yaml | head -n1 | sed -E 's/^appVersion:[[:space:]]*//; s/["'"'"']//g')"
+            composite="${appver}-dev-${short}"
+          fi
+          echo "composite=$composite" >> "$GITHUB_OUTPUT"
+          echo "::notice::composite app version: $composite"
+
+  changes:
+    name: detect stale images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      agents: ${{ steps.d.outputs.agents }}
+      archs: ${{ steps.d.outputs.archs }}
+      image_archs: ${{ steps.d.outputs.image_archs }}
+      workloads: ${{ steps.d.outputs.workloads }}
+      images: ${{ steps.d.outputs.images }}
+      mock: ${{ steps.d.outputs.mock }}
+      source_shas: ${{ steps.d.outputs.source_shas }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - id: d
+        env:
+          EVENT: ${{ github.event_name }}
+          RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
+        run: |
+          set -euo pipefail
+          # By path: mise here installs crane alone; the same file is the image:resolve task.
+          out="$(.mise/tasks/image/resolve gha-outputs)"
+          printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
+          printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
+
+  build-images:
+    # One job per arch builds the stale ones of the five images side by side;
+    # see image:ci-build. merge-images tags the rest. A PR builds its images in
+    # e2e instead, so image:resolve lists none for this job: see
+    # e2e:ci-images. A merge group builds them there too, and here pushes
+    # them to the cache tag a later merge group reuses. Only a v* tag builds
+    # them for arm64 (image:resolve's image_archs), so an arm64-only break
+    # first fails a release.
+    needs: [changes]
+    if: ${{ needs.changes.outputs.images != '[]' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    # This job keeps the release build's own cache, so it wants Cargo's plain
+    # `target/` and not mr boxington's managed one in its place (see the
+    # wrapper in `.mise/config.toml`).
+    env:
+      MBX_DISABLE: "1"
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(needs.changes.outputs.image_archs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The vm-runner's release build: its crates and cargo's target, per arch.
+      # Keyed by the exact Rust version and the crate's lock and pins, with no
+      # older entry to fall back on, so an entry holds one lockfile's build and
+      # never piles up the artifacts of the crates a bump replaced. The
+      # workspace's own crates recompile every run anyway: cargo fingerprints a
+      # path dependency by mtime, and a fresh checkout moves every one.
+      - id: rust-release-key
+        run: &rust-release-version |
+          set -euo pipefail
+          rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+          [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+      - id: rust-release
+        if: ${{ contains(fromJSON(needs.changes.outputs.images), 'vm-runner') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &rust-release-paths |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            packages/vm-runner/target
+          key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+      # What the vm-runner's oci task builds outside cargo's target: the patched
+      # libkrun and guest kernel, and the smolvm and crane downloads. They
+      # follow the pins and patches alone, so a lockfile bump keeps the
+      # kernel, which takes minutes to build.
+      - id: vm-runner-deps
+        if: ${{ contains(fromJSON(needs.changes.outputs.images), 'vm-runner') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &vm-runner-deps-paths ~/.cache/platform-vm-runner
+          key: &vm-runner-deps-key vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+      # check-test's Go and pnpm caches, read-only, for the images that build
+      # from them. Before setup-mise, for the reason check-test gives.
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'controller') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *go-paths
+          key: *go-key
+          restore-keys: *go-restore-keys
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-store
+          key: *pnpm-key
+          restore-keys: *pnpm-restore-keys
+      - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'ui') || contains(fromJSON(needs.changes.outputs.images), 'api-server') || contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *pnpm-verified
+          key: *pnpm-verified-key
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Build
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERIFY: ${{ inputs.verify }}
+          EVENT: ${{ github.event_name }}
+          IMAGES: ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}
+        run: |
+          read -r -a images <<< "$IMAGES"
+          # A merge group pushes its builds to the cache tag later groups
+          # reuse, and no consumer reads; see image:resolve's mq_tag.
+          if [ "$EVENT" = merge_group ]; then images=("${images[@]/%/:mq}")
+          elif [ "$VERIFY" = true ]; then images=("${images[@]/%/:cacheonly}"); fi
+          .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
+      # Main writes it on a miss, once the build has compiled into it; a PR's
+      # e2e-vm job (e2e.yml) reads the amd64 one.
+      - if: ${{ inputs.main-push && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *rust-release-paths
+          key: *rust-release-key
+      - if: ${{ inputs.main-push && steps.vm-runner-deps.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *vm-runner-deps-paths
+          key: *vm-runner-deps-key
+      # The keycloak theme build, for e2e on a PR. This job starts from an
+      # empty task cache, so the entry holds this run's artifacts alone, and
+      # only a run that built keycloak has any.
+      - if: ${{ matrix.arch == 'amd64' && inputs.main-push && contains(fromJSON(needs.changes.outputs.images), 'keycloak') }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *task-artifacts
+          key: &keycloak-theme-key mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
+      - if: ${{ !inputs.verify }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-images-${{ matrix.arch }}
+          path: /tmp/digests
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-images:
+    name: merge multi-arch manifests
+    needs: [changes, build-images, appversion, check-test]
+    # build-images is skipped when every image is reused; then this job only
+    # tags.
+    if: ${{ !inputs.verify && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: ${{ needs.changes.outputs.images != '[]' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-images-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane usage
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Create manifest lists and push
+        env:
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
+          # Every image carries its source-sha tag: image:resolve reuses by it.
+          SOURCE_SHA_TAGGED: controller vm-runner api-server ui keycloak
+          # The chart pins the runner by digest: a rebuild of the same content
+          # keeps it, so no runner rolls.
+          CONTENT_REUSED: vm-runner
+          # keycloak's merge takes minutes of copying inside the registry; its
+          # registry requests are logged to find where the time goes.
+          CI_MERGE_DEBUG: keycloak
+        run: .mise/tasks/image/ci-merge /tmp/digests controller vm-runner api-server ui keycloak
+
+  build-agents:
+    # One job per arch builds the agents one after another; see
+    # image:ci-build. merge-agents keeps the `check` gate on publishing.
+    needs: [changes]
+    if: ${{ needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: nodejs pnpm crane usage uv conda:pigz
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+        id: agent-tools
+      - name: Build
+        env:
+          ARCH: ${{ matrix.arch }}
+          AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
+          PR: ${{ inputs.verify }}
+          # A tool that the agent-tools cache lacks installs in this step, and
+          # mise reads the token from MISE_GITHUB_TOKEN.
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A PR or a merge group only proves its agents build.
+          read -r -a agents <<< "$AGENTS"
+          [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
+          .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
+      # The images' apt base is made by the build above, not by agent-tools, so
+      # main writes it here: the day it is dated by keeps a rebuild daily, and
+      # every job that builds an agent image restores it from this entry. An
+      # older day's entry is left to the repo's 10 GB budget, which retires it.
+      - if: ${{ github.ref == 'refs/heads/main' && steps.agent-tools.outputs.apt-base-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/apt-base
+            ~/.cache/platform-agent-oci/apt-base.key
+          key: ${{ steps.agent-tools.outputs.apt-base-key }}
+      - if: ${{ !inputs.verify }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-agents-${{ matrix.arch }}
+          path: /tmp/digests
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-agents:
+    name: merge multi-arch agent manifests
+    needs: [build-agents, appversion, changes, check-test]
+    if: ${{ !inputs.verify && needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-agents-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane usage
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Create manifest lists and push
+        env:
+          AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
+        run: |
+          read -r -a agents <<< "$AGENTS"
+          SOURCE_SHA_TAGGED="$AGENTS" .mise/tasks/image/ci-merge /tmp/digests "${agents[@]}"
+
+  build-workloads:
+    # One job per arch, one workload after another, like build-agents, and
+    # beside it: each workload is packed onto the default image the job builds
+    # itself, not onto a published one. Every workload builds even after one fails,
+    # but merge-workloads then merges none. A PR builds none: image:resolve
+    # lists no workload for it, and this job pushes, which a PR must not.
+    needs: [changes]
+    if: ${{ !inputs.verify && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    strategy:
+      # One arch's failed build must not cancel the other's, which then
+      # reports nothing of its own.
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: nodejs pnpm crane usage uv conda:pigz
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+      - name: Build
+        env:
+          ARCH: ${{ matrix.arch }}
+          WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          # k-search's tools are never cached, so its build always installs.
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          read -r -a workloads <<< "$WORKLOADS"
+          .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-workloads-${{ matrix.arch }}
+          path: /tmp/digests
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-workloads:
+    name: merge multi-arch workload manifests
+    needs: [build-workloads, appversion, changes, check-test]
+    if: ${{ !inputs.verify && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digests-workloads-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane usage
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Create manifest lists and push
+        env:
+          WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
+        run: |
+          read -r -a workloads <<< "$WORKLOADS"
+          SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge /tmp/digests "${workloads[@]}"
+
+  build-mock:
+    name: build mock (e2e fixture)
+    needs: [changes]
+    # On a PR, e2e builds the mock itself. Otherwise only a mock whose source
+    # sha has no image builds; e2e pulls it by that tag.
+    if: ${{ !inputs.verify && !startsWith(github.ref, 'refs/tags/v') && needs.changes.outputs.mock == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The push tag is the mock's source sha, which needs the history.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: nodejs pnpm crane usage uv conda:pigz
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+      - name: Build
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: .mise/tasks/image/ci-build amd64 mock:source
+
+  mirror-images:
+    name: mirror third-party images
+    if: ${{ inputs.main-push || inputs.release }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Crane alone, and the task by path: `mise run` would install every tool
+      # first, which took this job a minute and a half.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: crane
+          cache: "false"
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Mirror
+        run: .mise/tasks/image/mirror
+
+  publish-dev:
+    name: publish dev chart
+    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
+    if: >-
+      ${{ inputs.main-push && !cancelled() &&
+          needs.changes.result == 'success' &&
+          needs.appversion.result == 'success' &&
+          needs.merge-images.result == 'success' &&
+          (needs.merge-agents.result == 'success' || needs.merge-agents.result == 'skipped') &&
+          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # mise's pinned helm alone, and crane for the digest pins. The chart's
+      # dependencies and the tag pins run by path: `mise -C helm deps` and
+      # `mise run` install every tool first, which took this job a minute and
+      # a half.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: helm crane
+          cache: "false"
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Log in to Helm OCI registry
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
+
+      - name: Build Helm chart dependencies
+        run: helm/.mise/deps
+
+      - name: Pin content-tagged image tags and digests
+        env:
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
+        run: .mise/tasks/image/pin-tags "$SOURCE_SHAS"
+
+      - name: Push Helm chart
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          COMPOSITE: ${{ needs.appversion.outputs.composite }}
+        run: |
+          helm package helm --version "0.0.0-main.${RUN_NUMBER}" --app-version "$COMPOSITE"
+          helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
+          helm package helm --version 0.0.0-main --app-version "$COMPOSITE"
+          helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
+
+  security:
+    # After the merges, so the image scan reads this commit's tags, and after
+    # mirror-images, so it reads the mirrored copies of this commit's pins. It
+    # runs even when a build or the mirror failed: the lockfile scans still
+    # run, and the image scan is left out.
+    needs: [build-images, build-agents, build-workloads, merge-images, merge-agents, merge-workloads, mirror-images]
+    if: ${{ github.ref == 'refs/heads/main' && !cancelled() }}
+    permissions:
+      contents: read
+      issues: write
+    uses: $/.github/workflows/security.yml
+    with:
+      images-published: ${{ needs.merge-images.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+      MEND_USER_KEY: ${{ secrets.MEND_USER_KEY }}

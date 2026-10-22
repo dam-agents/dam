@@ -657,24 +657,24 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a sparse file is stored as its data and a map of its holes, so a 64 MiB file that holds a few bytes costs the seed a few blocks rather than 64 MiB, and one with no data at all costs none. A file with more regions than the header has room for carries the rest in extension blocks. What the archive reads back is the file byte for byte, holes as zeros, at its full size.
+    // TEST_SCENARIO: a sparse file is stored as its data and a map of its holes, so a 100 MiB file that holds a few bytes costs the seed a few blocks rather than 100 MiB, and one with no data at all costs none. A file with more regions than the header has room for carries the rest in extension blocks. What the archive reads back is the file byte for byte, holes as zeros, at its full size. The data lies 20 MiB apart because APFS fills a gap of 16 MiB or less with zeros it allocates, so closer writes leave no holes to store there; a filesystem that keeps no holes at all does not run the test.
     #[test]
     fn a_sparse_file_is_stored_as_its_data_and_its_holes() {
         let home = TempDir::new("seed-sparse");
-        let size = 64 << 20;
+        let size = 100 << 20;
         let empty = home.path().join("empty");
         fs::File::create(&empty).unwrap().set_len(size).unwrap();
         let holes = home.path().join("holes");
         let file = fs::File::create(&holes).unwrap();
         file.set_len(size).unwrap();
         let mut expected = vec![0u8; size as usize];
-        for i in 0..6u64 {
-            let at = i * (8 << 20) + 4096;
+        for i in 0..5u64 {
+            let at = i * (20 << 20) + 4096;
             file.write_all_at(b"data", at).unwrap();
             expected[at as usize..at as usize + 4].copy_from_slice(b"data");
         }
         drop(file);
-        if fs::metadata(&holes).unwrap().blocks() * 512 >= size {
+        if fs::metadata(&holes).unwrap().blocks() * 512 >= 1 << 20 {
             return;
         }
 

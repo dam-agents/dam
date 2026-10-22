@@ -12,6 +12,7 @@ import { composeFileModule } from "./modules/file/compose.js";
 import { composeImportModule } from "./modules/import/compose.js";
 import { composeScheduleModule } from "./modules/schedule/compose.js";
 import { composeSkillModule } from "./modules/skill/compose.js";
+import { composeSpendModule } from "./modules/spend/compose.js";
 import { composeSatelliteModule } from "./modules/satellite/index.js";
 import { composeSshModule } from "./modules/ssh/compose.js";
 import { composeMetricsModule } from "./modules/metrics/compose.js";
@@ -34,6 +35,7 @@ export function compose(): Command {
   });
   const agent = composeAgentModule({
     buildTrpc,
+    tokenProvider,
     configService,
     compatService,
     templateService: template.exports.createService,
@@ -46,6 +48,14 @@ export function compose(): Command {
     createAgentService: agent.exports.createService,
   };
   const egress = composeEgressModule(base);
+  const connection = composeConnectionModule({
+    ...base,
+    browserOpener: createBrowserOpener(),
+  });
+  const spend = composeSpendModule({
+    ...base,
+    createConnectionService: connection.exports.createService,
+  });
 
   const program = new Command();
   program
@@ -63,7 +73,7 @@ export function compose(): Command {
     composeFileModule(base),
     egress,
     composeApprovalModule(base),
-    composeConnectionModule({ ...base, browserOpener: createBrowserOpener() }),
+    connection,
     composeScheduleModule(base),
     composeSkillModule(base),
     composeSatelliteModule(base),
@@ -73,7 +83,11 @@ export function compose(): Command {
     }),
     composeChannelModule(base),
     composeMetricsModule(base),
-    composeTelemetryModule(base),
+    spend,
+    composeTelemetryModule({
+      ...base,
+      createSpendService: spend.exports.createService,
+    }),
     composeTermsModule(base),
   ]) {
     for (const command of module.commands) program.addCommand(command);

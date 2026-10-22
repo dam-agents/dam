@@ -38,9 +38,11 @@ const agent = (
   image: "x:latest",
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
+  whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
+  disabled: false,
   overBudget: false,
   size,
   state,
@@ -50,9 +52,9 @@ const agent = (
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  environmentOf: null,
   vm: false,
   runtimeMigration: null,
-  runtimeMigratable: false,
 });
 
 describe("slots", () => {

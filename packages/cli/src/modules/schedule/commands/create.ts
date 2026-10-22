@@ -23,6 +23,7 @@ import {
   parseAtFlag,
   recurringFlagsGiven,
 } from "../domain/once-flags.js";
+import { parseSettingFlags } from "../../shared/setting-flags.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 
 interface CreateOpts {
@@ -31,7 +32,9 @@ interface CreateOpts {
   once?: boolean;
   at?: string;
   now?: boolean;
+  harness?: string;
   model?: string;
+  setting: string[];
   daily?: string;
   every?: string;
   rrule?: string;
@@ -67,8 +70,18 @@ export function buildCreateCommand(deps: {
     )
     .option("--now", "with --once: run immediately")
     .option(
+      "--harness <name>",
+      "harness its sessions run on, one the agent carries (default: the agent's)",
+    )
+    .option(
       "--model <model>",
-      "with --once: the model its session runs on (default: the agent's)",
+      "model its sessions run on, named with its provider as <provider>/<model id> (default: the agent's)",
+    )
+    .option(
+      "--setting <id=value>",
+      "a per-session setting of the harness, e.g. effort=high (repeatable)",
+      (v: string, acc: string[]) => [...acc, v],
+      [] as string[],
     )
     .option("--daily <HH:MM>", "run daily at HH:MM (24h)")
     .option("--every <interval>", "run every N minutes (Nm) or hours (Nh)")
@@ -133,14 +146,22 @@ export function buildCreateCommand(deps: {
           process.stderr.write(`error: ${(e as Error).message}\n`);
           process.exit(EXIT_INVALID_INPUT);
         }
-      } else if (
-        opts.at !== undefined ||
-        opts.now ||
-        opts.model !== undefined
-      ) {
-        process.stderr.write("error: --at, --now and --model need --once\n");
+      } else if (opts.at !== undefined || opts.now) {
+        process.stderr.write("error: --at and --now need --once\n");
         process.exit(EXIT_INVALID_INPUT);
       }
+      let settings: Record<string, string> | undefined;
+      try {
+        settings = parseSettingFlags(opts.setting);
+      } catch (e) {
+        process.stderr.write(`error: ${(e as Error).message}\n`);
+        process.exit(EXIT_INVALID_INPUT);
+      }
+      const choices = {
+        ...(opts.harness ? { harness: opts.harness } : {}),
+        ...(opts.model ? { model: opts.model } : {}),
+        ...(settings ? { settings } : {}),
+      };
 
       const host = await resolveActiveHost(deps, opts.server);
 
@@ -158,7 +179,7 @@ export function buildCreateCommand(deps: {
           task: opts.task,
           timezone,
           ...(at ? { at } : {}),
-          ...(opts.model ? { model: opts.model } : {}),
+          ...choices,
         });
         if (!created.ok) {
           if (created.error.kind === "invalid-input") {
@@ -213,6 +234,7 @@ export function buildCreateCommand(deps: {
         task: opts.task,
         ...(opts.sessionMode ? { sessionMode: opts.sessionMode } : {}),
         ...(opts.precheck ? { precheck: opts.precheck } : {}),
+        ...choices,
       });
       if (!result.ok) {
         if (result.error.kind === "invalid-input") {

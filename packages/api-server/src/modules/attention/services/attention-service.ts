@@ -1,16 +1,17 @@
-import type {
-  AttentionDismissal,
-  AttentionItem,
-  AttentionList,
-  AttentionService,
-  SessionMode,
-  SessionType,
+import {
+  ATTENTION_FEED_LIMIT,
+  type AttentionDismissal,
+  type AttentionItem,
+  type AttentionList,
+  type AttentionService,
+  type DefaultModelNotice,
+  type SessionMode,
+  type SessionType,
 } from "api-server-api";
 
 import type { AttentionRecordRow } from "../domain/types.js";
 import type { AttentionRepository } from "../infrastructure/attention-repository.js";
 
-const FEED_LIMIT = 200;
 const AGENT_SESSIONS_LIMIT = 50;
 
 function toItem(row: AttentionRecordRow): AttentionItem {
@@ -21,6 +22,8 @@ function toItem(row: AttentionRecordRow): AttentionItem {
     type: row.type as SessionType,
     title: row.title,
     scheduleId: row.scheduleId,
+    threadTs: row.threadTs,
+    harness: row.harness,
     createdAt: row.createdAt.toISOString(),
     activityAt: row.activityAt?.toISOString() ?? null,
     seenAt: row.seenAt?.toISOString() ?? null,
@@ -28,19 +31,43 @@ function toItem(row: AttentionRecordRow): AttentionItem {
   };
 }
 
+const agentOfDefaultModelNoticeId = (id: string): string =>
+  id.slice(0, Math.max(0, id.lastIndexOf(":")));
+
 export function createAttentionService(deps: {
   repo: AttentionRepository;
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
+  defaultModelNotices: () => Promise<DefaultModelNotice[]>;
+  log: (message: string) => void;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, dismissals] = await Promise.all([
-        deps.repo.listForOwner(deps.ownerSub, FEED_LIMIT),
+      const [records, allDismissals, notices] = await Promise.all([
+        deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
         deps.repo.listDismissals(deps.ownerSub),
+        deps.defaultModelNotices().catch((err: Error) => {
+          deps.log(`[attention] default-model notices: ${err.message}`);
+          return null;
+        }),
       ]);
+      const current = new Set((notices ?? []).map((notice) => notice.id));
+      const resolved =
+        notices === null
+          ? []
+          : allDismissals.filter(
+              (d) => d.kind === "default-model" && !current.has(d.itemId),
+            );
+      if (resolved.length > 0)
+        await deps.repo.deleteDismissals(
+          deps.ownerSub,
+          "default-model",
+          resolved.map((d) => d.itemId),
+        );
+      const dismissals = allDismissals.filter((d) => !resolved.includes(d));
       return {
+        defaultModels: notices ?? [],
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
@@ -77,11 +104,21 @@ export function createAttentionService(deps: {
           })),
       );
 
+      const defaultModels = await Promise.all(
+        items
+          .filter((item) => item.kind === "default-model")
+          .map(async (item) => ({
+            item,
+            owned: await deps.ownsAgent(agentOfDefaultModelNoticeId(item.id)),
+          })),
+      );
+
       await deps.repo.setDismissals(
         deps.ownerSub,
         [
           ...sessions.filter((item) => owned.has(item.id)),
           ...approvals.filter((a) => a.owned).map((a) => a.item),
+          ...defaultModels.filter((d) => d.owned).map((d) => d.item),
         ].map((item) => ({ kind: item.kind, itemId: item.id })),
         at,
       );

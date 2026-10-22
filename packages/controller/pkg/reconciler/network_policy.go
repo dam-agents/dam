@@ -101,7 +101,7 @@ func BuildGatewayIngressNetworkPolicy(pairKey, owner string, vm bool, cfg *confi
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ext_authz decides on the host name an agent asks for, and Envoy then resolves that name and dials whatever address comes back, so an approved name that resolves to a private address — by its owner's DNS record or by rebinding after approval — would carry the agent into the cluster, the node, or the cloud metadata endpoint. The kernel closes that path whatever a name resolves to: the gateway reaches the public internet, minus the private, loopback, link-local, CGNAT and this-network ranges. Inside the network it reaches only what its own clusters dial: the cluster DNS pods, the api-server on ext-authz and harness, the harness waypoint, the object store and the telemetry collector, each on its own port and on HBONE 15008, because the gateway is in the ambient mesh and ztunnel carries its in-mesh hops there. The ranges an install opens for its enterprise services come on top, with the metadata endpoints excepted inside them.
+// UNIT_BOUNDARY_DESCRIPTION: ext_authz decides on the host name an agent asks for, and Envoy then resolves that name and dials whatever address comes back, so an approved name that resolves to a private address — by its owner's DNS record or by rebinding after approval — would carry the agent into the cluster, the node, or the cloud metadata endpoint. The kernel closes that path whatever a name resolves to: the gateway reaches the public internet, minus the private, loopback, link-local, CGNAT and this-network ranges. Inside the network it reaches only what its own clusters dial: the cluster DNS pods, the api-server on ext-authz and harness, the harness waypoint, the object store and the telemetry collector, each on its own port and on HBONE 15008, because the gateway is in the ambient mesh and ztunnel carries its in-mesh hops there. The in-cluster peers and the ranges an install opens for its enterprise services come on top, each peer on its own ports, plus HBONE for a peer in the mesh, with the metadata endpoints excepted inside the ranges.
 func BuildGatewayEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	tcpPorts := func(ports ...int) []networkingv1.NetworkPolicyPort {
@@ -155,8 +155,24 @@ func BuildGatewayEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRe
 		}
 		egress = append(egress, rule)
 	}
+	for _, peer := range cfg.GatewayEgress.Peers {
+		var ports []int
+		for _, p := range peer.Ports {
+			ports = append(ports, int(p))
+		}
+		if peer.Mesh {
+			ports = append(ports, hbonePort)
+		}
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{{
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": peer.Namespace}},
+				PodSelector:       &metav1.LabelSelector{MatchLabels: peer.PodLabels},
+			}},
+			Ports: tcpPorts(ports...),
+		})
+	}
 	for _, cidr := range cfg.GatewayEgress.ExtraCIDRs {
-		except, metadata := exceptMetadata(cidr, nil, gatewayMetadataCIDRs)
+		except, metadata := exceptMetadata(cidr)
 		if metadata {
 			continue
 		}
@@ -196,6 +212,28 @@ var gatewayMetadataCIDRs = []netip.Prefix{
 	netip.MustParsePrefix("169.254.169.254/32"),
 	netip.MustParsePrefix("100.100.100.200/32"),
 	netip.MustParsePrefix("fd00:ec2::254/128"),
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata endpoint has it subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close.
+func exceptMetadata(cidr string) ([]string, bool) {
+	block, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return nil, false
+	}
+	block = block.Masked()
+	var except []string
+	for _, m := range gatewayMetadataCIDRs {
+		if block.Addr().Is4() != m.Addr().Is4() {
+			continue
+		}
+		if m.Bits() <= block.Bits() && m.Contains(block.Addr()) {
+			return nil, true
+		}
+		if block.Contains(m.Addr()) {
+			except = append(except, m.String())
+		}
+	}
+	return except, false
 }
 
 func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {

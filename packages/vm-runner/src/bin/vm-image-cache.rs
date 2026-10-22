@@ -13,7 +13,7 @@ use vm_runner::release::relabel;
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-image-cache",
-    about = "The only writer of a node's VM image cache: fetches, preloads and evicts for every runner on the node"
+    about = "The only writer of a node's VM image cache: fetches, preloads and evicts for every runner of the install on the node"
 )]
 struct Args {
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]
@@ -48,6 +48,7 @@ fn main() -> anyhow::Result<()> {
         })?;
     let every = parse_duration(&args.interval)?;
     anyhow::ensure!(!every.is_zero(), "--interval must be positive");
+    // UNIT_BOUNDARY_DESCRIPTION: the cache directory is closed to every host uid but root. Its trees keep the setuid binaries their images carry, which a guest's own kernel honours, and a hostPath takes no nosuid mount option, so a mode is what keeps an unprivileged process on the node — a runner that a guest escaped from included — from running one of them as root on the host. Runners still read it as root through their idmapped mount.
     {
         use std::os::unix::fs::PermissionsExt;
         let dir = args.image_dir.display();
@@ -58,7 +59,7 @@ fn main() -> anyhow::Result<()> {
                 format!("labelling the cache directory {dir} {}", args.selinux_label)
             })?;
         }
-        std::fs::set_permissions(&args.image_dir, std::fs::Permissions::from_mode(0o755))
+        std::fs::set_permissions(&args.image_dir, std::fs::Permissions::from_mode(0o700))
             .with_context(|| format!("setting the mode of the cache directory {dir}"))?;
     }
     let images: Vec<String> = args
@@ -80,7 +81,6 @@ fn main() -> anyhow::Result<()> {
                 crane: "crane".to_string(),
                 pins: images.clone(),
                 lifetime: lifetime.clone(),
-                check_access: true,
                 ref_fresh: REF_FRESH,
                 hold_lease: HOLD_LEASE,
                 hold_grace: HOLD_LEASE,
@@ -96,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             let stop = lifetime.clone();
             let serving = tokio::spawn({
                 let socket = args.socket.clone();
+                let cache = cache.clone();
                 async move {
                     cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await
                 }
@@ -108,7 +109,9 @@ fn main() -> anyhow::Result<()> {
             }
             lifetime.cancel();
             let _ = preloading.await;
-            serving.await??;
+            let served = serving.await?;
+            tokio::task::spawn_blocking(move || cache.flush()).await?;
+            served?;
             anyhow::Ok(())
         })
 }

@@ -1,11 +1,15 @@
+import { ErlenmeyerFlask } from "@carbon/pictograms-react";
 import type { FeatureId } from "api-server-api";
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 
+import { getBrand } from "@/brand";
 import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
   useInstallCapabilities,
@@ -21,48 +25,58 @@ interface FeatureRow {
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
+    id: "platform-provider",
+    label: `${getBrand().name} LLM provider`,
+    description:
+      "Add a built-in LLM provider, served by this installation and needing no API key, to Settings → Providers.",
+  },
+  {
     id: "interactive-artifacts",
     label: "Interactive artifacts",
     description:
-      "Lets buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
+      "Let buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
   },
   {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
-      "Reveals the pre-release connection catalog (Google services, Spotify, YouTube, custom client-credentials).",
-  },
-  {
-    id: "vm-sandboxes",
-    label: "New sandbox runtime",
-    description: (
-      <>
-        Use a new sandbox runtime based on{" "}
-        <a
-          href="https://github.com/smol-machines/smolvm"
-          target="_blank"
-          rel="noreferrer"
-          className="underline hover:text-foreground"
-          onClick={(event) => event.stopPropagation()}
-        >
-          smolvm
-        </a>
-        . Starts much faster, and supports running containers (Docker,
-        Kubernetes).
-      </>
-    ),
+      "See the pre-release connection catalog: Google services, Spotify, YouTube and custom client credentials.",
   },
   {
     id: "agent-telemetry",
     label: "Agent telemetry",
     description:
-      "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
+      "See what each turn of a conversation did (its spans, its records and what the call cost) under the reply itself, and export telemetry from the session menu.",
+  },
+  {
+    id: "chat-forms",
+    label: "Chat forms",
+    description:
+      "Let agents put forms, choices and cards into their chat replies, for example during onboarding or a kit update, and send your answer back with one click.",
   },
   {
     id: "processes",
     label: "Processes panel",
     description:
       "See what runs in your agent, what keeps it awake, and what finished while you were away.",
+  },
+  {
+    id: "custom-avatars",
+    label: "Custom avatars",
+    description:
+      "Give an agent an emoji or an uploaded JPG or PNG as its avatar, in the UI and in Slack.",
+  },
+  {
+    id: "new-layout",
+    label: "JanUI",
+    description:
+      "A sidebar of agent avatars beside your conversations, with pinned sessions, a dashboard Home, and one side panel on the right with an icon bar for files, changes, artifacts and the browser. Turn it off to return to the current layout.",
+  },
+  {
+    id: "environments",
+    label: "Environments",
+    description:
+      "Let your vm agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
   },
 ];
 
@@ -75,6 +89,7 @@ function FeatureRowCard({
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
+  const descriptionId = useId();
   return (
     <label
       className={cn(
@@ -86,11 +101,19 @@ function FeatureRowCard({
         <span className="block text-sm font-medium text-foreground">
           {row.label}
         </span>
-        <span className="mt-0.5 block text-sm text-muted-foreground">
+        <span
+          id={descriptionId}
+          className="mt-0.5 block text-sm text-muted-foreground"
+        >
           {row.description}
         </span>
       </span>
-      <Switch checked={enabled} onCheckedChange={onToggle} />
+      <Switch
+        checked={enabled}
+        onCheckedChange={onToggle}
+        label={row.label}
+        describedBy={descriptionId}
+      />
     </label>
   );
 }
@@ -103,8 +126,9 @@ export function FeaturesTab() {
   return (
     <div>
       <PageHeader
+        pictogram={<ErlenmeyerFlask aria-hidden />}
         title="Experimental features"
-        description="Experimental features, toggled per user."
+        description="Try features that are still in progress. Each switch changes only your own account."
       />
 
       <div className="flex flex-col gap-3">
@@ -121,6 +145,11 @@ export function FeaturesTab() {
           ),
         )}
       </div>
+
+      <SectionLabel spaced className="mt-8">
+        Onboarding
+      </SectionLabel>
+      <ResetOnboardingCard />
     </div>
   );
 }

@@ -3,6 +3,8 @@ import type { CSSProperties, ReactNode, Ref } from "react";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
+import { SidePanelCloseButton } from "./side-panel-close-button.js";
+
 export function SidebarSection({
   id,
   title,
@@ -19,7 +21,7 @@ export function SidebarSection({
   id?: string;
   title: string;
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   headerLeft?: ReactNode;
   headerRight?: ReactNode;
   className?: string;
@@ -37,21 +39,28 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-11 shrink-0 border-border",
+          "flex items-center gap-1 pl-3 pr-2 h-12 shrink-0 border-border",
           open && "border-b",
           headerClassName,
         )}
       >
         {headerLeft}
-        <DisclosureToggle
-          open={open}
-          onToggle={onToggle}
-          chevronClassName="text-muted-foreground"
-          className="flex-1 text-sm font-medium text-foreground transition-colors"
-        >
-          <span className="whitespace-nowrap">{title}</span>
-        </DisclosureToggle>
+        {onToggle ? (
+          <DisclosureToggle
+            open={open}
+            onToggle={onToggle}
+            chevronClassName="text-muted-foreground"
+            className="flex-1 text-sm font-medium text-foreground transition-colors"
+          >
+            <span className="whitespace-nowrap">{title}</span>
+          </DisclosureToggle>
+        ) : (
+          <h2 className="flex-1 whitespace-nowrap text-sm font-medium text-foreground">
+            {title}
+          </h2>
+        )}
         {headerRight}
+        <SidePanelCloseButton />
       </div>
       {}
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">

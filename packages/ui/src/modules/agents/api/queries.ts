@@ -5,7 +5,11 @@ import { queryClient } from "../../../query-client.js";
 import { type PlatformStore, useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentState, AgentView } from "../../../types.js";
-import { agentReadiness, untilAgentReady } from "../lib/agent-start.js";
+import {
+  type AgentReadiness,
+  agentReadiness,
+  untilAgentReady,
+} from "../lib/agent-start.js";
 import { vanishedAgentIds } from "../lib/deleted-agent.js";
 
 export const agentsKeys = {
@@ -74,23 +78,29 @@ export function useAgentDisplayName(agentId: string | null): string | null {
   return agents.find((a) => a.id === agentId)?.name ?? agentId;
 }
 
-function operableIn(
+export type AgentReach = "operable" | "unreachable" | "inoperable";
+
+function reachIn(
   s: PlatformStore,
   agentId: string | null,
   runState: AgentState | undefined,
-): boolean {
-  return (
-    agentId !== null &&
-    runState === "running" &&
-    !s.restartingAgents.has(agentId) &&
-    !s.pausingAgents.has(agentId) &&
-    !s.unreachableAgents.has(agentId)
-  );
+): AgentReach {
+  if (
+    agentId === null ||
+    runState !== "running" ||
+    s.restartingAgents.has(agentId)
+  )
+    return "inoperable";
+  return s.unreachableAgents.has(agentId) ? "unreachable" : "operable";
+}
+
+export function useAgentReach(agentId: string | null): AgentReach {
+  const runState = useAgentRunState(agentId);
+  return useStore((s) => reachIn(s, agentId, runState));
 }
 
 export function useIsAgentOperable(agentId: string | null): boolean {
-  const runState = useAgentRunState(agentId);
-  return useStore((s) => operableIn(s, agentId, runState));
+  return useAgentReach(agentId) === "operable";
 }
 
 export function useIsAgentAnswerableSoon(agentId: string | null): boolean {
@@ -108,28 +118,37 @@ export function useIsAgentAnswerableSoon(agentId: string | null): boolean {
   );
 }
 
-export function untilAgentOperable(agentId: string): Promise<void> | null {
-  const read = () => {
-    const agent = queryClient
-      .getQueryData<{ list: readonly AgentView[] }>(
-        agentsKeys.listWithChannels(),
-      )
-      ?.list.find((a) => a.id === agentId);
-    const store = useStore.getState();
-    return agentReadiness(
-      agent,
-      operableIn(store, agentId, agent?.state),
-      store.restartingAgents.has(agentId),
-    );
-  };
-  return untilAgentReady(read, (onChange) => {
-    const offQueries = queryClient.getQueryCache().subscribe(onChange);
-    const offStore = useStore.subscribe(onChange);
-    return () => {
-      offQueries();
-      offStore();
-    };
-  });
+export function agentReadinessNow(
+  agentId: string,
+  evenUnreachable = false,
+): AgentReadiness {
+  const agent = queryClient
+    .getQueryData<{ list: readonly AgentView[] }>(agentsKeys.listWithChannels())
+    ?.list.find((a) => a.id === agentId);
+  const store = useStore.getState();
+  const reach = reachIn(store, agentId, agent?.state);
+  return agentReadiness(
+    agent,
+    reach === "operable" || (evenUnreachable && reach === "unreachable"),
+    store.restartingAgents.has(agentId),
+  );
+}
+
+export function untilAgentOperable(
+  agentId: string,
+  { evenUnreachable = false } = {},
+): Promise<void> | null {
+  return untilAgentReady(
+    () => agentReadinessNow(agentId, evenUnreachable),
+    (onChange) => {
+      const offQueries = queryClient.getQueryCache().subscribe(onChange);
+      const offStore = useStore.subscribe(onChange);
+      return () => {
+        offQueries();
+        offStore();
+      };
+    },
+  );
 }
 
 function isDeniedAgentRead(error: unknown): boolean {
@@ -153,15 +172,4 @@ export function useAgentConnections(agentId: string | null) {
     retry: false,
     refetchOnMount: "always",
   });
-}
-
-export function runtimeMigrationPlanOptions(agentId: string) {
-  return {
-    ...trpc.agents.planRuntimeMigration.queryOptions({ id: agentId }),
-    staleTime: 5000,
-  };
-}
-
-export function useRuntimeMigrationPlan(agentId: string) {
-  return useQuery(runtimeMigrationPlanOptions(agentId));
 }

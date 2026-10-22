@@ -1,11 +1,13 @@
-import { Checkmark, ChevronDown } from "@carbon/icons-react";
+import { ChevronDown } from "@carbon/icons-react";
+import { modelConstraintsFor } from "agent-runtime-api";
 import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionHeader } from "@/components/ui/list-section";
@@ -54,13 +56,12 @@ export function ModelSettingsPanel({
   const valueOf = (field: string): string | null => draft.valueOf(field);
 
   const shownModel = valueOf("model");
-  const constraints =
-    (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
+  const constraints = modelConstraintsFor(catalog, shownModel);
 
   const change = (field: string, value: string | null) => {
     draft.set(field, value);
     if (field !== "model") return;
-    const allowed = (value && catalog.modelConstraints?.[value]) || {};
+    const allowed = modelConstraintsFor(catalog, value) ?? {};
     for (const group of catalog.options) {
       if (group.id === "model") continue;
       const list = allowed[group.id];
@@ -131,6 +132,7 @@ export function ModelSettingsPanel({
 
 const CLEARED_LABEL = "Agent default";
 const CLEARED_DESCRIPTION = "The model the agent's harness starts on";
+const CLEARED_VALUE = "";
 
 function OptionGroup({
   title,
@@ -207,61 +209,61 @@ export function OptionPicker({
         align="start"
         className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
       >
-        {clearable && (
-          <OptionItem
-            label={clearedLabel}
-            description={clearedDescription}
-            active={value === null}
-            onSelect={() => onSelect(null)}
-          />
-        )}
-        {choices.map((c) => (
-          <OptionItem
-            key={c.id}
-            label={c.name}
-            detail={c.name === c.id ? undefined : c.id}
-            description={c.description}
-            active={c.id === value}
-            onSelect={() => onSelect(c.id)}
-          />
-        ))}
+        <DropdownMenuRadioGroup value={value ?? CLEARED_VALUE}>
+          {clearable && (
+            <OptionItem
+              value={CLEARED_VALUE}
+              label={clearedLabel}
+              description={clearedDescription}
+              onSelect={() => onSelect(null)}
+            />
+          )}
+          {choices.map((c) => (
+            <OptionItem
+              key={c.id}
+              value={c.id}
+              label={c.name}
+              detail={c.name === c.id ? undefined : c.id}
+              description={c.description}
+              onSelect={() => onSelect(c.id)}
+            />
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 function OptionItem({
+  value,
   label,
   detail,
   description,
-  active,
   onSelect,
 }: {
+  value: string;
   label: string;
   detail?: string;
   description?: string | null;
-  active: boolean;
   onSelect: () => void;
 }) {
   return (
-    <DropdownMenuItem
+    <DropdownMenuRadioItem
+      value={value}
       onSelect={onSelect}
-      className="h-auto flex-col items-start gap-0.5 py-2"
+      className="h-auto py-2"
     >
-      <span className="flex items-center gap-1.5 font-medium">
-        {active && <Checkmark size={12} className="shrink-0" />}
-        <span className={active ? "" : "pl-[18px]"}>{label}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="font-medium">{label}</span>
+        {detail && (
+          <span className="font-mono text-2xs text-muted-foreground">
+            {detail}
+          </span>
+        )}
+        {description && (
+          <span className="text-2xs text-muted-foreground">{description}</span>
+        )}
       </span>
-      {detail && (
-        <span className="pl-[18px] font-mono text-2xs text-muted-foreground">
-          {detail}
-        </span>
-      )}
-      {description && (
-        <span className="pl-[18px] text-2xs text-muted-foreground">
-          {description}
-        </span>
-      )}
-    </DropdownMenuItem>
+    </DropdownMenuRadioItem>
   );
 }

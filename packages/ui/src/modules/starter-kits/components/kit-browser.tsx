@@ -147,6 +147,7 @@ export function KitFilterBar({
             variant="ghost"
             size="icon-xs"
             aria-label="Clear search"
+            tooltip="Clear search"
             onClick={() => {
               onQueryChange("");
               inputRef.current?.focus();
@@ -165,7 +166,7 @@ export function KitFilterBar({
           variant="pill"
           size="sm"
           ariaLabel="Filter kits by category"
-          className="mb-5"
+          className="mb-5 flex-wrap"
         />
       )}
     </>

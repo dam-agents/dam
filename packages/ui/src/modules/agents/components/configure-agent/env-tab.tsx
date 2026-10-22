@@ -1,4 +1,12 @@
-import { Edit, Locked, Password, WarningAlt } from "@carbon/icons-react";
+import {
+  Add,
+  Locked,
+  Password,
+  RequestQuote,
+  View,
+  ViewOff,
+  WarningAlt,
+} from "@carbon/icons-react";
 import { isProtectedAgentEnvName } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -12,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
-import { LIST_ROW, ListSection } from "@/components/ui/list-section";
+import { AddRow, LIST_ROW, ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { cn } from "@/lib/utils";
 
@@ -23,37 +31,42 @@ import {
   isValidEnvName,
 } from "../../../../types.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
-import { useInheritedEnvs } from "../../../sandboxes/hooks/use-inherited-envs.js";
+import type { SectionHeaderSlot } from "../../../sandboxes/components/sandbox-home-header.js";
+import { useGuardedClose } from "../../../sandboxes/hooks/use-guarded-close.js";
+import {
+  type InheritedEnv,
+  useInheritedEnvs,
+} from "../../../sandboxes/hooks/use-inherited-envs.js";
 import { useUpdateAgent } from "../../api/mutations.js";
 import { useAgentConnections } from "../../api/queries.js";
 
-export interface InheritedEnv {
-  name: string;
-  value: string;
-  source: "system" | { secretName: string } | { appLabel: string };
-}
+const ENV_NAME_RULE =
+  "Use capital letters, digits and _, and don't start with a digit.";
+
+const MASK = "••••••••";
 
 function shadowWarnings(
-  envVars: EnvVar[],
   inherited: InheritedEnv[],
 ): { envName: string; shadowedSource: string }[] {
-  const sourceLabelByName = new Map<string, string>();
-  for (const i of inherited) {
-    if (i.source === "system") continue;
-    sourceLabelByName.set(
-      i.name,
-      "secretName" in i.source
-        ? `secret "${i.source.secretName}"`
-        : `connection "${i.source.appLabel}"`,
-    );
-  }
-  return envVars.flatMap((e) => {
-    const shadowedSource = sourceLabelByName.get(e.name);
-    return shadowedSource ? [{ envName: e.name, shadowedSource }] : [];
-  });
+  return inherited.flatMap((i) =>
+    i.shadowed && i.source !== "system"
+      ? [
+          {
+            envName: i.name,
+            shadowedSource: `the ${i.source.kind} ${i.source.label}`,
+          },
+        ]
+      : [],
+  );
 }
 
-export function EnvTab({ agent }: { agent: AgentView }) {
+export function EnvTab({
+  agent,
+  header,
+}: {
+  agent: AgentView;
+  header: SectionHeaderSlot;
+}) {
   const updateAgent = useUpdateAgent();
   const { data: apps = [] } = useAppConnections();
   const { data: agentConnections } = useAgentConnections(agent.id);
@@ -83,9 +96,18 @@ export function EnvTab({ agent }: { agent: AgentView }) {
       { onSuccess: onSaved },
     );
   const [editing, setEditing] = useState<number | "new" | null>(null);
-  const warnings = shadowWarnings(envVars, inherited);
+  const warnings = shadowWarnings(inherited);
+  const shownInherited = inherited.filter((e) => !e.shadowed);
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
+  const toggleReveal = (name: string) =>
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
   return (
     <>
+      {header()}
       {warnings.length > 0 && (
         <Callout
           tone="warning"
@@ -99,8 +121,8 @@ export function EnvTab({ agent }: { agent: AgentView }) {
           <ul className="list-disc pl-5 text-muted-foreground">
             {warnings.map((w) => (
               <li key={w.envName}>
-                <span className="font-mono">{w.envName}</span> shadows{" "}
-                {w.shadowedSource}'s contribution
+                <span className="font-mono">{w.envName}</span> shadows the value
+                from {w.shadowedSource}
               </li>
             ))}
           </ul>
@@ -108,11 +130,28 @@ export function EnvTab({ agent }: { agent: AgentView }) {
       )}
 
       <ListSection
-        onNew={() => setEditing("new")}
-        newDisabled={saving}
-        newTestId="env-var-new"
         isEmpty={envVars.length === 0}
-        empty="No variables yet."
+        empty="No variables yet. Create one for configuration the agent reads from its environment."
+        onNew={() => setEditing("new")}
+        newLabel="Create variable"
+        newTestId="env-var-new"
+        newDisabled={saving}
+        addRow={
+          <AddRow
+            onClick={() => setEditing("new")}
+            disabled={saving}
+            testId="env-var-new"
+            className="text-xs"
+          >
+            <Add size={14} className="shrink-0" />
+            <span className="font-mono font-semibold text-foreground">
+              Create variable
+            </span>
+            <span className="flex-1 truncate text-muted-foreground">
+              Name and value the agent reads from its environment.
+            </span>
+          </AddRow>
+        }
       >
         {envVars.map((v, i) => (
           <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
@@ -122,10 +161,27 @@ export function EnvTab({ agent }: { agent: AgentView }) {
             <span className="text-muted-foreground">=</span>
             <span
               className="font-mono text-muted-foreground truncate flex-1"
-              title={v.value}
+              title={revealed.has(v.name) ? v.value : undefined}
             >
-              {v.value}
+              {revealed.has(v.name) ? v.value : MASK}
+              {!revealed.has(v.name) && (
+                <span className="sr-only">Value hidden</span>
+              )}
             </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`${revealed.has(v.name) ? "Hide" : "Show"} value of ${v.name}`}
+              aria-pressed={revealed.has(v.name)}
+              tooltip={revealed.has(v.name) ? "Hide value" : "Show value"}
+              onClick={() => toggleReveal(v.name)}
+            >
+              {revealed.has(v.name) ? (
+                <ViewOff size={14} />
+              ) : (
+                <View size={14} />
+              )}
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -134,10 +190,11 @@ export function EnvTab({ agent }: { agent: AgentView }) {
               disabled={saving}
               onClick={() => setEditing(i)}
             >
-              <Edit size={14} />
+              <RequestQuote size={14} />
             </Button>
             <RemoveButton
               label={`Remove ${v.name}`}
+              tooltip="Remove"
               onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
               disabled={saving}
             />
@@ -145,14 +202,14 @@ export function EnvTab({ agent }: { agent: AgentView }) {
         ))}
       </ListSection>
 
-      {inherited.length > 0 && (
+      {shownInherited.length > 0 && (
         <ListSection
           label="Inherited"
-          description="Set by the platform and by this agent's connections. Read-only."
+          description="Set by the platform and by this agent's providers and connections. Read-only."
           isEmpty={false}
           empty={null}
         >
-          {inherited.map((e, i) => (
+          {shownInherited.map((e, i) => (
             <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
           ))}
         </ListSection>
@@ -200,13 +257,17 @@ function EnvVarModal({
     trimmed.length === 0
       ? undefined
       : !isValidEnvName(trimmed)
-        ? "Must match [A-Z_][A-Z0-9_]*"
+        ? ENV_NAME_RULE
         : takenNames.includes(trimmed)
-          ? "A variable with this name already exists"
+          ? "A variable with this name already exists."
           : undefined;
   const canSave = trimmed.length > 0 && !error;
+  const close = useGuardedClose(
+    name !== (initial?.name ?? "") || value !== (initial?.value ?? ""),
+    onClose,
+  );
   return (
-    <Modal onClose={pending ? undefined : onClose}>
+    <Modal onClose={pending ? undefined : () => void close()}>
       <form
         className="contents"
         onSubmit={(e) => {
@@ -216,7 +277,7 @@ function EnvVarModal({
         }}
       >
         <DialogHeader
-          onClose={onClose}
+          onClose={() => void close()}
           title={initial ? "Edit variable" : "New variable"}
         />
         <DialogBody className="flex flex-col gap-4">
@@ -225,6 +286,8 @@ function EnvVarModal({
               autoFocus={!initial}
               className="font-mono"
               placeholder="ENV_NAME"
+              aria-invalid={error ? true : undefined}
+              variant={error ? "invalid" : undefined}
               value={name}
               onChange={(e) => setName(e.target.value.toUpperCase())}
             />
@@ -240,10 +303,10 @@ function EnvVarModal({
           </FormField>
         </DialogBody>
         <DialogActions
-          onCancel={onClose}
+          onCancel={() => void close()}
           cancelDisabled={pending}
           pending={pending}
-          label={initial ? "Save" : "Add variable"}
+          label={initial ? "Save" : "Create variable"}
           pendingLabel="Saving…"
           disabled={!canSave}
           testId="env-var-save"
@@ -254,34 +317,34 @@ function EnvVarModal({
 }
 
 function InheritedEnvRow({ entry }: { entry: InheritedEnv }) {
-  const isSystem = entry.source === "system";
-  const sourceName =
-    entry.source === "system"
-      ? null
-      : "secretName" in entry.source
-        ? entry.source.secretName
-        : entry.source.appLabel;
+  const source = entry.source === "system" ? null : entry.source;
   return (
-    <div className={cn(LIST_ROW, "text-xs")}>
-      <span
-        className={cn("shrink-0", isSystem && "text-muted-foreground")}
-        title={isSystem ? "Platform-managed" : `From connection: ${sourceName}`}
-      >
-        {isSystem ? <Locked size={12} /> : <Password size={12} />}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-xs">
+      <span className="flex min-w-0 items-center gap-3 max-sm:basis-full">
+        <span
+          className={cn("shrink-0", !source && "text-muted-foreground")}
+          title={
+            source
+              ? `From the ${source.kind} ${source.label}`
+              : "Platform-managed"
+          }
+        >
+          {source ? <Password size={12} /> : <Locked size={12} />}
+        </span>
+        <span className="font-mono font-semibold text-foreground truncate">
+          {entry.name}
+        </span>
+        <span className="text-muted-foreground">=</span>
       </span>
-      <span className="font-mono font-semibold text-foreground truncate">
-        {entry.name}
-      </span>
-      <span className="text-muted-foreground">=</span>
       <span
-        className="font-mono text-muted-foreground truncate flex-1"
+        className="min-w-0 flex-1 truncate font-mono text-muted-foreground max-sm:pl-6"
         title={entry.value}
       >
         {entry.value}
       </span>
-      {!isSystem && (
-        <span className="text-xs text-muted-foreground truncate max-w-[160px]">
-          {sourceName}
+      {source && (
+        <span className="max-w-[200px] truncate text-xs text-muted-foreground max-sm:basis-full max-sm:pl-6">
+          {source.label}
         </span>
       )}
     </div>

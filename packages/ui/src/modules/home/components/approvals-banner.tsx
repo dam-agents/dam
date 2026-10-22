@@ -1,19 +1,38 @@
 import { ChevronRight, Warning } from "@carbon/icons-react";
 
-import { useStore } from "../../../store.js";
+import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
+import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 import { approvalsBannerCopy } from "../lib/approval-copy.js";
+import { defaultModelStopsRuns } from "../lib/default-model-copy.js";
 
 export function ApprovalsBanner() {
-  const setActivityView = useStore((s) => s.setActivityView);
+  const openSidePanel = useOpenSidePanel();
   const approvals = useWaitingApprovals();
-  if (approvals.length === 0) return null;
-  const { title, detail } = approvalsBannerCopy(approvals);
+  const notices = useDefaultModelNotices().all.filter(defaultModelStopsRuns);
+  if (approvals.length === 0 && notices.length === 0) return null;
+  const agents = new Set(notices.map((notice) => notice.agentId)).size;
+  const needDefault = `${String(agents)} ${agents === 1 ? "agent needs" : "agents need"} a default model`;
+  const approvalsCopy =
+    approvals.length > 0 ? approvalsBannerCopy(approvals) : null;
+  const { title, detail } = approvalsCopy
+    ? {
+        title: approvalsCopy.title,
+        detail:
+          notices.length > 0
+            ? `${approvalsCopy.detail} · ${needDefault}`
+            : approvalsCopy.detail,
+      }
+    : {
+        title: needDefault,
+        detail:
+          "Their schedules and Slack or Telegram turns won't run until you choose one",
+      };
 
   return (
     <button
       type="button"
-      onClick={() => setActivityView("feed")}
+      onClick={() => openSidePanel("approvals")}
       data-testid="approvals-banner"
       className="mb-6 flex w-full items-center gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
     >

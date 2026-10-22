@@ -98,6 +98,13 @@ export function createContentApp(deps: ContentAppDeps): Hono {
           ? renderTextKindInner(kind, blob.content.toString("utf8"), {
               title: artifact.title,
               fileName: artifact.fileName,
+              ...(artifact.interactive
+                ? {
+                    bridge: isRestricted(artifact)
+                      ? ("owner" as const)
+                      : ("shared" as const),
+                  }
+                : {}),
             })
           : downloadInner(),
       );

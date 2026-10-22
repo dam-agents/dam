@@ -48,6 +48,6 @@ The pinned commit is the `version` in [`image.toml`](image.toml).
 
 ## CI / publishing
 
-The skydiscover image is published by CI (`.github/workflows/cd.yml`): the per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to the public `quay.io/dam-agents/skydiscover` (no `imagePullSecret`).
+The skydiscover image is published by CI (`.github/workflows/build.yml`): the per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to the public `quay.io/dam-agents/skydiscover` (no `imagePullSecret`).
 Registering the component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it in that job.
 Both templates (`adaevolve`, `evox`) are enabled in `values.yaml` under "Pre-configured Images" (`category: preconfigured`, `experimental: true`).

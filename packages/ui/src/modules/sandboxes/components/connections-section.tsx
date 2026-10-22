@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
@@ -13,13 +13,21 @@ import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.
 import { useSharedChannels } from "../hooks/use-shared-channels.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
+import type { SectionHeaderSlot } from "./sandbox-home-header.js";
 
 interface Props {
   agentId: string;
   oauthReturnView: string;
+  header: SectionHeaderSlot;
+  leading?: ReactNode;
 }
 
-export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
+export function ConnectionsSection({
+  agentId,
+  oauthReturnView,
+  header,
+  leading,
+}: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
@@ -65,6 +73,8 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
 
   return (
     <>
+      {header()}
+      {leading}
       <GrantedConnectionsPanel
         groups={groups}
         granted={granted}

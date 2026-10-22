@@ -1,13 +1,9 @@
-import { Box, Chemistry } from "@carbon/icons-react";
+import { Chemistry, Gift, Tools } from "@carbon/icons-react";
+import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
-import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import {
@@ -15,14 +11,15 @@ import {
   StatusBadge,
 } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
 import { reclaimSentence } from "../lib/reclaim-notices.js";
+import { statusTone } from "../lib/status-tone.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
+import type { AgentUsage } from "../utils/sandbox-subtitle.js";
 import {
   formatTemporaryDraw,
   type TemporaryDraw,
@@ -33,40 +30,30 @@ import {
   ContributionFailuresBadge,
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
-import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
-import { FreeUpComputeItems } from "./power-menu-items.js";
+import { RuntimeMigrationBadge } from "./runtime-migration-badge.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
-import { VmRuntimeBadge } from "./vm-runtime-badge.js";
+import { UsagePairs } from "./usage-pairs.js";
 
 const SECOND_LINE_ITEM =
   "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
+
+const SIZE_HINT =
+  "Size: compute slots this agent reserves, then its CPU and memory limits";
 
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
   working?: boolean;
   subtitle: string | null;
+  usage: AgentUsage | null;
   temporaryDraw?: TemporaryDraw;
-  deletePending: boolean;
   updatePending: boolean;
   updateBusy: boolean;
   onSelect: () => void;
   onUpdate: () => void;
-  migratePending: boolean;
-  onMigrate: () => void;
-  migrationControlsBusy: boolean;
-  onAbortMigration: () => void;
-  onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
-  onWake: () => void;
-  onRestart: () => void;
-  onPause: () => void;
-  onStop: () => void;
-  onDelete: () => void;
-  onAddToChannel?: (messenger: "slack" | "telegram") => void;
-  messengers?: { slack?: boolean; telegram?: boolean };
 }
 
 export function AgentRow({
@@ -74,26 +61,14 @@ export function AgentRow({
   display,
   working,
   subtitle,
+  usage,
   temporaryDraw,
-  deletePending,
   updatePending,
   updateBusy,
   onSelect,
   onUpdate,
-  migratePending,
-  onMigrate,
-  migrationControlsBusy,
-  onAbortMigration,
-  onRetryMigration,
   onConfigure,
   configureLabel,
-  onWake,
-  onRestart,
-  onPause,
-  onStop,
-  onDelete,
-  onAddToChannel,
-  messengers = {},
 }: Props) {
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
@@ -104,46 +79,39 @@ export function AgentRow({
   return (
     <Card
       data-testid="agent-row"
-      {...clickableProps(onSelect)}
-      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
+      onClick={onSelect}
+      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:not([data-row-main]):hover]:bg-muted/40"
     >
       <AgentAvatar
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent.stopRequested, working ?? false)}
+        mood={avatarMood(display.state, agent)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          {}
-          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:hover))_&]:text-primary">
-            {agent.name}
+          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:not([data-row-main]):hover))_&]:text-primary">
+            <button
+              type="button"
+              data-row-main
+              className="max-w-full cursor-pointer truncate rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {agent.name}
+            </button>
           </h2>
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
               {kindBadge.label}
             </Badge>
           )}
-          <VmRuntimeBadge agent={agent} />
+          <RuntimeMigrationBadge agent={agent} />
           <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·'_/_'']">
-          <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
-          {kitBadge && (
-            <span
-              className="flex min-w-0 items-center gap-1"
-              title={kitBadge.title}
-              aria-label={`From the ${kitBadge.label} starter kit`}
-            >
-              <Box size={14} className="shrink-0" aria-hidden />
-              <span className="truncate">{kitBadge.label}</span>
-            </span>
-          )}
-          {subtitle && <span className="truncate">{subtitle}</span>}
           <span
             title={statusNote}
             {...(statusNote
@@ -158,14 +126,31 @@ export function AgentRow({
               state={display.state}
               working={working}
               keptWork={keptWork}
+              vm={agent.vm}
+              refused={isStartRefusal(agent.podTerminationCode)}
               className={cn(
                 SECOND_LINE_ITEM,
-                display.state === "error" && "text-danger dark:text-danger",
-                display.state === "over_budget" &&
-                  "text-warning-fg dark:text-warning-fg",
+                statusTone(display.state, working, keptWork),
               )}
             />
           </span>
+          <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
+          {kitBadge && (
+            <span
+              className="flex min-w-0 items-center gap-1"
+              title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
+            >
+              <Gift size={14} className="shrink-0" aria-hidden />
+              <span className="truncate">{kitBadge.label}</span>
+            </span>
+          )}
+          {subtitle && (
+            <span className="truncate" title={SIZE_HINT}>
+              {subtitle}
+            </span>
+          )}
+          {usage && <UsagePairs usage={usage} />}
         </div>
         <AgentChannelChips agent={agent} className="mt-2" />
         {temporaryDraw && temporaryDraw.count > 0 && (
@@ -191,69 +176,20 @@ export function AgentRow({
           busy={updateBusy}
           onUpdate={onUpdate}
         />
-        <MigrateRuntimeAction
-          agent={agent}
-          pending={migratePending}
-          onMigrate={onMigrate}
-          controlsBusy={migrationControlsBusy}
-          onAbort={onAbortMigration}
-          onRetry={onRetryMigration}
-        />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        {}
-        <span onClick={(e) => e.stopPropagation()}>
-          <RowActionsMenu label="Agent actions">
-            <DropdownMenuItem onSelect={onConfigure}>
-              {configureLabel}
-            </DropdownMenuItem>
-            {onAddToChannel && (messengers.slack || messengers.telegram) && (
-              <>
-                <DropdownMenuSeparator />
-                {messengers.slack && (
-                  <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
-                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                    Add to Slack channel
-                  </DropdownMenuItem>
-                )}
-                {messengers.telegram && (
-                  <DropdownMenuItem onSelect={() => onAddToChannel("telegram")}>
-                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-                    Add to Telegram chat
-                  </DropdownMenuItem>
-                )}
-              </>
-            )}
-            <DropdownMenuSeparator />
-            {display.state === "running" && (
-              <FreeUpComputeItems
-                agent={agent}
-                onPause={onPause}
-                onStop={onStop}
-              />
-            )}
-            {display.powerAction === "start" ? (
-              <DropdownMenuItem onSelect={onWake}>
-                {}
-                {display.state === "over_budget" ? "Start" : "Wake"}
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                disabled={display.powerAction === null}
-                onSelect={onRestart}
-              >
-                Restart
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              disabled={deletePending}
-              onSelect={onDelete}
-            >
-              Delete agent
-            </DropdownMenuItem>
-          </RowActionsMenu>
-        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={configureLabel}
+          tooltip={configureLabel}
+          className="shrink-0 text-muted-foreground"
+          onClick={(e) => {
+            e.stopPropagation();
+            onConfigure();
+          }}
+        >
+          <Tools size={16} />
+        </Button>
       </div>
     </Card>
   );

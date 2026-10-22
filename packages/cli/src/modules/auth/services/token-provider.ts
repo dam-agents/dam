@@ -14,6 +14,12 @@ export interface TokenProvider {
   ): Promise<Result<string, TokenProviderError>>;
 }
 
+export interface SavedTokenProvider {
+  getSavedAccessToken(
+    host: HostUrl,
+  ): Promise<Result<string, TokenProviderError>>;
+}
+
 export interface HostMetadataResolver {
   resolve(
     host: HostUrl,
@@ -33,68 +39,76 @@ export interface TokenProviderDeps {
   now?: () => Date;
 }
 
-export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
+export function createTokenProvider(
+  deps: TokenProviderDeps,
+): TokenProvider & SavedTokenProvider {
   const now = deps.now ?? (() => new Date());
+
+  const getSavedAccessToken: SavedTokenProvider["getSavedAccessToken"] = async (
+    host,
+  ) => {
+    const stored = await deps.authStore.read();
+    if (!stored.ok) return stored;
+    const hostAuth = stored.value.get(host);
+    if (!hostAuth) return err({ kind: "not-logged-in", host });
+
+    if (!isWithinRefreshBuffer(hostAuth, now(), REFRESH_BUFFER_SECONDS)) {
+      return ok(hostAuth.accessToken);
+    }
+
+    const metaResult = await deps.hostMetadata.resolve(host);
+    if (!metaResult.ok) return err(metaResult.error);
+
+    const refreshResult = await deps.tokenEndpointClient.refresh({
+      tokenEndpoint: metaResult.value.tokenEndpoint,
+      clientId: hostAuth.cliClientId,
+      refreshToken: hostAuth.refreshToken,
+    });
+
+    if (!refreshResult.ok) {
+      return err({
+        kind: "refresh-transient",
+        host,
+        reason: refreshResult.error.reason,
+      });
+    }
+
+    const body = refreshResult.value;
+    if (body.kind === "error") {
+      if (body.error === "invalid_grant") {
+        const removed = await deps.authStore.remove(host);
+        if (!removed.ok) return removed;
+        return err({ kind: "session-expired", host });
+      }
+      return err({
+        kind: "refresh-failed",
+        host,
+        reason: body.error_description
+          ? `${body.error}: ${body.error_description}`
+          : body.error,
+      });
+    }
+
+    const newAuth: HostAuth = {
+      ...hostAuth,
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      expiresAt: new Date(now().getTime() + body.expires_in * 1000),
+    };
+    let written = await deps.authStore.write(host, newAuth);
+    if (!written.ok) {
+      written = await deps.authStore.write(host, newAuth);
+    }
+    if (!written.ok) return written;
+    return ok(body.access_token);
+  };
 
   return {
     async getValidAccessToken(host) {
       const envToken = deps.authEnvReader.damToken();
       if (envToken !== undefined) return ok(envToken);
-
-      const stored = await deps.authStore.read();
-      if (!stored.ok) return stored;
-      const hostAuth = stored.value.get(host);
-      if (!hostAuth) return err({ kind: "not-logged-in", host });
-
-      if (!isWithinRefreshBuffer(hostAuth, now(), REFRESH_BUFFER_SECONDS)) {
-        return ok(hostAuth.accessToken);
-      }
-
-      const metaResult = await deps.hostMetadata.resolve(host);
-      if (!metaResult.ok) return err(metaResult.error);
-
-      const refreshResult = await deps.tokenEndpointClient.refresh({
-        tokenEndpoint: metaResult.value.tokenEndpoint,
-        clientId: hostAuth.cliClientId,
-        refreshToken: hostAuth.refreshToken,
-      });
-
-      if (!refreshResult.ok) {
-        return err({
-          kind: "refresh-transient",
-          host,
-          reason: refreshResult.error.reason,
-        });
-      }
-
-      const body = refreshResult.value;
-      if (body.kind === "error") {
-        if (body.error === "invalid_grant") {
-          const removed = await deps.authStore.remove(host);
-          if (!removed.ok) return removed;
-          return err({ kind: "session-expired", host });
-        }
-        return err({
-          kind: "refresh-failed",
-          host,
-          reason: body.error_description
-            ? `${body.error}: ${body.error_description}`
-            : body.error,
-        });
-      }
-
-      const newAuth: HostAuth = {
-        ...hostAuth,
-        accessToken: body.access_token,
-        refreshToken: body.refresh_token,
-        expiresAt: new Date(now().getTime() + body.expires_in * 1000),
-      };
-      let written = await deps.authStore.write(host, newAuth);
-      if (!written.ok) {
-        written = await deps.authStore.write(host, newAuth);
-      }
-      if (!written.ok) return written;
-      return ok(body.access_token);
+      return getSavedAccessToken(host);
     },
+    getSavedAccessToken,
   };
 }

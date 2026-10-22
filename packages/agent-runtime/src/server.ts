@@ -43,11 +43,18 @@ import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
-  createSshService,
-  prepareSshd,
-  spawnSshd,
-  type PreparedSshd,
-} from "./modules/ssh.js";
+  createModelCatalog,
+  servesHarness,
+  VENDORED_PRICE_TABLE,
+} from "./modules/model-catalog/index.js";
+import {
+  composeModelRouter,
+  routerEnvFor,
+  createModelCallExporter,
+} from "./modules/model-router/index.js";
+import { composeSsh, spawnSshd, type PreparedSshd } from "./modules/ssh.js";
+import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
@@ -55,6 +62,7 @@ import {
   DISPLAY_COMMAND,
   displayAvailable,
   fileLog,
+  LAUNCH_MODE_FILE,
 } from "./modules/browser-preview.js";
 import {
   startDisplaySupervisor,
@@ -63,16 +71,32 @@ import {
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
+import { createEnvironmentForward } from "./modules/environment-forward.js";
+import {
+  composeChanges,
+  createGitTraceReader,
+  gitTraceEnv,
+  sessionEnvVarsOf,
+} from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
-import { sessionDirectoryEntries } from "./modules/acp/index.js";
+import {
+  createTerminalSessionLookup,
+  nonClaudeModelEnv,
+  sessionDirectoryEntries,
+} from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
   createArtifactTouchReporter,
+  createToolApprovalReporter,
   createEnvPlugin,
   createEnvStateStore,
+  staleEnvReason,
+  createModelDiscovery,
   createFilePlugin,
   createHarnessClient,
+  createInvocationWatch,
+  createSubAgentsRunning,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
   loadManifest,
@@ -80,16 +104,27 @@ import {
   readSkillInstallBootState,
   resolveDrivers,
   harnessConfigBindingOf,
+  readCurrentValues,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
-import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { leaseSpawnEnv, mergedSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
+  canonicalModel,
   PROVIDER_REMOVED_REASON,
-  type LeasePair,
+  type SessionChoice,
 } from "./modules/acp/services/lease-router.js";
+import {
+  aliasForTemplateId,
+  HARNESS_HOME_PROVIDERS,
+  parseQualifiedModel,
+} from "api-server-api";
+import {
+  PROVIDER_DIALECTS,
+  renderName,
+} from "./modules/model-catalog/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -119,6 +154,13 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 }
 
 const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
+const environmentOf = process.env.PLATFORM_ENVIRONMENT_OF ?? "";
+const environmentForward =
+  environmentOf === ""
+    ? null
+    : createEnvironmentForward({
+        ownPorts: [config.PORT, config.PLATFORM_MODEL_ROUTER_PORT],
+      });
 const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
   ? {
       [defaultHarness]: loadManifest(
@@ -161,6 +203,29 @@ const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
 );
+const changesLog = (msg: string) => process.stderr.write(`[changes] ${msg}\n`);
+const changes = composeChanges({
+  roots: [workDir, homeDir],
+  stateBackend,
+  githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
+  sessionOf: (id) => (sessionMetadata.get(id) !== undefined ? id : undefined),
+  runningSessions: () =>
+    Object.keys(sessionMetadata.all()).filter((id) =>
+      acpRuntime.isSessionRunning(id),
+    ),
+  log: changesLog,
+});
+const gitTraceDir = join(homeDir, ".platform", "git-traces");
+const sessionEnvVars = sessionEnvVarsOf(
+  Object.values(harnessManifests).map((m) => m.sessionEnvVar),
+);
+const gitTraces = createGitTraceReader({
+  dir: gitTraceDir,
+  sessionEnvVars,
+  onCommand: (command) => void changes.onGitCommand(command),
+  log: changesLog,
+});
+
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
@@ -179,7 +244,12 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
       : {}),
     log: skillsLog,
   });
-const sshService = createSshService(homeDir);
+// UNIT_BOUNDARY_DESCRIPTION: sshd's files go outside the agent's home only where nothing else fills that home and /run is writable: a VM guest runs as root over a tmpfs /run with the platform share at /platform, so a full home there cannot lock its owner out of the machine; a container and a dev run keep them in the home, which is the one path their uid may write — a container's /run is root's and it has no share, and its volume no pool guard.
+const VM_SHARE_DIR = "/platform";
+const { service: sshService, prepare: prepareSsh } = composeSsh(
+  existsSync(VM_SHARE_DIR),
+  homeDir,
+);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -189,26 +259,236 @@ const artifactTouchReporter = createArtifactTouchReporter({
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
 
+const toolApprovalReporter = createToolApprovalReporter({
+  client: harnessClient,
+  log: (msg) => process.stderr.write(`[tool-approvals] ${msg}\n`),
+});
+
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       command: podServicePath,
-      stateBackend,
       envReader: envStore,
       log: podLog,
     })
   : null;
 
-process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
+const modelCatalog = createModelCatalog({
+  envState: () => envStore.state(),
+  envReady: envStore.ready,
+  discover: createModelDiscovery({
+    log: (msg) => process.stderr.write(`[model-catalog] ${msg}\n`),
+  }),
+  harnesses: Object.fromEntries(
+    Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
+  ),
+  table: VENDORED_PRICE_TABLE,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
 
-let seedHarnessModel: (() => Promise<void>) | null = null;
-let leaseModel:
-  | ((lease: {
-      harness: string;
-      provider: string | null;
-    }) => Promise<string | null>)
-  | null = null;
+if (envStore.ready()) void modelCatalog.refresh();
+modelCatalog.start();
+
+const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
+const subAgentsRunning = createSubAgentsRunning({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+let sessionState: {
+  turnRunning: (sessionId: string) => boolean;
+  localWork: (sessionId: string) => boolean;
+  spawnedBy: (sessionId: string) => string[];
+} = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
+const invocationWatch = createInvocationWatch({
+  reporter: {
+    report: (input) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  },
+  turnRunning: (sessionId) => sessionState.turnRunning(sessionId),
+  localWork: (sessionId) => sessionState.localWork(sessionId),
+  subAgentsRunning: (sessionId) =>
+    subAgentsRunning(sessionState.spawnedBy(sessionId)),
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+const modelCallExporter = createModelCallExporter({
+  envState: () => envStore.state(),
+  log: modelRouterLog,
+});
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the lease router and the Session metadata are
+ * composed after the Model Router, so their lookups are bound once they exist.
+ */
+let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
+let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+let runningSessionsOf: ((harness: string) => string[]) | null = null;
+const TERMINAL_PIN_REFRESH_MS = 2_000;
+const terminalSessionOf = createTerminalSessionLookup(
+  Object.values(harnessManifests).flatMap((m) =>
+    m.terminalSessionPins ? [expandHome(m.terminalSessionPins, homeDir)] : [],
+  ),
+  TERMINAL_PIN_REFRESH_MS,
+);
+const modelRouter = composeModelRouter({
+  sessionModelOf: (sessionId) => {
+    const choice = sessionChoiceOf?.(sessionId);
+    const subagentModel = choice?.settings?.subagentModel ?? null;
+    const subagentEffort = choice?.settings?.subagentEffort ?? null;
+    if (!choice?.model && !subagentModel && !subagentEffort) return null;
+    return { model: choice?.model ?? null, subagentModel, subagentEffort };
+  },
+  isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
+  terminalSessionOf,
+  runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
+  catalog: modelCatalog,
+  envState: () => envStore.state(),
+  harnesses: Object.fromEntries(
+    Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
+  ),
+  defaultHarness,
+  port: config.PLATFORM_MODEL_ROUTER_PORT,
+  onCall: (record) => modelCallExporter.record(record),
+  onCallStarted: (session) => invocationWatch.modelCallStarted(session),
+  onCallEnded: (session, answered) =>
+    invocationWatch.modelCallEnded(session, answered),
+  onRefused: ({ session, ...error }) =>
+    invocationWatch.modelError(session, error),
+  log: modelRouterLog,
+});
+await modelRouter.listen();
+const grantedAliases = (): string[] => [
+  ...new Set(
+    envStore.state().providers.flatMap((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return alias ? [alias] : [];
+    }),
+  ),
+];
+const aliasOfConnection = (connectionId: string): string | null => {
+  const layer = envStore.state().providers.find((l) => l.id === connectionId);
+  return layer?.template ? aliasForTemplateId(layer.template) : null;
+};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the env of a provider Connection the router does
+ * not serve (Bedrock) reaches a harness process only when no granted provider
+ * serves that harness through the router, since the harness's shim picks
+ * Bedrock whenever it is set; beside a routed provider, a session names
+ * Bedrock by its model and runs in a native process of its own.
+ */
+const FIRST_LISTING_WAIT_MS = 10_000;
+const unroutedProviderEnv = (harness: string): Record<string, string> => {
+  if (routerEnvOf(harness).PLATFORM_MODEL_ROUTER_SERVES) return {};
+  return Object.assign(
+    {},
+    ...envStore.state().providers.flatMap((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      const routed = alias !== null && PROVIDER_DIALECTS[alias].length > 0;
+      return routed ? [] : [l.env];
+    }),
+  ) as Record<string, string>;
+};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Connection a session runs on outside the
+ * router, when its model's alias names one the harness's manifest runs
+ * natively; a session with no model runs natively when the harness's home
+ * provider is such a Connection.
+ */
+const nativeConnectionOf = (
+  harness: string,
+  model: string | null,
+): string | null => {
+  const templates = harnessManifests[harness]?.modelRouter?.native?.templates;
+  if (!templates) return null;
+  const native = (alias: string) =>
+    envStore
+      .state()
+      .providers.find(
+        (l) =>
+          l.template !== undefined &&
+          templates.includes(l.template) &&
+          aliasForTemplateId(l.template) === alias,
+      )?.id ?? null;
+  if (model) {
+    const alias = parseQualifiedModel(model)?.alias;
+    return alias ? native(alias) : null;
+  }
+  const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
+  return home ? native(home) : null;
+};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
+ * through the Model Router needs each session's model; one that runs on a
+ * native Connection, or an agent holding no provider whose API the harness
+ * speaks, keeps the harness's own model configuration. Before the pod's env
+ * arrives nothing is known, so a model is required.
+ */
+const modelRequired = (harness: string): boolean => {
+  const binding = harnessManifests[harness]?.modelRouter;
+  if (binding === undefined) return false;
+  if (!envStore.ready()) return true;
+  return (
+    nativeConnectionOf(harness, null) === null &&
+    envStore.state().providers.some((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return (
+        alias !== null &&
+        servesHarness({ dialects: PROVIDER_DIALECTS[alias] }, harness, binding)
+      );
+    })
+  );
+};
+const nativeEnv = (connectionId: string): Record<string, string> =>
+  envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a terminal's harness starts with the same model
+ * env as its chat process: a native Connection's env and the harness's own
+ * model name, else the router's env and catalog name.
+ */
+const terminalModelEnv = (lease: {
+  harness: string;
+  model: string | null;
+}): Record<string, string> => {
+  const native = nativeConnectionOf(lease.harness, lease.model);
+  if (native)
+    return {
+      ...nativeEnv(native),
+      ...(lease.model !== null && {
+        PLATFORM_MODEL:
+          parseQualifiedModel(lease.model)?.upstreamId ?? lease.model,
+      }),
+    };
+  return {
+    ...unroutedProviderEnv(lease.harness),
+    ...routerEnvOf(lease.harness),
+    ...nonClaudeModelEnv(
+      harnessManifests[lease.harness]?.modelRouter?.nonClaudeModelEnv,
+      [lease.model],
+    ),
+    ...(lease.model !== null && {
+      PLATFORM_MODEL: renderSessionModel(
+        lease.model,
+        harnessManifests[lease.harness]?.modelRouter,
+      ),
+    }),
+  };
+};
+const renderSessionModel = (
+  model: string,
+  binding: RuntimeManifest["modelRouter"],
+): string => {
+  const parsed = parseQualifiedModel(model);
+  return parsed ? renderName(parsed, binding) : model;
+};
+const routerEnvOf = (harness: string): Record<string, string> =>
+  routerEnvFor({
+    harness,
+    binding: harnessManifests[harness]?.modelRouter,
+    providers: modelCatalog.providers(),
+    port: modelRouter.port,
+  });
+
+process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
 const processes = prepareProcesses(stateBackend);
 
@@ -234,45 +514,124 @@ const {
   envReader: envStore,
   defaultHarness,
   harnesses: Object.fromEntries(
-    Object.entries(harnessManifests).map(([name, manifest]) => [
-      name,
-      {
-        sessionHistory: manifest.sessionHistory,
-        sessionSpend: manifest.sessionSpend,
-        ...(manifest.terminalSessionPins && {
-          terminalSessionPins: expandHome(
-            manifest.terminalSessionPins,
-            homeDir,
-          ),
-        }),
-        sessionModel: sessionModelOf(manifest),
-        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
-        catalog: harnessConfigBindingOf(manifest)?.catalog,
-      },
-    ]),
+    Object.entries(harnessManifests).map(([name, manifest]) => {
+      const harnessConfig = harnessConfigBindingOf(manifest);
+      return [
+        name,
+        {
+          sessionHistory: manifest.sessionHistory,
+          ...(manifest.terminalSessionPins && {
+            terminalSessionPins: expandHome(
+              manifest.terminalSessionPins,
+              homeDir,
+            ),
+          }),
+          sessionModel: sessionModelOf(manifest),
+          ...(manifest.modelRouter?.sessionModel && {
+            sessionModelFrame: {
+              configOption: manifest.modelRouter.sessionModel.configOption,
+              render: (model: string) =>
+                (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
+                renderSessionModel(model, manifest.modelRouter),
+            },
+          }),
+          ...(manifest.initializeCapabilities && {
+            initialize: manifest.initializeCapabilities as Record<
+              string,
+              unknown
+            >,
+          }),
+          ...(manifest.harnessState && {
+            harnessState: manifest.harnessState,
+          }),
+          ...(manifest.modelRouter?.nonClaudeModelEnv && {
+            nonClaudeModelEnv: manifest.modelRouter.nonClaudeModelEnv,
+          }),
+          sessionSettings: harnessConfig?.sessionSettings,
+          catalog: harnessConfig?.catalog,
+          configured: () =>
+            harnessConfig
+              ? readCurrentValues(harnessConfig, homeDir, (msg) =>
+                  process.stderr.write(`[harness-config] ${msg}\n`),
+                )
+              : { mode: null, model: null },
+        },
+      ];
+    }),
   ),
   isTerminalSessionActive: isPtySessionActive,
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  agentRequests: toolApprovalReporter,
+  onToolActivity: ({ sessionId }) =>
+    void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
+  onTurnOutcome: (sessionId, end) =>
+    invocationWatch.turnOutcome(sessionId, end),
+  onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
+  sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
-  beforeSpawn: () => {
-    if (seedHarnessModel) return seedHarnessModel();
-    process.stderr.write(
-      "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
-    );
-    return Promise.resolve();
-  },
-  leaseModel: (lease) => leaseModel?.(lease) ?? Promise.resolve(null),
+  beforeSpawn: () =>
+    Promise.race([
+      modelCatalog.listed(),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, FIRST_LISTING_WAIT_MS).unref();
+      }),
+    ]),
+  providerAliases: grantedAliases,
+  aliasOfConnection,
+  unroutedProviderEnv,
+  routerEnv: routerEnvOf,
+  nativeConnectionOf,
+  modelRequired,
+  nativeEnv,
+  leaseIdleMs: config.LEASE_IDLE_MS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
-const { service: processesService, keepMarks } = processes.start({
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
+isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+void gitTraces
+  .start()
+  .catch((error: unknown) =>
+    changesLog(
+      `reading git traces could not start: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
+runningSessionsOf = (harness) =>
+  Object.entries(sessionMetadata.all())
+    .filter(
+      ([sessionId, entry]) =>
+        (entry.meta.harness ?? defaultHarness) === harness &&
+        acpRuntime.isSessionRunning(sessionId),
+    )
+    .map(([sessionId]) => sessionId);
+sessionState = {
+  turnRunning: (sessionId) =>
+    acpRuntime.isSessionRunning(sessionId) || acpRuntime.harnessBusy(sessionId),
+  localWork: (sessionId) =>
+    acpRuntime.toolCallsOpen(sessionId) || backgroundWork.hasWork(sessionId),
+  spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
+};
+
+const {
+  service: processesService,
+  keepMarks,
+  startupItemEnv,
+} = processes.start({
+  agentHome: homeDir,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
+
+function applyStartupItemEnv(): void {
+  startupItemEnv.apply(mergedSpawnEnv(envStore)).catch((err: unknown) => {
+    process.stderr.write(
+      `[processes] Startup Item env not applied: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  });
+}
 
 let recoveryScheduled = false;
 function scheduleRecovery(): void {
@@ -300,6 +659,7 @@ const reconcileOnState = imageSkillReconciler
 
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
+  onSessionDefaults: (defaults) => acpRuntime.receiveDefaults(defaults),
   onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
   manifests: harnessManifests,
   defaultHarness,
@@ -308,18 +668,24 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
+  invocationWatch,
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
       sessionMetadata.isTombstoned(sessionId),
     ),
   envReader: envStore,
+  envStale: () => staleEnvReason(envStore.state()),
+  catalog: modelCatalog,
+  modelRouter: true,
   plugins: [
     createEnvPlugin({
       store: envStore,
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
+        applyStartupItemEnv();
+        void modelCatalog.refresh();
         scheduleRecovery();
       },
     }),
@@ -329,16 +695,9 @@ const runtimeChannel = await composeRuntimeChannel({
     }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  onSnapshotProcessed: (contributions) => {
-    reconcileOnState?.(contributions);
-    setupGitCredentialHelper(contributions);
-  },
+  onContributionsApplied: setupGitCredentialHelper,
+  ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
 });
-
-seedHarnessModel = async () => {
-  await runtimeChannel.seedHarnessModel();
-};
-leaseModel = (lease) => runtimeChannel.leaseModel(lease);
 
 const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
 let preparedSshd: Promise<PreparedSshd | null> | undefined;
@@ -354,6 +713,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 const createTrpcContext = (): AgentRuntimeContext => ({
   artifactApi,
   browser: browserPreview,
+  changes,
   files: filesService,
   kbPublish: kbPublish.service,
   sessions: sessionsService,
@@ -372,6 +732,7 @@ const trpcHandler = createHTTPHandler({
 
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
+const PTY_BACKGROUND_WORK_RECHECK_MS = 15_000;
 const PTY_ACTIVE_WINDOW_MS = 5_000;
 const PTY_INPUT_ECHO_MS = 500;
 
@@ -447,32 +808,35 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
+ * refuses the terminal with the provider-removed reason, as a chat prompt
+ * would be refused.
+ */
 function terminalLease(
   sessionId: string,
-  requested: Partial<LeasePair>,
-): LeasePair | string {
+  requested: { harness?: string; model?: string },
+): { harness: string; model: string | null } | string {
   const meta = sessionMetadata.get(sessionId)?.meta;
   const harness = meta?.harness ?? requested.harness ?? defaultHarness;
   if (!Object.hasOwn(harnessManifests, harness))
     return `this agent does not carry the ${harness} harness`;
-  const provider =
+  const chosen =
     meta?.harness !== undefined
-      ? (meta.provider ?? null)
-      : (requested.provider ?? envStore.providers()[0] ?? null);
-  const model =
-    meta?.harness !== undefined
-      ? (meta.model ?? null)
-      : (requested.model ?? null);
-  if (provider !== null && !envStore.providers().includes(provider))
+      ? acpRuntime.sessionChoice(sessionId).model
+      : requested.model !== undefined
+        ? canonicalModel(requested.model)
+        : null;
+  const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
+  if (alias && !grantedAliases().includes(alias))
     return PROVIDER_REMOVED_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",
     harness,
-    ...(provider !== null && { provider }),
-    ...(model !== null && { model }),
+    ...(chosen !== null && { model: chosen }),
   });
-  return { harness, provider, model };
+  return { harness, model: chosen };
 }
 
 /**
@@ -500,27 +864,48 @@ function killPtySlot(sessionId: string): void {
   } catch {}
   slot.headless.dispose();
   ptySlots.delete(sessionId);
+  backgroundWork.forget(sessionId);
   ptyLog(sessionId, "killed");
+}
+
+function anyPtyBusy(): boolean {
+  const kept = new Set(backgroundWork.held().map((h) => h.sessionId));
+  const now = Date.now();
+  return [...ptySlots.values()].some((slot) =>
+    terminalBusy({
+      attached: slot.client !== null,
+      sinceDetachMs: now - slot.detachedAt,
+      quietMs: now - slot.lastOutputAt,
+      detachGraceMs: PTY_DETACH_GRACE_MS,
+      idleReapMs: PTY_IDLE_REAP_MS,
+      keptBackgroundWork: kept.has(slot.sessionId),
+    }),
+  );
 }
 
 function reapPtySlotIfIdle(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot || slot.client || !slot.pty) return;
-  const quietMs = Date.now() - slot.lastOutputAt;
-  if (quietMs >= PTY_IDLE_REAP_MS) {
+  const reap = terminalReap({
+    quietMs: Date.now() - slot.lastOutputAt,
+    idleReapMs: PTY_IDLE_REAP_MS,
+    holdsBackgroundWork: backgroundWork.hasWork(sessionId),
+    recheckMs: PTY_BACKGROUND_WORK_RECHECK_MS,
+  });
+  if (reap.kind === "kill") {
     killPtySlot(sessionId);
     return;
   }
   slot.graceTimer = setTimeout(
     () => reapPtySlotIfIdle(slot.sessionId),
-    PTY_IDLE_REAP_MS - quietMs,
+    reap.ms,
   );
 }
 
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean; lease: Partial<LeasePair> },
+  opts: { reset: boolean; lease: { harness?: string; model?: string } },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -534,6 +919,7 @@ function attachPty(
     slot.client = null;
     slot.detachedAt = Date.now();
     markTerminalSeen(slot.sessionId);
+    void sessionsService.adoptHarnessTitle(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -604,15 +990,23 @@ function attachPty(
         cwd: workDir,
         env: {
           ...(Object.fromEntries(
-            Object.entries(leaseSpawnEnv(envStore, lease)).filter(
+            Object.entries(
+              leaseSpawnEnv(envStore, {
+                harness: lease.harness,
+                provider: null,
+                model: null,
+              }),
+            ).filter(
               ([k, v]) =>
                 v !== undefined &&
                 !k.startsWith("npm_config_") &&
                 !k.startsWith("npm_lifecycle_"),
             ),
           ) as Record<string, string>),
+          ...terminalModelEnv(lease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
+          ...gitTraceEnv(gitTraceDir, sessionEnvVars),
           HARNESS_SESSION_ID: sessionId,
           PLATFORM_TERMINAL_ID: terminalId,
         },
@@ -671,6 +1065,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(slot.sessionId, `exited ${exitCode}`);
+        void sessionsService.adoptHarnessTitle(slot.sessionId);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
@@ -679,6 +1074,7 @@ function attachPty(
         slot.pty = null;
         slot.headless.dispose();
         ptySlots.delete(slot.sessionId);
+        backgroundWork.forget(slot.sessionId);
       });
       return;
     }
@@ -731,12 +1127,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (environmentForward?.handleRequest(req, res)) return;
+
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
+      idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
+      openLinks: acp.openLinks,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -886,6 +1285,7 @@ const browserPreview = createBrowserPreview({
     join(homeDir, ".local/share/platform/browser"),
   socketDir:
     process.env.AGENT_BROWSER_SOCKET_DIR ?? join(homeDir, ".agent-browser"),
+  launchModeFile: join(homeDir, LAUNCH_MODE_FILE),
   log: browserLog("browser-preview"),
 });
 
@@ -903,8 +1303,14 @@ acpWss.on("connection", (ws, req: http.IncomingMessage) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  if (environmentForward?.handleUpgrade(req, socket, head)) return;
   const url = new URL(req.url!, `http://${req.headers.host}`);
-  if (url.pathname === "/api/acp") {
+  if (
+    environmentOf !== "" &&
+    (url.pathname === "/api/acp" || url.pathname === "/api/terminal")
+  ) {
+    socket.destroy();
+  } else if (url.pathname === "/api/acp") {
     acpWss.handleUpgrade(req, socket, head, (ws) =>
       acpWss.emit("connection", ws, req),
     );
@@ -936,7 +1342,7 @@ server.on("upgrade", (req, socket, head) => {
     );
   } else if (url.pathname === "/api/ssh") {
     startDisplay();
-    preparedSshd ??= prepareSshd(homeDir, sshLog).catch((err: Error) => {
+    preparedSshd ??= prepareSsh(sshLog).catch((err: Error) => {
       sshLog(`could not prepare sshd: ${err.message}`);
       preparedSshd = undefined;
       return null;
@@ -962,9 +1368,23 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) podService?.refreshEnv();
+  if (envStore.ready()) {
+    podService?.refreshEnv();
+    applyStartupItemEnv();
+  }
 
-  acpRuntime.prestart();
+  modelCatalog.onChange(() =>
+    acpRuntime.applyEnvChange({
+      namesChanged: false,
+      base: null,
+      providers: [],
+      harnesses: Object.keys(harnessManifests).map((id) => ({
+        id,
+        namesChanged: false,
+      })),
+    }),
+  );
+  if (environmentOf === "") acpRuntime.prestart();
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
@@ -981,7 +1401,7 @@ server.listen(config.PORT, () => {
 
   setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
 
-  warmHistory();
+  if (environmentOf === "") warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),
@@ -1061,7 +1481,9 @@ function gracefulShutdown(signal: string): void {
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
   browserPreview.close();
   browserDisplay?.stop();
+  activeTurns.markStopped();
   acpRuntime.shutdown();
+  void modelCallExporter.stop();
   setTimeout(() => process.exit(0), 3_000).unref();
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

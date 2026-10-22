@@ -10,9 +10,7 @@ export interface BrowserOpenRequest {
 export interface BrowserSlice {
   openBrowserAgentId: string | null;
   browserOpenRequest: BrowserOpenRequest | null;
-  browserMaximized: boolean;
   setOpenBrowser: (agentId: string | null, url?: string) => void;
-  setBrowserMaximized: (maximized: boolean) => void;
   takeBrowserOpenRequest: () => BrowserOpenRequest | null;
 }
 
@@ -24,12 +22,12 @@ export const createBrowserSlice: StateCreator<
 > = (set, get) => ({
   openBrowserAgentId: null,
   browserOpenRequest: null,
-  browserMaximized: false,
   setOpenBrowser: (agentId, url) =>
     set((state) =>
       agentId
         ? {
             openBrowserAgentId: agentId,
+            sidePanelTab: "browser" as const,
             browserOpenRequest: url
               ? { url, id: (state.browserOpenRequest?.id ?? 0) + 1 }
               : state.browserOpenRequest,
@@ -39,10 +37,10 @@ export const createBrowserSlice: StateCreator<
             openArtifactDirty: false,
             openDelegation: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
-        : { openBrowserAgentId: null, browserMaximized: false },
+        : { openBrowserAgentId: null, sidePanelMaximized: null },
     ),
-  setBrowserMaximized: (maximized) => set({ browserMaximized: maximized }),
   takeBrowserOpenRequest: () => {
     const request = get().browserOpenRequest;
     if (request) set({ browserOpenRequest: null });

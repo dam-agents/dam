@@ -110,6 +110,18 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
+{{- /* An Environment endpoint's address, with {host} for its
+       `<endpoint>-<environment>` label; empty without environments.domain. */ -}}
+{{- define "platform.url.environments" -}}
+{{- with .Values.environments.domain }}
+{{- if $.Values.port }}
+{{- printf "%s://{host}.%s:%v" $.Values.scheme . $.Values.port }}
+{{- else }}
+{{- printf "%s://{host}.%s" $.Values.scheme . }}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{- /* Path-based ingress rule block reused per host. `/api` goes to the
        api-server, everything else to the UI. Order matters: more-specific
        Prefix first. Pass `dict "uiSvc" $uiSvc "apiSvc" $apiSvc`. */ -}}
@@ -457,10 +469,82 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- printf "%s-vm-runner" (include "platform.fullname" .) }}
 {{- end }}
 
+{{/*
+The PriorityClass this release renders for its own runner pods. Always rendered,
+whether or not the install names a class of its own: helm deletes what it stops
+rendering, and a runner Deployment keeps the class it was rolled with, so a
+switch to a named class would otherwise leave live templates pointing at a class
+that no longer exists, and their next pod refused at admission.
+*/}}
+{{- define "platform.vmRunner.ownPriorityClassName" -}}
+{{- printf "%s-vm-runner-priority-%d" (include "platform.fullname" .) (int .Values.virtualization.runner.priority) }}
+{{- end }}
+
+{{/*
+The PriorityClass every runner pod runs under: the one the install names, else
+this release's own, which the chart renders beside the runners. Cluster-scoped
+and named after the release, because several installs share a cluster's nodes.
+*/}}
+{{- define "platform.vmRunner.priorityClassName" -}}
+{{- .Values.virtualization.runner.priorityClassName | default (include "platform.vmRunner.ownPriorityClassName" .) }}
+{{- end }}
+
 {{/* The VM runner image: by digest when one is pinned, else by tag. */}}
 {{- define "platform.vmRunner.image" -}}
 {{- $i := .Values.virtualization.runner.image }}
 {{- if $i.digest }}{{ printf "%s@%s" $i.repository $i.digest }}{{ else }}{{ printf "%s:%s" $i.repository ($i.tag | default .Chart.AppVersion) }}{{ end }}
+{{- end }}
+{{/*
+The node directory this install stages runner releases in: its own
+subdirectory of `runner.releaseHostPath`, named after the agent namespace,
+because every stager keeps only the newest few releases in its directory and
+installs that share nodes would otherwise remove each other's.
+*/}}
+{{- define "platform.vmRunner.releaseDir" -}}
+{{- with .Values.virtualization.runner.releaseHostPath }}{{ printf "%s/%s" (trimSuffix "/" .) $.Values.agentNamespace }}{{ end }}
+{{- end }}
+{{/*
+The node directory this install caches images in: its own subdirectory of
+`imageCache.hostPath`, one segment each for the release namespace and the
+release name — the pair the cluster already keeps unique. Two segments, not a
+dash join: joined, namespace `a-b` with release `c` and namespace `a` with
+release `b-c` both name `a-b-c`. The service is the only writer of the
+directory it serves, so two installs on a shared node given one directory take
+turns unlinking each other's socket and serving each other's trees. Deriving
+it from the install's own name means no value can hand two installs one
+directory.
+*/}}
+{{- define "platform.vmImageCache.dir" -}}
+{{- with .Values.virtualization.imageCache | default dict }}{{ with .hostPath }}{{ printf "%s/%s/%s" (clean .) $.Release.Namespace $.Release.Name }}{{ end }}{{ end }}
+{{- end }}
+{{/*
+What unpacking an image faithfully costs, and nothing else: every capability
+the runtime would grant is dropped first. A rootfs carries the owners and modes
+its files were built with, so tar chowns each entry (CHOWN), sets a mode on a
+file it has just given away (FOWNER), keeps a setgid bit on a file whose group
+is not its own (FSETID), and keeps writing into directories that are read-only
+or no longer its own (DAC_OVERRIDE). There is no MKNOD: the unpack skips the
+image's /dev, and fails on a device node anywhere else. The runners this
+service serves only read, so they hold none of CHOWN, FOWNER and FSETID.
+On OpenShift the service runs as spc_t: the label the cache sets is set from
+inside the container, and container_t may not relabel a host directory any
+more than write it. spc_t is the type a privileged container gets, unconfined
+by SELinux, without this becoming a privileged container. `runner.scc` has to
+leave the type to the pod (seLinuxContext RunAsAny); under MustRunAs admission
+refuses this pod. The runners keep container_t.
+*/}}
+{{- define "platform.vmImageCache.securityContext" -}}
+runAsUser: 0
+capabilities:
+  drop: ["ALL"]
+  add: ["CHOWN", "FOWNER", "FSETID", "DAC_OVERRIDE"]
+appArmorProfile:
+  type: Unconfined
+{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+seLinuxOptions:
+  type: spc_t
+  level: s0
+{{- end }}
 {{- end }}
 
 {{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
@@ -509,17 +593,22 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{/* Call with (dict "root" $ "templateName" <name> "rail" <telemetry>), where
      <name> is a harnessTemplates entry or a harnesses.catalog entry.
      Each harness reads its own export env, so `telemetry` names the rail:
-     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's.
-     Both land on the same collector over the agent's ordinary gateway egress —
-     see docs/architecture/observability.md. */}}
+     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's,
+     "pi" for the image's Pi exporter, "codex" for the flags the Codex image
+     renders. All land on the same collector over the agent's ordinary gateway
+     egress — see docs/architecture/observability.md. */}}
 {{- define "platform.agentTelemetry.env" -}}
 {{- $rail := toString .rail }}
 {{- if or (eq $rail "true") (eq $rail "claude-code") }}
 {{- include "platform.agentTelemetry.env.claudeCode" . }}
 {{- else if eq $rail "bob" }}
 {{- include "platform.agentTelemetry.env.bob" . }}
+{{- else if eq $rail "pi" }}
+{{- include "platform.agentTelemetry.env.pi" . }}
+{{- else if eq $rail "codex" }}
+{{- include "platform.agentTelemetry.env.codex" . }}
 {{- else }}
-{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
+{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code, bob, pi or codex. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
 {{- end }}
 {{- end }}
 
@@ -540,6 +629,12 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 # traceparent/tracestate before any external upstream, so nothing leaks outward.
 - name: CLAUDE_CODE_PROPAGATE_TRACEPARENT
   value: "1"
+# The image's model-gateway.sh then points the OTLP endpoint at the agent's
+# gateway, which forwards to the collector, so the export skips Claude Code's
+# one proxied socket. The controller serves that path whenever this chart sets
+# its collector host, which is when this rail renders.
+- name: PLATFORM_TELEMETRY_VIA_GATEWAY
+  value: "1"
 - name: OTEL_METRICS_EXPORTER
   value: "otlp"
 - name: OTEL_LOGS_EXPORTER
@@ -556,6 +651,34 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
   value: "1000"
 - name: OTEL_TRACES_EXPORT_INTERVAL
   value: "1000"
+{{- end }}
+
+{{/* Pi exports nothing itself: the image's pi-platform-telemetry extension
+     posts one OTLP/HTTP JSON log record per model call (pi.api_request) to
+     {ENDPOINT}/v1/logs, and only while OTEL_LOGS_EXPORTER is "otlp". */}}
+{{- define "platform.agentTelemetry.env.pi" -}}
+{{- $host := include "platform.clickstack.collector.host" .root }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .templateName | quote }}
+- name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ printf "https://%s:4318" $host | quote }}
+{{- end }}
+
+{{/* Codex reads its OTLP exporters only from the [otel] table of its
+     config.toml, never from this env: the image's launch scripts turn it into
+     `-c otel.*` flags, logs to {ENDPOINT}/v1/logs while OTEL_LOGS_EXPORTER is
+     "otlp" and traces to {ENDPOINT}/v1/traces while OTEL_TRACES_EXPORTER is.
+     Codex fixes its own service name, so OTEL_SERVICE_NAME would be inert. */}}
+{{- define "platform.agentTelemetry.env.codex" -}}
+{{- $host := include "platform.clickstack.collector.host" .root }}
+- name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_TRACES_EXPORTER
+  value: "otlp"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ printf "https://%s:4318" $host | quote }}
 {{- end }}
 
 {{/* Bob Shell builds its own tracer from BOB_TELEMETRY_* and posts OTLP/HTTP

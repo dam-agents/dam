@@ -7,11 +7,12 @@ import type {
   HarnessConfigService,
   Plugin,
   RuntimeChannelService,
+  SessionDefaultsEventPayload,
   SessionDirectoryEntry,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { noticeStream } from "../../core/notice-stream.js";
-import type { LeaseEnvReader } from "../../core/runtime-env.js";
+import { mergedSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   contributionDrivers,
   eventDrivers,
@@ -24,9 +25,11 @@ import { bindingsFingerprint } from "./domain/bindings-fingerprint.js";
 import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
+import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
 import {
   createInitializationPlugin,
   createSubAgentOutcomePlugin,
@@ -41,13 +44,15 @@ import {
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
+import type { InvocationWatch } from "./services/invocation-watch.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
-  SEED_LISTING_RETRY,
   createHarnessConfigPlugin,
   type HarnessConfigPlugin,
 } from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
+import { catalogChoices } from "./domain/catalog-choices.js";
+import type { ModelCatalog } from "../model-catalog/index.js";
 import {
   createSessionDirectoryReporter,
   type SessionDirectoryReporter,
@@ -66,11 +71,6 @@ export function pluginStateRoot(agentHome: string): string {
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   harnessConfig: HarnessConfigService;
-  seedHarnessModel(): Promise<boolean>;
-  leaseModel(lease: {
-    harness: string;
-    provider: string | null;
-  }): Promise<string | null>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
@@ -84,11 +84,17 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
+  invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
+  onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: LeaseEnvReader;
+  envStale?: () => string | undefined;
+  catalog?: ModelCatalog;
+  modelRouter?: boolean;
+  onContributionsApplied?: ApplyStateDeps["onContributionsApplied"];
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
 }
 
@@ -124,6 +130,7 @@ export async function composeRuntimeChannel(
   }
   const stateStore = createStateStore(opts.stateBackend, {
     envReady: opts.envReader.ready,
+    ...(opts.envStale && { envStale: opts.envStale }),
     bindingsFingerprint: bindingsFingerprint(
       Object.fromEntries(
         Object.entries(contributionBindings).map(([kind, list]) => [
@@ -152,16 +159,10 @@ export async function composeRuntimeChannel(
   };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
-  const harnessDefault = async (): Promise<string | null> =>
-    harnessConfigPlugin?.supported
-      ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
-          .defaultModel ?? null)
-      : null;
   registry.register(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      harnessDefault,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,
@@ -171,13 +172,21 @@ export async function composeRuntimeChannel(
       ...(opts.findSessionByRef
         ? { findSessionByRef: opts.findSessionByRef }
         : {}),
+      ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
+      invocationWatch: opts.invocationWatch,
     }),
   );
-  registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
+  const spawnEnv = () => mergedSpawnEnv(opts.envReader);
   registry.register(
-    createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
+    createWorkspaceSeedPlugin({ workDir: opts.workDir, spawnEnv, log }),
+  );
+  registry.register(
+    createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
+  registry.register(
+    createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
+  );
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
   );
@@ -186,6 +195,9 @@ export async function composeRuntimeChannel(
       driver: opts.triggerDriver,
       sessions: opts.subAgentSessions,
     }),
+  );
+  registry.register(
+    createSessionMessagePlugin({ driver: opts.triggerDriver, reporter, log }),
   );
 
   const discoverModels = createModelDiscovery({ log });
@@ -206,11 +218,17 @@ export async function composeRuntimeChannel(
         agentHome: opts.agentHome,
         envReader: opts.envReader,
         discoverModels,
-        seedListingRetry: SEED_LISTING_RETRY,
+        ...(opts.catalog &&
+          opts.manifests[harness]?.modelRouter && {
+            catalogModels: () => catalogChoices(opts.catalog!.view(harness)),
+          }),
         log,
       }),
     );
   }
+  opts.catalog?.onChange(() => {
+    for (const watcher of listingWatchers) watcher();
+  });
   const harnessConfigPlugin = harnessConfigs.get(defaultHarness);
   const harnessConfigFor = (harness: string | undefined) =>
     harnessConfigs.get(harness ?? defaultHarness);
@@ -276,6 +294,9 @@ export async function composeRuntimeChannel(
         harnessConfigCurrentByHarness: await harnessConfigByHarness(),
       }),
     }),
+    ...(opts.onContributionsApplied
+      ? { onContributionsApplied: opts.onContributionsApplied }
+      : {}),
     ...(opts.onSnapshotProcessed
       ? { onSnapshotProcessed: opts.onSnapshotProcessed }
       : {}),
@@ -309,11 +330,13 @@ export async function composeRuntimeChannel(
           },
           signal,
         ),
+      catalog: async ({ harness }) =>
+        opts.catalog?.view(harness) ?? {
+          harness,
+          routed: false,
+          providers: [],
+        },
     },
-    seedHarnessModel: async () =>
-      (await harnessConfigPlugin?.seedModel()) ?? false,
-    leaseModel: async ({ harness, provider }) =>
-      (await harnessConfigs.get(harness)?.leaseModel(provider)) ?? null,
     sessionDirectory,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {
@@ -325,6 +348,8 @@ export async function composeRuntimeChannel(
         defaultHarness,
         harnesses: Object.keys(opts.manifests).map((name) => {
           const plugin = harnessConfigs.get(name);
+          const nativeTemplates =
+            opts.manifests[name]?.modelRouter?.native?.templates;
           return {
             name,
             harnessConfig: plugin !== undefined,
@@ -332,13 +357,23 @@ export async function composeRuntimeChannel(
             sessionModel: plugin?.sessionModel ?? false,
             ...(plugin?.sessionSettings && {
               sessionSettings: plugin.sessionSettings,
+              platformSubagentSettings: true,
+            }),
+            ...(plugin?.derivedStartMode && {
+              derivedStartMode: plugin.derivedStartMode,
+            }),
+            ...(nativeTemplates?.length && { nativeTemplates }),
+            ...(opts.manifests[name]?.sessionMcpEntry === false && {
+              identifiesSession: false,
             }),
           };
         }),
         kbPublish: 2,
         liveUpdates: true,
+        modelRouter: opts.modelRouter === true,
       };
-      for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
+      // UNIT_BOUNDARY_DESCRIPTION: the first retry comes fast because the usual first failure is a wake's own: the agent's gateway starts beside the guest and is often still coming up when the runtime first says hello, and a 1 s wait put that whole second on the agent's wake.
+      for (let delay = 100; ; delay = Math.min(delay * 2, 30_000)) {
         const harnessConfigCurrent = await harnessConfigPlugin?.readCurrent({
           discover: false,
         });

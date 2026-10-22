@@ -2,13 +2,19 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	dynfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -31,7 +37,7 @@ func TestReclaimAdmitsBlockedStartByHibernatingIdlePeer(t *testing.T) {
 	peerU, err := agentToUnstructured(peer)
 	require.NoError(t, err)
 	r, _ := setupReconciler(t, agent, peerSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -68,7 +74,7 @@ func TestReclaimedVictimStaysDownOnItsOwnNextReconcile(t *testing.T) {
 	peerU, err := agentToUnstructured(peer)
 	require.NoError(t, err)
 	r, _ := setupReconciler(t, agent, peerSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -92,7 +98,7 @@ func TestReclaimHibernatesNothingWhenRoomIsInsufficient(t *testing.T) {
 	agent := ownedAgentCR("my-agent", "1", "512Mi")
 
 	r, _ := setupReconciler(t, agent, smallSS, bigSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	for _, p := range []*apiv1.Agent{small, big} {
 		u, err := agentToUnstructured(p)
 		require.NoError(t, err)
@@ -116,7 +122,7 @@ func TestReclaimSkipsBusyPeer(t *testing.T) {
 	peerU, err := agentToUnstructured(peer)
 	require.NoError(t, err)
 	r, _ := setupReconciler(t, agent, peerSS)
-	r.busyProbe = func(context.Context, string) bool { return true }
+	r.podStatus = func(context.Context, string) (bool, bool) { return false, true }
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -124,6 +130,53 @@ func TestReclaimSkipsBusyPeer(t *testing.T) {
 
 	assert.Equal(t, int32(1), agentSSReplicas(t, r, "peer"), "busy peer must not be reclaimed")
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, "my-agent"))
+}
+
+// TEST_SCENARIO: an idle probe takes a round trip, and the api-server writes a session pin without taking the controller's owner lock. A pin that lands after the victim was chosen but before it is stamped must keep it awake: a user who just opened the agent must not have it put to sleep under them.
+func TestReclaimLeavesAPeerPinnedWhileItsIdleProbeRan(t *testing.T) {
+	peer, peerSS := idlePeer("peer", "3900m", "1Gi", 10*time.Minute, nil)
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+	r, _ := setupReconciler(t, agent, peerSS)
+	r.podStatus = func(ctx context.Context, name string) (bool, bool) {
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, types.MergePatchType,
+			[]byte(`{"metadata":{"annotations":{"`+annActiveSession+`":"true"}}}`), metav1.PatchOptions{})
+		require.NoError(t, err)
+		return true, true
+	}
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, "peer"), "a pin landing during the idle probe must keep the peer awake")
+	assert.False(t, reclaimedAgent(t, r, "peer"))
+}
+
+// TEST_SCENARIO: a write between the victim's re-read and its reclaim stamp fails the stamp on its resource version. That conflict is the pin of the previous scenario arriving a moment later, so the victim is left awake rather than halted on a stamp that lost.
+func TestReclaimLeavesAPeerWhoseStampConflicts(t *testing.T) {
+	peer, peerSS := idlePeer("peer", "3900m", "1Gi", 10*time.Minute, nil)
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+	r, _ := setupReconciler(t, agent, peerSS)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("patch", "agents", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.(k8stesting.PatchAction).GetName() != "peer" {
+			return false, nil, nil
+		}
+		return true, nil, apierrors.NewConflict(AgentsGVR.GroupResource(), "peer", errors.New("the object has been modified"))
+	})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, "peer"), "a victim whose stamp conflicts must not be halted")
+	assert.False(t, reclaimedAgent(t, r, "peer"))
 }
 
 func TestReclaimEligibility(t *testing.T) {
@@ -161,7 +214,7 @@ func TestReclaimPrefersLongestIdlePeer(t *testing.T) {
 	agent := ownedAgentCR("my-agent", "250m", "512Mi")
 
 	r, _ := setupReconciler(t, agent, recentSS, staleSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	for _, p := range []*apiv1.Agent{recent, stale} {
 		u, err := agentToUnstructured(p)
 		require.NoError(t, err)

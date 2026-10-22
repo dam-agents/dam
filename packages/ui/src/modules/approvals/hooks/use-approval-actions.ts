@@ -9,6 +9,8 @@ import {
 import type { ApprovalView } from "api-server-api";
 
 import { useStore } from "../../../store.js";
+import { continueLabel } from "../../spend/lib/copy.js";
+import { localResetTime } from "../../spend/lib/format.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -34,13 +36,17 @@ interface ApprovalAction {
 
 interface ApprovalActions {
   actions: readonly ApprovalAction[];
+  primaryLabel: string;
   inflight: boolean;
   hostLabel: string | null;
   expiredNote: string | null;
   openSettings: () => void;
 }
 
-export function useApprovalActions(row: ApprovalView): ApprovalActions {
+export function useApprovalActions(
+  row: ApprovalView,
+  ids: readonly string[] = [row.id],
+): ApprovalActions {
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
@@ -84,7 +90,42 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     }
   };
 
-  const actions: ApprovalAction[] = [
+  const each = async (
+    mutate: (input: { id: string }) => Promise<unknown>,
+  ): Promise<void> => {
+    for (const id of ids) await mutate({ id });
+  };
+
+  const continueText =
+    row.payload.kind === "spend_limit"
+      ? continueLabel(row.payload.amountMicros, row.payload.unit)
+      : "Continue";
+
+  const spendLimitActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: continueText,
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || !live,
+      tooltip: live
+        ? undefined
+        : `The question expired at ${localResetTime(row.expiresAt)} your time`,
+      resolvedLabel: "Continued",
+      run: () => direct(() => each(approveOnce.mutateAsync)),
+    },
+    {
+      id: "dismiss",
+      label: "Stop for today",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      resolvedLabel: "Stopped for today",
+      run: () => direct(() => each(dismiss.mutateAsync)),
+    },
+  ];
+
+  const egressActions: ApprovalAction[] = [
     {
       id: "allow-once",
       label: "Allow once",
@@ -92,22 +133,22 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       danger: false,
       disabled: inflight || allowOnceDisabled,
       tooltip: allowOnceDisabled
-        ? "Original request already failed; pick Allow permanently to allow future retries"
+        ? "Original request already failed; pick Always allow to allow future retries"
         : undefined,
       resolvedLabel: "Allowed",
-      run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
+      run: () => direct(() => each(approveOnce.mutateAsync)),
     },
     {
       id: "allow-permanent",
-      label: "Allow permanently",
+      label: "Always allow…",
       icon: CheckmarkFilled,
       danger: false,
       disabled: inflight,
       tooltip: restart.permanentTooltip,
-      resolvedLabel: "Allowed permanently",
+      resolvedLabel: "Always allowed",
       run: () =>
         confirmed(restart.confirmNarrow, "Allow & restart", () =>
-          approvePermanent.mutateAsync({ id: row.id }),
+          each(approvePermanent.mutateAsync),
         ),
     },
     ...(hostLabel
@@ -122,14 +163,14 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
             resolvedLabel: `Allowed all of ${hostLabel}`,
             run: () =>
               confirmed(restart.confirmHost, "Allow & restart", () =>
-                approveHost.mutateAsync({ id: row.id }),
+                each(approveHost.mutateAsync),
               ),
           },
         ]
       : []),
     {
       id: "dismiss",
-      label: "Deny this request",
+      label: "Deny",
       icon: Close,
       danger: true,
       disabled: inflight || !live,
@@ -137,30 +178,33 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
         ? "Deny this single request — re-prompts on the next attempt"
         : "Original request already failed; nothing to dismiss",
       resolvedLabel: "Denied",
-      run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
+      run: () => direct(() => each(dismiss.mutateAsync)),
     },
     {
       id: "deny-forever",
-      label: "Deny permanently",
+      label: "Always deny…",
       icon: Misuse,
       danger: true,
       disabled: inflight,
       tooltip: restart.denyForeverTooltip,
-      resolvedLabel: "Denied permanently",
+      resolvedLabel: "Always denied",
       run: () =>
         confirmed(restart.confirmNarrow, "Deny & restart", () =>
-          denyForever.mutateAsync({ id: row.id }),
+          each(denyForever.mutateAsync),
         ),
     },
   ];
 
+  const spendLimit = row.type === "spend_limit";
+
   return {
-    actions,
+    actions: spendLimit ? spendLimitActions : egressActions,
+    primaryLabel: spendLimit ? continueText : "Allow once",
     inflight,
     hostLabel,
     expiredNote:
       row.status === "expired" && row.type === "ext_authz"
-        ? "The original request already failed. Allow permanently writes a rule that future retries match."
+        ? "The original request already failed. Always allow writes a rule that future retries match."
         : null,
     openSettings: () => navigateToSandboxHome(row.agentId, "network"),
   };

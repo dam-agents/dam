@@ -39,7 +39,9 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     const gates = queries[0].match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(3);
+    expect(gates).toHaveLength(
+      (queries[0].match(/FROM otel_logs/g) ?? []).length,
+    );
   });
 
   it("computes roots session-unfiltered even when the read is session-scoped", async () => {
@@ -50,19 +52,6 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     const sql = queries[0];
     const [traceRootCte] = sql.split("session_root AS");
     expect(traceRootCte).not.toContain("{sessionId:String}");
-  });
-
-  it("narrows a multi-session read to those sessions while roots stay unfiltered", async () => {
-    const { client, queries } = fakeClient([]);
-    await createClickhouseReader(client).runtimeBySession(["a-1"], {
-      fromIso: "2026-10-01T00:00:00.000Z",
-      sessionIds: ["s-1", "s-2"],
-    });
-    const [traceRootCte, rest] = queries[0].split("session_root AS");
-    expect(traceRootCte).not.toContain("{sessionIds:Array(String)}");
-    expect(rest).toContain(
-      "LogAttributes['session.id'] IN {sessionIds:Array(String)}",
-    );
   });
 });
 

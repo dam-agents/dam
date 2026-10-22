@@ -2,22 +2,38 @@ import type { ActiveTurnStore } from "../infrastructure/active-turn-store.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { TriggerSessionDriver } from "./trigger-session-driver.js";
 
+const DISOWNED_REJECTION =
+  "The tool call that was running when the sandbox went down may show in " +
+  'your history as rejected or interrupted by the user — "The user ' +
+  'doesn\'t want to proceed with this tool use", "[Request interrupted ' +
+  'by user for tool use]". Nobody rejected it: the restart cut it off, ' +
+  "and the harness records that as a rejection. Do not stop or wait for " +
+  "the user because of it.";
+const CHECK_AND_CONTINUE =
+  "Check the current state of the workspace before you continue, then carry " +
+  "on with the task you were working on.";
+
 export const INTERRUPTION_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the sandbox restarted mid-task " +
     "(most often because it ran out of memory). Some effects of your last " +
     "actions may be partial — a file half-written, a command that never " +
     "finished.",
-  "The tool call that was running when the sandbox restarted may show in " +
-    'your history as rejected or interrupted by the user — "The user ' +
-    'doesn\'t want to proceed with this tool use", "[Request interrupted ' +
-    'by user for tool use]". Nobody rejected it: the restart cut it off, ' +
-    "and the harness records that as a rejection. Do not stop or wait for " +
-    "the user because of it.",
-  "Check the current state of the workspace before you continue, then carry " +
-    "on with the task you were working on.",
+  DISOWNED_REJECTION,
+  CHECK_AND_CONTINUE,
   "If this problem persists, stop and instruct the user to go to ⵗ → " +
     "Configure agent → set Compute Resources dropdown to a higher tier.",
+  "</turn-interrupted>",
+].join("\n");
+
+export const STOPPED_NOTICE = [
+  "<turn-interrupted>",
+  "Your previous turn here was cut short: the platform stopped the sandbox " +
+    "mid-task — the agent was put to sleep, restarted or moved — and it has " +
+    "started again. Some effects of your last actions may be partial — a " +
+    "file half-written, a command that never finished.",
+  DISOWNED_REJECTION,
+  CHECK_AND_CONTINUE,
   "</turn-interrupted>",
 ].join("\n");
 
@@ -34,6 +50,9 @@ export const MAX_RESUME_ATTEMPTS = 5;
  * mid-task. The notice also disowns the harness's record of the tool call the
  * restart cut off — written as a user's rejection that says to stop and wait —
  * so the agent carries on instead of waiting for a person who never acted.
+ * A turn the platform stopped, as by a Sleep, gets a notice that says so
+ * rather than blaming its memory. Nobody reads the resumed turn live, so its
+ * prompt waits for the harness alone, never for a viewer to engage.
  * A continuation that dies again is resumed again, up to
  * MAX_RESUME_ATTEMPTS times for one interruption. The attempt is counted before
  * the resume is tried, so a continuation that keeps running out of memory
@@ -73,8 +92,9 @@ export async function recoverInterruptedTurns(deps: {
     deps.store.bumpAttempts(marker.sessionId);
     try {
       await deps.triggerDriver.start({
-        task: INTERRUPTION_NOTICE,
+        task: marker.stopped ? STOPPED_NOTICE : INTERRUPTION_NOTICE,
         resumeSessionId: marker.sessionId,
+        unattended: true,
       });
       deps.log(`resumed interrupted session ${marker.sessionId}`);
     } catch (err) {

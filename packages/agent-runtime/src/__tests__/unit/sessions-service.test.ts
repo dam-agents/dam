@@ -18,6 +18,8 @@ function fakeStore(): SessionMetadataStore {
     startRun: () => null,
     finishRun: () => {},
     runStartsOf: () => [],
+    markUnstored: () => {},
+    markStored: () => {},
     all: () => ({}),
     adopt: () => {},
     tombstone: () => {},
@@ -64,6 +66,7 @@ describe("createSessionsService", () => {
     const { caller, listCalls } = pagedHarness();
     const changes = createSessionChanges(0);
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => caller,
       sessionMetadata: fakeStore(),
       isRunning: () => false,
@@ -84,6 +87,38 @@ describe("createSessionsService", () => {
     vi.advanceTimersByTime(0);
     await service.list();
     expect(listCalls).toHaveLength(4);
+  });
+
+  // TEST_SCENARIO: the sessions list shows a badge per repository a session touched, with its pull request; the list carries what the changes module recorded for each session, and nothing for a session that edited no repository.
+  it("carries the repositories each session touched", async () => {
+    const { caller } = pagedHarness();
+    const touched = {
+      name: "acme/app",
+      path: "/home/agent/work/app",
+      branch: "feat/x",
+      pullRequest: { number: 7, url: "https://github.com/acme/app/pull/7" },
+    };
+    const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: fakeStore(),
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      sessionRepositories: (sessionId) =>
+        sessionId === "newer" ? [touched] : [],
+      log: () => {},
+    });
+
+    const { sessions } = await service.list();
+
+    expect(sessions.find((s) => s.sessionId === "newer")?.repositories).toEqual(
+      [touched],
+    );
+    expect(sessions.find((s) => s.sessionId === "older")).not.toHaveProperty(
+      "repositories",
+    );
   });
 
   // TEST_SCENARIO: the first list after a boot starts the harness cold; the platform's own session records answer within the grace, and the harness-only sessions follow through a change notice that keeps the listing it just read.
@@ -112,6 +147,7 @@ describe("createSessionsService", () => {
       },
     });
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => caller,
       sessionMetadata: store,
       isRunning: () => false,
@@ -144,12 +180,63 @@ describe("createSessionsService", () => {
     expect(second.incomplete).toBeUndefined();
     expect(listCalls).toBe(1);
   });
+  // TEST_SCENARIO: the harness listing reaches the service through the runtime's own session/list, which already shows a renamed session under its custom title. The automatic title the runtime passes beside it stays the automatic one, so the rename dialog's placeholder is not the custom title again.
+  it("keeps the automatic title of a renamed session through the runtime's listing", async () => {
+    const caller: InProcessCaller = {
+      request: async <T>(method: string): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        return {
+          sessions: [
+            {
+              sessionId: "renamed",
+              title: "Daily brief",
+              updatedAt: null,
+              _meta: {
+                platform: {
+                  customTitle: "Daily brief",
+                  autoTitle: "Summarize the open pull requests",
+                },
+              },
+            },
+          ],
+        } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const store = fakeStore();
+    store.all = () => ({
+      renamed: {
+        meta: { mode: "chat", customTitle: "Daily brief" },
+        createdAt: "2026-08-27T10:00:00.000Z",
+      },
+    });
+    const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: store,
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+
+    const { sessions } = await service.list();
+    expect(sessions[0]).toMatchObject({
+      title: "Daily brief",
+      customTitle: "Daily brief",
+      autoTitle: "Summarize the open pull requests",
+    });
+  });
+
   // TEST_SCENARIO: the agent renames its own session through the platform tool, which knows the session only by its reference; clearing the title hands the row back to the harness's title.
   it("sets a title on the session a reference names, and clears it with null", async () => {
     const entries: Record<string, SessionMetaEntry> = {
       s1: { meta: { mode: "chat", ref: "ref-1" }, createdAt: "2026-10-08" },
     };
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => pagedHarness().caller,
       sessionMetadata: {
         ...fakeStore(),
@@ -178,12 +265,24 @@ describe("createSessionsService", () => {
     await service.setTitle({ sessionId: "s1", title: null });
     expect(entries.s1?.meta).toEqual({ mode: "chat", ref: "ref-1" });
     expect(await service.setTitle({ ref: "gone", title: "x" })).toBe(false);
+
+    // TEST_SCENARIO: the api-server reads a session's settings by its ref when the session spawns a platform sub-agent; a session with none answers empty settings, an untracked ref null.
+    expect((await service.settings({ ref: "ref-1" }))?.settings).toEqual({});
+    entries.s1 = {
+      ...entries.s1!,
+      meta: { ...entries.s1!.meta, settings: { subagentModel: "ibm/gpt-5.5" } },
+    };
+    expect((await service.settings({ ref: "ref-1" }))?.settings).toEqual({
+      subagentModel: "ibm/gpt-5.5",
+    });
+    expect(await service.settings({ ref: "gone" })).toBeNull();
   });
 
   // TEST_SCENARIO: a session only the harness lists, such as one started from a shell in the pod, has no platform record yet; renaming it from the UI must work, so it gets a terminal record carrying the title, while an id the harness does not list stays refused.
   it("renames a session only the harness lists, and refuses an unknown one", async () => {
     const entries: Record<string, SessionMetaEntry> = {};
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => pagedHarness().caller,
       sessionMetadata: {
         ...fakeStore(),
@@ -210,5 +309,66 @@ describe("createSessionsService", () => {
       false,
     );
     expect(entries.unknown).toBeUndefined();
+  });
+});
+
+describe("adoptHarnessTitle", () => {
+  function titled(meta: SessionMetaEntry["meta"]) {
+    const entries = new Map<string, SessionMetaEntry>([
+      ["term", { meta, createdAt: "2026-10-20T00:00:00.000Z" }],
+    ]);
+    const asked: unknown[] = [];
+    const caller: InProcessCaller = {
+      request: async <T>(method: string, params: unknown): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        asked.push(params);
+        return {
+          sessions: [{ sessionId: "term", title: "fix the login\nmore" }],
+        } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: {
+        ...fakeStore(),
+        get: (id) => entries.get(id),
+        set: (id, m) => {
+          entries.set(id, { ...entries.get(id)!, meta: m });
+        },
+      },
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+    return { service, asked, meta: () => entries.get("term")?.meta };
+  }
+
+  // TEST_SCENARIO: A terminal Session sends no prompt, so its title is the one its own harness lists; the list is asked of that harness, and the first line is kept as the Session's title.
+  it("keeps the harness's title for a terminal session", async () => {
+    const t = titled({ mode: "terminal", harness: "copilot" });
+    await t.service.adoptHarnessTitle("term");
+    expect(t.asked).toEqual([
+      { cwd: ".", _meta: { platform: { harness: "copilot" } } },
+    ]);
+    expect(t.meta()?.title).toBe("fix the login");
+  });
+
+  // TEST_SCENARIO: A title a person set wins over the harness's, and a chat Session already takes its title from its first prompt, so neither asks the harness.
+  it("leaves a set title and a chat session alone", async () => {
+    for (const meta of [
+      { mode: "terminal", customTitle: "mine" },
+      { mode: "chat" },
+    ]) {
+      const t = titled(meta);
+      await t.service.adoptHarnessTitle("term");
+      expect(t.asked).toEqual([]);
+      expect(t.meta()?.title).toBeUndefined();
+    }
   });
 });

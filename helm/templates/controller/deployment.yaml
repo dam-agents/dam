@@ -56,7 +56,7 @@ spec:
             #   - AGENT_TEMPLATE_DEFAULTS: chart-wide fallbacks for fields a
             #     template can override (template wins when set).
             - name: AGENT_BASE
-              value: {{ merge (dict "toolsHostPath" (.Values.harnessTools.hostPath | default "")) .Values.controller.agent.base | toJson | quote }}
+              value: {{ .Values.controller.agent.base | toJson | quote }}
             # `$HOME` literals in mount paths are substituted at
             # chart render time with the fixed agent home, so the
             # controller and api-server only ever see absolute paths.
@@ -81,18 +81,17 @@ spec:
                   "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
-                  "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
-                  "imageArchiveHostPath" $r.imageArchiveHostPath
-                  "releaseHostPath" ($r.releaseHostPath | default "") "releaseSameRuntimeOnly" ($r.releaseSameRuntimeOnly | default false)
-                  "dnsPolicy" ($r.dnsPolicy | default "Default")
-                  "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)
-                  "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
-                  "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
+                  "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false)
+                  "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
+                  "seccomp" (include "platform.vmRunner.seccomp" .)
+                  "imageCacheHostPath" (include "platform.vmImageCache.dir" .) "imageCacheBudget" ($cache.budget | default "" | toString)
+                  "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
+                  "priorityClassName" (include "platform.vmRunner.priorityClassName" .)
                   "hostAddress" ($r.hostAddress | default "")
-                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "idleWait" ($r.rollout.idleWait | default "1h")) }}
+                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "stalledTimeout" ($r.rollout.stalledTimeout | default "30m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int) "cloneSource" (dig "cloneSource" true (.Values.virtualization.runtimeMigration | default dict))) | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int) "cloneSource" (dig "cloneSource" true (.Values.virtualization.runtimeMigration | default dict))) "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}

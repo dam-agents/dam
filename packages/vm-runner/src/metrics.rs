@@ -3,6 +3,7 @@ use std::fmt::Write;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use crate::api::{REASON_OOM_KILLED, REASON_SECCOMP_KILLED};
 use crate::plan::Action;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines, its image cache and its cgroup's memory and CPU, for the platform's collector to scrape, under the series names the platform's dashboards and alerts select. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
@@ -66,6 +67,7 @@ struct Families {
     ready: Histogram,
     fetches: Histogram,
     restarts: u64,
+    kills: BTreeMap<&'static str, u64>,
     failures: BTreeMap<(&'static str, &'static str), u64>,
     refusals: u64,
     lookups: BTreeMap<&'static str, u64>,
@@ -84,6 +86,8 @@ impl Default for Metrics {
             ready: Histogram::new(BOOT_BUCKETS),
             fetches: Histogram::new(FETCH_BUCKETS),
             restarts: 0,
+            // UNIT_BOUNDARY_DESCRIPTION: both reasons are there from the first scrape, at zero, so a dashboard's `increase()` counts the first kill of a runner's life instead of starting from it.
+            kills: BTreeMap::from([(REASON_OOM_KILLED, 0), (REASON_SECCOMP_KILLED, 0)]),
             failures: BTreeMap::new(),
             refusals: 0,
             lookups: BTreeMap::new(),
@@ -105,6 +109,7 @@ pub struct Gauges {
     pub cpu_limit_milli: Option<u64>,
     pub working_set_mib: Option<i32>,
     pub pressured: Option<bool>,
+    pub oom_group: Option<bool>,
 }
 
 impl Metrics {
@@ -132,6 +137,11 @@ impl Metrics {
 
     pub fn unhealthy_restart(&self) {
         self.families().restarts += 1;
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a VMM the kernel or the machine's seccomp filter killed, by the reason its machine is told. It is no failed operation — the runner refused nothing and nothing was asked of it — so it has a counter of its own, which is what makes a guest the filter keeps killing visible.
+    pub fn killed(&self, reason: &'static str) {
+        *self.families().kills.entry(reason).or_default() += 1;
     }
 
     pub fn failed(&self, op: Action, reason: &'static str) {
@@ -199,6 +209,20 @@ impl Metrics {
             "Machines restarted because a guest that had answered stopped answering.",
             f.restarts,
         );
+        header(
+            &mut out,
+            "machine_kills_total",
+            "Machines whose VMM a signal killed, by the reason the Agent is told.",
+            "counter",
+        );
+        for (reason, n) in &f.kills {
+            sample(
+                &mut out,
+                "machine_kills_total",
+                &[("reason", reason)],
+                *n as f64,
+            );
+        }
         header(
             &mut out,
             "machine_operation_failures_total",
@@ -291,13 +315,13 @@ impl Metrics {
         gauge(
             &mut out,
             "storage_usable_bytes",
-            "Bytes the runner may use on the owner's claim, in use or free; past 90% of it no machine is created, started or grown.",
+            "Bytes the runner may use on the owner's claim, in use or free; past 90% of it no machine is created or grown, and past 97% none is started.",
             gauges.storage.map_or(f64::NAN, |s| s.usable as f64),
         );
         gauge(
             &mut out,
             "memory_working_set_mib",
-            "Memory the runner's cgroup charges less the file cache the kernel can drop: the figure the kernel kills the runner, and every machine with it, by.",
+            "Memory the runner's cgroup charges less the file cache the kernel can drop: the figure the kernel kills a machine of it, a VMM, by.",
             gauges.working_set_mib.map_or(f64::NAN, f64::from),
         );
         gauge(
@@ -305,6 +329,12 @@ impl Metrics {
             "memory_pressure",
             "1 while the working set is past the pressure threshold and the controller is asked to free memory, else 0.",
             gauges.pressured.map_or(f64::NAN, |p| f64::from(u8::from(p))),
+        );
+        gauge(
+            &mut out,
+            "memory_oom_group",
+            "1 while the runner's cgroup kills the whole pod for one machine's memory: memory.oom.group, which the node's kubelet writes and sets unless its singleProcessOOMKill is on. NaN before the runner's first sample, and where there is no cgroup to read.",
+            gauges.oom_group.map_or(f64::NAN, |g| f64::from(u8::from(g))),
         );
         gauge(
             &mut out,
@@ -393,6 +423,29 @@ fn histogram(out: &mut String, name: &str, help: &str, keys: &[&str], h: &Histog
 mod tests {
     use super::*;
 
+    // TEST_SCENARIO: a counter family that first appears at its first event starts at 1, and `increase()` over a window that holds that event misses it, so a runner that has killed no machine still reports both reasons at zero. A dashboard's OOM panel then counts the first kill of a runner's life.
+    #[test]
+    fn both_kill_reasons_are_reported_before_the_first_kill() {
+        let text = Metrics::default().render(&Gauges {
+            budget_bytes: 0,
+            limit_mib: 0,
+            reserve_mib: 0,
+            committed_mib: None,
+            storage: None,
+            cpu: None,
+            cpu_limit_milli: None,
+            working_set_mib: None,
+            pressured: None,
+            oom_group: None,
+        });
+        for line in [
+            "platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 0",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 0",
+        ] {
+            assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
+        }
+    }
+
     // TEST_SCENARIO: the platform's dashboards and alerts select these series by name, type and label names, and a renamed or dropped series moves a panel without failing anything else. The whole set is spelled out here, in the order a scrape exposes it, and a scrape exposes nothing beyond it; the label names of every labelled family are pinned through a sample of each, and a gauge the runner could not count reads as NaN.
     #[test]
     fn a_scrape_exposes_exactly_the_series_the_dashboards_select() {
@@ -401,6 +454,7 @@ mod tests {
         metrics.start(Action::Create, Duration::from_secs(1), true);
         metrics.became_ready(Action::Create, Duration::from_secs(1));
         metrics.failed(Action::Create, "MachineBootFailed");
+        metrics.killed("MachineSeccompKilled");
         metrics.lookup(true);
         metrics.fetched(Duration::from_secs(1), false);
         let text = metrics.render(&Gauges {
@@ -413,6 +467,7 @@ mod tests {
             cpu_limit_milli: None,
             working_set_mib: None,
             pressured: None,
+            oom_group: None,
         });
 
         let types: Vec<&str> = text
@@ -426,6 +481,7 @@ mod tests {
                 "platform_vm_runner_machine_start_duration_seconds histogram",
                 "platform_vm_runner_machine_ready_seconds histogram",
                 "platform_vm_runner_machine_unhealthy_restarts_total counter",
+                "platform_vm_runner_machine_kills_total counter",
                 "platform_vm_runner_machine_operation_failures_total counter",
                 "platform_vm_runner_machine_admission_refusals_total counter",
                 "platform_vm_runner_image_cache_lookups_total counter",
@@ -441,6 +497,7 @@ mod tests {
                 "platform_vm_runner_storage_usable_bytes gauge",
                 "platform_vm_runner_memory_working_set_mib gauge",
                 "platform_vm_runner_memory_pressure gauge",
+                "platform_vm_runner_memory_oom_group gauge",
                 "platform_vm_runner_cpu_limit_millicores gauge",
                 "platform_vm_runner_cpu_usage_seconds_total counter",
                 "platform_vm_runner_cpu_periods_total counter",
@@ -452,11 +509,14 @@ mod tests {
             "platform_vm_runner_machine_start_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"600\"} 1",
             "platform_vm_runner_machine_ready_seconds_bucket{op=\"create\",le=\"+Inf\"} 1",
             "platform_vm_runner_machine_operation_failures_total{op=\"create\",reason=\"MachineBootFailed\"} 1",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 0",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 1",
             "platform_vm_runner_image_cache_lookups_total{result=\"hit\"} 1",
             "platform_vm_runner_image_fetch_duration_seconds_bucket{outcome=\"failed\",le=\"1200\"} 1",
             "platform_vm_runner_memory_committed_mib NaN",
             "platform_vm_runner_storage_used_bytes NaN",
             "platform_vm_runner_memory_pressure NaN",
+            "platform_vm_runner_memory_oom_group NaN",
             "platform_vm_runner_cpu_limit_millicores NaN",
             "platform_vm_runner_cpu_throttled_periods_total NaN",
         ] {
@@ -471,6 +531,7 @@ mod tests {
         metrics.operation(Action::Create, Duration::from_millis(1500), true);
         metrics.operation(Action::Create, Duration::from_secs(700), true);
         metrics.failed(Action::Start, "MachineBootFailed");
+        metrics.killed("MachineOOMKilled");
         metrics.lookup(false);
         let text = metrics.render(&Gauges {
             budget_bytes: 10,
@@ -489,6 +550,7 @@ mod tests {
             cpu_limit_milli: Some(9000),
             working_set_mib: Some(3000),
             pressured: Some(true),
+            oom_group: Some(false),
         });
         for line in [
             "platform_vm_runner_machine_operation_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"1\"} 0",
@@ -498,12 +560,15 @@ mod tests {
             "platform_vm_runner_machine_operation_duration_seconds_sum{op=\"create\",outcome=\"ok\"} 701.5",
             "platform_vm_runner_machine_operation_duration_seconds_count{op=\"create\",outcome=\"ok\"} 2",
             "platform_vm_runner_machine_operation_failures_total{op=\"wake\",reason=\"MachineBootFailed\"} 1",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 1",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 0",
             "platform_vm_runner_image_cache_lookups_total{result=\"miss\"} 1",
             "platform_vm_runner_memory_committed_mib 2048",
             "platform_vm_runner_storage_used_bytes 75",
             "platform_vm_runner_storage_usable_bytes 100",
             "platform_vm_runner_memory_working_set_mib 3000",
             "platform_vm_runner_memory_pressure 1",
+            "platform_vm_runner_memory_oom_group 0",
             "platform_vm_runner_cpu_limit_millicores 9000",
             "platform_vm_runner_cpu_usage_seconds_total 2.5",
             "platform_vm_runner_cpu_periods_total 40",

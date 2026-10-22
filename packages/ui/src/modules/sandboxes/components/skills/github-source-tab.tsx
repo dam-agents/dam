@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { FormField } from "@/components/form-field";
 import { DialogActions, DialogBody } from "@/components/modal";
 import { Input } from "@/components/ui/input";
@@ -7,9 +9,11 @@ import type { GithubSourceForm } from "../../hooks/use-github-source-form.js";
 export function GithubSourceTab({
   github,
   onClose,
+  footer,
 }: {
   github: GithubSourceForm;
   onClose: () => void;
+  footer?: ReactNode;
 }) {
   const { register, formState, watch } = github.form;
   const { errors, isSubmitting, isValid } = formState;
@@ -50,7 +54,7 @@ export function GithubSourceTab({
         >
           <Input
             variant="monospace"
-            placeholder="github.ibm.com/org/repo-name"
+            placeholder="https://github.com/owner/repo"
             {...register("gitUrl")}
           />
         </FormField>
@@ -69,6 +73,7 @@ export function GithubSourceTab({
             {...register("path")}
           />
         </FormField>
+        {footer}
       </DialogBody>
 
       <DialogActions

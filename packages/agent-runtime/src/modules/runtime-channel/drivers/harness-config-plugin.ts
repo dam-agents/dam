@@ -28,16 +28,6 @@ import type { LeaseEnvReader } from "../../../core/runtime-env.js";
 
 const IMPL_NAME = "harness-config";
 
-export interface SeedListingRetry {
-  attempts: number;
-  delayMs: number;
-}
-
-export const SEED_LISTING_RETRY: SeedListingRetry = {
-  attempts: 5,
-  delayMs: 2_000,
-};
-
 export type ApplyHarnessConfigFn = (
   payload: HarnessConfigEventPayload,
 ) => Promise<void>;
@@ -47,13 +37,12 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly catalog: HarnessConfigBinding["catalog"];
   readonly sessionModel: boolean;
   readonly sessionSettings: string[] | undefined;
+  readonly derivedStartMode: string[] | undefined;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   models(
     provider: string | null,
   ): Promise<HarnessConfigChoice[] | null | undefined>;
   apply: ApplyHarnessConfigFn;
-  seedModel(): Promise<boolean>;
-  leaseModel(provider: string | null): Promise<string | null>;
 }
 
 export function createHarnessConfigPlugin(deps: {
@@ -62,7 +51,7 @@ export function createHarnessConfigPlugin(deps: {
   agentHome: string;
   envReader: LeaseEnvReader;
   discoverModels: ModelDiscovery;
-  seedListingRetry: SeedListingRetry;
+  catalogModels?: () => HarnessConfigChoice[] | null;
   onApplied?: () => void;
   onListingChanged?: () => void;
   log: (msg: string) => void;
@@ -117,7 +106,6 @@ export function createHarnessConfigPlugin(deps: {
     envReader.forLease({ harness: deps.harness, provider });
   const defaultEnv = (): Record<string, string> =>
     envOf(envReader.providers()[0] ?? null);
-  const seedRetry = deps.seedListingRetry;
 
   const apply: ApplyHarnessConfigFn = async (payload) => {
     if (!binding) {
@@ -205,14 +193,28 @@ export function createHarnessConfigPlugin(deps: {
       : { ...values, availableModels };
   };
 
+  const catalogOutcome = (): ModelDiscoveryOutcome | null => {
+    const models = deps.catalogModels?.() ?? null;
+    if (models === null) return null;
+    return models.length === 0
+      ? { status: "unavailable" }
+      : {
+          status: "observed",
+          models,
+          entries: models.map((m) => ({ id: m.value, name: m.value })),
+          via: "model-router",
+        };
+  };
+
   const listModels = async (
     env: Record<string, string>,
   ): Promise<HarnessConfigChoice[] | null | undefined> => {
     const outcome: ModelDiscoveryOutcome = !binding
       ? { status: "not-configured" }
-      : binding.modelDiscovery && !envReader.ready()
-        ? { status: "unavailable" }
-        : await keptOrDiscovered(env);
+      : (catalogOutcome() ??
+        (binding.modelDiscovery && !envReader.ready()
+          ? { status: "unavailable" }
+          : await keptOrDiscovered(env)));
     switch (outcome.status) {
       case "observed": {
         const extendsCatalog = selectDiscoverySource(
@@ -242,95 +244,6 @@ export function createHarnessConfigPlugin(deps: {
     }
   };
 
-  const listUntilAnswered = async (
-    env: Record<string, string>,
-  ): Promise<ModelDiscoveryOutcome> => {
-    for (let attempt = 1; ; attempt++) {
-      const outcome = await discoverModels(binding?.modelDiscovery, env);
-      if (outcome.status !== "unavailable" || attempt >= seedRetry.attempts)
-        return outcome;
-      log(
-        `[harness-config] model listing unavailable — asking again in ${seedRetry.delayMs}ms (${attempt}/${seedRetry.attempts})`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, seedRetry.delayMs));
-    }
-  };
-
-  let checkedProvider: string | undefined;
-  const seedModel = async (): Promise<boolean> => {
-    if (!binding?.modelDiscovery || !binding.keys.model) return false;
-    const env = defaultEnv();
-    const source = selectDiscoverySource(binding.modelDiscovery, env);
-    if (!source) return false;
-    if (!source.spec.redirectEnv?.includes(source.via)) {
-      log(
-        `[harness-config] no model seeded: ${source.via} supplies the harness's own endpoint`,
-      );
-      return false;
-    }
-    const pinned = source.spec.pinEnv?.find((name) => !!env[name]?.trim());
-    const standingModel = (): string | undefined =>
-      readCurrentValues(binding, agentHome, log).model ??
-      (pinned ? env[pinned]?.trim() : undefined);
-    const provider = `${source.via}=${env[source.via] ?? ""}`;
-
-    const reseed = async (): Promise<boolean> => {
-      const outcome = await listUntilAnswered(env);
-      if (outcome.status !== "observed" || outcome.via !== source.via)
-        return false;
-      checkedProvider = provider;
-      const current = readCurrentValues(binding, agentHome, log).model;
-      const standing = standingModel();
-      const listed = (model: string | undefined): boolean =>
-        outcome.models.some((m) => m.value === model);
-      if (standing && listed(standing)) {
-        if (!current)
-          log(`[harness-config] no model seeded: ${pinned} pins one already`);
-        return false;
-      }
-      if (current && pinned && listed(env[pinned]?.trim())) {
-        log(
-          `[harness-config] ${current} is not served via ${outcome.via}; leaving the model to ${pinned}`,
-        );
-        await apply({ unset: ["model"] });
-        return true;
-      }
-      const model = outcome.models[0]?.value;
-      if (!model) return false;
-      log(
-        standing
-          ? `[harness-config] ${standing} is not served via ${outcome.via}; seeding model ${model}`
-          : `[harness-config] seeding model ${model} (via ${outcome.via})`,
-      );
-      await apply({ model });
-      return true;
-    };
-
-    if (standingModel() && (checkedProvider ??= provider) === provider) {
-      void reseed().catch((err: unknown) => {
-        log(`[harness-config] model check failed: ${(err as Error).message}`);
-      });
-      return false;
-    }
-    return reseed();
-  };
-
-  const leaseModel = async (
-    provider: string | null,
-  ): Promise<string | null> => {
-    if (!binding?.modelDiscovery) return null;
-    const env = envOf(provider);
-    const source = selectDiscoverySource(binding.modelDiscovery, env);
-    const pinned = source?.spec.pinEnv
-      ?.map((name) => env[name]?.trim())
-      .find((value) => !!value);
-    if (pinned) return pinned;
-    const outcome = await listUntilAnswered(env);
-    if (outcome.status !== "observed") return null;
-    if (!source?.spec.redirectEnv?.includes(outcome.via)) return null;
-    return outcome.models[0]?.value ?? null;
-  };
-
   return {
     name: IMPL_NAME,
     supported: binding !== undefined,
@@ -339,18 +252,40 @@ export function createHarnessConfigPlugin(deps: {
     sessionSettings: binding?.sessionSettings
       ? Object.keys(binding.sessionSettings)
       : undefined,
+    derivedStartMode: derivedStartModeOf(binding),
     readCurrent,
     models: (provider) => listModels(envOf(provider)),
     apply,
-    seedModel,
-    leaseModel,
     bindEvent(_kind: string, _binding: DriverBinding): EventHandler {
       return async (payload) => apply(payload as HarnessConfigEventPayload);
     },
   };
 }
 
-function readCurrentValues(
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the session settings whose start mode the runtime
+ * derives, which the picker needs to show the same mode the session starts in.
+ * A harness that does not opt in derives none, so the picker derives none.
+ */
+function derivedStartModeOf(
+  binding: HarnessConfigBinding | undefined,
+): string[] | undefined {
+  const derived = Object.entries(binding?.sessionSettings ?? {}).flatMap(
+    ([id, setting]) =>
+      "mode" in setting && setting.deriveStartMode === true ? [id] : [],
+  );
+  return derived.length === 0 ? undefined : derived;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the values the harness's own config file names,
+ * read where a session's settings are synced. A session that picked no mode
+ * starts on the mode the file names, because the harness reads it at start,
+ * and one that picked no model runs on the model it names, so only a file that
+ * names neither leaves the mode to the catalog and the model. A file that
+ * cannot be read names nothing, which leaves both to the runtime.
+ */
+export function readCurrentValues(
   binding: HarnessConfigBinding,
   agentHome: string,
   log: (msg: string) => void,

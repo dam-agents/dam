@@ -17,6 +17,7 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 export const INVOCATIONS_ACTIVE_KEY = "agent-platform.ai/invocations-active";
 
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
+export const DISABLED_KEY = "agent-platform.ai/disabled";
 export const RECLAIMED_AT_KEY = "agent-platform.ai/reclaimed-at";
 export const RUNTIME_MIGRATION_KEY = "agent-platform.ai/runtime-migration";
 export const RUNTIME_MIGRATION_MESSAGE_KEY =
@@ -54,3 +55,4 @@ export const ANN_IMAGE_UPDATE_REFUSED =
 
 export const READY_REASON_HIBERNATED = "Hibernated";
 export const READY_REASON_OVER_BUDGET = "OverBudget";
+export const AGENT_POD_REASON_MACHINE_STOPPING = "MachineStopping";

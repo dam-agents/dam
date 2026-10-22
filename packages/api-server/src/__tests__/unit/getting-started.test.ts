@@ -88,6 +88,9 @@ function memoryRepo(): GettingStartedRepository & {
       const c = checklists.get(owner)!;
       checklists.set(owner, { ...c, dismissedAt: dismissed ? tick() : null });
     },
+    async reset(owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
+    },
   };
 }
 
@@ -323,6 +326,34 @@ describe("unlock avatars saga", () => {
     );
   });
 
+  /** TEST_SCENARIO: the deployment connects its CurveBender for every user, so it finishes nothing on the checklist, while the user's own Connection still does. */
+  it("ignores the deployment's own CurveBender connection", async () => {
+    const ctx = start();
+    await ctx.service("u1").progress();
+
+    emit({
+      type: EventType.ConnectionCreated,
+      actorSub: "u1",
+      connectionKey: "cb",
+      templateId: "curve-bender-deployment",
+      kind: "oauth_app",
+    });
+    await settle();
+    expect((await ctx.service("u1").progress()).unlocks).toHaveLength(0);
+
+    emit({
+      type: EventType.ConnectionCreated,
+      actorSub: "u1",
+      connectionKey: "cb-mine",
+      templateId: "curve-bender",
+      kind: "oauth_app",
+    });
+    await settle();
+    expect(
+      (await ctx.service("u1").progress()).unlocks.map((u) => u.task),
+    ).toEqual(["create-connection"]);
+  });
+
   /** TEST_SCENARIO: removing a skill or a Slack bind with no known owner does not finish a task. */
   it("ignores an uninstall and a Slack bind without an owner", async () => {
     const { service } = start();
@@ -392,5 +423,27 @@ describe("unlock avatars saga", () => {
       before.unlocks[1]!.character,
     );
     expect(after.unlocks.every((u) => !u.fresh)).toBe(true);
+  });
+
+  /** TEST_SCENARIO: resetting locks every character and reopens the checklist, and a task done again unlocks again even on the replica that recorded it before. */
+  it("locks everything on reset and unlocks a repeated task again", async () => {
+    const { service } = start();
+    const schedule = () =>
+      emit({
+        type: EventType.ScheduleCreated,
+        scheduleId: "s1",
+        agentId: "a1",
+        ownerSub: "u1",
+      });
+    schedule();
+    await settle();
+    await service("u1").setDismissed(true);
+    const reset = await service("u1").reset();
+    expect(reset).toEqual({ unlocks: [], dismissed: false });
+    schedule();
+    await settle();
+    expect((await service("u1").progress()).unlocks).toEqual([
+      expect.objectContaining({ task: "create-schedule" }),
+    ]);
   });
 });

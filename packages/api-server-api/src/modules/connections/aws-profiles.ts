@@ -1,4 +1,9 @@
 import type { Contribution } from "agent-runtime-api";
+import {
+  defaultAccountGroups,
+  type DefaultAccountKind,
+  type DefaultAccountSource,
+} from "./default-accounts.js";
 import { connectionEgressPlaceholder } from "./egress-addressing.js";
 
 export const AWS_CREDENTIALS_FILE_PATH = "$HOME/.aws/credentials";
@@ -6,19 +11,11 @@ export const AWS_CONFIG_FILE_PATH = "$HOME/.aws/config";
 export const AWS_PROFILE_ENV = "AWS_PROFILE";
 export const AWS_PLACEHOLDER_SECRET_KEY = "signed-by-gateway";
 
-const RESERVED_PROFILE_NAMES = new Set(["default"]);
-const FALLBACK_PROFILE_NAME = "storage";
-const ID_SUFFIX_LENGTH = 8;
+const AWS_PROFILE_KIND = "aws-profile";
 
 type EgressSign = Extract<Contribution, { kind: "egress-sign" }>;
 
-export interface AwsProfileSource {
-  id: string;
-  name: string;
-  preferred: boolean;
-  grantedAt?: string;
-  contributions: Contribution[];
-}
+export type AwsProfileSource = DefaultAccountSource;
 
 export interface AwsProfile {
   connectionId: string;
@@ -43,50 +40,37 @@ export function awsProfileSlug(text: string): string {
     .join("-");
 }
 
-function profileNames(members: readonly AwsProfileSource[]): string[] {
-  const taken = new Set<string>();
-  return members.map((member) => {
-    const base = awsProfileSlug(member.name) || FALLBACK_PROFILE_NAME;
-    const name =
-      taken.has(base) || RESERVED_PROFILE_NAMES.has(base)
-        ? `${base}-${awsProfileSlug(member.id).slice(0, ID_SUFFIX_LENGTH)}`
-        : base;
-    taken.add(name);
-    return name;
-  });
-}
-
-function byGrantTime(a: AwsProfileSource, b: AwsProfileSource): number {
-  if (a.grantedAt !== b.grantedAt) {
-    if (a.grantedAt === undefined) return 1;
-    if (b.grantedAt === undefined) return -1;
-    return a.grantedAt < b.grantedAt ? -1 : 1;
-  }
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-}
+export const awsProfileKind: DefaultAccountKind<typeof AWS_PROFILE_KIND> = {
+  id: AWS_PROFILE_KIND,
+  scopeOf: (contributions) =>
+    signingTargetOf(contributions) === undefined ? undefined : "",
+  naming: {
+    slug: awsProfileSlug,
+    fallback: "storage",
+    reserved: new Set(["default"]),
+    idSuffixLength: 8,
+  },
+  minAccounts: 1,
+};
 
 export function awsProfiles(
   granted: readonly AwsProfileSource[],
 ): AwsProfile[] {
-  const members = granted
-    .flatMap((source) => {
-      const target = signingTargetOf(source.contributions);
-      return target ? [{ source, target }] : [];
-    })
-    .sort((a, b) => byGrantTime(a.source, b.source));
-  const activeIndex = Math.max(
-    0,
-    members.findIndex((member) => member.source.preferred),
-  );
-  const names = profileNames(members.map((member) => member.source));
-  return members.map(({ source, target }, index) => ({
-    connectionId: source.id,
-    connectionName: source.name,
-    profile: names[index] ?? source.id,
-    active: index === activeIndex,
-    endpointUrl: `https://${target.host}${target.port ? `:${target.port}` : ""}`,
-    region: target.region,
-  }));
+  const [group] = defaultAccountGroups(awsProfileKind, granted);
+  return (group?.accounts ?? []).flatMap((account) => {
+    const target = signingTargetOf(account.contributions);
+    if (!target) return [];
+    return [
+      {
+        connectionId: account.connectionId,
+        connectionName: account.connectionName,
+        profile: account.name,
+        active: account.active,
+        endpointUrl: `https://${target.host}${target.port ? `:${target.port}` : ""}`,
+        region: target.region,
+      },
+    ];
+  });
 }
 
 function credentialsFile(profile: AwsProfile): Contribution {

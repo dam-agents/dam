@@ -1,4 +1,7 @@
-import { poolLevel } from "../../budgets/domain/vm-usage.js";
+import {
+  poolLevel,
+  STORAGE_NEARLY_FULL_PERCENT,
+} from "../../budgets/domain/vm-usage.js";
 
 export type AlertKind = "storage" | "runner_oom";
 
@@ -13,7 +16,6 @@ export interface AlertStep {
   send: boolean;
 }
 
-export const STORAGE_WRITES_FAILING_PERCENT = 98;
 export const STORAGE_REARM_PERCENT = 80;
 export const STORAGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const OOM_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -32,7 +34,7 @@ function storageLevel(level: string): StorageLevel {
 }
 
 function readingOf(percent: number): StorageLevel {
-  if (percent >= STORAGE_WRITES_FAILING_PERCENT) return "full";
+  if (percent >= STORAGE_NEARLY_FULL_PERCENT) return "full";
   if (poolLevel(percent) === "critical") return "high";
   return "ok";
 }

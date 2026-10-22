@@ -37,7 +37,7 @@ type CheckClient = grpc.Client & {
 
 describe("ext-authz gRPC Check: requested port and scheme", () => {
   const seen: Array<{ host: string; port: number; tls: boolean }> = [];
-  let server: grpc.Server | undefined;
+  let stop: ((deadlineMs: number) => Promise<void>) | undefined;
   let client: CheckClient | undefined;
 
   beforeAll(async () => {
@@ -48,11 +48,26 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
       gate: {
         gateRequest: async ({ host, port, tls }) => {
           seen.push({ host, port, tls });
-          return "allow";
+          return host === "denied.x"
+            ? {
+                verdict: "refuse",
+                basis: "rule",
+                response: {
+                  status: 403,
+                  headers: { "content-type": "text/plain" },
+                  body: "Blocked by network rule",
+                },
+              }
+            : "allow";
         },
       },
+      spend: {
+        callStarted: async () => {},
+        record: async () => {},
+        settleUnrecordedCalls: async () => {},
+      },
     });
-    server = app.server;
+    stop = app.stop;
     const Client = grpc.makeGenericClientConstructor(
       AuthorizationService,
       "Authorization",
@@ -64,9 +79,9 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
     ) as unknown as CheckClient;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     client?.close();
-    server?.forceShutdown();
+    await stop?.(0);
   });
 
   async function check(attributes: DeepPartial<CheckRequest>["attributes"]) {
@@ -78,7 +93,7 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
         err ? reject(err) : resolve(r),
       ),
     );
-    return { code: res.status?.code, gate: seen[0] };
+    return { code: res.status?.code, gate: seen[0], res };
   }
 
   it("takes the port from the Host of a plain HTTP request", async () => {
@@ -88,7 +103,10 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
           http: { host: "api.x:8080", scheme: "http", method: "GET" },
         },
       }),
-    ).toEqual({ code: 0, gate: { host: "api.x", port: 8080, tls: false } });
+    ).toMatchObject({
+      code: 0,
+      gate: { host: "api.x", port: 8080, tls: false },
+    });
   });
 
   it("defaults plain HTTP to 80 and TLS-terminated HTTP to 443", async () => {
@@ -96,12 +114,18 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
       await check({
         request: { http: { host: "api.x", scheme: "http", method: "GET" } },
       }),
-    ).toEqual({ code: 0, gate: { host: "api.x", port: 80, tls: false } });
+    ).toMatchObject({
+      code: 0,
+      gate: { host: "api.x", port: 80, tls: false },
+    });
     expect(
       await check({
         request: { http: { host: "api.x", scheme: "https", method: "GET" } },
       }),
-    ).toEqual({ code: 0, gate: { host: "api.x", port: 443, tls: true } });
+    ).toMatchObject({
+      code: 0,
+      gate: { host: "api.x", port: 443, tls: true },
+    });
   });
 
   it("treats a CONNECT authority as TLS with its own port", async () => {
@@ -111,12 +135,15 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
           http: { host: "store.svc:8333", scheme: "http", method: "CONNECT" },
         },
       }),
-    ).toEqual({ code: 0, gate: { host: "store.svc", port: 8333, tls: true } });
+    ).toMatchObject({
+      code: 0,
+      gate: { host: "store.svc", port: 8333, tls: true },
+    });
   });
 
   // TEST_SCENARIO: the L4 catch-all sees only SNI and always dials 443, so an SNI-only Check is TLS on 443.
   it("treats an SNI-only Check as TLS on 443", async () => {
-    expect(await check({ tlsSession: { sni: "api.x" } })).toEqual({
+    expect(await check({ tlsSession: { sni: "api.x" } })).toMatchObject({
       code: 0,
       gate: { host: "api.x", port: 443, tls: true },
     });
@@ -129,6 +156,21 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
           http: { host: "api.x:80ab", scheme: "http", method: "GET" },
         },
       }),
-    ).toEqual({ code: 7, gate: undefined });
+    ).toMatchObject({ code: 7, gate: undefined });
+  });
+
+  it("sends a rule's refusal as the denied response, not a bare 403", async () => {
+    const { code, res } = await check({
+      request: {
+        http: { host: "denied.x", scheme: "https", method: "GET" },
+      },
+    });
+
+    expect(code).toBe(7);
+    expect(res.status?.message).toBe("policy denied");
+    expect(res.deniedResponse).toMatchObject({
+      status: { code: 403 },
+      body: "Blocked by network rule",
+    });
   });
 });

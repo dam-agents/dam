@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sessionRepositorySchema } from "../changes/schemas.js";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
 
 export const podSessionModeSchema = z.enum(["chat", "terminal"]);
@@ -10,12 +11,8 @@ export const podSessionTypeSchema = z.enum([
   "schedule_cron",
   "schedule_once",
   "cli_run",
+  "invocation",
 ]);
-
-export const sessionSpendSchema = z.object({
-  unit: z.string().min(1),
-  cost: z.number(),
-});
 
 export const podSessionSchema = z.object({
   sessionId: z.string().min(1),
@@ -24,6 +21,8 @@ export const podSessionSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
   title: z.string().nullable(),
+  customTitle: z.string().nullable().optional(),
+  autoTitle: z.string().nullable().optional(),
   scheduleId: z.string().nullable(),
   initialization: z.boolean().optional(),
   threadTs: z.string().nullable(),
@@ -36,7 +35,8 @@ export const podSessionSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
-  spend: sessionSpendSchema.optional(),
+  follows: z.enum(["chat", "channel", "scheduled"]).nullable().optional(),
+  repositories: z.array(sessionRepositorySchema).optional(),
 });
 
 export const SESSION_CATEGORIES = [
@@ -82,10 +82,11 @@ export const setSessionTitleInputSchema = z.union([
   z.object({ ref: z.string().min(1), title: sessionTitleSchema.nullable() }),
 ]);
 
-export const sessionSpendInputSchema = z.object({
-  from: z.string().datetime({ offset: true }),
-  to: z.string().datetime({ offset: true }),
+export const sessionSettingsInputSchema = z.object({
+  ref: z.string().min(1),
 });
+
+export const sessionByRefInputSchema = z.object({ ref: z.string().min(1) });
 
 const SESSION_HISTORY_TAIL_MAX = 10_000;
 

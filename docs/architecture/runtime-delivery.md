@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-13
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -12,10 +12,10 @@ What a Connection is and which rail each Contribution kind takes is [connections
 The subsystem cuts across two bounded contexts:
 
 - **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents.
-  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), and the event report below is generic to the channel.
+  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), the tool-approval report to [home-feed](home-feed.md#what-home-reads), and the event report below is generic to the channel.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
-The runtime channel is five routes between api-server and agent-runtime — `applyState` inward, `hello`, the artifact-touch report, the session-directory report and the event report outward:
+The runtime channel is six routes between api-server and agent-runtime — `applyState` inward, `hello`, the artifact-touch report, the session-directory report, the tool-approval report and the event report outward:
 
 ```mermaid
 flowchart LR
@@ -33,6 +33,7 @@ flowchart LR
   rt -->|hello| api
   rt -->|reportArtifactTouch| api
   rt -->|session-directory report| api
+  rt -->|tool-approval report| api
   rt -->|event report| api
 ```
 
@@ -54,9 +55,11 @@ State changes write to the outbox, the worker reads and dispatches a fresh paylo
 
 A one-shot directive the agent executes through a per-kind handler inside the agent-runtime.
 Each event carries an `id` of the form `<key>:<epoch-ms>` (stable across redeliveries; an id without the timestamp never runs — see below), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl.
-The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or a spawned sub-agent's install bootstrap), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing or its onboarding command; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** and **sub-agent-outcome** (open or continue a session with the result of a [satellite](satellites.md) job or a sub-agent that outlived its turn), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file).
+The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **session-defaults** (the agent's chat, channel and scheduled defaults, sent whenever one changes and after every `hello`; each replaces the last, and the runtime keeps them on the home volume for the sessions that follow a default, see [sessions](sessions.md#session-inside-the-pod)), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or a spawned sub-agent's install bootstrap), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing or its onboarding command; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** and **sub-agent-outcome** (open or continue a session with the result of a [satellite](satellites.md) job or a sub-agent that outlived its turn), **session-message** (a message one of the agent's sessions sent into another — see [sessions](sessions.md#messages-between-sessions)), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file).
 Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
+A workspace-mutating event runs with the agent's runtime env, the same env its harness and terminal shells get, not the runtime's bare process env.
+Its git and `gh` calls therefore carry the agent's Connection placeholders — on an agent that [requires addresses](connections.md#addressing-a-connection), the only thing that makes the gateway inject a credential — and find git's credential helper already set up, because a delivery's contributions are applied, and the helper set up from them, before its events run.
 While a workspace-mutating event (`workspace-seed`, `workspace-command`) is pending for an agent, the agent surfaces as *preparing workspace* rather than running, so chat waits for the mutation to settle instead of racing it.
 The events queued behind it wait too: a workspace mutation whose handler fails **halts the rest of that agent's events** until it settles — an initialization session never opens on a seed or install that has not happened — and the runtime **reports the failure with its reason** over the event report, so the row carries "refusing to seed a non-empty work directory" rather than a bare attempt count.
 The report is announced as an agent change the moment it lands — through the outcome-handler seam the schedules share, which isolates each kind's reactions so one that fails cannot silence the rest — so a watching UI shows the failure while the platform is still retrying, not only once it has given up.
@@ -69,7 +72,7 @@ A workspace-mutating kind the agent's runtime does not advertise is stamped the 
 Both exits announce the same agent change as a clean settle, so the agent leaves *preparing workspace* instead of sitting there until the event's TTL; the mutation itself did not happen, which the event row's error records.
 
 `harness-config` carries mode/config-defaults choices from the Config panel, and model choices from a spawn: one event per action, written once into the harness's own configuration file and never re-asserted, so the file stays the user's to edit.
-The mapping and option catalog its manifest declares, live model discovery, the seeded model, and the snapshot that renders the panel while the agent is stopped are owned by [harness configuration](harness-config.md).
+The mapping and option catalog its manifest declares, live model discovery, and the snapshot that renders the panel while the agent is stopped are owned by [harness configuration](harness-config.md).
 
 All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum.
 Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events.
@@ -108,7 +111,7 @@ sequenceDiagram
   WK->>PG: record the outcome, stamp the settled events
 ```
 
-The computed state slice merges user-typed env, connection-granted contributions, skill refs, and the platform's **built-in contributions** — the per-agent platform MCP entry always, plus the aggregate shared-knowledge-base MCP entry while the agent holds at least one such grant ([connections](connections.md#built-in-contributions)).
+The computed state slice merges user-typed env, connection-granted contributions, skill refs, and the platform's **built-in contributions** — the per-agent platform MCP entry and the agent's display name (`PLATFORM_AGENT_NAME`) always, plus the aggregate shared-knowledge-base MCP entry while the agent holds at least one such grant ([connections](connections.md#built-in-contributions)).
 
 ### `applyState` — state and events delivery (server → agent)
 
@@ -148,16 +151,17 @@ A failed report is logged and retried on the next change or the next boot.
 
 ### `hello` — agent → api-server catch-up
 
-Called on boot, on wake from hibernation, and on any agent-side reconnect.
+Called when the agent-runtime starts: on boot and on wake from hibernation.
 It never carries state itself — if the reported cursor is behind it enqueues a worker dispatch, and the catch-up arrives as an ordinary `applyState`.
 If the Contribution and Event kinds it advertises differ from the set on record, it first raises the desired version, which puts the row behind and so enqueues by the same rule.
+It raises the version the same way when the cursor is at the version but the hash the agent reports applying differs from the state built for it now, as after a deploy that changes what the api-server builds; an agent that keeps running picks such a change up at its next start.
 
-The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the pod's live-updates watch surface).
+The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the pod's live-updates watch surface, the in-pod Model Router as `modelRouter`).
 A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; before its first hello an agent is unknown, not outdated, and is polled.
 Each claim gates both the UI surfaces that read it and the platform's pod-facing streams.
 Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
-An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, or its image binds its contribution drivers differently from when it applied.
+An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, its image binds its contribution drivers differently from when it applied, or an older runtime wrote the env file without the provider templates this one reads, as when an image update moves an agent past the Model Router release.
 The platform then re-delivers the whole snapshot to every driver.
 The dispatch a `hello` enqueues waits for the Agent to be ready, except for a migrated machine whose migration is verified: it is ready only after its Backend switches, and its runtime waits only seconds for the env before it starts the harness without it ([runtime migration](vm-runtime-migration.md)).
 
@@ -191,7 +195,8 @@ The common contract:
 - It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
 - An event settles when its handler **accepts** it, not when the work it started finishes.
   That distinction is what keeps a slow handler off the channel: `applyState` is serialized per agent, so anything awaited inside a handler stops every other contribution and event for that agent, and the api-server abandons the call after its own timeout.
-  A handler with work that can outlive the call — a schedule's Precheck is the one today — settles immediately and reports its outcome afterwards over the **event report** below.
+  A handler with work that can outlive the call settles immediately and reports its outcome afterwards over the **event report** below.
+  Two do: a schedule's Precheck, and a sub-agent's `trigger`, whose run the runtime watches and reports as failed when it can no longer produce a result ([invocations](invocations.md)).
   The cost is deliberate: work detached this way is lost if the pod dies before it finishes, because the event is already settled.
 
 A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires; the events behind it in that apply keep running, except behind a failed workspace mutation, which holds them (above).
@@ -457,7 +462,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
   The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, and the event report.
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, the tool-approval report — a permission request no client can answer, and how it ended — and the event report.
   The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
 - **Capabilities are honored end-to-end, and never silently.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered.
   A grant that requires unsupported kinds still succeeds and the unsupported parts simply don't appear in the agent's payload — but the Agent carries an owner-visible warning naming what its runtime refused, and keeps it until the runtime advertises those kinds.

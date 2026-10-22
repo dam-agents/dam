@@ -1,12 +1,19 @@
 import {
+  type FeatureId,
+  type FeatureMode,
   brandSchema,
+  featureIdSchema,
   featureModeSchema,
   harnessCatalogConfigSchema,
   linksSchema,
+  PROVIDER_TEMPLATE_IDS,
+  signUpsSchema,
+  spendCeilingUsdTextSchema,
 } from "api-server-api";
+import { X509Certificate } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
-import pkg from "../package.json" with { type: "json" };
 import { getLogger } from "./core/logger.js";
 import { durationToMinutesStrict, goDurationMs } from "./duration.js";
 
@@ -61,19 +68,29 @@ const defaultMountsSchema = z
     ),
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
+// UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode, with every feature it does not name read as the chart's default mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
 const featureModesSchema = z
-  .string()
-  .default("{}")
-  .transform((raw, ctx) => {
-    try {
-      return JSON.parse(raw) as unknown;
-    } catch {
-      ctx.addIssue({ code: "custom", message: "must be a JSON object" });
-      return z.NEVER;
-    }
+  .object({
+    named: z
+      .string()
+      .default("{}")
+      .transform((raw, ctx) => {
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          ctx.addIssue({ code: "custom", message: "must be a JSON object" });
+          return z.NEVER;
+        }
+      })
+      .pipe(z.record(z.string(), featureModeSchema)),
+    fallback: featureModeSchema.default("experimental"),
   })
-  .pipe(z.record(z.string(), featureModeSchema));
+  .transform(
+    ({ named, fallback }) =>
+      Object.fromEntries(
+        featureIdSchema.options.map((id) => [id, named[id] ?? fallback]),
+      ) as Record<FeatureId, FeatureMode>,
+  );
 
 // UNIT_BOUNDARY_DESCRIPTION: the chart's harness catalog. Without one (a dev run outside the chart) the default image's harness is Claude Code with nothing else on offer.
 const harnessesSchema = z
@@ -89,8 +106,106 @@ const harnessesSchema = z
   })
   .pipe(harnessCatalogConfigSchema);
 
+const dollarsSchema = z.number().finite().nonnegative();
+
+const dollarTokenPricesShape = {
+  input: dollarsSchema.optional(),
+  output: dollarsSchema.optional(),
+  cacheRead: dollarsSchema.optional(),
+  cacheWrite5m: dollarsSchema.optional(),
+  cacheWrite1h: dollarsSchema.optional(),
+};
+
+const dollarTierPricesSchema = z.strictObject({
+  ...dollarTokenPricesShape,
+  aboveThreshold: z.strictObject(dollarTokenPricesShape).optional(),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: the chart's operator prices for model calls, in dollars per million tokens and per web search. They win over every other price, and the chart ships IBM LiteLLM's own prices, which no public price list has.
+const spendPriceOverridesSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z
+      .array(
+        z.strictObject({
+          provider: z.string().refine((id) => PROVIDER_TEMPLATE_IDS.has(id), {
+            message: "must be a provider template id",
+          }),
+          model: z.string().min(1),
+          ...dollarTokenPricesShape,
+          input: dollarsSchema,
+          output: dollarsSchema,
+          webSearch: dollarsSchema.optional(),
+          threshold: z
+            .strictObject({
+              promptTokens: z.number().int().positive(),
+              ...dollarTokenPricesShape,
+            })
+            .optional(),
+          flex: dollarTierPricesSchema.optional(),
+          priority: dollarTierPricesSchema.optional(),
+          factors: z.record(z.string(), z.number().positive()).optional(),
+        }),
+      )
+      .superRefine((rows, ctx) => {
+        const seen = new Set<string>();
+        for (const [index, row] of rows.entries()) {
+          const key = `${row.provider} ${row.model}`;
+          if (seen.has(key)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [index, "model"],
+              message: `${row.model} is priced twice for ${row.provider}`,
+            });
+          }
+          seen.add(key);
+        }
+      }),
+  );
+
+// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider, the key the gateway sends it, and optionally the CA the gateway validates it against. The gateway injects the key only into TLS it terminates, so a base URL that is not https, or a CA file that is set but holds no readable certificate, leaves the feature off, logged rather than failing the boot, so values written for an earlier release cannot crash-loop the api-server. An empty base URL or key means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
+const platformProviderSchema = z
+  .object({
+    baseUrl: z.string().default(""),
+    model: z.string().default(""),
+    apiKey: z.string().default(""),
+    caFile: z.string().default(""),
+  })
+  .transform(({ baseUrl, model, apiKey, caFile }) => {
+    if (baseUrl === "" || apiKey === "") return null;
+    if (!z.url({ protocol: /^https$/ }).safeParse(baseUrl).success) {
+      getLogger().error(
+        "platform provider off: PLATFORM_PROVIDER_BASE_URL must be an https URL, the gateway meters only TLS it terminates",
+      );
+      return null;
+    }
+    let ca: string | undefined;
+    try {
+      ca = caFile === "" ? undefined : readFileSync(caFile, "utf8").trim();
+      if (ca !== undefined) new X509Certificate(ca);
+    } catch (err) {
+      getLogger().error(
+        { caFile, err },
+        "platform provider off: PLATFORM_PROVIDER_CA_FILE does not hold a readable PEM certificate",
+      );
+      return null;
+    }
+    return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey, ca };
+  });
+// UNIT_BOUNDARY_DESCRIPTION: the key the deployment offers CurveBender to its users, sent by the gateway on every CurveBender call. An empty key means the deployment offers no shared CurveBender, so no template exists and every user keeps their own key.
+const curveBenderDeploymentSchema = z
+  .object({ apiKey: z.string().default("") })
+  .transform(({ apiKey }) => (apiKey === "" ? null : { apiKey }));
 const configSchema = z.object({
-  serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
@@ -129,11 +244,12 @@ const configSchema = z.object({
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.stringbool().default(false),
+  // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing.
+  vmPoolStorage: z.string().default("100Gi"),
+  vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
-  runtimeMigrationRetentionMs: z
-    .string()
-    .default("168h")
-    .transform(goDurationMs),
+  platformProvider: platformProviderSchema,
+  curveBenderDeployment: curveBenderDeploymentSchema,
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -144,6 +260,7 @@ const configSchema = z.object({
   keycloakClientId: z.string().default("platform-ui"),
   keycloakCliClientId: z.string().default("platform-cli"),
   keycloakShareClientId: z.string().default("platform-share"),
+  keycloakEnvironmentsClientId: z.string().default("platform-environments"),
   keycloakApiAudience: z.string().default("platform-api"),
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
@@ -180,10 +297,22 @@ const configSchema = z.object({
   acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
   onceScheduleAgentMaxOpen: z.coerce.number().int().positive().default(20),
   onceScheduleAgentMaxPerHour: z.coerce.number().int().positive().default(30),
+  environmentsUrl: z
+    .string()
+    .refine((u) => u.includes("{host}"), "must name {host}")
+    .nullable()
+    .default(null),
+  environmentsMaxPerAgent: z.coerce.number().int().positive().default(5),
+  environmentExpiryMaxDays: z.coerce.number().int().positive().default(30),
   minClientCliVersion: z.string().optional(),
+  recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   harnesses: harnessesSchema,
+  spendPriceOverrides: spendPriceOverridesSchema,
+  spendDefaultUserCeilingMicros: spendCeilingUsdTextSchema
+    .nullable()
+    .default(null),
   starterKitsCatalogs: z.string().default(""),
   githubEnterpriseHost: z.string().default(""),
   githubEnterpriseToken: z.string().default(""),
@@ -229,6 +358,7 @@ const configSchema = z.object({
     version: z.string().min(1, "terms.version must be set"),
     text: z.string().min(1, "terms.text must be set"),
   }),
+  signUps: signUpsSchema.default("open"),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -242,7 +372,13 @@ const validatedConfigSchema = configSchema
         "ACP_TURN_STALL_PROBE_SECONDS is below APPROVAL_HOLD_SECONDS and was raised to it, so a turn blocked on an approval is never probed before the hold resolves",
       );
     }
-    return { ...c, acpTurnStallProbeSeconds: stall };
+    return {
+      ...c,
+      acpTurnStallProbeSeconds: stall,
+      featureModes: c.platformProvider
+        ? c.featureModes
+        : { ...c.featureModes, "platform-provider": "off" as const },
+    };
   })
   .refine(
     (c) =>
@@ -269,23 +405,25 @@ const validatedConfigSchema = configSchema
 export function agentsInstallSettings(config: Config) {
   return {
     virtualizationEnabled: config.virtualizationEnabled,
-    vmForced:
-      config.virtualizationEnabled &&
-      config.featureModes["vm-sandboxes"] === "on",
     defaultHarness: config.harnesses.default,
     telemetry: Object.values(config.harnesses.catalog).some(
       (h) => h.telemetryEnv.length > 0,
     ),
     agentDefaultStorageSize: config.agentDefaultStorageSize,
     agentDefaultMounts: config.agentDefaultMounts,
-    runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
   };
 }
 
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\d+)?$/;
+
+function recommendedClientCliVersion(appVersion: string): string | undefined {
+  return RELEASE_VERSION.test(appVersion) ? appVersion : undefined;
+}
+
 export function loadConfig(): Config {
+  const appVersion = process.env.PLATFORM_APP_VERSION ?? "0.0.0";
   return validatedConfigSchema.parse({
-    serverVersion: pkg.version,
-    appVersion: process.env.PLATFORM_APP_VERSION ?? "0.0.0",
+    appVersion,
     namespace: process.env.NAMESPACE,
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     logLevel: process.env.LOG_LEVEL,
@@ -315,8 +453,21 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
-    featureModes: process.env.FEATURE_MODES,
-    runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
+    vmPoolStorage: process.env.VM_POOL_STORAGE,
+    vmPoolMemory: process.env.VM_POOL_MEMORY,
+    featureModes: {
+      named: process.env.FEATURE_MODES,
+      fallback: process.env.FEATURE_DEFAULT_MODE,
+    },
+    platformProvider: {
+      baseUrl: process.env.PLATFORM_PROVIDER_BASE_URL,
+      model: process.env.PLATFORM_PROVIDER_MODEL,
+      apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
+      caFile: process.env.PLATFORM_PROVIDER_CA_FILE,
+    },
+    curveBenderDeployment: {
+      apiKey: process.env.CURVE_BENDER_DEPLOYMENT_API_KEY,
+    },
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,
@@ -327,6 +478,7 @@ export function loadConfig(): Config {
     keycloakClientId: process.env.KEYCLOAK_CLIENT_ID,
     keycloakCliClientId: process.env.KEYCLOAK_CLI_CLIENT_ID,
     keycloakShareClientId: process.env.KEYCLOAK_SHARE_CLIENT_ID,
+    keycloakEnvironmentsClientId: process.env.KEYCLOAK_ENVIRONMENTS_CLIENT_ID,
     keycloakApiAudience: process.env.KEYCLOAK_API_AUDIENCE,
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
@@ -368,10 +520,16 @@ export function loadConfig(): Config {
     acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
     onceScheduleAgentMaxOpen: process.env.ONCE_SCHEDULE_AGENT_MAX_OPEN,
     onceScheduleAgentMaxPerHour: process.env.ONCE_SCHEDULE_AGENT_MAX_PER_HOUR,
+    environmentsUrl: process.env.ENVIRONMENTS_URL || null,
+    environmentsMaxPerAgent: process.env.ENVIRONMENTS_MAX_PER_AGENT,
+    environmentExpiryMaxDays: process.env.ENVIRONMENT_EXPIRY_MAX_DAYS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
+    recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     harnesses: process.env.HARNESSES,
+    spendPriceOverrides: process.env.SPEND_PRICE_OVERRIDES,
+    spendDefaultUserCeilingMicros: process.env.SPEND_DEFAULT_USER_CEILING_USD,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
     githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,
     githubEnterpriseToken: process.env.GITHUB_ENTERPRISE_TOKEN,
@@ -424,5 +582,6 @@ export function loadConfig(): Config {
       version: process.env.TERMS_VERSION,
       text: process.env.TERMS_TEXT,
     },
+    signUps: process.env.SIGN_UPS || undefined,
   });
 }

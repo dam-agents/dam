@@ -30,6 +30,7 @@ export interface SessionMetaLike {
     provider?: string;
     model?: string;
     settings?: Record<string, string>;
+    follows?: "chat" | "channel" | "scheduled" | null;
     title?: string;
     customTitle?: string;
   };
@@ -70,6 +71,8 @@ function fromEntry(
     createdAt: entry.createdAt,
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
     title: entry.meta.customTitle ?? listed?.title ?? entry.meta.title ?? null,
+    customTitle: entry.meta.customTitle ?? null,
+    autoTitle: listed?.title ?? entry.meta.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,
@@ -84,6 +87,7 @@ function fromEntry(
     }),
     ...(entry.meta.model !== undefined && { model: entry.meta.model }),
     ...(entry.meta.settings !== undefined && { settings: entry.meta.settings }),
+    ...(entry.meta.follows !== undefined && { follows: entry.meta.follows }),
   };
 }
 
@@ -98,6 +102,8 @@ function fromHarnessOnly(
     createdAt: listed.updatedAt ?? EPOCH,
     updatedAt: listed.updatedAt ?? null,
     title: listed.title ?? null,
+    customTitle: null,
+    autoTitle: listed.title ?? null,
     scheduleId: null,
     initialization: false,
     threadTs: null,

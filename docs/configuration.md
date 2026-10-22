@@ -23,6 +23,7 @@ Each agent's gateway verifies the upstream before it injects a credential.
 If something on the cluster's egress path intercepts TLS with its own CA (a corporate inspecting proxy, or the platform's own gateway when the platform runs inside one of its agents), every injected connection fails its handshake and the agent reports a 503.
 Name that CA with `controller.gatewayUpstreamExtraCAs`: `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
 Gateways then trust it on top of the public roots, and agents trust it beside their gateway's CA, since the proxy also intercepts the hosts a gateway passes through untouched.
+The api-server trusts it too, for its own outbound calls on the same path: Slack's Socket Mode and Web API, GitHub, and OAuth token exchanges.
 A connection that carries its upstream's own CA still validates against that CA alone.
 `mise run cluster:install` sets the value by itself when it runs inside one of the platform's vm agents.
 
@@ -155,10 +156,17 @@ Without the scope, an agent's post goes out as the app and its text opens with a
 The emoji is a robot face.
 To use the workspace's own emoji instead, upload one per agent avatar and turn on **Use custom emoji for agents** where the agent's Slack channel is connected or edited.
 The fields beside each avatar are prefilled `<brand.short>-agent-1` to `-8` (for example `dam-agent-1`).
+The footer under every agent post opens with the same emoji, then "Sent by" and the agent's name.
 
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing.
 Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and re-run the install flow when Slack asks.
 The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
+The Stop button on an agent's working status needs the `agent_session_stopped` subscription the same way; without it Slack answers a press with "Stop isn't available for this agent".
+
+The Stop button also needs Slack's agent messaging (`agent_view` in the manifest), which replaces the older `assistant_view`.
+Slack refuses a manifest that declares both, so an app created from an earlier manifest is moved in its app settings: the **Agent** tab offers the update.
+The switch is one-way, people in the workspace see it only after a hard refresh of Slack, and a distributed app may need Marketplace review again.
+Until the app is moved, the working status still shows through the older assistant API, without a Stop button.
 
 ### Connecting a workspace
 
@@ -219,14 +227,19 @@ A mention in a channel no instance is bound to gets an ephemeral rejection.
 ## Telegram Integration
 
 Platform runs a single Telegram bot for the entire installation.
-A Telegram chat (DM or group) binds to at most one instance; the binding routes every message in that chat.
+A Telegram chat (DM or group) binds to at most one instance.
+In a direct chat the instance answers every message; in a group it answers messages that mention the bot or reply to it, and with ambient mode on it reads every message and chimes in when it can help.
 
 1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
+   In BotFather, turn the bot's **Group Privacy** off (Bot Settings → Group Privacy).
+   With it on, Telegram shows the bot only commands and replies to its own messages in groups, so mentions and ambient mode do not work there; a bot that is a group's admin sees everything anyway.
+   A bot already in a group must be removed and added again for the change to take effect there.
 2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotName=<handle>`.
 3. Connect a chat: add the bot to a chat (or message it directly) and send `/bind` (or just `/start`).
    In groups, only chat admins can start the flow.
    Complete the browser login and pick the instance.
 4. The bot confirms in the chat.
+5. Optionally, in a group, a chat admin sends `/ambient on` to have the instance read every message; `/ambient off` turns it back to mentions and replies only, and `/ambient` alone shows the current mode.
 
 **Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed.
 Every turn runs under the instance's own credentials, and `/unbind` in the chat disconnects it (the owner can also disconnect it from the web UI).
@@ -245,6 +258,7 @@ With a running systemd (or OpenRC) it runs the Lima provision scripts on the hos
 On a node kernel without IPv6 the mesh dataplane is installed IPv4-only.
 Claude Code on the web needs that wrapper and more: see the [`ccweb`](../.agents/skills/ccweb/SKILL.md) skill.
 A sandbox that can open `/dev/kvm` also runs vm-backend agents: `cluster:install` turns `virtualization.enabled` on there unless the values or `--set=virtualization.enabled=false` choose otherwise.
+A sandbox that cannot open it gets none, and the install warns that they are off.
 Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every vm agent with `controller.agent.templateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
 Changing the ask restarts that agent's machine and no other; changing the template default restarts every vm agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
@@ -253,14 +267,25 @@ The api-server offers no way to ask, so only someone who can edit Agent resource
 
 ### vm-backend agents (VM runner)
 
-Agents created with `backend.type: vm` — chosen beside the image rather than by a template of its own, by an API caller directly or for every agent a flagged-in owner creates in the browser — run as smolvm microVMs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+An install that can virtualize creates every new agent on the `vm` Backend, whichever path makes it ([features](architecture/features.md)).
+In the cluster, each runs as a smolvm microVM inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+A local install on an Apple silicon Mac has no such pod, unless it keeps the runner pods on nested virtualization: one runner outside the cluster serves every owner from the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
 Such an agent persists the agent's home and nothing else: the rest of the machine is a root overlay discarded every time it stops.
-Turn it on with `virtualization.enabled=true`, which then requires two more values or the install refuses to render: `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, and `virtualization.runner.egressCidrs`, the only kernel gate behind a guest's own egress allowlist (say `[0.0.0.0/0]` with the cluster's ranges in `egressExceptCidrs` to leave it unconfined out loud).
+Turn it on with `virtualization.enabled=true`, which then requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, or the install refuses to render.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
 The devices reach the pod only as device-plugin resources, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.
+The runner pod runs in a user namespace, which puts two demands on its nodes.
+The node's `/dev/kvm` must be mode 0666, systemd's own default, because the device keeps its host owner unmapped in the pod; Debian and Ubuntu lower it to 0660, which no runner can open.
+The runner's claim, `virtualization.runner.storageClass`, needs a filesystem that supports idmapped mounts, such as ext4 or xfs on Ceph RBD; on CephFS or NFS the runner never starts.
 Every other knob, and what each one costs, is documented per field under `virtualization` in [`helm/values.yaml`](../helm/values.yaml); the shape it produces is described in [vm-runner](architecture/vm-runner.md).
 A published chart pins the runner image by digest rather than by the release, and a rebuild that changes nothing in the image keeps its digest, so an upgrade that leaves that image unchanged does not roll the runner: a roll stops every machine of that owner at once, and each of those agents loses the turn it was running.
 A chart rendered straight from git keeps the appVersion fallback and rolls the runner on every deploy.
-Locally, `mise run cluster:install -- --set=virtualization.enabled=true` creates the k3s Lima VM with nested virtualization (Apple silicon M3+ on macOS 15+) and stages the agent image archives on the node for the runners to mount, since there is no registry.
-Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it.
+Locally, `mise run cluster:install` turns `virtualization.enabled` on by default where the host can run machines, and the chart's own default stays off.
+On an Apple silicon Mac it runs them on one runner on the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
+In a sandbox (`IS_SANDBOX`) it does so when the sandbox can open `/dev/kvm`.
+On a Linux host outside a sandbox and on an Intel Mac it leaves them off, and says why at the start and the end of the install; under CI they are off unless asked for.
+`--set=virtualization.enabled=false` (or the same key in the values file) turns them off, and `--set=virtualization.enabled=true` asks for them where the default would not.
+The e2e install chooses for itself: off, unless `E2E_VIRTUALIZATION=1`.
+With `PLATFORM_NESTED_VIRT=1` on a Mac, the install creates the k3s Lima VM with nested virtualization (Apple silicon M3+ on macOS 15+) and runs the runner pods in it, staging the agent images on the node for the runners to mount, since there is no registry.
+Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it; until then the default leaves vm agents off with a warning, and an explicit `virtualization.enabled=true` fails the install.

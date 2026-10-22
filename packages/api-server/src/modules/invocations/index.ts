@@ -11,6 +11,8 @@ export {
   composeSubAgentAwaitMarks,
   type SubAgentAwaitMarks,
   createDriverResolutionAdapter,
+  createSpawnSessionsAdapter,
+  createInvocationTasksAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
   composeInvocationPinReconciler,
@@ -19,12 +21,19 @@ export {
 export {
   AttenuationError,
   InvalidSchemaError,
+  ModelNameError,
+  NoSpawnModelError,
+  NO_SPAWN_MODEL_MESSAGE,
   ProviderMismatchError,
+  SpendLimitReachedError,
   UnresolvableDriverError,
   type InvocationsService,
+  type Reachability,
+  type SpendHoldGate,
   type SpawnInput,
 } from "./services/invocations-service.js";
 export { createTargetAdmission } from "./services/target-admission.js";
+export type { DriverProvider } from "./domain/provider-inheritance.js";
 export { isInvocationTargetName } from "./domain/target-name.js";
 export { REPORT_GRACE_MS } from "./services/target-reaper.js";
 export { createPodSessionClient } from "./infrastructure/pod-session-client.js";

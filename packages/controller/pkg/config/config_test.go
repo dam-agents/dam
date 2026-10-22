@@ -216,6 +216,26 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "AGENT_BASE")
 }
 
+func TestLoadFromEnv_GatewayEgressPeers(t *testing.T) {
+	for egress, want := range map[string]string{
+		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [8000]}]}`:  "",
+		`{"peers": [{"podLabels": {"app": "llm"}, "ports": [8000]}]}`:                      "peers[0] needs a namespace",
+		`{"peers": [{"namespace": "gpu"}]}`:                                                "peers[0] needs a namespace and at least one port",
+		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [70000]}]}`: "out of range",
+		`{"peers": [{"namespace": "gpu", "podLabels": {}, "ports": [8000]}]}`:              "peers[0] needs podLabels",
+		`{"peers": {"namespace": "gpu"}}`:                                                  "GATEWAY_EGRESS: invalid JSON",
+	} {
+		setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "platform", "POD_NAME": "controller-0", "GATEWAY_EGRESS": egress})
+		cfg, err := LoadFromEnv()
+		if want != "" {
+			require.ErrorContains(t, err, want, egress)
+			continue
+		}
+		require.NoError(t, err)
+		assert.Equal(t, []GatewayEgressPeer{{Namespace: "gpu", PodLabels: map[string]string{"app": "llm"}, Ports: []int32{8000}}}, cfg.GatewayEgress.Peers)
+	}
+}
+
 const (
 	minAgentBaseJSON             = `{"terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
 	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
@@ -377,33 +397,54 @@ func TestLoadFromEnv_RejectsAVMRunnerWithNoMemoryLimit(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "limits.memory")
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, "8Gi", cfg.VM.Runner.Resources.Limits.Memory().String())
 }
 
-// TEST_SCENARIO: the roll width counts runners, so a negative one is a values typo. The controller refuses to start rather than roll no runner, or every one, without saying so.
-func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
+// TEST_SCENARIO: runner pods take a new runner image only as a hand-off from the node's release directory, so virtualization with runner pods and no such directory is refused at start. A host runner outside the cluster has no pod to hand off in, and needs none.
+func TestLoadFromEnv_RejectsRunnerPodsWithNoReleaseDirectory(t *testing.T) {
 	base := map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 	}
 	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
-	for _, bad := range []string{`"rollout":{"maxConcurrent":-1}`} {
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "releaseHostPath")
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"hostAddress":"192.168.5.2"}}`
+	setEnv(t, base)
+	_, err = LoadFromEnv()
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: the roll width counts runners or names their share, so a negative count or a share past all of them is a values typo. The controller refuses to start rather than roll no runner, or every one, without saying so.
+func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
+	for _, bad := range []string{`"rollout":{"maxConcurrent":-1}`, `"rollout":{"maxConcurrentPercent":101}`, `"rollout":{"maxConcurrentPercent":-5}`, `"rollout":{"stalledTimeout":"-1m"}`} {
 		base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,` + bad + `}}`
 		setEnv(t, base)
 		_, err := LoadFromEnv()
 		assert.Error(t, err, bad)
 	}
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"settleTimeout":"15m","idleWait":"2h"}}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"maxConcurrentPercent":10,"settleTimeout":"15m","stalledTimeout":"45m","idleWait":"2h"}}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, 2, cfg.VM.Runner.Rollout.MaxConcurrent)
+	assert.Equal(t, 10, cfg.VM.Runner.Rollout.MaxConcurrentPercent)
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
+	assert.Equal(t, 45*time.Minute, cfg.VM.Runner.Rollout.StalledTimeout.AsDuration())
 	assert.Equal(t, 2*time.Hour, cfg.VM.Runner.Rollout.IdleWait.AsDuration())
 }
 
@@ -413,7 +454,7 @@ func TestLoadFromEnv_ReadsTheRuntimeMigrationRetention(t *testing.T) {
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 	}
-	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
 	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"-1h"}}`
 	setEnv(t, base)
 	_, err := LoadFromEnv()
@@ -432,7 +473,7 @@ func TestLoadFromEnv_ReadsTheRuntimeMigrationCopyCaps(t *testing.T) {
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 	}
-	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
 	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"ownerConcurrency":-1}}`
 	setEnv(t, base)
 	_, err := LoadFromEnv()
@@ -452,7 +493,7 @@ func TestLoadFromEnv_ReadsWhetherTheRuntimeMigrationCopyClones(t *testing.T) {
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 	}
-	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
 	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()

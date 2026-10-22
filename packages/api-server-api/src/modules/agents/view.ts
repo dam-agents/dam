@@ -1,12 +1,27 @@
-import type {
-  Agent,
-  RuntimeMigrationPlan,
-  RuntimeMigrationRefusal,
-} from "./types.js";
+import type { Agent } from "./types.js";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The agents a caller sees when it lists agents:
+ * those its key is bound to, without Environments. An Environment is its own
+ * kind of thing under its Owning Agent, never an agent in a list, a picker or
+ * a count, on any surface that lists agents (the app, the CLI, an API key's
+ * agent picker); it is still found by id, as its own page and its relays need.
+ */
+export function listedAgents(
+  agents: Agent[],
+  boundTo: "*" | readonly string[],
+): Agent[] {
+  return agents.filter(
+    (agent) =>
+      !agent.spec.environmentOf &&
+      (boundTo === "*" || boundTo.includes(agent.id)),
+  );
+}
 
 export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
   return {
     spawnedBy,
+    environmentOf: agent.spec.environmentOf ?? null,
     id: agent.id,
     name: agent.name,
     createdAt: agent.createdAt,
@@ -20,11 +35,13 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     env: agent.spec.env,
     hibernationTimeoutMin: agent.effectiveHibernationTimeoutMin,
     requireConnectionAddress: agent.spec.requireConnectionAddress === true,
+    whisper: agent.spec.whispersOff !== true,
     grantedSecretIds: agent.spec.grantedSecretIds ?? [],
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,
     error: agent.error,
     stopRequested: agent.stopRequested,
+    disabled: agent.disabled,
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
     ...(agent.reclaimed ? { reclaimed: agent.reclaimed } : {}),
@@ -33,7 +50,9 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
       memory: agent.spec.resources?.limits?.memory,
     },
     podTerminationReason: agent.podTerminationReason,
+    podTerminationCode: agent.podTerminationCode,
     notReadyMessage: agent.notReadyMessage,
+    ...(agent.startFailure ? { startFailure: agent.startFailure } : {}),
     podRestarts: agent.podRestarts,
     podRestartReason: agent.podRestartReason,
     gatewayFailure: agent.gatewayFailure,
@@ -46,57 +65,11 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     ...(agent.kbShareRoots ? { kbShareRoots: agent.kbShareRoots } : {}),
     vm: agent.spec.backend?.type === "vm",
     runtimeMigration: agent.runtimeMigration ?? null,
-    runtimeMigratable: agent.runtimeMigratable ?? false,
     starterKit: agent.starterKit ?? null,
     starterKitOnboarded: agent.starterKitOnboarded ?? null,
     kitUpdatePending: agent.kitUpdatePending ?? null,
     ...(agent.onboardingSteps
       ? { onboardingSteps: agent.onboardingSteps }
       : {}),
-  };
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the words for why an agent cannot move to the new runtime, one sentence per reason. The plan shows them before the user asks, and the migrate mutation refuses with the same sentences, so the two never disagree.
-export function runtimeMigrationRefusalReasons(
-  refusal: RuntimeMigrationRefusal,
-): string[] {
-  switch (refusal.type) {
-    case "AlreadyOnVm":
-      return ["This agent already runs on the new runtime"];
-    case "VirtualizationDisabled":
-      return [
-        "The new runtime is not enabled on this install (virtualization.enabled)",
-      ];
-    case "RuntimeMigrationInProgress":
-      return ["This agent is already moving to the new runtime"];
-    case "StorageMigrationInProgress":
-      return [
-        "This agent's storage is being migrated — try again once it finishes",
-      ];
-    case "PersistsUnmovablePaths":
-      return refusal.paths.map((p) => `${p.path} cannot be moved: ${p.reason}`);
-    case "HomeNotPersisted":
-      return [
-        "This agent does not keep its home directory, so there is nothing for the new runtime to carry over",
-      ];
-    case "ConcurrentUpdate":
-      return [
-        "This agent changed while the move was being requested — try again",
-      ];
-  }
-}
-
-export function toRuntimeMigrationPlanView(plan: RuntimeMigrationPlan) {
-  return {
-    unmovable: plan.unmovable,
-    bootsSleepingAgent: plan.bootsSleepingAgent,
-    retentionMs: plan.retentionMs,
-    allowed: plan.refusal === null,
-    refusal: plan.refusal
-      ? {
-          type: plan.refusal.type,
-          reasons: runtimeMigrationRefusalReasons(plan.refusal),
-        }
-      : null,
   };
 }

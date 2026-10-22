@@ -24,6 +24,8 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `AgentWoken` | _elsewhere_ | agents |
 | `SlackConnected` | `slack_channel_bound` | agents |
 | `SlackDisconnected` | _elsewhere_ | agents, channels |
+| `TelegramChatBound` | _elsewhere_ | agents |
+| `TelegramChatUnbound` | _elsewhere_ | agents, channels |
 | `ChannelTurnRelayed` | `channel_turn` | channels |
 | `ChannelMessageSent` | `channel_message_sent` | mcp-endpoint |
 | `SessionTurnRelayed` | `session_turn` | agent-proxies/acp-relay |
@@ -40,12 +42,14 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ContributionGapChanged` | _elsewhere_ | runtime-delivery |
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
+| `SpendLimitsChanged` | _elsewhere_ | spend |
+| `GatewayCallEnded` | _elsewhere_ | spend |
 | `ScheduleCreated` | _elsewhere_ | schedules |
 | `ScheduleUpdated` | _elsewhere_ | schedules |
 | `ScheduleDeleted` | _elsewhere_ | schedules |
 | `SchedulePrecheckReported` | _elsewhere_ | schedules |
 | `HarnessConfigChanged` | `harness_config_changed` | harness-config |
-| `AttentionChanged` | _elsewhere_ | attention |
+| `AttentionChanged` | _elsewhere_ | attention, harness-config |
 | `ArtifactCreated` | _elsewhere_ | artifact-library |
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |
@@ -68,7 +72,9 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `StarterKitOnboarded` | `starter_kit_onboarded` | starter-kits |
 | `IdentityLinked` | _elsewhere_ | channels |
 | `AgentOutOfMemory` | `agent_oom` | agents |
+| `AgentResourceRemoved` | _elsewhere_ | agents |
 | `AvatarUnlocked` | _elsewhere_ | getting-started |
+| `GettingStartedReset` | _elsewhere_ | getting-started |
 
 ## Deliberately not recorded
 

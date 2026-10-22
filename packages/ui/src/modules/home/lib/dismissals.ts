@@ -45,11 +45,3 @@ export function isDismissedItem(
   const activity = item.at === null ? null : Date.parse(item.at);
   return activity === null || Number.isNaN(activity) || activity <= at;
 }
-
-export function sessionDismissedAt(
-  byKey: ReadonlyMap<string, number>,
-  agentId: string,
-  sessionId: string,
-): number | null {
-  return byKey.get(`session:${agentId}:${sessionId}`) ?? null;
-}

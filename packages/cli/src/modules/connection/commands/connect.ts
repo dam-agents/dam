@@ -4,6 +4,7 @@ import {
   type ConnectionCreateInput,
   type ConnectionTemplateInput,
   type ConnectionTemplateView,
+  type SecretlessConnectionCreateInput,
   connectionNameSchema,
 } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
@@ -20,7 +21,16 @@ import {
   type ConfigFlagError,
   resolveConfigInputFlags,
 } from "../domain/config-inputs.js";
+import {
+  type ConnectionScope,
+  formatScope,
+  hasScopeFlags,
+  isGitHubUserTokenTemplate,
+  resolveUserTokenScope,
+  scopeOf,
+} from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
+import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
 
 const POLL_INTERVAL_MS = 2000;
 const DEFAULT_TIMEOUT_SECONDS = 300;
@@ -39,6 +49,7 @@ interface ConnectOpts {
   appId?: string;
   installationId?: string;
   privateKey?: string;
+  account?: string;
   repositories?: string;
   repositoryIds?: string;
   permissions?: string;
@@ -56,6 +67,7 @@ interface ConnectOpts {
   server?: string;
   json?: boolean;
   browser?: boolean;
+  prompt?: boolean;
   timeout?: string;
 }
 
@@ -106,16 +118,20 @@ export function buildConnectCommand(deps: {
       'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
     )
     .option(
+      "--account <login>",
+      "narrow a GitHub sign-in to the app's installation on this user or organization, after consent (GitHub)",
+    )
+    .option(
       "--repositories <names>",
-      "input: limit the minted token to these repository names, space- or comma-separated (GitHub App installation)",
+      "limit the token to these repository names, space- or comma-separated (GitHub, GitHub App installation)",
     )
     .option(
       "--repository-ids <ids>",
-      "input: limit the minted token to these numeric repository ids; takes precedence over --repositories (GitHub App installation)",
+      "limit the token to these numeric repository ids; takes precedence over --repositories (GitHub, GitHub App installation)",
     )
     .option(
       "--permissions <pairs>",
-      "input: limit the minted token to these name:level permissions, e.g. contents:read (GitHub App installation)",
+      "limit the token to these name:level permissions, e.g. contents:read (GitHub, GitHub App installation)",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -160,12 +176,19 @@ export function buildConnectCommand(deps: {
     )
     .option(
       "--json",
-      "emit { ok, id, status, authKind, presetsApplied? } as JSON",
+      "emit { ok, id, status, authKind, presetsApplied?, scope? } as JSON",
     )
-    .option("--no-browser", "print the authorize URL instead of opening it")
+    .option(
+      "--no-browser",
+      "print the authorize or secret-entry link instead of opening it",
+    )
+    .option(
+      "--prompt",
+      "ask for a missing secret at a hidden terminal prompt instead of on a web page",
+    )
     .option(
       "--timeout <seconds>",
-      "how long to wait for OAuth authorization",
+      "how long to wait for OAuth authorization or for the secret to be entered",
       String(DEFAULT_TIMEOUT_SECONDS),
     )
     .addHelpText(
@@ -174,6 +197,9 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github\n" +
         "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
+        "  dam connection connect github --account acme --repositories api,web \\\n" +
+        "      --permissions contents:read,pull_requests:write\n" +
+        "  dam connection connect github-pat   # the user enters the token on a web page\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
         "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
         "      --issuer-url https://auth.example.com/realms/main --client-id … --client-secret …\n" +
@@ -185,7 +211,12 @@ export function buildConnectCommand(deps: {
         "  dam connection connect s3-compatible --endpoint https://s3.us-south.cloud-object-storage.appdomain.cloud \\\n" +
         "      --bucket my-bucket --access-key-id … --secret-access-key …\n" +
         "  dam connection connect https://mcp.example.com\n" +
-        "  dam connection connect https://mcp.example.com --auth none\n",
+        "  dam connection connect https://mcp.example.com --auth none\n" +
+        "\nA missing secret (token, API key, client secret, private key, key pair)\n" +
+        "is entered on a web page of the server: the command opens it, waits until\n" +
+        "the secret is saved, and reports the result. The page shows where the\n" +
+        "secret will be sent. Sign in there as the same user. Pass --prompt to type\n" +
+        "it at a hidden terminal prompt instead.\n",
     )
     .action(async (providerOrUrl: string, opts: ConnectOpts) => {
       const json = opts.json ?? false;
@@ -206,7 +237,7 @@ export function buildConnectCommand(deps: {
       const templates = templatesRes.value;
 
       const mcpUrl = parseHttpUrl(providerOrUrl);
-      const { template, name, values, presetsApplied } = mcpUrl
+      const { template, name, values, presetsApplied, secretOnPage } = mcpUrl
         ? await resolveMcpTemplate({
             svc,
             url: providerOrUrl,
@@ -235,6 +266,7 @@ export function buildConnectCommand(deps: {
       const payload = buildPayload(template, name, {
         ...values,
         ...configRes.value,
+        ...(secretOnPage ? pagePlaceholders(template) : {}),
       });
       if ("error" in payload) {
         process.stderr.write(`error: ${payload.error}\n`);
@@ -251,12 +283,49 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
+      const presetNames = presetsApplied.map((i) => i.name);
+      if (secretOnPage) {
+        if (!json && presetNames.length > 0) {
+          const fields = presetsApplied.map((i) => labelFor(i.name)).join(", ");
+          process.stderr.write(
+            `Using preset values (${fields}). Pass ${flagListFor(presetsApplied)} to use your own.\n`,
+          );
+        }
+        const entered = await enterSecretOnPage({
+          svc,
+          host,
+          browserOpener: deps.browserOpener,
+          input: { action: "create", connection: withoutSecret(payload) },
+          noBrowser: opts.browser === false,
+          timeoutSeconds,
+        });
+        if (entered.kind === "saved") {
+          emitSuccess({
+            json,
+            verb: "Created",
+            name,
+            id: entered.connectionId,
+            authKind: template.authKind,
+            presetsApplied: presetNames,
+          });
+          process.exit(EXIT_SUCCESS);
+        }
+        process.stderr.write(
+          "note: this server has no secret-entry page; asking here instead\n",
+        );
+        const typed = await promptMissing(
+          template,
+          secretInputsOf(template),
+          json,
+        );
+        Object.assign(payload, typed);
+      }
+
       const createRes = await svc.createConnection(payload);
       exitOnServiceError(createRes, host);
       const { id } = createRes.value;
 
-      const presetNames = presetsApplied.map((i) => i.name);
-      if (!json && presetNames.length > 0) {
+      if (!json && !secretOnPage && presetNames.length > 0) {
         const fields = presetsApplied.map((i) => labelFor(i.name)).join(", ");
         process.stderr.write(
           `Using preset values (${fields}). Pass ${flagListFor(presetsApplied)} to use your own.\n`,
@@ -301,6 +370,11 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
+      const scope =
+        isGitHubUserTokenTemplate(template.id) && hasScopeFlags(opts)
+          ? await narrowUserToken(svc, id, name, opts)
+          : undefined;
+
       emitSuccess({
         json,
         verb: "Connected",
@@ -309,6 +383,7 @@ export function buildConnectCommand(deps: {
         authKind: "oauth",
         presetsApplied: presetNames,
         ...(noBrowser ? { authUrl } : {}),
+        ...(scope ? { scope } : {}),
       });
       process.exit(EXIT_SUCCESS);
     });
@@ -319,6 +394,7 @@ interface ResolvedConnection {
   name: string;
   values: Record<string, string>;
   presetsApplied: ConnectionTemplateInput[];
+  secretOnPage: boolean;
 }
 
 async function resolveSlugTemplate(args: {
@@ -349,7 +425,11 @@ async function resolveSlugTemplate(args: {
     "repositoryIds",
     "permissions",
   ] as const) {
-    if (opts[flag] && !template.inputs.some((i) => i.name === flag)) {
+    if (
+      opts[flag] &&
+      !isGitHubUserTokenTemplate(template.id) &&
+      !template.inputs.some((i) => i.name === flag)
+    ) {
       process.stderr.write(
         `error: this server does not support --${camelToKebab(flag)} for '${template.id}' — ` +
           "the token would carry the installation's full authority\n",
@@ -358,10 +438,17 @@ async function resolveSlugTemplate(args: {
     }
   }
 
+  if (opts.account !== undefined && !isGitHubUserTokenTemplate(template.id)) {
+    process.stderr.write(
+      `error: --account applies only to a GitHub sign-in (github, github-enterprise), not '${template.id}'\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
-  const { values, presetsApplied } = await collectInputs(template, opts, json);
-  return { template, name, values, presetsApplied };
+  const collected = await collectInputs(template, opts, json);
+  return { template, name, ...collected };
 }
 
 async function resolveMcpTemplate(args: {
@@ -394,7 +481,13 @@ async function resolveMcpTemplate(args: {
 
   const name = await resolveMcpName(mcpUrl, opts, json);
   validateName(name);
-  return { template, name, values: { url }, presetsApplied: [] };
+  return {
+    template,
+    name,
+    values: { url },
+    presetsApplied: [],
+    secretOnPage: false,
+  };
 }
 
 async function resolveMcpName(
@@ -435,6 +528,7 @@ function validateName(name: string): void {
 interface CollectedInputs {
   values: Record<string, string>;
   presetsApplied: ConnectionTemplateInput[];
+  secretOnPage: boolean;
 }
 
 async function collectInputs(
@@ -458,14 +552,35 @@ async function collectInputs(
     }
   }
 
-  if (missing.length === 0) return { values, presetsApplied };
+  if (missing.length === 0) {
+    return { values, presetsApplied, secretOnPage: false };
+  }
 
+  if (!opts.prompt && missesOnlyThePageSecret(template, missing)) {
+    return { values, presetsApplied, secretOnPage: true };
+  }
+
+  Object.assign(values, await promptMissing(template, missing, json));
+  return { values, presetsApplied, secretOnPage: false };
+}
+
+async function promptMissing(
+  template: ConnectionTemplateView,
+  missing: readonly ConnectionTemplateInput[],
+  json: boolean,
+): Promise<Record<string, string>> {
   if (!process.stdin.isTTY) {
     const flagList = flagListFor(missing);
     process.stderr.write(`error: missing required input(s): ${flagList}\n`);
+    if (missesOnlyThePageSecret(template, missing)) {
+      process.stderr.write(
+        "hint: drop --prompt to enter the secret on a web page instead\n",
+      );
+    }
     process.exit(EXIT_INVALID_INPUT);
   }
 
+  const values: Record<string, string> = {};
   for (const input of missing) {
     const prompt = input.secret ? password : text;
     const label = input.label ?? labelFor(input.name);
@@ -476,7 +591,70 @@ async function collectInputs(
     if (isCancel(answer)) exitCancelled({ json });
     values[input.name] = String(answer).trim();
   }
-  return { values, presetsApplied };
+  return values;
+}
+
+function missesOnlyThePageSecret(
+  template: ConnectionTemplateView,
+  missing: readonly ConnectionTemplateInput[],
+): boolean {
+  const pageFields = PAGE_SECRET_FIELDS[template.authKind];
+  if (!pageFields) return false;
+  const names = new Set(missing.map((i) => i.name));
+  return (
+    pageFields.every((f) => names.has(f)) &&
+    missing.every((i) => pageFields.includes(i.name))
+  );
+}
+
+function secretInputsOf(
+  template: ConnectionTemplateView,
+): ConnectionTemplateInput[] {
+  const pageFields = PAGE_SECRET_FIELDS[template.authKind] ?? [];
+  return template.inputs.filter((i) => pageFields.includes(i.name));
+}
+
+const PAGE_PLACEHOLDER = "entered-on-the-page";
+
+function pagePlaceholders(
+  template: ConnectionTemplateView,
+): Record<string, string> {
+  return Object.fromEntries(
+    (PAGE_SECRET_FIELDS[template.authKind] ?? []).map((f) => [
+      f,
+      PAGE_PLACEHOLDER,
+    ]),
+  );
+}
+
+function withoutSecret(
+  payload: ConnectionCreateInput,
+): SecretlessConnectionCreateInput {
+  switch (payload.authKind) {
+    case "header": {
+      const { value: _value, ...rest } = payload;
+      return rest;
+    }
+    case "client-credentials": {
+      const { clientSecret: _clientSecret, ...rest } = payload;
+      return rest;
+    }
+    case "github-app": {
+      const { privateKey: _privateKey, ...rest } = payload;
+      return rest;
+    }
+    case "sigv4": {
+      const {
+        accessKeyId: _accessKeyId,
+        secretAccessKey: _secretAccessKey,
+        ...rest
+      } = payload;
+      return rest;
+    }
+    case "oauth":
+    case "none":
+      throw new Error(`a ${payload.authKind} connection takes no page secret`);
+  }
 }
 
 function buildPayload(
@@ -591,6 +769,34 @@ function buildPayload(
   }
 }
 
+async function narrowUserToken(
+  svc: ConnectionService,
+  id: string,
+  name: string,
+  opts: ConnectOpts,
+): Promise<ConnectionScope | undefined> {
+  const fail = (message: string): never => {
+    process.stderr.write(
+      `error: connected ${name} (${id}), but couldn't limit it: ${message}\n` +
+        "  It reaches everything this sign-in can. Limit it with `dam connection scope " +
+        `${name} …\` before you grant it, or remove it with \`dam connection disconnect ${name}\`.\n`,
+    );
+    process.exit(EXIT_RUNTIME_FAILURE);
+  };
+  const probe = await svc.probeGitHubUserToken(id);
+  if (!probe.ok) return fail(probe.error.reason);
+  const resolved = resolveUserTokenScope(probe.value, undefined, opts);
+  if (!resolved.ok) return fail(resolved.error);
+  const res = await svc.updateGitHubUserTokenScope({ id, ...resolved.value });
+  if (!res.ok) return fail(res.error.reason);
+  const after = await svc.getConnection(id);
+  const scope = after.ok && after.value ? scopeOf(after.value) : undefined;
+  if (!opts.json) {
+    process.stderr.write(`Limited ${name} to ${formatScope(scope)}.\n`);
+  }
+  return scope;
+}
+
 function checkClusterTrust(
   probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
   host: string,
@@ -636,6 +842,7 @@ function emitSuccess(args: {
   authKind: ConnectionTemplateView["authKind"];
   authUrl?: string;
   presetsApplied?: string[];
+  scope?: ConnectionScope;
 }): void {
   if (args.json) {
     process.stdout.write(
@@ -648,6 +855,7 @@ function emitSuccess(args: {
         ...(args.presetsApplied && args.presetsApplied.length > 0
           ? { presetsApplied: args.presetsApplied }
           : {}),
+        ...(args.scope ? { scope: args.scope } : {}),
       })}\n`,
     );
   } else {

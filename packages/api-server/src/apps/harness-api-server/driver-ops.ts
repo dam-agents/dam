@@ -1,10 +1,14 @@
+import { match } from "ts-pattern";
 import type { z } from "zod";
 import {
+  isQualifiedModel,
+  PROVIDERS,
   providerTypeForTemplateId,
   type BudgetsService,
   type ConnectionsService,
   type HarnessCatalog,
   type InvocationView,
+  type ProviderPresetType,
   type spawnInvocationRequestSchema,
   type TemplatesService,
 } from "api-server-api";
@@ -15,21 +19,33 @@ import {
 import { SizeNeverFitsError } from "../../modules/budgets/index.js";
 import {
   AttenuationError,
+  NoSpawnModelError,
   InvalidSchemaError,
+  ModelNameError,
   ProviderMismatchError,
+  SpendLimitReachedError,
   UnresolvableDriverError,
+  type DriverProvider,
   type InvocationOrigin,
   type InvocationsService,
   type SpawnInput,
 } from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { DEFAULT_TEMPLATE_ID } from "../../modules/templates/index.js";
+import {
+  isNoDefaultModelError,
+  type FirePair,
+} from "../../modules/harness-config/index.js";
 
 export type SpawnRequest = z.infer<typeof spawnInvocationRequestSchema>;
 
 export type SpawnOutcome =
   | { ok: true; id: string }
-  | { ok: false; kind: "invalid" | "forbidden" | "conflict"; message: string };
+  | {
+      ok: false;
+      kind: "invalid" | "forbidden" | "conflict" | "spend_limit_reached";
+      message: string;
+    };
 
 export interface DriverOpsDeps {
   agents: {
@@ -44,6 +60,33 @@ export interface DriverOpsDeps {
   harnesses: HarnessCatalog;
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
+  defaultModel?: (driverId: string, harness: string) => Promise<string | null>;
+}
+
+const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
+  "nothing names the sub-agent's model: pass a provider-qualified model, as the agent's Config panel lists it, or spawn on the harness of this agent's default model to run on that model; an agent with no default gets one on its Providers page";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model of the driver's saved chat default, when
+ * that default runs on the harness asked for; null when it runs on another
+ * harness or names no model, so nothing is ever picked in the owner's place.
+ * An older runtime's bare model name is none either, since the spawn route
+ * takes provider-qualified names only.
+ */
+export function driverDefaultModel(
+  firePair: FirePair,
+): NonNullable<DriverOpsDeps["defaultModel"]> {
+  return async (driverId, harness) => {
+    const pair = await firePair(driverId, "chat", { harness }).catch(
+      (err: unknown) => {
+        if (isNoDefaultModelError(err)) return null;
+        throw err;
+      },
+    );
+    return pair?.harness === harness && isQualifiedModel(pair.model)
+      ? pair.model
+      : null;
+  };
 }
 
 /**
@@ -66,10 +109,36 @@ function driverOps(
   const invocations = deps.invocationsServiceFor(owner);
   const conns = deps.connectionsServiceFor(owner);
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a driver script has no Session to inherit a
+   * model from, so a script spawn that names none, on the harness the
+   * driver's saved default runs on, runs on that default's model, the one
+   * its owner chose. A spawn that names a model keeps it; one of an image,
+   * one on another harness and one from a driver with no default name none,
+   * and the service refuses them as before.
+   */
+  const withDefaultModel = async (
+    body: SpawnRequest,
+    origin: InvocationOrigin,
+  ): Promise<SpawnRequest["harnessConfig"]> => {
+    if (
+      origin !== "script" ||
+      body.harnessConfig?.model !== undefined ||
+      body.image !== undefined ||
+      body.harness === undefined ||
+      !deps.defaultModel
+    )
+      return body.harnessConfig;
+    const model = await deps.defaultModel(driverId, body.harness);
+    return model ? { ...body.harnessConfig, model } : body.harnessConfig;
+  };
+
   return {
     async spawn(
       body: SpawnRequest,
-      origin: InvocationOrigin = "script",
+      from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
+        origin: "script",
+      },
     ): Promise<SpawnOutcome> {
       const target: SpawnInput["target"] = body.image
         ? { image: body.image }
@@ -110,6 +179,7 @@ function driverOps(
         if (template!.spec.providers) target.runsOn = template!.spec.providers;
       }
 
+      const harnessConfig = await withDefaultModel(body, from.origin);
       const connections = body.connections ?? [];
       const resources =
         body.resources ??
@@ -125,18 +195,17 @@ function driverOps(
       ]);
       const driverGrantIds = granted.connections.map((g) => g.connectionId);
       const grantSet = new Set(driverGrantIds);
-      const driverProviders = owned.flatMap((cn) => {
-        const type = grantSet.has(cn.id)
-          ? providerTypeForTemplateId(cn.templateId)
-          : null;
-        return type ? [{ id: cn.id, type }] : [];
-      });
+      const { driverProviders, attachableProviders } = providersOf(
+        owned,
+        grantSet,
+      );
 
       try {
         const { id } = await invocations.spawn({
           driverAgentId: driverId,
           driverGrantIds,
           driverProviders,
+          attachableProviders,
           target,
           setup: {
             ...(body.seed ? { seed: body.seed } : {}),
@@ -151,8 +220,9 @@ function driverOps(
           schema: body.schema,
           ...(body.label !== undefined ? { label: body.label } : {}),
           ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
-          ...(body.harnessConfig ? { harnessConfig: body.harnessConfig } : {}),
-          origin,
+          ...(harnessConfig ? { harnessConfig } : {}),
+          origin: from.origin,
+          driverSessionId: from.driverSessionId ?? null,
         });
         return { ok: true, id };
       } catch (err) {
@@ -172,12 +242,30 @@ function driverOps(
         if (
           err instanceof InvalidSchemaError ||
           err instanceof SizeNeverFitsError ||
+          err instanceof ModelNameError ||
           err instanceof ProviderMismatchError
         ) {
           return { ok: false, kind: "invalid", message: err.message };
         }
+        if (err instanceof NoSpawnModelError) {
+          return {
+            ok: false,
+            kind: "invalid",
+            message:
+              from.origin === "script"
+                ? NO_SCRIPT_SPAWN_MODEL_MESSAGE
+                : err.message,
+          };
+        }
         if (err instanceof UnresolvableDriverError) {
           return { ok: false, kind: "conflict", message: err.message };
+        }
+        if (err instanceof SpendLimitReachedError) {
+          return {
+            ok: false,
+            kind: "spend_limit_reached",
+            message: err.message,
+          };
         }
         throw err;
       }
@@ -213,7 +301,34 @@ function driverOps(
     },
 
     async images() {
-      const templates = await deps.templates.list();
+      const [templates, granted, owned] = await Promise.all([
+        deps.templates.list(),
+        conns.getAgentConnections(driverId),
+        conns.listConnections(),
+      ]);
+      const providers = providersOf(
+        owned,
+        new Set(granted.connections.map((g) => g.connectionId)),
+      );
+      const runsOn = (
+        harness: SpawnInput["target"]["harness"],
+        runsOnTypes: ProviderPresetType[] | undefined,
+      ) =>
+        match(
+          invocations.reachability({
+            ...providers,
+            target: {
+              ...(harness && { harness }),
+              ...(runsOnTypes && { runsOn: runsOnTypes }),
+            },
+          }),
+        )
+          .with({ kind: "runs" }, ({ provider }) => ({
+            provider: PROVIDERS[provider].displayName,
+          }))
+          .with({ kind: "refused" }, ({ reason }) => ({ unavailable: reason }))
+          .with({ kind: "unnarrowed" }, () => ({}))
+          .exhaustive();
       return templates.flatMap((t) => {
         const size = concreteResources(
           t.spec.resources,
@@ -228,6 +343,7 @@ function driverOps(
               description: h.description,
               harness: h.name,
               size,
+              ...runsOn(h.name, h.providers),
             }))
           : [
               {
@@ -237,6 +353,7 @@ function driverOps(
                 description: t.spec.description,
                 ...(t.spec.harness ? { harness: t.spec.harness } : {}),
                 size,
+                ...(t.spec.harness ? runsOn(undefined, t.spec.providers) : {}),
               },
             ];
       });
@@ -253,5 +370,29 @@ function driverOps(
         },
       };
     },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the provider Connections the driver holds,
+ * which a sub-agent inherits from, and the ones its owner holds but has not
+ * attached to it, which a refused spawn names as the fix.
+ */
+function providersOf(
+  owned: readonly { id: string; templateId: string }[],
+  granted: ReadonlySet<string>,
+): {
+  driverProviders: DriverProvider[];
+  attachableProviders: ProviderPresetType[];
+} {
+  const typed = owned.flatMap((cn) => {
+    const type = providerTypeForTemplateId(cn.templateId);
+    return type ? [{ id: cn.id, type }] : [];
+  });
+  return {
+    driverProviders: typed.filter((p) => granted.has(p.id)),
+    attachableProviders: typed
+      .filter((p) => !granted.has(p.id))
+      .map((p) => p.type),
   };
 }

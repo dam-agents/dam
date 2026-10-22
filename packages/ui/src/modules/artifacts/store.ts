@@ -44,6 +44,7 @@ export const createArtifactsSlice: StateCreator<
       id
         ? {
             openArtifactId: id,
+            sidePanelTab: "artifacts" as const,
             openArtifactEdit: opts?.edit ?? false,
             openArtifactDirty:
               id === state.openArtifactId ? state.openArtifactDirty : false,
@@ -52,6 +53,7 @@ export const createArtifactsSlice: StateCreator<
             openDelegation: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : {
             openArtifactId: id,

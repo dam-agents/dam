@@ -19,21 +19,13 @@ import {
   agentRestartInputSchema,
   agentPeekBindFlowInputSchema,
   agentUpdateInputSchema,
-  agentPauseInputSchema,
-  agentStopInputSchema,
+  agentSetDisabledInputSchema,
+  agentSleepInputSchema,
   agentUpgradeInputSchema,
-  agentMigrateRuntimeInputSchema,
-  agentPlanRuntimeMigrationInputSchema,
-  agentAbortRuntimeMigrationInputSchema,
-  agentRetryRuntimeMigrationInputSchema,
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
-import {
-  runtimeMigrationRefusalReasons,
-  toAgentView,
-  toRuntimeMigrationPlanView,
-} from "./view.js";
+import { listedAgents, toAgentView } from "./view.js";
 
 export const agentsRouter = t.router({
   list: readAgentProcedure.query(async ({ ctx }) => {
@@ -44,14 +36,16 @@ export const agentsRouter = t.router({
     const driverByTarget = new Map(
       targets.map((t) => [t.targetAgentId, t.driverAgentId]),
     );
-    const allowed =
-      ctx.user.agentIds === "*"
-        ? agents
-        : agents.filter((a) => ctx.user.agentIds.includes(a.id));
-    return allowed.map((agent) =>
+    return listedAgents(agents, ctx.user.agentIds).map((agent) =>
       toAgentView(agent, driverByTarget.get(agent.id) ?? null),
     );
   }),
+
+  runtimeFleet: readAgentProcedure.query(({ ctx }) =>
+    ctx.agents.runtimeFleet(
+      ctx.user.agentIds === "*" ? undefined : ctx.user.agentIds,
+    ),
+  ),
 
   get: readAgentProcedure
     .input(agentGetInputSchema)
@@ -108,20 +102,17 @@ export const agentsRouter = t.router({
       if (res.ok) return toAgentView(res.value);
       if (res.error.type === "AgentNotFound")
         throw new TRPCError({ code: "NOT_FOUND" });
+      if (res.error.type === "AgentDisabled")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This agent is disabled; enable it to wake it",
+        });
       throw new TRPCError({
         code: "CONFLICT",
         message: res.error.failed
-          ? "This agent's move to the new runtime failed; retry or abort the move to wake it"
+          ? "This agent's move to the new runtime failed and it waits on an operator to finish or undo the move"
           : "This agent is moving to the new runtime and wakes once the move is done",
       });
-    }),
-
-  stop: manageAgentsProcedure
-    .input(agentStopInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.stop(input.id);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toAgentView(agent);
     }),
 
   retryWorkspace: manageAgentsProcedure
@@ -132,12 +123,26 @@ export const agentsRouter = t.router({
       return toAgentView(agent);
     }),
 
-  pause: manageAgentsProcedure
-    .input(agentPauseInputSchema)
+  sleep: manageAgentsProcedure
+    .input(agentSleepInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.pause(input.id);
+      const agent = await ctx.agents.sleep(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
+    }),
+
+  setDisabled: manageAgentsProcedure
+    .input(agentSetDisabledInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.setDisabled(input.id, input.disabled);
+      if (res.ok) return toAgentView(res.value);
+      if (res.error.type === "AgentNotFound")
+        throw new TRPCError({ code: "NOT_FOUND" });
+      throw new TRPCError({
+        code: "CONFLICT",
+        message:
+          "This agent is moving to the new runtime; it can be disabled once the move ends",
+      });
     }),
 
   upgrade: manageAgentsProcedure
@@ -158,92 +163,6 @@ export const agentsRouter = t.router({
             code: "CONFLICT",
             message:
               "The template changed since you reviewed the update — check the new version and retry",
-          });
-      }
-    }),
-
-  planRuntimeMigration: readAgentProcedure
-    .input(agentPlanRuntimeMigrationInputSchema)
-    .query(async ({ ctx, input }) => {
-      checkAgentBinding(ctx, input.id);
-      const res = await ctx.agents.planRuntimeMigration(input.id);
-      if (!res.ok) throw new TRPCError({ code: "NOT_FOUND" });
-      return toRuntimeMigrationPlanView(res.value);
-    }),
-
-  migrateRuntime: manageAgentsProcedure
-    .input(agentMigrateRuntimeInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const res = await ctx.agents.migrateRuntime(input.id);
-      if (res.ok) return toAgentView(res.value);
-      if (res.error.type === "AgentNotFound")
-        throw new TRPCError({ code: "NOT_FOUND" });
-      const message = runtimeMigrationRefusalReasons(res.error).join("; ");
-      switch (res.error.type) {
-        case "AlreadyOnVm":
-        case "RuntimeMigrationInProgress":
-        case "StorageMigrationInProgress":
-        case "ConcurrentUpdate":
-          throw new TRPCError({ code: "CONFLICT", message });
-        case "VirtualizationDisabled":
-        case "PersistsUnmovablePaths":
-        case "HomeNotPersisted":
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message });
-      }
-    }),
-
-  abortRuntimeMigration: manageAgentsProcedure
-    .input(agentAbortRuntimeMigrationInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const res = await ctx.agents.abortRuntimeMigration(input.id);
-      if (res.ok) return toAgentView(res.value);
-      switch (res.error.type) {
-        case "AgentNotFound":
-          throw new TRPCError({ code: "NOT_FOUND" });
-        case "NoRuntimeMigration":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "This agent is not moving to the new runtime",
-          });
-        case "RuntimeMigrationVerified":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "This agent has already started on the new runtime, so the move can no longer be undone",
-          });
-        case "ConcurrentUpdate":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "This agent changed while the request was being made — try again",
-          });
-      }
-    }),
-
-  retryRuntimeMigration: manageAgentsProcedure
-    .input(agentRetryRuntimeMigrationInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const res = await ctx.agents.retryRuntimeMigration(input.id);
-      if (res.ok) return toAgentView(res.value);
-      switch (res.error.type) {
-        case "AgentNotFound":
-          throw new TRPCError({ code: "NOT_FOUND" });
-        case "NoRuntimeMigration":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "This agent is not moving to the new runtime",
-          });
-        case "RuntimeMigrationNotFailed":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "This agent's move has not failed, so there is nothing to retry",
-          });
-        case "ConcurrentUpdate":
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "This agent changed while the request was being made — try again",
           });
       }
     }),

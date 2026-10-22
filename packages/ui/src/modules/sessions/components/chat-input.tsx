@@ -1,9 +1,9 @@
 import {
-  Add,
-  Close,
+  Attachment as AttachmentIcon,
   Document,
   SendAltFilled,
   StopFilledAlt,
+  TrashCan,
 } from "@carbon/icons-react";
 import {
   type KeyboardEvent,
@@ -38,6 +38,7 @@ export interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
 }
 
@@ -47,12 +48,13 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  onTakeBack,
   blockedReason,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const setDraft = useStore((s) => s.setDraft);
-  const clearDraft = useStore((s) => s.clearDraft);
+  const clearDraftContent = useStore((s) => s.clearDraftContent);
   const key = agentId ? draftKey(agentId, sessionId) : null;
   const draft = useStore((s) =>
     key ? (s.drafts[key] ?? EMPTY_DRAFT) : EMPTY_DRAFT,
@@ -194,9 +196,9 @@ export function ChatInput({
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
     promptHistory.reset();
-    clearDraft(key);
+    clearDraftContent(key);
     onSend(text, files);
-  }, [key, loadingSession, clearDraft, onSend, promptHistory]);
+  }, [key, loadingSession, clearDraftContent, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {
@@ -205,7 +207,8 @@ export function ChatInput({
     }
     if (e.key === "Escape" && showStop && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      onStop();
+      if (onTakeBack && !hasContent) onTakeBack();
+      else onStop();
       return;
     }
     if (e.key !== "Enter" || e.shiftKey || isMobile()) return;
@@ -260,7 +263,7 @@ export function ChatInput({
               aria-label="Attach file"
               tooltip="Attach file"
             >
-              <Add size={16} />
+              <AttachmentIcon size={16} />
             </Button>
             <Textarea
               ref={textareaRef}
@@ -340,12 +343,13 @@ function AttachmentChip({
         size="icon"
         onClick={onRemove}
         aria-label={`Remove ${name}`}
+        tooltip="Remove"
         className={cn(
           "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
           HOVER_ACTION,
         )}
       >
-        <Close size={10} />
+        <TrashCan size={10} />
       </Button>
     </div>
   );

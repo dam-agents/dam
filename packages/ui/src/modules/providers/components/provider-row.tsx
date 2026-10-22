@@ -1,38 +1,49 @@
-import type { HarnessFamily } from "api-server-api";
+import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Card, CARD_SURFACE } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
+import { cn } from "@/lib/utils";
 
-import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
+import type { ProviderPresetType } from "../../../types.js";
+import { providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
+import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
+  templateId?: string;
+  name?: string;
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
+  degraded?: boolean;
+  keyCheck?: ProviderKeyCheck | null;
+  checking?: boolean;
   balance?: ReactNode;
-  onOpen: () => void;
+  onOpen?: () => void;
+  connectedAction?: string;
 }
 
 export function ProviderRow({
   type,
+  templateId,
+  name: givenName,
   harnesses,
   connected,
+  degraded = false,
+  keyCheck,
+  checking,
   balance,
   onOpen,
+  connectedAction = "Edit",
 }: Props) {
-  const name = PROVIDERS[type].displayName;
-
-  return (
-    <CardButton
-      onClick={onOpen}
-      aria-label={connected ? `Edit ${name}` : `Connect ${name}`}
-      className="flex w-full items-center gap-3 p-4"
-    >
-      <CardIcon provider={type} />
+  const name = givenName ?? providerName(type);
+  const refused = connected && keyCheck?.result === "refused";
+  const body = (
+    <>
+      <CardIcon provider={type} templateId={templateId} />
       <div className="min-w-0 flex-1">
         <div className="flex h-8 items-center gap-2">
           <p
@@ -41,12 +52,11 @@ export function ProviderRow({
           >
             {name}
           </p>
-          <Badge
-            variant={connected ? "success" : "muted"}
-            className="ml-auto shrink-0"
-          >
-            {connected ? "Connected" : "Not connected"}
-          </Badge>
+          <ConnectionBadge
+            connected={connected}
+            degraded={degraded}
+            refused={refused}
+          />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex shrink-0 items-center gap-2">
@@ -55,6 +65,7 @@ export function ProviderRow({
               <HarnessIcons
                 harnesses={harnesses}
                 size="sm"
+                focusable={!onOpen}
                 className="text-muted-foreground opacity-70"
               />
             ) : (
@@ -65,8 +76,66 @@ export function ProviderRow({
           </div>
           <div className="min-w-0 text-right">{balance}</div>
         </div>
+        {connected && keyCheck !== undefined && (
+          <div className="mt-2">
+            <ProviderKeyStatus check={keyCheck} checking={checking} />
+          </div>
+        )}
       </div>
+    </>
+  );
+  const layout = "flex w-full items-center gap-3 p-4";
+
+  return onOpen ? (
+    <CardButton
+      onClick={onOpen}
+      aria-label={
+        connected
+          ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
+          : `Connect ${name}`
+      }
+      className={layout}
+    >
+      {body}
     </CardButton>
+  ) : (
+    <div className={cn(CARD_SURFACE, layout)}>{body}</div>
+  );
+}
+
+function ConnectionBadge({
+  connected,
+  degraded,
+  refused,
+}: {
+  connected: boolean;
+  degraded: boolean;
+  refused: boolean;
+}) {
+  if (!connected)
+    return (
+      <Badge variant="muted" className="ml-auto shrink-0">
+        Not connected
+      </Badge>
+    );
+  if (refused)
+    return (
+      <Badge variant="danger" className="ml-auto shrink-0">
+        Key refused
+      </Badge>
+    );
+  return degraded ? (
+    <Badge
+      variant="warning"
+      className="ml-auto shrink-0"
+      data-testid="provider-degraded-badge"
+    >
+      Degraded
+    </Badge>
+  ) : (
+    <Badge variant="success" className="ml-auto shrink-0">
+      Connected
+    </Badge>
   );
 }
 

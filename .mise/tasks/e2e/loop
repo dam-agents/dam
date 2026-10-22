@@ -55,6 +55,6 @@ mise run e2e:gate
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
 # for the next loop. The arguments ride after `--` so mise appends them to the
 # playwright command instead of parsing them as its own flags.
-PLATFORM_BASE_URL="http://localhost:5555" \
-PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
+PLATFORM_BASE_URL="http://localhost:6555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
   mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"}

@@ -3,10 +3,18 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
   statSync,
 } from "node:fs";
-import { readdir, readFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type BrowserAction,
@@ -18,10 +26,17 @@ import {
   ok,
   type PageState,
   type Result,
+  type TabState,
 } from "agent-runtime-api";
 import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
-import { type PageWatch, type WatchPages, watchPages } from "./browser-cdp.js";
+import {
+  type BrowserView,
+  type PageWatch,
+  TabGoneError,
+  type WatchPages,
+  watchPages,
+} from "./browser-cdp.js";
 
 export const BROWSER_SESSION = "default";
 
@@ -40,8 +55,27 @@ export const DISPLAY_TOOLS = [
   DISPLAY_COMMAND,
   "/usr/bin/Xvfb",
   "/opt/selkies/bin/selkies",
+  "/usr/local/bin/platform-browser",
   "/opt/ms-playwright/chromium",
 ] as const;
+
+export const LAUNCH_MODE_FILE = ".local/share/platform/browser-launch";
+const STANDARD_LAUNCH = "standard";
+
+export function readTestingMode(path: string): boolean {
+  try {
+    return readFileSync(path, "utf8").trim() !== STANDARD_LAUNCH;
+  } catch {
+    return true;
+  }
+}
+
+async function writeTestingMode(path: string, on: boolean): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const next = `${path}.${process.pid}.tmp`;
+  await writeFile(next, on ? "testing\n" : `${STANDARD_LAUNCH}\n`);
+  await rename(next, path);
+}
 
 export function displayAvailable(
   exists: (path: string) => boolean = existsSync,
@@ -212,7 +246,12 @@ export function createCommandQueue(run: BrowserCommand): {
  * none runs) and watches its pages over CDP (browser-cdp), so the page's
  * address, title, loading and history reach the panel as they change and the
  * toolbar's actions run without queueing behind the agent; a CDP
- * connection that drops is a browser gone. Its display socket (attachDisplay)
+ * connection that drops is a browser gone. The panel's tabs are the browser's
+ * own, by target id: a tab the panel selects comes to the front at once, and
+ * agent-browser is then told to select it too (`tab <target id>`, in its
+ * queue), so the agent's next command acts on the tab the user sees; a tab the
+ * agent brings to the front reaches the panel through the watcher, which
+ * closes with the last panel, as it asks every tab for its visibility. Its display socket (attachDisplay)
  * is relayed to the display's stream server, held with what its client sent
  * until that server answers. A check or launch that times out finds the
  * browser busy — a heavy page, or the agent's own commands ahead in
@@ -222,12 +261,16 @@ export function createCommandQueue(run: BrowserCommand): {
  * busy browser loses the user's page. Everything is refused, before anything
  * starts, on an agent that does not require named connections — the panel's
  * user would otherwise browse with the agent's injected credentials — and on
- * an image without the display stack.
+ * an image without the display stack. The testing mode switch saves how the
+ * browser is launched to a file in the agent's home, which the image's
+ * launcher (platform-browser) reads on every launch, the agent's own ones too,
+ * and relaunches the browser on the same profile, back on the page it showed.
  */
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
   socketDir: string;
+  launchModeFile: string;
   available?: () => boolean;
   offered?: () => boolean;
   healthCheckMs?: number;
@@ -262,6 +305,8 @@ export function createBrowserPreview(deps: {
   let state: BrowserState = "starting";
   let failure: string | null = null;
   let shown: PageState | null = null;
+  let tabs: TabState[] | undefined;
+  let activeTab: string | null = null;
   let browserUp = false;
   let failedLaunches = 0;
   let failedChecks = 0;
@@ -269,6 +314,7 @@ export function createBrowserPreview(deps: {
   let pendingNavigation: string | null = null;
   let lastAnswerAt = Date.now();
   let generation = 0;
+  let testingMode = readTestingMode(deps.launchModeFile);
 
   let dirty = false;
   let reconciling = false;
@@ -290,6 +336,9 @@ export function createBrowserPreview(deps: {
     state,
     message: failure,
     page: shown,
+    testingMode,
+    tabs,
+    activeTab,
   });
 
   function notify() {
@@ -305,10 +354,18 @@ export function createBrowserPreview(deps: {
     notify();
   }
 
-  function showPage(next: PageState | null) {
-    if (!next) return;
-    shown = next;
+  function showPage(next: BrowserView) {
+    if (!next.page) return;
+    shown = next.page;
+    tabs = next.tabs;
+    activeTab = next.activeTab;
     notify();
+  }
+
+  function unwatch() {
+    page?.close();
+    page = null;
+    browserUp = false;
   }
 
   function browserGone(reason: string) {
@@ -396,7 +453,7 @@ export function createBrowserPreview(deps: {
       while (dirty && !closed) {
         dirty = false;
         if (viewers.size === 0) {
-          browserUp = false;
+          unwatch();
           continue;
         }
         if (!(await ensureBrowser())) continue;
@@ -478,12 +535,21 @@ export function createBrowserPreview(deps: {
       await timed(label, step);
       return ok(undefined);
     } catch (e) {
+      if (e instanceof TabGoneError) return err({ kind: "TabGone" });
       return err({ kind: "Failed", detail: (e as Error).message });
     }
   };
 
+  function selectForAgent(tab: string | null) {
+    if (!tab) return;
+    exec(["tab", tab]).catch((e: Error) =>
+      deps.log(`tab ${tab}: ${e.message.split("\n")[0]}`),
+    );
+  }
+
   async function navigate(
     raw: string,
+    tab?: string,
   ): Promise<Result<void, BrowserDomainError>> {
     const refused = refusal();
     if (refused) return err(refused);
@@ -495,19 +561,69 @@ export function createBrowserPreview(deps: {
       return ok(undefined);
     }
     const target = page;
-    return attempt("navigate", () => target.navigate(url));
+    return attempt("navigate", () => target.navigate(url, tab));
   }
 
   async function act(
     action: BrowserAction,
+    tab?: string,
   ): Promise<Result<void, BrowserDomainError>> {
     const refused = refusal();
     if (refused) return err(refused);
     if (action === "restart" || action === "clearData")
       return attempt(action, () => restart(action === "clearData"));
+    return onPage(action, (target) => target[action](tab));
+  }
+
+  async function onPage(
+    label: string,
+    step: (target: PageWatch) => Promise<unknown>,
+  ): Promise<Result<void, BrowserDomainError>> {
+    const refused = refusal();
+    if (refused) return err(refused);
     if (!browserUp || !page) return ok(undefined);
     const target = page;
-    return attempt(action, () => target[action]());
+    return attempt(label, () => step(target));
+  }
+
+  const selectTab = (tab: string) =>
+    onPage("select tab", async (target) => {
+      await target.select(tab);
+      selectForAgent(tab);
+    });
+
+  async function newTab(): Promise<Result<string, BrowserDomainError>> {
+    let opened: string | null = null;
+    const done = await onPage("new tab", async (target) => {
+      opened = await target.open();
+      selectForAgent(opened);
+    });
+    if (!done.ok) return done;
+    return opened
+      ? ok(opened)
+      : err({ kind: "Failed", detail: "The browser is still starting" });
+  }
+
+  const closeTab = (tab: string) =>
+    onPage("close tab", async (target) => {
+      selectForAgent(await target.closeTab(tab));
+    });
+
+  async function setTestingMode(
+    on: boolean,
+  ): Promise<Result<void, BrowserDomainError>> {
+    const refused = refusal();
+    if (refused) return err(refused);
+    if (on === testingMode) return ok(undefined);
+    const saved = await attempt("save launch mode", () =>
+      writeTestingMode(deps.launchModeFile, on),
+    );
+    if (!saved.ok) return saved;
+    testingMode = on;
+    deps.log(`testing mode ${on ? "on" : "off"}`);
+    const reopen = shown && previewUrl(shown.url);
+    if (reopen && viewers.size > 0) pendingNavigation = reopen;
+    return attempt("relaunch", () => restart());
   }
 
   function addViewer(viewer: (snapshot: BrowserSnapshot) => void) {
@@ -521,7 +637,7 @@ export function createBrowserPreview(deps: {
     viewers.delete(viewer);
     if (viewers.size > 0) return;
     stopTimers();
-    browserUp = false;
+    unwatch();
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
   }
@@ -644,6 +760,10 @@ export function createBrowserPreview(deps: {
     watch: watchBrowser,
     navigate,
     act,
+    selectTab,
+    newTab,
+    closeTab,
+    setTestingMode,
     attachDisplay,
     viewers: () => viewers.size,
     close() {

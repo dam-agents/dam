@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
 import { createByLinkHostGate } from "../../modules/artifact-library/viewer/by-link-host-gate.js";
+import { ARTIFACT_PROMPT_TYPE, ARTIFACT_REQUEST_TYPE } from "api-server-api";
+
+import { SHARED_BRIDGE_REFUSAL } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { createContentApp } from "../../modules/artifact-library/viewer/content-app.js";
 import { createShareViewerApp } from "../../modules/artifact-library/viewer/viewer-app.js";
 import type {
@@ -11,8 +14,12 @@ import type {
 } from "../../modules/artifact-library/services/share-viewer-service.js";
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import type { RenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
+import type { ShareBridgeService } from "../../modules/artifact-library/services/share-bridge-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
-import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
+import {
+  shareSessionCookie,
+  type ShareSession,
+} from "../../modules/artifact-library/domain/share-session.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 
 function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
@@ -88,6 +95,12 @@ const auth = {
   getSession: (id: string) => Promise.resolve(sessions.get(id) ?? null),
 };
 
+const unusedBridge: ShareBridgeService = {
+  request: () => Promise.reject(new Error("no bridge call expected")),
+  prompt: () => Promise.reject(new Error("no bridge call expected")),
+  refuse: () => {},
+};
+
 function appWith(
   viewer: ShareViewerService,
   tokens: Pick<RenderTokenService, "mint"> = renderTokens,
@@ -95,10 +108,13 @@ function appWith(
   return createShareViewerApp({
     viewer,
     auth,
+    sessionCookie: shareSessionCookie("https://share.example.com"),
     renderTokens: tokens,
     brandName: "Platform",
     uiBaseUrl: "http://app.localhost",
     contentBaseUrl: "https://content.example.com",
+    shareBaseUrl: "https://share.example.com",
+    bridge: unusedBridge,
   });
 }
 
@@ -239,6 +255,60 @@ describe("content app", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: An interactive page that is public, which the sharing
+   * rules forbid but an old row could still be, gets the refusing bridge:
+   * its buttons fail at once with a notice and post nothing toward any agent.
+   */
+  it("renders a public interactive page with the refusing bridge", async () => {
+    const app = contentAppWith(
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: artifactRow({ interactive: true }),
+          } satisfies SharedResolution),
+      }),
+    );
+    const html = await (await app.request("/a/slug-a?v=1")).text();
+    expect(html).toContain(SHARED_BRIDGE_REFUSAL);
+    expect(html).not.toContain(ARTIFACT_PROMPT_TYPE);
+    expect(html).not.toContain(ARTIFACT_REQUEST_TYPE);
+  });
+
+  /**
+   * TEST_SCENARIO: The owner shared an interactive page with named viewers.
+   * The content host gives it the same bridge as the owner's preview, so its
+   * buttons post prompts and requests to the share page, which relays them.
+   */
+  it("renders a restricted interactive page with the relaying bridge", async () => {
+    const artifact = artifactRow({
+      interactive: true,
+      visibility: "restricted",
+    });
+    const app = contentAppWith(
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "restricted",
+            artifact,
+          } satisfies SharedResolution),
+      }),
+    );
+    const token = await renderTokens.mint(artifact.id, 1);
+    const html = await (await app.request(`/a/slug-a?v=1&t=${token}`)).text();
+    expect(html).toContain(ARTIFACT_PROMPT_TYPE);
+    expect(html).toContain(ARTIFACT_REQUEST_TYPE);
+    expect(html).not.toContain(SHARED_BRIDGE_REFUSAL);
+  });
+
+  it("renders a plain page without any bridge", async () => {
+    const html = await (
+      await contentAppWith(publicViewer()).request("/a/slug-a?v=1")
+    ).text();
+    expect(html).not.toContain("window.platform");
   });
 
   it("renders images through the relative raw URL on the same host", async () => {
@@ -454,7 +524,7 @@ describe("restricted artifacts on the share host", () => {
     });
   }
   const withCookie = (id: string) => ({
-    headers: { cookie: `share_session=${id}` },
+    headers: { cookie: `__Host-share_session=${id}` },
   });
 
   /**
@@ -471,6 +541,23 @@ describe("restricted artifacts on the share host", () => {
     );
     expect(page.headers.get("Cache-Control")).toBe("private, no-store");
     expect((await app.request("/a/slug-a/raw?v=1")).status).toBe(401);
+  });
+
+  /**
+   * TEST_SCENARIO: Any host under the same parent domain, artifact code on the
+   * content host included, can plant a cookie named share_session. Only the
+   * __Host- cookie, which the browser accepts from the share host alone, may
+   * sign the visitor in; a planted one is ignored, whoever's session it names.
+   */
+  it("ignores a share session cookie another host could have set", async () => {
+    const app = appWith(restrictedViewer(["alice@example.com"]));
+    const planted = { headers: { cookie: "share_session=sid-alice" } };
+    const page = await app.request("/a/slug-a", planted);
+    expect(page.status).toBe(302);
+    expect(page.headers.get("Location")).toBe(
+      `/auth/login?next=${encodeURIComponent("/a/slug-a")}`,
+    );
+    expect((await app.request("/a/slug-a/raw", planted)).status).toBe(401);
   });
 
   /**

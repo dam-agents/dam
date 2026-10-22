@@ -2,10 +2,12 @@ import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import {
+  exitOnAgentCallError,
+  resolveAgentOrExit,
+} from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printTrpcError } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
@@ -119,7 +121,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
           if (e instanceof DirectoryPathTooLongError) {
             process.stderr.write(`error: ${e.message}\n`);
           } else {
-            printTrpcError(e, host);
+            await exitOnAgentCallError(e, svc, agent, host);
           }
           process.exit(EXIT_RUNTIME_FAILURE);
         }

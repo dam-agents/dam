@@ -1,6 +1,11 @@
+import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { loadYamlDocument } from "../../core/yaml-document.js";
 import type { CatalogSource } from "../../modules/starter-kits/infrastructure/catalog-source.js";
 import {
   createCatalogSourceFromLocator,
@@ -17,6 +22,10 @@ import {
   type NamedCatalog,
 } from "../../modules/starter-kits/infrastructure/catalog-refresh.js";
 import { parseCatalogSeeds } from "../../modules/starter-kits/infrastructure/catalog-seeds.js";
+import {
+  type AvatarImages,
+  storeAvatarImage,
+} from "../../modules/agents/infrastructure/avatar-image-routes.js";
 import type { RefResolution } from "../../modules/starter-kits/infrastructure/git-ref-resolver.js";
 import type {
   ResolvedCatalogRepository,
@@ -56,6 +65,12 @@ function harness(
   } = {},
 ) {
   const resolved = memoryResolved();
+  const images = new Map<string, { png: Buffer; ownerSub: string }>();
+  const avatarImages: AvatarImages = {
+    save: async (id, png, ownerSub) => void images.set(id, { png, ownerSub }),
+    load: async (id) => images.get(id)?.png ?? null,
+    sweep: async () => 0,
+  };
   const refresh = createCatalogRefresh({
     catalogs: catalogs.map((c) => ({ entryHosts: ENTERPRISE_HOSTS, ...c })),
     repo: resolved,
@@ -72,8 +87,13 @@ function harness(
     sourceForEntry:
       opts.sourceForEntry ??
       ((gitUrl, ref) => createGitCatalogSource(PUBLIC_HOSTS, gitUrl, ref)),
+    avatar: {
+      maxBytes: 2 * 1024 * 1024,
+      store: (bytes, ownerSub) =>
+        storeAvatarImage(avatarImages, bytes, ownerSub),
+    },
   });
-  return { refresh, repo: resolved };
+  return { refresh, repo: resolved, images };
 }
 
 const APP_VERSION = "1.4.2";
@@ -88,8 +108,8 @@ ${extra}`;
 
 function memorySource(
   locator: string,
-  files: Record<string, string>,
-): CatalogSource & { reads: string[]; files: Record<string, string> } {
+  files: Record<string, string | Buffer>,
+): CatalogSource & { reads: string[]; files: Record<string, string | Buffer> } {
   const reads: string[] = [];
   return {
     locator,
@@ -97,7 +117,14 @@ function memorySource(
     files,
     async readText(relPath) {
       reads.push(relPath);
-      return files[relPath] ?? null;
+      return files[relPath]?.toString() ?? null;
+    },
+    async readBytes(relPath, maxBytes) {
+      reads.push(relPath);
+      const file = files[relPath];
+      if (file === undefined) return null;
+      if (file.length > maxBytes) throw new Error(`${relPath} is too large`);
+      return Buffer.from(file);
     },
   };
 }
@@ -154,6 +181,9 @@ kits:
       source: {
         locator: "/broken",
         readText: () => {
+          throw new Error("network down");
+        },
+        readBytes: () => {
           throw new Error("network down");
         },
       },
@@ -296,6 +326,10 @@ kits:
     await refresh.run();
     expect((await repo.list()).map((k) => k.kit.id).sort()).toEqual(["a", "b"]);
 
+    outcome = { status: "unreachable", unseen: true };
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id).sort()).toEqual(["a", "b"]);
+
     outcome = { status: "absent" };
     await refresh.run();
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a"]);
@@ -347,6 +381,76 @@ kits:
       "echo hi",
       "echo hi",
     ]);
+  });
+
+  // TEST_SCENARIO: a kit's avatar image is a file in the kit repository, so the refresh must turn it into a stored avatar the Agent spec can name, and the row must carry that value rather than the path, which means nothing outside the kit.
+  it("stores a kit's avatar image and keeps characters and emoji as written", async () => {
+    const png = await sharp({
+      create: { width: 900, height: 300, channels: 3, background: "#e89da8" },
+    })
+      .png()
+      .toBuffer();
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml":
+        "kits:\n  - path: kits/pic\n  - path: kits/char\n  - path: kits/emoji\n",
+      "kits/pic/kit.yaml": KIT("pic", "avatar:\n  path: assets/avatar.png\n"),
+      "kits/pic/assets/avatar.png": png,
+      "kits/char/kit.yaml": KIT("char", "avatar: shield\n"),
+      "kits/emoji/kit.yaml": KIT("emoji", 'avatar: "emoji:🛡️"\n'),
+    });
+    const { refresh, repo, images } = harness([
+      { name: "platform", source: catalog },
+    ]);
+    await refresh.run();
+
+    const pic = (await repo.get("platform", "pic"))?.kit.avatar;
+    const id = pic?.match(/^image:([0-9a-f]{64})$/)?.[1];
+    expect(images.get(id ?? "")?.ownerSub).toBe("kit:platform/pic");
+    expect((await sharp(images.get(id ?? "")?.png).metadata()).width).toBe(512);
+    expect((await repo.get("platform", "char"))?.kit.avatar).toBe("shield");
+    expect((await repo.get("platform", "emoji"))?.kit.avatar).toBe("emoji:🛡️");
+  });
+
+  // TEST_SCENARIO: the avatar file is untrusted input from the kit author. A file that is not a JPG or PNG, one over the upload limit, a missing one, or a path out of the kit directory must store nothing and leave the kit listed with the default avatar, so a bad picture never withdraws a working kit.
+  it("lists a kit with no avatar when its image is unusable", async () => {
+    const files: Record<string, string | Buffer> = {
+      "catalog.yaml":
+        "kits:\n  - path: a\n  - path: b\n  - path: c\n  - path: d\n",
+      "a/kit.yaml": KIT("a", "avatar:\n  path: avatar.gif\n"),
+      "a/avatar.gif": await sharp({
+        create: { width: 8, height: 8, channels: 3, background: "#000" },
+      })
+        .gif()
+        .toBuffer(),
+      "b/kit.yaml": KIT("b", "avatar:\n  path: big.png\n"),
+      "b/big.png": Buffer.alloc(2 * 1024 * 1024 + 1),
+      "c/kit.yaml": KIT("c", "avatar:\n  path: missing.png\n"),
+      "d/kit.yaml": KIT("d", "avatar:\n  path: ../a/avatar.gif\n"),
+    };
+    const { refresh, repo, images } = harness([
+      { name: "platform", source: memorySource("/catalog", files) },
+    ]);
+    await refresh.run();
+
+    const kits = await repo.list();
+    expect(kits.map((k) => [k.kit.id, k.kit.avatar])).toEqual([
+      ["a", undefined],
+      ["b", undefined],
+      ["c", undefined],
+      ["d", undefined],
+    ]);
+    expect(images.size).toBe(0);
+  });
+
+  // TEST_SCENARIO: `image:<id>` names a row in one install's database, so a kit that wrote it would point at nothing on any other install; the schema refuses it and a kit ships the file instead.
+  it("rejects a kit that names a stored image id as its avatar", async () => {
+    const catalog = memorySource("/catalog", {
+      "catalog.yaml": "kits:\n  - path: a\n",
+      "a/kit.yaml": KIT("a", `avatar: "image:${"0".repeat(64)}"\n`),
+    });
+    const { refresh, repo } = harness([{ name: "platform", source: catalog }]);
+    await refresh.run();
+    expect(await repo.list()).toEqual([]);
   });
 
   it("replaces a catalog's kits on each refresh", async () => {
@@ -742,9 +846,10 @@ describe("the shipped proof-of-concept catalog", () => {
   it("validates and lists its kits", async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const dir = path.resolve(here, "../../../../../helm/starter-kits");
-    const { refresh, repo } = harness([
-      { name: "platform", source: createLocalCatalogSource(dir) },
-    ]);
+    const { refresh, repo } = harness(
+      [{ name: "platform", source: createLocalCatalogSource(dir) }],
+      { sourceForEntry: (gitUrl) => memorySource(gitUrl, {}) },
+    );
     await refresh.run();
     const kits = await repo.list();
     expect(kits.map((k) => k.kit.id).sort()).toEqual([
@@ -755,10 +860,13 @@ describe("the shipped proof-of-concept catalog", () => {
       "nous",
       "openevolve",
       "shinkaevolve",
+      "spotlights",
     ]);
     expect(new Set(kits.map((k) => k.catalog))).toEqual(new Set(["platform"]));
-    // TEST_SCENARIO: every kit the chart still ships brings its own image. The wiki toolkits are the ones that did not, and they now live in their own repositories, offered through the curated catalog.
-    expect(kits.every((k) => k.kit.image !== undefined)).toBe(true);
+    // TEST_SCENARIO: every kit the chart ships brings its own image, except Spotlights, which installs its engine on the default image.
+    expect(
+      kits.filter((k) => k.kit.image === undefined).map((k) => k.kit.id),
+    ).toEqual(["spotlights"]);
     expect(kits.some((k) => k.kit.knowledgeBase !== undefined)).toBe(false);
     expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
       /^quay\.io\/dam-agents\/nous(:|$)/,
@@ -773,6 +881,157 @@ describe("the shipped proof-of-concept catalog", () => {
     ).toMatchObject({ storage: "5Gi" });
     expect(
       kits.filter((k) => k.kit.onboarding !== false).map((k) => k.kit.id),
-    ).toEqual([]);
+    ).toEqual(["spotlights"]);
+  });
+
+  // TEST_SCENARIO: the engine strips the environment that points each CLI at the Model Router, and Codex will not start without a credential at all, so a fresh agent's codex failed where its claude worked. The install must leave a shim that gives both back, pin the two default models where the engine reads them, and write the rate table the engine prices calls from.
+  it("gives the Spotlights install a working codex and a rate table", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const dir = path.resolve(here, "../../../../../helm/starter-kits");
+    const kit = loadYamlDocument(
+      fs.readFileSync(path.join(dir, "kits/spotlights/kit.yaml"), "utf8"),
+    ) as { install: { command: string } };
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "spotlights-kit-"));
+    const fakeBin = path.join(home, "fake-bin");
+    const wrapperDir = path.join(home, ".local", "share", "aube", "bin");
+    const path_ = `${wrapperDir}:${fakeBin}:${process.env.PATH}`;
+    fs.mkdirSync(fakeBin);
+    const fake = (name: string, body: string) => {
+      const file = path.join(fakeBin, name);
+      fs.writeFileSync(file, body, { mode: 0o755 });
+      return file;
+    };
+    const at = (...parts: string[]) => path.join(home, ...parts);
+
+    const bundledTable = at("site-packages", "rates.json");
+    fs.mkdirSync(path.dirname(bundledTable), { recursive: true });
+    fs.writeFileSync(
+      bundledTable,
+      JSON.stringify({
+        "anthropic:claude-opus-4-8": {
+          input: 1e-6,
+          output: 1e-5,
+          cache_read: 1e-7,
+          cache_create: 1e-6,
+          unit: "per_token",
+        },
+      }),
+    );
+
+    const initMarker = at("init-ran");
+    const engineCli = at(".local", "bin", "spotlights-engine");
+    fs.mkdirSync(path.dirname(engineCli), { recursive: true });
+    fs.writeFileSync(
+      engineCli,
+      `#!${fake(
+        "engine-python",
+        `#!/bin/sh\n[ "$1" = -c ] && { echo ${bundledTable}; exit 0; }\nengine=$1\nshift\nexec /bin/sh "$engine" "$@"\n`,
+      )}\n` +
+        [
+          "unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY",
+          "unset OPENAI_API_KEY OPENAI_BASE_URL",
+          `case "$1" in init) echo ran >> ${initMarker}; exit 0 ;; esac`,
+          'printf "%s %s\\n" "$SPOTLIGHTS_MODELS_FILE" "$SPOTLIGHTS_RATES_FILE" >> ' +
+            at("engine-env"),
+          'exec "$@"',
+          "",
+        ].join("\n"),
+      { mode: 0o755 },
+    );
+    fake("uv", "#!/bin/sh\nexit 0\n");
+
+    fake(
+      "claude",
+      `#!/bin/sh\nprintf 'claude %s %s %s\\n' "$ANTHROPIC_BASE_URL" "$ANTHROPIC_AUTH_TOKEN" "$*"\n`,
+    );
+    fake(
+      "codex",
+      `#!/bin/sh\n[ -n "$OPENAI_API_KEY" ] || { echo "Missing environment variable: OPENAI_API_KEY" >&2; exit 1; }\nprintf 'codex %s %s\\n' "$OPENAI_API_KEY" "$*"\n`,
+    );
+    const listing = (harness: string, model_name: string, info: object) => {
+      const file = at(`router-${harness}.json`);
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ data: [{ model_name, model_info: info }] }),
+      );
+      return file;
+    };
+    const claudeListing = listing(
+      "claude-code",
+      "claude/ibm/aws/claude-opus-5",
+      {
+        mode: "chat",
+        input_cost_per_token: 3.8e-6,
+        output_cost_per_token: 1.9e-5,
+        cache_read_input_token_cost: 3.8e-7,
+        cache_creation_input_token_cost: 4.75e-6,
+      },
+    );
+    const codexListing = listing("codex", "ibm/azure/gpt-5.5", {
+      mode: "chat",
+      input_cost_per_token: 2.5e-6,
+      output_cost_per_token: 1.5e-5,
+      cache_read_input_token_cost: 5e-7,
+    });
+    fake(
+      "curl",
+      `#!/bin/sh\ncase "$*" in\n*claude-code*) cat ${claudeListing} ;;\n*codex*) cat ${codexListing} ;;\nesac\n`,
+    );
+
+    execFileSync("bash", ["-c", kit.install.command], {
+      cwd: home,
+      env: {
+        HOME: home,
+        PATH: path_,
+        PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:24180",
+      },
+      stdio: "pipe",
+    });
+
+    expect(fs.readFileSync(initMarker, "utf8")).toBe("ran\n");
+    expect(
+      fs.readFileSync(at(".config", "spotlights", "models.yaml"), "utf8"),
+    ).toBe("claude: claude/ibm/aws/claude-opus-5\ncodex: ibm/azure/gpt-5.5\n");
+
+    const rates = JSON.parse(
+      fs.readFileSync(at(".config", "spotlights", "rates.json"), "utf8"),
+    );
+    expect(rates["anthropic:claude/ibm/aws/claude-opus-5"]).toMatchObject({
+      input: 3.8e-6,
+      output: 1.9e-5,
+      cache_read: 3.8e-7,
+      cache_create: 4.75e-6,
+      unit: "per_token",
+    });
+    const gptRow = {
+      input: 2.5e-6,
+      output: 1.5e-5,
+      cache_read: 5e-7,
+      cache_create: 0,
+      unit: "per_token",
+    };
+    expect(rates["openai:ibm/azure/gpt-5.5"]).toMatchObject(gptRow);
+    expect(rates["openai:codex"]).toMatchObject(gptRow);
+    expect(rates["anthropic:claude-opus-4-8"]).toMatchObject({ input: 1e-6 });
+
+    fs.rmSync(at("engine-env"), { force: true });
+    const run = (cli: string, env: Record<string, string> = {}) =>
+      execFileSync("sh", [path.join(wrapperDir, "spotlights-engine"), cli], {
+        env: {
+          HOME: home,
+          PATH: path_,
+          PLATFORM_MODEL_ROUTER_SERVES: "1",
+          PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:24180",
+          ...env,
+        },
+      }).toString();
+    expect(run("claude")).toMatch(
+      /^claude http:\/\/127\.0\.0\.1:24180 platform:conn:router /,
+    );
+    expect(fs.readFileSync(at("engine-env"), "utf8")).toBe(
+      `${at(".config", "spotlights", "models.yaml")} ${at(".config", "spotlights", "rates.json")}\n`,
+    );
+    expect(run("codex")).toMatch(/^codex platform:conn:router /);
+    expect(() => run("codex", { PLATFORM_MODEL_ROUTER_SERVES: "" })).toThrow();
   });
 });

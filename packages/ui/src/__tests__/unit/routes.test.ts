@@ -12,10 +12,11 @@ const canonicalPaths = [
   "/terms",
   "/telegram/bind",
   "/slack/bind",
+  "/connections/secret",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/starter-kits/platform/code-reviewer",
-  "/artifacts",
+  "/starter-kits/link/acme/shared-kit",
   "/analytics",
   "/nonexistent",
 ];
@@ -33,10 +34,29 @@ describe("route round-trip", () => {
     "/experiments",
     "/experiments/new",
     "/agents/new",
-    "/starter-kits",
     "/starter-kits/software",
   ])("sends the retired %s to Home", (path) => {
     expect(parseRoute(path).view).toBe("home");
+  });
+
+  // TEST_SCENARIO: the sidebar's Artifacts and Starter kits each open their own page, and a link to either page lands there.
+  it("opens the Artifacts and Starter kits pages", () => {
+    expect(parseRoute("/artifacts")).toEqual({ view: "artifacts" });
+    expect(parseRoute("/starter-kits")).toEqual({ view: "starter-kits" });
+    expect(routeToPath({ view: "artifacts" })).toBe("/artifacts");
+    expect(routeToPath({ view: "starter-kits" })).toBe("/starter-kits");
+  });
+
+  // TEST_SCENARIO: a kit from a link is addressed by its repository, so a teammate can share the platform page itself: /starter-kits/link/<owner>/<repo> opens the kit modal for that repository, keeping the slash between owner and repository.
+  it("opens the kit modal for a kit from a link", () => {
+    expect(parseRoute("/starter-kits/link/acme/shared-kit")).toEqual({
+      view: "starter-kit",
+      catalog: "link",
+      kit: "acme/shared-kit",
+    });
+    expect(
+      routeToPath({ view: "starter-kit", catalog: "link", kit: "acme/kit.v2" }),
+    ).toBe("/starter-kits/link/acme/kit.v2");
   });
 
   it("opens the kit modal for a retired kit setup link", () => {

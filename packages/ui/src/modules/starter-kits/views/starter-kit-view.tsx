@@ -1,10 +1,19 @@
-import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Gift,
+  Launch,
+  Meter,
+  PlayFilledAlt,
+  WarningAlt,
+} from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
+  LINKED_KIT_CATALOG,
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
+import { isAvatarCharacter } from "api-server-api/avatar/svg";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -18,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -37,6 +47,8 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -45,13 +57,13 @@ import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
 import { KitCategoryTag } from "../components/kit-category-tag.js";
 import { KitChannelsSection } from "../components/kit-channels-section.js";
-import { KitRequirementsCard } from "../components/kit-requirements-card.js";
+import { KitRequirementsList } from "../components/kit-requirements-list.js";
 import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
-  VM_BACKEND_LABEL,
+  kitRunsOnVm,
 } from "../lib/catalog-cards.js";
 import {
   buildStarterKitApplyInput,
@@ -105,6 +117,7 @@ function Row({
   title,
   tag,
   detail,
+  code,
   action,
 }: {
   icon?: React.ReactNode;
@@ -112,6 +125,7 @@ function Row({
   title: string;
   tag?: React.ReactNode;
   detail?: string;
+  code?: string;
   action?: React.ReactNode;
 }) {
   const tile =
@@ -141,6 +155,11 @@ function Row({
             text={detail}
             className="mt-0.5 text-sm text-muted-foreground"
           />
+        )}
+        {code !== undefined && (
+          <pre className="mt-1.5 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
+            {code}
+          </pre>
         )}
       </div>
       {action}
@@ -178,6 +197,9 @@ export function StarterKitDetailView() {
   if (!kit.isPending && (kit.isError || kit.data === undefined)) {
     return (
       <KitLoadErrorModal
+        linkReason={
+          catalog === LINKED_KIT_CATALOG ? (kit.error?.message ?? null) : null
+        }
         onRetry={() => void kit.refetch()}
         onClose={close}
         onBack={back}
@@ -187,20 +209,27 @@ export function StarterKitDetailView() {
 
   return (
     <Modal size="xl" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
-      {kit.data === undefined ? (
+      {kit.data === undefined || kitId === null ? (
         <KitDetailSkeleton onClose={close} onBack={back} />
       ) : (
-        <KitDetail kit={kit.data} onClose={close} onBack={back} />
+        <KitDetail
+          kit={kit.data}
+          routeKit={kitId}
+          onClose={close}
+          onBack={back}
+        />
       )}
     </Modal>
   );
 }
 
 function KitLoadErrorModal({
+  linkReason,
   onRetry,
   onClose,
   onBack,
 }: {
+  linkReason: string | null;
   onRetry: () => void;
   onClose: () => void;
   onBack: () => void;
@@ -211,8 +240,9 @@ function KitLoadErrorModal({
       <DialogBody>
         <Callout tone="danger">
           <p className="text-sm text-foreground">
-            Couldn&apos;t load this starter kit. It may have been removed from
-            the catalog, or the catalog is unreachable.
+            {linkReason !== null
+              ? `Couldn't use the kit at this link: ${linkReason}`
+              : "Couldn't load this starter kit. It may have been removed from the catalog, or the catalog is unreachable."}
           </p>
           <div className="mt-2 flex gap-2">
             <Button variant="outline" size="sm" onClick={onRetry}>
@@ -264,6 +294,51 @@ function KitDetailSkeleton({
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A kit from a link is in no catalog, so nobody on
+ * this platform reviewed it; the notice says so above everything the kit sets
+ * up, and names the repository and the commit the agent is created from. For
+ * such a kit the modal also lists its install command and environment, which
+ * a catalog kit's review already covered.
+ */
+function LinkedKitNotice({
+  kit,
+  link,
+}: {
+  kit: StarterKitView;
+  link: { url: string };
+}) {
+  return (
+    <Callout
+      tone="warning"
+      size="sm"
+      className="mb-6 flex gap-2.5"
+      data-testid="linked-kit-notice"
+    >
+      <WarningAlt size={16} className="mt-px shrink-0 text-warning-fg" />
+      <div className="min-w-0 text-sm leading-snug">
+        <p className="font-semibold text-warning-fg">
+          This kit is not in a catalog
+        </p>
+        <p className="mt-0.5 text-muted-foreground">
+          Nobody on this platform reviewed it. Check what it sets up below
+          before you create the agent: it is created from{" "}
+          <a
+            href={`${link.url}/tree/${kit.version}`}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-foreground underline underline-offset-2"
+          >
+            {link.url.replace("https://github.com/", "")}@
+            {shortKitVersion(kit.version)}
+          </a>
+          .
+        </p>
+      </div>
+    </Callout>
+  );
+}
+
 function KitVideoPanel({ video }: { video: string | undefined }) {
   return (
     <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
@@ -289,30 +364,34 @@ function KitVideoPanel({ video }: { video: string | undefined }) {
 
 function KitDetail({
   kit,
+  routeKit,
   onClose,
   onBack,
 }: {
   kit: StarterKitView;
+  routeKit: string;
   onClose: () => void;
   onBack: () => void;
 }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
+  const { answered, vm: installVm } = useVmRuntime();
+  const runsOnVm = kitRunsOnVm(kit, answered ? installVm : undefined);
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
   const returnPath = routeToPath({
     view: "starter-kit",
     catalog: kit.catalog,
-    kit: kit.id,
+    kit: routeKit,
   });
   const { form, update, toggleConnection, reset } = useSetupForm(
     "starter-kit",
     {
       namePrefix: kit.id,
       returnPath,
-      scope: `${kit.catalog}/${kit.id}`,
+      scope: `${kit.catalog}/${routeKit}`,
     },
   );
   const [invalidSchedules, setInvalidSchedules] = useState<readonly string[]>(
@@ -360,9 +439,15 @@ function KitDetail({
     isStarterKitSetupComplete(kit, form, owned, templateById);
 
   const unlocked = useUnlockedAvatars();
+  const customAvatars = useFeatures().data?.["custom-avatars"] ?? false;
+  const kitAvatar =
+    customAvatars || isAvatarCharacter(kit.avatar) ? kit.avatar : undefined;
   const avatar = useMemo(
-    () => form.avatar ?? defaultAvatar(form.name, unlocked, agents ?? []),
-    [form.avatar, form.name, unlocked, agents],
+    () =>
+      form.avatar ??
+      kitAvatar ??
+      defaultAvatar(form.name, unlocked, agents ?? []),
+    [form.avatar, kitAvatar, form.name, unlocked, agents],
   );
 
   const create = async () => {
@@ -390,12 +475,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || kit.backend === "vm") return null;
+    if (!kit.resources || !budget.data || runsOnVm !== false) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, kit.backend, budget.data]);
+  }, [kit.resources, runsOnVm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -431,15 +516,11 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
-            {kit.backend === "vm" && (
-              <Badge variant="muted" size="sm">
-                {VM_BACKEND_LABEL}
-              </Badge>
-            )}
           </div>
         </DialogHeader>
 
         <DialogBody>
+          {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
           {form.name && (
             <div
               className="mb-8 flex min-w-0 items-center gap-3"
@@ -451,7 +532,7 @@ function KitDetail({
                 onRename={(name) => update({ name })}
                 onAvatarChange={(next) => update({ avatar: next })}
                 avatarSize={36}
-                mood="idle"
+                mood="awake"
                 nameClassName="text-base font-semibold text-foreground"
                 nameTag="h2"
               />
@@ -463,15 +544,17 @@ function KitDetail({
                 title={`${kit.name} knowledge base skills`}
                 detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
                 action={
-                  <a
-                    href={kbSeed.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open the ${kit.name} repository`}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Launch size={16} />
-                  </a>
+                  <Tooltip content="Open repository">
+                    <a
+                      href={kbSeed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open the ${kit.name} repository`}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  </Tooltip>
                 }
               />
             </Section>
@@ -529,15 +612,17 @@ function KitDetail({
                     : ""
                 } before the first session`}
                 action={
-                  <a
-                    href={kit.seed.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open the repository"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Launch size={16} />
-                  </a>
+                  <Tooltip content="Open repository">
+                    <a
+                      href={kit.seed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open the repository"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  </Tooltip>
                 }
               />
             </Section>
@@ -560,6 +645,27 @@ function KitDetail({
               />
             ))}
           </Section>
+
+          {kit.link && kit.install && (
+            <Section label="Install command">
+              <Row
+                title="Runs in the agent's workspace when it is created"
+                code={kit.install.command}
+              />
+            </Section>
+          )}
+
+          {kit.link && kit.env.length > 0 && (
+            <Section label="Environment">
+              {kit.env.map((variable) => (
+                <Row
+                  key={variable.name}
+                  title={variable.name}
+                  code={variable.value}
+                />
+              ))}
+            </Section>
+          )}
 
           {size && (
             <Section label="Compute">
@@ -586,7 +692,7 @@ function KitDetail({
           {connectionRequirements(kit).length > 0 && (
             <section className="mb-6">
               <SectionLabel spaced>Connections</SectionLabel>
-              <KitRequirementsCard
+              <KitRequirementsList
                 kit={kit}
                 granted={owned.filter((c) => grantedIds.has(c.id))}
                 templateById={templateById}
@@ -661,6 +767,7 @@ function KitDetail({
             <ArrowLeft size={16} /> Back
           </Button>
           <Button onClick={() => void create()} disabled={!canCreate}>
+            <Gift size={16} aria-hidden />
             {apply.isPending ? "Creating…" : "Use this starter kit"}
           </Button>
         </DialogFooter>

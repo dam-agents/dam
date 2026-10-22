@@ -10,6 +10,8 @@ export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
 
 export const REWRITE_REFUSED_CODE = "REWRITE_REFUSED";
 
+export const REWRITE_BUSY_CODE = "REWRITE_BUSY";
+
 export const STEER_METHOD = "_session/steering";
 
 export const steerResponseSchema = z.object({
@@ -87,6 +89,7 @@ export const platformClippedReplayMetaSchema = z.object({
 export const platformReplayTurnMetaSchema = z.object({
   inFlight: z.boolean(),
   interruptedAt: z.string().optional(),
+  interruptedByStop: z.boolean().optional(),
 });
 export type PlatformReplayTurnMeta = z.infer<
   typeof platformReplayTurnMetaSchema
@@ -146,6 +149,16 @@ export const platformUndeliveredMetaSchema = z.array(
   platformUndeliveredPromptSchema,
 );
 export const platformSupersededMetaSchema = z.array(z.string());
+
+export const CONTINUED_FROM_TEXT_MAX = 1024 * 1024;
+export const CONTINUED_FROM_LABEL_MAX = 200;
+export const platformContinuedFromSchema = z.object({
+  invocationId: z.string().min(1),
+  label: z.string().min(1).max(CONTINUED_FROM_LABEL_MAX),
+  prompt: z.string().max(CONTINUED_FROM_TEXT_MAX),
+  result: z.string().max(CONTINUED_FROM_TEXT_MAX),
+});
+export type PlatformContinuedFrom = z.infer<typeof platformContinuedFromSchema>;
 export type PlatformUndeliveredPrompt = z.infer<
   typeof platformUndeliveredPromptSchema
 >;
@@ -194,6 +207,47 @@ export const platformRunResultResponseSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("interrupted") }),
   z.object({ status: z.literal("none") }),
 ]);
+
+export const RUN_ENDED_CAPABILITY = "runEnded";
+
+export function runEndedSupported(initializeResult: unknown): boolean {
+  const parsed = z
+    .object({
+      _meta: z.object({
+        platform: z.object({ [RUN_ENDED_CAPABILITY]: z.literal(true) }),
+      }),
+    })
+    .safeParse(initializeResult);
+  return parsed.success;
+}
+
+export const platformRunEndedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1).optional(),
+  stopReason: z.string().min(1).optional(),
+});
+export type PlatformRunEndedParams = z.infer<
+  typeof platformRunEndedParamsSchema
+>;
+
+const platformRunEndedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/runEnded"),
+  params: platformRunEndedParamsSchema,
+});
+type PlatformRunEndedNotification = z.infer<
+  typeof platformRunEndedNotificationSchema
+>;
+
+export function buildPlatformRunEndedNotification(
+  params: PlatformRunEndedParams,
+): PlatformRunEndedNotification {
+  return platformRunEndedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/runEnded",
+    params,
+  });
+}
 
 export const platformRunStartsMetaSchema = z.array(
   z.string().datetime({ offset: true }),
@@ -316,15 +370,19 @@ export type PlatformSteerQueuedParams = z.infer<
   typeof platformSteerQueuedParamsSchema
 >;
 
-export const platformRewriteFromParamsSchema = z.object({
-  sessionId: z.string().min(1),
-  mode: z.enum(["rewind", "fork"]),
-  messageId: z.string().min(1),
-  upToMessageId: z.string().min(1).nullable().optional(),
-  prompt: z.array(promptBlockSchema).min(1),
-  promptId: z.string().min(1),
-  title: z.string().min(1).optional(),
-});
+export const platformRewriteFromParamsSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    mode: z.enum(["rewind", "fork"]),
+    messageId: z.string().min(1),
+    upToMessageId: z.string().min(1).nullable().optional(),
+    prompt: z.array(promptBlockSchema).min(1).optional(),
+    promptId: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+  })
+  .refine((p) => (p.prompt === undefined) === (p.promptId === undefined), {
+    message: "prompt and promptId come together",
+  });
 export type PlatformRewriteFromParams = z.infer<
   typeof platformRewriteFromParamsSchema
 >;

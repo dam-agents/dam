@@ -8,6 +8,8 @@ import type {
   HarnessCatalog,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  SpendStatus,
+  ToolApprovalReports,
 } from "api-server-api";
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
@@ -31,6 +33,7 @@ import {
   createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
+  type SpendHoldGate,
 } from "../../modules/invocations/index.js";
 import {
   composeBudgetsModule,
@@ -51,16 +54,31 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
-import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
+import {
+  createDriverOps,
+  driverDefaultModel,
+  type DriverOpsDeps,
+} from "./driver-ops.js";
+import type { FirePair } from "../../modules/harness-config/index.js";
 import { createAgentImageReader } from "./agent-image.js";
+import {
+  limitRequestBody,
+  MAX_AGENT_REQUEST_BODY_BYTES,
+} from "../../core/request-body-bounds.js";
 import { agentsInstallSettings, type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type {
+  RuntimeMutator,
+  SessionMessages,
+} from "../../modules/runtime-delivery/index.js";
 import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
+import { composeFeaturesForOwner } from "../../modules/features/index.js";
+import { createChatFormPreferencesReader } from "../../modules/chat-forms/index.js";
+import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -79,8 +97,10 @@ export interface HarnessApiServerAppDeps {
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
   harnessCatalog: HarnessCatalog;
+  firePair: FirePair;
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
+  environmentsFor: (owner: string) => EnvironmentsServiceImpl;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
@@ -88,12 +108,16 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   kitUpdateReporter: KitUpdateReporter;
   runtimeProgress: RuntimeProgressPort;
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
+  spendHold: SpendHoldGate;
+  spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
+  toolApprovalsFor: (owner: string) => ToolApprovalReports;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -112,6 +136,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsRepo,
     templatesRepo,
     harnessCatalog,
+    firePair,
     artifactLibraryFor,
     agentsServiceFor,
     connectionsServiceFor,
@@ -126,6 +151,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     readHarnessConfigSupport,
     runtimeProgress,
     secretStore,
+    spendHold,
+    spendStatusFor,
   } = deps;
 
   const defaultLimits = {
@@ -170,11 +197,13 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       wakeAgent,
       frames: deps.delegationFrames,
       readHarnessConfigSupport,
+      spendHold,
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
         defaultLimits,
-        vmForced: agentsInstallSettings(config).vmForced,
+        virtualizationEnabled:
+          agentsInstallSettings(config).virtualizationEnabled,
         gate: composeSpawnSizeGate({
           k8s: k8sClient,
           owner,
@@ -221,6 +250,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     connectionsServiceFor,
     templates: templatesRepo,
     harnesses: harnessCatalog,
+    defaultModel: driverDefaultModel(firePair),
     budgetsFor: (owner) =>
       composeBudgetsModule({
         k8s: k8sClient,
@@ -228,11 +258,18 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         listAgents: () => agentsRepo.list(owner),
         defaultCeiling,
         slotSize: defaultLimits,
+        isSlackUnlinked: async () => false,
+        vmPool: {
+          storage: config.vmPoolStorage,
+          memory: config.vmPoolMemory,
+        },
       }).budgets,
     defaultLimits,
   };
 
+  const readChatFormPreferences = createChatFormPreferencesReader(db);
   const app = new Hono();
+  app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
     channelManager,
     k8s: k8sClient,
@@ -255,10 +292,38 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
+    chatFormPreferences: (owner, agentId) =>
+      readChatFormPreferences(
+        agentId,
+        async () =>
+          (
+            await composeFeaturesForOwner({
+              db,
+              owner,
+              surface: "mcp",
+              modes: config.featureModes,
+            }).features.flags()
+          )["chat-forms"],
+      ),
     agentImage: createAgentImageReader(k8sClient),
+    environments: async (owner, agentId) => {
+      const flags = await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "mcp",
+        modes: config.featureModes,
+      }).features.flags();
+      if (!flags.environments) return null;
+      const agent = await agentsRepo.get(agentId, owner);
+      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
+        return null;
+      return deps.environmentsFor(owner).forOwningAgent(agentId);
+    },
     agentTelemetry,
+    spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
+    sessionMessages: deps.sessionMessages,
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,
@@ -275,6 +340,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       recordTouch: (input) => mcpArtifactLibraryFor(owner).recordTouch(input),
     }),
     kbPublish: kbPublishGate,
+    toolApprovalsFor: deps.toolApprovalsFor,
   });
 
   const server = serve(

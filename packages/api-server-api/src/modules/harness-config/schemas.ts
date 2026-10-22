@@ -21,6 +21,19 @@ export const harnessConfigStatusInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+export const defaultKindSchema = z.enum(["chat", "channel", "scheduled"]);
+
+export const harnessConfigDefaultForInputSchema = z.object({
+  agentId: z.string().min(1),
+  harness: z.string().min(1).optional(),
+  kind: defaultKindSchema.default("chat"),
+});
+
+export const sessionPairInputSchema = z.object({
+  agentId: z.string().min(1),
+  kind: defaultKindSchema.default("chat"),
+});
+
 export const harnessConfigSnapshotInputSchema = z.object({
   agentId: z.string().min(1),
   harness: z.string().min(1).optional(),
@@ -30,6 +43,8 @@ export const harnessConfigStatusSchema = z.object({
   supported: z.boolean(),
   catalog: harnessConfigCatalog.nullable(),
   sessionModel: z.boolean(),
+  modelRouter: z.boolean(),
+  followsDefaults: z.boolean(),
   defaultHarness: z.string().nullable(),
   harnesses: z.array(harnessCapability).nullable(),
 });
@@ -43,6 +58,18 @@ export const sessionPairSchema = z.object({
 
 export const rememberSessionPairInputSchema = sessionPairSchema.extend({
   agentId: z.string().min(1),
+  kind: defaultKindSchema.default("chat"),
+});
+
+export const clearSessionDefaultInputSchema = z.object({
+  agentId: z.string().min(1),
+  kind: z.enum(["channel", "scheduled"]),
+});
+
+export const sessionDefaultsSchema = z.object({
+  chat: sessionPairSchema.nullable(),
+  channel: sessionPairSchema.nullable(),
+  scheduled: sessionPairSchema.nullable(),
 });
 
 export const harnessConfigSettledSchema = z.object({

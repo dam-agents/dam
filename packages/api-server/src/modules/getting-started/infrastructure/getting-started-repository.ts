@@ -37,6 +37,7 @@ export interface GettingStartedRepository {
   markSeen(owner: string, task: GettingStartedTask): Promise<void>;
   markPicked(owner: string, character: AvatarCharacter): Promise<void>;
   setDismissed(owner: string, dismissed: boolean): Promise<void>;
+  reset(owner: string): Promise<void>;
 }
 
 type UnlockRow = typeof avatarUnlocks.$inferSelect;
@@ -157,6 +158,16 @@ export function createGettingStartedRepository(
         .update(gettingStartedChecklists)
         .set({ dismissedAt: dismissed ? sql`now()` : null })
         .where(eq(gettingStartedChecklists.owner, owner));
+    },
+
+    async reset(owner) {
+      await db.transaction(async (tx) => {
+        await tx.delete(avatarUnlocks).where(eq(avatarUnlocks.owner, owner));
+        await tx
+          .update(gettingStartedChecklists)
+          .set({ dismissedAt: null })
+          .where(eq(gettingStartedChecklists.owner, owner));
+      });
     },
   };
 }

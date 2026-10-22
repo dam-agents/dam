@@ -54,13 +54,17 @@ export function SessionPairPlaceholder({
     ? pairLabel(pair, catalog?.harnesses, providers.granted)
     : undefined;
 
-  if (providers.loaded && providers.owned.length === 0)
+  if (providers.loaded && providers.granted.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <SessionPairTrigger label={label} aria-busy />
+        <SessionPairTrigger
+          label={label}
+          harness={pair ? pair.harness : undefined}
+          aria-busy
+        />
       </PopoverTrigger>
       <PopoverContent
         side="top"

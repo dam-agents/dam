@@ -20,13 +20,13 @@ const gate = (ceiling: { cpu: string; memory: string }) =>
 const admission = (opts: {
   templateResources?: { limits?: Record<string, string> };
   ceiling: { cpu: string; memory: string };
-  vmForced?: boolean;
+  virtualizationEnabled?: boolean;
 }) =>
   createTargetAdmission({
     readTemplateResources: async () => opts.templateResources,
     defaultLimits: { cpu: "1", memory: "1Gi" },
     gate: gate(opts.ceiling),
-    vmForced: opts.vmForced ?? false,
+    virtualizationEnabled: opts.virtualizationEnabled ?? false,
   });
 
 describe("target admission", () => {
@@ -51,11 +51,11 @@ describe("target admission", () => {
     ).resolves.toBeUndefined();
   });
 
-  // TEST_SCENARIO: an install that pins the vm runtime makes every target a microVM, so a setup that names no backend is not held to the container Ceiling either.
-  test("admits any size on an install that pins the vm runtime", async () => {
+  // TEST_SCENARIO: an install that can virtualize makes every target a microVM, so a setup that names no backend is not held to the container Ceiling either.
+  test("admits any size on an install that can virtualize", async () => {
     const a = admission({
       ceiling: { cpu: "6", memory: "14Gi" },
-      vmForced: true,
+      virtualizationEnabled: true,
     });
 
     await expect(
@@ -179,7 +179,11 @@ describe("budget visibility over the route", () => {
             : null,
       } as never,
       invocationsServiceFor: () => ({}) as never,
-      connectionsServiceFor: () => ({}) as never,
+      connectionsServiceFor: () =>
+        ({
+          listConnections: async () => [],
+          getAgentConnections: async () => ({ connections: [] }),
+        }) as never,
       templates: {
         list: async () => [
           {

@@ -7,8 +7,24 @@
 # side changed must rerun these. The image's entrypoint (image.toml) passes
 # arguments this binary has to accept, and the chart's image cache template the
 # arguments the image cache service has to accept.
-#MISE sources=["src/**/*.rs", "tests/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin", "smolvm.patch", "contract/*.json", "image.toml", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml", "{{vars.repo_root}}/helm/templates/controller/vm-runner-releases.yaml"]
+#MISE sources=["src/**/*.rs", "tests/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin", "smolvm.patch", "contract/*.json", "image.toml", "reboot-id", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml", "{{vars.repo_root}}/helm/templates/controller/vm-runner-releases.yaml"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
 cargo test --locked "$@"
+# The guest agent is rebuilt from smolvm.patch for the image (see oci), so the
+# patch's own tests run too: the launch-exit record a failed launch leaves, the
+# signal a reaped child keeps for the embedder that did not reap it, how long
+# that note is offered for, and what a teardown's own kill may not replace.
+# A lane filtered by name exits 0 when a name matches nothing, so the count is
+# asserted: a test renamed in the patch has to be renamed here too.
+lane=$(
+    cargo test --locked --manifest-path .smolvm/Cargo.toml -p smolvm --lib -- \
+        a_failed_launch_record_names_the_pid_and_the_signal \
+        a_reaped_child_keeps_its_signal_for_every_reader \
+        a_note_past_its_window_is_not_offered \
+        a_teardown_does_not_replace_the_signal_a_process_was_killed_by \
+        a_pid_spawned_again_forgets_the_note_before_it
+)
+echo "$lane"
+grep -q "test result: ok. 5 passed" <<<"$lane"

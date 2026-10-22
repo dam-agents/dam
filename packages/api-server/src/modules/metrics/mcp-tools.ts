@@ -7,10 +7,10 @@ import {
 import type { AgentTelemetryService } from "./services/agent-telemetry.js";
 
 const SELF =
-  "Reads this agent's own telemetry only — it is scoped to the caller and can never return another agent's.";
+  "Reads this agent's own figures only — it is scoped to the caller and can never return another agent's.";
 
 const UNMEASURED =
-  "When it returns available=false, this deployment does not measure telemetry; say so instead of estimating.";
+  "When it returns available=false, this deployment does not collect that telemetry; say so instead of estimating.";
 
 export function registerAgentTelemetryTools(
   server: McpServer,
@@ -21,7 +21,7 @@ export function registerAgentTelemetryTools(
 ): void {
   server.tool(
     "get_metrics",
-    `What this agent's runs cost and how long they took, from the platform's own attributed accounting — always prefer it over estimating cost or counting tokens out of a transcript. Returns window totals and a per-model token/cost split, and with granularity adds a row per session or a row per LLM call. ${SELF} Every result carries totalsCover, which states what its totals span for the arguments you passed and whether rows came back capped. ${UNMEASURED}`,
+    `What this agent's runs cost and how long they took. The cost is what the platform's gateway measured for each model call, the same figure as the owner's screens and spend limits — always prefer it over estimating cost or counting tokens out of a transcript. Returns window totals per unit (dollars, plan use, Bobcoins) and a per-model split, and with granularity adds a row per session, a row per LLM call from your own telemetry, or a row per platform sub-agent you spawned — the way to tell which sub-agent, model or session cost what. ${SELF} Every result carries totalsCover, which states what its totals span for the arguments you passed and whether rows came back capped, and measuredSince, before which nothing was measured. ${UNMEASURED}`,
     agentMetricsInputSchema.shape,
     (query) =>
       run(async () =>

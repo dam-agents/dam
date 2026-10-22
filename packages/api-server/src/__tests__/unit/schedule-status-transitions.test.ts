@@ -45,4 +45,25 @@ describe("schedule status transitions", () => {
       value: 0,
     });
   });
+
+  // TEST_SCENARIO: a decline is proof the schedule works again, so a refusal it settles must not stay on the card as the schedule's last result.
+  it("a decline clears a refused fire's reason", () => {
+    const patch = statusForVerdict(
+      "declined",
+      AT,
+      null,
+      "this agent holds no openai provider",
+    );
+
+    expect(patch.lastFiredResult).toBeNull();
+    expect(patch.lastFiredAt).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a run that finished and a hold are both facts the owner wants kept, so neither is cleared the way a failure is.
+  it("a decline keeps a finished run and a hold", () => {
+    for (const kept of ["success", "held: agent disabled"])
+      expect(statusForVerdict("declined", AT, null, kept)).not.toHaveProperty(
+        "lastFiredResult",
+      );
+  });
 });

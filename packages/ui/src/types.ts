@@ -8,10 +8,10 @@ import type {
 
 export type Role = "user" | "assistant";
 
-export interface ToolContent {
-  type: "content" | "diff" | "terminal";
-  text?: string;
-}
+export type ToolContent =
+  | { type: "content"; text: string }
+  | { type: "terminal"; text: string }
+  | { type: "diff"; path: string; oldText: string | null; newText: string };
 
 export interface ToolChip {
   kind: "tool";
@@ -19,6 +19,8 @@ export interface ToolChip {
   title: string;
   status: string;
   content?: ToolContent[];
+  toolKind?: string;
+  description?: string;
 }
 
 interface TextPart {
@@ -160,17 +162,21 @@ export interface AgentView {
   env?: EnvVar[];
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
+  whisper: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;
   error?: string;
   stopRequested: boolean;
+  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: { at: string; for: "memory" | "compute" };
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: { reason: string; message: string };
   podRestarts: number;
   podRestartReason?: string;
   gatewayFailure?: string;
@@ -190,9 +196,9 @@ export interface AgentView {
   starterKitOnboarded: string | null;
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
+  environmentOf: string | null;
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
-  runtimeMigratable: boolean;
   kind?: AgentKind;
 }
 
@@ -209,16 +215,6 @@ export interface RuntimeMigrationView {
   phase: RuntimeMigrationPhase;
   message?: string;
   attempts?: number;
-  abortable: boolean;
-  retryable: boolean;
-}
-
-export interface RuntimeMigrationPlanView {
-  unmovable: { path: string; reason: string }[];
-  bootsSleepingAgent: boolean;
-  retentionMs: number | null;
-  allowed: boolean;
-  refusal: { type: string; reasons: string[] } | null;
 }
 
 interface QuietWindowView {
@@ -236,7 +232,10 @@ export interface Schedule {
   rrule: string | null;
   at: string | null;
   inSession: "fresh" | "continue" | "report" | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
+  migrationNote: string | null;
   sessionTitle: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];

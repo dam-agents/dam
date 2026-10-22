@@ -1,6 +1,7 @@
 export {
   composeAgentsModule,
   composePublicAgentPage,
+  attachProviderToBareAgents,
   connectionGrantProvisioner,
 } from "./compose.js";
 export type {
@@ -18,6 +19,13 @@ export {
 } from "./infrastructure/agents-repository.js";
 export { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+export {
+  createAvatarImageRoutes,
+  createAvatarImagesRepository,
+  MAX_AVATAR_BYTES,
+  storeAvatarImage,
+  sweepAvatarImages,
+} from "./infrastructure/avatar-image-routes.js";
 export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
@@ -26,12 +34,14 @@ export { createImageUpdate } from "./services/image-update.js";
 export { podIsIdle } from "./infrastructure/pod-status-client.js";
 export {
   AgentWakeTimeoutError,
+  describeWakeFailure,
   isAgentWakeTimeoutError,
   isTransientWakeFailure,
   wakeFailureReasonToken,
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
 export { isAgentStoppedError } from "./domain/agent-stopped.js";
+export { telegramChatOf } from "./domain/telegram-conversation.js";
 export {
   isNewOutOfMemoryRestart,
   type PodRestartState,

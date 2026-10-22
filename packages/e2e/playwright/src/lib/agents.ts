@@ -2,10 +2,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
-import { bootTimeoutMs, onLaneBackend } from "./backend.js";
 import { harnessName } from "./fixtures.js";
 
-const AGENT_RUNNING_TIMEOUT_MS = bootTimeoutMs(180_000);
+const AGENT_RUNNING_TIMEOUT_MS = 240_000;
 
 export async function waitForAgentRunning(
   api: ApiClient,
@@ -87,9 +86,10 @@ export async function ensureAgentRunning(
 ): Promise<string> {
   const list = await api.agents.list.query();
   if (!list.some((a) => a.name === agentName))
-    await api.agents.create.mutate(
-      onLaneBackend({ name: agentName, templateId: harnessName }),
-    );
+    await api.agents.create.mutate({
+      name: agentName,
+      templateId: harnessName,
+    });
   return waitForAgentRunning(api, agentName);
 }
 
@@ -119,6 +119,26 @@ export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
 }
 
+export async function ensureSidebarExpanded(page: Page): Promise<void> {
+  const expand = page
+    .getByTestId("app-sidebar")
+    .getByRole("button", { name: "Expand navigation" });
+  if (await expand.isVisible()) await expand.click();
+  await expect(page.getByTestId("sidebar-agents")).toBeVisible();
+}
+
+export function sidebarAgentRow(page: Page, agentName: string): Locator {
+  return page
+    .getByTestId("sidebar-agents")
+    .locator("li")
+    .filter({
+      has: page.getByTestId("sidebar-agent-row").filter({
+        hasText: new RegExp(`^${agentName}\\s*(\\(unread\\))?$`),
+      }),
+    })
+    .first();
+}
+
 export async function gotoAgentChat(
   page: Page,
   agentName: string,
@@ -128,6 +148,7 @@ export async function gotoAgentChat(
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
+  await ensureSidebarExpanded(page);
 }
 
 export async function openAgentChat(
@@ -152,6 +173,10 @@ export async function sendMessageToAgent(
   const input = chatInput(page);
   await expect(input).toBeVisible();
   await input.fill(message);
+  // UNIT_BOUNDARY_DESCRIPTION: the composer accepts text while the Session it was just switched to is still loading, but send returns early while it loads and the text stays a draft, so the key goes only once the send button beside the textarea reports the composer ready.
+  await expect(
+    input.locator("xpath=..").getByRole("button", { name: /^(Send|Queue)$/ }),
+  ).toBeEnabled({ timeout: 60_000 });
   await input.press("Enter");
 }
 

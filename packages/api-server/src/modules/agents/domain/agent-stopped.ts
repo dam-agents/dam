@@ -1,10 +1,16 @@
 export class AgentStoppedError extends Error {
   readonly agentId: string;
+  readonly disabled: boolean;
 
-  constructor(agentId: string) {
-    super(`agent ${agentId} was stopped by its owner — wake it to continue`);
+  constructor(agentId: string, disabled = false) {
+    super(
+      disabled
+        ? `agent ${agentId} is disabled by its owner — it does not run until they enable it`
+        : `agent ${agentId} was put to sleep by its owner — try again in a moment, or wake it`,
+    );
     this.name = "AgentStoppedError";
     this.agentId = agentId;
+    this.disabled = disabled;
   }
 }
 

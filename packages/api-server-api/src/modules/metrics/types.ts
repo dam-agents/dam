@@ -2,14 +2,10 @@ import type { z } from "zod";
 import type { SessionCategory } from "../sessions/types.js";
 import type {
   metricsOverviewInputSchema,
-  metricsSessionCostsInputSchema,
   metricsSpendBreakdownInputSchema,
 } from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
-export type MetricsSessionCostsQuery = z.infer<
-  typeof metricsSessionCostsInputSchema
->;
 type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;
@@ -17,12 +13,26 @@ type MetricsSpendBreakdownQuery = z.infer<
 export interface TokenSpendByModel {
   model: string;
   calls: number;
+  uncountedCalls: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd: number;
   durationMs: number;
+}
+
+export interface TokenSpendByProvider {
+  provider: string;
+  connectionId: string;
+  connectionName: string | null;
+  calls: number;
+  uncountedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
 }
 
 export interface SpendByAgent {
@@ -73,12 +83,14 @@ export interface CallContext {
 
 export interface MetricsOverview {
   tokenSpendByModel: TokenSpendByModel[];
+  tokenSpendByProvider: TokenSpendByProvider[];
   runtimeBySession: SessionRuntime[];
   contextPerCall: CallContext[];
 }
 
 interface SpendBreakdown {
   byModel: TokenSpendByModel[];
+  byProvider: TokenSpendByProvider[];
   byAgent: SpendByAgent[];
   byDay: SpendByDay[];
   bySessionType: SpendBySessionType[];
@@ -86,6 +98,5 @@ interface SpendBreakdown {
 
 export interface MetricsService {
   overview(query: MetricsQuery): Promise<MetricsOverview>;
-  sessionCosts(query: MetricsSessionCostsQuery): Promise<SessionRuntime[]>;
   spendBreakdown(query: MetricsSpendBreakdownQuery): Promise<SpendBreakdown>;
 }

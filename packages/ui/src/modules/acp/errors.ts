@@ -1,11 +1,16 @@
 import {
   jsonRpcErrorDetails,
+  nextUtcMidnight,
+  platformUndeliveredMetaSchema,
+  type PlatformUndeliveredPrompt,
   PROMPT_NOT_QUEUED_CODE,
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+import { z } from "zod";
 
+import { localResetTime } from "../spend/lib/format.js";
 import { connectionWentAway } from "./close-race.js";
 
 export function describeJsonRpcError(
@@ -60,9 +65,14 @@ export function isQueueFullError(e: unknown): boolean {
 }
 
 interface SendErrorDescription {
+  title?: string;
   message: string;
   hint?: string;
+  kind?: "provider-unavailable";
 }
+
+const PROVIDER_UNAVAILABLE =
+  /\b(?:HTTP\/?[\d.]*|status(?: code)?:?|error:?|failed:?)\s*(?:500|502|503|504|529)\b|overloaded|service unavailable|bad gateway|gateway timeout|upstream connect error|upstream request timeout/i;
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   [
@@ -79,17 +89,37 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   ],
 ];
 
+function describeSpendRefusal(raw: string): SendErrorDescription | null {
+  if (!/spend quota exceeded/i.test(raw)) return null;
+  const reset = localResetTime(nextUtcMidnight());
+  return /platform operator/i.test(raw)
+    ? {
+        title: "Spend ceiling reached:",
+        message: `You reached the daily spend ceiling that your operator set, so paid model calls stop. Ask your operator for a higher ceiling, or wait until ${reset} your time.`,
+        hint: `Details: ${raw}`,
+      }
+    : {
+        title: "Spend limit reached:",
+        message: `This agent reached a daily spend limit, so its model calls stop. Continue it on Home, or wait until ${reset} your time.`,
+        hint: `Details: ${raw}`,
+      };
+}
+
 export function describeSendError(raw: string): SendErrorDescription {
   if (
     raw === QUEUE_FULL_DESCRIPTION.message ||
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
+  const spendRefusal = describeSpendRefusal(raw);
+  if (spendRefusal) return spendRefusal;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     if (/credential secret/i.test(raw)) return { message: raw };
     return { message: raw, hint };
   }
+  if (PROVIDER_UNAVAILABLE.test(raw))
+    return { message: raw, kind: "provider-unavailable" };
   if (/process exited unexpectedly/i.test(raw)) {
     return {
       message: "The agent's process stopped unexpectedly.",
@@ -118,6 +148,21 @@ export function classifyResumeError(e: unknown): ResumeErrorKind {
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
   return "other";
+}
+
+const unstoredDataSchema = z.object({
+  platform: z.object({
+    unstored: z.literal(true),
+    undelivered: platformUndeliveredMetaSchema,
+  }),
+});
+
+export function unstoredSessionPrompts(
+  e: unknown,
+): PlatformUndeliveredPrompt[] | null {
+  const data = (e as { data?: unknown } | null)?.data;
+  const parsed = unstoredDataSchema.safeParse(data);
+  return parsed.success ? parsed.data.platform.undelivered : null;
 }
 
 export type SessionFailureKind =

@@ -1,6 +1,10 @@
 import { Bot, Chat, StopFilledAlt } from "@carbon/icons-react";
-import type { DelegationNode, TurnSummary } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import {
+  type DelegationNode,
+  delegationTitle,
+  type TurnSummary,
+} from "api-server-api";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -12,9 +16,14 @@ import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
 import type { AgentState } from "../../../types.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { useStopDelegation } from "../api/mutations.js";
-import { delegationState, firstLine } from "../lib/delegation-state.js";
+import {
+  type DelegationModel,
+  delegationModel,
+  delegationState,
+} from "../lib/delegation-state.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
 interface Props {
@@ -41,6 +50,9 @@ export function DelegationCard({
   const state = delegationState(node, agentStates.get(node.id));
   const failed = state === "failed";
   const turn = turns?.[node.id];
+  const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
+  const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
+  const model = delegationModel(node.requestedModel, turn?.models);
 
   return (
     <div className={cn(CARD_SURFACE, "border-border px-3 mt-2")}>
@@ -62,7 +74,7 @@ export function DelegationCard({
             className="truncate text-sm font-medium text-foreground"
             title={node.prompt}
           >
-            {firstLine(node.prompt)}
+            {delegationTitle(node)}
           </span>
           <span
             className={cn(
@@ -76,11 +88,13 @@ export function DelegationCard({
         <DelegationStatePill state={state} />
       </button>
 
+      <ModelLine model={model} />
       {turn && (
         <TurnTelemetry
           agentId={driverAgentId}
           invocationId={node.id}
           turn={turn}
+          spend={turnSpend?.get(turn.turnId)}
           className="-mt-1 mb-1.5"
           triggerClassName="ml-[58px]"
         />
@@ -188,5 +202,35 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <div className="text-2xs text-placeholder">{label}</div>
       {children}
     </div>
+  );
+}
+
+const SUBSTITUTED =
+  "The sub-agent ran another model than the one its driver asked for.";
+
+function ModelLine({ model }: { model: DelegationModel }) {
+  if (model.ran === null && model.requested === null) return null;
+  const asked =
+    model.requested === null
+      ? null
+      : `${model.ran === null ? "Asked" : " · asked"} for ${model.requested}`;
+  return (
+    <p
+      data-testid="delegation-model"
+      className="-mt-1 mb-1.5 ml-[58px] truncate text-xs text-muted-foreground"
+    >
+      {model.ran !== null && <>Model {model.ran}</>}
+      {asked !== null &&
+        (model.substituted ? (
+          <Tooltip content={SUBSTITUTED} side="top">
+            <span tabIndex={0} className="text-warning">
+              {asked}
+              <span className="sr-only">. {SUBSTITUTED}</span>
+            </span>
+          </Tooltip>
+        ) : (
+          asked
+        ))}
+    </p>
   );
 }

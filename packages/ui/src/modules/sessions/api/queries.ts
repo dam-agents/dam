@@ -14,7 +14,7 @@ import {
   SessionType,
   type SessionView,
 } from "api-server-api";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
@@ -24,6 +24,8 @@ import {
   useAgentLacksLiveUpdates,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
+import { isUnreadSession } from "../../home/lib/unread.js";
+import { nextSessionCursor } from "../lib/sidebar-session-window.js";
 import {
   findAgentSession,
   listAgentSessionPage,
@@ -52,6 +54,50 @@ function updateListedSessions(
           sessions: update(page.sessions, i),
         })),
       },
+  );
+}
+
+function unreadListedAgentIds(openSessionId: string | null): string {
+  const ids = new Set<string>();
+  for (const [, data] of queryClient.getQueriesData<SessionPages>({
+    queryKey: acpSessionsKeys.all,
+    predicate: ({ queryKey }) => queryKey[2] === "pages",
+  }))
+    for (const page of data?.pages ?? [])
+      for (const s of page.sessions)
+        if (isUnreadSession(s, { open: s.sessionId === openSessionId }))
+          ids.add(s.agentId);
+  return [...ids].sort().join("\n");
+}
+
+export function useAgentsWithUnreadListedSessions(
+  openSessionId: string | null,
+): ReadonlySet<string> {
+  const snapshot = () => unreadListedAgentIds(openSessionId);
+  const ids = useSyncExternalStore(
+    (onChange) => queryClient.getQueryCache().subscribe(onChange),
+    snapshot,
+    snapshot,
+  );
+  return useMemo(() => new Set(ids ? ids.split("\n") : []), [ids]);
+}
+
+export function keepFirstSessionPages(agentId?: string): void {
+  queryClient.setQueriesData<SessionPages>(
+    {
+      queryKey:
+        agentId === undefined
+          ? acpSessionsKeys.all
+          : acpSessionsKeys.pages(agentId),
+      predicate: ({ queryKey }) => queryKey[2] === "pages",
+    },
+    (prev) =>
+      prev && prev.pages.length > 1
+        ? {
+            pages: prev.pages.slice(0, 1),
+            pageParams: prev.pageParams.slice(0, 1),
+          }
+        : prev,
   );
 }
 
@@ -208,7 +254,7 @@ export function useSessionPages(
                 ...(pageParam && { after: pageParam }),
                 limit: SESSION_PAGE_SIZE,
               }),
-            () => untilAgentOperable(agentId),
+            () => untilAgentOperable(agentId, { evenUnreachable: true }),
           );
           if (pageParam) return page;
           const coversAll =
@@ -229,7 +275,8 @@ export function useSessionPages(
         }
       : skipToken,
     initialPageParam: null as SessionListCursor | null,
-    getNextPageParam: (last) => last.nextCursor,
+    getNextPageParam: (_last, pages, lastCursor) =>
+      nextSessionCursor(pages, lastCursor),
     refetchOnMount: "always",
     refetchInterval: live && compat ? 5_000 : false,
     staleTime: 5_000,
@@ -318,6 +365,8 @@ export function provisionalSessionView(item: AttentionItem): SessionView {
     createdAt: item.createdAt,
     scheduleId: item.scheduleId,
     title: item.title,
+    threadTs: item.threadTs,
+    harness: item.harness,
     updatedAt: item.activityAt,
     running: item.working,
     seenAt: item.seenAt,
@@ -328,7 +377,7 @@ export function useProvisionalSessions(
   agentId: string | null,
   enabled: boolean,
 ): SessionView[] | undefined {
-  const { data } = useQuery({
+  const { data, isError } = useQuery({
     ...trpc.attention.sessionsForAgent.queryOptions(
       agentId && enabled ? { agentId } : skipToken,
     ),
@@ -336,7 +385,10 @@ export function useProvisionalSessions(
     retry: false,
   });
   return useMemo(
-    () => (enabled ? data?.map(provisionalSessionView) : undefined),
-    [data, enabled],
+    () =>
+      enabled
+        ? (data?.map(provisionalSessionView) ?? (isError ? [] : undefined))
+        : undefined,
+    [data, isError, enabled],
   );
 }

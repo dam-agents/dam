@@ -1,30 +1,26 @@
 import { Checkmark, Edit } from "@carbon/icons-react";
-import type { AvatarCharacter, AvatarMood } from "api-server-api/avatar/svg";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Tooltip } from "@/components/ui/tooltip";
+import { getErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
-import { AgentAvatar, resolveCharacter } from "./avatar/agent-avatar.js";
-import { AvatarGrid } from "./avatar/avatar-picker.js";
+import {
+  AgentAvatar,
+  type AgentAvatarMood,
+  resolveCharacter,
+} from "./avatar/agent-avatar.js";
+import { AvatarPicker } from "./avatar/avatar-picker.js";
 import { NewAvatarDot } from "./avatar/new-avatar-dot.js";
 
-const PENCIL_BADGE =
-  "flex shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground";
-const REVEAL_ON_HOVER =
-  "opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100";
+const ICON_BUTTON = "shrink-0 text-muted-foreground hover:text-foreground";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent's avatar and name, each editable in
- * place and saved on confirm. The chat header and the agent configuration
- * header share it so both rename and re-skin the agent the same way.
+ * place and saved on confirm, in the agent configuration header.
  */
 export function EditableAgentIdentity({
   agent,
@@ -32,7 +28,7 @@ export function EditableAgentIdentity({
 }: {
   agent: AgentView;
 } & IdentityDisplay) {
-  const rename = useUpdateAgent();
+  const rename = useUpdateAgent({ inlineError: true });
   const changeAvatar = useUpdateAgent();
   const name =
     (rename.isPending ? rename.variables.name : undefined) ?? agent.name;
@@ -45,12 +41,16 @@ export function EditableAgentIdentity({
       {...display}
       name={name}
       avatar={avatar}
-      onRename={(next) => {
+      onRename={async (next) => {
         if (next === agent.name) return;
         const keepNameDerivedAvatar = agent.avatar
           ? {}
           : { avatar: resolveCharacter(name, avatar) };
-        rename.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
+        await rename.mutateAsync({
+          id: agent.id,
+          name: next,
+          ...keepNameDerivedAvatar,
+        });
       }}
       onAvatarChange={(next) =>
         changeAvatar.mutate({ id: agent.id, avatar: next })
@@ -61,8 +61,7 @@ export function EditableAgentIdentity({
 
 interface IdentityDisplay {
   avatarSize: number;
-  mood: AvatarMood;
-  avatarClassName?: string;
+  mood: AgentAvatarMood;
   nameClassName?: string;
   nameTag?: "h1" | "h2";
 }
@@ -78,117 +77,121 @@ export function EditableIdentity({
   onAvatarChange,
   avatarSize,
   mood,
-  avatarClassName,
   nameClassName,
   nameTag: NameTag = "h1",
 }: {
   name: string;
   avatar: string | null | undefined;
-  onRename: (name: string) => void;
-  onAvatarChange: (avatar: AvatarCharacter) => void;
+  onRename: (name: string) => Promise<void> | void;
+  onAvatarChange: (avatar: string) => void;
 } & IdentityDisplay) {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const editEnded = useRef(false);
-  const character = resolveCharacter(name, avatar);
+  const errorId = useId();
+  const current =
+    avatar?.startsWith("emoji:") || avatar?.startsWith("image:")
+      ? avatar
+      : resolveCharacter(name, avatar);
 
   const startEdit = () => {
     editEnded.current = false;
+    setError(null);
     setDraft(name);
   };
   const cancelEdit = () => {
     editEnded.current = true;
+    setError(null);
     setDraft(null);
   };
-  const commitName = () => {
+  const commitName = async () => {
     if (editEnded.current) return;
-    editEnded.current = true;
     const next = draft?.trim();
-    setDraft(null);
-    if (next) onRename(next);
+    if (!next) {
+      setError("Enter a name.");
+      return;
+    }
+    editEnded.current = true;
+    try {
+      await onRename(next);
+      setError(null);
+      setDraft(null);
+    } catch (e) {
+      editEnded.current = false;
+      setError(getErrorMessage(e, "Couldn't rename the agent."));
+    }
   };
 
   return (
     <>
-      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <PopoverTrigger
-          type="button"
-          aria-label={`Avatar: ${character}. Choose an avatar`}
-          className={cn("group relative shrink-0 rounded-md", avatarClassName)}
-        >
-          <AgentAvatar
-            name={name}
-            avatar={avatar}
-            size={avatarSize}
-            mood={mood}
-          />
-          <span
-            className={cn(
-              PENCIL_BADGE,
-              REVEAL_ON_HOVER,
-              "absolute -right-1 -bottom-1 size-4",
-            )}
-          >
-            <Edit size={10} />
-          </span>
-          {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-3">
-          <AvatarGrid
-            value={character}
-            onPick={(next) => {
-              setPickerOpen(false);
-              if (next !== character) onAvatarChange(next);
-            }}
-            onLeave={() => setPickerOpen(false)}
-          />
-        </PopoverContent>
-      </Popover>
+      <AvatarPicker value={current} onChange={onAvatarChange}>
+        <AgentAvatar
+          name={name}
+          avatar={avatar}
+          size={avatarSize}
+          mood={mood}
+        />
+        {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
+      </AvatarPicker>
       {draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
-          <button
-            type="button"
-            onClick={startEdit}
-            title={`Rename ${name}`}
-            className="group flex min-w-0 items-center gap-1.5 text-left"
-          >
-            <span className="truncate">{name}</span>
-            <span
-              aria-hidden
-              className={cn(PENCIL_BADGE, REVEAL_ON_HOVER, "size-5")}
+          <Tooltip content="Rename">
+            <button
+              type="button"
+              onClick={startEdit}
+              aria-label={`Rename ${name}`}
+              className="flex min-w-0 items-center gap-1.5 text-left"
             >
-              <Edit size={12} />
-            </span>
-          </button>
+              <span className="truncate">{name}</span>
+              <Edit aria-hidden size={16} className={ICON_BUTTON} />
+            </button>
+          </Tooltip>
         </NameTag>
       ) : (
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="relative flex min-w-0 items-center gap-1.5">
           <input
             autoFocus
             aria-label="Agent name"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setError(null);
+            }}
             onFocus={(e) => e.target.select()}
-            onBlur={commitName}
+            onBlur={() => void commitName()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitName();
+              if (e.key === "Enter") void commitName();
               if (e.key === "Escape") cancelEdit();
             }}
             className={cn(
               "min-w-0 flex-1 rounded-sm bg-transparent px-1 -mx-1 outline-hidden ring-1 ring-border focus-visible:ring-ring",
+              error && "ring-danger focus-visible:ring-danger",
               nameClassName,
             )}
           />
-          <button
-            type="button"
-            aria-label="Save name"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={commitName}
-            className={cn(PENCIL_BADGE, "size-5")}
-          >
-            <Checkmark size={12} />
-          </button>
+          <Tooltip content="Save name">
+            <button
+              type="button"
+              aria-label="Save name"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => void commitName()}
+              className={ICON_BUTTON}
+            >
+              <Checkmark size={16} />
+            </button>
+          </Tooltip>
+          {error && (
+            <span
+              id={errorId}
+              role="alert"
+              className="absolute top-full left-0 mt-1 text-xs font-normal text-danger"
+            >
+              {error}
+            </span>
+          )}
         </span>
       )}
     </>

@@ -13,6 +13,8 @@ import {
 import { Command } from "commander";
 import {
   agentCreateInputSchema,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  isStartRefusal,
   type ConnectionTemplateView,
   type ConnectionView,
   PROVIDER_PRESET_TYPES,
@@ -283,7 +285,7 @@ async function runCreate(
     }
     case "error":
       spin.stop(
-        `Agent entered error state: ${failureReason(waitResult.agent)}`,
+        `Agent ${isStartRefusal(waitResult.agent.podTerminationCode) ? "could not start" : "entered error state"}: ${failureReason(waitResult.agent)}`,
       );
       note(`dam agent get ${name}`, "Inspect");
       process.exit(EXIT_RUNTIME_FAILURE);
@@ -363,11 +365,27 @@ interface ProviderSelection {
   type: string;
 }
 
-interface ExistingProviderConn {
+export interface ExistingProviderConn {
   id: string;
   name: string;
   templateId: string;
   type: ProviderPresetType;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Connection a personal credential for this
+ * provider type would replace. The deployment's CurveBender answers for the
+ * same type but its key is never the user's to replace, so a personal key
+ * gets a Connection of its own.
+ */
+export function personalProviderConn(
+  conns: readonly ExistingProviderConn[],
+  type: ProviderPresetType,
+): ExistingProviderConn | undefined {
+  return conns.find(
+    (c) =>
+      c.type === type && c.templateId !== CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  );
 }
 
 async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
@@ -451,7 +469,7 @@ async function addOrReplaceProvider(
     });
     if (isCancel(type)) return cancelAndCleanup(trpc, cleanup);
 
-    const existingOfType = existingConns.find((c) => c.type === type);
+    const existingOfType = personalProviderConn(existingConns, type);
 
     if (existingOfType) {
       const replace = await confirm({

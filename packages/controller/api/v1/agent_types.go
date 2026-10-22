@@ -14,6 +14,8 @@ import (
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
+// +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
+// +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -24,9 +26,12 @@ type AgentSpec struct {
 	// Description is an optional human-readable description.
 	// +optional
 	Description string `json:"description,omitempty"`
-	// Avatar is the agent's chosen avatar character; unset means one picked from its owner and name.
+	// Avatar is the agent's chosen avatar: a character name, "emoji:<emoji>" or "image:<sha256>"; unset means a character picked from its owner and name.
 	// +optional
 	Avatar string `json:"avatar,omitempty"`
+	// WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
+	// +optional
+	WhispersOff bool `json:"whispersOff,omitempty"`
 	// Init is an optional one-shot init script run before the agent starts.
 	// +optional
 	Init string `json:"init,omitempty"`
@@ -40,7 +45,7 @@ type AgentSpec struct {
 	// +optional
 	Resources ResourceSpec `json:"resources,omitempty"`
 
-	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent ignores it and always takes the chart-wide vm idle timeout. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent reads the chart-wide vm idle timeout instead of the container one when it carries no override. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
 	// +optional
 	HibernationTimeout *metav1.Duration `json:"hibernationTimeout,omitempty"`
 
@@ -85,10 +90,18 @@ type AgentSpec struct {
 	Backend *Backend `json:"backend,omitempty"`
 
 	// Harness names the harness the agent image runs (claude-code, codex,
-	// pi, bob, mock). One image serves every harness, and the agent reads
+	// pi, bob, copilot, mock). One image serves every harness, and the agent reads
 	// this as PLATFORM_HARNESS; empty leaves the image's own default.
 	// +optional
 	Harness string `json:"harness,omitempty"`
+
+	// EnvironmentOf names the Agent that owns this one as an Environment: a
+	// sandbox that runs software for others to open, with no harness, on its
+	// owner's VM runner beside the owning Agent. Set at create, never changed;
+	// the guest reads it as PLATFORM_ENVIRONMENT_OF.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="environmentOf cannot change"
+	EnvironmentOf string `json:"environmentOf,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
@@ -266,7 +279,7 @@ const (
 	// the seed. The migration can no longer be aborted.
 	ReasonRuntimeMigrationVerified = "Verified"
 	// ReasonRuntimeMigrationFailed: the copy attempts or the time budget ran
-	// out. Terminal until the user retries or aborts.
+	// out. Terminal until an operator retries or aborts.
 	ReasonRuntimeMigrationFailed = "Failed"
 )
 
@@ -275,6 +288,12 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonMachineStopping is stamped on AgentPodReady of a vm agent whose
+// hibernation has begun but whose machine the runner is still stopping. The
+// runner answers a stop before the guest has powered off, so the agent is not
+// yet Hibernated; the api-server reads it as hibernating, not as starting.
+const ReasonMachineStopping = "MachineStopping"
+
 // ReasonOverBudget is stamped on Ready when the agent wants to run but its
 // start would push the owner's summed Sizes (`spec.resources.limits`) past
 // their Ceiling (#1900). The pods stay at zero; the message carries the
@@ -282,10 +301,44 @@ const ReasonHibernated = "Hibernated"
 // lapses.
 const ReasonOverBudget = "OverBudget"
 
+// ReasonAwaitingAllocation is stamped on Ready when a vm agent's machine is
+// waiting for the node to grant its runner the memory the start needs. The
+// owner's pool has room and, while the node is still enacting the resize,
+// nothing they disable frees memory it has not handed over, so it is not
+// ReasonOverBudget: a wake waits for it the way it waits for any start in
+// progress, and no refusal is announced. Once the node defers or refuses that
+// resize, the owner's idle agents are hibernated for the room it did grant,
+// while the reason stays this one.
+const ReasonAwaitingAllocation = "AwaitingAllocation"
+
+// ReasonAwaitingWarmUp is stamped on Ready when a vm agent's start was refused
+// for room while its owner's runner was inside the window after a restart, in
+// which the machines the restart is bringing back are counted at their warm-up
+// floors until they have warmed. They settle below those floors, so the pool has
+// room once they have, and nothing the owner does frees it: the start is not
+// ReasonOverBudget, a wake waits for it the way it waits for any start in
+// progress, and no idle agent is put to sleep for the wave it is part of. The
+// window is a bound on that wait rather than proof of room, so a refusal past it
+// is the pool's again, and the owner's idle agents are then the room it has left.
+const ReasonAwaitingWarmUp = "AwaitingWarmUp"
+
+// ReasonAllocationUnreadable is stamped on Ready when a vm agent's start has
+// waited past the point where the node is merely late to report how much memory
+// it granted the owner's VM runner. The start keeps holding and is retried at
+// the parked tick: the platform cannot admit it without a figure, and the node
+// may yet report one. It carries the Machine prefix every start failure the
+// page shows as an error carries.
+const ReasonAllocationUnreadable = "MachineAllocationUnreadable"
+
 // ReasonStuckOnSupersededRevision marks a pod that will never become ready,
 // its revision having been superseded — typically a template still referencing
 // a deleted credential Secret. Terminal, unlike PodNotReady.
 const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
+
+// ReasonOwnerGatewayListenerStale marks a vm agent whose owner gateway does
+// not yet serve the listener last rendered for it. Transient: Envoy applies
+// the new file within seconds of the kubelet's sync.
+const ReasonOwnerGatewayListenerStale = "OwnerGatewayListenerStale"
 
 // ReasonMachineRunnerUnschedulable is stamped on AgentPodReady when a vm
 // agent's owner has a VM runner pod the scheduler cannot place (no node
@@ -295,11 +348,22 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 
-// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
-// kernel took down when it OOM-killed the owner's VM runner, from the
-// runner pod's last termination, until the agent is ready again. Every
-// machine of the owner is a process of that pod, so they all restart at
-// once. Not a Machine* reason: the agent is starting again, not failed.
+// ReasonMachineRunnerNodeLost is stamped on AgentPodReady when a vm agent's
+// owner has a VM runner pod on a node the cluster does not report ready. The
+// pod cannot be replaced there — the claim stays attached to a node nothing
+// runs on — so every agent of that owner is down until an operator brings the
+// node back or fences it. Not a Machine* reason the runner can report: the
+// runner is not running.
+const ReasonMachineRunnerNodeLost = "MachineRunnerNodeLost"
+
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent whose
+// machine was holding memory on the owner's VM runner when the kernel
+// OOM-killed it, for the ten minutes after the kill, from the runner pod's
+// last termination. Every machine of the owner is a process of that pod, so
+// they all restart at once; an agent woken after the kill carries nothing,
+// since the kill did not take it down, and a reason the runner gives for one
+// machine alone outranks the kill. Not a Machine* reason: the agent is
+// starting again, not failed.
 const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
@@ -381,7 +445,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=18
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=20
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

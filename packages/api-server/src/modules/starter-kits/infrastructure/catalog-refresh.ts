@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type {
   ResolvedSkill,
   ResolvedStarterKit,
+  StarterKit,
   StarterKitCatalogEntry,
 } from "api-server-api";
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
@@ -37,25 +38,102 @@ export interface CatalogRefreshDeps {
     subPath: string,
   ) => Promise<ResolvedSkill[]>;
   sourceForEntry: (gitUrl: string, ref: string) => CatalogSource;
+  avatar: {
+    maxBytes: number;
+    store: (
+      bytes: Buffer,
+      ownerSub: string,
+    ) => Promise<{ avatar: `image:${string}` } | { error: string }>;
+  };
 }
 
 export interface CatalogRefresh {
   run(): Promise<void>;
 }
 
-type EntryFailure = "rejected" | "unreadable";
+export interface KitFailure {
+  kind: "rejected" | "unreadable" | "unseen";
+  reason: string;
+}
 
-export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
+export type KitResolverDeps = Pick<
+  CatalogRefreshDeps,
+  "refs" | "appVersion" | "scanSkills" | "sourceForEntry"
+> & { avatar?: CatalogRefreshDeps["avatar"] };
+
+export interface KitResolver {
+  resolve(
+    named: NamedCatalog,
+    entry: StarterKitCatalogEntry,
+  ): Promise<ResolvedKitRow | KitFailure>;
+}
+
+function rejected(reason: string): KitFailure {
+  return { kind: "rejected", reason };
+}
+
+function unreadable(reason: string): KitFailure {
+  return { kind: "unreadable", reason };
+}
+
+function unseen(reason: string): KitFailure {
+  return { kind: "unseen", reason };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Reads one kit the way a catalog entry names it:
+ * resolves its ref to a commit, reads and validates `kit.yaml` there, pins its
+ * seed and scans its bundled skills. The catalog refresh runs it for every
+ * entry; a Linked Kit runs it for the one repository a user pasted. A failure
+ * says why in words a user can act on, beside the log line an operator reads.
+ * A repository the host will not show (`unseen`: missing, renamed or private)
+ * is held by the refresh like an unreachable one, so a rename never prunes a
+ * catalog, while a Linked Kit tells the user to check the link.
+ * Without an avatar store a kit's avatar image is dropped and the kit keeps
+ * the default one.
+ */
+export function createKitResolver(deps: KitResolverDeps): KitResolver {
+  async function resolveAvatar(
+    named: NamedCatalog,
+    entry: StarterKitCatalogEntry,
+    source: CatalogSource,
+    kit: StarterKit,
+  ): Promise<ResolvedStarterKit["avatar"]> {
+    if (typeof kit.avatar !== "object") return kit.avatar;
+    if (!deps.avatar) return undefined;
+    const store = deps.avatar;
+    const avatarPath = kit.avatar.path;
+    const fail = (reason: string) => {
+      getLogger().warn(
+        { catalog: named.name, id: kit.id, path: avatarPath, reason },
+        "starter kits: the kit's avatar image is not usable; the kit keeps the default avatar",
+      );
+      return undefined;
+    };
+    if (relPathEscapes(avatarPath)) return fail("path escapes the kit");
+    try {
+      const bytes = await source.readBytes(
+        path.posix.join(entry.path, avatarPath),
+        store.maxBytes,
+      );
+      if (bytes === null) return fail("file not found");
+      const stored = await store.store(bytes, `kit:${named.name}/${kit.id}`);
+      return "error" in stored ? fail(stored.error) : stored.avatar;
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function resolveEntry(
     named: NamedCatalog,
     entry: StarterKitCatalogEntry,
-  ): Promise<ResolvedKitRow | EntryFailure> {
+  ): Promise<ResolvedKitRow | KitFailure> {
     if (relPathEscapes(entry.path)) {
       getLogger().warn(
         { catalog: named.name, path: entry.path },
         "starter kits: entry path rejected",
       );
-      return "rejected";
+      return rejected(`the kit path ${entry.path} leaves the repository`);
     }
 
     if (entry.url && !named.entryHosts.locate(entry.url)) {
@@ -67,7 +145,9 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         },
         "starter kits: the entry names a host this catalog may not aim at; the entry is withdrawn",
       );
-      return "rejected";
+      return rejected(
+        `${entry.url} is not on a host kits may be read from here (${named.entryHosts.readableHosts.join(", ")})`,
+      );
     }
 
     const gitUrl = entry.url ?? named.gitUrl;
@@ -84,7 +164,15 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
             ? "starter kits: the entry's ref is gone; the entry is withdrawn"
             : "starter kits: could not reach the entry's repository",
         );
-        return resolution.status === "absent" ? "rejected" : "unreadable";
+        return resolution.status === "absent"
+          ? rejected(
+              ref
+                ? `${gitUrl} has no branch, tag or commit named ${ref}`
+                : `${gitUrl} could not be found, or it is not public`,
+            )
+          : resolution.unseen
+            ? unseen(`${gitUrl} could not be found, or it is not public`)
+            : unreadable(`${gitUrl} could not be reached; try again`);
       }
       version = resolution.sha;
       source = deps.sourceForEntry(gitUrl, resolution.sha);
@@ -97,7 +185,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         { catalog: named.name, source: source.locator, path: kitPath },
         "starter kits: kit.yaml not found at the resolved commit",
       );
-      return "rejected";
+      return rejected(`${gitUrl ?? "the catalog"} has no ${kitPath}`);
     }
     const parsed = starterKitSchema.safeParse(loadYamlDocument(text));
     if (!parsed.success) {
@@ -109,7 +197,12 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         },
         "starter kits: kit.yaml rejected",
       );
-      return "rejected";
+      return rejected(
+        `${kitPath} is not a valid kit: ${parsed.error.issues
+          .slice(0, 3)
+          .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+          .join("; ")}`,
+      );
     }
     const kit = parsed.data;
 
@@ -124,7 +217,9 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         },
         "starter kits: the kit's seed names a host this catalog may not aim at; the kit is withdrawn",
       );
-      return "rejected";
+      return rejected(
+        `the kit's seed ${seedUrl} is not on a host kits may be read from here (${named.entryHosts.readableHosts.join(", ")})`,
+      );
     }
     let seedRef: string | undefined;
     if (seedUrl) {
@@ -145,7 +240,15 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
               ? "starter kits: the seed ref is gone; the kit is withdrawn"
               : "starter kits: could not reach the seed repository",
           );
-          return resolution.status === "absent" ? "rejected" : "unreadable";
+          return resolution.status === "absent"
+            ? rejected(
+                `the kit's seed ${seedUrl} has no ${kit.seed?.ref ?? "default branch"}`,
+              )
+            : resolution.unseen
+              ? unseen(
+                  `the kit's seed ${seedUrl} could not be found, or it is not public`,
+                )
+              : unreadable(`the kit's seed ${seedUrl} could not be reached`);
         }
         seedRef = resolution.sha;
       }
@@ -172,9 +275,13 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
         { catalog: named.name, id: kit.id },
         "starter kits: the kit's seed says `self` but the kit was not read from a repository",
       );
-      return "rejected";
+      return rejected(
+        "the kit's seed says `self`, but the kit was not read from a repository",
+      );
     }
-    const { seed, ...withoutSeed } = kit;
+    const { seed, avatar: _declared, ...rest } = kit;
+    const avatar = await resolveAvatar(named, entry, source, kit);
+    const withoutSeed = { ...rest, ...(avatar ? { avatar } : {}) };
     const pinnedKit: ResolvedStarterKit =
       seed && seedUrl
         ? {
@@ -199,6 +306,12 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     };
   }
 
+  return { resolve: resolveEntry };
+}
+
+export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
+  const kits = createKitResolver(deps);
+
   async function refreshCatalog(named: NamedCatalog): Promise<void> {
     const text = await named.source.readText(CATALOG_FILE);
     if (text === null) {
@@ -219,19 +332,19 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
 
     const resolved = await Promise.all(
       parsed.data.kits.map((entry) =>
-        resolveEntry(named, entry).catch((err: unknown) => {
+        kits.resolve(named, entry).catch((err: unknown) => {
           getLogger().warn(
             { catalog: named.name, path: entry.path, err },
             "starter kits: entry failed to resolve",
           );
-          return "unreadable" as const;
+          return unreadable(err instanceof Error ? err.message : String(err));
         }),
       ),
     );
 
     const byId = new Map<string, ResolvedKitRow>();
     for (const row of resolved) {
-      if (typeof row === "string") continue;
+      if ("kind" in row) continue;
       if (byId.has(row.kitId)) {
         getLogger().warn(
           { catalog: named.name, id: row.kitId },
@@ -242,10 +355,12 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       byId.set(row.kitId, row);
     }
     const rows = [...byId.values()];
-    const unreadable = resolved.filter((row) => row === "unreadable").length;
-    if (unreadable > 0) {
+    const unread = resolved.filter(
+      (row) => "kind" in row && row.kind !== "rejected",
+    ).length;
+    if (unread > 0) {
       getLogger().warn(
-        { catalog: named.name, unreadable, resolved: rows.length },
+        { catalog: named.name, unreadable: unread, resolved: rows.length },
         "starter kits: incomplete read; the unreadable entries keep their stored rows",
       );
       await deps.repo.upsert(rows);

@@ -9,6 +9,7 @@ import {
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
+import { WakeToEditButton } from "../../agents/components/wake-to-edit-button.js";
 import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { ModelSettingsPanel } from "../../sessions/components/model-settings-panel.js";
 import {
@@ -16,7 +17,6 @@ import {
   ReadOnlyOptionFace,
 } from "../../sessions/components/option-field.js";
 import { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
-import { WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
 export function SandboxModelSettings({ agentId }: { agentId: string }) {
   const draft = useHarnessConfigDraft(agentId);

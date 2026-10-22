@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { skillSourcePathSchema } from "../skills/schemas.js";
 import { agentSizeSchema, storageQuantitySchema } from "./schemas.js";
 
 export const agentSetupInstallSchema = z.object({
@@ -17,6 +18,7 @@ export const agentSetupResourcesSchema = agentSizeSchema.extend({
 export const agentSetupSkillSchema = z.object({
   source: z.url(),
   name: z.string().min(1),
+  path: skillSourcePathSchema.optional(),
 });
 
 export const agentSetupSeedSchema = z.object({

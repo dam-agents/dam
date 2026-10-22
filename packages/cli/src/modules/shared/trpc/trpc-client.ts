@@ -5,7 +5,11 @@ import {
   splitLink,
   type TRPCClient,
 } from "@trpc/client";
-import type { AppRouter } from "api-server-api";
+import {
+  AGENT_UNREACHABLE,
+  type AgentUnreachableBody,
+  type AppRouter,
+} from "api-server-api";
 import type { AppRouter as AgentRuntimeAppRouter } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
 
@@ -33,6 +37,31 @@ export class ForbiddenAtTransportError extends Error {
   constructor(public readonly detail: string) {
     super(detail || "access denied");
     this.name = "ForbiddenAtTransportError";
+  }
+}
+
+export class AgentUnavailableAtTransportError extends Error {
+  readonly kind = "agent-unavailable" as const;
+  constructor(public readonly reason?: string) {
+    super(
+      reason === undefined
+        ? "the agent is unreachable"
+        : `the agent is unavailable: ${reason}`,
+    );
+    this.name = "AgentUnavailableAtTransportError";
+  }
+}
+
+export class NonJsonAnswerAtTransportError extends Error {
+  readonly kind = "non-json-answer" as const;
+  constructor(
+    public readonly status: number,
+    statusText: string,
+  ) {
+    super(
+      `the server answered HTTP ${String(status)}${statusText ? ` ${statusText}` : ""} with a body that is not an API response`,
+    );
+    this.name = "NonJsonAnswerAtTransportError";
   }
 }
 
@@ -70,6 +99,24 @@ function wrapFetchWithServerGates(
   const inner = baseFetch ?? fetch;
   return (async (input, init) => {
     const response = await inner(input, init);
+    if (response.status === 502) {
+      const body = (await response
+        .clone()
+        .json()
+        .catch(() => ({}))) as Partial<AgentUnreachableBody>;
+      if (body.error === AGENT_UNREACHABLE)
+        throw new AgentUnavailableAtTransportError(
+          typeof body.message === "string" ? body.message : undefined,
+        );
+    }
+    if (
+      !response.ok &&
+      !(response.headers.get("content-type") ?? "").includes("json")
+    )
+      throw new NonJsonAnswerAtTransportError(
+        response.status,
+        response.statusText,
+      );
     if ([401, 403, 412].includes(response.status)) {
       const clone = response.clone();
       let body: { error?: string; message?: string };
@@ -81,7 +128,12 @@ function wrapFetchWithServerGates(
       if (body.error === "terms_stale")
         throw new TermsStaleAtTransportError(host);
       if (body.error === "unauthorized")
-        throw new AuthRequiredAtTransportError(`session expired for ${host}`);
+        throw new AuthRequiredAtTransportError(
+          response.redirected &&
+            new URL(response.url).origin !== new URL(host).origin
+            ? `${host} moved to ${new URL(response.url).origin}/`
+            : `session expired for ${host}`,
+        );
       if (body.error === "forbidden")
         throw new ForbiddenAtTransportError(
           typeof body.message === "string" ? body.message : "",

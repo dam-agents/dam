@@ -2,6 +2,7 @@ import { err, ok, type Result } from "../../../result.js";
 import type {
   AuthRequiredError,
   NotFoundError,
+  RuntimeMigratingError,
   TransportError,
 } from "../domain/errors.js";
 import type { AgentView } from "../domain/agent-view.js";
@@ -10,11 +11,15 @@ import {
   trpcCall,
   trpcErrorCode,
 } from "../../shared/trpc/classify.js";
+import type { RuntimeFleet } from "api-server-api";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
   list(): Promise<
     Result<readonly AgentView[], TransportError | AuthRequiredError>
+  >;
+  runtimeFleet(): Promise<
+    Result<RuntimeFleet, TransportError | AuthRequiredError>
   >;
   get(
     id: string,
@@ -25,6 +30,15 @@ export interface AgentService {
   restart(
     id: string,
   ): Promise<Result<void, TransportError | AuthRequiredError | NotFoundError>>;
+  setDisabled(
+    id: string,
+    disabled: boolean,
+  ): Promise<
+    Result<
+      AgentView,
+      TransportError | AuthRequiredError | NotFoundError | RuntimeMigratingError
+    >
+  >;
 }
 
 export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
@@ -40,6 +54,9 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
   return {
     async list() {
       return trpcCall(() => deps.trpc.agents.list.query());
+    },
+    async runtimeFleet() {
+      return trpcCall(() => deps.trpc.agents.runtimeFleet.query());
     },
     async get(id) {
       try {
@@ -62,6 +79,15 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
         await deps.trpc.agents.restart.mutate({ id });
         return ok(undefined);
       } catch (e) {
+        return notFoundOnMutate(e, id);
+      }
+    },
+    async setDisabled(id, disabled) {
+      try {
+        return ok(await deps.trpc.agents.setDisabled.mutate({ id, disabled }));
+      } catch (e) {
+        if (trpcErrorCode(e) === "CONFLICT")
+          return err({ kind: "runtime-migrating" });
         return notFoundOnMutate(e, id);
       }
     },

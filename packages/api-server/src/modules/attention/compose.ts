@@ -1,4 +1,4 @@
-import type { AttentionService } from "api-server-api";
+import type { AttentionService, DefaultModelNotice } from "api-server-api";
 import type { RuntimeFeatures } from "agent-runtime-api";
 import type { Db } from "db";
 
@@ -18,12 +18,15 @@ export function composeAttentionService(deps: {
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
+  defaultModelNotices: () => Promise<DefaultModelNotice[]>;
 }): AttentionService {
   return createAttentionService({
     repo: createAttentionRepository(deps.db),
     ownerSub: deps.ownerSub,
     ownsApproval: deps.ownsApproval,
     ownsAgent: deps.ownsAgent,
+    defaultModelNotices: deps.defaultModelNotices,
+    log: (message) => process.stderr.write(`${message}\n`),
   });
 }
 

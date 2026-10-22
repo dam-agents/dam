@@ -3,6 +3,7 @@ import {
   type AcpRuntime,
   type AcpRuntimeDeps,
 } from "../acp-runtime.js";
+import { noopAgentRequests } from "../pending-agent-requests.js";
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import type { AgentProcess } from "../../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../../infrastructure/client-channel.js";
@@ -12,6 +13,7 @@ import {
 } from "../../../infrastructure/session-metadata-store.js";
 import type { UndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
+import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import type { PlatformUndeliveredPrompt } from "api-server-api";
 
@@ -40,6 +42,7 @@ export interface Harness {
   receivedMethods(): string[];
   answersTo(id: number): Frame[];
   replyTo(method: string, result?: unknown): void;
+  refuseTo(method: string, error: object): void;
   replyToSession(method: string, sessionId: string, result?: unknown): void;
   emit(frame: object): void;
   pushLine(line: string): void;
@@ -69,6 +72,7 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
       resolveExit();
     },
     exited,
+    exitCause: () => null,
   };
 
   const received = (method?: string): Frame[] =>
@@ -87,6 +91,14 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
         throw new Error(`no ${method} was ever forwarded to the harness`);
       }
       harness.emit({ jsonrpc: "2.0", id: last.id, result });
+    },
+    refuseTo(method, error) {
+      const matching = received(method);
+      const last = matching[matching.length - 1];
+      if (last === undefined) {
+        throw new Error(`no ${method} was ever forwarded to the harness`);
+      }
+      harness.emit({ jsonrpc: "2.0", id: last.id, error });
     },
     replyToSession(method, sessionId, result = {}) {
       const match = received(method).find(
@@ -217,9 +229,13 @@ export function createWorld(
   const runtime = createAcpRuntime({
     workingDir: "/workspace",
     idleReapDelayMs: IDLE_REAP_DELAY_MS,
+    agentRequests: noopAgentRequests,
     onArtifactTouch: () => {},
     queueParkMs: QUEUE_PARK_MS,
     undeliveredPrompts: createInMemoryUndeliveredStore(),
+    continuedFrom: createContinuedFromStore(memoryDocumentBackend(), () =>
+      new Date().toISOString(),
+    ),
     activeTurns: createActiveTurnStore(memoryDocumentBackend()),
     backgroundWork: createBackgroundWorkRegistry({
       keepPolicy: keepsEveryTask,
@@ -334,6 +350,21 @@ export function memoryDocumentBackend(): DocumentStoreBackend {
         read: () => state,
         write(next) {
           state = next;
+        },
+      };
+    },
+  };
+}
+
+export function sharedDocumentBackend(): DocumentStoreBackend {
+  const documents = new Map<string, unknown>();
+  return {
+    open(name, opts) {
+      if (!documents.has(name)) documents.set(name, opts.initial());
+      return {
+        read: () => documents.get(name) as ReturnType<typeof opts.initial>,
+        write(next) {
+          documents.set(name, next);
         },
       };
     },

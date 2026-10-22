@@ -30,7 +30,6 @@ const turn = (
   traceIds: [],
   models: [],
   calls: 1,
-  costUsd: 0,
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,

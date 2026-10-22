@@ -22,6 +22,45 @@ inputs:
 runs:
   using: composite
   steps:
+    # Maven on every full install, in an entry of its own: its one download
+    # host, archive.apache.org, stalls for minutes at a time, and each stall
+    # failed a whole build. arm64 has no tool cache below, and x64's misses on
+    # every mise.lock change. Keyed by the maven version mise.lock pins and by
+    # this file, which pins mise, whose install layout the entry holds; per
+    # arch. A change to this file falls back on the same maven version's older
+    # entry: the exact key missed in every merge group between such a change
+    # and main's next save, and each miss downloaded maven again. Only main
+    # writes it, at the end, for the reason the tool cache gives.
+    - id: maven-version
+      if: inputs.install_args == ''
+      shell: bash
+      run: |
+        set -euo pipefail
+        maven="$(sed -n '/^\[\[tools\.maven\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+        [ -n "$maven" ] || { echo "::error::mise.lock names no maven version"; exit 1; }
+        echo "version=$maven" >> "$GITHUB_OUTPUT"
+    # mise names a version's directory by a hash of what it installed and
+    # links the version to it, so the entry holds both.
+    # A release restores only what reviewed code wrote: main is this entry's
+    # one writer (the save below).
+    # jactionlint ignore=cache-poisoning
+    - id: maven-cache
+      if: inputs.install_args == ''
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.local/share/mise/installs/maven
+          ~/.local/share/mise/installs/maven-*
+        key: mise-maven-${{ runner.os }}-${{ runner.arch }}-${{ steps.maven-version.outputs.version }}-${{ hashFiles('.github/actions/setup-mise/action.yml') }}
+        restore-keys: mise-maven-${{ runner.os }}-${{ runner.arch }}-${{ steps.maven-version.outputs.version }}-
+    # mise's download limits, for this install and every later step, the
+    # same as install-harness-tools': a file that trickles fails after 5
+    # minutes, not mise's default 30, and a stall is retried 6 times. A zig
+    # download at 20 kB/s once held the install until the job was cancelled.
+    - shell: bash
+      run: |
+        echo "MISE_HTTP_RETRIES=6" >> "$GITHUB_ENV"
+        echo "MISE_HTTP_DOWNLOAD_TIMEOUT=5m" >> "$GITHUB_ENV"
     # Builds are reproducible per commit: every image this job builds carries
     # the checked-out commit's time as its creation date, and the same commit
     # always gives the same date. A fixed date instead ages every image, and
@@ -29,22 +68,36 @@ runs:
     - shell: bash
       run: |
         [ -n "${SOURCE_DATE_EPOCH:-}" ] || echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
-    # A PR never saves the tool cache: a branch must not write an entry main
-    # then restores. mise-action keys the cache by the tools a job names, so
+    # A PR or a merge group never saves the tool cache: a branch must not
+    # write an entry main then restores. mise-action keys the cache by the
+    # tools a job names, so
     # each install_args was its own entry, all of them rotating with every
     # mise.lock change and evicting the build caches from the repo's 10 GB.
     # Only the full install is cached, on x64 alone: a subset installs in
     # seconds without one (mirror-images: 3 s), and on arm64 only
     # build-images installs everything, on main.
-    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+    # cache_save is off for a pull request and a merge group, so those saves
+    # never reach this cache. The writers left are the default-branch schedules
+    # and dispatches, pushes of main, and the ref's own pushes and dispatches;
+    # GitHub scopes a non-default ref's entry to that ref, so a release reads
+    # main's entry and its own tag's, and nothing else.
+    # jactionlint ignore=cache-poisoning
+    - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
       with:
-        version: "2026.10.4"
+        version: "2026.10.5"
         install_args: ${{ inputs.install_args }}
         cache: ${{ inputs.cache == 'true' && inputs.install_args == '' && runner.arch == 'X64' }}
-        cache_save: ${{ github.event_name != 'pull_request' }}
+        cache_save: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
     - if: inputs.quay-username != ''
       shell: bash
       env:
         QUAY_USERNAME: ${{ inputs.quay-username }}
         QUAY_PASSWORD: ${{ inputs.quay-password }}
       run: echo "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
+    - if: inputs.install_args == '' && github.ref == 'refs/heads/main' && steps.maven-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.local/share/mise/installs/maven
+          ~/.local/share/mise/installs/maven-*
+        key: ${{ steps.maven-cache.outputs.cache-primary-key }}

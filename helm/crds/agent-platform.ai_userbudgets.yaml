@@ -93,8 +93,9 @@ spec:
                 - type: string
                 description: |-
                   Memory is the ceiling on summed memory limits (e.g. "16Gi"), and the
-                  memory limit of the user's VM runner: the pool every vm Agent of theirs
-                  is admitted against.
+                  memory limit of the user's VM runner: the whole pool every vm Agent of
+                  theirs shares, which a start is admitted against only as far as the node
+                  has granted the runner pod.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
                 x-kubernetes-validations:

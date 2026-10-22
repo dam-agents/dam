@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { avatarSchema } from "../agents/schemas.js";
 import type { Agent } from "../agents/types.js";
 import type { SkillSetApplyResult } from "../skills/types.js";
 import type {
@@ -29,8 +30,9 @@ export type StarterKitEgressRule = z.infer<typeof starterKitEgressRuleSchema>;
 export type StarterKitResources = z.infer<typeof starterKitResourcesSchema>;
 export type StarterKit = z.infer<typeof starterKitSchema>;
 
-export type ResolvedStarterKit = Omit<StarterKit, "seed"> & {
+export type ResolvedStarterKit = Omit<StarterKit, "seed" | "avatar"> & {
   seed?: NonNullable<StarterKit["seed"]> & { url: string };
+  avatar?: z.infer<typeof avatarSchema>;
 };
 export type StarterKitCatalogEntry = z.infer<
   typeof starterKitCatalogEntrySchema
@@ -42,6 +44,7 @@ export interface StarterKitView extends ResolvedStarterKit {
   version: string;
   source: string;
   skillsInKit: ResolvedSkill[];
+  link?: { url: string };
 }
 
 export interface StarterKitApplyResult {
@@ -88,6 +91,7 @@ export interface KitUpdateChanges {
 export interface StarterKitsService {
   list: () => Promise<StarterKitView[]>;
   get: (catalog: string, id: string) => Promise<StarterKitView | null>;
+  inspect: (url: string) => Promise<StarterKitView>;
   apply: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
   markOnboarded: (agentId: string) => Promise<void>;
   updates: () => Promise<KitUpdateStatus[]>;

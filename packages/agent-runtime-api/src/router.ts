@@ -1,6 +1,7 @@
 import { t } from "./trpc.js";
 import { artifactApiRouter } from "./modules/artifact-api/router.js";
 import { browserRouter } from "./modules/browser/router.js";
+import { changesRouter } from "./modules/changes/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { kbPublishRouter } from "./modules/kb-publish/router.js";
 import { sessionsRouter } from "./modules/sessions/router.js";
@@ -13,6 +14,7 @@ import { processesRouter } from "./modules/processes/router.js";
 export const appRouter = t.router({
   artifactApi: artifactApiRouter,
   browser: browserRouter,
+  changes: changesRouter,
   files: filesRouter,
   kbPublish: kbPublishRouter,
   sessions: sessionsRouter,

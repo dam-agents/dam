@@ -9,6 +9,7 @@ import { PROVIDERS } from "../../../../types.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 
 const OPENAI_DISPLAY_NAME = PROVIDERS.openai.displayName;
+const OPENAI_KEY_PAGE_URL = "https://platform.openai.com/api-keys";
 
 const openaiCredentialSchema = z
   .object({ value: z.string() })
@@ -57,6 +58,10 @@ export function OpenAIForm({
           ? "Paste a new API key to replace the existing one."
           : "Powers Codex agents and any harness that reads OPENAI_API_KEY."
       }
+      keyPage={{
+        href: OPENAI_KEY_PAGE_URL,
+        hint: "Create a secret key in the OpenAI dashboard",
+      }}
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
@@ -68,6 +73,7 @@ export function OpenAIForm({
           data-lpignore="true"
           data-form-type="other"
           placeholder="sk-…"
+          aria-label="OpenAI API key"
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

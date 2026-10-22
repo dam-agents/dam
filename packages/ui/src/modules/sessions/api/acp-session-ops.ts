@@ -33,6 +33,8 @@ interface PlatformMeta {
   provider?: string;
   model?: string;
   settings?: Record<string, string>;
+  customTitle?: string | null;
+  autoTitle?: string | null;
 }
 
 interface ListedSession {
@@ -64,6 +66,8 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
+    ...(p?.customTitle !== undefined && { customTitle: p.customTitle }),
+    ...(p?.autoTitle !== undefined && { autoTitle: p.autoTitle }),
     updatedAt: s.updatedAt ?? null,
     running: p?.running ?? false,
     seenAt: p?.seenAt ?? null,
@@ -127,6 +131,7 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   schedule_cron: SessionType.ScheduleCron,
   schedule_once: SessionType.ScheduleOnce,
   cli_run: SessionType.CliRun,
+  invocation: SessionType.Invocation,
 };
 
 const POD_MODE: Record<PodSession["mode"], SessionMode> = {
@@ -145,6 +150,8 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,
+    ...(s.customTitle !== undefined && { customTitle: s.customTitle }),
+    ...(s.autoTitle !== undefined && { autoTitle: s.autoTitle }),
     updatedAt: s.updatedAt,
     running: s.running,
     seenAt: s.seenAt,
@@ -155,7 +162,8 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     provider: s.provider ?? null,
     model: s.model ?? null,
     ...(s.settings && { settings: s.settings }),
-    ...(s.spend ? { spend: s.spend } : {}),
+    ...(s.follows !== undefined && { follows: s.follows }),
+    ...(s.repositories?.length ? { repositories: s.repositories } : {}),
   };
 }
 

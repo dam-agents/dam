@@ -1,8 +1,15 @@
 import type { Db } from "db";
-import type { ConnectionsService } from "api-server-api";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  PLATFORM_LLM_TEMPLATE_ID,
+  type ConnectionsService,
+  type HarnessCatalog,
+  type SecretRequestsService,
+} from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
 import { createProviderBalanceSource } from "./infrastructure/provider-balance-source.js";
 import {
   createOAuthEngine,
@@ -21,13 +28,30 @@ import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
 import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
-import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
-import { createConnectionsService } from "./services/connections-service.js";
+import {
+  buildCatalog,
+  type OperatorCredentials,
+  type PlatformProviderEndpoint,
+} from "./domain/catalog.js";
+import {
+  createConnectionsService,
+  type ManagedProviderConnections,
+} from "./services/connections-service.js";
 import {
   createContributionFanOut,
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import { createSecretRequestsService } from "./services/secret-requests.js";
+import type {
+  PendingSecretRequest,
+  SecretRequestOutcome,
+} from "./domain/secret-request.js";
+import {
+  providerEgressScopes,
+  scopeCovers,
+  type ProviderEgressRequest,
+} from "./domain/provider-egress-scopes.js";
 import {
   createOAuthRefreshLoop,
   type OAuthRefreshLoop,
@@ -41,8 +65,14 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
 
+export interface SecretRequestStores {
+  pending: TtlStore<PendingSecretRequest>;
+  outcomes: TtlStore<SecretRequestOutcome>;
+}
+
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  secretRequestStores: SecretRequestStores;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
@@ -55,8 +85,11 @@ export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
   pendingFlowStore: TtlStore<PendingFlow>;
+  secretRequestStores: SecretRequestStores;
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
+  platformProvider?: PlatformProviderEndpoint | null;
+  curveBenderDeployment?: boolean;
   e2eEnabled?: boolean;
 }
 
@@ -66,6 +99,8 @@ export function composeConnectionsAtBoot(
   const templates = createConnectionTemplateRegistry(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
+      platformProvider: opts.platformProvider ?? null,
+      curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );
 
@@ -96,6 +131,7 @@ export function composeConnectionsAtBoot(
 
   return {
     templates,
+    secretRequestStores: opts.secretRequestStores,
     oauthEngine,
     githubAppEngine,
     s3CredentialProbe,
@@ -116,6 +152,59 @@ export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
   return createConnectionsRepository(db).listDistinctGrantAgentIds();
 }
 
+export async function listManagedConnectionOwners(db: Db): Promise<string[]> {
+  const repo = createConnectionsRepository(db);
+  const owners = await Promise.all(
+    [PLATFORM_LLM_TEMPLATE_ID, CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID].map((id) =>
+      repo.listOwnersOfTemplate(id),
+    ),
+  );
+  return [...new Set(owners.flat())];
+}
+
+export function listConnectionTemplateIds(db: Db): () => Promise<string[]> {
+  return () => readConnectionTemplateIds(db);
+}
+
+export function createGrantedConnectionTemplates(db: Db): {
+  templateOf(agentId: string, connectionId: string): Promise<string | null>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async templateOf(agentId, connectionId) {
+      const granted = await repo.listConnectionsForAgent(agentId);
+      return granted.find((c) => c.id === connectionId)?.templateId ?? null;
+    },
+  };
+}
+
+export function createProviderEgressScopes(db: Db): {
+  covers(agentId: string, request: ProviderEgressRequest): Promise<boolean>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async covers(agentId, request) {
+      const granted = await repo.listConnectionsForAgent(agentId);
+      return providerEgressScopes(granted).some((scope) =>
+        scopeCovers(scope, request),
+      );
+    },
+  };
+}
+
+export function createConnectionNames(db: Db): {
+  namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async namesOf(ownerSub) {
+      return new Map(
+        (await repo.listByOwner(ownerSub)).map((c) => [c.id, c.name]),
+      );
+    },
+  };
+}
+
 export function composeConnectionsForOwner(opts: {
   ownerId: string;
   db: Db;
@@ -131,7 +220,12 @@ export function composeConnectionsForOwner(opts: {
   oauthCallbackUrl: string;
   brandName: string;
   maxSharedKbConnections?: number;
-}): ConnectionsService {
+  platformProviderEnabled: () => Promise<boolean>;
+  platformProviderKey: string | null;
+  platformProviderCa: string | null;
+  curveBenderDeploymentKey: string | null;
+  harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+}): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
 
@@ -180,8 +274,34 @@ export function composeConnectionsForOwner(opts: {
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),
+    platformProviderEnabled: opts.platformProviderEnabled,
+    platformProviderKey: opts.platformProviderKey,
+    platformProviderCa: opts.platformProviderCa,
+    curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
+    harnesses: opts.harnesses,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),
+  });
+}
+
+export function composeSecretRequestsForOwner(opts: {
+  ownerId: string;
+  db: Db;
+  uiBaseUrl: string;
+  stores: SecretRequestStores;
+  templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  connections: Pick<ConnectionsService, "createFromTemplate" | "update">;
+  agentName: (agentId: string) => Promise<string | null>;
+}): SecretRequestsService {
+  return createSecretRequestsService({
+    ownerId: opts.ownerId,
+    uiBaseUrl: opts.uiBaseUrl,
+    pending: opts.stores.pending,
+    outcomes: opts.stores.outcomes,
+    templates: opts.templates,
+    repo: createConnectionsRepository(opts.db),
+    connections: opts.connections,
+    agentName: opts.agentName,
   });
 }

@@ -6,10 +6,12 @@ import type {
   KbPublishGate,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  ToolApprovalReports,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
+import { MAX_TRPC_BATCH_SIZE } from "../../core/request-body-bounds.js";
 
 export interface RuntimeTrpcDeps {
   k8s: K8sClient;
@@ -17,6 +19,7 @@ export interface RuntimeTrpcDeps {
   sessionDirectory: SessionDirectoryService;
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
   kbPublish: KbPublishGate;
+  toolApprovalsFor: (owner: string) => ToolApprovalReports;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -45,12 +48,14 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         duplex: "half",
       } as RequestInit),
       router: harnessRouter,
+      maxBatchSize: MAX_TRPC_BATCH_SIZE,
       createContext: (): HarnessContext => ({
         agentId,
         runtimeDelivery: deps.hello,
         sessionDirectory: deps.sessionDirectory,
         artifactTouches: deps.artifactTouchesFor(verified.owner),
         kbPublish: deps.kbPublish,
+        toolApprovals: deps.toolApprovalsFor(verified.owner),
       }),
     });
   });

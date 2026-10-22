@@ -1,4 +1,10 @@
 import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
+import {
+  ColorContrast,
+  FoundationModel,
+  UserProfile,
+} from "@carbon/pictograms-react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,7 +21,7 @@ import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
-import type { SettingsTab } from "../../platform/lib/routes.js";
+import { routeToPath, type SettingsTab } from "../../platform/lib/routes.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
@@ -23,6 +29,7 @@ import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js"
 import { useUsageInspectAvailability } from "../../usage/api/queries.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
 import { AboutTab } from "../components/about-tab.js";
+import { ToolActivitySetting } from "../components/tool-activity-setting.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -33,8 +40,6 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "usage", label: "Usage" },
   { value: "schedules", label: "Schedules" },
 ];
-
-const WIDE_TABS = new Set<SettingsTab>(["usage", "analytics"]);
 
 const themeOptions = [
   {
@@ -58,7 +63,7 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  const { data: flags } = useFeatures();
+  const { data: flags, isSuccess: flagsLoaded } = useFeatures();
   const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
   const showFeatures =
     featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
@@ -85,36 +90,54 @@ export function SettingsView() {
     (rawTab === "slack-workspaces" && !showSlackWorkspaces) ||
     (rawTab === "analytics" && !showAnalytics);
   const activeTab = hiddenTab ? "account" : rawTab;
+  const tabStrip = useRef<HTMLDivElement>(null);
+  const hiddenTabSettled =
+    (rawTab === "features" && !showFeatures && flagsLoaded) ||
+    (rawTab === "slack-workspaces" &&
+      slackInstall.isSuccess &&
+      !showSlackWorkspaces) ||
+    (rawTab === "analytics" && usageInspect.isSuccess && !showAnalytics);
+  useEffect(() => {
+    if (!hiddenTabSettled) return;
+    history.replaceState(
+      history.state,
+      "",
+      routeToPath({ view: "settings", settingsTab: "account" }),
+    );
+    useStore.setState({ settingsTab: "account" });
+  }, [hiddenTabSettled]);
+  useEffect(() => {
+    tabStrip.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [activeTab]);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const user = getUser();
 
   return (
-    <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
-      <Tabs
-        ariaLabel="Settings sections"
-        tabs={tabs}
-        value={activeTab}
-        onValueChange={navigateToSettings}
-        variant="pill"
-        size="sm"
-        orientation="vertical"
-        className="flex-row overflow-x-auto px-1.5 py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] shrink-0"
-      />
+    <div className="flex gap-6 md:gap-10 flex-col md:flex-row md:pt-5">
+      <div ref={tabStrip} className="contents">
+        <Tabs
+          ariaLabel="Settings sections"
+          tabs={tabs}
+          value={activeTab}
+          onValueChange={navigateToSettings}
+          variant="pill"
+          size="sm"
+          orientation="vertical"
+          className="flex-row overflow-x-auto px-1.5 py-1 [mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)] [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] md:[mask-image:none] shrink-0"
+        />
+      </div>
 
-      <div
-        key={activeTab}
-        className={cn(
-          "anim-in min-w-0 flex-1",
-          !WIDE_TABS.has(activeTab) && "max-w-2xl",
-        )}
-      >
+      <div key={activeTab} className="anim-in min-w-0 max-w-2xl flex-1">
         {activeTab === "appearance" && (
           <div>
             <PageHeader
+              pictogram={<ColorContrast aria-hidden />}
               title="Appearance"
-              description="Customize the look and feel of the interface."
+              description="Choose how the interface looks."
             />
 
             <div className="mb-8">
@@ -149,6 +172,8 @@ export function SettingsView() {
                 )}
               </div>
             </div>
+
+            <ToolActivitySetting />
           </div>
         )}
 
@@ -157,8 +182,9 @@ export function SettingsView() {
         {activeTab === "account" && (
           <div>
             <PageHeader
+              pictogram={<UserProfile aria-hidden />}
               title="Account"
-              description="Manage your account and session."
+              description="See who you are signed in as, and sign out."
             />
 
             <Card className="flex items-center gap-4 p-4">
@@ -187,6 +213,7 @@ export function SettingsView() {
           <div>
             <div>
               <PageHeader
+                pictogram={<FoundationModel aria-hidden />}
                 title="Providers"
                 description="Connect an LLM provider to give agents access to its models."
               />

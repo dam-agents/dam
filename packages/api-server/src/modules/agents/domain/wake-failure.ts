@@ -1,3 +1,5 @@
+import { TerminationCode } from "api-server-api";
+import { storageFullMessage } from "../../budgets/domain/vm-usage.js";
 export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
@@ -24,22 +26,39 @@ export interface WakeConditionsSnapshot {
   gatewayPodNotReadyReason?: string;
 }
 
-export const POD_FAILURE_REASONS = new Set([
-  "OutOfMemory",
-  "HomeVolumeFull",
-  "ImagePullFailure",
-  "InvalidImageName",
-  "ContainerTerminated",
-  "MachineBootFailed",
-  "MachineImageUnavailable",
-  "MachineRunnerUnschedulable",
-  "RunnerOutOfMemory",
-  "MachineStorageFull",
+export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.OutOfMemory,
+  TerminationCode.HomeVolumeFull,
+  TerminationCode.ImagePullFailure,
+  TerminationCode.InvalidImageName,
+  TerminationCode.ContainerTerminated,
+  TerminationCode.MachineBootFailed,
+  TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
+  TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.MachineRunnerNodeLost,
+  TerminationCode.MachineAllocationUnreadable,
+  TerminationCode.RunnerOutOfMemory,
+  TerminationCode.MachineStorageFull,
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",
+]);
+// UNIT_BOUNDARY_DESCRIPTION: the refusals of a vm machine's start that this wake will not outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the runner cannot reach the node's image cache, the guest did not boot, the node holding the owner's runner is gone, or a node that has gone a minute without reporting what it granted the runner has had that published as the start's own diagnosis. A wake fails on one at once rather than at its timeout, the cache refusal and the named diagnosis with them: no wait of this wake's brings the machine up, and a node that starts reporting is met by the controller's retry and the next wake, not by this one's. An unschedulable runner is left out, because a node can free up or be added while the wake waits, and so is a grant still inside its first minute, which reads AwaitingAllocation. A pull or boot still in progress reads MachineNotReady, so it never matches.
+export const REFUSED_START_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.MachineStorageFull,
+  TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
+  TerminationCode.MachineBootFailed,
+  TerminationCode.MachineRunnerNodeLost,
+  TerminationCode.MachineAllocationUnreadable,
+]);
+
+// UNIT_BOUNDARY_DESCRIPTION: the refusals that come from the node a machine runs on rather than from the image it was asked to boot: the runner cannot reach the node's image cache service, so it boots only the trees its machines already hold and refuses every other image. An image update that meets one holds the upgrade and says so: moving the Agent back would convict an image that starts fine on every other node, and silently drop the upgrade the owner is waiting for.
+export const NODE_FAULT_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.MachineImageCacheUnreachable,
 ]);
 
 export function classifyWakeFailure(
@@ -51,7 +70,7 @@ export function classifyWakeFailure(
       kind: "over-budget",
       message:
         s.overBudgetMessage ||
-        "starting this agent would exceed your compute budget — stop a running agent to free room",
+        "starting this agent would exceed your compute budget — disable agents you aren't using to free room",
     };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
@@ -122,29 +141,35 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "migrating":
       return "the agent is moving to the new runtime";
     case "migration-failed":
-      return "the agent's move to the new runtime failed, and it stays stopped until its owner retries or aborts the move";
+      return "the agent's move to the new runtime failed, and it stays asleep until an operator finishes or undoes the move";
     case "hibernated-not-scaled":
-      return "scale-up was never started";
+      return "the platform didn't start it";
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "OutOfMemory":
           return "the agent ran out of memory";
         case "HomeVolumeFull":
-          return "the agent's home volume is full";
+          return "the agent's storage is full";
         case "ImagePullFailure":
           return "the agent image cannot be pulled";
         case "InvalidImageName":
           return "the agent image reference is invalid";
         case "MachineImageUnavailable":
-          return "the agent image is not available to the VM runner";
+          return "the agent image is not available";
+        case "MachineImageCacheUnreachable":
+          return "the server running its owner's agents cannot reach its image cache — tell an admin";
         case "MachineBootFailed":
-          return "the agent's microVM did not boot";
+          return "its VM didn't boot";
         case "MachineRunnerUnschedulable":
-          return "the VM runner for this agent's owner cannot be placed on any node";
+          return "no server can run it right now — tell an admin";
+        case "MachineRunnerNodeLost":
+          return "the server running its owner's agents is down — tell an admin";
+        case "MachineAllocationUnreadable":
+          return "the server running its owner's agents has not reported how much memory it gave them — tell an admin";
         case "RunnerOutOfMemory":
-          return "its owner's VM agents ran out of memory together and all restarted — stop agents that are not in use to free memory";
+          return "its owner's VM agents ran out of memory together and the ones that were running restarted — disabling agents that aren't in use frees memory";
         case "MachineStorageFull":
-          return "the storage its owner's agents share is full";
+          return storageFullMessage();
         default:
           return "the agent crashed while starting";
       }
@@ -184,7 +209,8 @@ export class AgentWakeTimeoutError extends Error {
     failure: WakeFailureCause;
   }) {
     super(
-      args.failure.kind === "over-budget" ||
+      args.durationMs < args.timeoutMs ||
+        args.failure.kind === "over-budget" ||
         args.failure.kind === "migrating" ||
         args.failure.kind === "migration-failed"
         ? `agent ${args.agentId} was not started: ${describeWakeFailure(args.failure)}`

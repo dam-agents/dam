@@ -22,7 +22,7 @@ const (
 	admissionMessageMax  = 1024
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a vm machine may run on one spec without answering before it is reported NeverReady. It must be well under the chart's vm idle timeout, five minutes from the wake: an Agent moved while hibernated takes the new image on its next wake, so the report and the image update job's move back have to land before the idle checker hibernates it again. It must also be under the runner's own ten-minute restart of a quiet guest that once answered, which every moved machine has, since that restart stops the clock. A guest boots in seconds and the runner reports one silent for a minute as a slow boot, so two minutes running without an answer is a failure. An install whose vm idle timeout is under about four minutes never reports NeverReady; it would need the idle checker to hold an Agent until its start is decided.
+// UNIT_BOUNDARY_DESCRIPTION: how long a vm machine may run on one spec without answering before it is reported NeverReady. It must be well under the chart's vm idle timeout, five minutes from the wake: an Agent moved while hibernated takes the new image on its next wake, so the report and the image update job's move back have to land before the idle checker hibernates it again. It must also be under the runner's own ten-minute restart of a quiet guest that once answered, which every moved machine has, since that restart stops the clock. A guest boots in seconds and the runner reports one silent for a minute as a slow boot, so two minutes running without an answer is a failure. The idle checker holds a vm agent whose boot is in progress until its start is decided, so the report lands under a shorter vm idle timeout too.
 const vmStartFailureNotReady = 2 * time.Minute
 
 type startFailure struct {
@@ -61,13 +61,13 @@ type vmStartClock struct {
 	notReadySince time.Time
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how the vm machine is failing on the current spec, and the clock to keep for the next read. The runner restarts a guest that answered and then went quiet, and counts it, but never restarts one that never answered, so the first is a crash loop counted from this generation on and the second is a machine that runs past the bound without becoming ready. A count below the one remembered means the runner restarted and forgot, so the count starts again. Only the running state starts the not-ready clock: a create, a start or a restart in flight is the runner's own work, an image pull included.
+// UNIT_BOUNDARY_DESCRIPTION: how the vm machine is failing on the current spec, and the clock to keep for the next read. The runner restarts a guest that answered and then went quiet, and counts it, but never restarts one that never answered, so the first is a crash loop counted from this generation on and the second is a machine that runs past the bound without becoming ready. A count below the one remembered means the runner restarted and forgot, so the count starts again. Only the running state starts the not-ready clock: a create, a start or a restart in flight is the runner's own work, an image pull included, and so is a boot the runner reports copying a disk, and the re-boot that follows a VMM the kernel or its seccomp filter killed, which the runner bounds itself and reports as a kill reason until the guest answers.
 func vmStartFailure(prev vmStartClock, generation int64, st vmrunner.MachineStatus, now time.Time) (vmStartClock, startFailure) {
 	if prev.generation != generation || st.Restarts < prev.restartsAtGen {
 		prev = vmStartClock{generation: generation, restartsAtGen: st.Restarts}
 	}
 	switch {
-	case st.Ready || st.State != vmrunner.StateRunning:
+	case st.Ready || st.State != vmrunner.StateRunning || st.Reason == vmrunner.ReasonCopyingDisk || st.Reason == vmrunner.ReasonOOMKilled || st.Reason == vmrunner.ReasonSeccompKilled:
 		prev.notReadySince = time.Time{}
 	case prev.notReadySince.IsZero():
 		prev.notReadySince = now

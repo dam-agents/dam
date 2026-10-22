@@ -12,6 +12,18 @@ export interface RuntimeMutator {
     tx?: Db | DbTx,
   ): Promise<number>;
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: for a kind whose newest event replaces every
+   * earlier one, an older event still waiting must never reach the runtime
+   * after or beside the newer one, as a runtime that comes back from refusing
+   * the kind would otherwise get the whole backlog in order.
+   */
+  supersede(
+    agentId: string,
+    kind: PendingEventRow["kind"],
+    tx?: Db | DbTx,
+  ): Promise<void>;
+
   enqueueAfterCommit(agentId: string): Promise<void>;
 }
 
@@ -47,6 +59,10 @@ export function createRuntimeMutator(deps: {
         return version;
       };
       return tx ? write(tx) : deps.db.transaction(write);
+    },
+
+    async supersede(agentId, kind, tx): Promise<void> {
+      await deps.outboxRepo.supersedePending(agentId, kind, tx);
     },
 
     async enqueueAfterCommit(agentId): Promise<void> {

@@ -31,6 +31,9 @@ describe("connection create with an invalid input", () => {
   // TEST_SCENARIO: an S3 bucket name with a space and an underscore is refused as BAD_REQUEST with the bucket message.
   it("refuses a bad bucket name as BAD_REQUEST", async () => {
     const svc = createConnectionsService({
+      harnesses: { default: "claude-code", harnesses: [] },
+      platformProviderEnabled: async () => false,
+      platformProviderKey: null,
       ownerId: "owner",
       templates: createConnectionTemplateRegistry(buildCatalog()),
       repo: unused(),

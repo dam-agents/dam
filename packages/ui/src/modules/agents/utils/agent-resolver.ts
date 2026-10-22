@@ -1,6 +1,6 @@
 import type { AgentState, AgentView } from "../../../types.js";
 
-export type AgentDisplayState = AgentState | "over_budget";
+export type AgentDisplayState = AgentState | "over_budget" | "disabled";
 
 export interface AgentDisplay {
   state: AgentDisplayState;
@@ -14,30 +14,25 @@ const NO_IDS: ReadonlySet<string> = new Set();
 export function resolveAgentDisplay(
   agent: AgentView,
   restartingAgentIds: ReadonlySet<string>,
-  pausingAgentIds: ReadonlySet<string> = NO_IDS,
   slowStartIds: ReadonlySet<string> = NO_IDS,
 ): AgentDisplay {
   const restarting = restartingAgentIds.has(agent.id);
-  const pausing =
-    !restarting && agent.state === "running" && pausingAgentIds.has(agent.id);
-  const state: AgentDisplayState = restarting
-    ? "starting"
-    : pausing
-      ? "hibernating"
+  const state: AgentDisplayState = agent.disabled
+    ? "disabled"
+    : restarting
+      ? "starting"
       : agent.overBudget
         ? "over_budget"
         : agent.state;
   const clickable =
-    !restarting &&
-    !pausing &&
-    (agent.state === "running" || agent.state === "hibernated");
+    !restarting && (agent.state === "running" || agent.state === "hibernated");
   const slowStart =
     !restarting &&
     agent.state === "starting" &&
     !agent.overBudget &&
     (slowStartIds.has(agent.id) || !!agent.podTerminationReason);
   const powerAction: AgentDisplay["powerAction"] =
-    restarting || pausing
+    agent.disabled || restarting
       ? null
       : agent.state === "hibernated" || agent.overBudget
         ? "start"

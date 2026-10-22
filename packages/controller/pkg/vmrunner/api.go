@@ -56,6 +56,17 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: the machine when it changes, since a guest
 	// UNIT_BOUNDARY_DESCRIPTION: reads its CPU's features only at boot.
 	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: what admission may commit to this machine, at
+	// UNIT_BOUNDARY_DESCRIPTION: most, in MiB, as the controller reads it off
+	// UNIT_BOUNDARY_DESCRIPTION: the owner's runner pod: the memory the node
+	// UNIT_BOUNDARY_DESCRIPTION: reserved for that pod, which is below the limit
+	// UNIT_BOUNDARY_DESCRIPTION: the pod was given while an in-place resize
+	// UNIT_BOUNDARY_DESCRIPTION: waits for room. A runner admits no machine past
+	// UNIT_BOUNDARY_DESCRIPTION: it, so machines never grow past what the
+	// UNIT_BOUNDARY_DESCRIPTION: scheduler sees and no busy node evicts an
+	// UNIT_BOUNDARY_DESCRIPTION: owner's runner for memory the node never lent
+	// UNIT_BOUNDARY_DESCRIPTION: them. Zero admits against the runner's limit.
+	AdmitMiB int `json:"admitMiB,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a seed as the runner answers its upload: the
@@ -83,6 +94,11 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: holds, as the runner last measured it. Zero
 	// UNIT_BOUNDARY_DESCRIPTION: until measured, which counts as MemoryMiB.
 	UsedMiB int `json:"usedMiB,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: whether the running machine is still within
+	// UNIT_BOUNDARY_DESCRIPTION: its warm-up after its boot, when it counts at
+	// UNIT_BOUNDARY_DESCRIPTION: least at the warm-up floor however little it
+	// UNIT_BOUNDARY_DESCRIPTION: was measured at: its harness is still growing.
+	Warming bool `json:"warming,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the disk the machine's last start asked for,
 	// UNIT_BOUNDARY_DESCRIPTION: in GiB. Only a runner that grows a disk at
 	// UNIT_BOUNDARY_DESCRIPTION: the next start rather than restarting for it
@@ -120,13 +136,23 @@ const (
 )
 
 const (
-	ReasonNotReady         = "MachineNotReady"
-	ReasonOutOfCapacity    = "MachineOutOfCapacity"
-	ReasonImageUnavailable = "MachineImageUnavailable"
-	ReasonBootFailed       = "MachineBootFailed"
-	ReasonSeedMissing      = "MachineSeedMissing"
-	ReasonStorageFull      = "MachineStorageFull"
-	ReasonHomeFull         = "MachineHomeFull"
+	ReasonNotReady      = "MachineNotReady"
+	ReasonOutOfCapacity = "MachineOutOfCapacity"
+	// UNIT_BOUNDARY_DESCRIPTION: a start the runner had room for but the node has not yet granted the runner pod: the controller asks the node for that memory with an in-place resize, so the agent is retried at once and no idle agent is hibernated for it.
+	ReasonAwaitingAllocation = "MachineAwaitingAllocation"
+	ReasonImageUnavailable   = "MachineImageUnavailable"
+	ReasonBootFailed         = "MachineBootFailed"
+	ReasonSeedMissing        = "MachineSeedMissing"
+	ReasonStorageFull        = "MachineStorageFull"
+	ReasonHomeFull           = "MachineHomeFull"
+	// UNIT_BOUNDARY_DESCRIPTION: a machine refused because its runner cannot reach the node's image cache service at all: the node's fault, not the image's. The api-server holds an image update on it rather than moving the Agent back, so an image that starts fine elsewhere is not convicted for one node's mount.
+	ReasonImageCacheUnreachable = "MachineImageCacheUnreachable"
+	// UNIT_BOUNDARY_DESCRIPTION: a first boot that copies a disk before the guest answers — a conversion to btrfs or a migration seed's restore. The runner holds such a boot for up to six hours, so it is a boot in progress, never a start failure.
+	ReasonCopyingDisk = "MachineCopyingDisk"
+	// UNIT_BOUNDARY_DESCRIPTION: a machine whose VMM the kernel killed for memory, which the runner reports from the VMM's exit signal until the guest answers again. Every machine of an owner shares the runner's cgroup, so what grows past it costs one machine a restart, not the owner every machine.
+	ReasonOOMKilled = "MachineOOMKilled"
+	// UNIT_BOUNDARY_DESCRIPTION: a machine whose VMM a seccomp filter killed: the guest made a call the runner's filter forbids, and reads as a machine that restarted once rather than one that flaps. The runner reports it from the VMM's exit signal until the guest answers again.
+	ReasonSeccompKilled = "MachineSeccompKilled"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: which runner release a runner pod runs, as its loader last wrote it: the one running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running.
@@ -137,7 +163,12 @@ type RunnerRelease struct {
 	Message string `json:"message,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
+// UNIT_BOUNDARY_DESCRIPTION: the release the controller names for the pod's loader to run: the runner image reference the stager staged it under.
+type RunnerReleaseName struct {
+	Release string `json:"release"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills a machine of it by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
 type RunnerPressure struct {
 	Version       uint64 `json:"version,omitempty"`
 	Pressured     bool   `json:"pressured"`
@@ -145,7 +176,7 @@ type RunnerPressure struct {
 	WorkingSetMiB int    `json:"workingSetMiB,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit. The read also lists each machine, which the api-server shows and the controller does not need.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit, and every machine it holds. `MachineFigures` says whether each machine carries the memory figures a status reports, which the memory pass counts with instead of a status read each; a runner older than them leaves the mark out, and the pass then reads each machine's status as before, because a zero read as a machine's size and warm-up would count a warming machine at its measured use alone.
 type RunnerUsage struct {
 	Storage struct {
 		UsedBytes   int64 `json:"usedBytes"`
@@ -155,12 +186,32 @@ type RunnerUsage struct {
 		LimitMiB     int64 `json:"limitMiB"`
 		CommittedMiB int64 `json:"committedMiB"`
 	} `json:"memory"`
+	Machines       []MachineUsage `json:"machines"`
+	MachineFigures bool           `json:"machineFigures"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.
+// UNIT_BOUNDARY_DESCRIPTION: one machine as the usage read lists it. The memory figures are filled only when the read carries the mark above, so a caller reads them only under it.
+type MachineUsage struct {
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	CPUs      int    `json:"cpus"`
+	MemoryMiB int    `json:"memoryMiB,omitempty"`
+	UsedMiB   int    `json:"usedMiB,omitempty"`
+	Warming   bool   `json:"warming"`
+	DiskGiB   int    `json:"diskGiB,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner can reach the node's image cache service right now, as its own connect reports it: the socket inside the runner's read-only mount of the node directory, and, when nothing serves it, the error a machine of that runner would be refused with. An empty error is a cache the runner reached.
+type RunnerImageCache struct {
+	Socket string `json:"socket"`
+	Error  string `json:"error,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other three never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning. Reboot means the release declares that the machines booted before it must reboot onto it, which only its own pod does.
 const (
 	HeldUnstaged = "unstaged"
 	HeldRuntime  = "runtime"
+	HeldReboot   = "reboot"
 	HeldFailed   = "failed"
 )
 

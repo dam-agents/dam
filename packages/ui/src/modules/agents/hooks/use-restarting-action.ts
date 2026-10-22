@@ -12,10 +12,11 @@ export function useRestartingAction(mutate: AgentPowerMutate) {
 
   return useCallback(
     (id: string) => {
+      const agent = agents.find((a) => a.id === id);
       setRestarting(id, {
-        seenNonRunning: false,
+        seenNonRunning: agent?.state !== "running",
         clickedAt: Date.now(),
-        parkedAtClick: agents.find((a) => a.id === id)?.overBudget ?? false,
+        parkedAtClick: agent?.overBudget ?? false,
       });
       mutate({ id }).catch(() => clearRestarting(id));
     },

@@ -49,6 +49,7 @@ Deploy DAM on your own infrastructure and build with the platform.
 ### IBM hosted deployment
 
 Use DAM through IBM Research without managing your own cluster.
+Sign in with your IBM login to start; there is no approval step.
 
 - [Launch DAM](https://ibm.biz/dam-agents)
 - [IBM documentation](https://ibm.biz/dam-docs)
@@ -65,7 +66,7 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 - **Isolated by design:** Sandboxed agents, credential isolation, network controls, and optional human approval.
 - **Always on:** Persistent workspaces preserve files, memory, and context beyond individual sessions.
-- **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, and other ACP-compatible runtimes.
+- **Any harness, any model:** Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, and other ACP-compatible runtimes.
 - **Built for teams:** Shared agents accessible through Slack, Telegram, web UI, and CLI.
 - **Automate and coordinate:** Scheduled workflows and subagents that can split work across harnesses and models.
 - **Understand costs:** Usage, budgets, and activity visibility by user, agent, harness, and model.
@@ -96,7 +97,7 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 DAM is Apache 2.0 licensed and deploys to Kubernetes using Helm.
 
 ```sh
-helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.17
+helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
 The chart includes Keycloak, Postgres, Redis, and optional telemetry.
@@ -123,6 +124,7 @@ Follow development, report issues, and help shape the project.
 - macOS or Linux
 
 On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
+Rust builds need the machine's C toolchain, and the VM runner's image build (only with virtualization on) also needs glibc's static library: `build-essential` on Debian and Ubuntu has both.
 
 ### Setup
 
@@ -134,6 +136,16 @@ mise run cluster:install
 ```
 
 Open [localhost:4444](http://localhost:4444) and log in with `dev` / `dev`.
+
+### The Rust build cache
+
+`cargo` in this repository runs through [mr boxington](https://mr-boxington.jdx.dev/), which keeps compiled crates in a content-addressed store and restores what another checkout or worktree already built.
+A second checkout builds the VM runner in about half the time, and CI shares the same cache through GitHub Actions.
+The tool and the `cargo` wrapper are declared in [`.mise/config.toml`](.mise/config.toml), so they are active in this repository alone and nothing changes in your global mise or editor configuration.
+
+The store collects as it fills, up to 60 GiB.
+Set a different budget with `MBX_GC_MAX_TOTAL_SIZE` in a `mise.local.toml`, run one command without the cache with `MBX_DISABLE=1 cargo …`, and read what the cache saved with `mbx stats`.
+The VM runner's own target directory becomes a symlink into the store, which [`prune-target`](packages/vm-runner/.mise/prune-target) tolerates: it removes the link, and the next build makes it again.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution instructions and [`AGENTS.md`](AGENTS.md) for engineering conventions.
 

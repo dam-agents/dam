@@ -74,7 +74,6 @@ function viewOf(status: Record<string, unknown>) {
       {} as RuntimeFeatures,
       [],
       [],
-      { virtualizationEnabled: false, defaultMounts: [] },
     ),
   );
 }

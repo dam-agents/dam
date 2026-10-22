@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-13
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -37,7 +37,7 @@ flowchart LR
 ### controller
 
 A stateless Go reconciler built on client-go.
-It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by periodic re-checks; its one worker takes what a person waits on first ([budgets](budgets.md#enforcement)).
+It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by periodic re-checks; each of its eight workers reconciles the agents of the owners hashed to it, one at a time, and takes what a person waits on first, so one owner's hung VM runner delays only the owners on its worker, except while a runner roll holds its install-wide lock ([budgets](budgets.md#enforcement), [#4939](https://github.com/dam-agents/dam/issues/4939)).
 It reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, hibernates idle agents by scaling the pair to zero, and deletes agent and gateway pods stranded NotReady on a configuration it has already superseded (the one case where it evicts a pod outside hibernation — see [security-and-credentials](security-and-credentials.md) and [agent-lifecycle](agent-lifecycle.md)).
 The schedule loop lives in the api-server, not here (see [schedules](schedules.md)).
 The controller writes only the `status` subresource on the resources it owns; it never writes `spec`.
@@ -73,7 +73,7 @@ The public port also accepts streamed bundled file imports per agent and proxies
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent.
 Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, agent and invocation reapers) run this way, and each replica re-asserts its scheduler registrations periodically so a Redis dataset loss cannot silently stop the sweeps.
-Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres.
+Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, Environment sign-ins, hand-off codes and sessions, and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres.
 The per-agent MCP endpoint is **stateless** — it mints no streamable-HTTP session id and builds a server and transport per request — so any replica serves any harness call and nothing has to pin a gateway to a replica.
 Affinity was tried first and does not work here: a Service `sessionAffinity` is bypassed on a waypoint-fronted Service, and a consistent-hash `DestinationRule` on source IP leaves the waypoint's route without a hash policy, which degrades ring hash to per-request random.
 Since every harness call still traverses the waypoint, it is itself replicated with its own disruption budget when the api-server runs more than one replica.
@@ -87,6 +87,7 @@ Events are non-durable and advisory by contract — nothing may depend on one ar
 Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, the public-profile projection and Slack worker registration, and two that reach across replicas by forwarding a *signal* over the shared Redis bus — never the event itself.
 One wakes egress-approval holds parked on other replicas; the other projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription.
 A hint means "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay.
+A reconnect or a tab return re-reads the mutable families no stream carries, and a reconnect also marks every other query stale, so its next reader re-reads it; a Session Transcript is re-read by its chat over its own ACP path, not by a mounted query.
 State the platform cannot observe from a write site or the cluster API — the session list, the workspace directories a client has open, the file it has open, a provider's refreshed model list — is hinted by the pod that owns it instead, over the agent's own tRPC surface.
 A client-scoped watch exists only while a subscriber is attached: a tab viewing one agent watches that agent.
 Session lists are watched by one lease-elected watcher across every awake agent, which records what it reads for [home-feed](home-feed.md); browsers hold no session subscription of their own.
@@ -103,7 +104,7 @@ There is no server-side mode-change side effect, and the notice carries no paylo
 The UI's session *list*, though, is no longer an ACP read: agent-runtime composes it on its own tRPC surface, unioning what the harness reports with its own metadata store — so a session it has recorded but the harness has not yet persisted is listed with no title, rather than being invisible until its first turn lands.
 A title the platform stores — from a [schedule](schedules.md#session-continuity), the user, or the agent renaming its own session — wins over the harness's until cleared, and the harness is never told.
 A harness that mints its own id for a terminal session's conversation (Codex, Bob) pins that id in a directory its runtime manifest names (`terminalSessionPins`), one file per terminal session; the union lists the pinned conversation once, under the terminal session's id and with the harness's title, so opening it resumes the conversation rather than starting an empty terminal under the harness's id.
-A harness that keeps its own cost per conversation (Bob, in Bobcoins) declares a command for it in its runtime manifest (`sessionSpend`), and the read carries each session's cost in that unit; a failed command costs the list only that figure.
+The list read never starts a harness, and a terminal session sends no prompt the platform could take a title from, so when its terminal detaches or exits the runtime asks that session's harness for its listing once (a `session/list` naming the harness in `_meta.platform`) and keeps the first line of the harness's title as the session's own, unless a title is already kept or set.
 The read is paged, newest activity first: a client asks for one page, optionally narrowed to session categories, one schedule or a single session, and follows a cursor for older ones; the pod filters before it cuts, so a narrowed page is full of matches.
 Behind it the pod gathers the harness's whole listing and reuses it until a session change or short expiry drops it.
 A read waits briefly for a starting harness, then answers from the platform's records, marked incomplete so no reader takes a missing session as gone.
@@ -133,14 +134,15 @@ Its responsibilities are:
   Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio.
   The SSH wire is opaque here — this is `dam ssh`'s transport.
   Available only on images that ship `sshd`.
-- Run the browser panel's display stack and its browser: the `browser` tRPC procedures keep agent-browser's browser running and run the panel's toolbar, and the stream socket relayed from the api-server on `/api/browser/display` it hands to the display's stream server ([browser-panel](browser-panel.md)).
-- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME, and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers.
+- Run the browser panel's display stack and its browser: the `browser` tRPC procedures keep agent-browser's browser running and run the panel's toolbar and tab bar, and the stream socket relayed from the api-server on `/api/browser/display` it hands to the display's stream server ([browser-panel](browser-panel.md)).
+- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and on wake, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME, and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers.
   See [runtime delivery](runtime-delivery.md).
 - On a shared knowledge base, own share freshness: watch the share roots, persist a dirty marker on the agent volume, and after a quiet period initiate the publish handshake against the api-server — plan locally, upload to presigned URLs, report completion.
   A scheduled or running flush reports the pod busy so hibernation waits ([knowledge bases](knowledge-bases.md)).
 - Expose a scoped tRPC router — in-pod file operations, the composed session list, and the watch subscriptions behind the live panels — over HTTP and WebSocket: the UI reaches it through the api-server's WebSocket relay, non-browser callers through the HTTP proxy, and a channel worker dials this pod directly to place an inbound attachment in the workspace ([channel-turns](channel-turns.md)).
 - Relay Artifact API requests from interactive pages (api-server is the only caller) to the server the Agent runs on the loopback Artifact API Port, with a fixed host, a timeout and a response size cap ([artifact-library](artifact-library.md#interactive-pages)).
   The relay rides the existing harness port: no port was added to the pod, the Service, the NetworkPolicy or the VM runner, so nothing outside the agent can reach the Agent's server directly.
+- On an [Environment](environments.md), relay HTTP and WebSocket from `/api/environment/forward/<port>/` to that port on its own loopback, only for an endpoint port the api-server names on the request, and never one of the runtime's own ports.
 - Accept bundled file imports on the harness port — extract the tarball to a staging directory on the per-agent PVC, then merge each entry into `<homeDir>/work` recursively: files are added or replaced, folders are merged so existing files not in the bundle are kept.
   A bundle file colliding with an existing directory rejects the import before workspace changes, naming the paths.
   Merging is not transactional against concurrent workspace writes or I/O failures.
@@ -157,7 +159,7 @@ See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/ag
 
 The pods behind the `vm` Backend: **one runner per owner**, a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent, created and removed by the controller; a local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
 Each vm Agent is a persistent machine on its owner's runner, published through the agent's Service so the api-server dials it like a pod; the runner is the Backend's trust boundary, per owner rather than per Agent.
-A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time, and a new runner release can be handed the machines inside the pod instead.
+A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time, and a new runner release can be handed the machines inside the pod instead, unless it declares another reboot key than the pod runs, which rolls the pod to reboot them (a pod whose own release declares no key takes it in place).
 [vm-runner](vm-runner.md) owns the runner in depth: its gates, machine API, image cache and guest; [upgrades](vm-runner-upgrades.md) owns its rolls and hand-offs.
 
 ### gateway
@@ -166,6 +168,7 @@ A per-agent Envoy pod paired with the agent-runtime pod.
 Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap.
 Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler.
 A per-pair NetworkPolicy admits ingress to its proxy port only from the paired agent pod and, for a vm Agent, the owner's VM runner, which it also admits to the machine's resolver ([vm-runner](vm-runner.md)).
+With `virtualization.gateway.perOwner` on, vm Agents share one gateway pod per owner instead, a Deployment beside the owner's runner with one listener per agent behind each agent's own gateway Service ([credential-gateway](credential-gateway.md#owner-gateway)).
 See [security-and-credentials](security-and-credentials.md).
 
 ### ui
@@ -204,6 +207,7 @@ The session view shows a framed turn as the person would read it, which makes th
 Frame instructions are hidden by name, so a tag the view does not know stays visible rather than taking real text with it.
 Conversation history handed to the agent is shown collapsed, together with the note that explains it.
 Messages steered into a running turn show as one user message each: the view finds them by their speaker lines and treats everything before the first one as instructions for the agent.
+An agent's reply is cleaned the same way when the agent echoes a frame tag, and a `<thinking>` passage the agent wrote as text shows as a thought; chat forms are keyed by the cleaned reply, so a form keeps its state wherever the reply is split.
 Changing the frame's shape therefore changes what the session view renders.
 
 The view places an agent's output by the turn it belongs to, which the runtime stamps on every frame it relays: the running prompt's turn, or — for work the harness does unprompted, such as resuming when a background task finishes — a turn the runtime opens for it and ends at the harness's next usage report or after a quiet minute, and that a prompt starting meanwhile ends first.
@@ -230,6 +234,7 @@ So a reply never lands above a newer message, unprompted work shows as the lates
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP                               | MCP tool access, runtime-channel `hello`, and the knowledge-base publish handshake — the pod requests a publish (work order out) and reports completion                                                                                                                                                                                                                                                 |
 | agent-runtime → object store (via paired gateway)                                           | HTTPS (presigned PUT)              | Knowledge-base snapshot uploads. The pod holds no object-store credential: it can only write the specific keys the api-server signed for it, and only until those links expire                                                                                                                                                                                                                          |
 | gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC                               | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal                                                                                                                                                                                                                                                                                                     |
+| gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC (access log stream)           | The spend meter's record of each model call, on the same pinned Service ([spend-limits](spend-limits.md))                                                                                                                                                                                                                                                                                               |
 | controller → K8s API                                                                        | watch / list / write               | Resource reconciliation and status writes                                                                                                                                                                                                                                                                                                                                                               |
 | api-server → K8s API                                                                        | REST + watch                       | Resource CRUD, spec writes, pod wake; a watch per replica keeps the Agent read cache current ([agent-lifecycle](agent-lifecycle.md))                                                                                                                                                                                                                                                                    |
 | api-server → agent-runtime                                                                  | HTTP (tRPC)                        | Runtime-channel `applyState` delivery from the outbox worker; knowledge-base share config sync (roots, limits, flush nudge)                                                                                                                                                                                                                                                                             |
@@ -255,7 +260,7 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
   It is also how a user with the UI open learns of a crash they did not watch happen: a refresh rarely lands in the short window where the termination cause is visible, so the UI announces a *rise* in the count between two refreshes, once, naming memory when that was the cause; a crash from before the page loaded is not announced.
   A rise is only trustworthy if the count moves on an observed pod or machine, so a failed pod read, or a runner that does not answer, leaves the published count and cause as they were.
   The count describes the pod currently backing the Agent, so it resets when that pod is replaced and is cleared on hibernation; a scaled-down Agent never reads as crashed.
-  For the `vm` backend it counts the times the runner has revived a guest that stopped answering its health check, published with the cause `GuestStoppedAnswering` — readiness there comes from that check rather than a pod event, so the controller polls for it — closely while the machine is on its way up, since that wait is the last of a wake a user feels, and loosely once that window has passed, because a machine unready long after it was asked is not about to become ready.
+  For the `vm` backend it counts the times the runner has revived a guest that stopped answering its health check since the controller last asked the machine stopped, published with the cause `GuestStoppedAnswering` — readiness there comes from that check rather than a pod event, so the controller polls for it — closely while the machine is on its way up, since that wait is the last of a wake a user feels, and loosely once that window has passed, because a machine unready long after it was asked is not about to become ready.
   A guest that answers is ready even while the runtime's start call runs on, and a guest that has answered stays ready through one missed probe — a probe is bounded to two seconds, which a guest under nested virtualization or on a busy node can take, and a readiness that flapped on each such miss would fail the deliveries riding on it — reading unready on the second consecutive miss, and revived only once quiet far longer than that.
   The liveness sweep reads the count the same way for either backend.
   The vm Agent's restart verb, resizes and template-driven env and image changes reach the machine as a restart.
@@ -278,6 +283,14 @@ See [`helm/`](../../helm/) for the install layout.
   Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication.
   They do not share routes.
+- **Bounded input arrays.** Every array in a request from outside the api-server — a user or agent tRPC call, the e2e test API, an MCP message on either MCP endpoint, an agent request body — holds at most 100 000 items.
+  The api-server checks the raw input before any schema parses it, so no schema parses the elements of an oversized array, and the e2e API refuses it before its access check.
+  The limit lives outside the input schemas, so no published JSON schema or MCP tool description shows it.
+  The request that carries the input has a byte limit too, checked before anything buffers or parses the body: 32 MiB on the user tRPC HTTP endpoint and for one tRPC WebSocket message, 128 MiB on every agent endpoint of the harness listener.
+  An HTTP body over the limit gets 413; a WebSocket message over it closes the connection with code 1009.
+  Each limit sits well above the largest legitimate input: a `skills.createLocal` call for users, a 20 000-file kb-publish plan for agents.
+  The MCP SDK also holds each MCP endpoint to 4 MiB and 100 messages per JSON-RPC batch.
+  A tRPC HTTP batch, user or agent, holds at most 1 000 calls; a tRPC WebSocket batch is bounded only by the message byte limit, because the WebSocket adapter has no batch limit.
 - **Credential isolation.** Agent pods never hold real upstream credentials.
   The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway.
   See [security-and-credentials](security-and-credentials.md).

@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::time::Duration;
 
 use crate::state::{machine_ids, read_spec};
 
-// UNIT_BOUNDARY_DESCRIPTION: whether one more machine fits in the memory this runner was given. A guest takes host memory only as it touches it and hands freed memory back, so a running machine is counted at what its VMM was last measured holding plus a headroom for it to grow into, never above its size, and an owner can run more machines than their sizes add up to. A machine not yet measured, and each in-flight create, which is not on disk yet and would otherwise be counted as nothing right when two creates race, count at their full size. Guests that grow together past the headroom can still take the runner over its limit, and the kernel then kills it with every machine of its owner; the controller hibernates idle agents before that, from the use the runner reports.
+// UNIT_BOUNDARY_DESCRIPTION: whether one more machine fits in the memory this runner was given. A guest takes host memory only as it touches it and hands freed memory back, so a running machine is counted at what its VMM was last measured holding plus a headroom for it to grow into, never above its size, and an owner can run more machines than their sizes add up to. A machine still warming up, one not yet measured, and each in-flight create, which is not on disk yet and would otherwise be counted as nothing right when two creates race, count at least at the warm-up floor. Guests that grow together past what they are counted at can still take the runner over its limit, and the kernel then kills the largest process in the runner's cgroup — a machine's VMM, which raises its own OOM score to be that process — and the runner restarts that machine under a reason of its own; the controller hibernates idle agents before that, from the use the runner reports.
+
+// UNIT_BOUNDARY_DESCRIPTION: how long after its boot began a machine counts at least at the warm-up floor. A harness reaches most of its working set within a minute of the guest answering; the window is fixed rather than ended by the guest's first answer, because the harness only starts then.
+pub const WARMUP: Duration = Duration::from_secs(120);
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner has to hand out. A limit of zero is a runner told nothing about its memory, which admits everything — the controller sets this from the pod's own limit, and a runner that invented one would refuse machines its node had room for.
 pub struct Capacity<'a> {
@@ -13,7 +17,7 @@ pub struct Capacity<'a> {
     pub reserve_mib: i32,
     // UNIT_BOUNDARY_DESCRIPTION: what a measured machine is counted at beyond its measurement, for the guest to grow into between two probes and before the controller acts on pressure.
     pub headroom_mib: i32,
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine not yet measured is counted at when that is less than its size; zero counts it at its size. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest. The first measurement usually comes about 100 ms after the start returns, before the agent's harness has started, so a harness that is still starting is under-counted until later probes see it grow.
+    // UNIT_BOUNDARY_DESCRIPTION: the warm-up floor: what a machine is counted at, at least, until it is measured and for WARMUP after its boot began, never above its size; zero counts it at its size then, and a machine whose spec cannot be read at everything the runner hands out. The agent's harness starts only once the guest answers and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest; the floor lets pool / floor machines warm up together, and a start refused for that is retried by the controller.
     pub boot_mib: i32,
 }
 
@@ -24,12 +28,13 @@ impl Capacity<'_> {
         want_mib: i32,
         committing: &BTreeMap<String, i32>,
         running: &dyn Fn(&str) -> bool,
-        resident: &dyn Fn(&str) -> Option<i32>,
+        resident: &dyn Fn(&str) -> Option<(i32, bool)>,
+        warming: &dyn Fn(&str) -> bool,
     ) -> anyhow::Result<()> {
         if self.limit_mib == 0 {
             return Ok(());
         }
-        let used = self.committed(Some(id), committing, running, resident)?;
+        let used = self.committed(Some(id), committing, running, resident, warming)?;
         if used + self.unmeasured(want_mib) + i64::from(self.reserve_mib)
             > i64::from(self.limit_mib)
         {
@@ -41,13 +46,14 @@ impl Capacity<'_> {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, or its applied size when unmeasured, whichever is smaller.
+    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured, warming up, or measured before a read that has failed since, and never above its applied size. A running machine whose spec cannot be read counts at the same measurement plus headroom, at least at the warm-up floor — at everything the runner hands out for machines when no floor is configured — while it warms up or after a read that has failed since, and at everything the runner hands out for machines when it was never measured: its size is what is unknown, not whether it holds memory.
     pub fn committed(
         &self,
         except: Option<&str>,
         committing: &BTreeMap<String, i32>,
         running: &dyn Fn(&str) -> bool,
-        resident: &dyn Fn(&str) -> Option<i32>,
+        resident: &dyn Fn(&str) -> Option<(i32, bool)>,
+        warming: &dyn Fn(&str) -> bool,
     ) -> anyhow::Result<i64> {
         let mut ids = machine_ids(self.state_dir)?;
         ids.extend(committing.keys().cloned());
@@ -60,12 +66,33 @@ impl Capacity<'_> {
             if !running(other) {
                 continue;
             }
-            if let Some(applied) = read_spec(self.state_dir, other) {
-                let size = applied.memory_mib;
-                used += resident(other).map_or(self.unmeasured(size), |mib| {
-                    i64::from(size.min(mib.saturating_add(self.headroom_mib)))
+            let Some(applied) = read_spec(self.state_dir, other) else {
+                let handout = i64::from(self.limit_mib - self.reserve_mib).max(0);
+                let floor = if self.boot_mib > 0 {
+                    i64::from(self.boot_mib)
+                } else {
+                    handout
+                };
+                used += resident(other).map_or(handout, |(mib, stale)| {
+                    let counted = i64::from(mib.saturating_add(self.headroom_mib));
+                    if warming(other) || stale {
+                        counted.max(floor)
+                    } else {
+                        counted
+                    }
                 });
-            }
+                continue;
+            };
+            let size = applied.memory_mib;
+            let floor = self.unmeasured(size);
+            used += resident(other).map_or(floor, |(mib, stale)| {
+                let counted = i64::from(size.min(mib.saturating_add(self.headroom_mib)));
+                if warming(other) || stale {
+                    counted.max(floor)
+                } else {
+                    counted
+                }
+            });
         }
         Ok(used)
     }
@@ -83,7 +110,7 @@ impl Capacity<'_> {
 mod tests {
     use super::*;
     use crate::api::MachineSpec;
-    use crate::state::write_spec;
+    use crate::state::{write_spec, SPEC_FILE};
     use crate::testdir::TempDir;
     use std::fs;
 
@@ -106,6 +133,7 @@ mod tests {
             &committing(&[("agent-b", 6000)]),
             &never,
             &unmeasured,
+            &never,
         )
         .unwrap_err()
         .to_string();
@@ -127,7 +155,14 @@ mod tests {
             headroom_mib: 0,
             boot_mib: 0,
         }
-        .room_for("agent-a", 64_000, &BTreeMap::new(), &never, &unmeasured)
+        .room_for(
+            "agent-a",
+            64_000,
+            &BTreeMap::new(),
+            &never,
+            &unmeasured,
+            &never
+        )
         .is_ok());
     }
 
@@ -150,7 +185,14 @@ mod tests {
 
         assert!(
             capacity
-                .room_for("agent-a", 4096, &BTreeMap::new(), &running_b, &unmeasured)
+                .room_for(
+                    "agent-a",
+                    4096,
+                    &BTreeMap::new(),
+                    &running_b,
+                    &unmeasured,
+                    &never
+                )
                 .is_ok(),
             "the stopped machine was counted, and a machine that fits was refused"
         );
@@ -161,7 +203,8 @@ mod tests {
                     4097,
                     &BTreeMap::new(),
                     &|_: &str| true,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_err(),
             "both were counted and there is no room"
@@ -183,7 +226,7 @@ mod tests {
             boot_mib: 0,
         };
         let all = |_: &str| true;
-        let used = |mib: i32| move |id: &str| (id == "agent-b").then_some(mib);
+        let used = |mib: i32| move |id: &str| (id == "agent-b").then_some((mib, false));
 
         assert!(
             capacity
@@ -192,7 +235,8 @@ mod tests {
                     8192 - 4096 - 768,
                     &BTreeMap::new(),
                     &all,
-                    &used(512)
+                    &used(512),
+                    &never
                 )
                 .is_ok(),
             "agent-b was counted at more than its 512 MiB plus 256 MiB of headroom"
@@ -204,22 +248,74 @@ mod tests {
                     8192 - 4096 - 767,
                     &BTreeMap::new(),
                     &all,
-                    &used(512)
+                    &used(512),
+                    &never
                 )
                 .is_err(),
             "agent-b was counted at less than its use plus headroom"
         );
         assert!(
             capacity
-                .room_for("agent-a", 1, &BTreeMap::new(), &all, &used(4000))
+                .room_for("agent-a", 1, &BTreeMap::new(), &all, &used(4000), &never)
                 .is_err(),
             "a machine near its size was counted above it, or the unmeasured one below its size"
         );
         assert!(
             capacity
-                .room_for("agent-a", 1, &BTreeMap::new(), &all, &unmeasured)
+                .room_for("agent-a", 1, &BTreeMap::new(), &all, &unmeasured, &never)
                 .is_err(),
             "an unmeasured machine was counted below its size"
+        );
+    }
+
+    // TEST_SCENARIO: a running machine whose spec cannot be read holds memory all the same: a spec.json left corrupt, or one a runner of another schema wrote, is not a machine holding nothing, and admitting another machine beside it as if it held nothing is how the runner goes over its limit and the kernel kills a machine of its owner. The runner measured it on adoption, so it counts at that measurement plus headroom; one never measured counts at everything the runner hands out for machines, since its size is what is unknown.
+    #[test]
+    fn a_running_machine_whose_spec_cannot_be_read_is_not_counted_as_nothing() {
+        let dir = TempDir::new("unreadable");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join("spec.json"), b"not a spec").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 0,
+        };
+        let all = |_: &str| true;
+        let used = |mib: i32| move |id: &str| (id == "agent-b").then_some((mib, false));
+
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    8192 - 512 - 256,
+                    &BTreeMap::new(),
+                    &all,
+                    &used(512),
+                    &never
+                )
+                .is_ok(),
+            "a measured machine with no readable spec was counted at more than its measurement plus headroom"
+        );
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    8192 - 512 - 255,
+                    &BTreeMap::new(),
+                    &all,
+                    &used(512),
+                    &never
+                )
+                .is_err(),
+            "a measured machine with no readable spec was counted at less than its measurement plus headroom"
+        );
+        assert!(
+            capacity
+                .room_for("agent-a", 1, &BTreeMap::new(), &all, &unmeasured, &never)
+                .is_err(),
+            "an unmeasured machine with no readable spec was counted as nothing"
         );
     }
 
@@ -243,7 +339,8 @@ mod tests {
                     4096,
                     &committing(&[("agent-b", 4096)]),
                     &never,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_ok(),
             "the two exactly fill the runner"
@@ -255,7 +352,8 @@ mod tests {
                     4097,
                     &committing(&[("agent-b", 4096)]),
                     &never,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_err(),
             "a machine in flight was counted as nothing"
@@ -282,7 +380,8 @@ mod tests {
                 4097,
                 &committing(&[("agent-b", 4096)]),
                 &|_: &str| true,
-                &unmeasured
+                &unmeasured,
+                &never
             )
             .is_err(),
             "the old 512 MiB spec was counted instead of the 4096 MiB being committed"
@@ -309,14 +408,15 @@ mod tests {
                 6000,
                 &committing(&[("agent-a", 6000)]),
                 &|_: &str| true,
-                &unmeasured
+                &unmeasured,
+                &never
             )
             .is_ok(),
             "a machine was refused the memory it is already running on"
         );
     }
 
-    // TEST_SCENARIO: the reserve is what the runner process and its VMM threads run in. Handing it to a machine is how the whole runner gets killed for going over its container limit — every machine on the node with it — so it is subtracted from what can be admitted, once, however many machines there are.
+    // TEST_SCENARIO: the reserve is what the runner process and its VMM threads run in. Handing it to a machine is how the runner goes over its container limit and the kernel kills a machine of it, so it is subtracted from what can be admitted, once, however many machines there are.
     #[test]
     fn the_reserve_is_never_handed_to_a_machine() {
         let dir = TempDir::new("reserve");
@@ -335,7 +435,8 @@ mod tests {
                     8192 - 1024,
                     &BTreeMap::new(),
                     &never,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_ok(),
             "an empty runner cannot fill what it has left"
@@ -347,7 +448,8 @@ mod tests {
                     8192 - 1023,
                     &BTreeMap::new(),
                     &never,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_err(),
             "a machine was given a byte of the runner's own memory"
@@ -376,7 +478,8 @@ mod tests {
                     4096,
                     &committing(&[("agent-c", 4096)]),
                     &all,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_ok(),
             "three half-runner machines booting together did not fit at 2 GiB each"
@@ -388,7 +491,8 @@ mod tests {
                     4096,
                     &committing(&[("agent-c", 4096), ("agent-d", 4096), ("agent-e", 4096)]),
                     &all,
-                    &unmeasured
+                    &unmeasured,
+                    &never
                 )
                 .is_err(),
             "a fifth 2 GiB boot estimate fit into 8 GiB"
@@ -400,10 +504,163 @@ mod tests {
                     4096,
                     &committing(&[("agent-c", 4096), ("agent-d", 4096)]),
                     &all,
-                    &|id: &str| (id == "agent-b").then_some(4000)
+                    &|id: &str| (id == "agent-b").then_some((4000, false)),
+                    &never
                 )
                 .is_err(),
             "a measured machine was counted at the boot estimate rather than its use"
+        );
+    }
+
+    // TEST_SCENARIO: a machine measured right after its boot holds a few hundred MiB, but its harness starts only once the guest answers and grows to 2 to 3 GiB within the next minute. While it warms up it counts at the warm-up floor however little it was measured at, so machines that boot together are not admitted into room their harnesses will take; once warmed up it counts at its use plus headroom again.
+    #[test]
+    fn a_just_started_machine_measured_small_counts_at_the_warm_up_floor() {
+        let dir = TempDir::new("warmup");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 3072,
+        };
+        let all = |_: &str| true;
+        let small = |_: &str| Some((300, false));
+        let warming = |id: &str| id == "agent-b";
+        let starts = committing(&[("agent-c", 4096)]);
+
+        assert!(
+            capacity
+                .room_for("agent-a", 4096, &starts, &all, &small, &warming)
+                .is_err(),
+            "a warming machine measured at 300 MiB was counted below the 3 GiB floor"
+        );
+        assert!(
+            capacity
+                .room_for("agent-a", 4096, &starts, &all, &small, &never)
+                .is_ok(),
+            "a warmed-up machine was still counted at the floor rather than its use plus headroom"
+        );
+        assert_eq!(
+            capacity
+                .committed(
+                    None,
+                    &BTreeMap::new(),
+                    &all,
+                    &|_: &str| Some((3500, false)),
+                    &warming
+                )
+                .unwrap(),
+            3756,
+            "a warming machine already past the floor was not counted at its use plus headroom"
+        );
+    }
+
+    // TEST_SCENARIO: a figure the prober could no longer read is from before the failure, so admission counts the machine at least at the warm-up floor while it stands: last measured small, it would otherwise count below what one boot of it is reserved at, and the next start would be admitted into room its harness is about to take.
+    #[test]
+    fn a_figure_from_before_a_failed_read_counts_at_least_at_the_warm_up_floor() {
+        let dir = TempDir::new("stale-figure");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 3072,
+        };
+        let all = |_: &str| true;
+        let stale = |_: &str| Some((300, true));
+        let fresh = |_: &str| Some((300, false));
+
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &stale, &never)
+                .unwrap(),
+            3072,
+            "a figure from before a failed read was counted below the warm-up floor"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &fresh, &never)
+                .unwrap(),
+            556,
+            "a figure the last probe read was raised to the floor"
+        );
+    }
+
+    // TEST_SCENARIO: a machine whose spec cannot be read still has a warm-up, and the floor needs no size: while it warms up admission counts it at least at the warm-up floor, as it does for a machine whose spec reads, instead of at the little a probe measured right after its boot.
+    #[test]
+    fn an_unreadable_spec_that_is_warming_counts_at_the_warm_up_floor() {
+        let dir = TempDir::new("unreadable-warmup");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join(SPEC_FILE), "not json").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 3072,
+        };
+        let all = |_: &str| true;
+        let small = |_: &str| Some((300, false));
+
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &small, &|_: &str| true)
+                .unwrap(),
+            3072,
+            "a warming machine whose spec cannot be read was counted at its measurement alone"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &small, &never)
+                .unwrap(),
+            556,
+            "a warmed-up machine whose spec cannot be read was counted at the floor"
+        );
+    }
+
+    // TEST_SCENARIO: with no warm-up floor configured a machine counts at its whole size while it warms up or after a read that has failed, and a spec nobody can read leaves only the handout to stand for that size. Counted at its measurement plus headroom alone, a 300 MiB machine with no readable spec passes for one that may hold all of the runner, and the next start boots onto its disks.
+    #[test]
+    fn an_unreadable_spec_counts_at_the_handout_when_no_floor_is_set() {
+        let dir = TempDir::new("unreadable-handout");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join(SPEC_FILE), "not json").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 1024,
+            headroom_mib: 256,
+            boot_mib: 0,
+        };
+        let all = |_: &str| true;
+        let small = |_: &str| Some((300, false));
+        let stale = |_: &str| Some((300, true));
+
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &small, &|_: &str| true)
+                .unwrap(),
+            7168,
+            "a warming machine whose spec cannot be read was counted at its measurement alone"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &stale, &never)
+                .unwrap(),
+            7168,
+            "a figure from before a failed read was counted at its measurement alone"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &small, &never)
+                .unwrap(),
+            556,
+            "a figure the last read did read was raised to the handout"
         );
     }
 
@@ -411,7 +668,41 @@ mod tests {
         false
     }
 
-    fn unmeasured(_: &str) -> Option<i32> {
+    // TEST_SCENARIO: a machine whose spec cannot be read and whose last figure a probe could not refresh is counted at least at the warm-up floor, as one that is warming up is: the spec that would bound it is what is missing, and the figure is from before the failure, so neither says how much it holds now. Nothing else about the branch changes: a figure the last read did read counts at measurement plus headroom.
+    #[test]
+    fn an_unreadable_spec_after_a_failed_read_counts_at_the_warm_up_floor() {
+        let dir = TempDir::new("unreadable-stale");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join(SPEC_FILE), "not json").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 3072,
+        };
+        let all = |_: &str| true;
+        let stale = |_: &str| Some((300, true));
+        let fresh = |_: &str| Some((300, false));
+
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &stale, &never)
+                .unwrap(),
+            3072,
+            "a figure from before a failed read was counted below the warm-up floor when the spec could not be read"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &fresh, &never)
+                .unwrap(),
+            556,
+            "a figure the last read did read was raised to the floor"
+        );
+    }
+
+    fn unmeasured(_: &str) -> Option<(i32, bool)> {
         None
     }
 

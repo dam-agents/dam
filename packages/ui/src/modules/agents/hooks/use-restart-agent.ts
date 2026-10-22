@@ -30,11 +30,12 @@ export function useSyncRestartingAgents() {
     );
     if (freshlyParked) {
       const reason =
-        freshlyParked.overBudgetMessage ?? "stop a running agent to free room";
+        freshlyParked.overBudgetMessage ??
+        "disable agents you aren't using to free room";
       void showConfirm(
-        `${reason[0].toUpperCase()}${reason.slice(1)}.`,
+        `${reason[0].toUpperCase()}${reason.slice(1)}${reason.endsWith(".") ? "" : "."}`,
         "This agent could not start",
-        { confirmLabel: "Manage sandboxes" },
+        { confirmLabel: "Manage agents" },
       ).then((ok) => ok && setView("home"));
     }
   }, [data, dataUpdatedAt, setRestartingAgents, showConfirm, setView]);

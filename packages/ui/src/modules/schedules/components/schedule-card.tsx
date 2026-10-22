@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  ChevronUp,
-  Launch,
-  Time,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { ChevronDown, ChevronUp, Time, WarningAlt } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -17,6 +11,11 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
+import {
+  defaultModelScheduleWarning,
+  defaultModelStopsRuns,
+} from "../../home/lib/default-model-copy.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
@@ -26,7 +25,7 @@ import {
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
 import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
-  lastRunStatus,
+  cardOutcome,
   precheckAlert,
   runNowConfirmText,
   runNowStartedText,
@@ -56,6 +55,7 @@ export function ScheduleCard({
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
   const runScheduleNow = useRunScheduleNow();
+  const defaultModels = useDefaultModelNotices();
 
   const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
@@ -63,11 +63,13 @@ export function ScheduleCard({
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
   const stopReason = enabled ? status?.stopReason : undefined;
+  const defaultModelNotice = defaultModels.byAgentEvenDismissed
+    .get(schedule.agentId)
+    ?.find((notice) => notice.kinds.includes("scheduled"));
+  const noDefaultModel =
+    enabled && !schedule.model && defaultModelStopsRuns(defaultModelNotice);
   const onceState = scheduleOnceState(schedule);
-  const onceOutcome =
-    onceState && onceState !== "pending"
-      ? lastRunStatus(status?.lastResult)
-      : null;
+  const outcome = cardOutcome(schedule);
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
@@ -75,7 +77,7 @@ export function ScheduleCard({
     if (
       await showConfirm(
         "It stops running and cannot be recovered.",
-        `Delete ${name}?`,
+        `Delete “${name}”?`,
         { kind: "destructive", confirmLabel: "Delete schedule" },
       )
     )
@@ -117,6 +119,11 @@ export function ScheduleCard({
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-md font-medium text-foreground">
             <span className="truncate">{name}</span>
+            {schedule.migrationNote && (
+              <WarningAlt size={16} className="shrink-0 text-warning">
+                <title>{schedule.migrationNote}</title>
+              </WarningAlt>
+            )}
             {alert && (
               <WarningAlt
                 size={16}
@@ -139,11 +146,24 @@ export function ScheduleCard({
               </>
             )}
             {cadence && <span className="truncate">{cadence}</span>}
-            {onceOutcome && (
+            {(schedule.harness || schedule.model) && (
               <>
                 <span aria-hidden>·</span>
-                <span className={cn("truncate", onceOutcome.className)}>
-                  {onceOutcome.label}
+                <span className="truncate">
+                  {[schedule.harness, schedule.model]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </>
+            )}
+            {outcome && (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  className={cn("truncate", outcome.className)}
+                  title={outcome.label}
+                >
+                  {outcome.label}
                 </span>
               </>
             )}
@@ -158,6 +178,19 @@ export function ScheduleCard({
                   }
                 >
                   <Time size={12} /> {nextRunHint}
+                </span>
+              </>
+            )}
+            {noDefaultModel && (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-warning"
+                  title="The agent has no default model it can run. Set one on its Providers page, or pick a model for this schedule."
+                >
+                  <WarningAlt size={12} />{" "}
+                  {defaultModelNotice &&
+                    defaultModelScheduleWarning(defaultModelNotice)}
                 </span>
               </>
             )}
@@ -176,7 +209,7 @@ export function ScheduleCard({
         </div>
 
         <Button variant="outline" size="sm" onClick={onViewResults}>
-          <Launch size={14} /> View results
+          View results
         </Button>
 
         {onceState === null && (
@@ -185,7 +218,7 @@ export function ScheduleCard({
             onCheckedChange={(checked) =>
               toggleSchedule.mutate({ id, enabled: checked })
             }
-            label={enabled ? "Disable schedule" : "Enable schedule"}
+            label="Schedule enabled"
           />
         )}
 
@@ -225,7 +258,14 @@ export function ScheduleCard({
         )}
       </button>
 
-      {isExpanded && <ScheduleDetails schedule={schedule} />}
+      {isExpanded && (
+        <ScheduleDetails
+          schedule={schedule}
+          {...(onceState === null || onceState === "pending"
+            ? { onPickModel: handleEdit }
+            : {})}
+        />
+      )}
     </div>
   );
 }

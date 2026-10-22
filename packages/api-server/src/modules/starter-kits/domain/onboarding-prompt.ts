@@ -1,4 +1,9 @@
-import type { StarterKit, TemplateHarness } from "api-server-api";
+import {
+  chatFormCapabilities,
+  type StarterKit,
+  type TemplateHarness,
+} from "api-server-api";
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 import { spellHarnessCommand } from "../../templates/index.js";
 import type { GrantedTemplate } from "./requirements.js";
 import { satisfiesRequirement } from "./requirements.js";
@@ -11,6 +16,18 @@ export interface OnboardingFacts {
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
   familyTitles: ReadonlyMap<string, string>;
+  chatForms?: ChatFormPreferences | null;
+}
+
+export function chatFormLines(
+  chatForms: ChatFormPreferences | null | undefined,
+): string[] {
+  if (!chatForms) return [];
+  return [
+    "",
+    "The user's web chat renders A2UI forms (see the platform-chat-forms skill). When you ask the user to choose between options or fill in values, prefer a form, and follow the user's preferences in the capabilities below.",
+    chatFormCapabilities(chatForms),
+  ];
 }
 
 export function describeAccepts(
@@ -95,6 +112,7 @@ export function composeOnboardingPrompt(facts: OnboardingFacts): string {
     "",
     "Before you ask the user anything, call the set_onboarding_checklist tool with what you need FROM THE USER, so they can watch progress in the platform: one step per value only they can supply, decision only they can make, or action only they can take (installing an app, approving access). Your own work — verifying a connection, writing files, registering schedules, checking the install — is not a step; do it without listing it. Three to six steps is typical. Tick each with complete_onboarding_step the moment the user has supplied it, and call set_onboarding_checklist again if the conversation adds, renames or drops a step; the steps you keep stay ticked.",
     releaseLine(facts.schedules.length > 0),
+    ...chatFormLines(facts.chatForms),
   ].join("\n");
 }
 

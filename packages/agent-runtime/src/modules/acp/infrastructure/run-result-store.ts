@@ -44,12 +44,13 @@ function withinCap(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Keeps the outcome of the newest finished turn of
+ * UNIT_BOUNDARY_DESCRIPTION: Keeps the outcome of the newest finished run of
  * each `cli_run` Session — its stopReason and accumulated assistant text — so
  * a headless caller (`dam run get`) can read a run's result after the Session
- * Transcript is gone. The Transcript is in-memory and the idle reap forgets it
- * seconds after a turn ends with no client attached, so a record written at
- * turn end in its own document (`.platform/run-results.json`) is the only
+ * Transcript is gone. A run ends when its prompt is answered and the harness
+ * is idle, an Autonomous Turn after the answer included. The Transcript is
+ * in-memory and the idle reap forgets it seconds after a run ends with no
+ * client attached, so a record written at run end in its own document (`.platform/run-results.json`) is the only
  * uniform place a detached run's answer survives, across every harness. One
  * record per Session, newest turn wins; it goes when the Session is deleted,
  * or — the document is byte-capped — when another session's write needs the

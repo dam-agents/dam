@@ -1,34 +1,76 @@
 import { useEffect } from "react";
 
+import { getBrand } from "./brand.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { IconRail } from "./components/icon-rail.js";
+import { useIsDesktop } from "./hooks/use-is-desktop.js";
+import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
+import { useAgentsList } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
-import {
-  ActivityButton,
-  NotificationsPanel,
-} from "./modules/home/components/notifications-panel.js";
+import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
+import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
+import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
+import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
+import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
+import { SidebarV2 } from "./modules/platform/components/sidebar-v2/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
-import { isDarkTheme } from "./modules/platform/store/theme.js";
+import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
+import { ProviderOutageBanner } from "./modules/provider-status/components/provider-outage-banner.js";
+import { SECTIONS } from "./modules/sandboxes/components/sandbox-section-nav.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
+import { useAgentSession } from "./modules/sessions/api/queries.js";
+import {
+  AppSidePanelButtons,
+  AppSidePanelHost,
+} from "./modules/sessions/components/app-side-panel.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
+import { useStarterKit } from "./modules/starter-kits/api/queries.js";
 import { BrowseKitsModal } from "./modules/starter-kits/components/browse-kits-modal.js";
 import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
+import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { UsageReportView } from "./modules/usage/views/usage-report-view.js";
 import { useStore } from "./store.js";
+
+function useDocumentTitle() {
+  const view = useStore((s) => s.view);
+  const settingsTab = useStore((s) => s.settingsTab);
+  const sandboxSection = useStore((s) => s.sandboxSection);
+  const agentId = useStore((s) =>
+    s.view === "chat" ? s.selectedAgent : s.agentId,
+  );
+  const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
+  const kitCatalog = useStore((s) => s.starterKitCatalog);
+  const kitId = useStore((s) => s.starterKitId);
+  const agent = useAgentsList().find((a) => a.id === agentId);
+  const session = useAgentSession(agentId, sessionId).data;
+  const kit = useStarterKit(kitCatalog, kitId).data;
+  const title = documentTitle(
+    {
+      view,
+      settingsTab,
+      sandboxSectionTitle: SECTIONS.find((e) => e.section === sandboxSection)
+        ?.title,
+    },
+    { agent: agent?.name, session: session?.title, kit: kit?.name },
+    getBrand().name,
+  );
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+}
 
 export default function App() {
   const view = useStore((s) => s.view);
@@ -37,12 +79,21 @@ export default function App() {
   useBrowserHistory();
 
   useEffect(() => {
-    const apply = () => {
-      document.documentElement.classList.toggle(
-        "dark",
-        isDarkTheme(useStore.getState().theme),
+    if (
+      view === "terms" ||
+      view === "telegram-bind" ||
+      view === "slack-bind" ||
+      view === "connection-secret"
+    )
+      document.title = documentTitle(
+        { view, settingsTab: "account" },
+        {},
+        getBrand().name,
       );
-    };
+  }, [view]);
+
+  useEffect(() => {
+    const apply = () => applyTheme(useStore.getState().theme);
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
@@ -64,17 +115,44 @@ export default function App() {
         <DialogOverlay />
       </>
     );
+  if (view === "connection-secret") return <ConnectionSecretView />;
   if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }
 
+function SkipLink() {
+  return (
+    <a
+      href="#main"
+      onClick={(e) => {
+        e.preventDefault();
+        document.getElementById("main")?.focus();
+      }}
+      className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-toast focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg focus:ring-2 focus:ring-ring"
+    >
+      Skip to content
+    </a>
+  );
+}
+
+function AppSidebar() {
+  return useNewLayout() ? <SidebarV2 /> : <Sidebar />;
+}
+
 function MainApp() {
   const view = useStore((s) => s.view);
-  const activityOpen = useStore((s) => s.activityView !== null);
-  const setActivityView = useStore((s) => s.setActivityView);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const desktop = useIsDesktop();
+
+  const newLayout = useNewLayout();
+  useEffect(() => {
+    if (newLayout) document.documentElement.dataset.layout = "new";
+    else delete document.documentElement.dataset.layout;
+  }, [newLayout]);
 
   useLiveEvents();
+  useSyncRestartingAgents();
+  useDocumentTitle();
   useAgentCrashToasts();
   useApprovalToasts();
 
@@ -103,21 +181,19 @@ function MainApp() {
   if (view === "chat")
     return (
       <>
+        <SkipLink />
         <div className="flex h-dvh bg-background overflow-hidden">
-          <IconRail hideMobileBar />
-          <div className="relative z-content flex-1 min-w-0">
-            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
-              <div className="pointer-events-auto">
-                <ActivityButton onOpen={() => setActivityView("feed")} />
-              </div>
-            </div>
+          <AppSidebar />
+          <main
+            id="main"
+            tabIndex={-1}
+            className="relative z-content flex-1 min-w-0 outline-none"
+          >
             <ChatView />
-          </div>
+          </main>
         </div>
-        {activityOpen && (
-          <NotificationsPanel onClose={() => setActivityView(null)} />
-        )}
         {kitBrowserOpen && <BrowseKitsModal />}
+        <MobileNavDrawer />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -125,48 +201,57 @@ function MainApp() {
 
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+      <SkipLink />
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
-            <div className="pointer-events-auto">
-              <ActivityButton onOpen={() => setActivityView("feed")} />
-            </div>
-          </div>
-          <div
-            className={cn(
-              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-              view === "home" || view === "starter-kit"
-                ? "max-w-[1200px]"
-                : view === "settings" || view === "sandbox-home"
-                  ? "max-w-[1040px]"
-                  : "max-w-[960px]",
-            )}
+        <AppSidebar />
+        <AppSidePanelHost>
+          <main
+            id="main"
+            tabIndex={-1}
+            className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
-            {view === "sandbox-home" ? (
-              <SandboxHomeView />
-            ) : view === "home" || view === "starter-kit" ? (
-              <>
-                <HomeView />
-                {view === "starter-kit" && <StarterKitDetailView />}
-              </>
-            ) : view === "settings" ? (
-              <SettingsView />
-            ) : view === "artifacts" ? (
-              <ArtifactsView />
-            ) : (
-              <NotFoundView />
+            {/* UNIT_BOUNDARY_DESCRIPTION: JanUI's rail is the whole of the navigation and its right rail the whole of the panel, so the bar that stands in for both on a phone has nothing left to do there. */}
+            {!desktop && !newLayout && (
+              <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
-          </div>
-        </main>
+            <div
+              className={cn(
+                "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
+                view === "home" ||
+                  view === "starter-kit" ||
+                  view === "starter-kits" ||
+                  view === "artifacts"
+                  ? "max-w-[1200px]"
+                  : view === "settings" || view === "sandbox-home"
+                    ? "max-w-[1040px]"
+                    : "max-w-[960px]",
+              )}
+            >
+              <ProviderOutageBanner className="mb-6" />
+              {view === "sandbox-home" ? (
+                <SandboxHomeView />
+              ) : view === "home" || view === "starter-kit" ? (
+                <>
+                  <HomeView />
+                  {view === "starter-kit" && <StarterKitDetailView />}
+                </>
+              ) : view === "artifacts" ? (
+                <ArtifactsView />
+              ) : view === "starter-kits" ? (
+                <StarterKitsView />
+              ) : view === "settings" ? (
+                <SettingsView />
+              ) : (
+                <NotFoundView />
+              )}
+            </div>
+          </main>
+        </AppSidePanelHost>
       </div>
-      {activityOpen && (
-        <NotificationsPanel onClose={() => setActivityView(null)} />
-      )}
       {kitBrowserOpen && <BrowseKitsModal />}
+      <MobileNavDrawer />
       <DialogOverlay />
       <ConnectionBanner />
-      <GettingStartedDock placement="page" />
     </div>
   );
 }

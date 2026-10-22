@@ -6,7 +6,10 @@ shared="$HOME/.pi/agent"
 # LiteLLM connections set this placeholder for Claude Code. Pi would count it as
 # an Anthropic key and fall back to api.anthropic.com when no model resolves.
 unset ANTHROPIC_AUTH_TOKEN
-if [ -n "$PLATFORM_PROVIDER" ]; then
+# With the Model Router one Pi process serves every provider, so the shared
+# directory is the only one; the per-provider lease directories are for the
+# pre-router runtime.
+if [ -n "$PLATFORM_PROVIDER" ] && [ -z "$PLATFORM_MODEL_ROUTER_URL" ]; then
   lease="$HOME/.pi/leases/$PLATFORM_PROVIDER"
   mkdir -p "$lease" "$shared/sessions" "$shared/npm"
   for entry in "$shared"/*; do
@@ -33,7 +36,13 @@ mem="$(mise where npm:@zhafron/pi-memory 2>/dev/null)/node_modules/@zhafron/pi-m
 [ -d "$shared/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
   set -- -e "$mem" "$@"
 provider= pin=
-if [ -n "$AWS_BEARER_TOKEN_BEDROCK" ]; then
+if [ -n "$PLATFORM_MODEL_ROUTER_URL" ]; then
+  # The Model Router: one Pi provider, "platform", carrying every granted
+  # provider's models under provider-qualified names; the session's model is
+  # a catalog name the runtime sends (PLATFORM_MODEL for the TUI, ACP for chat).
+  provider=platform
+  unset OPENAI_API_KEY ANTHROPIC_API_KEY
+elif [ -n "$AWS_BEARER_TOKEN_BEDROCK" ]; then
   provider=amazon-bedrock pin=$AWS_BEDROCK_MODEL
 elif [ -n "$OPENAI_PROXY_URL" ]; then
   provider=openai-proxy pin=$OPENAI_PROXY_MODEL
@@ -51,4 +60,5 @@ if [ -n "$provider" ] && [ -z "$model" ]; then
 fi
 [ -z "$provider" ] || [ -z "$model" ] || set -- "$@" --provider "$provider"
 [ -z "$model" ] || set -- "$@" --model "$model"
-exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"
+extensions=/usr/local/share/pi-platform/extensions
+exec pi -e "$extensions/pi-dynamic-providers/index.ts" -e "$extensions/pi-platform-telemetry/index.ts" "$@"

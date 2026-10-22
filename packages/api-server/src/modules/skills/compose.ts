@@ -8,6 +8,7 @@ import {
 } from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
+import { createEgressRuleMatchAdapter } from "../egress-rules/compose.js";
 import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
 import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
@@ -75,6 +76,7 @@ export function composeSkillsModule(deps: {
 }): SkillsService {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
+  const egressRules = createEgressRuleMatchAdapter(db);
   return createSkillsService({
     surface: deps.surface,
     repo: createSkillsRepository(db, seedSources),
@@ -99,5 +101,8 @@ export function composeSkillsModule(deps: {
     scanPublic: scanPublicGithubArchive,
     readPublicSkillFile: readPublicGithubSkillFile,
     brandName: deps.brandName,
+    egressDenies: (agentId) => async (host, method, path) =>
+      (await egressRules.match(agentId, host, 443, true, method, path))
+        ?.verdict === "deny",
   });
 }

@@ -5,7 +5,9 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
+import { resultObjectTexts, terminalOutputPart } from "agent-runtime-api";
 import type {
+  PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,
   QueuedPrompt,
@@ -18,6 +20,7 @@ import type {
   ToolContent,
 } from "../../types.js";
 import { describeJsonRpcError } from "./errors.js";
+import { PLUMBING_TAGS } from "./plumbing-tags.js";
 import type { AcpUpdate, FrameMeta } from "./types.js";
 
 const OUTPUT_LIMIT_STOP_REASON: StopReason = "max_tokens";
@@ -26,26 +29,8 @@ function isOutputLimitStop(stopReason: string | undefined): boolean {
   return stopReason === OUTPUT_LIMIT_STOP_REASON;
 }
 
-const PLUMBING_TAGS = [
-  "how-to-respond",
-  "addressed-to-you",
-  "reading-along",
-  "network-access",
-  "attached-files",
-  "turn-undelivered",
-  "turn-interrupted",
-  "system-reminder",
-  "task-notification",
-  "command-name",
-  "command-message",
-  "command-args",
-  "local-command-stdout",
-  "local-command-stderr",
-  "local-command-caveat",
-  "user-prompt-submit-hook",
-];
 const PLUMBING_RE = new RegExp(
-  `<(${PLUMBING_TAGS.join("|")})>[\\s\\S]*?<\\/\\1>`,
+  `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*(?<!/))?>[\\s\\S]*?<\\/\\1>`,
   "g",
 );
 function stripPlumbing(raw: string): string {
@@ -57,16 +42,47 @@ const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
-  return content
-    ?.map<ToolContent>((c) => {
-      if (c.type === "content")
-        return {
-          type: c.type,
-          text: c.content.type === "text" ? c.content.text : "",
-        };
-      return { type: c.type, text: "" };
-    })
-    .filter((c) => c.text);
+  return content?.flatMap((c): ToolContent[] => {
+    if (c.type === "diff")
+      return [
+        {
+          type: "diff",
+          path: c.path,
+          oldText: c.oldText ?? null,
+          newText: c.newText,
+        },
+      ];
+    if (c.type === "content" && c.content.type === "text" && c.content.text)
+      return [{ type: "content", text: c.content.text }];
+    return [];
+  });
+}
+
+const TERMINAL_TEXT_LIMIT = 50 * 1024;
+
+function withTerminalPart(
+  previous: ToolContent[] | undefined,
+  part: string,
+): ToolContent[] {
+  const blocks = previous ?? [];
+  const last = blocks[blocks.length - 1];
+  const kept = last?.type === "terminal" ? blocks.slice(0, -1) : blocks;
+  const text = `${last?.type === "terminal" ? last.text : ""}${part}`;
+  return [
+    ...kept,
+    { type: "terminal", text: text.slice(-TERMINAL_TEXT_LIMIT) },
+  ];
+}
+
+function adapterOutput(
+  u: ToolCall | ToolCallUpdate,
+  previous: ToolContent[] | undefined,
+): ToolContent[] | undefined {
+  const results = resultObjectTexts(u);
+  if (results.length > 0)
+    return results.map((text) => ({ type: "content", text }));
+  const part = terminalOutputPart(u);
+  return part === null ? undefined : withTerminalPart(previous, part);
 }
 
 const EMBEDDED_RE =
@@ -307,6 +323,19 @@ export function sendWaits(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether the session has nothing yet, so the chat
+ * shows the new-session hero. A send the runtime queues leaves the transcript
+ * for the queue below it (`platform/queueChanged`); a new session's first
+ * prompt waits there while its harness settings apply, and it still counts.
+ */
+export function conversationEmpty(
+  messages: readonly Message[],
+  queue: readonly QueuedPrompt[],
+): boolean {
+  return messages.length === 0 && queue.length === 0;
+}
+
 export function withoutQueuedSends(
   messages: Message[],
   items: QueuedPrompt[],
@@ -541,12 +570,14 @@ export function settleReplay(
 
 export function appendInterruptedNotice(
   messages: Message[],
-  interruptedAt: string | undefined,
+  turn: PlatformReplayTurnMeta | undefined,
 ): Message[] {
-  if (interruptedAt === undefined) return messages;
+  if (turn?.interruptedAt === undefined || turn.inFlight) return messages;
   return appendNotice(
     messages,
-    "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
+    turn.interruptedByStop
+      ? "This conversation was interrupted when the agent was stopped (put to sleep, restarted or moved) and is resuming automatically — the agent will pick the task back up."
+      : "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
   );
 }
 
@@ -682,12 +713,17 @@ function handleToolCall(
 ): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx !== null) return patchToolChip(messages, existingIdx, u, at);
+  const content = mapToolContent(u.content);
   const chip: ToolChip = {
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
     status: u.status ?? "pending",
-    content: mapToolContent(u.content),
+    content: content?.length
+      ? content
+      : (adapterOutput(u, undefined) ?? content),
+    toolKind: u.kind,
+    description: toolDescription(u.rawInput),
   };
   return appendAgentParts(messages, [chip], at, turnId);
 }
@@ -718,6 +754,14 @@ function findToolIdx(
   return null;
 }
 
+function toolDescription(rawInput: unknown): string | undefined {
+  if (typeof rawInput !== "object" || rawInput === null) return undefined;
+  const description = (rawInput as { description?: unknown }).description;
+  return typeof description === "string" && description.trim()
+    ? description.trim()
+    : undefined;
+}
+
 function patchToolChip(
   messages: Message[],
   idx: number,
@@ -737,7 +781,11 @@ function patchToolChip(
                   ...p,
                   status: u.status ?? p.status,
                   title: u.title ?? p.title,
-                  content: content?.length ? content : p.content,
+                  content: content?.length
+                    ? content
+                    : (adapterOutput(u, p.content) ?? p.content),
+                  toolKind: u.kind ?? p.toolKind,
+                  description: toolDescription(u.rawInput) ?? p.description,
                 }
               : p,
           ),

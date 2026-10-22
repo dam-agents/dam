@@ -21,6 +21,7 @@ function agent(extra: Partial<Agent> = {}): Agent {
     state: "running",
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     podRestarts: 0,
     contributionFailures: [],
@@ -126,6 +127,19 @@ describe("kit update", () => {
     await expect(reporter.report("agent-1", "user-1", OLD)).rejects.toThrow();
     await reporter.report("agent-1", "user-1", NEW);
     expect(ended).toEqual({ ...STAMP, commit: NEW });
+  });
+
+  // TEST_SCENARIO: an agent created from a link has no catalog row to compare against, yet its Seed Stamp still tracks the kit's branch, so it is offered updates like a catalog agent; the update session is told the kit came from a link rather than that it left a catalog it was never in.
+  it("offers a kit update to an agent created from a link", async () => {
+    const linked = agent({ starterKit: `link/guardian@${OLD}` });
+    const [status] = await harness(linked).updates.updates();
+    expect(status?.state).toBe("available");
+
+    const h = harness(linked);
+    await h.updates.startUpdate("agent-1");
+    const task = (h.bumped[0]?.payload as { task: string }).task;
+    expect(task).toContain("was created from a link rather than a catalog");
+    expect(task).not.toContain("no longer listed");
   });
 
   // TEST_SCENARIO: the hover card shows only the changelog versions the update crosses.

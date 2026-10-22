@@ -1,29 +1,36 @@
 import {
+  Add,
   ArrowLeft,
   ArrowRight,
   Close,
   ErrorFilled,
-  Globe,
-  Maximize,
-  Minimize,
   Renew,
 } from "@carbon/icons-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSwitchItem,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 import {
   readPersistedFlag,
   writePersistedFlag,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
 import { addressUrl } from "../lib/address.js";
+import { browserLinkLabel } from "../lib/browser-link.js";
+import { showsTabBar } from "../lib/tabs.js";
+import { BrowserTabBar } from "./browser-tab-bar.js";
 import { StreamView } from "./stream-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
@@ -34,13 +41,11 @@ interface Props {
 }
 
 export function DockedBrowserPanel({ agentId, agentName }: Props) {
-  const close = useStore((s) => s.setOpenBrowser);
-  const maximized = useStore((s) => s.browserMaximized);
-  const setMaximized = useStore((s) => s.setBrowserMaximized);
   const showConfirm = useStore((s) => s.showConfirm);
   const openRequestId = useStore((s) => s.browserOpenRequest?.id);
   const takeOpenRequest = useStore((s) => s.takeBrowserOpenRequest);
   const screenRef = useRef<HTMLIFrameElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
   const stream = useBrowserControl(agentId);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
@@ -48,10 +53,17 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
 
+  const launchUnsupported =
+    stream.connection === "live" && stream.testingMode === undefined;
+
   const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
   useEffect(() => {
     if (!editing) setAddress(shownUrl);
   }, [shownUrl, editing]);
+  useEffect(() => {
+    if (editing) addressRef.current?.select();
+  }, [editing]);
+  const showsHost = !editing && shownUrl !== "";
 
   const { navigate } = stream;
   useEffect(() => {
@@ -68,6 +80,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     screenRef.current?.focus();
   };
 
+  const openTab = () => {
+    stream.newTab();
+    setAddress("");
+    addressRef.current?.focus();
+  };
+
   const clearData = async () => {
     const ok = await showConfirm(
       "Sign-ins, cookies and site data stored in this agent's browser are deleted.",
@@ -79,17 +97,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span
-          aria-hidden
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
-        >
-          {stream.page.loading ? <Spinner size={13} /> : <Globe size={13} />}
-        </span>
+      <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         <Button
           variant="ghost"
           size="icon-sm"
           aria-label="Back"
+          tooltip="Back"
           disabled={!stream.page.canGoBack}
           onClick={stream.back}
         >
@@ -99,19 +112,18 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Forward"
+          tooltip="Forward"
           disabled={!stream.page.canGoForward}
           onClick={stream.forward}
         >
           <ArrowRight size={16} />
         </Button>
-        <form onSubmit={submit} className="min-w-0 flex-1">
+        <form onSubmit={submit} className="relative min-w-0 flex-1">
           <Input
-            value={address}
+            ref={addressRef}
+            value={showsHost ? browserLinkLabel(shownUrl) : address}
             onChange={(e) => setAddress(e.target.value)}
-            onFocus={(e) => {
-              setEditing(true);
-              e.currentTarget.select();
-            }}
+            onFocus={() => setEditing(true)}
             onBlur={() => setEditing(false)}
             onKeyDown={(e) => {
               if (e.key !== "Escape") return;
@@ -119,7 +131,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
               e.currentTarget.blur();
             }}
             placeholder="Search or enter address"
-            title={stream.page.title || undefined}
+            title={
+              [stream.page.title, shownUrl].filter(Boolean).join("\n") ||
+              undefined
+            }
             type="text"
             name="browser-address"
             autoComplete="off"
@@ -130,28 +145,32 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             data-lpignore="true"
             data-form-type="other"
             aria-label="Address in the agent's browser"
-            className="h-8 font-mono text-xs"
+            className={cn(
+              "h-8 pr-8 text-xs",
+              showsHost ? "truncate" : "font-mono",
+            )}
           />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            className="absolute top-1/2 right-1 -translate-y-1/2"
+            aria-label={stream.page.loading ? "Stop loading" : "Reload"}
+            tooltip={stream.page.loading ? "Stop loading" : "Reload"}
+            onClick={stream.page.loading ? stream.stop : stream.reload}
+          >
+            {stream.page.loading ? <Close size={14} /> : <Renew size={14} />}
+          </Button>
         </form>
-        {stream.page.loading ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Stop loading"
-            onClick={stream.stop}
-          >
-            <Close size={16} />
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Reload"
-            onClick={stream.reload}
-          >
-            <Renew size={16} />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New tab"
+          tooltip="New tab"
+          onClick={openTab}
+        >
+          <Add size={16} />
+        </Button>
         <RowActionsMenu label="Browser actions">
           <DropdownMenuItem onSelect={stream.restartBrowser}>
             Restart browser
@@ -159,36 +178,24 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
             Clear browser data
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuSwitchItem
+            checked={stream.testingMode ?? true}
+            disabled={launchUnsupported || stream.connection !== "live"}
+            onCheckedChange={stream.setTestingMode}
+            data-testid="browser-testing-mode"
+          >
+            <span className="flex min-w-0 max-w-64 flex-col gap-0.5 whitespace-normal">
+              <span>Browser testing mode</span>
+              <span className="text-2xs text-muted-foreground">
+                {launchUnsupported
+                  ? "This agent's image cannot change how its browser starts."
+                  : "On, pages can tell the browser is automated, and some sites then block sign-ins or show bot checks. Turn it off when a site refuses you. The agent keeps control either way. Switching restarts the browser and keeps sign-ins and the open page."}
+              </span>
+            </span>
+          </DropdownMenuSwitchItem>
         </RowActionsMenu>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={maximized ? "Restore panel size" : "Maximize browser"}
-          tooltip={maximized ? "Restore" : "Maximize"}
-          onClick={() => setMaximized(!maximized)}
-        >
-          {maximized ? <Minimize size={16} /> : <Maximize size={16} />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => close(null)}
-        >
-          <Close size={16} />
-        </Button>
-      </div>
-
-      <div className="relative flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">
-        {stream.page.title && (
-          <span className="min-w-0 max-w-[50%] truncate font-medium text-foreground">
-            {stream.page.title}
-          </span>
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          Runs in {agentName}'s sandbox — not a page from this site
-        </span>
+        <SidePanelCloseButton />
         {stream.page.loading && (
           <span
             aria-hidden
@@ -196,6 +203,15 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           />
         )}
       </div>
+
+      {showsTabBar(stream.tabs) && (
+        <BrowserTabBar
+          tabs={stream.tabs}
+          activeTab={stream.activeTab}
+          onSelect={stream.selectTab}
+          onClose={stream.closeTab}
+        />
+      )}
 
       {!noticeSeen && (
         <Callout

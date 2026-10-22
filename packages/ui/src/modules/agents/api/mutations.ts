@@ -1,6 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
 import type { AgentConnections } from "api-server-api";
-import type { AvatarCharacter } from "api-server-api/avatar/svg";
 
 import { getErrorMessage } from "@/lib/errors";
 
@@ -22,7 +21,7 @@ import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
-  invalidates: [agentsKeys.listWithChannels()],
+  invalidates: [agentsKeys.listWithChannels(), trpc.attention.pathKey()],
 };
 
 const invalidatesAgentsAndBudget = {
@@ -37,7 +36,7 @@ export interface CreateAgentInput {
   templateId?: string;
   image?: string;
   description?: string;
-  avatar?: AvatarCharacter;
+  avatar?: string;
   env?: EnvVar[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
@@ -48,7 +47,6 @@ export interface CreateAgentInput {
   importEntries?: BundleEntry[];
   importRawBundle?: File;
   size?: { cpu?: string; memory?: string };
-  vm?: boolean;
 }
 
 export function useCreateAgent() {
@@ -134,7 +132,7 @@ export function useDeleteAgent() {
   });
 }
 
-export function useUpdateAgent() {
+export function useUpdateAgent({ inlineError = false } = {}) {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     onSettled: (_agent, error, vars) => {
@@ -144,6 +142,7 @@ export function useUpdateAgent() {
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't update agent",
+      suppressErrorToast: inlineError,
     },
   });
 }
@@ -158,12 +157,12 @@ export function useWakeAgentMutation() {
   });
 }
 
-export function usePauseAgent() {
+export function useSetAgentDisabled() {
   return useMutation({
-    ...trpc.agents.pause.mutationOptions(),
+    ...trpc.agents.setDisabled.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't pause agent",
+      errorToast: "Couldn't change whether the agent is disabled",
     },
   });
 }
@@ -174,16 +173,6 @@ export function useRetryWorkspace() {
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't retry the workspace step",
-    },
-  });
-}
-
-export function useStopAgent() {
-  return useMutation({
-    ...trpc.agents.stop.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't stop agent",
     },
   });
 }
@@ -204,36 +193,6 @@ export function useUpgradeAgentMutation() {
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't update agent",
-    },
-  });
-}
-
-export function useMigrateRuntimeMutation() {
-  return useMutation({
-    ...trpc.agents.migrateRuntime.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't move the agent to the new runtime",
-    },
-  });
-}
-
-export function useAbortRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.abortRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't undo the move to the new runtime",
-    },
-  });
-}
-
-export function useRetryRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.retryRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't retry the move to the new runtime",
     },
   });
 }
@@ -307,6 +266,7 @@ export function useSetAgentConnections() {
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),
         egressRulesKeys.all,
+        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't update app connections",
     },

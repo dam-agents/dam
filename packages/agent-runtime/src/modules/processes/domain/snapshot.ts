@@ -12,6 +12,8 @@ export interface ScannedProcess {
   cmdline: string;
   outputPath: string | null;
   keepMark: string | null;
+  startupItem: string | null;
+  link: string | null;
 }
 
 export interface ProcSnapshot {

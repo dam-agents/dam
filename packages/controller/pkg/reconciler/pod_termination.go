@@ -89,18 +89,27 @@ func classifyWaiting(w *corev1.ContainerStateWaiting) (reason, message string, o
 	return "", "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: when the runner container of a runner pod was last OOM-killed: its current state while it has not restarted yet, else its last termination.
-func runnerOOMKilledAt(pod *corev1.Pod) time.Time {
-	var at time.Time
+// UNIT_BOUNDARY_DESCRIPTION: one OOM kill of a runner pod's runner container, named by the container that died and the time it finished: the terminated container's own id and the kernel's finished time are what tell two kills of one owner's runner apart, and neither changes when the pod's container restarts, so the same kill keeps the same name across a controller or a runner restart. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten.
+type runnerKill struct {
+	ID string
+	At time.Time
+}
+
+func (k runnerKill) IsZero() bool { return k.At.IsZero() }
+
+// UNIT_BOUNDARY_DESCRIPTION: the latest OOM kill the pod records for its runner container: its current state while the container has not restarted yet, else its last termination.
+func runnerOOMKillOf(pod *corev1.Pod) runnerKill {
+	var kill runnerKill
 	for _, cs := range pod.Status.ContainerStatuses {
 		if cs.Name != vmRunnerComponent {
 			continue
 		}
 		for _, t := range []*corev1.ContainerStateTerminated{cs.State.Terminated, cs.LastTerminationState.Terminated} {
-			if t != nil && t.Reason == "OOMKilled" && t.FinishedAt.After(at) {
-				at = t.FinishedAt.Time
+			if t == nil || t.Reason != "OOMKilled" || !t.FinishedAt.After(kill.At) {
+				continue
 			}
+			kill = runnerKill{ID: t.ContainerID + "@" + t.FinishedAt.UTC().Format(time.RFC3339), At: t.FinishedAt.Time}
 		}
 	}
-	return at
+	return kill
 }

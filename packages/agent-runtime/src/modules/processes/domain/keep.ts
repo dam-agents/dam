@@ -18,7 +18,6 @@ export interface KeepOverride {
 export interface KeepDecisions {
   marks: KeepMark[];
   overrides: KeepOverride[];
-  holds: boolean;
 }
 
 export interface KeepResolution {
@@ -49,13 +48,12 @@ function carriesMark(
  * UNIT_BOUNDARY_DESCRIPTION: Decides whether one row keeps the agent awake,
  * and who decided. The user's override wins over the agent's Keep Mark, and
  * the mark wins over the default. By default a Harness Task keeps the agent
- * awake and a Detached Process does not. A Turn Process never does, and takes
- * no decision. A Detached Process carries the agent's mark when any process in
- * its tree carries one: the PLATFORM_KEEP value a `platform-keep` launch passed
+ * awake and a Detached Process does not. A Turn Process and a Startup Item
+ * never do, and take no decision: an item starts again at every wake. A
+ * Detached Process carries the agent's mark when any process in its tree
+ * carries one: the PLATFORM_KEEP value a `platform-keep` launch passed
  * down, which every descendant inherits even through nohup or setsid, or the
- * pid and start time a `platform-keep --pid` named. With background holds
- * switched off for the install, nothing keeps the agent awake, but the row
- * still says who decided.
+ * pid and start time a `platform-keep --pid` named.
  */
 export function createKeepResolver(
   decisions: KeepDecisions,
@@ -64,8 +62,8 @@ export function createKeepResolver(
   const markedKeys = new Set(decisions.marks.map(markedProcessKey));
   const overrides = new Map(decisions.overrides.map((o) => [o.key, o]));
 
-  const decide = (tree: ProcessTree): KeepResolution => {
-    if (tree.kind === "turn")
+  return (tree: ProcessTree): KeepResolution => {
+    if (tree.kind === "turn" || tree.kind === "startup-item")
       return { keepsAwake: false, keepSource: "default" };
     const override = overrides.get(tree.identity);
     if (override)
@@ -75,11 +73,6 @@ export function createKeepResolver(
     if (tree.members.some((m) => carriesMark(m, markIds, markedKeys)))
       return { keepsAwake: true, keepSource: "agent" };
     return { keepsAwake: false, keepSource: "default" };
-  };
-
-  return (tree) => {
-    const resolved = decide(tree);
-    return decisions.holds ? resolved : { ...resolved, keepsAwake: false };
   };
 }
 

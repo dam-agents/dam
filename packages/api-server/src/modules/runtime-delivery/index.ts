@@ -1,6 +1,11 @@
 export { composeRuntimeDelivery } from "./compose.js";
 export { createBullConnection } from "./infrastructure/state-queue.js";
+export type { OutboxRepo } from "./infrastructure/outbox-repo.js";
 export type { RuntimeMutator } from "./services/runtime-mutator.js";
+export type {
+  SessionMessageEvent,
+  SessionMessages,
+} from "./services/session-messages.js";
 export type {
   EventLifecycleListener,
   EventLifecycleTransition,
@@ -8,6 +13,7 @@ export type {
 export {
   initializationEvent,
   kitUpdateEvent,
+  sessionPairFields,
   workspaceCommandEvent,
   workspaceSeedEvent,
 } from "./domain/outbox-events.js";

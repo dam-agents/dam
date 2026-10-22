@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import {
   runtimeFeaturesOf,
@@ -34,6 +35,7 @@ import { createBuiltinContributions } from "./services/builtin-contributions.js"
 import {
   createWorkerHandler,
   type IsAgentRunning,
+  type PendingEventResolver,
 } from "./services/worker-handler.js";
 import { createCronSweep, type CronSweep } from "./services/cron-sweep.js";
 import { createHelloHandler } from "./services/hello-handler.js";
@@ -52,8 +54,14 @@ import {
   type EventLifecycleListener,
 } from "./services/event-lifecycle.js";
 import { createEventOutcomeRegistry } from "./services/event-outcome-registry.js";
+import {
+  createSessionMessages,
+  SESSION_MESSAGE_KIND,
+  type SessionMessages,
+} from "./services/session-messages.js";
 import { emit, EventType } from "../../events.js";
 import { workspaceEvent } from "./domain/outbox-events.js";
+import { createEgressRuleMatchAdapter } from "../egress-rules/compose.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -63,6 +71,7 @@ export interface RuntimeDeliveryComposition {
   sweep: CronSweep;
   hello: RuntimeDeliveryService;
   runtimeMutator: RuntimeMutator;
+  sessionMessages: SessionMessages;
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
   runtimeFeaturesMany(
     agentIds: string[],
@@ -118,6 +127,8 @@ export interface ComposeRuntimeDeliveryOpts {
   harnessServerUrl: string;
   telemetryEnv: (harness: string) => readonly EnvVar[];
   resolveOwner: (agentId: string) => Promise<string | null>;
+  resolveAgentName: (agentId: string) => Promise<string | null>;
+  resolveEvent?: PendingEventResolver;
   deliveryConcurrency: number;
 }
 
@@ -132,10 +143,15 @@ export function composeRuntimeDelivery(
     harnessServerUrl: opts.harnessServerUrl,
     telemetryEnv: opts.telemetryEnv,
   });
+  const egressRules = createEgressRuleMatchAdapter(opts.db);
   const stateBuilder = createStateBuilder({
     db: opts.db,
     outboxRepo,
     builtin,
+    agentName: opts.resolveAgentName,
+    egressDenies: (agentId) => async (host, method, path) =>
+      (await egressRules.match(agentId, host, 443, true, method, path))
+        ?.verdict === "deny",
   });
   const queue = createStateQueue(opts.bullConnection);
 
@@ -154,6 +170,7 @@ export function composeRuntimeDelivery(
     clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.namespace),
     resolveOwner: opts.resolveOwner,
     notifyLifecycle,
+    ...(opts.resolveEvent && { resolveEvent: opts.resolveEvent }),
     log,
   });
   const worker = startStateWorker({
@@ -191,6 +208,7 @@ export function composeRuntimeDelivery(
     outboxRepo,
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
+    stateBuilder,
     queue,
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,
@@ -204,6 +222,16 @@ export function composeRuntimeDelivery(
     queue,
   });
 
+  const sessionMessages = createSessionMessages({
+    runtimeMutator,
+    readCapabilities: async (agentId) =>
+      (await agentsRuntimeRepo.get(agentId))?.runtimeCapabilities ?? null,
+    newId: randomUUID,
+    log,
+  });
+  eventOutcomes.add(SESSION_MESSAGE_KIND, sessionMessages.onOutcome);
+  lifecycleListeners.set(SESSION_MESSAGE_KIND, sessionMessages.onLifecycle);
+
   return {
     registerEventOutcomeHandler: eventOutcomes.add,
     registerEventLifecycleListener: (kind, listener) => {
@@ -216,6 +244,7 @@ export function composeRuntimeDelivery(
     sweep,
     hello,
     runtimeMutator,
+    sessionMessages,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
       const [row, preparing, features, workspace] = await Promise.all([
         outboxRepo.getRow(agentId),

@@ -3,20 +3,20 @@
 {{- /*
 The per-node runner release stager: the only writer of the node directory that
 `runner.releaseHostPath` names. It runs this chart's runner image and copies the
-runner release that image carries — the runner, platform-init and
-platform-runc — into the directory under the image reference the controller
-names the release by, keeping the newest few. A chart upgrade rolls this
-DaemonSet, which stages the new release; each runner pod's loader then hands
-its machines to it. Runner pods mount the directory read-only, so a guest that
-escapes into its runner cannot replace the release another owner's runner
-takes next.
+runner release that image carries — the runner, platform-init, platform-runc
+and the loader above them — into the directory under the image reference the
+controller names the release by, keeping the newest few. A chart upgrade rolls
+this DaemonSet, which stages the new release; each runner pod's loader then
+hands its machines to it, and becomes it where it carries another loader.
+Runner pods mount the directory read-only, so a guest that escapes into its
+runner cannot replace the release another owner's runner takes next.
 
 It also stages the VM runtime the release was built against — the smolvm
 release with its libkrun and guest agent — once per runtime, so a release
 built against another runtime than a pod's image brings its own.
 
-It runs wherever a runner can, on the runner's own nodeSelector and
-tolerations. A runner on a node it has not reached yet keeps its release until
+It runs wherever a runner can, on the runner's own nodeSelector,
+tolerations and affinity. A runner on a node it has not reached yet keeps its release until
 it does. It needs no capability: it is root writing a directory root owns,
 and the image build leaves root, the owner of every file it copies, able to
 read them.
@@ -46,6 +46,14 @@ spec:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: vm-runner-releases
+  {{- /*
+  A stager serves nothing once it has staged, so a chart upgrade replaces
+  every one at once: a node's runners wait for the new release only as long as
+  that node's own image pull, not for the stagers on every node before it.
+  */}}
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 100%
   template:
     metadata:
       labels:
@@ -65,6 +73,10 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with $v.runner.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: stage
           image: {{ include "platform.vmRunner.image" $ | quote }}
@@ -72,7 +84,7 @@ spec:
           {{- /*
           The runner image, whose ENTRYPOINT starts a runner pod's loader —
           replaced here. The release is named by the very reference the
-          controller writes into each runner's release ConfigMap. The runtime
+          controller names to each runner over its machine API. The runtime
           is the smolvm tree the image installs.
           */}}
           command: ["vm-runner-loader", "stage"]
@@ -120,7 +132,7 @@ spec:
       volumes:
         - name: releases
           hostPath:
-            path: {{ $v.runner.releaseHostPath }}
+            path: {{ include "platform.vmRunner.releaseDir" . }}
             type: DirectoryOrCreate
 {{- with $v.runner.scc }}
 ---

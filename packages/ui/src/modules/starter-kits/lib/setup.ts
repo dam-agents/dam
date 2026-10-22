@@ -88,7 +88,10 @@ export function isStarterKitSetupComplete(
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<StarterKitView, "id" | "catalog" | "connections">,
+  kit: Pick<
+    StarterKitView,
+    "id" | "catalog" | "connections" | "link" | "version"
+  >,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
@@ -102,6 +105,7 @@ export function buildStarterKitApplyInput(
   return {
     catalog: kit.catalog,
     kitId: kit.id,
+    ...(kit.link ? { link: { url: kit.link.url, commit: kit.version } } : {}),
     name: draft.name.trim(),
     connectionIds: draftConnectionIds(draft),
     ...(slackChannelId ? { slackChannelId } : {}),
@@ -184,7 +188,12 @@ export function describeAccepts(
 ): string {
   const families = familiesIn(templates);
   return ids
-    .map((id) => families.get(id)?.title ?? templates.get(id)?.name ?? id)
+    .map(
+      (id) =>
+        families.get(id)?.title ??
+        templates.get(id)?.name ??
+        id.charAt(0).toUpperCase() + id.slice(1),
+    )
     .join(" or ");
 }
 

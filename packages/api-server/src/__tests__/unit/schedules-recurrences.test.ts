@@ -486,6 +486,19 @@ describe("rrule presets", () => {
     });
   });
 
+  it.each([
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;BYMONTH=1,7",
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;BYMONTHDAY=1,15",
+    "FREQ=MINUTELY;INTERVAL=15;BYMONTH=3",
+    "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=20271231T000000",
+  ])(
+    "reads %s as custom, so the editor keeps the parts no preset has a field for",
+    (rrule) => {
+      expect(detectPreset(rrule)).toEqual({ kind: "custom", rrule });
+    },
+  );
+
   it("describes the minutes and the days of a rule", () => {
     expect(rruleToText("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0")).toBe(
       "every day at 9:30 AM",
@@ -494,6 +507,27 @@ describe("rrule presets", () => {
       "every 2 hours on Monday and Wednesday",
     );
   });
+
+  // TEST_SCENARIO: the daily preset stores its days as FREQ=DAILY;BYDAY, which the text library reads as "every day on Monday", so it is described as the weekly rule it fires like.
+  it.each([
+    [
+      "FREQ=DAILY;BYDAY=MO;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "every week on Monday at 9 AM",
+    ],
+    [
+      "FREQ=DAILY;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "every week on Monday and Wednesday at 9 AM",
+    ],
+    [
+      "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "every weekday at 9 AM",
+    ],
+  ])(
+    "describes the daily preset limited to days, %s, as weekly",
+    (rrule, text) => {
+      expect(rruleToText(rrule)).toBe(text);
+    },
+  );
 
   it("describes a rule with a floating UNTIL", () => {
     expect(

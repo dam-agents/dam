@@ -13,15 +13,6 @@ export function delegationState(
   return agentState === "over_budget" ? "waiting" : "working";
 }
 
-export function firstLine(prompt: string): string {
-  return (
-    prompt
-      .split("\n")
-      .find((line) => line.trim() !== "")
-      ?.trim() ?? ""
-  );
-}
-
 export function flattenIds(nodes: readonly DelegationNode[]): string[] {
   return nodes.flatMap((node) => [node.id, ...flattenIds(node.children)]);
 }
@@ -32,7 +23,24 @@ export function hasRunning(nodes: readonly DelegationNode[]): boolean {
   );
 }
 
-const CAPTURE_WINDOW_MS = 60_000;
+const JUST_ENDED_MS = 60_000;
+
+function justEnded(node: DelegationNode, now: number): boolean {
+  return (
+    node.status !== "running" &&
+    node.completedAt !== null &&
+    now - Date.parse(node.completedAt) < JUST_ENDED_MS
+  );
+}
+
+export function hasJustEnded(
+  nodes: readonly DelegationNode[],
+  now: number,
+): boolean {
+  return nodes.some(
+    (node) => justEnded(node, now) || hasJustEnded(node.children, now),
+  );
+}
 
 export function awaitsCapture(
   nodes: readonly DelegationNode[],
@@ -40,10 +48,7 @@ export function awaitsCapture(
 ): boolean {
   return nodes.some(
     (node) =>
-      (node.status !== "running" &&
-        !node.transcriptAvailable &&
-        node.completedAt !== null &&
-        now - Date.parse(node.completedAt) < CAPTURE_WINDOW_MS) ||
+      (justEnded(node, now) && !node.transcriptAvailable) ||
       awaitsCapture(node.children, now),
   );
 }
@@ -60,4 +65,35 @@ export function countByStatus(
     counts.failed += nested.failed;
   }
   return counts;
+}
+
+export interface DelegationModel {
+  ran: string | null;
+  requested: string | null;
+  substituted: boolean;
+}
+
+function sameModel(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model a sub-agent ran, from its turn's
+ * telemetry, against the model its driver asked for. The driver may name a
+ * model with a provider prefix that the recorded call omits, or the reverse,
+ * so a prefix alone never counts as a substitution.
+ */
+export function delegationModel(
+  requested: string | null,
+  ran: readonly string[] | undefined,
+): DelegationModel {
+  const recorded = ran ?? [];
+  return {
+    ran: recorded.length > 0 ? recorded.join(", ") : null,
+    requested,
+    substituted:
+      requested !== null &&
+      recorded.length > 0 &&
+      !recorded.some((model) => sameModel(model, requested)),
+  };
 }

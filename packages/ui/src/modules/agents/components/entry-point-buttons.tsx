@@ -1,3 +1,4 @@
+import { Add, Gift } from "@carbon/icons-react";
 import type { EntryPointChoice } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ const BROWSE_KITS: EntryPoint = {
   label: "Browse starter kits",
 };
 
-export function EntryPointButtons() {
+export function EntryPointButtons({ hero = false }: { hero?: boolean }) {
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const defaultAgent = useCreateDefaultAgent();
   const recordEntryPoint = useRecordEntryPoint();
@@ -27,6 +28,27 @@ export function EntryPointButtons() {
     if (entryPoint === CREATE_AGENT) void defaultAgent.create();
     else setKitBrowserOpen(true);
   };
+  if (hero)
+    return (
+      <>
+        <Button
+          size="lg"
+          onClick={() => enter(CREATE_AGENT)}
+          disabled={!defaultAgent.ready}
+          data-testid="entry-point-lead"
+        >
+          {CREATE_AGENT.label}
+        </Button>
+        <Button
+          size="lg"
+          variant="outline"
+          onClick={() => enter(BROWSE_KITS)}
+          data-testid="entry-point-second"
+        >
+          Start from a kit
+        </Button>
+      </>
+    );
   return (
     <>
       <Button
@@ -34,6 +56,7 @@ export function EntryPointButtons() {
         onClick={() => enter(BROWSE_KITS)}
         data-testid="entry-point-second"
       >
+        <Gift size={16} aria-hidden />
         {BROWSE_KITS.label}
       </Button>
       <Button
@@ -41,6 +64,7 @@ export function EntryPointButtons() {
         disabled={!defaultAgent.ready}
         data-testid="entry-point-lead"
       >
+        <Add size={16} aria-hidden />
         {CREATE_AGENT.label}
       </Button>
     </>

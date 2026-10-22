@@ -237,20 +237,24 @@ def spawn(
 
     The sub-agent runs on this driver's model provider and receives only the
     ``connections`` passed (ids from ``list_connections()``). Its egress
-    follows this driver's rules.
+    follows this driver's rules, except the hosts of its own model provider,
+    which pass over them.
 
     ``ttl_ms`` is a kill deadline, not pacing: the platform removes the
     sub-agent the moment it lapses, mid-work or not. ``label`` names the
     sub-agent, in this script's log lines and on the platform.
 
     ``model``, ``mode`` and ``config_options`` choose the sub-agent's harness
-    config, the same values its Config panel offers (for claude-code:
-    ``model="sonnet"``, ``config_options={"effort": "low"}``). They are
-    written before its first turn. The platform does not check the values: a
-    wrong model name can fail the first turn (burning the TTL) or silently run
-    another model, depending on the harness and provider, so try a new name
-    with a short ``ttl_ms`` and check the model the sub-agent reports. Omit
-    them to run the template's default."""
+    config. ``model`` names a model with its provider, as the Config panel
+    lists it (``model="ibm/aws/claude-haiku-4-5"``; Claude Code's own
+    ``claude/ibm/...`` spelling is accepted too); a bare name such as
+    ``"sonnet"`` is refused. ``config_options`` takes the values the panel
+    offers (``{"effort": "low"}``). They are written before its first turn. A
+    model the sub-agent's harness does not list on this agent is refused
+    before anything is created; a setting the harness cannot apply fails the
+    spawn once the sub-agent boots. Omit ``model`` to run on this agent's
+    default model, on the harness that default runs on; on any other
+    harness, or with no default, the spawn is refused."""
     if harness is None and image is None:
         raise ValueError("pass harness= (or image=)")
     if resources is not None and (memory is not None or cpu is not None):

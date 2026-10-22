@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-10-10
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -38,6 +38,7 @@ flowchart LR
     inst[(agent_skills)]
     pubs[(agent_skill_publishes)]
     sets[(skill_sets)]
+    hidden[(agent_hidden_skill_sources)]
   end
 
   subgraph pod[agent pod]
@@ -55,6 +56,7 @@ flowchart LR
   skills-svc <--> src
   skills-svc <--> inst
   skills-svc <--> sets
+  skills-svc <--> hidden
   pub-svc --> pubs
 
   scanner -->|HTTPS| github
@@ -95,14 +97,21 @@ Input that names no repository is refused in the field, before the source exists
 The directory of a browse link becomes the source's path when the user gave none.
 The branch is **not** honoured — both scanners read the repository's default branch — so the product says the branch was ignored rather than silently scanning something else.
 
-Listing dedupes on `gitUrl` with first-wins precedence: user → system → template.
-A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.
+A source is identified by its repository **and** its path, so one owner may connect the same repository several times, once per path — the developer skills of a repository, and a test profile under another directory of it that an agent with narrower egress installs.
+"No path" is a value of its own, and paths compare in canonical form.
+Listing dedupes on `(gitUrl, path)` with first-wins precedence: user → system → template.
+A user creating a custom source for the same URL and path shadows the system entry; deleting the user row exposes the system entry again.
+
+The owner can **hide** a source on one agent (`agent_hidden_skill_sources`), whatever its kind, so a system or template source that cannot be removed stops cluttering that agent's skills page.
+A hide is keyed by `(agentId, gitUrl, path)`, the same identity listing dedupes on, so it survives the source row being deleted and re-added; the agent's source list still returns the source, marked `hidden`, and the agent-delete cleanup removes the rows.
+A hide is refused while the agent has an Installed Skill Ref from that source, judged from the refs and not from a scan, so a source that cannot be scanned (an account without access, an unreachable repository) can still be hidden.
+The UI does not scan a hidden source, offers the hide once the agent's skills state has loaded, and lists hidden sources in the Add source dialog to show them again.
 
 A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults.
 When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged.
 A path that **is itself a skill directory** — the common case when someone shares a link to one skill's folder — contributes itself as a skill, alongside any skills one level below it, rather than resolving to nothing.
-Path is a property of the source, resolved server-side; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source.
-One path per `(owner, gitUrl)`; changing it is delete + re-add.
+Path is part of the source's identity; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source.
+Another path of the same repository is another source; changing a source's path is delete + re-add.
 
 ### Skill, Installed Skill Ref, Local Skill
 
@@ -110,7 +119,11 @@ A **Scanned Skill** is what a scan reports about one skill in a Source, from eit
 A pod predating that last field reports none, which is why the api-server's own shape keeps it optional.
 The field-level shape lives in the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)).
 
-An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent.
+An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent, and the path of the source it was installed from.
+That recorded path, not a lookup by repository, drives the ref's fetch and egress check, and deleting a source removes only the refs installed from its path.
+An agent holds a skill name from one path of a repository at a time; installing the same name from another path of it replaces the ref.
+An install names the path of the source it comes from.
+One that names none keeps the path the agent already installed the skill from; a first install takes the repository's path-less source, or its only source, and is refused when several paths could match.
 The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
 
 A **Local Skill** is a directory present in some [Skill Path](agent-skills.md#skill-path) on the pod, regardless of how it got there; the pod judges its [Skill Origin](agent-skills.md#skill-origin) at the same time.
@@ -169,7 +182,7 @@ And a skill installed after first boot from outside the image has no pristine co
 
 A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique per owner) — so configuring an agent's skills is not manual work repeated from memory on each new one.
 
-A set stores **`(gitUrl, name)` pairs only**.
+A set stores **`(gitUrl, name)` pairs**, each with the source path when the skill came from a source that has one.
 The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct.
 No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today.
 Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
@@ -246,7 +259,7 @@ Owns:
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`.
   `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (once the pod has caught up), and folds in the `agent_skill_publishes` rows.
-- **Cleanup** — the module exports a delete-by-agent cleanup that removes both `agent_skills` and `agent_skill_publishes` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep.
+- **Cleanup** — the module exports a delete-by-agent cleanup that removes the `agent_skills`, `agent_skill_publishes` and `agent_hidden_skill_sources` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep.
   User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
 
 ## Flows
@@ -277,6 +290,23 @@ sequenceDiagram
 ```
 
 Public-source installs work identically except Envoy's filter chain has no credential to inject (no token swap, anonymous archive download).
+
+### Fetch mode
+
+An agent may be denied the repository a skill comes from but allowed one directory of it — a black-box QA agent that must not read the source of the product it tests, yet installs that product's test profile.
+The api-server decides how the pod fetches each GitHub skill-ref from the agent's [egress rules](security-and-credentials.md#hitl-ext_authz), with the same matcher the egress gate uses:
+
+- No rule denies the archive (`GET api.github.com /repos/{owner}/{repo}/tarball/{version}` or `GET codeload.github.com /{owner}/{repo}/…`): the pod fetches the tarball, as it always has.
+  A request that matches no rule counts as not denied, since the gate may still let it through.
+- The archive is denied, the source has a path, and `GET api.github.com /repos/{owner}/{repo}/contents/{path}?ref={version}` is not denied: the skill-ref carries `fetch: "directory"`, and the pod fetches only that directory ([agent-skills.md](agent-skills.md#the-service)).
+- Otherwise install and batch apply refuse the skill up front with `PRECONDITION_FAILED` and a message that names the repository and tells the user to set a path the agent may read; nothing is recorded.
+
+The rules that open one directory are `GET /repos/{owner}/{repo}/contents/{path}/*` and `GET /repos/{owner}/{repo}/contents/{path}?*`: every request of a directory fetch carries the ref as a query, and the prefix form `contents/{path}*` would also open siblings such as `{path}-tools/` or `{path}.md`.
+The allowed directory must hold no symlink, because the Contents API answers a symlink to a file with that file's content, wherever it lives.
+
+The pod scan of a private source asks the same question at `HEAD`.
+In directory mode it reads that head from the default branch's ref — `GET /repos/{owner}/{repo}` and `GET /repos/{owner}/{repo}/git/refs/heads/{branch}`, which the agent allows too — never from the head commit, whose diff can show files outside the path.
+The mark is part of the delivered state's hash, so changing the agent's egress rules redelivers its skills in the new mode.
 
 ### Publish
 
@@ -363,14 +393,15 @@ The cost is an out-of-band deletion noticed one read later.
 ## Persistence touchpoints
 
 Skills are entirely an **Application State** subsystem ([persistence](persistence.md)).
-Four Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
+Five Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
 
-| Table                   | Key                                 | Owner     |
-| ----------------------- | ----------------------------------- | --------- |
-| `skill_sources`         | `(id)`, unique on `(owner, gitUrl)` | per-user  |
-| `skill_sets`            | `(id)`, unique on `(owner, name)`   | per-user  |
-| `agent_skills`          | `(agentId, source, name)`           | per-agent |
-| `agent_skill_publishes` | `(id)`, indexed by `agentId`        | per-agent |
+| Table                        | Key                                       | Owner     |
+| ---------------------------- | ----------------------------------------- | --------- |
+| `skill_sources`              | `(id)`, unique on `(owner, gitUrl, path)` | per-user  |
+| `skill_sets`                 | `(id)`, unique on `(owner, name)`         | per-user  |
+| `agent_skills`               | `(agentId, source, name)`                 | per-agent |
+| `agent_skill_publishes`      | `(id)`, indexed by `agentId`              | per-agent |
+| `agent_hidden_skill_sources` | `(agentId, gitUrl, path)`                 | per-agent |
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`.
 Both are computed at request time.

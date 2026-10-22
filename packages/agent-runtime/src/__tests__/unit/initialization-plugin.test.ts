@@ -41,6 +41,7 @@ describe("initialization plugin", () => {
           type: SessionType.Regular,
           mode: SessionMode.Chat,
           initialization: true,
+          follows: "chat",
         },
       },
     ]);

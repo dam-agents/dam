@@ -1,4 +1,4 @@
-import { Close, Time, Undo } from "@carbon/icons-react";
+import { Time, TrashCan, Undo } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
   StarterKitSchedule,
@@ -33,6 +33,7 @@ import {
   overrideFromForm,
 } from "../lib/kit-schedule-form.js";
 import { kitScheduleCadence } from "../lib/setup.js";
+import { ClampedText } from "./clamped-text.js";
 import { KitScheduleInstructions } from "./kit-schedule-instructions.js";
 
 interface Props {
@@ -126,6 +127,12 @@ export function KitScheduleCard({
               </Badge>
             )}
           </div>
+          {schedule.description && (
+            <ClampedText
+              text={schedule.description}
+              className="mt-0.5 text-sm text-foreground/80"
+            />
+          )}
           <p className="mt-0.5 text-sm text-muted-foreground">
             {keepsDeclared
               ? kitScheduleCadence(schedule)
@@ -146,10 +153,10 @@ export function KitScheduleCard({
           aria-label={
             skipped ? `Add back ${schedule.name}` : `Skip ${schedule.name}`
           }
-          tooltip={skipped ? "Add back" : "Skip this schedule"}
+          tooltip={skipped ? "Add back" : "Skip"}
           onClick={onToggleSkipped}
         >
-          {skipped ? <Undo size={16} /> : <Close size={16} />}
+          {skipped ? <Undo size={16} /> : <TrashCan size={16} />}
         </Button>
       </div>
 
@@ -201,8 +208,8 @@ export function KitScheduleCard({
             />
             <SchedulePrecheckField
               layout="rows"
-              register={register}
-              errors={errors}
+              registration={register("precheck")}
+              error={errors.precheck?.message}
             />
             <div className="px-4 py-3">
               <QuietHoursEditor

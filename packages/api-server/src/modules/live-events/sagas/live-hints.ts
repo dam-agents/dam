@@ -52,6 +52,20 @@ export function hintFor(
         ownerSub: event.ownerSub,
         hint: { topic: "attention", agentId: event.agentId },
       };
+    case EventType.SlackConnected:
+    case EventType.SlackDisconnected:
+      return event.ownerSub
+        ? {
+            ownerSub: event.ownerSub,
+            hint: { topic: "attention", agentId: event.agentId },
+          }
+        : null;
+    case EventType.TelegramChatBound:
+    case EventType.TelegramChatUnbound:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "attention", agentId: event.agentId },
+      };
     case EventType.ArtifactCreated:
     case EventType.ArtifactUpdated:
     case EventType.ArtifactDeleted:
@@ -72,12 +86,11 @@ export function hintFor(
         hint: { topic: "kbShares", agentId: event.agentId },
       };
     case EventType.AvatarUnlocked:
+    case EventType.GettingStartedReset:
       return { ownerSub: event.ownerSub, hint: { topic: "gettingStarted" } };
     case EventType.UserAuthenticated:
     case EventType.AgentRestarted:
     case EventType.AgentWoken:
-    case EventType.SlackConnected:
-    case EventType.SlackDisconnected:
     case EventType.ChannelTurnRelayed:
     case EventType.ChannelMessageSent:
     case EventType.ConnectionCreated:
@@ -104,6 +117,9 @@ export function hintFor(
     case EventType.StarterKitOnboarded:
     case EventType.IdentityLinked:
     case EventType.AgentOutOfMemory:
+    case EventType.AgentResourceRemoved:
+    case EventType.SpendLimitsChanged:
+    case EventType.GatewayCallEnded:
       return null;
     default: {
       const unhandled: never = event;

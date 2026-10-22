@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { AVATAR_CHARACTERS } from "../agents/avatar/svg.js";
-import { agentNameSchema } from "../agents/schemas.js";
+import { agentNameSchema, avatarSchema } from "../agents/schemas.js";
+import { AVATAR_CHARACTERS, AVATAR_EMOJI_RE } from "../agents/avatar/svg.js";
 import {
   agentSetupEnvVarSchema,
   agentSetupInstallSchema,
@@ -48,6 +48,7 @@ export const starterKitChannelSchema = z.object({
 const scheduleCommon = {
   name: z.string().min(1),
   task: z.string().min(1),
+  description: z.string().min(1).optional(),
   enabled: z.boolean().default(true),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   precheck: precheckSchema.optional(),
@@ -109,6 +110,15 @@ export const starterKitResourcesSchema = agentSetupResourcesSchema.extend({
   note: z.string().min(1).optional(),
 });
 
+export const starterKitAvatarSchema = z.union([
+  z.enum(AVATAR_CHARACTERS),
+  z
+    .string()
+    .regex(AVATAR_EMOJI_RE)
+    .meta({ pattern: "^emoji:.+$", description: "`emoji:` and one RGI emoji" }),
+  z.object({ path: z.string().min(1) }),
+]);
+
 const harnessCommandNameSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9:_-]*$/, "a command name without the leading slash");
@@ -121,6 +131,7 @@ export const starterKitSchema = z.object({
   tagline: z.string().min(1).optional(),
   category: starterKitCategorySchema,
   icon: z.string().min(1).optional(),
+  avatar: starterKitAvatarSchema.optional(),
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
@@ -204,17 +215,33 @@ export const starterKitScheduleOverrideSchema = z.object({
   precheck: precheckSchema.nullable().optional(),
 });
 
-export const starterKitApplyInputSchema = z.object({
-  catalog: starterKitCatalogNameSchema,
-  kitId: starterKitIdSchema,
-  name: agentNameSchema,
-  avatar: z.enum(AVATAR_CHARACTERS).optional(),
-  templateId: z.string().min(1).optional(),
-  connectionIds: z.array(z.string().min(1)).default([]),
-  slackChannelId: z.string().min(1).optional(),
-  skipSchedules: z.array(z.string().min(1)).default([]),
-  scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
+export const LINKED_KIT_CATALOG = "link";
+
+export const starterKitInspectInputSchema = z.object({
+  url: z.url({ protocol: /^https$/ }),
 });
+
+export const starterKitLinkSchema = z.object({
+  url: z.url({ protocol: /^https$/ }),
+  commit: z.string().regex(/^[0-9a-f]{40}$/),
+});
+
+export const starterKitApplyInputSchema = z
+  .object({
+    catalog: starterKitCatalogNameSchema,
+    kitId: starterKitIdSchema,
+    link: starterKitLinkSchema.optional(),
+    name: agentNameSchema,
+    avatar: avatarSchema.optional(),
+    templateId: z.string().min(1).optional(),
+    connectionIds: z.array(z.string().min(1)).default([]),
+    slackChannelId: z.string().min(1).optional(),
+    skipSchedules: z.array(z.string().min(1)).default([]),
+    scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
+  })
+  .refine((input) => (input.catalog === LINKED_KIT_CATALOG) === !!input.link, {
+    message: `a kit from a link names catalog "${LINKED_KIT_CATALOG}" and its link; a catalog kit names neither`,
+  });
 
 export const seedStampSchema = z.object({
   url: z.string().min(1),

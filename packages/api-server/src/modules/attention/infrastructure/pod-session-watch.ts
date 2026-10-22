@@ -25,16 +25,26 @@ export interface PodSessionSubscription {
 
 export interface PodSessionClient {
   watchAgent(agentId: string, onNotice: () => void): PodSessionSubscription;
-  listSessions(agentId: string): Promise<PodSessionList>;
+  listSessions(agentId: string, signal: AbortSignal): Promise<PodSessionList>;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A one-off read waits for its socket to open, and
+ * the socket retries for as long as the pod cannot be reached. An Agent deleted
+ * before its pod ever answered is never reached, so without a bound the read
+ * and its retries outlive the Agent until the process restarts.
+ */
+const READ_TIMEOUT_MS = 10_000;
 
 export function createPodSessionClient(
   namespace: string,
   log: (message: string) => void,
+  webSocket?: typeof WebSocket,
 ): PodSessionClient {
   const connect = (agentId: string) => {
     const wsClient = createWSClient({
       url: `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,
+      WebSocket: webSocket,
       keepAlive: { enabled: true },
       onError: () => log(`pod session watch errored for ${agentId}`),
     });
@@ -70,10 +80,15 @@ export function createPodSessionClient(
       };
     },
 
-    async listSessions(agentId) {
+    async listSessions(agentId, signal) {
       const { wsClient, client } = connect(agentId);
       try {
-        const page = await client.sessions.list.query();
+        const page = await client.sessions.list.query(undefined, {
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(READ_TIMEOUT_MS),
+          ]),
+        });
         return { sessions: page.sessions, incomplete: !!page.incomplete };
       } finally {
         wsClient.close();

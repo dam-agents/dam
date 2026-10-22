@@ -49,7 +49,11 @@ const (
 	// prune it.
 	// Agent gen 18: avatar added to AgentSpec — the avatar character the owner
 	// picked; an older CRD would prune it.
-	AgentSchemaGeneration = 18
+	// Agent gen 19: whispersOff added to AgentSpec — the owner turned off
+	// whispers to the agent in every conversation; an older CRD would prune it.
+	// Agent gen 20: environmentOf added to AgentSpec — the Agent that owns this
+	// one as an Environment, immutable; an older CRD would prune it.
+	AgentSchemaGeneration = 20
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.
@@ -57,4 +61,6 @@ const (
 	// UserBudget gen 2: cpu and memory are optional and also set the user's
 	// VM pool; storage added — the ceiling of their VM runner's claim.
 	UserBudgetSchemaGeneration = 2
+	// UserSpendLimit gen 1: per-user daily Spend Ceiling in US dollars.
+	UserSpendLimitSchemaGeneration = 1
 )

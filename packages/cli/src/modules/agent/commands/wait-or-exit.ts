@@ -1,3 +1,4 @@
+import { isStartRefusal } from "api-server-api";
 import type { AgentView } from "../domain/agent-view.js";
 import type { AgentService } from "../services/agent-service.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
@@ -43,7 +44,7 @@ export async function waitForRunningOrExit(
       } else {
         const id = opts.showIdOnError ? ` (${waitResult.agent.id})` : "";
         process.stderr.write(
-          `error: agent "${opts.name}"${id} entered error state: ${failureReason(waitResult.agent)}\n`,
+          `error: agent "${opts.name}"${id} ${isStartRefusal(waitResult.agent.podTerminationCode) ? "could not start" : "entered error state"}: ${failureReason(waitResult.agent)}\n`,
         );
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
@@ -68,6 +69,8 @@ export async function waitForRunningOrExit(
         );
         if (waitResult.agent.state === "over_budget")
           process.stderr.write(`${refusalReason(waitResult.agent)}\n`);
+        else if (waitResult.agent.podTerminationReason)
+          process.stderr.write(`${waitResult.agent.podTerminationReason}\n`);
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
     case "transport":
@@ -79,12 +82,23 @@ export async function waitForRunningOrExit(
 }
 
 export const REFUSAL_HINT =
-  "hint: stop an agent you are not using to free room, then start this one again; it may also start by itself once room frees";
+  "hint: disable agents you aren't using to free room, then start this one again; it may also start by itself once room frees";
 
 export function refusalReason(agent: AgentView): string {
-  return agent.overBudgetMessage ?? "its owner's pool is full";
+  return agent.overBudgetMessage ?? "your agents' resources are in use";
 }
 
 export function failureReason(agent: AgentView): string {
   return agent.error ?? agent.podTerminationReason ?? "unknown";
+}
+
+export async function startFailure(
+  svc: AgentService,
+  agentId: string,
+): Promise<string | null> {
+  const now = await svc.get(agentId);
+  if (!now.ok || now.value === null) return null;
+  if (now.value.state === "over_budget") return refusalReason(now.value);
+  if (now.value.state === "error") return failureReason(now.value);
+  return null;
 }

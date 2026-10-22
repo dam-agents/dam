@@ -23,6 +23,7 @@ import {
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
+  type RuntimeFleetAgent,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -53,22 +54,18 @@ import {
   ANN_STARTER_KIT_SEED,
 } from "../infrastructure/labels.js";
 import {
-  executeAbortRuntimeMigration,
-  executeRetryRuntimeMigration,
-  executeRuntimeMigration,
-  type RuntimeMigrationWrite,
-} from "./runtime-migration.js";
-import {
   type AgentMount,
   isVmBackend,
-  type RuntimeMigrationContext,
+  type VmPoolCapacity,
 } from "../domain/runtime-migration.js";
-import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
-import { isTelegramDirectConversation } from "../domain/telegram-conversation.js";
+import {
+  isTelegramDirectConversation,
+  telegramChatOf,
+} from "../domain/telegram-conversation.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
@@ -173,22 +170,15 @@ export function executeTelegramBind(deps: {
     const agent = await deps.getAgent(agentId);
     if (!agent) return err({ type: "AgentNotFound" as const });
 
-    const existing = await deps.binding.findAgentByConversation(
-      flow.conversationId,
-    );
+    const chat = telegramChatOf(flow.conversationId);
+    const existing = await deps.binding.findAgentByConversation(chat);
     if (existing && existing.agentId !== agentId) {
       return err({ type: "ChatAlreadyBound" as const });
     }
     if (!existing) {
-      const outcome = await deps.binding.bind(
-        flow.conversationId,
-        agentId,
-        flow.keycloakSub,
-      );
+      const outcome = await deps.binding.bind(chat, agentId, flow.keycloakSub);
       if (outcome === "conflict") {
-        const raced = await deps.binding.findAgentByConversation(
-          flow.conversationId,
-        );
+        const raced = await deps.binding.findAgentByConversation(chat);
         if (!raced || raced.agentId !== agentId)
           return err({ type: "ChatAlreadyBound" as const });
       }
@@ -204,14 +194,20 @@ export function executeTelegramBind(deps: {
       agentId,
       result: "success",
       detail: {
-        conversationId: flow.conversationId,
+        conversationId: chat,
         telegramUserId: flow.telegramUserId,
       },
     });
 
+    emit({
+      type: EventType.TelegramChatBound,
+      ownerSub: flow.keycloakSub,
+      agentId,
+    });
+
     const post = await deps.binding.postMessage(
       agentId,
-      flow.conversationId,
+      chat,
       `This chat is now connected to ${agent.name}. Run the unbind command to disconnect.`,
     );
     if ("error" in post) {
@@ -223,7 +219,7 @@ export function executeTelegramBind(deps: {
         agentId,
         result: "failure",
         reason: post.error,
-        detail: { conversationId: flow.conversationId },
+        detail: { conversationId: chat },
       });
     }
 
@@ -234,6 +230,7 @@ export function executeTelegramBind(deps: {
 const NO_BACKGROUND_WORK: AgentBackgroundWork = {
   sessions: [],
   keptProcesses: 0,
+  openLinks: 0,
 };
 
 export function executeBackgroundWorkRead(deps: {
@@ -296,6 +293,12 @@ export function executeTelegramUnbind(deps: {
       result: "success",
       detail: { conversationId, viaUi: true },
     });
+    if (deps.owner)
+      emit({
+        type: EventType.TelegramChatUnbound,
+        ownerSub: deps.owner,
+        agentId,
+      });
     return ok(null);
   };
 }
@@ -532,9 +535,10 @@ export interface ResizeGatePort {
   ): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent, or a move onto the vm backend, when its owner's shared storage is too full to hold one; it throws the refusal the caller sees.
+// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent when its owner's shared storage is too full to hold one, and reads the pool a move must fit into, in the runner's own figures. Unreadable or absent is null, which refuses nothing.
 export interface StorageGatePort {
   assertCanCreateVm(): Promise<void>;
+  readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
 export function createAgentsService(deps: {
@@ -543,6 +547,7 @@ export function createAgentsService(deps: {
   agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
+  lastHelloAt?: (agentId: string) => Promise<Date | null>;
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
@@ -552,13 +557,9 @@ export function createAgentsService(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  agentDefaultStorageSize?: string;
-  agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
-  vmForced?: boolean;
   defaultHarness?: string;
   telemetry?: boolean;
-  runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
@@ -567,10 +568,10 @@ export function createAgentsService(deps: {
       connectionIds: string[];
       providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
-    defaultProvider(
+    defaultProviders(
       connectionIds: string[],
       template: { harness?: string; providers?: readonly string[] },
-    ): Promise<string | null>;
+    ): Promise<string[]>;
     applyAfterCreate(
       agentId: string,
       sel: { connectionIds: string[] },
@@ -623,11 +624,6 @@ export function createAgentsService(deps: {
     (SlackConversationRef & { label: SlackConversationLabel | null })[]
   >;
 }): AgentsService {
-  const runtimeMigrationContext: RuntimeMigrationContext = {
-    virtualizationEnabled: deps.virtualizationEnabled === true,
-    defaultMounts: deps.agentDefaultMounts,
-  };
-
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
     secretRef: string | undefined,
@@ -758,27 +754,8 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
-      runtimeMigrationContext,
       checklists.get(infra.id),
     );
-  }
-
-  const runtimeMigrationWrites = {
-    owner: deps.owner,
-    getAgent: (agentId: string) => deps.repo.getLive(agentId, deps.owner),
-    writeMigration: (agentId: string, patch: RuntimeMigrationWrite) =>
-      deps.repo.writeRuntimeMigration(agentId, deps.owner, patch),
-  };
-
-  async function migrationUpdated(
-    infra: InfraAgent,
-  ): Promise<ReturnType<typeof assembleAgent>> {
-    emit({
-      type: EventType.AgentUpdated,
-      agentId: infra.id,
-      ...(deps.owner ? { ownerSub: deps.owner } : {}),
-    });
-    return project(infra);
   }
 
   async function ownsOrDeny(id: string, surface: string): Promise<boolean> {
@@ -910,7 +887,6 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
-        runtimeMigrationContext,
         (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
@@ -980,10 +956,54 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
-          runtimeMigrationContext,
           checklistMap.get(infra.id),
         );
       });
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: read from the Agent resources' image pins,
+     * since a hibernated agent has said no hello since it slept. The count
+     * the old runtime path waits on; a key bound to some agents counts only
+     * those.
+     */
+    async runtimeFleet(agentIds) {
+      const infraAgents = (await deps.repo.list(deps.owner)).filter(
+        (a) => !agentIds || agentIds.includes(a.id),
+      );
+      const templateIds = [
+        ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
+      ];
+      const templateImages = new Map<string, string>();
+      await Promise.all(
+        templateIds.map(async (tid) => {
+          const tmpl = await deps.readTemplateSpec(tid);
+          if (tmpl) templateImages.set(tid, tmpl.spec.image);
+        }),
+      );
+      const outdated: RuntimeFleetAgent[] = [];
+      let onCurrent = 0;
+      for (const infra of infraAgents) {
+        const templateImage = infra.templateId
+          ? templateImages.get(infra.templateId)
+          : undefined;
+        const update = templateImage
+          ? templateImageUpdate(infra.spec.image, templateImage)
+          : undefined;
+        if (!update) {
+          onCurrent += 1;
+          continue;
+        }
+        const hello = await deps.lastHelloAt?.(infra.id);
+        outdated.push({
+          agentId: infra.id,
+          name: infra.name,
+          image: update.fromImage,
+          templateImage: update.toImage,
+          lastHello: hello ? hello.toISOString() : null,
+        });
+      }
+      return { onCurrent, outdated };
     },
 
     async get(id) {
@@ -998,7 +1018,14 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
-      const vm = input.vm === true || deps.vmForced === true;
+      // UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. A container is what an install without virtualization can still make, and what the Agents made before the microVM was the default already run as; nothing new is created on it.
+      if (input.vm === false && deps.virtualizationEnabled)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this install runs every new agent as its own microVM, so a container agent cannot be created; only agents made before virtualization was enabled still run on the container backend",
+        });
+      const vm = input.vm ?? deps.virtualizationEnabled === true;
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
@@ -1075,13 +1102,19 @@ export function createAgentsService(deps: {
         );
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
+      if (input.environmentOf !== undefined) {
+        spec.environmentOf = input.environmentOf;
+        delete spec.harness;
+      }
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 
-      const providerConnectionId =
-        input.providerConnectionId ??
-        (templateId !== undefined && !input.noDefaultProvider
-          ? await deps.grantProvisioner?.defaultProvider(
+      const providerConnectionId = input.providerConnectionId;
+      const defaultProviders =
+        providerConnectionId === undefined &&
+        templateId !== undefined &&
+        !input.noDefaultProvider
+          ? ((await deps.grantProvisioner?.defaultProviders(
               input.connectionIds ?? [],
               {
                 ...(typeof spec.harness === "string" && {
@@ -1089,14 +1122,14 @@ export function createAgentsService(deps: {
                 }),
                 ...(templateProviders && { providers: templateProviders }),
               },
-            )
-          : undefined) ??
-        undefined;
+            )) ?? [])
+          : [];
       const grantSel = {
         connectionIds: Array.from(
           new Set([
             ...(input.connectionIds ?? []),
             ...(providerConnectionId ? [providerConnectionId] : []),
+            ...defaultProviders,
           ]),
         ),
         providerConnectionId,
@@ -1217,7 +1250,6 @@ export function createAgentsService(deps: {
         runtimeFeaturesOf(null),
         [],
         [],
-        runtimeMigrationContext,
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1243,12 +1275,15 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
+      let renamed = false;
       if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
-        if (input.name !== undefined && input.name !== current.name)
+        if (input.name !== undefined && input.name !== current.name) {
+          renamed = true;
           await assertNameFree(input.name, current.owner, input.id);
+        }
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
@@ -1263,6 +1298,8 @@ export function createAgentsService(deps: {
             : minutesToDuration(input.hibernationTimeoutMin);
       if (input.requireConnectionAddress !== undefined)
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
+      if (input.whisper !== undefined)
+        patch.whispersOff = input.whisper ? null : true;
       let gateLiveResize:
         | ((
             apply: () => Promise<InfraAgent | null>,
@@ -1316,8 +1353,8 @@ export function createAgentsService(deps: {
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
-        if (refreshed) {
-          await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed || renamed) {
           await deps.runtimeMutator.bump(input.id, []);
           await deps.runtimeMutator.enqueueAfterCommit(input.id);
         }
@@ -1326,7 +1363,8 @@ export function createAgentsService(deps: {
       if (
         input.env !== undefined ||
         input.secretRef !== undefined ||
-        input.requireConnectionAddress !== undefined
+        input.requireConnectionAddress !== undefined ||
+        input.whisper !== undefined
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
@@ -1336,6 +1374,7 @@ export function createAgentsService(deps: {
           result: "success",
           detail: {
             secretRefChanged: input.secretRef !== undefined,
+            ...(input.whisper !== undefined ? { whisper: input.whisper } : {}),
             ...(input.requireConnectionAddress !== undefined
               ? { requireConnectionAddress: input.requireConnectionAddress }
               : {}),
@@ -1404,8 +1443,9 @@ export function createAgentsService(deps: {
       const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
       if (hold !== "none")
         return err({ type: "RuntimeMigrating", failed: hold === "failed" });
-      const infra = await deps.repo.wake(id);
-      if (!infra) return err({ type: "AgentNotFound" });
+      const woke = await deps.repo.wake(id);
+      if (!woke.ok) return err(woke.error);
+      const infra = woke.value;
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1435,11 +1475,27 @@ export function createAgentsService(deps: {
       return project((await deps.repo.get(id)) ?? infra);
     },
 
-    async stop(id) {
-      if (!(await ownsOrDeny(id, "agent.stop"))) return null;
-      const infra = await deps.repo.requestStop(id);
+    async sleep(id) {
+      if (!(await ownsOrDeny(id, "agent.sleep"))) return null;
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return null;
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is moving to the new runtime and is not running; it can be stopped once the move ends",
+        });
+      const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
+        current.spec.hibernationTimeout,
+        current.spec.backend?.type === "vm",
+        deps.agentIdleTimeoutMinutes,
+      );
+      const infra =
+        effectiveTimeout === 0
+          ? await deps.repo.requestStop(id)
+          : await deps.repo.requestSleep(id);
       if (!infra) return null;
-      securityLog("info", "agent.stop", {
+      securityLog("info", "agent.sleep", {
         category: "privileged",
         actor: deps.owner ?? null,
         actorKind: "user",
@@ -1449,28 +1505,28 @@ export function createAgentsService(deps: {
       return project(infra);
     },
 
-    async pause(id) {
-      if (!(await ownsOrDeny(id, "agent.pause"))) return null;
+    async setDisabled(id, disabled) {
+      if (!(await ownsOrDeny(id, "agent.setDisabled")))
+        return err({ type: "AgentNotFound" });
       const current = await deps.repo.get(id, deps.owner);
-      if (!current) return null;
-      const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
-        current.spec.hibernationTimeout,
-        current.spec.backend?.type === "vm",
-        deps.agentIdleTimeoutMinutes,
-      );
-      const infra =
-        effectiveTimeout === 0
-          ? await deps.repo.requestStop(id)
-          : await deps.repo.requestPause(id);
-      if (!infra) return null;
-      securityLog("info", "agent.pause", {
+      if (!current) return err({ type: "AgentNotFound" });
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        return err({ type: "RuntimeMigrating" });
+      const infra = await deps.repo.setDisabled(id, disabled);
+      if (!infra) return err({ type: "AgentNotFound" });
+      securityLog("info", disabled ? "agent.disable" : "agent.enable", {
         category: "privileged",
         actor: deps.owner ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
       });
-      return project(infra);
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
+      return ok(await project(infra));
     },
 
     async upgrade(id, expectedToImage) {
@@ -1488,44 +1544,6 @@ export function createAgentsService(deps: {
         ...(deps.owner ? { ownerSub: deps.owner } : {}),
       });
       return ok(await project(result.value));
-    },
-
-    async migrateRuntime(id) {
-      await deps.storageGate?.assertCanCreateVm();
-      const result = await executeRuntimeMigration({
-        ...runtimeMigrationWrites,
-        migration: runtimeMigrationContext,
-        defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
-      })(id);
-      if (!result.ok) return result;
-      return ok(await migrationUpdated(result.value));
-    },
-
-    async abortRuntimeMigration(id) {
-      const result = await executeAbortRuntimeMigration(runtimeMigrationWrites)(
-        id,
-      );
-      if (!result.ok) return result;
-      return ok(await migrationUpdated(result.value));
-    },
-
-    async retryRuntimeMigration(id) {
-      const result = await executeRetryRuntimeMigration(runtimeMigrationWrites)(
-        id,
-      );
-      if (!result.ok) return result;
-      return ok(await migrationUpdated(result.value));
-    },
-
-    async planRuntimeMigration(id) {
-      const infra = await deps.repo.getLive(id, deps.owner);
-      if (!infra) return err({ type: "AgentNotFound" as const });
-      return ok(
-        runtimeMigrationPlan(infra, {
-          ...runtimeMigrationContext,
-          retentionMs: deps.runtimeMigrationRetentionMs ?? null,
-        }),
-      );
     },
 
     async ensureReady(id, opts) {
@@ -1551,7 +1569,11 @@ export function createAgentsService(deps: {
 
       if (slackChannelId === undefined) {
         await deps.deleteChannelByType(id, ChannelType.Slack);
-        emit({ type: EventType.SlackDisconnected, agentId: id });
+        emit({
+          type: EventType.SlackDisconnected,
+          agentId: id,
+          ownerSub: infra.owner ?? deps.owner ?? null,
+        });
         return project(infra);
       }
 
@@ -1561,6 +1583,7 @@ export function createAgentsService(deps: {
           type: EventType.SlackDisconnected,
           agentId: id,
           slackChannelId,
+          ownerSub: infra.owner ?? deps.owner ?? null,
         });
       }
       return project(infra);

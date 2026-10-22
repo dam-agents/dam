@@ -6,10 +6,14 @@
 //
 // Source: github.com/envoyproxy/envoy → api/envoy/service/auth/v3/external_auth.proto
 //                                       api/envoy/service/auth/v3/attribute_context.proto
+//                                       api/envoy/config/core/v3/base.proto (Metadata, HeaderValue)
+//                                       api/envoy/type/v3/http_status.proto
 
 syntax = "proto3";
 
 package envoy.service.auth.v3;
+
+import "google/protobuf/struct.proto";
 
 service Authorization {
   rpc Check (CheckRequest) returns (CheckResponse);
@@ -23,7 +27,14 @@ message AttributeContext {
   Peer source = 1;
   Peer destination = 2;
   Request request = 4;
+  // Populated on model-provider chains: the gateway's spend meter writes its
+  // metadata namespace before the ext_authz filter runs.
+  Metadata metadata_context = 11;
   TLSSession tls_session = 12;
+}
+
+message Metadata {
+  map<string, google.protobuf.Struct> filter_metadata = 1;
 }
 
 message Peer {
@@ -65,9 +76,33 @@ message Status {
   string message = 2;
 }
 
+// envoy/type/v3/http_status.proto: the enum StatusCode is a varint on the
+// wire, so int32 carries the same bytes.
+message HttpStatus {
+  int32 code = 1;
+}
+
+// envoy/config/core/v3/base.proto. Envoy sets (overwrites) a denied-response
+// header when `append` is unset, so the other fields are left out.
+message HeaderValue {
+  string key = 1;
+  string value = 2;
+}
+
+message HeaderValueOption {
+  HeaderValue header = 1;
+}
+
+// Sent with a non-OK status to give the downstream client a shaped refusal
+// (status, headers, body) instead of Envoy's default bare 403.
+message DeniedHttpResponse {
+  HttpStatus status = 1;
+  repeated HeaderValueOption headers = 2;
+  string body = 3;
+}
+
 message CheckResponse {
   Status status = 1;
-  // OkHttpResponse / DeniedHttpResponse fields exist upstream; we rely on
-  // status.code = 0 → OK, anything else → PERMISSION_DENIED, which Envoy
-  // honors regardless of whether the http details are populated.
+  // OkHttpResponse (field 3) exists upstream; we never send it.
+  DeniedHttpResponse denied_response = 2;
 }

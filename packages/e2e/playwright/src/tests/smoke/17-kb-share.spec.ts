@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
+import { mutateAgentFiles } from "../../lib/backend.js";
 import { baseUrl } from "../../config.js";
 import { harnessName } from "../../lib/fixtures.js";
 
@@ -24,22 +24,6 @@ const SENTINEL = "kb-share-sentinel-1739";
 const MCP_PROTOCOL = "2025-03-26";
 
 const shareHost = `share.${new URL(baseUrl).hostname}`;
-
-async function agentFilesMutation(
-  token: string,
-  agentId: string,
-  procedure: string,
-  input: unknown,
-): Promise<Response> {
-  return fetch(`${baseUrl}/api/agents/${agentId}/trpc/files.${procedure}`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
-}
 
 const target = new URL(baseUrl);
 
@@ -128,7 +112,7 @@ async function callTool(
 }
 
 test("share a knowledge base and read it over the share-host MCP endpoint", async () => {
-  test.setTimeout(bootTimeoutMs(360_000));
+  test.setTimeout(300_000);
   const token = await getAccessToken();
   const httpApi = createApiClient(token);
   await acceptTerms(httpApi);
@@ -137,16 +121,15 @@ test("share a knowledge base and read it over the share-host MCP endpoint", asyn
   try {
     let agentId = "";
     await test.step("create the knowledge base and seed its wiki", async () => {
-      await api.agents.create.mutate(
-        onLaneBackend({
-          name: KB_NAME,
-          templateId: harnessName,
-          kbShareRoots: ["wiki"],
-        }),
-      );
+      await api.agents.create.mutate({
+        name: KB_NAME,
+        templateId: harnessName,
+        kbShareRoots: ["wiki"],
+      });
       agentId = await waitForAgentRunning(httpApi, KB_NAME);
-      await agentFilesMutation(token, agentId, "mkdir", { path: "work/wiki" });
-      const write = await agentFilesMutation(token, agentId, "write", {
+      const ownToken = () => Promise.resolve(token);
+      await mutateAgentFiles(ownToken, agentId, "mkdir", { path: "work/wiki" });
+      const write = await mutateAgentFiles(ownToken, agentId, "write", {
         path: "work/wiki/index.md",
         content: `# Team wiki\n\nThe magic word is ${SENTINEL}.\n`,
       });

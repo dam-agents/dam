@@ -1,11 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import type { BudgetReserved, BudgetsService } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
 import {
   storageRefusal,
   vmUsageView,
   type RunnerUsage,
 } from "../domain/vm-usage.js";
+import type { VmPoolCapacity } from "../../agents/domain/runtime-migration.js";
 
 export interface BudgetedAgent {
   id: string;
@@ -25,6 +27,7 @@ interface BudgetsServiceDeps {
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
   readVmUsage(): Promise<RunnerUsage | null>;
+  isSlackUnlinked(): Promise<boolean>;
 }
 
 export interface ResizeGate {
@@ -35,7 +38,10 @@ export interface ResizeGate {
 }
 
 export function createResizeGate(
-  deps: Omit<BudgetsServiceDeps, "slotSize" | "readVmUsage">,
+  deps: Omit<
+    BudgetsServiceDeps,
+    "slotSize" | "readVmUsage" | "isSlackUnlinked"
+  >,
 ): ResizeGate {
   return {
     async assertResizeFits(agent, newSize) {
@@ -65,7 +71,7 @@ export function createResizeGate(
           code: "FORBIDDEN",
           message:
             `This size would take your running agents to ${cores(totalCpu)}/${cores(ceilCpu)} ` +
-            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — pause, stop, or shrink another agent first.`,
+            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — disable another agent or shrink it first.`,
         });
       }
     },
@@ -107,15 +113,56 @@ export function createSpawnSizeGate(
 
 export interface StorageGate {
   assertCanCreateVm(): Promise<void>;
+  readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
-export function createStorageGate(
-  deps: Pick<BudgetsServiceDeps, "readVmUsage">,
-): StorageGate {
+export interface PoolSizes {
+  storage: string;
+  memory: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the pool the install sizes for an owner who has no runner yet: the pool their UserBudget names, each field falling back on its own on the install's, with nothing used against it. Zero for a memory the install does not set, where the runner is sized by its UserBudget alone, which refuses no machine.
+export function configuredPool(
+  install: PoolSizes,
+  override: Partial<PoolSizes> | null,
+): VmPoolCapacity {
+  return {
+    storage: {
+      usedBytes: 0,
+      usableBytes: parseMemoryBytes(override?.storage ?? install.storage),
+    },
+    memory: {
+      committedMiB: 0,
+      limitMiB: Math.round(
+        parseMemoryBytes(override?.memory ?? install.memory) / 1024 ** 2,
+      ),
+    },
+  };
+}
+
+export function createStorageGate(deps: {
+  readVmUsage(): Promise<RunnerUsage | null>;
+  readConfiguredPool(): Promise<VmPoolCapacity>;
+}): StorageGate {
   return {
     async assertCanCreateVm() {
       const refusal = storageRefusal(await deps.readVmUsage());
       if (refusal) throw refusal;
+    },
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's own figures where it answered, and otherwise the pool the owner is configured to get, with nothing written to it yet — a user's first move is judged against the pool their runner is about to be created at, rather than against nothing. A pool that cannot be read is null, as an unreadable runner is: the move is then judged on nothing there, not failed.
+    async readCapacity() {
+      const usage = await deps.readVmUsage();
+      if (!usage) return deps.readConfiguredPool().catch(() => null);
+      return {
+        storage: {
+          usedBytes: usage.storage.usedBytes,
+          usableBytes: usage.storage.usableBytes,
+        },
+        memory: {
+          committedMiB: usage.memory.committedMiB,
+          limitMiB: usage.memory.limitMiB,
+        },
+      };
     },
   };
 }
@@ -128,6 +175,12 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         deps.readCeilingOverride(),
         deps.readVmUsage(),
       ]);
+      const slackUnlinked = vmUsage
+        ? await deps.isSlackUnlinked().catch((error: unknown) => {
+            getLogger().warn({ error }, "budgets.slack-link.failed");
+            return false;
+          })
+        : false;
       const { cpuMilli, memoryBytes } = reservedBy(agents);
       const ceiling = { ...deps.defaultCeiling, ...override };
       return {
@@ -145,14 +198,17 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         },
         ...(vmUsage
           ? {
-              vm: vmUsageView(
-                vmUsage,
-                new Set(
-                  agents
-                    .filter((a) => a.spec.backend?.type === "vm")
-                    .map((a) => a.id),
+              vm: {
+                ...vmUsageView(
+                  vmUsage,
+                  new Set(
+                    agents
+                      .filter((a) => a.spec.backend?.type === "vm")
+                      .map((a) => a.id),
+                  ),
                 ),
-              ),
+                ...(slackUnlinked ? { slackUnlinked } : {}),
+              },
             }
           : {}),
       };

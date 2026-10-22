@@ -25,7 +25,7 @@ Shape:
 
 All `meta` fields are optional.
 `tombstones` lists sessions the owner deleted — skip them.
-Classify: `type == "schedule_cron"` is a scheduled run, `threadTs` present is channel-driven, otherwise on-demand.
+Classify: `type == "schedule_cron"` is a scheduled run, `type == "invocation"` is a run a driver agent spawned, `threadTs` present is channel-driven, otherwise on-demand.
 Count the window like:
 
 ```sh
@@ -92,6 +92,13 @@ Terminal sessions are named by the platform session id; chat sessions are named 
 The JSONL shape is pi's own — inspect the first lines of one file (`head -3`) to learn it before parsing.
 
 Memory is often the richer source on pi: `~/.pi/agent/memory/` holds `MEMORY.md`, `USER.md`, `IDENTITY.md`, and `daily/YYYY-MM-DD.md` activity logs that already summarize what happened per day.
+
+## copilot — layout seen on 1.0.96, format not pinned
+
+Copilot keeps one directory per session under `~/.copilot/session-state/<session id>/`.
+Each holds `workspace.yaml` (the session's `name`, its `cwd`, and `client_name`: `github/acp` for a chat session, `github/cli` for a terminal one) and `events.jsonl`, one event per line (`user.message`, `assistant.message`, `session.model_change` and others).
+A terminal session runs under the platform's own session id, so its directory name is that id.
+Inspect one `events.jsonl` before parsing: the event shape is Copilot's own and not pinned.
 
 ## codex — not verified, probe first
 

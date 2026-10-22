@@ -18,7 +18,7 @@ Its tasks are addressed by path:
 
 Repo-level tasks (aggregators and their `check:*` leaves, `release:*`, `cluster:*`, `e2e*`, `skills:*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included).
 Documentation checks are their own config root, `//docs:*`.
-The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself), and `fix` runs `fix:comment-types` and `fix:markdown` first (the first rewrites sources the formatters then format, the second skill files the manifest then hashes), then `fix:skill-manifest`, `//docs:fix` and `//packages/...:fix`, each named, so a new root `fix:*` leaf or config root outside `packages/` joins that list (a `run` step, unlike `depends`, would reach the root `fix` itself through `//...`).
+The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself), and `fix` runs `fix:comment-types` and `fix:markdown` first (the first rewrites sources the formatters then format, the second skill files the manifest then hashes), then `fix:skill-manifest`, `fix:skills-lock`, `//docs:fix` and `//packages/...:fix`, each named, so a new root `fix:*` leaf or config root outside `packages/` joins that list (a `run` step, unlike `depends`, would reach the root `fix` itself through `//...`).
 `mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`.
 Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`.
 
@@ -91,7 +91,7 @@ Rules that keep hits honest:
 - **Declare every input.** Cross-package reads are covered by depending on the upstream package's task (`^check:tsc` = the same task in every pnpm workspace dependency); `pnpm-lock.yaml` is in every TypeScript key.
 - **Never depend on an install step.** Installs are `[deps]` providers, not tasks; a dependency that runs without a cache key makes every dependent uncacheable.
 - **Never cache what talks to the outside**: image builds, cluster ops, anything reading a registry or a live cluster.
-  The image:pack images' `:oci` tasks do declare `sources` and `outputs`, without the cache: mise then skips one only while its tar is newer than every source, so a repeated `cluster:install` does not rebuild an unchanged image.
+  The image:pack images' and the VM runner's `:oci` tasks do declare `sources` and `outputs`, without the cache: mise then skips one only while its tar is newer than every source, so a repeated `cluster:install` does not rebuild an unchanged image.
   A pulled tar is dated to 1980, so it never passes for a build of the checkout.
 
 Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`.

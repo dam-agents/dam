@@ -1,0 +1,10 @@
+# Nothing comes from forky (Debian testing) but OpenRC: trixie's 0.56 has no
+# user services, which the agent's own services are (~/.config/rc). Drop this
+# once trixie-backports or Debian 14 ships OpenRC 0.60 or later.
+Package: *
+Pin: release n=forky
+Pin-Priority: 100
+
+Package: openrc libeinfo1 librc1t64
+Pin: release n=forky
+Pin-Priority: 990

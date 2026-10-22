@@ -131,3 +131,21 @@ func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, owne
 	}
 	return authzPolicy(agentName+"-extauthz-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: while an owner gateway serves a vm Agent, the mesh sees the owner's principal, not the agent's, so each agent's policies also admit that principal. At the harness the owner principal is admitted only to the agent's own paths and only with the agent named in the header that agent's harness guard sets: every other route of the owner gateway strips that header, so a request that reached the harness by another spelling of its address, outside the guard, carries no name and is refused.
+func admitOwnerGateway(policy *unstructured.Unstructured, agentName, principal string, harness bool) {
+	rule := map[string]interface{}{
+		"from": []interface{}{map[string]interface{}{"source": map[string]interface{}{"principals": []interface{}{principal}}}},
+	}
+	if harness {
+		rule["to"] = []interface{}{map[string]interface{}{"operation": map[string]interface{}{"paths": []interface{}{fmt.Sprintf("/api/agents/%s/*", agentName)}}}}
+		rule["when"] = []interface{}{map[string]interface{}{"key": "request.headers[" + harnessGuardHeader + "]", "values": []interface{}{agentName}}}
+	}
+	spec := policy.Object["spec"].(map[string]interface{})
+	spec["rules"] = append(spec["rules"].([]interface{}), rule)
+}
+
+func dropOwnPrincipal(policy *unstructured.Unstructured) {
+	spec := policy.Object["spec"].(map[string]interface{})
+	spec["rules"] = spec["rules"].([]interface{})[1:]
+}

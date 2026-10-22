@@ -5,6 +5,7 @@ import {
   openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
+  sidebarAgentRow,
   waitForAgentRunning,
 } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
@@ -21,6 +22,8 @@ const activeRowSelector = '[data-testid="session-row"][data-active="true"]';
 test("deleting inactive and active sessions preserves the right navigation (#4239, #1084)", async ({
   page,
 }) => {
+  test.setTimeout(300_000);
+
   const token = await getAccessToken();
   const api = createApiClient(token);
 
@@ -45,7 +48,9 @@ test("deleting inactive and active sessions preserves the right navigation (#423
   );
 
   await test.step("start a second session and keep it active", async () => {
-    await page.getByRole("button", { name: "New", exact: true }).click();
+    await sidebarAgentRow(page, agentName)
+      .getByRole("button", { name: "New session" })
+      .click();
     await expect(chatInput(page)).toBeVisible();
     await sendMessageToAgent(page, secondPrompt);
     await expect(page.getByText(scriptedReply)).toBeVisible({

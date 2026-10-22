@@ -72,6 +72,8 @@ function toRow(
     type: session.type,
     title: session.title,
     scheduleId: session.scheduleId,
+    threadTs: session.threadTs ?? null,
+    harness: session.harness ?? null,
     createdAt: toDate(session.createdAt) ?? new Date(),
     activityAt: toDate(session.updatedAt),
     seenAt: toDate(session.seenAt),
@@ -201,10 +203,11 @@ export function createSessionWatcher(deps: {
   function hold(agent: InfraAgent, live: boolean): void {
     const ownerSub = agent.owner;
     if (!ownerSub) return;
+    const reads = new AbortController();
     const entry: Held = {
       ownerSub,
-      close: () => {},
-      read: () => deps.pods.listSessions(agent.id),
+      close: () => reads.abort(),
+      read: () => deps.pods.listSessions(agent.id, reads.signal),
       poll: null,
       debounce: null,
       retry: null,

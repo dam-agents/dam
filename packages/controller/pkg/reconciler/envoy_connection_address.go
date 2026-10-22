@@ -12,12 +12,12 @@ const (
 	skipFilterActionType     = "type.googleapis.com/envoy.extensions.filters.common.matcher.action.v3.SkipFilter"
 )
 
-func connectionAddressHTTPFilter(c envoyHostChain) ev {
+func connectionAddressHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
 	return ev{
 		"name": "connection_address",
 		"typed_config": ev{
 			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
-			"default_source_code": ev{"inline_string": luaConnectionAddressScript(c)},
+			"default_source_code": ev{"inline_string": p.luaScript(luaConnectionAddressParams(c), luaConnectionAddressKey, luaConnectionAddressBody)},
 		},
 	}
 }
@@ -73,12 +73,17 @@ func skippedForRivals(filter ev, innerName string, rivals []string) ev {
 }
 
 func addressedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
-	entry := scopedRoute(c, connectionID, scope, match, rewrite)
-	entry["match"] = ev{
-		"prefix": match,
-		"headers": []any{
-			ev{"name": connectionAddressHeader, "string_match": ev{"exact": connectionID}},
-		},
+	return addAddress(routeEntry(c, connectionID, scope, scopeMatch(scope, match), rewrite), connectionID)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a rewrite route adds only the rewrite, so its match stays the plain prefix it was before path scopes were segment-safe.
+func addressedRewriteRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
+	return addAddress(routeEntry(c, connectionID, scope, ev{"prefix": match}, rewrite), connectionID)
+}
+
+func addAddress(entry ev, connectionID string) ev {
+	entry["match"].(ev)["headers"] = []any{
+		ev{"name": connectionAddressHeader, "string_match": ev{"exact": connectionID}},
 	}
 	return entry
 }
@@ -86,21 +91,21 @@ func addressedRoute(c envoyHostChain, connectionID, scope, match, rewrite string
 func buildConnectionAddressRoutes(c envoyHostChain, connectionID string) []any {
 	emitted := map[string]bool{}
 	var routes []any
-	add := func(scope, match, rewrite string) {
+	add := func(route ev, match string) {
 		if emitted[match] {
 			return
 		}
 		emitted[match] = true
-		routes = append(routes, addressedRoute(c, connectionID, scope, match, rewrite))
+		routes = append(routes, route)
 	}
 	for _, scope := range c.ScopesOf(connectionID) {
 		for _, r := range c.PathRewrites {
 			if !scopeCovers(scope, r.Prefix) {
 				continue
 			}
-			add(r.Prefix, r.Prefix, r.Replacement)
+			add(addressedRewriteRoute(c, connectionID, r.Prefix, r.Prefix, r.Replacement), r.Prefix)
 		}
-		add(scope, scope, "")
+		add(addressedRoute(c, connectionID, scope, scope, ""), scope)
 	}
 	return routes
 }
@@ -167,13 +172,18 @@ func luaContestedList(c envoyHostChain) string {
 }
 
 func luaConnectionAddressScript(c envoyHostChain) string {
+	return luaConnectionAddressParams(c) + luaConnectionAddressBody
+}
+
+const luaConnectionAddressKey = "connection-address.lua"
+
+func luaConnectionAddressParams(c envoyHostChain) string {
 	return "local HEADERS = " + luaStringList(claimedHeaderNames(c)) + "\n" +
 		"local PARAMS = " + luaStringList(claimedQueryParams(c)) + "\n" +
 		"local CONTESTED = " + luaContestedList(c) + "\n" +
 		"local ADDRESS_HEADER = " + strconv.Quote(connectionAddressHeader) + "\n" +
 		"local PREFIX = " + strconv.Quote(connectionEgressPlaceholderPrefix) + "\n" +
-		"local PATH_SEGMENT = " + strconv.Quote(connectionEgressPathSegment) + "\n" +
-		luaConnectionAddressBody
+		"local PATH_SEGMENT = " + strconv.Quote(connectionEgressPathSegment) + "\n"
 }
 
 const luaConnectionAddressBody = `local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"

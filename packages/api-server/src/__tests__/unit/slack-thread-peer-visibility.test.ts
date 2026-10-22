@@ -14,7 +14,7 @@ import { configureLogger } from "../../core/logger.js";
 configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
-const FOOTER_LABEL = "Powered by DAM";
+const FOOTER_LABEL = "Sent by an agent";
 const CHANNEL = "C1";
 const THREAD_TS = "1.0";
 const THREAD_KEY = slackThreadKey(CHANNEL, THREAD_TS);
@@ -126,6 +126,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,

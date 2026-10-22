@@ -19,11 +19,13 @@ const (
 )
 
 type reclaimCandidate struct {
-	name      string
-	idleSince time.Time
-	cpu       resource.Quantity
-	mem       resource.Quantity
-	vmMiB     int
+	name         string
+	idleSince    time.Time
+	cpu          resource.Quantity
+	mem          resource.Quantity
+	vmMiB        int
+	booting      bool
+	holdsNothing bool
 }
 
 func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agent, owner string) (bool, error) {
@@ -75,7 +77,10 @@ func (r *AgentReconciler) pickReclaimCandidates(ctx context.Context, agent *apiv
 		if needCPU.Sign() <= 0 && needMem.Sign() <= 0 {
 			break
 		}
-		if c.vmMiB > 0 || r.busyProbe(ctx, c.name) {
+		if c.vmMiB > 0 {
+			continue
+		}
+		if idle, _ := r.podStatus(ctx, c.name); !idle {
 			continue
 		}
 		needCPU.Sub(c.cpu)
@@ -107,8 +112,8 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		if err != nil {
 			return nil, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
-		idleSince, ok := reclaimEligible(peer.Annotations,
-			effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase), now)
+		idleTimeout := effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase)
+		idleSince, ok := reclaimEligible(peer.Annotations, idleTimeout, now)
 		if !ok {
 			continue
 		}
@@ -120,9 +125,10 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			continue
 		}
 		cpu, mem := r.limitsOf(&peer.Spec)
-		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem}
+		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem, booting: vmBootInProgress(item, idleTimeout, now)}
 		if peer.Spec.IsVM() {
 			c.vmMiB = r.accountedMemoryMiB(ctx, owner, peer.Name, &peer.Spec)
+			c.holdsNothing = r.refusedWithoutMachine(peer) || r.waitingForRoom(peer)
 		}
 		out = append(out, c)
 	}
@@ -152,10 +158,18 @@ func reclaimEligible(annotations map[string]string, idleTimeout time.Duration, n
 	return last, true
 }
 
-func (r *AgentReconciler) stampReclaimed(ctx context.Context, name, stamp string) error {
-	raw, err := json.Marshal(map[string]any{
-		"metadata": map[string]any{"annotations": map[string]string{annReclaimedAt: stamp}},
-	})
+// UNIT_BOUNDARY_DESCRIPTION: writes the reclaim stamp, and only onto the
+// UNIT_BOUNDARY_DESCRIPTION: version of the Agent the reclaim re-read it at:
+// UNIT_BOUNDARY_DESCRIPTION: an api-server write landing between that read and
+// UNIT_BOUNDARY_DESCRIPTION: this patch bumps the version and the patch fails
+// UNIT_BOUNDARY_DESCRIPTION: with a conflict instead of spending the activity
+// UNIT_BOUNDARY_DESCRIPTION: of an agent somebody just touched.
+func (r *AgentReconciler) stampReclaimed(ctx context.Context, name, stamp, resourceVersion string) error {
+	meta := map[string]any{"annotations": map[string]string{annReclaimedAt: stamp}}
+	if resourceVersion != "" {
+		meta["resourceVersion"] = resourceVersion
+	}
+	raw, err := json.Marshal(map[string]any{"metadata": meta})
 	if err != nil {
 		return fmt.Errorf("encoding reclaim stamp: %w", err)
 	}

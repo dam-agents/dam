@@ -4,6 +4,7 @@ import {
   asc,
   eq,
   inArray,
+  isNull,
   lt,
   ne,
   sql,
@@ -65,10 +66,15 @@ export interface SchedulesRepository {
   ): Promise<void>;
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
   stampFire(id: string, result: string): Promise<void>;
-  stampResult(id: string, result: string): Promise<void>;
+  stampResult(
+    id: string,
+    result: string | null,
+    nextRun?: Date | null,
+  ): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
+  claimWaitingOnce(owner: string, now: Date): Promise<string[]>;
   replaceResult(id: string, expected: string, next: string): Promise<boolean>;
   countAgentOnce(
     agentId: string,
@@ -295,10 +301,14 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(eq(schedulesTable.id, id));
     },
 
-    async stampResult(id, result): Promise<void> {
+    async stampResult(id, result, nextRun): Promise<void> {
       await db
         .update(schedulesTable)
-        .set({ lastFiredResult: result, updatedAt: new Date() })
+        .set({
+          lastFiredResult: result,
+          ...(nextRun !== undefined ? { nextRun } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schedulesTable.id, id));
     },
 
@@ -307,7 +317,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .update(schedulesTable)
         .set({
           ...(patch.lastFiredAt ? { lastFiredAt: patch.lastFiredAt } : {}),
-          ...(patch.lastFiredResult
+          ...(patch.lastFiredResult !== undefined
             ? { lastFiredResult: patch.lastFiredResult }
             : {}),
           lastDeclinedAt: patch.lastDeclinedAt,
@@ -390,6 +400,25 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         )
         .returning({ id: schedulesTable.id });
       return rows.length > 0;
+    },
+
+    async claimWaitingOnce(owner, now): Promise<string[]> {
+      const at = now.toISOString();
+      const rows = await db
+        .update(schedulesTable)
+        .set({ nextRun: now, updatedAt: now })
+        .where(
+          and(
+            eq(schedulesTable.owner, owner),
+            eq(schedulesTable.enabled, true),
+            sql`${schedulesTable.spec}->>'type' = 'once'`,
+            isNull(schedulesTable.lastFiredAt),
+            sql`${schedulesTable.nextRun} > ${at}::timestamptz`,
+            sql`(${schedulesTable.spec}->>'at')::timestamptz <= ${at}::timestamptz`,
+          ),
+        )
+        .returning({ id: schedulesTable.id });
+      return rows.map((row) => row.id);
     },
 
     async setNextRun(id, nextRun): Promise<void> {

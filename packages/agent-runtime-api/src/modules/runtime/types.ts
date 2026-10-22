@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
+import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
 
 export const contributionKind = z.enum([
   "env",
@@ -21,6 +22,8 @@ export const eventKind = z.enum([
   "harness-config",
   "satellite-outcome",
   "sub-agent-outcome",
+  "session-message",
+  "session-defaults",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -52,6 +55,7 @@ export const envContribution = z.object({
   name: z.string().min(1),
   placeholder: z.string(),
   provider: z.string().min(1).optional(),
+  providerTemplate: z.string().min(1).optional(),
   harness: z.string().min(1).optional(),
 });
 
@@ -127,6 +131,7 @@ export const skillRefContribution = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   path: z.string().optional(),
+  fetch: z.enum(SOURCE_FETCH_MODES).optional(),
 });
 
 export const contribution = z.discriminatedUnion("kind", [
@@ -141,6 +146,12 @@ export const contribution = z.discriminatedUnion("kind", [
 export type Contribution = z.infer<typeof contribution>;
 
 export const SESSION_REF_HEADER = "x-platform-session-ref";
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the field the api-server sets in the answer to
+ * an accepted report_result, which the target's runtime reads in the tool
+ * output to learn its run has a result.
+ */
+export const RESULT_ACCEPTED_FIELD = "invocationResultAccepted";
 export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";
 
 export const onceOriginMode = z.enum(["continue", "report"]);
@@ -158,6 +169,7 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   once: z.literal(true).optional(),
+  invocation: z.literal(true).optional(),
   origin: onceOrigin.optional(),
   harness: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),
@@ -168,8 +180,37 @@ export const triggerEventPayload = z.object({
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
   lastRunAt: z.string().datetime({ offset: true }).optional(),
+  onDefault: z.literal(true).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
+
+export const sessionDefaultKind = z.enum(["chat", "channel", "scheduled"]);
+export type SessionDefaultKind = z.infer<typeof sessionDefaultKind>;
+
+export const sessionDefaultPair = z.object({
+  harness: z.string().min(1),
+  provider: z.string().min(1).nullable(),
+  model: z.string().min(1).nullable(),
+  settings: sessionSettingsSchema.optional(),
+});
+export type SessionDefaultPair = z.infer<typeof sessionDefaultPair>;
+
+export const sessionDefaultsEventPayload = z.object({
+  chat: sessionDefaultPair.nullable(),
+  channel: sessionDefaultPair.nullable(),
+  scheduled: sessionDefaultPair.nullable(),
+});
+export type SessionDefaultsEventPayload = z.infer<
+  typeof sessionDefaultsEventPayload
+>;
+
+export const sessionDefaultsEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("session-defaults"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: sessionDefaultsEventPayload,
+});
 
 export const triggerEvent = z.object({
   id: z.string().min(1),
@@ -274,9 +315,21 @@ export const harnessConfigEvent = z.object({
   payload: harnessConfigEventPayload,
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the agent's saved default an outcome turn runs
+ * on when it opens a new Session, so no model nobody chose runs it.
+ */
+const outcomePair = {
+  harness: z.string().min(1).optional(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
+};
+
 export const satelliteOutcomeEventPayload = z.object({
   task: z.string().min(1),
   refs: z.array(z.string().min(1)).min(1),
+  ...outcomePair,
 });
 export type SatelliteOutcomeEventPayload = z.infer<
   typeof satelliteOutcomeEventPayload
@@ -293,6 +346,7 @@ export const satelliteOutcomeEvent = z.object({
 export const subAgentOutcomeEventPayload = z.object({
   task: z.string().min(1),
   ids: z.array(z.string().min(1)).min(1),
+  ...outcomePair,
 });
 export type SubAgentOutcomeEventPayload = z.infer<
   typeof subAgentOutcomeEventPayload
@@ -306,6 +360,36 @@ export const subAgentOutcomeEvent = z.object({
   payload: subAgentOutcomeEventPayload,
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a message one of the agent's Sessions sends into
+ * another of its Sessions through the send_session_message tool. `from` names
+ * the sending Session as the platform resolved it, never as the sender wrote
+ * it, so the receiving turn can tell who is talking. A `notice` is the
+ * platform telling a sender that its message was not delivered; nothing is
+ * sent back when a notice itself fails, so notices never loop.
+ */
+export const sessionMessageEventPayload = z.object({
+  sessionId: z.string().min(1),
+  text: z.string().min(1).max(20_000),
+  from: z.object({
+    sessionId: z.string().min(1).optional(),
+    title: z.string().optional(),
+    type: z.string().optional(),
+  }),
+  notice: z.literal(true).optional(),
+});
+export type SessionMessageEventPayload = z.infer<
+  typeof sessionMessageEventPayload
+>;
+
+export const sessionMessageEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("session-message"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: sessionMessageEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
@@ -315,6 +399,8 @@ export const event = z.discriminatedUnion("kind", [
   harnessConfigEvent,
   satelliteOutcomeEvent,
   subAgentOutcomeEvent,
+  sessionMessageEvent,
+  sessionDefaultsEvent,
 ]);
 export type Event = z.infer<typeof event>;
 
@@ -322,6 +408,7 @@ export const harnessConfigChoice = z.object({
   value: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
+  needsApproval: z.boolean().optional(),
 });
 export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
 
@@ -332,6 +419,7 @@ export const harnessConfigOptionGroup = z.object({
   category: z.string().min(1),
   default: z.string().min(1).optional(),
   choices: z.array(harnessConfigChoice),
+  subagents: z.boolean().optional(),
 });
 
 export const harnessConfigCatalog = z.object({
@@ -362,6 +450,10 @@ export const harnessCapability = z.object({
   harnessConfigCatalog: harnessConfigCatalog.optional(),
   sessionModel: z.boolean(),
   sessionSettings: z.array(z.string().min(1)).optional(),
+  derivedStartMode: z.array(z.string().min(1)).optional(),
+  nativeTemplates: z.array(z.string().min(1)).optional(),
+  platformSubagentSettings: z.boolean().optional(),
+  identifiesSession: z.boolean().optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
 export function routesSessionPairs(
@@ -371,6 +463,18 @@ export function routesSessionPairs(
   >[],
 ): boolean {
   return !carried.some((h) => h.harnessConfig && !h.sessionSettings);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the runtime's hello claims an in-pod
+ * Model Router, which makes a session's model a provider-qualified name
+ * chosen per turn; readers keep the pre-router behaviour for an agent that
+ * does not claim it.
+ */
+export function routesByModelName(capabilities: unknown): boolean {
+  return (
+    (capabilities as { modelRouter?: unknown } | null)?.modelRouter === true
+  );
 }
 
 function advertisedKinds<T extends string>(known: readonly T[]) {
@@ -392,6 +496,7 @@ export const capabilities = z.object({
   harnesses: z.array(harnessCapability).optional(),
   kbPublish: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
+  modelRouter: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;
 

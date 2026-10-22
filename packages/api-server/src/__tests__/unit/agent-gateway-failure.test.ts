@@ -47,7 +47,6 @@ describe("gatewayFailure", () => {
         {} as RuntimeFeatures,
         [],
         [],
-        { virtualizationEnabled: false, defaultMounts: [] },
       ),
     );
     expect(view.gatewayFailure).toBe("exited with code 1 (Error)");

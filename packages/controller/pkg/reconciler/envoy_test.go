@@ -1,8 +1,6 @@
 package reconciler
 
 import (
-	"context"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -119,63 +117,13 @@ func TestFilterByGrants_SecretAndConnectionAxesAreIndependent(t *testing.T) {
 	assert.ElementsMatch(t, []string{"platform-cred-aaa", "platform-conn-slack"}, names(got))
 }
 
-type capturedWarning struct {
-	message       string
-	agent         string
-	unresolvedIDs []string
-}
-
-type warningCapture struct {
-	records *[]capturedWarning
-}
-
-func (h warningCapture) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h warningCapture) Handle(_ context.Context, rec slog.Record) error {
-	w := capturedWarning{message: rec.Message}
-	rec.Attrs(func(a slog.Attr) bool {
-		switch a.Key {
-		case "agent":
-			w.agent = a.Value.String()
-		case "unresolvedIds":
-			if ids, ok := a.Value.Any().([]string); ok {
-				w.unresolvedIDs = ids
-			}
-		}
-		return true
-	})
-	*h.records = append(*h.records, w)
-	return nil
-}
-
-func (h warningCapture) WithAttrs([]slog.Attr) slog.Handler { return h }
-
-func (h warningCapture) WithGroup(string) slog.Handler { return h }
-
-func captureWarnings(t *testing.T) *[]capturedWarning {
-	t.Helper()
-	records := &[]capturedWarning{}
-	previous := slog.Default()
-	slog.SetDefault(slog.New(warningCapture{records: records}))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	return records
-}
-
-func warningMessages(in []capturedWarning) []string {
-	out := make([]string, 0, len(in))
-	for _, w := range in {
-		out = append(out, w.message)
-	}
-	return out
-}
-
 const unresolvedConnectionMessage = "granted-connection-ids contains ids with no matching owner Secret; entries contribute nothing"
 
 const unresolvedSecretMessage = "granted-secret-ids contains ids with no matching owner Secret; entries contribute nothing"
 
 // TEST_SCENARIO: the owner Secret behind a granted connection is gone and nothing in the cluster changes. Every reconcile recomputes the same unresolved id, so the controller must report it on the first pass only — the log stays readable while the grant stays broken.
 func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
 
 	for range 5 {
@@ -183,75 +131,75 @@ func TestFilterByGrants_UnresolvedGrantWarnsOnceWhileUnchanged(t *testing.T) {
 		assert.Equal(t, []string{"platform-conn-github"}, names(got))
 	}
 
-	require.Len(t, *warnings, 1)
-	assert.Equal(t, unresolvedConnectionMessage, (*warnings)[0].message)
-	assert.Equal(t, "agent-steady", (*warnings)[0].agent)
-	assert.Equal(t, []string{"conn-gone"}, (*warnings)[0].unresolvedIDs)
+	require.Len(t, captured.all(), 1)
+	assert.Equal(t, unresolvedConnectionMessage, captured.all()[0].Message)
+	assert.Equal(t, "agent-steady", logAttr(captured.all()[0], "agent").String())
+	assert.Equal(t, []string{"conn-gone"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
 }
 
 // TEST_SCENARIO: a second grant goes unresolvable after the first was already reported. The set of unresolved ids differs from what was last reported, so the operator hears about the new id instead of it hiding behind the old report.
 func TestFilterByGrants_ChangedUnresolvedSetWarnsAgain(t *testing.T) {
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 
 	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
 	filterByGrants("agent-growing", nil, nil, []string{"conn-gone"})
 	filterByGrants("agent-growing", nil, nil, []string{"conn-gone", "conn-also-gone"})
 
-	require.Len(t, *warnings, 2)
-	assert.Equal(t, []string{"conn-gone"}, (*warnings)[0].unresolvedIDs)
-	assert.Equal(t, []string{"conn-also-gone", "conn-gone"}, (*warnings)[1].unresolvedIDs)
+	require.Len(t, captured.all(), 2)
+	assert.Equal(t, []string{"conn-gone"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
+	assert.Equal(t, []string{"conn-also-gone", "conn-gone"}, logAttr(captured.all()[1], "unresolvedIds").Any().([]string))
 }
 
 // TEST_SCENARIO: the owner Secret is recreated and then disappears again. Resolving the condition drops what was remembered, so a later recurrence of the same id is a first report again rather than silence.
 func TestFilterByGrants_ResolvedThenRecurringGrantWarnsAgain(t *testing.T) {
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 	restored := []corev1.Secret{ownerSecret("platform-conn-restored", "connection", "conn-flapping")}
 
 	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
 	filterByGrants("agent-flapping", restored, nil, []string{"conn-flapping"})
 	filterByGrants("agent-flapping", nil, nil, []string{"conn-flapping"})
 
-	require.Len(t, *warnings, 2)
-	assert.Equal(t, []string{"conn-flapping"}, (*warnings)[0].unresolvedIDs)
-	assert.Equal(t, []string{"conn-flapping"}, (*warnings)[1].unresolvedIDs)
+	require.Len(t, captured.all(), 2)
+	assert.Equal(t, []string{"conn-flapping"}, logAttr(captured.all()[0], "unresolvedIds").Any().([]string))
+	assert.Equal(t, []string{"conn-flapping"}, logAttr(captured.all()[1], "unresolvedIds").Any().([]string))
 }
 
 // TEST_SCENARIO: two agents name the same dead connection id. The memory is keyed per agent, so one agent reconciling in a loop cannot swallow the other agent's first report.
 func TestFilterByGrants_EachAgentGetsItsOwnFirstReport(t *testing.T) {
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 
 	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
 	filterByGrants("agent-one", nil, nil, []string{"conn-gone"})
 	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
 	filterByGrants("agent-two", nil, nil, []string{"conn-gone"})
 
-	require.Len(t, *warnings, 2)
-	assert.Equal(t, "agent-one", (*warnings)[0].agent)
-	assert.Equal(t, "agent-two", (*warnings)[1].agent)
+	require.Len(t, captured.all(), 2)
+	assert.Equal(t, "agent-one", logAttr(captured.all()[0], "agent").String())
+	assert.Equal(t, "agent-two", logAttr(captured.all()[1], "agent").String())
 }
 
 // TEST_SCENARIO: one agent has an unresolvable secret grant and an unresolvable connection grant at once. The two grant kinds are remembered apart, so both are reported once and neither masks the other.
 func TestFilterByGrants_BothGrantKindsReportIndependently(t *testing.T) {
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 
 	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
 	filterByGrants("agent-both-kinds", nil, []string{"sec-gone"}, []string{"conn-gone"})
 
-	require.Len(t, *warnings, 2)
+	require.Len(t, captured.all(), 2)
 	assert.ElementsMatch(t,
 		[]string{unresolvedSecretMessage, unresolvedConnectionMessage},
-		warningMessages(*warnings))
+		captured.messages())
 }
 
 // TEST_SCENARIO: an Agent is deleted while one of its grants is still unresolvable. Deletion forgets what was reported for that agent, so the memory does not grow for agents that no longer exist, and an agent recreated under the same name reports again.
 func TestFilterByGrants_DeletingAgentForgetsWhatWasReported(t *testing.T) {
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 
 	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
 	unresolvedGrants.forget("agent-deleted")
 	filterByGrants("agent-deleted", nil, nil, []string{"conn-gone"})
 
-	require.Len(t, *warnings, 2)
+	require.Len(t, captured.all(), 2)
 }
 
 const luaFilterType = "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua"
@@ -680,8 +628,8 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testi
 		"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 	}}, rc["request_headers_to_add"],
 		"every request the gateway forwards carries the gateway's own agent id")
-	assert.Equal(t, []any{"x-platform-invocation-id"}, rc["request_headers_to_remove"],
-		"a non-target may not smuggle an invocation id on any route")
+	assert.Equal(t, []any{"x-platform-invocation-id", "x-platform-session", "x-platform-harness"}, rc["request_headers_to_remove"],
+		"a non-target may not smuggle an invocation id on any route, and the router's stamps never reach a plain-http host")
 }
 
 // TEST_SCENARIO: an Invocation target attributes to its root Driver, so the id the gateway stamps is the Driver's and the target's own id rides alongside it. The outer listener must carry that same pairing, not the plain non-target stamp.
@@ -700,7 +648,7 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testin
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}, rc["request_headers_to_add"])
-	assert.NotContains(t, rc, "request_headers_to_remove",
+	assert.Equal(t, []any{"x-platform-session", "x-platform-harness"}, rc["request_headers_to_remove"],
 		"a target stamps its invocation id rather than removing it")
 }
 
@@ -713,7 +661,7 @@ func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testin
 		rc := outerRouteConfig(t, doc)
 		route := collectorChainRoute(t, doc)
 		assert.Equal(t, route["request_headers_to_add"], rc["request_headers_to_add"], ids[0])
-		assert.Equal(t, route["request_headers_to_remove"], rc["request_headers_to_remove"], ids[0])
+		assert.Subset(t, rc["request_headers_to_remove"], route["request_headers_to_remove"], ids[0])
 	}
 }
 
@@ -725,8 +673,115 @@ func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *
 	require.NotNil(t, rc)
 	assert.NotContains(t, rc, "request_headers_to_add",
 		"nothing to attribute to, so nothing is disclosed")
-	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
+	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id", "x-platform-session", "x-platform-harness"},
 		rc["request_headers_to_remove"])
+}
+
+func outerRouteWithPrefix(t *testing.T, doc map[string]any, prefix string) map[string]any {
+	t.Helper()
+	rc := outerRouteConfig(t, doc)
+	require.NotNil(t, rc)
+	vhosts, _ := rc["virtual_hosts"].([]any)
+	vh, _ := vhosts[0].(map[string]any)
+	routes, _ := vh["routes"].([]any)
+	for _, r := range routes {
+		rm, _ := r.(map[string]any)
+		match, _ := rm["match"].(map[string]any)
+		if match["prefix"] == prefix {
+			return rm
+		}
+	}
+	return nil
+}
+
+// TEST_SCENARIO: Claude Code sends its logs, metrics and traces through one proxy agent with one socket, and a request that waits behind another is dropped when its export times out — most of the per-call log records, the spend, never arrive. A request to the gateway's own address with no proxy avoids that agent. So the plain-HTTP side of the proxy listener takes the reserved OTLP path, before the open forward that takes every other plain request. It goes to the pinned collector with the prefix stripped, and it has no egress check, as the collector's CONNECT route has none: it can reach only the platform's collector.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathForwardsToTheCollector(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+
+	route := outerRouteWithPrefix(t, doc, "/__platform_otlp/")
+	require.NotNil(t, route, "telemetry on: the gateway takes OTLP on its own address")
+	assert.Equal(t, map[string]any{
+		"cluster":              "otel_collector",
+		"prefix_rewrite":       "/",
+		"host_rewrite_literal": "platform-clickstack-collector.platform.svc.cluster.local",
+		"timeout":              "0s",
+	}, route["route"], "only the pinned collector, whatever host the request names")
+	assert.Equal(t, true, route["typed_per_filter_config"].(map[string]any)["envoy.filters.http.ext_authz"].(map[string]any)["disabled"])
+
+	rc := outerRouteConfig(t, doc)
+	routes := rc["virtual_hosts"].([]any)[0].(map[string]any)["routes"].([]any)
+	otlpAt, fallthroughAt := -1, -1
+	for i, r := range routes {
+		switch r.(map[string]any)["match"].(map[string]any)["prefix"] {
+		case "/__platform_otlp/":
+			otlpAt = i
+		case "/":
+			if _, headers := r.(map[string]any)["match"].(map[string]any)["headers"]; !headers {
+				fallthroughAt = i
+			}
+		}
+	}
+	assert.Less(t, otlpAt, fallthroughAt, "the OTLP path must match before the open forward")
+}
+
+// TEST_SCENARIO: the OTLP path is on the outer listener, so the route config's own stamp is what attributes it, the same stamp every other route out gets. A target's export must arrive under its Driver's id with its own invocation id, and a non-target's must not carry an invocation id it set itself.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathCarriesTheAttributionStamp(t *testing.T) {
+	for _, ids := range [][2]string{{"inst-1", ""}, {"target-1", "driver-root"}} {
+		got, err := renderEnvoyBootstrap(ids[0], ids[1], telemetryTestCfg(), nil, false)
+		require.NoError(t, err)
+		doc := mustParseBootstrap(t, got)
+		route := outerRouteWithPrefix(t, doc, "/__platform_otlp/")
+		require.NotNil(t, route)
+		assert.NotContains(t, route, "request_headers_to_add", "a route-level stamp would replace the route config's, not add to it")
+		assert.NotContains(t, route, "request_headers_to_remove")
+		assert.Equal(t, collectorChainRoute(t, doc)["request_headers_to_add"], outerRouteConfig(t, doc)["request_headers_to_add"], ids[0])
+	}
+}
+
+// TEST_SCENARIO: with no telemetry backend there is no collector cluster to forward to, and an agent's request to the reserved path is an ordinary plain request, held to the egress check like any other.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathNeedsTelemetry(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
+	require.NoError(t, err)
+	assert.Nil(t, outerRouteWithPrefix(t, mustParseBootstrap(t, got), "/__platform_otlp/"))
+	assert.NotContains(t, got, "__platform_otlp")
+}
+
+// TEST_SCENARIO: Claude Code posts each signal once a second, so a logged OTLP post would be most of a gateway's egress access log, and so most of what the gateway writes to the telemetry store. Successful posts on the OTLP route are left out; a failed one is still logged, and every other request is logged as before. The filter keys on the route's name, which the agent cannot set: the path is already rewritten when the log is written, and a header such as the original path is one the agent could send itself to hide a request from the log.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathLogsOnlyFailures(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", otelTelemetryCfg(), nil, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+	assert.Equal(t, "gateway_otlp", outerRouteWithPrefix(t, doc, "/__platform_otlp/")["name"])
+	sr := doc["static_resources"].(map[string]any)
+	var hcm map[string]any
+	for _, l := range sr["listeners"].([]any) {
+		if l.(map[string]any)["name"] == "agent_egress" {
+			chains := l.(map[string]any)["filter_chains"].([]any)
+			hcm = chains[len(chains)-1].(map[string]any)["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		}
+	}
+	require.NotNil(t, hcm)
+	logs, _ := hcm["access_log"].([]any)
+	require.Len(t, logs, 2)
+	for _, l := range logs {
+		ext := l.(map[string]any)["filter"].(map[string]any)["extension_filter"].(map[string]any)
+		assert.Equal(t, "envoy.access_loggers.extension_filters.cel", ext["name"])
+		assert.Equal(t, "xds.route_name != 'gateway_otlp' || response.code >= 400 || response.flags != 0u",
+			ext["typed_config"].(map[string]any)["expression"])
+	}
+
+	plain, err := renderEnvoyBootstrap("inst-1", "", otelCfg("http://otel.platform.svc:4318"), nil, false)
+	require.NoError(t, err)
+	assert.NotContains(t, plain, "extension_filters.cel", "no OTLP route, no filter on the egress log")
+}
+
+func otelTelemetryCfg() *config.Config {
+	c := otelCfg("http://otel.platform.svc:4318")
+	c.TelemetryCollectorHost = "platform-clickstack-collector.platform.svc.cluster.local"
+	c.TelemetryCollectorPort = 4318
+	return c
 }
 
 func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
@@ -1938,14 +1993,14 @@ func TestLuaGlobPattern_MatchesTheEgressRulePatternLiterally(t *testing.T) {
 func TestChainsFromSecrets_SigningMissingCredentialsKeyDegradesToAllowOnly(t *testing.T) {
 	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
 	delete(s.Data, "aws-credentials")
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 
 	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
 	require.Len(t, chains, 1)
 	assert.Equal(t, "s3.example.cloud", chains[0].Host)
 	assert.False(t, chains[0].Credentialed(),
 		"a missing credentials file is a fatal Envoy boot error, so the host must degrade to allow-only")
-	assert.Contains(t, warningMessages(*warnings), "connection Secret missing credentials data key; rendering host allow-only (no request signing)")
+	assert.Contains(t, captured.messages(), "connection Secret missing credentials data key; rendering host allow-only (no request signing)")
 }
 
 func TestChainsFromSecrets_TraversalCredentialsKeyDegradesToAllowOnly(t *testing.T) {
@@ -2097,4 +2152,26 @@ func TestRenderEnvoyBootstrap_SigningSecretMissingKeyStillBoots(t *testing.T) {
 		"envoy.filters.http.dynamic_forward_proxy",
 		"envoy.filters.http.router",
 	}, httpFilterNamesForHost(t, mustParseBootstrap(t, got), "s3.example.cloud"))
+}
+
+// TEST_SCENARIO: the built-in provider's Connection Secret, on its own model server's port, yields a metered chain that dials that port, like any other model-provider Connection; a Connection of a template that is no model provider stays unmetered.
+func TestChainsFromSecrets_PlatformProviderChainIsMetered(t *testing.T) {
+	for _, tc := range []struct {
+		template string
+		metered  bool
+	}{{"platform-llm", true}, {"ibm-litellm", true}, {"curve-bender-deployment", true}, {"github", false}} {
+		s := ownerSecret("platform-conn-"+tc.template, "connection", "conn-"+tc.template)
+		delete(s.Annotations, envoyHostPatternAnn)
+		s.Annotations[envoySecretPurposeAnn] = "connection:" + tc.template
+		s.Annotations[envoyInjectionHostsAnn] = `[{"host":"llm.models.svc","port":8443,"headerName":"Authorization","valueFormat":"Bearer {value}"}]`
+		s = withHostSDS(s, "llm.models.svc")
+
+		chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+		require.Len(t, chains, 1, tc.template)
+		assert.Equal(t, 8443, chains[0].UpstreamPort, tc.template)
+		assert.Equal(t, tc.metered, chains[0].Metered(), tc.template)
+		if tc.metered {
+			assert.Equal(t, map[string]string{"conn-" + tc.template: tc.template}, chains[0].MeteredConnectionTemplates())
+		}
+	}
 }

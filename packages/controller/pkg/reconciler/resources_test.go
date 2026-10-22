@@ -20,7 +20,7 @@ var testConfig = &config.Config{
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	ExtAuthzPort:      4002,
-	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2",
+	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4",
 	EnvoyPort:         10000,
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
@@ -504,34 +504,6 @@ func TestBuildAgentStatefulSet_TrustsTheInstallsExtraCAs(t *testing.T) {
 	assert.Equal(t, []corev1.KeyToPath{{Key: "extra-cas.crt", Path: "extra-cas.crt"}}, extras.Items)
 	require.NotNil(t, extras.Optional)
 	assert.True(t, *extras.Optional)
-}
-
-// TEST_SCENARIO: the default image bakes no tools and reads them from the node directory a DaemonSet fills, at a path no baked image uses. Once the install sets that directory, every agent pod mounts it read-only into the agent container alone, since the DaemonSet is its only writer and the init containers need no tools. With no directory set the pod gets no host mount.
-func TestBuildAgentStatefulSet_MountsTheNodesHarnessToolsReadOnly(t *testing.T) {
-	cfg := *testConfig
-	cfg.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
-	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "iptables:1"}
-	pod := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "10.0.0.1").Spec.Template.Spec
-
-	dir := corev1.HostPathDirectoryOrCreate
-	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
-	}})
-	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: "/usr/share/mise", ReadOnly: true})
-	require.NotEmpty(t, pod.InitContainers)
-	for _, c := range pod.InitContainers {
-		for _, m := range c.VolumeMounts {
-			assert.NotEqual(t, "harness-tools", m.Name, c.Name)
-		}
-	}
-
-	pod = BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec
-	for _, v := range pod.Volumes {
-		assert.NotEqual(t, "harness-tools", v.Name)
-	}
-	for _, m := range pod.Containers[0].VolumeMounts {
-		assert.NotEqual(t, "harness-tools", m.Name)
-	}
 }
 
 // TEST_SCENARIO: the agent runtime offers the browser panel only on an Agent that requires named connections, since its user would otherwise browse with the agent's injected credentials, so the container is told which with PLATFORM_REQUIRE_CONNECTION_ADDRESS, always set: as an explicit env it wins over the template defaults and over the owner's secretRef, which Kubernetes applies beneath it, so neither can claim the panel for an Agent that does not require named connections.

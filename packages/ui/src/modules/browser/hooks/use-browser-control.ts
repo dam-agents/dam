@@ -8,6 +8,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { watchWithRetry } from "../../../lib/watch-retry.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
+import { createTabTarget } from "../lib/tab-target.js";
+import { closeTabLocally, selectTabLocally } from "../lib/tabs.js";
 
 const ERROR_SHOWN_MS = 6_000;
 
@@ -36,8 +38,15 @@ type Client = ReturnType<typeof agentTrpc>;
  * UNIT_BOUNDARY_DESCRIPTION: the browser panel's control of the agent's
  * browser, over the agent's tRPC. Watching keeps the browser running while the
  * panel is open and reports its state and page; the toolbar's actions are
- * mutations. An address asked for before the watch is live is sent once it
- * is, as the agent may still be waking. `connects` counts each time the watch
+ * mutations, and so is the testing mode switch; a runtime too old to have it
+ * reports no mode. The browser's tabs come with its state, and the toolbar acts
+ * on the tab the panel shows, named by its target id, so an agent bringing
+ * another tab to the front meanwhile does not redirect it; a runtime too old
+ * to report tabs reports none, and is sent no tab. A select or close shows at
+ * once, and one the runtime refuses falls back to the tabs it last reported.
+ * After a new tab, an address or toolbar action acts on the new tab, never on
+ * the one shown before (tab-target). An address asked for before the watch is live is sent once it is, as
+ * the agent may still be waking. `connects` counts each time the watch
  * goes live, which the stream page uses to check its token. An agent that does
  * not offer the panel is told apart from one that cannot be reached, and is
  * not retried.
@@ -54,6 +63,14 @@ export function useBrowserControl(agentId: string) {
   const [connects, setConnects] = useState(0);
   const live = useRef(false);
   const pendingUrl = useRef<string | null>(null);
+  const reported = useRef<BrowserSnapshot | null>(null);
+  const shownTab = useRef<string | undefined>(undefined);
+  shownTab.current = (snapshot.tabs && snapshot.activeTab) || undefined;
+  const [tabTarget] = useState(createTabTarget);
+  const targetTab = useCallback(
+    () => tabTarget.target(() => shownTab.current),
+    [tabTarget],
+  );
 
   useEffect(() => {
     if (!error) return;
@@ -79,10 +96,42 @@ export function useBrowserControl(agentId: string) {
         pendingUrl.current = url;
         return;
       }
-      run((client) => client.browser.navigate.mutate({ url }));
+      run(async (client) =>
+        client.browser.navigate.mutate({ url, tab: await targetTab() }),
+      );
     },
-    [run],
+    [run, targetTab],
   );
+
+  const newTab = () => {
+    setError(null);
+    tabTarget.open(
+      agentTrpc(agentId)
+        .browser.newTab.mutate()
+        .then(
+          ({ tab }) => tab,
+          (e: unknown) => {
+            setError(messageOf(e));
+            return null;
+          },
+        ),
+    );
+  };
+
+  const showReported = (e: unknown): never => {
+    const last = reported.current;
+    if (last) setSnapshot(last);
+    throw e;
+  };
+
+  const onShownTab = (
+    call: (client: Client, input: { tab: string } | undefined) => unknown,
+  ) => {
+    run(async (client) => {
+      const tab = await targetTab();
+      return call(client, tab ? { tab } : undefined);
+    });
+  };
 
   useEffect(() => {
     live.current = false;
@@ -102,6 +151,8 @@ export function useBrowserControl(agentId: string) {
             pendingUrl.current = null;
             if (url) run((client) => client.browser.navigate.mutate({ url }));
           }
+          reported.current = parsed.data;
+          tabTarget.reported(parsed.data.activeTab);
           setSnapshot(parsed.data);
         },
         onError: (e) => {
@@ -116,21 +167,41 @@ export function useBrowserControl(agentId: string) {
         },
       });
     });
-  }, [agentId, watchKey, run]);
+  }, [agentId, watchKey, run, tabTarget]);
 
   return {
     connection,
     connects,
     browser: { state: snapshot.state, message: snapshot.message },
+    testingMode: snapshot.testingMode,
     page: snapshot.page ?? NO_PAGE,
+    tabs: snapshot.tabs,
+    activeTab: snapshot.activeTab ?? null,
     error,
     navigate,
-    reload: () => run((client) => client.browser.reload.mutate()),
-    stop: () => run((client) => client.browser.stop.mutate()),
-    back: () => run((client) => client.browser.back.mutate()),
-    forward: () => run((client) => client.browser.forward.mutate()),
+    reload: () => onShownTab((client, i) => client.browser.reload.mutate(i)),
+    stop: () => onShownTab((client, i) => client.browser.stop.mutate(i)),
+    back: () => onShownTab((client, i) => client.browser.back.mutate(i)),
+    forward: () => onShownTab((client, i) => client.browser.forward.mutate(i)),
+    selectTab: (tab: string) => {
+      tabTarget.clear();
+      setSnapshot((s) => selectTabLocally(s, tab));
+      run((client) =>
+        client.browser.selectTab.mutate({ tab }).catch(showReported),
+      );
+    },
+    closeTab: (tab: string) => {
+      tabTarget.clear();
+      setSnapshot((s) => closeTabLocally(s, tab));
+      run((client) =>
+        client.browser.closeTab.mutate({ tab }).catch(showReported),
+      );
+    },
+    newTab,
     clearData: () => run((client) => client.browser.clearData.mutate()),
     restartBrowser: () => run((client) => client.browser.restart.mutate()),
+    setTestingMode: (on: boolean) =>
+      run((client) => client.browser.setTestingMode.mutate({ on })),
     reconnect: () => setWatchKey((k) => k + 1),
   };
 }

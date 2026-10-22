@@ -19,9 +19,11 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   image: "x:latest",
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
+  whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
+  disabled: false,
   overBudget: false,
   size: { cpu: "1", memory: "2Gi" },
   state: "running",
@@ -31,9 +33,9 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  environmentOf: null,
   vm: false,
   runtimeMigration: null,
-  runtimeMigratable: false,
   ...overrides,
 });
 

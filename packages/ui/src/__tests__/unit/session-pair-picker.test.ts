@@ -63,13 +63,38 @@ const state = vi.hoisted(() => ({
   newSession: vi.fn(),
   connectProviders: vi.fn(),
   catalogLoaded: true,
+  catalog: undefined as
+    | {
+        harness: string;
+        routed: boolean;
+        providers: {
+          connectionId: string;
+          alias: string;
+          template: string;
+          displayName: string;
+          status: "listed" | "unavailable" | "unsupported";
+          listedAt: string | null;
+          models: {
+            name: string;
+            upstreamId: string;
+            contextWindow: number | null;
+            maxOutputTokens: number | null;
+            reasoning: boolean | null;
+            vision: boolean | null;
+            prices: null;
+            source: { limits: "none"; prices: "none" };
+          }[];
+        }[];
+      }
+    | undefined,
+  chosenModel: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({
       nextSessionPair: state.chosen ? { agent: state.chosen } : {},
-      setNextSessionPair: vi.fn(),
+      setNextSessionPair: state.chosenModel,
       navigateToSandboxHome: vi.fn(),
       showConfirm: state.showConfirm,
     }),
@@ -96,6 +121,46 @@ vi.mock("@/components/ui/tooltip", () => ({
       state.buttons[props["aria-label"]] = props.onClick as () => void;
     return createElement(Fragment, null, children);
   },
+}));
+
+vi.mock("../../modules/agents/api/harness-config.js", () => ({
+  useHarnessConfigStatus: () => ({ data: { followsDefaults: false } }),
+}));
+
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useIsAgentAnswerableSoon: () => state.answerable ?? state.operable,
+}));
+
+vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({
+  useOperableState: () => ({
+    operable: state.operable,
+    comingUp: !state.operable && !!state.answerable,
+  }),
+}));
+
+vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
+  useWakeAgent: () => ({ wake: vi.fn(), isPending: false }),
+}));
+
+vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
+  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+}));
+
+vi.mock("../../modules/home/hooks/use-default-model-notices.js", () => ({
+  useDefaultModelNotices: () => ({
+    all: [],
+    byAgentEvenDismissed: new Map(),
+    waiting: [],
+    dismiss: vi.fn(),
+  }),
+}));
+
+vi.mock("../../modules/schedules/api/queries.js", () => ({
+  useSchedules: () => ({ data: [] }),
+}));
+
+vi.mock("../../modules/schedules/api/mutations.js", () => ({
+  useClearScheduleChoices: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
@@ -136,6 +201,13 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   }),
   rememberSessionPair: vi.fn(),
   useHarnessConfigured: () => state.configured,
+  useHarnessCatalogModels: () => ({
+    data: state.catalog,
+    isLoading: state.loading,
+    isError: false,
+    operable: state.operable,
+    refetch: state.refetch,
+  }),
   useProviderModels: (_agent: string, _harness: string, provider: string) => {
     state.providersAsked.push(provider);
     return {
@@ -296,7 +368,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">Pi · IBM</button>");
+    expect(html).toContain(">IBM</span></button>");
     expect(html).toContain("Loading models…");
     expect(html).not.toContain("Configure");
     expect(html).not.toContain("Connect an LLM provider");
@@ -320,6 +392,8 @@ describe("session pair model choices", () => {
       renderPicker(),
       renderToStaticMarkup(
         createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "ibm",
@@ -348,7 +422,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">glm · Pi · Curve</button>");
+    expect(html).toContain(">glm (Curve)</span></button>");
   });
 
   it("warns before the agent answers when no provider is connected", () => {
@@ -388,6 +462,8 @@ describe("session pair model choices", () => {
       state.fetching = true;
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "curve",
@@ -423,6 +499,8 @@ describe("session pair model choices", () => {
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
         renderToStaticMarkup(
           createElement(ModelIndicator, {
+            kind: "chat",
+            onFollowDefault: () => {},
             agentId: "agent",
             harness: "pi",
             provider: "curve",
@@ -434,14 +512,273 @@ describe("session pair model choices", () => {
           }),
         ),
       )?.[0];
-    expect(label("glm-5-3")).toContain(
-      "glm-5-3 · Pi · Curve · Model not offered",
-    );
+    expect(label("glm-5-3")).toContain("glm-5-3 (Curve) · Model not offered");
     expect(label("glm-5-4")).not.toContain("Model not offered");
   });
 
   it("uses a harness catalog only when discovery is explicitly not configured", () => {
     state.models = { ibm: { availableModels: null } };
     expect(renderPicker()).toContain("Static model");
+  });
+});
+
+const model = (alias: string, upstreamId: string, contextWindow = 200_000) => ({
+  name: `${alias}/${upstreamId}`,
+  upstreamId,
+  contextWindow,
+  maxOutputTokens: null,
+  reasoning: null,
+  vision: null,
+  prices: null,
+  source: { limits: "none" as const, prices: "none" as const },
+});
+
+const routedCatalog = {
+  harness: "pi",
+  routed: true,
+  providers: [
+    {
+      connectionId: "ibm",
+      alias: "ibm",
+      template: "ibm-litellm",
+      displayName: "IBM",
+      status: "listed" as const,
+      listedAt: null,
+      models: [model("ibm", "gpt-5.5")],
+    },
+    {
+      connectionId: "curve",
+      alias: "cb",
+      template: "curve-bender",
+      displayName: "Curve",
+      status: "listed" as const,
+      listedAt: null,
+      models: [model("cb", "rits/zai-org/glm-5-3", 128_000)],
+    },
+  ],
+};
+
+describe("one model list on a runtime that routes by model name", () => {
+  beforeEach(() => {
+    state.models = {};
+    state.loading = false;
+    state.operable = true;
+    state.owned = [];
+    state.noProviders = false;
+    state.configured = undefined;
+    state.chosen = null;
+    state.catalog = routedCatalog;
+    state.providersAsked = [];
+    state.chosenModel.mockReset();
+  });
+
+  /** TEST_SCENARIO: Before a session starts, every attached provider's
+   * models are one grouped list under the Connections' names, each entry
+   * the upstream id with its context window, and the per-provider model
+   * hooks of the old runtime are never asked. */
+  it("lists every provider's models in one grouped list", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain('aria-label="IBM"');
+    expect(html).toContain('aria-label="Curve"');
+    expect(html).toContain("gpt-5.5");
+    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).toContain("200K");
+    expect(html).toContain("128K");
+    expect(html).toContain('aria-label="Disconnect IBM"');
+    expect(state.providersAsked).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: The model list is read from the running agent, so on a
+   * sleeping agent the list gives way to the start button rather than an
+   * empty list, and to "Agent is starting…" once the start is under way. */
+  it("offers to start a sleeping agent instead of an empty model list", () => {
+    const render = () =>
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    state.operable = false;
+    const asleep = render();
+    expect(asleep).toContain("Start agent to edit");
+    expect(asleep).not.toContain("gpt-5.5");
+    state.answerable = true;
+    const starting = render();
+    expect(starting).toContain("Agent is starting…");
+    expect(starting).not.toContain("Start agent to edit");
+    state.answerable = undefined;
+  });
+
+  /** TEST_SCENARIO: A second IBM key the owner holds cannot be attached
+   * beside the one the agent already uses (one Connection per provider
+   * alias), so it is listed disabled with the reason, not as an attach that
+   * would fail. */
+  it("shows a conflicting provider disabled with the alias reason", () => {
+    state.owned = [
+      {
+        id: "ibm-2",
+        name: "IBM second key",
+        type: "ibm-litellm",
+        templateId: "ibm-litellm",
+      } as never,
+    ];
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain('aria-label="IBM second key"');
+    expect(html).toMatch(
+      /disabled=""[^>]*>[^<]*<svg[^>]*>.*?Attach this provider/s,
+    );
+    expect(html).toContain("Why IBM second key cannot be attached");
+  });
+
+  /** TEST_SCENARIO: In a running session the popover lists the same grouped
+   * list across providers, with no new-session gate, and says a pick lands
+   * on the next message while a turn runs; the label under the composer
+   * reads upstream id and Connection name. */
+  it("offers every provider's models to a running session", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
+        agentId: "agent",
+        harness: "pi",
+        provider: "ibm",
+        model: "ibm/gpt-5.5",
+        carried,
+        routed: true,
+        turnRunning: true,
+        onChoose: vi.fn(),
+        onConfigure: vi.fn(),
+        onNewSession: state.newSession,
+      }),
+    );
+    expect(html).toContain("gpt-5.5 (IBM)");
+    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).toContain("applies to the next message");
+    expect(html).not.toContain("start a new session");
+    expect(html).not.toContain(">Change<");
+  });
+
+  /** TEST_SCENARIO: The provider a running session's model names (the
+   * runtime keeps no Connection id on a routed session) was removed from the
+   * agent. The session says so and offers the other providers' models and,
+   * since the owner still holds the Connection, re-attaching it. */
+  it("offers re-attach or another provider's model when the provider was removed", () => {
+    state.catalog = {
+      ...routedCatalog,
+      providers: [routedCatalog.providers[1]!],
+    };
+    state.owned = [
+      {
+        id: "anthropic-gone",
+        name: "Anthropic old",
+        type: "anthropic",
+        templateId: "anthropic",
+      } as never,
+    ];
+    const html = renderToStaticMarkup(
+      createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
+        agentId: "agent",
+        harness: "pi",
+        provider: null,
+        model: "anthropic/claude-sonnet-5-5",
+        carried,
+        routed: true,
+        onChoose: vi.fn(),
+        onConfigure: vi.fn(),
+        onNewSession: state.newSession,
+      }),
+    );
+    expect(html).toContain("Provider removed");
+    expect(html).toContain("Attach Anthropic old again");
+    expect(html).toContain("rits/zai-org/glm-5-3");
+  });
+});
+
+describe("JanUI's picker and the default's editor", () => {
+  beforeEach(() => {
+    state.models = {};
+    state.loading = false;
+    state.operable = true;
+    state.owned = [{ id: "other", name: "Other", type: "curve-bender" }];
+    state.noProviders = false;
+    state.configured = undefined;
+    state.chosen = null;
+    state.catalog = routedCatalog;
+    state.providersAsked = [];
+  });
+
+  const render = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+        ...props,
+      }),
+    );
+
+  /** TEST_SCENARIO: In JanUI the picker neither attaches nor
+   * disconnects providers; one row counts the attached providers among the
+   * owner's and leads to the agent's Providers page. The current layout
+   * keeps its controls. */
+  it("swaps provider controls for one Manage providers row", () => {
+    const html = render({ newLayout: true });
+    expect(html).not.toContain("Disconnect IBM");
+    expect(html).not.toContain("Attach this provider");
+    expect(html).not.toContain("Configure providers and defaults");
+    expect(html.replace(/<!-- -->/g, "")).toMatch(
+      /data-testid="session-pair-manage-providers"[^>]*>Manage providers \(2\/3 connected\)/,
+    );
+    const current = render({});
+    expect(current).toContain("Disconnect IBM");
+    expect(current).not.toContain("session-pair-manage-providers");
+  });
+
+  /** TEST_SCENARIO: As the editor of the agent's saved default, the picker
+   * shows the saved pair, not the pair picked for the next session, offers
+   * the same harnesses, models and session settings, and has neither
+   * provider controls nor the Manage providers row, since it sits on the
+   * Providers page already. */
+  it("edits the saved default with the same options and no provider row", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "curve-bender/rits/zai-org/glm-5-3",
+    };
+    const html = render({
+      defaultPair: {
+        value: { harness: "pi", provider: "ibm", model: "ibm-litellm/gpt-5.5" },
+        onChoose: vi.fn(),
+      },
+    });
+    expect(html).toContain("gpt-5.5");
+    expect(html).toContain('aria-label="Session settings"');
+    expect(html).not.toContain("session-pair-manage-providers");
+    expect(html).not.toContain("Configure providers and defaults");
+    expect(html).not.toContain("Disconnect IBM");
   });
 });

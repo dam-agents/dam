@@ -2,6 +2,7 @@ import type { ConnectionOptions } from "bullmq";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type { SchedulesService } from "api-server-api";
+import type { SessionChoicesValidator } from "../harness-config/index.js";
 import { OnceResult } from "api-server-api";
 import { emit, EventType } from "../../events.js";
 import type { AgentOnceLimits } from "./services/schedules-service.js";
@@ -21,8 +22,10 @@ import { createSchedulesService } from "./services/schedules-service.js";
 import {
   createSchedulerRunner,
   type SchedulerRunner,
+  type SpendHoldGate,
 } from "./services/scheduler-runner.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import { startResumeHeldOnceSaga } from "./sagas/resume-held-once.js";
 import type { FirePair } from "../harness-config/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
@@ -39,7 +42,7 @@ export interface SchedulesBoot {
   runner: SchedulerRunner;
   worker: RunningWorker;
   agentOnceLimits: AgentOnceLimits;
-  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
+  validateSessionChoices?: SessionChoicesValidator;
   retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
@@ -48,10 +51,16 @@ export interface ComposeSchedulesAtBootOpts {
   db: Db;
   firePair?: FirePair;
   agentOnceLimits?: AgentOnceLimits;
-  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
+  validateSessionChoices?: SessionChoicesValidator;
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
+  ensureDefault: (agentId: string) => Promise<AgentActivityStamp | null>;
+  defaultPendingAfterMove: (agentId: string) => Promise<boolean>;
+  scheduleModelFor: (
+    agentId: string,
+    model: string,
+  ) => Promise<string | undefined>;
   restoreActivity: (
     agentId: string,
     stamp: AgentActivityStamp,
@@ -59,6 +68,8 @@ export interface ComposeSchedulesAtBootOpts {
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
+  spendHold?: SpendHoldGate;
+  agentDisabled: (agentId: string) => Promise<boolean>;
 }
 
 export function composeSchedulesAtBoot(
@@ -73,6 +84,9 @@ export function composeSchedulesAtBoot(
     queue,
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    ensureDefault: opts.ensureDefault,
+    defaultPendingAfterMove: opts.defaultPendingAfterMove,
+    scheduleModelFor: opts.scheduleModelFor,
     restoreActivity: opts.restoreActivity,
     activityStamps: createRedisTtlStore<AgentActivityStamp>(
       opts.redis,
@@ -85,6 +99,11 @@ export function composeSchedulesAtBoot(
     ...(opts.runtimeMigrating
       ? { runtimeMigrating: opts.runtimeMigrating }
       : {}),
+    ...(opts.validateSessionChoices
+      ? { validateSessionChoices: opts.validateSessionChoices }
+      : {}),
+    ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
+    agentDisabled: opts.agentDisabled,
     log,
   });
   const worker = startScheduleWorker({
@@ -92,14 +111,15 @@ export function composeSchedulesAtBoot(
     handler: runner.buildFireHandler(),
     log,
   });
+  const resumeHeldOnce = startResumeHeldOnceSaga({ repo, queue });
   return {
     repo,
     queue,
     runner,
     worker,
     agentOnceLimits: opts.agentOnceLimits ?? DEFAULT_AGENT_ONCE_LIMITS,
-    ...(opts.sessionModelChoices
-      ? { sessionModelChoices: opts.sessionModelChoices }
+    ...(opts.validateSessionChoices
+      ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
     async retentionTick() {
       const pruned = await repo.deleteFinishedOnceOlderThan(
@@ -118,6 +138,7 @@ export function composeSchedulesAtBoot(
       if (pruned.length > 0) log(`pruned ${pruned.length} one-time schedules`);
     },
     async close() {
+      resumeHeldOnce.unsubscribe();
       await worker.close();
       await queue.close();
     },
@@ -154,8 +175,8 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
       owner,
       agentBinding: opts.agentBinding,
       agentOnceLimits: boot.agentOnceLimits,
-      ...(boot.sessionModelChoices
-        ? { sessionModelChoices: boot.sessionModelChoices }
+      ...(boot.validateSessionChoices
+        ? { validateSessionChoices: boot.validateSessionChoices }
         : {}),
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),

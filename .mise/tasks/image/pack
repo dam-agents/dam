@@ -17,12 +17,14 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 
 p = argparse.ArgumentParser()
-p.add_argument("base", help="Base image reference, pinned by digest, or a local OCI layout directory")
+p.add_argument("base", help="Base image reference, pinned by digest, or a local OCI layout directory or a tar of one")
 p.add_argument("root", help="Directory whose tree becomes the layer, at / or --at")
 p.add_argument("tar", help="Image tar to write, or with --layout the OCI layout directory")
 p.add_argument("tag", help="Tag the tar carries")
@@ -44,55 +46,70 @@ args = p.parse_args()
 arch = {"aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine(), platform.machine())
 cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "platform-image-pack"
 cache.mkdir(parents=True, exist_ok=True)
-base = Path(args.base)
-if not (base / "index.json").is_file():
-    base = cache / hashlib.sha256(f"{args.base} {arch}".encode()).hexdigest()[:32]
-    if not (base / "index.json").is_file():
-        tmp = Path(f"{base}.{os.getpid()}")
-        shutil.rmtree(tmp, ignore_errors=True)
-        subprocess.run(["crane", "pull", "--format=oci", "--platform", f"linux/{arch}", args.base, tmp], check=True)
-        try:
-            tmp.rename(base)
-        except OSError:
-            shutil.rmtree(tmp)
-
-
-def owner_of(spec):
-    uid, gid = spec.split(":")
-    return int(uid), int(gid)
-
-
-def owned(specs):
-    return [(owner_of(o), path) for o, path in (s.split("=", 1) for s in specs)]
-
-
-# <src>'s tree, not <src> itself, so a layer never resets / or <at>'s parents.
-# tarfile walks it sorted and keeps hard links as links. Each entry has mtime
-# 0, no owner names, and its owner by path, so the tar follows the tree's
-# content alone and holds each path once, which CRI-O needs.
-def tree_tar(src, dest, owner, at="", owns=(), own_dirs=(), clear=0):
-    def entry(info):
-        rel = info.name.removeprefix(f"{at}/") if at else info.name
-        info.uid, info.gid = owner
-        for o, path in owns:
-            if rel == path or rel.startswith(f"{path}/"):
-                info.uid, info.gid = o
-        for o, path in own_dirs:
-            if rel == path:
-                info.uid, info.gid = o
-        info.uname = info.gname = ""
-        info.mtime = 0
-        info.mode &= ~clear
-        return info
-
-    with tarfile.open(dest, "w", format=tarfile.GNU_FORMAT) as t:
-        for name in sorted(os.listdir(src)):
-            t.add(Path(src, name), arcname=f"{at}/{name}" if at else name, filter=entry)
-
-
 # In the cache, so the base's blobs are hard links rather than copies.
 work = Path(tempfile.mkdtemp(dir=cache, prefix="work."))
 try:
+    base = Path(args.base)
+    if base.is_file():
+        # A tar of a layout, as an oci task and image:pull leave an image: read as
+        # the layout it holds, so none of its layers is downloaded or copied.
+        base = work / "base"
+        with tarfile.open(Path(args.base)) as t:
+            t.extractall(base, filter="data")
+    if not (base / "index.json").is_file():
+        base = cache / hashlib.sha256(f"{args.base} {arch}".encode()).hexdigest()[:32]
+        if not (base / "index.json").is_file():
+            tmp = Path(f"{base}.{os.getpid()}")
+            # A registry can cut a layer download short ("error writing layer:
+            # unexpected EOF" from registry.access.redhat.com on a merge group), so
+            # a failed pull is retried, each time into an empty layout, as in
+            # image:pull.
+            for attempt in range(1, 4):
+                shutil.rmtree(tmp, ignore_errors=True)
+                if subprocess.run(["crane", "pull", "--format=oci", "--platform", f"linux/{arch}", args.base, tmp]).returncode == 0:
+                    break
+                if attempt == 3:
+                    raise SystemExit(f"image:pack: pull of {args.base} failed")
+                print(f"pull of {args.base} failed (attempt {attempt}); retrying in {attempt * 5}s", file=sys.stderr)
+                time.sleep(attempt * 5)
+            try:
+                tmp.rename(base)
+            except OSError:
+                shutil.rmtree(tmp)
+
+
+    def owner_of(spec):
+        uid, gid = spec.split(":")
+        return int(uid), int(gid)
+
+
+    def owned(specs):
+        return [(owner_of(o), path) for o, path in (s.split("=", 1) for s in specs)]
+
+
+    # <src>'s tree, not <src> itself, so a layer never resets / or <at>'s parents.
+    # tarfile walks it sorted and keeps hard links as links. Each entry has mtime
+    # 0, no owner names, and its owner by path, so the tar follows the tree's
+    # content alone and holds each path once, which CRI-O needs.
+    def tree_tar(src, dest, owner, at="", owns=(), own_dirs=(), clear=0):
+        def entry(info):
+            rel = info.name.removeprefix(f"{at}/") if at else info.name
+            info.uid, info.gid = owner
+            for o, path in owns:
+                if rel == path or rel.startswith(f"{path}/"):
+                    info.uid, info.gid = o
+            for o, path in own_dirs:
+                if rel == path:
+                    info.uid, info.gid = o
+            info.uname = info.gname = ""
+            info.mtime = 0
+            info.mode &= ~clear
+            return info
+
+        with tarfile.open(dest, "w", format=tarfile.GNU_FORMAT) as t:
+            for name in sorted(os.listdir(src)):
+                t.add(Path(src, name), arcname=f"{at}/{name}" if at else name, filter=entry)
+
     out = work / "oci"
     blobs = out / "blobs" / "sha256"
     blobs.mkdir(parents=True)

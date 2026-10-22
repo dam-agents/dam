@@ -262,6 +262,29 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out).toEqual([]);
   });
 
+  test("a subagent's hand-back report is not shown as a user message", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: '<agent-message from="aa5f0dd75068513b3">\n[Subagent hand-back] The report follows:\n  **Bottom line:** done.\n</agent-message>',
+      },
+    });
+    expect(out).toEqual([]);
+  });
+
+  test("a self-closed plumbing tag hides none of the user's text after it", () => {
+    const text = 'hello <agent-message from="a"/> keep me </agent-message> bye';
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: { type: "text" as const, text },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].parts).toEqual([{ kind: "text", text }]);
+  });
+
   test("a system wrapper with nested elements still closes the active bubble", () => {
     const start: Message[] = [
       userMsg("u1", "go"),
@@ -306,6 +329,32 @@ describe("applyUpdate — turn boundaries", () => {
       ["user", [{ kind: "text", text: "[ts 1.1] <@U1>: first\nsecond line" }]],
       ["user", [{ kind: "text", text: "[ts 1.2] <@U2>: third" }]],
     ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A follow-up chat's first prompt reaches the harness with the
+   * sub-agent's copy in front of the typed text. A reload from the harness's
+   * own history replays that prompt whole; the bubble must still show only
+   * what the user typed, whatever markup the escaped label holds.
+   */
+  test("a follow-up chat's copied block never shows in the first bubble", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: [
+          '<continued-from label="Refactor &lt;Button/&gt; props">',
+          "This chat continues the work of a sub-agent that has finished.",
+          "<prompt>\nRename the size prop.\n</prompt>",
+          "<result>\nDone.\n</result>",
+          "</continued-from>",
+          "",
+          "why that name?",
+        ].join("\n"),
+      },
+    });
+    expect(out[0].parts).toEqual([{ kind: "text", text: "why that name?" }]);
   });
 
   test("replayed channel history shows as a history part, the frame does not", () => {
@@ -435,6 +484,48 @@ describe("applyUpdate — tool calls", () => {
     });
     expect((out[0].parts[0] as ToolChip).status).toBe("completed");
     expect(out[2].parts).toHaveLength(0);
+  });
+
+  test("tool_call keeps a diff's path and old and new text on the chip", () => {
+    const out = applyUpdate([assistantMsg("a1", "", true)], {
+      sessionUpdate: "tool_call",
+      toolCallId: "t1",
+      title: "Edit src/a.ts",
+      kind: "edit",
+      status: "pending",
+      content: [
+        { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
+        { type: "diff", path: "/w/new.ts", newText: "x" },
+      ],
+    });
+    expect((out[0].parts[0] as ToolChip).content).toEqual([
+      { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
+      { type: "diff", path: "/w/new.ts", oldText: null, newText: "x" },
+    ]);
+  });
+
+  test("tool_call_update with a diff replaces the chip's content", () => {
+    const start: Message[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { kind: "tool", toolCallId: "t1", title: "Write", status: "pending" },
+        ],
+        streaming: true,
+      },
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t1",
+      status: "completed",
+      content: [
+        { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
+      ],
+    });
+    expect((out[0].parts[0] as ToolChip).content).toEqual([
+      { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
+    ]);
   });
 
   test("tool_call_update for unknown chip is a no-op", () => {
@@ -625,13 +716,33 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
 
 describe("appendInterruptedNotice", () => {
   test("appends one notice bubble when a turn was interrupted", () => {
-    const out = appendInterruptedNotice(
-      [userMsg("u1", "hi")],
-      "2026-09-07T00:00:00Z",
-    );
+    const out = appendInterruptedNotice([userMsg("u1", "hi")], {
+      inFlight: false,
+      interruptedAt: "2026-09-07T00:00:00Z",
+    });
     expect(out).toHaveLength(2);
     expect(out[1].notice).toBe(true);
-    expect(out[1].parts[0]).toMatchObject({ kind: "text" });
+    expect(out[1].parts[0]).toMatchObject({
+      kind: "text",
+      text: expect.stringContaining("out of memory"),
+    });
+  });
+
+  /** TEST_SCENARIO: the platform stopped the turn, as a user's Sleep does, so
+   * the notice names the stop and does not blame memory. */
+  test("names a stop instead of memory when the platform stopped the turn", () => {
+    const out = appendInterruptedNotice([userMsg("u1", "hi")], {
+      inFlight: false,
+      interruptedAt: "2026-09-07T00:00:00Z",
+      interruptedByStop: true,
+    });
+    expect(out[1].parts[0]).toMatchObject({
+      kind: "text",
+      text: expect.stringContaining("put to sleep"),
+    });
+    expect(out[1].parts[0]).not.toMatchObject({
+      text: expect.stringContaining("memory"),
+    });
   });
 
   test("no-op when the session was not interrupted", () => {

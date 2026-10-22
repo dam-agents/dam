@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, isNull, lt, sql, type Db } from "db";
+import { and, asc, desc, eq, isNull, lt, ne, sql, type Db } from "db";
 import { pendingApprovals } from "db";
 import type {
   ApprovalPayload,
   ApprovalStatus,
   ApprovalType,
+  ApprovalVerdict,
 } from "api-server-api";
 import type { PendingApprovalRow } from "../domain/types.js";
 
@@ -12,8 +13,32 @@ export interface ListApprovalsRepoOpts {
   status?: ApprovalStatus;
 }
 
+export async function deletePendingSpendQuestions(
+  db: Db,
+  ownerSub: string,
+  limitId: string,
+): Promise<Array<{ id: string; agentId: string }>> {
+  return db
+    .delete(pendingApprovals)
+    .where(
+      and(
+        eq(pendingApprovals.ownerSub, ownerSub),
+        eq(pendingApprovals.type, "spend_limit"),
+        eq(pendingApprovals.status, "pending"),
+        sql`${pendingApprovals.payload}->>'limitId' = ${limitId}`,
+      ),
+    )
+    .returning({ id: pendingApprovals.id, agentId: pendingApprovals.agentId });
+}
+
 export interface ApprovalsRepository {
   insertPending(row: NewPendingApproval): Promise<boolean>;
+  insertIfAbsent(row: NewPendingApproval): Promise<boolean>;
+  insertSettled(
+    row: NewPendingApproval,
+    settlement:
+      { status: "expired" } | { status: "resolved"; verdict: ApprovalVerdict },
+  ): Promise<boolean>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
   findActivePendingExtAuthz(input: {
     agentId: string;
@@ -42,6 +67,10 @@ export interface ApprovalsRepository {
     decidedBy: string,
   ): Promise<boolean>;
   markDelivered(id: string): Promise<void>;
+  correctResolvedVerdict(
+    id: string,
+    verdict: ApprovalVerdict,
+  ): Promise<boolean>;
   listResolvedUndelivered(opts: {
     staleMs: number;
     limit: number;
@@ -142,6 +171,46 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           },
           setWhere: sql`${pendingApprovals.status} = 'expired' OR (${pendingApprovals.status} = 'resolved' AND ${pendingApprovals.deliveredAt} IS NOT NULL)`,
         })
+        .returning({ id: pendingApprovals.id });
+      return written.length > 0;
+    },
+
+    async insertIfAbsent(row) {
+      const written = await db
+        .insert(pendingApprovals)
+        .values({
+          id: row.id,
+          type: row.type,
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+          sessionId: row.sessionId,
+          payload: row.payload,
+          expiresAt: row.expiresAt,
+        })
+        .onConflictDoNothing({ target: pendingApprovals.id })
+        .returning({ id: pendingApprovals.id });
+      return written.length > 0;
+    },
+
+    async insertSettled(row, settlement) {
+      const now = new Date();
+      const written = await db
+        .insert(pendingApprovals)
+        .values({
+          id: row.id,
+          type: row.type,
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+          sessionId: row.sessionId,
+          payload: row.payload,
+          expiresAt: row.expiresAt,
+          status: settlement.status,
+          verdict: settlement.status === "resolved" ? settlement.verdict : null,
+          decidedBy: "in-session",
+          resolvedAt: now,
+          deliveredAt: now,
+        })
+        .onConflictDoNothing({ target: pendingApprovals.id })
         .returning({ id: pendingApprovals.id });
       return written.length > 0;
     },
@@ -263,6 +332,21 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             isNull(pendingApprovals.deliveredAt),
           ),
         );
+    },
+
+    async correctResolvedVerdict(id, verdict) {
+      const rows = await db
+        .update(pendingApprovals)
+        .set({ verdict, resolvedAt: new Date() })
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "resolved"),
+            ne(pendingApprovals.verdict, verdict),
+          ),
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async listResolvedUndelivered({ staleMs, limit }) {

@@ -1,4 +1,8 @@
 import { match } from "ts-pattern";
+import {
+  registerEnvironmentTools,
+  type OwningAgentEnvironments,
+} from "../../modules/environments/index.js";
 import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -7,18 +11,22 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
+  RESULT_ACCEPTED_FIELD,
   SESSION_REF_HEADER,
   sessionTitleSchema,
   type AppRouter,
 } from "agent-runtime-api";
-import type { SatelliteView } from "api-server-api";
+import type { SatelliteView, SpendStatus } from "api-server-api";
+import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
   onceState,
   precheckSchema,
+  scheduleHarnessSchema,
   scheduleModelSchema,
+  scheduleSettingsSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -35,7 +43,14 @@ import type {
 } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
-import { registerSubAgentTools } from "./sub-agent-tools.js";
+import {
+  registerSubAgentTools,
+  SessionSettingsUnreadableError,
+} from "./sub-agent-tools.js";
+import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
+import { registerSpendLimitsTool } from "./spend-limits-tool.js";
+import { registerSessionMessageTools } from "./session-message-tools.js";
+import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -69,6 +84,8 @@ import {
   registerSatelliteTools,
 } from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
+import { registerChatFormTools } from "../../modules/chat-forms/index.js";
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 
 function resolveWorkspacePath(input: string): string {
   if (input.startsWith("/")) {
@@ -129,6 +146,8 @@ function renderChecklist(steps: OnboardingStep[]): string {
   ].join("\n");
 }
 
+const SESSION_LOOKUP_TIMEOUT_MS = 2_000;
+
 export interface McpSessionDeps {
   owner: string;
   channelManager: ChannelManager;
@@ -151,19 +170,30 @@ export interface McpSessionDeps {
   invocations: InvocationsService;
   driverOps: DriverOps;
   subAgentAwaits: SubAgentAwaitMarks;
+  requestSignal?: AbortSignal;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
+  environments: OwningAgentEnvironments | null;
   agentTelemetry: AgentTelemetryService;
+  spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
+  sessionMessages?: SessionMessages;
+  chatForms?: ChatFormPreferences | null;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
     waitDeadlineMs: number;
   } | null;
 }
+
+const SESSION_SETTINGS_INSTRUCTIONS =
+  "Your model, effort and other session settings, apart from the permission mode, are not set in your harness's own settings file: a session runs on what was picked in it, else on the default the owner set for its kind (chat, Slack or Telegram, or schedules) on the agent's Providers page. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu, or to change the default on the Providers page.";
+
+const KB_SHARE_INSTRUCTIONS =
+  "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
 
 export function createMcpSession(
   agentId: string,
@@ -175,12 +205,12 @@ export function createMcpSession(
       name: `platform-${agentId}`,
       version: "1.0.0",
     },
-    deps.kbShares
-      ? {
-          instructions:
-            "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.",
-        }
-      : undefined,
+    {
+      instructions: [
+        SESSION_SETTINGS_INSTRUCTIONS,
+        ...(deps.kbShares ? [KB_SHARE_INSTRUCTIONS] : []),
+      ].join("\n\n"),
+    },
   );
 
   const runtimeClient = createTRPCClient<AppRouter>({
@@ -296,7 +326,7 @@ export function createMcpSession(
         .string()
         .optional()
         .describe(
-          "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message.",
+          "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message — only with your owner, the person in a 1:1 DM you are connected to, or a member of a channel you are connected to; anyone else is refused.",
         ),
       attachment: attachmentInput,
       unfurlLinks: z
@@ -577,6 +607,12 @@ export function createMcpSession(
         .describe(
           "Thread to reply into. Omit for the thread of the message you're answering.",
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Conversation the thread is in: an id from describe_channel. Omit for the conversation you're answering; pass it when this agent is connected to several conversations and the reply is refused for not knowing which one.",
+        ),
       alsoSendToChannel: z
         .boolean()
         .optional()
@@ -600,6 +636,7 @@ export function createMcpSession(
       text,
       attachment,
       threadTs,
+      chatId,
       alsoSendToChannel,
       unfurlLinks,
       unfurlMedia,
@@ -612,6 +649,7 @@ export function createMcpSession(
         {
           text,
           ...(threadTs ? { threadTs } : {}),
+          ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
           ...(loaded ? { attachment: loaded.resolved } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
@@ -637,6 +675,7 @@ export function createMcpSession(
         detail: {
           action: "reply",
           textLength: text.length,
+          ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
@@ -669,14 +708,21 @@ export function createMcpSession(
         .describe(
           "Message to react to. Omit for the message you're currently answering.",
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Conversation the message is in: an id from describe_channel. Omit for the conversation you're answering; pass it when this agent is connected to several conversations and the reaction is refused for not knowing which one.",
+        ),
     },
-    async ({ emoji, messageTs }) => {
+    async ({ emoji, messageTs, chatId }) => {
       const result = await deps.channelManager.react(
         agentId,
         ChannelType.Slack,
         {
           emoji,
           ...(messageTs ? { messageTs } : {}),
+          ...(chatId ? { conversationId: chatId } : {}),
         },
       );
       const failed = "error" in result;
@@ -798,11 +844,23 @@ export function createMcpSession(
       source: z.string().url(),
       name: z.string().min(1),
       version: z.string().min(1),
+      path: skillSourcePathSchema
+        .optional()
+        .describe(
+          "The path of the source the skill was listed from, when the repository is connected with several paths.",
+        ),
     },
-    ({ source, name, version }) =>
+    ({ source, name, version, path }) =>
       textTool(
         "Failed to install skill",
-        () => deps.skills.install({ agentId, source, name, version }),
+        () =>
+          deps.skills.install({
+            agentId,
+            source,
+            name,
+            version,
+            ...(path !== undefined ? { path } : {}),
+          }),
         (installed) =>
           `Installed ${name} @ ${version.slice(0, 8)}. Agent now has ${installed.length} skill(s).`,
       ),
@@ -978,10 +1036,20 @@ export function createMcpSession(
         .describe(
           "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
         ),
+      harness: scheduleHarnessSchema
+        .optional()
+        .describe(
+          "Optional harness this schedule's sessions run on, one the agent's image carries. Omit it: the sessions run on the scheduled default the owner set for this agent (harness, provider, model and settings together). Set a harness, model or settings of the schedule's own only for a clear reason the task gives; the owner sees every schedule that does.",
+        ),
       model: scheduleModelSchema
         .optional()
         .describe(
-          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. On a harness with no such default (no provider pin and none declared by the harness), a schedule without a model follows the agent's current model instead. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
+          "Optional model this schedule's sessions run on instead of the owner's scheduled default, only for a clear reason the task gives (e.g. a cheap model for a frequent routine check). Name it with its provider, as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001, ibm/gpt-5-mini); the agent's model settings list the names. The provider must be one this agent holds and the harness accepts, else the schedule is refused with the reason. Omit it to run on the scheduled default. A model the agent can no longer reach at fire time fails that run with the reason rather than running on a substitute.",
+        ),
+      settings: scheduleSettingsSchema
+        .optional()
+        .describe(
+          'Optional per-session settings of the harness the sessions run on, as {settingId: value} (e.g. {"effort": "high"}), instead of the scheduled default\'s, only for a clear reason the task gives; the agent\'s model settings list each harness\'s settings and their values. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
         ),
       sessionTitle: sessionTitleSchema
         .optional()
@@ -998,7 +1066,9 @@ export function createMcpSession(
       task,
       sessionMode,
       precheck,
+      harness,
       model,
+      settings,
       sessionTitle,
     }) => {
       if ((cron === undefined) === (rrule === undefined)) {
@@ -1027,7 +1097,9 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  harness,
                   model,
+                  settings,
                   sessionTitle,
                 },
                 "agent",
@@ -1040,7 +1112,9 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  harness,
                   model,
+                  settings,
                   sessionTitle,
                 },
                 "agent",
@@ -1097,12 +1171,22 @@ export function createMcpSession(
         .describe(
           "fresh (default): a new session of its own. continue: a new turn in THIS session, with its context. report: a new session whose result comes back into THIS session as a new turn.",
         ),
+      harness: scheduleHarnessSchema
+        .optional()
+        .describe(
+          "Harness the new session runs on, one the agent's image carries. Omit it: the session runs on the scheduled default the owner set for this agent (harness, provider, model and settings together). Set a harness, model or settings of its own only for a clear reason the task gives. Not with inSession continue, which keeps this session's harness.",
+        ),
       model: z
         .string()
         .min(1)
         .optional()
         .describe(
-          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+          "Model the new session runs on, named with its provider as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001 for a routine check, ibm/gpt-5 for a hard one); the agent's model settings list the names. Set one only for a clear reason the task gives; omit it to run on the owner's scheduled default. Not with inSession continue, which keeps this session's model. A model this agent cannot reach is refused with the reason.",
+        ),
+      settings: scheduleSettingsSchema
+        .optional()
+        .describe(
+          'Per-session settings of the harness the session runs on, as {settingId: value} (e.g. {"effort": "high"}), instead of the scheduled default\'s, only for a clear reason the task gives; the agent\'s model settings list each harness\'s settings and their values. Not with inSession continue. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
         ),
       sessionTitle: sessionTitleSchema
         .optional()
@@ -1110,7 +1194,17 @@ export function createMcpSession(
           "Optional title for the new session, shown in the session list instead of the one the harness derives from the task. Not with inSession continue, which keeps this session's title.",
         ),
     },
-    async ({ name, task, at, timezone, inSession, model, sessionTitle }) => {
+    async ({
+      name,
+      task,
+      at,
+      timezone,
+      inSession,
+      harness,
+      model,
+      settings,
+      sessionTitle,
+    }) => {
       if (at !== undefined && !timezone)
         return errorResult("`at` requires `timezone`.");
       const zone = timezone ?? "UTC";
@@ -1127,7 +1221,9 @@ export function createMcpSession(
             task,
             timezone: zone,
             ...(at ? { at } : {}),
+            ...(harness ? { harness } : {}),
             ...(model ? { model } : {}),
+            ...(settings ? { settings } : {}),
             ...(sessionTitle ? { sessionTitle } : {}),
           },
           "agent",
@@ -1239,9 +1335,37 @@ export function createMcpSession(
     agentTelemetry: deps.agentTelemetry,
   });
 
+  const sessionMessages = deps.sessionMessages;
+  if (sessionMessages)
+    registerSessionMessageTools(server, {
+      listSessions: async (query) =>
+        (
+          await runtimeClient.sessions.list.query(query, {
+            signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
+          })
+        ).sessions,
+      callerSessionId: async () => {
+        const ref = deps.sessionRef;
+        if (!ref) return null;
+        try {
+          const { sessionId } = await runtimeClient.sessions.byRef.query(
+            { ref },
+            { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+          );
+          return sessionId;
+        } catch {
+          return null;
+        }
+      },
+      acceptsSessionMessages: () => sessionMessages.accepts(agentId),
+      send: async (payload) => {
+        await sessionMessages.send(agentId, payload);
+      },
+    });
+
   server.tool(
     "report_result",
-    "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
+    "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Once a call is accepted, your task is over: end your turn at once, with no more text and no more tool calls. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
     {
       result: z
         .unknown()
@@ -1256,14 +1380,79 @@ export function createMcpSession(
           `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
         );
       }
-      return textResult(JSON.stringify({ accepted: true }));
+      return textResult(
+        JSON.stringify({
+          accepted: true,
+          [RESULT_ACCEPTED_FIELD]: true,
+          next: "Your task is done. End your turn now, with no more text and no more tool calls.",
+        }),
+      );
     },
   );
+
+  if (deps.spendStatus)
+    registerSpendLimitsTool(server, { status: deps.spendStatus });
 
   registerSubAgentTools(server, {
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
+    spawningSession: async () => {
+      const ref = deps.sessionRef;
+      if (!ref) return null;
+      try {
+        const { sessionId } = await runtimeClient.sessions.byRef.query(
+          { ref },
+          { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+        );
+        return sessionId;
+      } catch (err) {
+        console.warn(
+          `[invocations] ${agentId}: could not resolve the spawning session; the sub-agent shows in every chat`,
+          err,
+        );
+        return null;
+      }
+    },
+    requestSignal: deps.requestSignal,
+    sessionIdentified: deps.sessionRef !== undefined,
+    sessionContext: async () => {
+      const ref = deps.sessionRef;
+      if (!ref) return null;
+      try {
+        return await runtimeClient.sessions.settings.query({ ref });
+      } catch (err) {
+        if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND")
+          return null;
+        console.warn(
+          `[invocations] ${agentId}: could not read the spawning session's settings; the spawn is refused`,
+          err,
+        );
+        throw new SessionSettingsUnreadableError();
+      }
+    },
+    catalogModels: async (harness) => {
+      try {
+        const view = await runtimeClient.harnessConfig.catalog.query({
+          harness,
+        });
+        if (!view.routed) return null;
+        return view.providers.flatMap((p) =>
+          p.models.map((m) => ({
+            alias: p.alias,
+            upstreamId: m.upstreamId,
+            name: m.name,
+          })),
+        );
+      } catch {
+        return null;
+      }
+    },
   });
+
+  if (deps.chatForms) registerChatFormTools(server, deps.chatForms);
+
+  if (deps.environments)
+    registerEnvironmentTools(server, { environments: deps.environments });
 
   if (deps.satellites)
     registerSatelliteTools(server, {
@@ -1311,10 +1500,20 @@ export interface MountMcpDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
+  chatFormPreferences: (
+    owner: string,
+    agentId: string,
+  ) => Promise<ChatFormPreferences | null>;
   agentImage: (agentId: string) => Promise<string | null>;
+  environments: (
+    owner: string,
+    agentId: string,
+  ) => Promise<OwningAgentEnvironments | null>;
   agentTelemetry: AgentTelemetryService;
+  spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
   satelliteWaitDeadlineMs?: number;
+  sessionMessages?: SessionMessages;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -1338,22 +1537,42 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const [ownerIsInspector, grantedSatellites] = await Promise.all([
-      deps.carriesInspectorRole(verified.owner),
-      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
-        (err: unknown) => {
+    const [ownerIsInspector, chatForms, grantedSatellites, environments] =
+      await Promise.all([
+        deps.carriesInspectorRole(verified.owner),
+        deps
+          .chatFormPreferences(verified.owner, agentId)
+          .catch((err: unknown) => {
+            console.error(
+              `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
+              err,
+            );
+            return null;
+          }),
+        Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+          (err: unknown) => {
+            console.error(
+              `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+              err,
+            );
+            return [];
+          },
+        ),
+        deps.environments(verified.owner, agentId).catch((err: unknown) => {
           console.error(
-            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+            `[environments] could not tell whether ${agentId} may own Environments; serving the session without them`,
             err,
           );
-          return [];
-        },
-      ),
-    ]);
+          return null;
+        }),
+      ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
+    const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
       owner: verified.owner,
       ...(sessionRef ? { sessionRef } : {}),
+      ...(deps.sessionMessages && { sessionMessages: deps.sessionMessages }),
+      chatForms,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,
@@ -1380,6 +1599,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       invocations,
       driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
       subAgentAwaits: deps.subAgentAwaitsFor(agentId),
+      requestSignal: c.req.raw.signal,
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,
@@ -1387,7 +1607,11 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudySubmissions: deps.caseStudySubmissions,
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
+      environments,
       agentTelemetry: deps.agentTelemetry,
+      ...(spendStatusFor
+        ? { spendStatus: () => spendStatusFor(agentId, verified.owner) }
+        : {}),
       satellites:
         deps.satelliteOps && grantedSatellites.length > 0
           ? {
@@ -1399,6 +1623,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           : null,
     });
     await session.server.connect(session.transport);
+    rejectOversizedArrays(session.transport);
 
     return session.transport.handleRequest(c.req.raw);
   });

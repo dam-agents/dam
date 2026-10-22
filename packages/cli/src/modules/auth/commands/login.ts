@@ -32,7 +32,7 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
     )
     .option(
       "--force",
-      "Skip the re-login confirm prompt when already logged in",
+      "Sign in again over a session that still works, without the confirm prompt",
     )
     .action(
       async (opts: { server?: string; browser?: boolean; force?: boolean }) => {

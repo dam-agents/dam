@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,6 +22,7 @@ import (
 	"strings"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 // TEST_SCENARIO: an Agent is deleted while its owner's runner is restarting. The machine cannot be removed yet, so the cleanup says so — the delete queue retries it — and a later attempt, with the runner back, removes it.
@@ -36,14 +38,15 @@ func TestADeleteThatCannotReachTheRunnerIsRetried(t *testing.T) {
 	r.runners = nil
 	r.runnerMu.Unlock()
 
-	require.Error(t, r.Delete(ctx, "my-agent", testOwner))
+	uid := deleteAgentCR(t, r, "my-agent")
+	require.Error(t, r.Delete(ctx, "my-agent", testOwner, uid))
 	assert.Empty(t, node.deleted)
 
 	r.runnerEndpoint = reachable
 	r.runnerMu.Lock()
 	r.runners = nil
 	r.runnerMu.Unlock()
-	require.NoError(t, r.Delete(ctx, "my-agent", testOwner))
+	require.NoError(t, r.Delete(ctx, "my-agent", testOwner, uid))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
@@ -153,6 +156,45 @@ func TestTheIdleCheckerRetriesAHibernationWhoseMachineDidNotStop(t *testing.T) {
 	checker.check(ctx)
 	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
 	assert.False(t, node.spec("my-agent").Running)
+}
+
+// TEST_SCENARIO: the runner answers a stop at once, while the guest is still being signalled, quiesced and powered off. A wake in those seconds would trust the first health check answer if the agent read hibernated, and the guest about to power off would give it. So the agent reads hibernated only once the runner reports the machine stopped, reads as stopping until then, and its reconcile watches the machine.
+func TestAnAgentReadsHibernatedOnlyOnceItsMachineHasStopped(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stored.SetAnnotations(agent.Annotations)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.mu.Lock()
+	node.stopsSlowly = true
+	node.mu.Unlock()
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+
+	checker.check(ctx)
+	require.False(t, node.spec("my-agent").Running)
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
+	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	stored, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stopping, err := FromCacheObject[apiv1.Agent](stored)
+	require.NoError(t, err)
+	assert.Equal(t, apiv1.ReasonMachineStopping, apimeta.FindStatusCondition(stopping.Status.Conditions, apiv1.ConditionAgentPodReady).Reason, "the agent reads as stopping, not as starting")
+	assert.True(t, r.watchingMachine("my-agent"), "the stopping machine is watched")
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.True(t, r.watchingMachine("my-agent"))
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.False(t, r.watchingMachine("my-agent"))
 }
 
 // TEST_SCENARIO: cert-manager cannot issue the owner's runner certificate — its issuer is missing. The agent cannot start until it does, and cert-manager says why only on the Certificate, so the Agent's readiness carries that account instead of a status that never moves.

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-13
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -49,6 +49,7 @@ flowchart LR
   An entry that was read and rejected — a `kit.yaml` the schema refuses, a path that escapes the catalog — is a withdrawal, not an outage: it leaves the resolved set like an entry the author removed, so one permanently broken kit never freezes the prune for the rest.
   The built-in catalog is refreshed by the same job: its file entries are stamped with the release rather than a sha, because chart files have no commit to resolve, while an entry naming a repository is resolved and stamped exactly like any other — so a built-in catalog carrying one does reach the network on refresh, and an air-gapped install may hold only file entries.
   What lives where follows from that: the built-in catalog holds the **workload kits**, whose images this repository builds and whose kit files are versioned with the release, and **definition kits** live in a repository of their own, listed either by a curated catalog the install points at — `curated` by default — or, when the kit must be switchable per install, by a built-in entry naming that repository.
+  A workload kit may also bring no image: it runs on the default Template and its `install` command puts the tool, at the version the kit file pins, into the agent's home.
   A definition kit is not copied into that catalog either: its `kit.yaml` sits at the root of the repository holding the code it installs, and the catalog lists it by `gitUrl`.
   That is what keeps the two in step — a change to a toolkit's bootstrap and the change to the kit describing it are one commit and one review, in the repository that owns both.
   Such a kit's seed says `self: true` rather than repeating the URL, and names no ref, so the workspace is seeded from the very commit the kit was resolved at and a kit can never describe code it was not read with.
@@ -85,17 +86,24 @@ flowchart LR
   A family expands to every template in it, so `accepts: [github]` is satisfied by an OAuth, PAT or App connection and its Connect button opens the GitHub page with all methods; a kit that must insist on one method names the template instead.
   Families are declared on the Connection Templates themselves ([connections](connections.md#connection-template)) and carried on the template view, so the server-side check and the catalog UI read the same data.
 - **Kit Schedule** — declared with the author's defaults and created by the platform at apply; a suggested one is created **disabled**.
-  The apply form lists them with their cadence and lets the user **skip** any before create; onboarding never asks for cadence, and the user edits the rest on the instance.
+  The apply form lists them with their cadence and the author's optional one-line `description`, keeps the task text behind a closed **Instructions** disclosure, and lets the user **skip** any before create; onboarding never asks for cadence, and the user edits the rest on the instance.
   A kit may also declare the schedule's [Precheck](schedules.md#precheck) — the shell check that decides its own fires — so a periodic check a kit ships is as cheap as one written by hand; a kit that seeds its definition declares the check its repository carries, and the apply form shows it with the rest of the schedule, to keep, replace or drop.
   Dropping travels as an explicit removal rather than an omission, because an omitted one means the kit's own command.
 - **Kit Channel** — suggested only.
   A channel never blocks apply; the apply form offers the Slack picker, other messengers are a note onboarding repeats.
 - **Provider compatibility** — a kit never states a provider as a Connection Requirement: it lists the provider presets it supports in `providers` (a kit with its own image states them on the image instead).
   The requirement list is for the connections the *job* needs; a kit from an external catalog that still declares a provider under `accepts` is read as its provider list and kept out of the Connections section.
-  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants the creating user's default provider Connection for that harness, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
+  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
+- **Avatar** — optional: the avatar an Agent created from the kit starts with ([agent avatars](agent-avatars.md)).
+  `avatar` names a built-in character (`avatar: shield`), an emoji (`avatar: "emoji:🛡️"`), or an image file in the kit repository (`avatar: {path: avatar.png}`, relative to `kit.yaml`).
+  The refresh reads the file at the kit's resolved commit, takes it only as a JPG or PNG of at most 2 MB, as the upload does, and stores it as an uploaded avatar; the resolved kit then carries `image:<id>`, and the hourly sweep keeps every image a resolved kit names.
+  A built-in kit ships the file in the chart, which puts a PNG or JPG into the catalog ConfigMap as binary data, so it must stay small: a ConfigMap holds at most 1 MiB.
+  A file the refresh cannot use leaves the kit listed with no avatar, and a log line says why; a stored `image:<id>` in `kit.yaml` is refused, because it names a row of one install only.
+  The apply form starts from the kit's avatar; an emoji or image needs the `custom-avatars` feature, and without it the form starts from the generated character, as for any kit with no avatar.
+  The avatar applies at create only: a Kit Update does not change the Agent's avatar.
 - **Own image** — optional.
   A kit for a workload baked into a custom image (the research frameworks) names the image itself — an OCI reference, the harness family inside it, and the providers it can run on — and its sessions have no harness choice.
   The Agent is created on that image exactly as a custom-image agent is, with the install's default mounts; nothing has to be declared in Helm for a kit to work.
@@ -104,9 +112,8 @@ flowchart LR
 - **Kit Backend** — optional `backend: vm`: the kit's work needs a machine rather than a pod.
   An agent container drops every capability, so a workload that runs a container runtime or a whole cluster inside its sandbox can only exist on the `vm` Backend ([platform-topology](platform-topology.md)); the kit says so and apply passes it to the create, where the existing refusal for a microVM on an install without virtualization already sits, before anything is created.
   **Whether the install can run one is a capability, not a preference, and it decides visibility**: a `vm` kit is left out of the listing and reads as absent on a read when `virtualization.enabled` is off, for the same reason a disabled built-in kit never reaches the UI — a catalog that offers what this install cannot run wastes the user's time and ends in a parked agent.
-  The **per-user** flag is treated the opposite way.
-  `vm-sandboxes` is progressive disclosure rather than authorization ([features](features.md)), so it hides nothing here and shows a **New sandbox runtime** badge instead: the kit's own declaration is what makes the agent a microVM, the user is told which runtime they are getting before they create it, and the same kit is on offer to everyone on the install rather than appearing and disappearing with a settings toggle.
-  A kit that names no backend is created as a container, even for an owner who opted into the new runtime, unless the install pins the new runtime on: that pin is the install's choice, not a preference, and makes every create a microVM ([features](features.md)).
+  A kit that names no backend gets its install's runtime: a microVM wherever virtualization is on, as every create that names no backend gets, and a container only on an install that cannot run one, where a `vm` kit is hidden anyway ([features](features.md)).
+  The kit therefore carries no runtime badge: on a given install every kit offered runs on the same Backend.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).
   Apply passes the preset to the create, which seeds from it exactly as when the user picks one; a kit that names none gets the create's default (`trusted`).
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
@@ -116,13 +123,13 @@ flowchart LR
   A new agent has it on by default, so a kit that names nothing gets that; `true` says so explicitly, and `false` turns it off for an agent whose tools need credentials added to requests that name no Connection.
   Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
-  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
+  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
   This is how the two wiki kits run their toolkit's bootstrap: from the checkout their `seed` brought in, pinned to the commit the catalog resolved, instead of fetching a script from the network at install.
 - **Knowledge Base Kit** — optional `knowledgeBase.shareRoots`: a kit may declare that what it creates publishes a [knowledge base](knowledge-bases.md), naming the workspace paths its shares expose.
   The apply stamps those roots on the Agent and nothing else changes: the toolkit is the kit's `seed`, the bootstrap its `install` run from that checkout, the first session its `onboarding`, so a knowledge base is a regular kit that declares one capability.
   No Kind marker is stamped — an agent created this way is badged by its kit like any other, and the sharing surfaces read the roots off the agent instead of asking which template built it; an agent stamped before kits keeps the old kind and template annotations and the roots that template always had.
-  The two knowledge kits (LLM Wiki, Plain Wiki) live in the toolkit repositories they install and are reached through the curated catalog, and are the kits with no image of their own — they run on the default Template.
+  The two knowledge kits (LLM Wiki, Plain Wiki) live in the toolkit repositories they install and are reached through the curated catalog, and run on the default Template.
   A knowledge base is set up by asking its owner what it is for and what to read first, so such a kit ships an `ONBOARDING.md` and names no onboarding command: the briefing then opens on that file once `install` has run, and the intake is reported as a checklist.
   A bare command cannot do that job — it is stamped onboarded at create and has nothing to report with.
 - **Agent Setup** — the seed, install, env, size, backend and external skills are one definition shared with spawning a sub-agent, so a target is set up exactly like a kit-created Agent ([invocations](invocations.md)).
@@ -131,7 +138,8 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  A kit on the `vm` backend gets none of it: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
+  Every kit on an install with virtualization gets none of it and shows no size, since every agent created there is a machine: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools.
+  Only an install that cannot run one, and so creates containers, shows a kit's size.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.
@@ -150,6 +158,7 @@ flowchart LR
 - **Initialization Session** — the first turn is an `initialization` event on the [runtime-delivery](runtime-delivery.md#event) rail, not a chat message a browser sends — so every platform-created agent gets its first session the same way.
   Apply composes the turn once the grants, schedules and Slack binding it describes exist, inserts the event, and wakes the agent; the agent-runtime opens a **regular** chat session with it — regular, not schedule-typed, so the user finds it in the default session list and can answer what it asks.
   The session it opens is marked `initialization` in its platform metadata, so the agent's chat opens it first for as long as it is the agent's most recent session — whether or not anything is held — and the session list badges it **Onboarding** while the kit's onboarding is pending.
+  The turn is queued before the Agent's first `hello`, so before it has a saved default, and names no model; each delivery gives it the default saved since, and holds it back while the Agent has no default model, since the runtime refuses a turn with none ([harness-config](harness-config.md#session-settings)).
   Running once is the rail's guarantee, not the kit's: the event id `initialization:<agent>:<ts>` is deduped by the runtime's per-key ledger on the agent's own volume, a failed dispatch is redelivered until it succeeds, and none of it needs a browser open.
   Kinded creates use the same rail for their install bootstrap, and events run in order, so a kit's bootstrap lands before its initialization session opens.
   **What the session opens with is the kit's `onboarding` field**: absent, the platform-composed briefing (follow `ONBOARDING.md` when the kit has a seed, ask the user what to work on otherwise); `prompt`, that text in place of the default instruction; `command`, a harness command the kit names and the platform spells for the agent's harness (`/setup`, `/prompts:setup` on Codex) — a mechanical trigger, so a kit that needs its first turn to ask the user for something declares none and ships `ONBOARDING.md`; `false`, no event and no session — the agent starts idle the way a Template-created one did.
@@ -194,7 +203,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
-The catalog lives in one place, the **Browse Kits modal**, opened from the rail's **Starter kits** entry and from Home's browse button.
+The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **Default**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channel — then applies without a further page.
 Every kit shows at one size.
@@ -202,12 +211,37 @@ Neither sits behind a flag: kits are how an agent is set up here, so the catalog
 The widget renders nothing when the install has no catalog.
 
 **Kit Onboarding** is the briefing the onboarding event carries — **visible** in the session where the knowledge-base bootstrap is hidden.
+The chat shows it as a collapsed "Setup instructions" card at the top of the initialization session rather than as a message the user wrote: the platform composed it, and the user opens it to read what the agent was told.
 That one sends a bare slash command, a mechanical trigger with nothing to read; a kit sends a briefing the user needs, because the agent's first act is to ask them for what only they can supply, and the answers only make sense against what the platform already set up.
 The prompt is **platform-composed from the kit and the Agent's state, read when the turn is composed** rather than snapshotted at create: the definition repository and the commit it is checked out at, each connection requirement with whether it is required or suggested *and whether it is actually connected right now*, the Agent's real schedules and which are disabled, the bound channel — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction.
 What onboarding asks for is `ONBOARDING.md`'s to say; the platform declares nothing about it.
 Reading live matters because the user can change any of it between create and the first turn: disable a schedule, drop a connection, or simply never grant a suggested one.
 A connection the user has since deleted reads as not connected rather than failing the prompt.
 Every kit ships `ONBOARDING.md` beside `kit.yaml`; the platform has seeded the definition into the work directory before the session opens, so the briefing points at the checkout rather than asking for a clone.
+With the owner's [chat forms](chat-forms.md) on, it also announces that the chat renders forms.
+
+## Linked Kit
+
+A **Linked Kit** is one kit read straight from a link to its repository, the way a teammate shares a kit nobody added to a catalog.
+Under the catalog, the Starter kits page and the Browse Kits modal take a pasted link to a public GitHub repository, and open the kit modal at `/starter-kits/link/<owner>/<repo>` — a URL that can itself be shared.
+No admin is involved and no catalog changes.
+
+- **Read like a catalog entry, never stored.** The kit is resolved by the same reader the refresh uses, as the only entry of a catalog named `link` that exists for that one read: the default branch's head is resolved to a commit, `kit.yaml` at the repository's root is validated there, its seed pinned and its bundled skills scanned.
+  Nothing is written to `starter_kit_catalog_entries`, so a Linked Kit never shows up in the catalog, and the name `link` is reserved: an install configuring a catalog of that name refuses to start.
+- **Public GitHub only.** The kit and its seed must both be on `github.com`.
+  The install's enterprise credential reads only what an operator chose to list, so a URL a user typed never makes the api-server fetch an internal repository with it.
+  A link into a branch or folder is refused, as everywhere a repository is named.
+- **Reviewed by the user, at one commit.** The modal shows everything the kit sets up, as for a catalog kit, and adds what a catalog's review would otherwise cover: a notice that nobody on the platform reviewed the kit, naming the repository and the commit, and the kit's install command and environment.
+  An unreviewed kit can set up nothing the user could not set up by hand on a new Agent — its image, egress, install command and schedules are all things the plain create and the agent's settings already offer the same user — so the review is the user's, and the modal gives them what they need for it.
+- **Created from the commit the user saw.** Apply names the link and that commit; the server reads the kit again at the commit rather than trusting what the browser sends, and refuses when the repository now holds a different kit.
+  The Agent is stamped `link/<kit>@<commit>`.
+- **A refusal says why.** A repository with no `kit.yaml`, an invalid field, a missing or private repository, and one that cannot be reached right now each come back as a message the person who pasted the link can act on.
+  GitHub answers an anonymous read of a missing, renamed or private repository the same way (401 or 404 on the ref advertisement), so all three read as "could not be found, or it is not public" — for the kit and for its seed.
+  The catalog refresh holds on that same answer rather than withdrawing the catalog's kits, so a renamed catalog repository never empties the kit list.
+  The modal shows a linked kit's install command and environment values in full, never clamped, since they are what the user is asked to check.
+- **Kit Updates work as for a catalog kit**, because detection follows the Seed Stamp, not the catalog ([below](#kit-update)).
+  With no catalog row to compare against, the update's briefing covers the definition only.
+  A kit's avatar image is not stored for a Linked Kit, since no row would keep it from the sweep; the kit keeps the default avatar, and an avatar character still applies.
 
 ## Kit Update
 
@@ -223,7 +257,8 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 **What changed** is read lazily for the hover card: the definition's own `VERSION` and `CHANGELOG.md` at both ends of the range, or, for a repository without a changelog, the compare API's commit list, cached for good because two commits never change.
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
-The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default lease.
+The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
+An agent whose saved default has no model, or names a model no provider it holds serves, cannot start an update: the request is refused and says to set a default on the agent's Providers page.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.
@@ -236,9 +271,9 @@ An abandoned update stays pending; the button then reopens its session or starts
 
 ## Invariants
 
-- **Kits are catalog-only platform inputs.** The platform never reads configuration back out of an Agent's own repository or workspace, so an agent committing to either can widen nothing the platform enforces — connections, egress, channels and the Template stay owner-managed platform state.
+- **Kits are catalog or link inputs, never workspace ones.** A kit reaches the platform from a catalog or from a link the user pastes; the platform never reads configuration back out of an Agent's own repository or workspace, so an agent committing to either can widen nothing the platform enforces — connections, egress, channels and the Template stay owner-managed platform state.
 - **Requirements are checked before create.** A missing required connection is refused with nothing to clean up.
-- **Kits are defined in git; the platform stores only their resolution.** The catalog locators are the only configuration, the resolved rows are a cache the refresh job rebuilds from the catalogs, and the Kit Version is provenance, not a source the platform re-reads; the Seed Stamp is read only to detect updates.
+- **Kits are defined in git; the platform stores only their resolution.** The catalog locators are the only configuration, the resolved rows are a cache the refresh job rebuilds from the catalogs, a Linked Kit is resolved on each read and never stored, and the Kit Version is provenance, not a source the platform re-reads; the Seed Stamp is read only to detect updates.
 
 ## Where the code lives
 

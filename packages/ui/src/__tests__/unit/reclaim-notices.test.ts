@@ -24,7 +24,9 @@ describe("nextReclaimNotices", () => {
   it("announces a reclaim once, after first load", () => {
     expect(replay([awake], [reclaimed("t1")], [reclaimed("t1")])).toEqual([
       [],
-      ["Scout was put to sleep early to free memory for your other agents"],
+      [
+        "Scout was put to sleep automatically to free memory for your other agents",
+      ],
       [],
     ]);
   });

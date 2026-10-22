@@ -6,6 +6,8 @@ import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 import type { InvocationsRepository } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
+  ModelNameError,
+  NoSpawnModelError,
   ProviderMismatchError,
   type SpawnInput,
 } from "../../modules/invocations/services/invocations-service.js";
@@ -96,6 +98,7 @@ const baseInput: SpawnInput = {
   connections: ["conn-ghe"],
   prompt: "run one cell",
   schema: { type: "object" },
+  harnessConfig: { model: "ibm/aws/claude-sonnet-5-5" },
 };
 
 describe("spawn applies an Agent Setup", () => {
@@ -143,11 +146,13 @@ describe("spawn applies an Agent Setup", () => {
       setup: { install: { command: "uv pip install ." }, env: [], skills: [] },
     });
 
-    expect(bumped[0]?.map((e) => e.kind)).toEqual([
+    expect(bumped[bumped.length - 1]?.map((e) => e.kind)).toEqual([
       "workspace-command",
       "trigger",
     ]);
-    expect(bumped[0]?.[0]?.payload).toEqual({ command: "uv pip install ." });
+    expect(bumped[bumped.length - 1]?.[0]?.payload).toEqual({
+      command: "uv pip install .",
+    });
   });
 
   test("without an install only the task is queued", async () => {
@@ -155,7 +160,7 @@ describe("spawn applies an Agent Setup", () => {
 
     await service.spawn(baseInput);
 
-    expect(bumped[0]?.map((e) => e.kind)).toEqual(["trigger"]);
+    expect(bumped[bumped.length - 1]?.map((e) => e.kind)).toEqual(["trigger"]);
   });
 
   test("external skills are applied to the target", async () => {
@@ -324,17 +329,54 @@ describe("spawn inherits the driver's provider", () => {
     expect(created[0]).toMatchObject({ providerConnectionId: "conn-litellm" });
   });
 
-  // TEST_SCENARIO: a target whose Template cannot run on any of the driver's providers would fail its first model call, so the spawn is refused before anything is created.
-  test("a target that cannot run on the driver's provider is refused", async () => {
+  // TEST_SCENARIO: a target whose Template cannot run on any of the driver's providers would fail its first model call, so the spawn is refused before anything is created. The refusal tells the user what to do: attach a fitting provider the owner already holds, else connect one in Settings first; a model whose provider the harness does not run on is told which held provider to name instead.
+  test("a target that cannot run on the driver's provider is refused, naming the fix", async () => {
     const { service, created } = makeService();
+    const target = {
+      templateId: "codex",
+      harness: "codex" as const,
+      runsOn: ["openai" as const, "anthropic" as const],
+    };
 
+    const { harnessConfig: _model, ...noModel } = baseInput;
+    await expect(
+      service.spawn({
+        ...noModel,
+        target,
+        attachableProviders: ["openai", "bob"],
+      }),
+    ).rejects.toThrow(
+      "codex runs on OpenAI, Anthropic, and this agent holds none of them; ask the user to attach OpenAI on this agent's Providers page",
+    );
+    await expect(service.spawn({ ...noModel, target })).rejects.toThrow(
+      "ask the user to connect OpenAI, Anthropic in Settings and attach it on this agent's Providers page",
+    );
     await expect(
       service.spawn({
         ...baseInput,
-        target: { templateId: "codex", runsOn: ["openai"] },
+        target: { ...target, runsOn: ["openai", "ibm-litellm"] },
+        harnessConfig: { model: "anthropic/claude-sonnet-5-5" },
       }),
-    ).rejects.toBeInstanceOf(ProviderMismatchError);
+    ).rejects.toThrow(
+      "the model names the anthropic provider, which codex does not run on; codex runs on OpenAI, IBM ETE LiteLLM Proxy, so name a model of IBM ETE LiteLLM Proxy",
+    );
     expect(created).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a spawn that names no model, onto a routed provider, is refused at once with how to name one, since the sub-agent's runtime refuses a turn without a model; an image-only spawn and one on Bedrock keep their own choices.
+  test("a spawn with no model is refused before anything starts", async () => {
+    const { service, created } = makeService();
+    const { harnessConfig: _model, ...noModel } = baseInput;
+    await expect(service.spawn(noModel)).rejects.toBeInstanceOf(
+      NoSpawnModelError,
+    );
+    expect(created).toEqual([]);
+    await service.spawn({
+      ...noModel,
+      driverProviders: [{ id: "conn-bedrock", type: "bedrock" }],
+      target: { templateId: "claude-code", runsOn: ["bedrock"] },
+    });
+    expect(created).toHaveLength(1);
   });
 
   test("the first compatible provider is picked", () => {
@@ -344,19 +386,46 @@ describe("spawn inherits the driver's provider", () => {
           { id: "a", type: "anthropic" },
           { id: "b", type: "openai" },
         ],
-        ["openai"],
+        { runsOn: ["openai"] },
       ),
     ).toEqual({ kind: "inherited", id: "b" });
   });
 
+  // TEST_SCENARIO: the driver holds IBM and Anthropic; a spawn naming an Anthropic model must land on the Anthropic Connection, not on IBM because it sorts first, and a spawn naming none follows the target harness's home order (Codex is at home on OpenAI, Claude Code on Anthropic). A model whose provider the target cannot take is incompatible.
+  test("the requested model's provider wins, else the target harness's home provider", () => {
+    const held = [
+      { id: "ibm", type: "ibm-litellm" as const },
+      { id: "anth", type: "anthropic" as const },
+      { id: "oai", type: "openai" as const },
+    ];
+    expect(inheritProvider(held, { alias: "anthropic" })).toEqual({
+      kind: "inherited",
+      id: "anth",
+    });
+    expect(inheritProvider(held, { harness: "codex" })).toEqual({
+      kind: "inherited",
+      id: "oai",
+    });
+    expect(inheritProvider(held, { harness: "claude-code" })).toEqual({
+      kind: "inherited",
+      id: "anth",
+    });
+    expect(
+      inheritProvider(held, { alias: "anthropic", runsOn: ["openai"] }),
+    ).toEqual({ kind: "incompatible" });
+  });
+
   test("a driver without a provider spawns without one", () => {
-    expect(inheritProvider([], ["openai"])).toEqual({ kind: "none" });
+    expect(inheritProvider([], { runsOn: ["openai"] })).toEqual({
+      kind: "none",
+    });
   });
 
   test("an image target narrows nothing", () => {
-    expect(
-      inheritProvider([{ id: "a", type: "anthropic" }], undefined),
-    ).toEqual({ kind: "inherited", id: "a" });
+    expect(inheritProvider([{ id: "a", type: "anthropic" }], {})).toEqual({
+      kind: "inherited",
+      id: "a",
+    });
   });
 });
 
@@ -608,5 +677,35 @@ describe("the spawn endpoint", () => {
         skills: [],
       },
     });
+  });
+});
+
+describe("spawn model naming", () => {
+  /** TEST_SCENARIO: A target runs on the current image, whose runtime routes
+   * by model name, so a spawn that names the target's model must name its
+   * provider too; a bare name is refused before anything is created. */
+  test("refuses a bare model name for the target", async () => {
+    const { service, created } = makeService();
+    await expect(
+      service.spawn({ ...baseInput, harnessConfig: { model: "gpt-5.5" } }),
+    ).rejects.toBeInstanceOf(ModelNameError);
+    await expect(
+      service.spawn({ ...baseInput, harnessConfig: { model: "sonnet" } }),
+    ).rejects.toThrow(/a tier name is no model/);
+    expect(created).toHaveLength(0);
+  });
+
+  /** TEST_SCENARIO: A Claude Code driver names the model the way its own
+   * picker spells it (`claude/<provider>/<id>`, lowercased); the spawn takes
+   * it and writes the provider-qualified form into the target's config. */
+  test("folds Claude Code's spelling into the provider-qualified name", async () => {
+    const { service, bumped } = makeService();
+    await service.spawn({
+      ...baseInput,
+      harnessConfig: { model: "claude/ibm/azure/gpt-5.5" },
+    });
+    expect(bumped.flat().map((e) => e.payload)).toContainEqual(
+      expect.objectContaining({ model: "ibm/azure/gpt-5.5" }),
+    );
   });
 });

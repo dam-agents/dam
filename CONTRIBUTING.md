@@ -46,6 +46,7 @@ mise generate git-pre-commit --write --task=check
   Markdown prose has one sentence per line; `mise run fix:markdown` formats it.
 - **Branding.** Don't hardcode the product name in code.
   User-visible branding flows from the Helm `brand.*` values.
+- **Repository settings.** GitHub settings are files under `.github/settings/`; see [`docs/guidelines/github-settings.md`](docs/guidelines/github-settings.md).
 - **Keep pull requests focused.** One logical change per pull request is easier to review and merge.
 
 ## Commits and branches
@@ -63,6 +64,8 @@ mise generate git-pre-commit --write --task=check
 2. Make your change, with tests where they apply.
 3. Run `mise run check` and `mise run test`.
 4. Open a pull request that links the issue it addresses and explains what changed and why.
+   If the change alters what the web UI shows or does, add screenshots or a recording of it in the running app to the pull request body or its first comment.
+   A reviewer cannot see a UI change from the diff.
 
 One of the [maintainers](https://github.com/dam-agents/community/blob/main/GOVERNANCE.md#maintainers) will review it.
 Please respond to review comments by pushing follow-up commits to the same branch.

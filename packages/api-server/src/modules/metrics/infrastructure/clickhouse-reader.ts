@@ -5,6 +5,7 @@ import type {
   SpendByAgent,
   SpendByDay,
   TokenSpendByModel,
+  TokenSpendByProvider,
 } from "api-server-api";
 import type {
   MetricsReader,
@@ -16,8 +17,40 @@ import type {
 
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
+const CALLING_AGENT_GATE = `(${AGENT_GATE} OR ResourceAttributes['platform.invocation.id'] IN {agentIds:Array(String)})`;
+const CALLING_AGENT_ID =
+  "if(ResourceAttributes['platform.invocation.id'] != '', ResourceAttributes['platform.invocation.id'], ResourceAttributes['platform.agent.id'])";
 
-const API_REQUEST = "Body = 'claude_code.api_request'";
+const HARNESS_CALL =
+  "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')";
+const CLAUDE_NATIVE_CALL =
+  "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')";
+const ROUTER_CALL = "Body = 'platform.model_call'";
+
+const CALL_KEY =
+  "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
+const CALL_KEY_TEXT =
+  "concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id'])";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Claude Code writes its own record beside the
+ * Model Router's, so a harness record is left out where the router's record
+ * stands in for it: the same agent and invocation (a sub-agent reports under
+ * its driver's id, on a runtime of its own) from that key's own first router
+ * record in the window on, so an image updated mid-window keeps its earlier
+ * harness records whenever the owner's other agents moved. ClickHouse has no
+ * correlated subquery, so the first records are one map looked up per row.
+ * The split is read from the data, so a router export that never arrived
+ * leaves the harness's count rather than none. A native Claude Code call
+ * names its model without the `claude/` prefix and always counts from the
+ * harness's record.
+ */
+const callRows = (w: MetricsWindow, gate = AGENT_GATE): string => {
+  const routerRows = [ROUTER_CALL, gate, ...timeBounds(w)].join(" AND ");
+  return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
+     OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
+     OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))[${CALL_KEY_TEXT}])))`;
+};
 
 const timeBounds = (w: MetricsWindow): string[] => [
   ...(w.hours === undefined
@@ -31,40 +64,46 @@ const timeBounds = (w: MetricsWindow): string[] => [
     : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
 ];
 
-const ownedCallRows = (w: MetricsWindow): string =>
-  [API_REQUEST, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+const ownedCallRows = (w: MetricsWindow, gate: string): string =>
+  [callRows(w, gate), gate, ...timeBounds(w)].join(" AND ");
 
 const sessionMatch = (w: MetricsWindow): string | undefined => {
   if (w.sessionId !== undefined)
     return "LogAttributes['session.id'] = {sessionId:String}";
-  if (w.sessionIds !== undefined)
-    return "LogAttributes['session.id'] IN {sessionIds:Array(String)}";
   return undefined;
 };
 
-const literalSessionTraceIds = (w: MetricsWindow, match: string): string =>
+const literalSessionTraceIds = (
+  w: MetricsWindow,
+  match: string,
+  gate: string,
+): string =>
   `SELECT DISTINCT TraceId FROM otel_logs
-       WHERE ${ownedCallRows(w)}
+       WHERE ${ownedCallRows(w, gate)}
          AND ${match}
          AND TraceId != ''`;
 
-const ownedLogRows = (w: MetricsWindow, body: string[]): string => {
-  const base = [...body, AGENT_GATE, ...timeBounds(w)];
+const ownedLogRows = (
+  w: MetricsWindow,
+  body: string[],
+  gate = AGENT_GATE,
+): string => {
+  const base = [...body, gate, ...timeBounds(w)];
   const match = sessionMatch(w);
   if (match === undefined) return base.join("\n  AND ");
-  const owned = ownedCallRows(w);
+  const owned = ownedCallRows(w, gate);
   return [
     ...base,
     `(${match}
    OR LogAttributes['session.id'] IN (
      SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
      WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
-       ${literalSessionTraceIds(w, match)})))`,
+       ${literalSessionTraceIds(w, match, gate)})))`,
   ].join("\n  AND ");
 };
 
-export const ownedApiRequests = (w: MetricsWindow): string =>
-  ownedLogRows(w, [API_REQUEST]);
+export const ownedApiRequests = (w: MetricsWindow, gate = AGENT_GATE): string =>
+  ownedLogRows(w, [callRows(w, gate)], gate);
 
 export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
 
@@ -85,14 +124,16 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
   ...(w.toIso === undefined ? {} : { toIso: w.toIso }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
-  ...(w.sessionIds === undefined ? {} : { sessionIds: w.sessionIds }),
 });
+
+const INVOCATION_ID = "ResourceAttributes['platform.invocation.id']";
 
 const IN = (a: string) => `toInt64OrZero(LogAttributes[${a}])`;
 const TOK_IN = IN("'input_tokens'");
 const TOK_CACHE_R = IN("'cache_read_tokens'");
 const TOK_CACHE_C = IN("'cache_creation_tokens'");
 const COST_USD = `${IN("'cost_usd_micros'")} / 1e6`;
+const UNCOUNTED = "countIf(LogAttributes['platform.uncounted'] != '')";
 
 const n = (v: unknown): number => Number(v ?? 0);
 
@@ -127,6 +168,7 @@ export function createClickhouseReader(
         `SELECT
            LogAttributes['model'] AS model,
            count() AS calls,
+           ${UNCOUNTED} AS uncountedCalls,
            sum(${TOK_IN}) AS inputTokens,
            sum(${IN("'output_tokens'")}) AS outputTokens,
            sum(${TOK_CACHE_R}) AS cacheReadTokens,
@@ -142,6 +184,7 @@ export function createClickhouseReader(
       return r.map((x) => ({
         model: String(x.model ?? ""),
         calls: n(x.calls),
+        uncountedCalls: n(x.uncountedCalls),
         inputTokens: n(x.inputTokens),
         outputTokens: n(x.outputTokens),
         cacheReadTokens: n(x.cacheReadTokens),
@@ -151,11 +194,43 @@ export function createClickhouseReader(
       })) satisfies TokenSpendByModel[];
     },
 
+    async tokenSpendByProvider(agentIds, window) {
+      const r = await rows(
+        `SELECT
+           LogAttributes['platform.provider.alias'] AS provider,
+           LogAttributes['platform.connection.id'] AS connectionId,
+           count() AS calls,
+           ${UNCOUNTED} AS uncountedCalls,
+           sum(${TOK_IN}) AS inputTokens,
+           sum(${IN("'output_tokens'")}) AS outputTokens,
+           sum(${TOK_CACHE_R}) AS cacheReadTokens,
+           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
+           sum(${COST_USD}) AS costUsd
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)}
+         GROUP BY provider, connectionId
+         ORDER BY costUsd DESC, calls DESC`,
+        windowParams(agentIds, window),
+      );
+      return r.map((x) => ({
+        provider: String(x.provider ?? ""),
+        connectionId: String(x.connectionId ?? ""),
+        connectionName: null,
+        calls: n(x.calls),
+        uncountedCalls: n(x.uncountedCalls),
+        inputTokens: n(x.inputTokens),
+        outputTokens: n(x.outputTokens),
+        cacheReadTokens: n(x.cacheReadTokens),
+        cacheCreationTokens: n(x.cacheCreationTokens),
+        costUsd: n(x.costUsd),
+      })) satisfies TokenSpendByProvider[];
+    },
+
     async spendByAgent(agentIds, window) {
       const r = await rows(
         `SELECT
            ResourceAttributes['platform.agent.id'] AS agentId,
-           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName,
+           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ${INVOCATION_ID} = '') AS agentName,
            sum(${COST_USD}) AS costUsd
          FROM otel_logs
          WHERE ${ownedApiRequests(window)}
@@ -234,7 +309,6 @@ export function createClickhouseReader(
       const base = ownedApiRequests({
         ...window,
         sessionId: undefined,
-        sessionIds: undefined,
       });
       const r = await rows(
         `WITH trace_root AS (
@@ -308,7 +382,7 @@ export function createClickhouseReader(
         `SELECT
            Timestamp AS at,
            LogAttributes['request_id'] AS requestId,
-           ResourceAttributes['platform.agent.id'] AS agentId,
+           ${CALLING_AGENT_ID} AS agentId,
            LogAttributes['model'] AS model,
            ${TOK_IN} AS inputTokens,
            ${TOK_CACHE_R} AS cacheReadTokens,
@@ -318,7 +392,7 @@ export function createClickhouseReader(
            ${COST_USD} AS costUsd,
            ${IN("'duration_ms'")} AS durationMs
          FROM otel_logs
-         WHERE ${ownedApiRequests(window)}
+         WHERE ${ownedApiRequests(window, CALLING_AGENT_GATE)}
          ORDER BY Timestamp DESC
          LIMIT {limit:UInt32}`,
         { ...windowParams(agentIds, window), limit },

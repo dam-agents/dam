@@ -23,6 +23,9 @@ var ErrUnauthorized = errors.New("the VM runner refused the controller's token")
 // UNIT_BOUNDARY_DESCRIPTION: a 404: the machine is not on the runner, or the runner's release does not serve the route at all, as a runner from before the pressure read does not.
 var ErrNotServed = errors.New("404 Not Found")
 
+// UNIT_BOUNDARY_DESCRIPTION: a 503: the runner is closing, as it does for a stop or a hand-off, and did not store the spec.
+var ErrUnavailable = errors.New("503 Service Unavailable")
+
 type Client struct {
 	URL  string
 	HTTP *http.Client
@@ -32,7 +35,7 @@ type Client struct {
 	reload func(context.Context) (string, error)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because the reconcile worker that calls it serves many owners' agents and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -105,6 +108,16 @@ func (c *Client) List(ctx context.Context) ([]string, error) {
 	return ids, json.Unmarshal(raw, &ids)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node's image cache service now. One connect on the runner's side, answered at once; the roll's gate asks it before it holds a changed pod back for a busy agent, since a runner without its cache boots only the trees its own machines already hold.
+func (c *Client) ImageCache(ctx context.Context) (RunnerImageCache, error) {
+	var cache RunnerImageCache
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/image-cache", nil)
+	if err != nil {
+		return cache, fmt.Errorf("VM runner: image cache: %w", err)
+	}
+	return cache, json.Unmarshal(raw, &cache)
+}
+
 func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
 	var release RunnerRelease
 	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/release", nil)
@@ -112,6 +125,18 @@ func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
 		return release, fmt.Errorf("VM runner: release: %w", err)
 	}
 	return release, json.Unmarshal(raw, &release)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: names the release the pod's loader should hand the machines to. The runner answers once it has written the name where the loader reads it; the hand-off itself follows within seconds, and Release reports it.
+func (c *Client) NameRelease(ctx context.Context, release string) error {
+	body, err := json.Marshal(RunnerReleaseName{Release: release})
+	if err != nil {
+		return err
+	}
+	if _, err := c.call(ctx, c.HTTP, http.MethodPost, "/release", body); err != nil {
+		return fmt.Errorf("VM runner: name release: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) Delete(ctx context.Context, id string) error {
@@ -149,6 +174,9 @@ func (c *Client) machine(ctx context.Context, hc *http.Client, method, id, query
 	return st, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an error body only ever becomes a message, and a proxy in front of the runner can answer with a page of any size, so no more of it is read.
+const errorBodyMax = 4096
+
 // UNIT_BOUNDARY_DESCRIPTION: one call, retried once with a re-read token if the runner refuses the one held. The body is kept as bytes so the retry sends it again.
 func (c *Client) call(ctx context.Context, hc *http.Client, method, path string, body []byte) ([]byte, error) {
 	for retried := false; ; retried = true {
@@ -165,7 +193,11 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 		if err != nil {
 			return nil, &UnreachableError{cause: err}
 		}
-		raw, _ := io.ReadAll(resp.Body)
+		var body io.Reader = resp.Body
+		if resp.StatusCode >= 300 {
+			body = io.LimitReader(resp.Body, errorBodyMax)
+		}
+		raw, _ := io.ReadAll(body)
 		_ = resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized:
@@ -174,6 +206,8 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 			}
 		case resp.StatusCode == http.StatusNotFound:
 			return nil, fmt.Errorf("%w: %s", ErrNotServed, bytes.TrimSpace(raw))
+		case resp.StatusCode == http.StatusServiceUnavailable:
+			return nil, fmt.Errorf("%w: %s", ErrUnavailable, bytes.TrimSpace(raw))
 		case resp.StatusCode >= 300:
 			return nil, fmt.Errorf("%s: %s", resp.Status, bytes.TrimSpace(raw))
 		default:

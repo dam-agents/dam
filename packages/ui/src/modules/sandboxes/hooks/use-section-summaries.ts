@@ -6,41 +6,47 @@ import {
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
+import { useChatFormPreferences } from "../../a2ui/api/queries.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
-  useStaleModel,
 } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import {
   useSkillSourceCount,
   useSkillsState,
 } from "../../agents/api/skills.js";
-import { useBudgetReserved } from "../../budgets/api/queries.js";
-import {
-  formatSizeLabel,
-  sizeInMi,
-  slotUnitOf,
-} from "../../budgets/lib/slots.js";
+import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import {
   useAppConnections,
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
 import { useCurrentPreset } from "../../egress-rules/api/queries.js";
-import { useAgentMonthSpend } from "../../metrics/api/queries.js";
-import { formatUsdCents } from "../../metrics/lib/format.js";
+import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
+import {
+  defaultModelHeadline,
+  defaultModelStopsRuns,
+} from "../../home/lib/default-model-copy.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
+import { useAgentSpendStatus } from "../../spend/api/queries.js";
+import { agentLimitOf } from "../../spend/lib/agent-limit.js";
+import { agentLimitCoverage } from "../../spend/lib/coverage.js";
+import {
+  formatSpend,
+  formatSpendOf,
+  formatSpent,
+} from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
 
-const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 const NO_PROVIDER_WARNING =
   "No provider connected — the agent cannot reach a model";
 
@@ -49,6 +55,12 @@ const PRESET_SUMMARY: Record<EgressPreset, string> = {
   none: "Default-deny",
   all: "Allow everything",
 };
+
+const CHAT_FORMS_SUMMARY = {
+  all: "Whenever they help",
+  input: "Only to ask for input",
+  off: "Off",
+} as const;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -88,17 +100,15 @@ export function useSectionSummaries(agent: AgentView | null): {
     );
   }, [appsLoaded, connectionsQuery.data, providerAppIds]);
 
-  const staleModel = useStaleModel(agent?.id ?? null);
+  const defaultNotice = useDefaultModelNotices()
+    .byAgentEvenDismissed.get(agent?.id ?? "")
+    ?.find(defaultModelStopsRuns);
   const sourceCount = useSkillSourceCount(agent?.id ?? null);
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(
     agent?.id ?? null,
   );
 
-  const { data: budget } = useBudgetReserved();
-  const setup =
-    agent && !agent.vm && budget
-      ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
-      : undefined;
+  const setup = "Manage this agent";
 
   const { data: currentPreset } = useCurrentPreset(agent?.id ?? null);
   const network = currentPreset ? PRESET_SUMMARY[currentPreset] : undefined;
@@ -133,11 +143,14 @@ export function useSectionSummaries(agent: AgentView | null): {
         (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
       )
       .map((s) => s.name);
-    return (
+    const names =
       formatNameList([...new Set(titles), ...satelliteNames]) ??
-      "No connections added"
-    );
+      "No connections added";
+    return agent?.requireConnectionAddress
+      ? `${names} · addressed only`
+      : names;
   }, [
+    agent?.requireConnectionAddress,
     connectionsQuery.data,
     apps,
     providerAppIds,
@@ -189,20 +202,59 @@ export function useSectionSummaries(agent: AgentView | null): {
       : providers.granted.map((p) => p.name).join(", ")
     : undefined;
 
-  const { data: monthSpend, isError: spendUnavailable } = useAgentMonthSpend(
-    agent?.id ?? null,
+  const limitCoverage = agentLimitCoverage(
+    providers.granted.map((p) => p.templateId),
+  );
+  const root = useRootDriver(agentId ?? null);
+  const rootName = root?.name;
+  const { data: spendStatus, isError: spendUnavailable } = useAgentSpendStatus(
+    agentId && root === null ? agentId : null,
   );
   const usageSummary = useMemo(() => {
+    if (rootName !== undefined) return `Counts toward ${rootName}`;
     if (spendUnavailable) return "Not available";
-    if (monthSpend === undefined) return undefined;
-    return monthSpend > 0
-      ? `${formatUsdCents(monthSpend)} this month`
-      : "No spend this month";
-  }, [monthSpend, spendUnavailable]);
+    if (!spendStatus || !agentId) return undefined;
+    const usdMicros =
+      spendStatus.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
+    const limit = agentLimitOf(spendStatus, agentId);
+    const paid = !providers.loaded || limitCoverage.paid;
+    const parts = [
+      ...(limit && paid
+        ? [formatSpendOf(usdMicros, limit.effectiveMicros, "usd")]
+        : usdMicros > 0
+          ? [formatSpend(usdMicros, "usd")]
+          : []),
+      ...spendStatus.spent
+        .filter((total) => total.unit !== "usd" && total.costMicros > 0)
+        .map((total) => formatSpent(total.costMicros, total.unit)),
+    ];
+    return parts.length > 0 ? `${parts.join(" · ")} today` : "No spend today";
+  }, [
+    rootName,
+    spendUnavailable,
+    spendStatus,
+    agentId,
+    providers.loaded,
+    limitCoverage.paid,
+  ]);
+
+  const chatFormsEnabled = useChatFormsEnabled();
+  const { data: chatForms } = useChatFormPreferences(
+    chatFormsEnabled ? (agentId ?? null) : null,
+  );
+  const chatFormsSummary = chatForms
+    ? [
+        CHAT_FORMS_SUMMARY[chatForms.forms],
+        ...(chatForms.forms !== "off" && chatForms.pacing === "one-at-a-time"
+          ? ["one at a time"]
+          : []),
+      ].join(" · ")
+    : undefined;
 
   return {
     summaries: {
       setup,
+      "chat-forms": chatFormsSummary,
       providers: providersSummary,
       connections,
       network,
@@ -215,8 +267,8 @@ export function useSectionSummaries(agent: AgentView | null): {
     warnings:
       missingProvider && !configStatus?.harnesses
         ? { providers: NO_PROVIDER_WARNING }
-        : staleModel.stale && !configStatus?.harnesses
-          ? { setup: STALE_MODEL_WARNING }
+        : defaultNotice
+          ? { providers: defaultModelHeadline(defaultNotice) }
           : {},
   };
 }

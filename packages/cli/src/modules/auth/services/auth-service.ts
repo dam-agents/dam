@@ -21,6 +21,7 @@ import type { DeviceFlowClient } from "../infrastructure/device-flow-client.js";
 import type { OidcDiscovery } from "../infrastructure/oidc-discovery.js";
 import type { RevokeClient } from "../infrastructure/revoke-client.js";
 import type { TokenEndpointClient } from "../infrastructure/token-endpoint-client.js";
+import type { SavedTokenProvider } from "./token-provider.js";
 
 export interface LoginOk {
   host: HostUrl;
@@ -58,12 +59,14 @@ export interface StatusEntry {
   source: "env" | "file";
   isActive: boolean;
   expiresAt?: Date;
+  sessionExpired: boolean;
 }
 
 export interface StatusReport {
   activeHost?: HostUrl;
   entries: ReadonlyArray<StatusEntry>;
   activeHostValid: boolean;
+  uncheckedReason?: string;
 }
 
 export type LoginError =
@@ -103,6 +106,7 @@ export interface AuthServiceDeps {
   browserOpener: BrowserOpener;
   authStore: AuthStore;
   authEnvReader: AuthEnvReader;
+  savedTokenProvider: SavedTokenProvider;
   now?: () => Date;
   sleepMs?: (ms: number) => Promise<void>;
 }
@@ -131,6 +135,11 @@ function stringField(
   const v = payload?.[key];
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
+
+type SavedSession =
+  | { kind: "valid" }
+  | { kind: "expired" }
+  | { kind: "unchecked"; reason: string };
 
 function describeAuthConfigError(e: AuthConfigProbeError): {
   reason: PreflightReason;
@@ -166,13 +175,49 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
   const now = deps.now ?? (() => new Date());
   const sleepMs = deps.sleepMs ?? ((ms) => sleep(ms));
 
+  const checkSavedSession = async (host: HostUrl): Promise<SavedSession> => {
+    const token = await deps.savedTokenProvider.getSavedAccessToken(host);
+    if (token.ok) return { kind: "valid" };
+    switch (token.error.kind) {
+      case "not-logged-in":
+      case "session-expired":
+        return { kind: "expired" };
+      case "refresh-failed":
+      case "refresh-transient":
+      case "auth-store-read":
+      case "auth-store-write":
+      case "malformed-auth-store":
+        return { kind: "unchecked", reason: token.error.reason };
+    }
+  };
+
   return {
     async login(input) {
+      const cfg = await deps.authConfigProbe.probe(input.host);
+      if (!cfg.ok) {
+        return err({
+          kind: "preflight",
+          ...describeAuthConfigError(cfg.error),
+        });
+      }
+      const warnings: string[] = [];
+      const movedTo = cfg.value.movedTo;
+      if (movedTo !== undefined) {
+        warnings.push(
+          `${input.host} redirects to ${movedTo}; logged in there and saved it as the server`,
+        );
+        input = { ...input, host: movedTo, persistServer: movedTo };
+      }
+
       const existing = await deps.authStore.read();
       if (!existing.ok) {
         return err({ kind: "auth-store", detail: existing.error.reason });
       }
-      if (existing.value.has(input.host) && !input.force) {
+      if (
+        existing.value.has(input.host) &&
+        !input.force &&
+        (await checkSavedSession(input.host)).kind === "valid"
+      ) {
         if (!input.isTty) return err({ kind: "requires-force" });
         return err({ kind: "aborted" });
       }
@@ -183,7 +228,6 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       if (!compat.ok) {
         return err({ kind: "preflight", ...describeCompatError(compat.error) });
       }
-      const warnings: string[] = [];
       switch (compat.value.kind) {
         case "below-floor":
           return err({
@@ -193,19 +237,11 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           });
         case "behind-current":
           warnings.push(
-            `CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}`,
+            `CLI ${compat.value.localCli} is behind the server's recommended CLI ${compat.value.serverRecommendedClient}`,
           );
           break;
         case "ok":
           break;
-      }
-
-      const cfg = await deps.authConfigProbe.probe(input.host);
-      if (!cfg.ok) {
-        return err({
-          kind: "preflight",
-          ...describeAuthConfigError(cfg.error),
-        });
       }
 
       const oidc = await deps.oidcDiscovery.discover(cfg.value.issuer);
@@ -313,6 +349,12 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
               `failed to update config.toml: ${cfgWrite.error.reason}`,
             );
           }
+          const resolved = await deps.configService.getResolved({});
+          if (resolved.ok && resolved.value.server !== input.persistServer) {
+            warnings.push(
+              `the active server is still ${resolved.value.server}; update DAM_SERVER to ${input.persistServer}`,
+            );
+          }
         }
         return ok({
           host: input.host,
@@ -361,13 +403,26 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
     },
 
     async status() {
-      const stored = await deps.authStore.read();
+      let stored = await deps.authStore.read();
       if (!stored.ok) {
         return err({ kind: "auth-store", detail: stored.error.reason });
       }
       const cfg = await deps.configService.getResolved({});
       const activeHost = cfg.ok ? cfg.value.server : undefined;
       const envToken = deps.authEnvReader.damToken();
+
+      let activeSession: SavedSession | undefined;
+      if (
+        activeHost !== undefined &&
+        envToken === undefined &&
+        stored.value.has(activeHost)
+      ) {
+        activeSession = await checkSavedSession(activeHost);
+        if (activeSession.kind === "valid") {
+          const refreshed = await deps.authStore.read();
+          if (refreshed.ok) stored = refreshed;
+        }
+      }
 
       const entries: StatusEntry[] = [];
       for (const [host, entry] of stored.value) {
@@ -380,6 +435,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           source: shadowed ? "env" : "file",
           isActive,
           expiresAt: shadowed ? undefined : entry.expiresAt,
+          sessionExpired: isActive && activeSession?.kind === "expired",
         });
       }
 
@@ -394,17 +450,24 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           username: ENV_USERNAME_PLACEHOLDER,
           source: "env",
           isActive: true,
+          sessionExpired: false,
         });
       }
 
       const activeEntry = entries.find((e) => e.isActive);
       const activeHostValid =
         activeEntry !== undefined &&
-        (activeEntry.source === "env" ||
-          (activeEntry.expiresAt !== undefined &&
-            activeEntry.expiresAt.getTime() > now().getTime()));
+        (activeEntry.source === "env" || activeSession?.kind === "valid");
 
-      return ok({ activeHost, entries, activeHostValid });
+      return ok({
+        activeHost,
+        entries,
+        activeHostValid,
+        uncheckedReason:
+          activeSession?.kind === "unchecked"
+            ? activeSession.reason
+            : undefined,
+      });
     },
   };
 }

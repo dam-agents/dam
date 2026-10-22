@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { randomBytes } from "node:crypto";
 import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
@@ -13,6 +14,7 @@ import {
   type ProviderPresetType,
   type SkillSetApplyResult,
   type SkillsService,
+  parseQualifiedModel,
 } from "api-server-api";
 import {
   type RuntimeMutator,
@@ -25,6 +27,7 @@ import { getLogger } from "../../../core/logger.js";
 import {
   type DriverProvider,
   inheritProvider,
+  missingProviderMessage,
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import {
@@ -68,12 +71,57 @@ export class InvalidSchemaError extends Error {
   }
 }
 
-export class ProviderMismatchError extends Error {
-  constructor(offered: ProviderPresetType[], runsOn: ProviderPresetType[]) {
+export class ModelNameError extends Error {
+  constructor(model: string) {
     super(
-      `the target cannot run on the driver's provider (${offered.join(", ")}); it runs on ${runsOn.join(", ")}`,
+      `name the target's model with its provider, as <provider>/<model id> (for example ibm/${model}); a tier name is no model`,
     );
+    this.name = "ModelNameError";
+  }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a sub-agent whose harness reaches its models
+ * through the Model Router needs a model, and its runtime refuses a turn
+ * without one; nothing named one (no platform sub-agent setting, no model in
+ * the spawn, not the calling session's own harness), so the spawn is refused
+ * at once instead of starting a sub-agent that cannot run.
+ */
+export const NO_SPAWN_MODEL_MESSAGE =
+  "nothing names the sub-agent's model: pass a provider-qualified model (list_harnesses lists each harness's models), or spawn on this session's own harness to run on its model";
+
+export class NoSpawnModelError extends Error {
+  constructor() {
+    super(NO_SPAWN_MODEL_MESSAGE);
+    this.name = "NoSpawnModelError";
+  }
+}
+
+export class ProviderMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
     this.name = "ProviderMismatchError";
+  }
+}
+
+export type SpendHoldReason = "limit" | "ceiling";
+
+export type SpendHoldGate = (input: {
+  agentId: string;
+  connectionId?: string;
+}) => Promise<SpendHoldReason | null>;
+
+const SPEND_HOLD_MESSAGE: Record<SpendHoldReason, string> = {
+  limit:
+    "the agent reached its spend limit for today, so no sub-agent starts until its owner continues the limit or the day ends at midnight UTC",
+  ceiling:
+    "the agent's owner reached the spend ceiling for today, so no sub-agent starts until the UTC day ends; the platform operator can raise the ceiling",
+};
+
+export class SpendLimitReachedError extends Error {
+  constructor(public readonly reason: SpendHoldReason) {
+    super(SPEND_HOLD_MESSAGE[reason]);
+    this.name = "SpendLimitReachedError";
   }
 }
 
@@ -88,6 +136,7 @@ export interface SpawnInput {
   driverAgentId: string;
   driverGrantIds: string[];
   driverProviders: DriverProvider[];
+  attachableProviders?: ProviderPresetType[];
   target: SpawnTarget;
   setup: AgentSetup;
   connections: string[];
@@ -97,6 +146,7 @@ export interface SpawnInput {
   ttlMs?: number;
   harnessConfig?: InvocationHarnessConfig;
   origin?: InvocationOrigin;
+  driverSessionId?: string | null;
 }
 
 export interface RecordResult {
@@ -104,8 +154,19 @@ export interface RecordResult {
   errors?: string;
 }
 
+export type Reachability =
+  | { kind: "runs"; provider: ProviderPresetType }
+  | { kind: "refused"; reason: string }
+  | { kind: "unnarrowed" };
+
 export interface InvocationsService {
   spawn(input: SpawnInput): Promise<{ id: string }>;
+  reachability(
+    input: Pick<
+      SpawnInput,
+      "driverProviders" | "attachableProviders" | "target"
+    >,
+  ): Reachability;
   get(
     invocationId: string,
     driverAgentId: string,
@@ -129,6 +190,7 @@ export function createInvocationsService(deps: {
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
+  spendHold?: SpendHoldGate;
   reaper: TargetReaper;
   reportGraceMs?: number;
   skills?: Pick<SkillsService, "applyEntries">;
@@ -163,6 +225,31 @@ export function createInvocationsService(deps: {
   }
 
   return {
+    reachability({ driverProviders, attachableProviders, target }) {
+      const provider = inheritProvider(driverProviders, {
+        runsOn: target.runsOn,
+        ...(target.harness && { harness: target.harness }),
+      });
+      return match(provider)
+        .with({ kind: "inherited" }, ({ id }): Reachability => {
+          const held = driverProviders.find((p) => p.id === id);
+          return held
+            ? { kind: "runs", provider: held.type }
+            : { kind: "unnarrowed" };
+        })
+        .with({ kind: "incompatible" }, (): Reachability => ({
+          kind: "refused",
+          reason: missingProviderMessage({
+            harness: target.harness,
+            runsOn: target.runsOn ?? [],
+            held: driverProviders.map((p) => p.type),
+            attachable: attachableProviders ?? [],
+          }),
+        }))
+        .with({ kind: "none" }, (): Reachability => ({ kind: "unnarrowed" }))
+        .exhaustive();
+    },
+
     async spawn(input) {
       const grantSet = new Set(input.driverGrantIds);
       const offending = input.connections.filter((c) => !grantSet.has(c));
@@ -170,15 +257,42 @@ export function createInvocationsService(deps: {
 
       compileSchema(input.schema);
 
-      const provider = inheritProvider(
-        input.driverProviders,
-        input.target.runsOn,
-      );
+      const requestedModel = input.harnessConfig?.model;
+      const parsedModel = requestedModel
+        ? parseQualifiedModel(requestedModel, { claudePrefix: true })
+        : null;
+      if (requestedModel && !parsedModel)
+        throw new ModelNameError(requestedModel);
+      if (parsedModel && input.harnessConfig)
+        input = {
+          ...input,
+          harnessConfig: {
+            ...input.harnessConfig,
+            model: `${parsedModel.alias}/${parsedModel.upstreamId}`,
+          },
+        };
+      const provider = inheritProvider(input.driverProviders, {
+        runsOn: input.target.runsOn,
+        ...(parsedModel && { alias: parsedModel.alias }),
+        ...(input.target.harness && { harness: input.target.harness }),
+      });
       if (provider.kind === "incompatible")
         throw new ProviderMismatchError(
-          provider.offered,
-          input.target.runsOn ?? [],
+          missingProviderMessage({
+            harness: input.target.harness,
+            runsOn: input.target.runsOn ?? [],
+            alias: parsedModel?.alias,
+            held: input.driverProviders.map((p) => p.type),
+            attachable: input.attachableProviders ?? [],
+          }),
         );
+
+      const routedProvider =
+        provider.kind === "inherited" &&
+        input.driverProviders.find((p) => p.id === provider.id)?.type !==
+          "bedrock";
+      if (!parsedModel && !input.target.image && routedProvider)
+        throw new NoSpawnModelError();
 
       const created = createInputFromSetup(input.setup);
       if (deps.targetAdmission) {
@@ -197,6 +311,11 @@ export function createInvocationsService(deps: {
       if (rootId === null) {
         throw new UnresolvableDriverError(input.driverAgentId);
       }
+      const held = await deps.spendHold?.({
+        agentId: rootId,
+        ...(provider.kind === "inherited" && { connectionId: provider.id }),
+      });
+      if (held) throw new SpendLimitReachedError(held);
 
       const targetId = generateK8sName("agent");
       const ttlMs =
@@ -224,6 +343,7 @@ export function createInvocationsService(deps: {
         expiresAt,
         harnessConfig: input.harnessConfig ?? null,
         origin: input.origin ?? "script",
+        driverSessionId: input.driverSessionId ?? null,
       });
       let agent;
       try {
@@ -296,6 +416,7 @@ export function createInvocationsService(deps: {
               scheduleId: invocationScheduleId(agent.id),
               task,
               sessionMode: "fresh",
+              invocation: true,
               ...(input.target.harness && {
                 harness: input.target.harness,
                 ...(provider.kind === "inherited" && { provider: provider.id }),

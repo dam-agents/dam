@@ -5,13 +5,13 @@ import {
   type AlertStep,
   nextOom,
   nextStorage,
-  STORAGE_WRITES_FAILING_PERCENT,
 } from "../domain/alert-policy.js";
+import { storageFullMessage } from "../../budgets/domain/vm-usage.js";
 import type { ResourceAlertsRepository } from "../infrastructure/resource-alerts-repository.js";
 
 export const RUNNER_OOM_REASON = "RunnerOutOfMemory";
 const OOM_COLLECT_MS = 15_000;
-const GIB = 1024 ** 3;
+const STORAGE_READ_LANES = 10;
 
 export interface OwnerStorage {
   usedBytes: number;
@@ -93,18 +93,26 @@ export function createResourceAlertsService(deps: {
 
   return {
     async evaluateStorage() {
-      for (const ownerSub of await deps.listStorageOwners()) {
-        const usage = await deps.readStorage(ownerSub);
-        if (!usage || usage.usableBytes <= 0) continue;
-        const percent = (usage.usedBytes / usage.usableBytes) * 100;
-        const at = now();
-        await advance(
-          ownerSub,
-          "storage",
-          (prev) => nextStorage(prev, percent, at),
-          () => storageMessage(usage, percent, deps.homeUrl),
-        );
-      }
+      const owners = (await deps.listStorageOwners()).values();
+      const lane = async () => {
+        for (const ownerSub of owners) {
+          try {
+            const usage = await deps.readStorage(ownerSub);
+            if (!usage || usage.usableBytes <= 0) continue;
+            const percent = (usage.usedBytes / usage.usableBytes) * 100;
+            const at = now();
+            await advance(
+              ownerSub,
+              "storage",
+              (prev) => nextStorage(prev, percent, at),
+              () => storageMessage(usage, deps.homeUrl),
+            );
+          } catch (err) {
+            deps.log(`storage alert for ${ownerSub} failed: ${String(err)}`);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: STORAGE_READ_LANES }, lane));
       for (const ownerSub of await deps.repo.listOwners("runner_oom", "open"))
         await evaluateOom(ownerSub);
     },
@@ -133,31 +141,15 @@ function sameMark(a: AlertMark, b: AlertMark): boolean {
   );
 }
 
-function gib(bytes: number): string {
-  return (bytes / GIB).toFixed(1);
-}
-
-export function storageMessage(
-  usage: OwnerStorage,
-  percent: number,
-  homeUrl: string,
-): string {
-  const full = percent >= STORAGE_WRITES_FAILING_PERCENT;
-  return [
-    `Your agents' shared storage is ${Math.floor(percent)}% full (${gib(usage.usedBytes)} of ${gib(usage.usableBytes)} GiB).`,
-    full
-      ? "Your agents may be failing to write files now, and could lose data."
-      : "New agents can't be created, and stopped agents can't start, until you free space.",
-    "Delete an agent you no longer need, clear caches inside your agents, or ask an admin for more storage.",
-    homeUrl,
-  ].join(" ");
+export function storageMessage(usage: OwnerStorage, homeUrl: string): string {
+  return `${storageFullMessage(usage)} ${homeUrl}`;
 }
 
 export function oomMessage(agents: readonly string[], homeUrl: string): string {
   const names = agents.length > 0 ? `: ${agents.join(", ")}` : "";
   return [
     `Your VM agents ran out of memory together, so every one that was running restarted${names}.`,
-    "Stop agents you are not using to free memory, or ask an admin for a larger memory pool.",
+    "Disable agents you aren't using to free memory, or ask an admin for a larger memory pool.",
     homeUrl,
   ].join(" ");
 }

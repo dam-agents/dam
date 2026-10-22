@@ -10,6 +10,7 @@ set -euo pipefail
 : "${DISPLAY:?}" "${XDG_RUNTIME_DIR:?}" "${PULSE_SERVER:?}"
 pulse_socket="${PULSE_SERVER#unix:}"
 x_socket="/tmp/.X11-unix/X${DISPLAY#:}"
+pipewire_socket="$XDG_RUNTIME_DIR/pipewire-0-manager"
 
 trap 'trap - EXIT; kill 0 2>/dev/null || true' EXIT INT TERM
 
@@ -28,7 +29,7 @@ if old=$(cat "$pidfile" 2>/dev/null) && [ "$old" != $$ ] && kill -KILL -- "-$old
   sleep 0.5
 fi
 echo $$ >"$pidfile"
-rm -f "$x_socket" "/tmp/.X${DISPLAY#:}-lock" "$pulse_socket"
+rm -f "$x_socket" "/tmp/.X${DISPLAY#:}-lock" "$pulse_socket" "$XDG_RUNTIME_DIR"/pipewire-0*
 
 Xvfb "$DISPLAY" -screen 0 3840x2400x24 -nolisten tcp &
 wait_for "$x_socket" "the virtual display"
@@ -42,7 +43,10 @@ for_window [class=".*"] fullscreen enable
 I3
 i3 -c "$XDG_RUNTIME_DIR/i3.conf" &
 
+# WirePlumber exits at once when PipeWire is not listening yet, which ends the
+# whole stack and the browser on its display with it.
 pipewire &
+wait_for "$pipewire_socket" "PipeWire"
 wireplumber &
 pipewire-pulse &
 wait_for "$pulse_socket" "PipeWire's PulseAudio server"

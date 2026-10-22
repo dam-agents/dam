@@ -1,5 +1,6 @@
+import { TRPCError } from "@trpc/server";
 import { match } from "ts-pattern";
-import { OnceResult } from "api-server-api";
+import { nextUtcMidnight, OnceResult } from "api-server-api";
 import type {
   EventOutcome,
   EventStage,
@@ -11,14 +12,20 @@ import type { SchedulesRepository } from "../infrastructure/schedules-repository
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
 import { onceFireAction, onceFireAt } from "../domain/once.js";
-import { statusForVerdict } from "../domain/status-transitions.js";
+import {
+  isFailureResult,
+  statusForVerdict,
+} from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
 import type {
   EventLifecycleTransition,
   RuntimeMutator,
 } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
-import type { FirePair } from "../../harness-config/index.js";
+import {
+  isNoDefaultModelError,
+  type FirePair,
+} from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
 
@@ -26,7 +33,20 @@ const TRIGGER_TTL_SECONDS = 3600;
 
 export type ActivityStamp = AgentActivityStamp;
 
-export type RunNowResult = "started" | "onboarding-pending";
+export type SpendHoldReason = "limit" | "ceiling";
+
+export type SpendHoldGate = (input: {
+  agentId: string;
+  connectionId?: string;
+}) => Promise<SpendHoldReason | null>;
+
+export type RunNowResult =
+  | "started"
+  | "onboarding-pending"
+  | "spend-limit"
+  | "spend-ceiling"
+  | "no-default-model"
+  | "default-pending";
 
 export interface SchedulerRunner {
   buildFireHandler(): (
@@ -56,17 +76,49 @@ export interface SchedulerRunner {
 
 export interface SchedulerRunnerDeps {
   firePair?: FirePair;
+  validateSessionChoices?: (
+    agentId: string,
+    choices: {
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    },
+  ) => Promise<string | undefined>;
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
+  ensureDefault: (agentId: string) => Promise<ActivityStamp | null>;
+  defaultPendingAfterMove: (agentId: string) => Promise<boolean>;
+  scheduleModelFor: (
+    agentId: string,
+    model: string,
+  ) => Promise<string | undefined>;
   restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
+  spendHold?: SpendHoldGate;
+  agentDisabled: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
 }
+
+const SPEND_HOLD = {
+  limit: {
+    holdReason: "spend_limit",
+    result: "held: spend limit reached for today",
+    runNow: "spend-limit",
+  },
+  ceiling: {
+    holdReason: "spend_ceiling",
+    result: "held: spend ceiling reached for today",
+    runNow: "spend-ceiling",
+  },
+} as const satisfies Record<
+  SpendHoldReason,
+  { holdReason: string; result: string; runNow: RunNowResult }
+>;
 
 const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
   ok: "allowed",
@@ -113,8 +165,12 @@ export function createSchedulerRunner(
     if (sched.status?.lastRun) return;
     const at = onceFireAt(spec, sched.status, now());
     if (at) {
-      await deps.repo.setNextRun(sched.id, at);
-      await deps.queue.ensure(sched.id, at, now());
+      const waiting = sched.status?.nextRun
+        ? new Date(sched.status.nextRun)
+        : null;
+      const next = waiting && waiting > at ? waiting : at;
+      await deps.repo.setNextRun(sched.id, next);
+      await deps.queue.ensure(sched.id, next, now());
       return;
     }
     log(`restore: one-time schedule ${sched.id} never fired in its window`);
@@ -123,10 +179,12 @@ export function createSchedulerRunner(
   }
 
   const firedHarness = new WeakMap<Schedule, string>();
+  const earlyWake = new WeakMap<Schedule, ActivityStamp>();
 
   async function triggerPayload(
     sched: Schedule,
     fireAt: Date,
+    opts: { wakeFirst: boolean },
   ): Promise<Record<string, unknown>> {
     const payload: Record<string, unknown> = {
       scheduleId: sched.id,
@@ -135,19 +193,42 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
-    if (sched.spec.model) payload.model = sched.spec.model;
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
+    if (!continues && opts.wakeFirst) {
+      const stamp = await deps.ensureDefault(sched.agentId);
+      if (stamp) earlyWake.set(sched, stamp);
+    }
+    const model = sched.spec.model
+      ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
+      : sched.spec.model;
+    if (model) payload.model = model;
+    const choices = {
+      ...(sched.spec.harness && { harness: sched.spec.harness }),
+      ...(model && { model }),
+      ...(sched.spec.settings && { settings: sched.spec.settings }),
+    };
+    if (!continues && Object.keys(choices).length > 0) {
+      const refusal = await deps.validateSessionChoices?.(
+        sched.agentId,
+        choices,
+      );
+      if (refusal)
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: refusal });
+    }
     const pair = continues
       ? undefined
-      : await deps.firePair?.(sched.agentId, {
-          ...(sched.spec.model && { model: sched.spec.model }),
+      : await deps.firePair?.(sched.agentId, "scheduled", {
+          ...(sched.spec.harness && { harness: sched.spec.harness }),
+          ...(model && { model }),
         });
     if (pair === null)
-      throw new Error(
-        "no model provider granted to this agent can run its harness; grant one to run this schedule",
-      );
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "no model provider granted to this agent can run its harness; grant one to run this schedule",
+      });
     if (pair) {
       firedHarness.set(sched, pair.harness);
       payload.harness = pair.harness;
@@ -156,6 +237,8 @@ export function createSchedulerRunner(
       else delete payload.model;
       if (pair.settings) payload.settings = pair.settings;
     }
+    if (sched.spec.settings) payload.settings = sched.spec.settings;
+    if (pair && Object.keys(choices).length === 0) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;
@@ -163,6 +246,20 @@ export function createSchedulerRunner(
         payload.origin = { ...sched.spec.origin, name: sched.name };
     }
     return payload;
+  }
+
+  async function spendHeld(
+    sched: Schedule,
+    payload: Record<string, unknown>,
+  ): Promise<(typeof SPEND_HOLD)[SpendHoldReason] | null> {
+    if (!deps.spendHold) return null;
+    const reason = await deps.spendHold({
+      agentId: sched.agentId,
+      ...(typeof payload.provider === "string" && {
+        connectionId: payload.provider,
+      }),
+    });
+    return reason ? SPEND_HOLD[reason] : null;
   }
 
   async function emitFired(
@@ -208,7 +305,13 @@ export function createSchedulerRunner(
 
   async function pokeAgent(sched: Schedule, eventId: string): Promise<void> {
     await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
-    const stamp = await deps.wakeAgent(sched.agentId);
+    const woke = await deps.wakeAgent(sched.agentId);
+    const early = earlyWake.get(sched);
+    earlyWake.delete(sched);
+    const stamp =
+      woke && early
+        ? { previous: early.previous, written: woke.written }
+        : woke;
     if (stamp && sched.spec.precheck && deps.activityStamps)
       await deps.activityStamps
         .set(eventId, stamp)
@@ -251,25 +354,49 @@ export function createSchedulerRunner(
       await emitChanged(sched.agentId, sched.id);
       return;
     }
+    if (action.kind !== "poke" && (await deps.agentDisabled(sched.agentId))) {
+      log(`fire: one-time schedule ${sched.id}'s agent is disabled; missed`);
+      noteFire("missed");
+      await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+      await emitChanged(sched.agentId, sched.id);
+      return;
+    }
     const eventId = `${sched.id}:${fireAt.getTime()}`;
     if (action.kind === "poke") {
       log(`fire: one-time schedule ${sched.id} is committed; poking again`);
     } else {
       try {
-        await commitTrigger(
-          sched,
-          eventId,
-          await triggerPayload(sched, fireAt),
-          action.expiresAt,
-        );
+        const payload = await triggerPayload(sched, fireAt, {
+          wakeFirst: true,
+        });
+        const held = await spendHeld(sched, payload);
+        if (held) {
+          const until = new Date(
+            Math.min(
+              nextUtcMidnight(now()).getTime(),
+              action.expiresAt.getTime(),
+            ),
+          );
+          log(
+            `fire: one-time schedule ${sched.id} ${held.result}; waiting until ${until.toISOString()}`,
+          );
+          noteFire("held", { holdReason: held.holdReason });
+          await deps.repo.setNextRun(sched.id, until);
+          await deps.queue.ensure(sched.id, until, now());
+          await emitChanged(sched.agentId, sched.id);
+          return;
+        }
+        await commitTrigger(sched, eventId, payload, action.expiresAt);
       } catch (err) {
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
         noteFire("failure", { stage: "commit" });
-        if (lastAttempt) {
+        const final = lastAttempt || isNoDefaultModelError(err);
+        if (final) {
           await deps.repo.recordFire(sched.id, reason, null).catch(() => {});
           await emitFired(sched, "failure");
         }
+        if (final && !lastAttempt) return;
         throw err;
       }
     }
@@ -312,7 +439,7 @@ export function createSchedulerRunner(
     if (spec.type === "once") return fireOnce(sched, spec, fireAt, lastAttempt);
     const hold = async (result: string) => {
       const after = nextFireAt(spec, now());
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
       if (after) await deps.queue.enqueue(scheduleId, after, now());
     };
     if (await deps.onboardingPending?.(sched.agentId)) {
@@ -327,6 +454,12 @@ export function createSchedulerRunner(
       await hold("held: moving to the new runtime");
       return;
     }
+    if (await deps.agentDisabled(sched.agentId)) {
+      log(`fire: agent ${sched.agentId} is disabled; holding`);
+      noteFire("held", { holdReason: "agent_disabled" });
+      await hold("held: agent disabled");
+      return;
+    }
 
     const eventId = `${scheduleId}:${fireAt.getTime()}`;
     const firedAt = now();
@@ -338,30 +471,40 @@ export function createSchedulerRunner(
 
     let stage: "commit" | "poke" = "commit";
     try {
-      await commitTrigger(
-        sched,
-        eventId,
-        await triggerPayload(sched, fireAt),
-        expiresAt,
-      );
+      const payload = await triggerPayload(sched, fireAt, { wakeFirst: true });
+      const held = await spendHeld(sched, payload);
+      if (held) {
+        log(`fire: agent ${sched.agentId} ${held.result}`);
+        noteFire("held", { holdReason: held.holdReason });
+        await hold(held.result);
+        return;
+      }
+      await commitTrigger(sched, eventId, payload, expiresAt);
       stage = "poke";
       await pokeAgent(sched, eventId);
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
-      const after = lastAttempt ? nextFireAt(spec, now()) : fireAt;
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
-      if (lastAttempt) {
+      const final = lastAttempt || isNoDefaultModelError(err);
+      const after = final ? nextFireAt(spec, now()) : fireAt;
+      if (stage === "commit")
+        await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
+      else
+        await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      if (final) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
         await emitFired(sched, "failure");
       }
+      if (final && !lastAttempt) return;
       throw err;
     }
 
     const next = nextFireAt(spec, now());
-    if (spec.precheck) await deps.repo.setNextRun(scheduleId, next);
-    else await deps.repo.recordFire(scheduleId, "success", next);
+    if (!spec.precheck) await deps.repo.recordFire(scheduleId, "success", next);
+    else if (isFailureResult(sched.status?.lastResult))
+      await deps.repo.stampResult(scheduleId, null, next);
+    else await deps.repo.setNextRun(scheduleId, next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     noteFire("success");
     await emitFired(sched, "success");
@@ -397,6 +540,12 @@ export function createSchedulerRunner(
         );
         return "onboarding-pending";
       }
+      if (await deps.defaultPendingAfterMove(sched.agentId)) {
+        log(
+          `run-now: agent ${sched.agentId} is setting up its default model; refusing`,
+        );
+        return "default-pending";
+      }
 
       const firedAt = now();
       const eventId = `run:${scheduleId}:${firedAt.getTime()}`;
@@ -405,17 +554,24 @@ export function createSchedulerRunner(
       );
 
       try {
-        await commitTrigger(
-          sched,
-          eventId,
-          await triggerPayload(sched, firedAt),
-          expiresAt,
-        );
+        const payload = await triggerPayload(sched, firedAt, {
+          wakeFirst: false,
+        });
+        const held = await spendHeld(sched, payload);
+        if (held) {
+          log(`run-now: agent ${sched.agentId} ${held.result}; refusing`);
+          return held.runNow;
+        }
+        await commitTrigger(sched, eventId, payload, expiresAt);
       } catch (err) {
         log(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
         await emitFired(sched, "failure");
+        if (isNoDefaultModelError(err)) {
+          await deps.repo.stampFire(scheduleId, err.message).catch(() => {});
+          return "no-default-model";
+        }
         throw err;
       }
 
@@ -433,6 +589,8 @@ export function createSchedulerRunner(
 
       if (!sched.spec.precheck)
         await deps.repo.stampFire(scheduleId, "success");
+      else if (isFailureResult(sched.status?.lastResult))
+        await deps.repo.stampResult(scheduleId, null);
       await emitFired(sched, "success");
       return "started";
     },
@@ -466,7 +624,12 @@ export function createSchedulerRunner(
       else if (sched.spec.precheck === input.ranPrecheck)
         await deps.repo.applyStatusPatch(
           input.scheduleId,
-          statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
+          statusForVerdict(
+            verdict,
+            now(),
+            input.detail ?? "precheck failed",
+            sched.status?.lastResult,
+          ),
         );
       else
         log(

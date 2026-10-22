@@ -1,3 +1,4 @@
+import { LINKED_KIT_CATALOG } from "api-server-api";
 import { z } from "zod";
 
 const settingsTabSchema = z.enum([
@@ -22,22 +23,26 @@ const sandboxSectionSchema = z.enum([
   "network",
   "environment",
   "channels",
+  "chat-forms",
   "skills",
   "schedules",
+  "environments",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
   | { view: "home" }
+  | { view: "artifacts" }
+  | { view: "starter-kits" }
   | { view: "chat"; agent: string; session?: string }
-  | { view: "settings"; settingsTab: SettingsTab }
+  | { view: "settings"; settingsTab: SettingsTab; period?: string }
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
+  | { view: "connection-secret" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "starter-kit"; catalog: string; kit: string }
-  | { view: "artifacts" }
   | { view: "analytics" }
   | { view: "not-found"; path: string };
 
@@ -71,7 +76,6 @@ export const RETIRED_PATHS = new Set([
   "/experiments/",
   "/experiments/new",
   "/agents/new",
-  "/starter-kits",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -79,7 +83,14 @@ const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
 
-export function parseRoute(path: string): Route {
+const PERIOD_PARAM = "period";
+
+function usagePeriodOf(search: string): { period?: string } {
+  const period = new URLSearchParams(search).get(PERIOD_PARAM);
+  return period ? { period } : {};
+}
+
+export function parseRoute(path: string, search = ""): Route {
   if (path === "/") return { view: "home" };
   const chatMatch = path.match(/^\/chat\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (chatMatch) {
@@ -90,16 +101,24 @@ export function parseRoute(path: string): Route {
     };
   }
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
+  if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/starter-kits") return { view: "starter-kits" };
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
     const tab = settingsTabSchema.safeParse(settingsMatch[1]);
-    if (tab.success) return { view: "settings", settingsTab: tab.data };
+    if (tab.success) {
+      return {
+        view: "settings",
+        settingsTab: tab.data,
+        ...(tab.data === "usage" ? usagePeriodOf(search) : {}),
+      };
+    }
   }
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
+  if (path === "/connections/secret") return { view: "connection-secret" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
-  if (path === "/artifacts") return { view: "artifacts" };
   if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -111,6 +130,15 @@ export function parseRoute(path: string): Route {
     };
   }
   if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };
+  const linkedKitMatch = path.match(
+    new RegExp(`^/starter-kits/${LINKED_KIT_CATALOG}/([^/]+)/([^/]+)$`),
+  );
+  if (linkedKitMatch)
+    return {
+      view: "starter-kit",
+      catalog: LINKED_KIT_CATALOG,
+      kit: `${decodeSegment(linkedKitMatch[1]!)}/${decodeSegment(linkedKitMatch[2]!)}`,
+    };
   const starterKitMatch = path.match(
     /^\/starter-kits\/([^/]+)\/([^/]+)(?:\/new)?$/,
   );
@@ -127,22 +155,31 @@ export function routeToPath(route: Route): string {
   switch (route.view) {
     case "home":
       return "/";
+    case "artifacts":
+      return "/artifacts";
+    case "starter-kits":
+      return "/starter-kits";
     case "chat": {
       const base = `/chat/${encodeURIComponent(route.agent)}`;
       return route.session
         ? `${base}/${encodeURIComponent(route.session)}`
         : base;
     }
-    case "settings":
-      return route.settingsTab === "account"
-        ? "/settings"
-        : `/settings/${route.settingsTab}`;
+    case "settings": {
+      if (route.settingsTab === "account") return "/settings";
+      const base = `/settings/${route.settingsTab}`;
+      return route.settingsTab === "usage" && route.period
+        ? `${base}?${new URLSearchParams({ [PERIOD_PARAM]: route.period })}`
+        : base;
+    }
     case "terms":
       return "/terms";
     case "telegram-bind":
       return "/telegram/bind";
     case "slack-bind":
       return "/slack/bind";
+    case "connection-secret":
+      return "/connections/secret";
     case "sandbox-home": {
       const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
       return route.sandboxSection === "setup"
@@ -150,9 +187,11 @@ export function routeToPath(route: Route): string {
         : `${base}/${route.sandboxSection}`;
     }
     case "starter-kit":
-      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
-    case "artifacts":
-      return "/artifacts";
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${
+        route.catalog === LINKED_KIT_CATALOG
+          ? route.kit.split("/").map(encodeURIComponent).join("/")
+          : encodeURIComponent(route.kit)
+      }`;
     case "analytics":
       return "/analytics";
     case "not-found":
@@ -168,6 +207,7 @@ export function routeToNavigationState(route: Route): {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
+  usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
@@ -178,6 +218,7 @@ export function routeToNavigationState(route: Route): {
     starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
     starterKitId: route.view === "starter-kit" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
+    usagePeriod: route.view === "settings" ? (route.period ?? null) : null,
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",
   };

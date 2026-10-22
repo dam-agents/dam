@@ -1,4 +1,6 @@
 import type { CoreV1Api } from "@kubernetes/client-node";
+import type { EnvironmentGate } from "../../modules/environments/index.js";
+import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
@@ -6,11 +8,13 @@ import type {
   E2eService,
   HarnessCatalog,
   LiveEventsService,
+  ProviderStatusService,
   ReposService,
   TermsService,
 } from "api-server-api";
 import type { FirePair } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { SpendSystem } from "../../modules/spend/index.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentCleanupHook,
@@ -41,7 +45,10 @@ import type { SlackBindFlowStore } from "../../modules/channels/infrastructure/s
 import type { SlackInstallPending } from "../../modules/channels/infrastructure/slack-install-routes.js";
 import type { SlackInstallService } from "../../modules/channels/services/slack-install-service.js";
 import type { ConnectionsBootCompose } from "../../modules/connections/compose.js";
-import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type {
+  OutboxRepo,
+  RuntimeMutator,
+} from "../../modules/runtime-delivery/index.js";
 import type { SchedulesBoot } from "../../modules/schedules/index.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -51,6 +58,7 @@ import type { SessionDirectory } from "../../modules/session-directory/index.js"
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type {
   KitUpstream,
+  LinkedKits,
   StarterKitsRepository,
 } from "../../modules/starter-kits/index.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
@@ -61,6 +69,7 @@ import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
+import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
@@ -86,13 +95,17 @@ export interface ApiServerDeps {
   slackBindFlows: SlackBindFlowStore;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
+  spendForOwner: SpendSystem["forOwner"];
+  providerStatus: ProviderStatusService;
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
   agentCleanupHooks: readonly AgentCleanupHook[];
+  environmentsFor: (owner: string) => EnvironmentsServiceImpl;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
+  outboxRepo: OutboxRepo;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
@@ -120,6 +133,7 @@ export interface ApiServerDeps {
   firePair: FirePair;
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
+  linkedKits: LinkedKits;
   reposService: ReposService;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   satellitesBoot: SatellitesComposition;
@@ -128,8 +142,10 @@ export interface ApiServerDeps {
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
+  environmentGate: EnvironmentGate;
   publicAgentPageService: PublicAgentPageService;
   gettingStarted: GettingStartedModule;
+  sidebarOrder: SidebarOrderModule;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

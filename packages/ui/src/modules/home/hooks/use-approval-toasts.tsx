@@ -2,7 +2,7 @@ import { Warning } from "@carbon/icons-react";
 import { useEffect, useRef } from "react";
 import { toast as sonner } from "sonner";
 
-import { useStore } from "../../../store.js";
+import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useFeed } from "../api/queries.js";
 import { approvalHeadline } from "../lib/approval-copy.js";
 import { approvalToastChanges } from "../lib/approval-toasts.js";
@@ -39,7 +39,7 @@ function fireApprovalToast(
 
 export function useApprovalToasts(): void {
   const { items, agents, loadingFeed } = useFeed();
-  const setActivityView = useStore((s) => s.setActivityView);
+  const openSidePanel = useOpenSidePanel();
   const seen = useRef<ReadonlySet<string> | null>(null);
 
   useEffect(() => {
@@ -63,8 +63,8 @@ export function useApprovalToasts(): void {
         item.id,
         names.get(item.agentId) ?? "An agent",
         approvalHeadline(item.approval),
-        () => setActivityView("approvals"),
+        () => openSidePanel("approvals"),
       );
     }
-  }, [items, agents, loadingFeed, setActivityView]);
+  }, [items, agents, loadingFeed, openSidePanel]);
 }

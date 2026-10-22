@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { type ReactNode, useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useCreateSchedule,
   useDeleteSchedule,
@@ -18,7 +19,7 @@ import {
 } from "../api/mutations.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
 import {
-  ScheduleModelField,
+  ScheduleChoicesField,
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
   ScheduleSessionTitleField,
@@ -39,6 +40,7 @@ interface Props {
   onDraftChange?: (draft: ScheduleDraft) => void;
   leadingFields?: ReactNode;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function RecurringScheduleForm({
@@ -48,6 +50,7 @@ export function RecurringScheduleForm({
   onDraftChange,
   leadingFields,
   onClose,
+  onDirtyChange,
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
@@ -59,7 +62,7 @@ export function RecurringScheduleForm({
     if (!existing) return;
     const confirmed = await showConfirm(
       "It stops running and cannot be recovered.",
-      `Delete ${existing.name}?`,
+      `Delete “${existing.name}”?`,
       { kind: "destructive", confirmLabel: "Delete schedule" },
     );
     if (!confirmed) return;
@@ -72,7 +75,10 @@ export function RecurringScheduleForm({
       resolver: zodResolver(scheduleFormSchema),
       defaultValues: { ...scheduleFormDefaults(existing), ...draft },
     });
-  const { errors } = formState;
+  const { errors, isDirty } = formState;
+  const unsaved = isDirty || !!draft?.name || !!draft?.task;
+  const close = useGuardedClose(unsaved, onClose);
+  useEffect(() => onDirtyChange?.(unsaved), [unsaved, onDirtyChange]);
 
   useEffect(() => {
     if (!onDraftChange) return;
@@ -89,7 +95,12 @@ export function RecurringScheduleForm({
 
   const onSubmit = handleSubmit((v) => {
     const precheck = v.precheck.trim();
+    const harness = v.harness.trim();
     const model = v.model.trim();
+    const settings = Object.fromEntries(
+      Object.entries(v.settings).filter(([, value]) => value !== ""),
+    );
+    const hasSettings = Object.keys(settings).length > 0;
     const sessionTitle = v.sessionTitle.trim();
     const common = {
       name: v.name,
@@ -114,7 +125,9 @@ export function RecurringScheduleForm({
           id: existing.id,
           ...common,
           precheck: precheck || null,
+          harness: harness || null,
           model: model || null,
+          settings: hasSettings ? settings : null,
           sessionTitle: sessionTitle || null,
         },
         { onSuccess },
@@ -125,7 +138,9 @@ export function RecurringScheduleForm({
           agentId,
           ...common,
           ...(precheck ? { precheck } : {}),
+          ...(harness ? { harness } : {}),
           ...(model ? { model } : {}),
+          ...(hasSettings ? { settings } : {}),
           ...(sessionTitle ? { sessionTitle } : {}),
         },
         { onSuccess },
@@ -137,7 +152,7 @@ export function RecurringScheduleForm({
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
         title={existing ? "Edit schedule" : "New schedule"}
-        onClose={onClose}
+        onClose={() => void close()}
       />
 
       <DialogBody className="flex flex-col gap-4">
@@ -174,22 +189,16 @@ export function RecurringScheduleForm({
           />
         </FormField>
 
-        <Controller
+        <ScheduleChoicesField
+          agentId={agentId}
           control={control}
-          name="model"
-          render={({ field }) => (
-            <ScheduleModelField
-              agentId={agentId}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
+          migrationNote={existing?.migrationNote ?? null}
         />
 
         <SchedulePrecheckField
           layout="stacked"
-          register={register}
-          errors={errors}
+          registration={register("precheck")}
+          error={errors.precheck?.message}
         />
 
         <ScheduleSessionTypeField layout="stacked" control={control} />
@@ -205,8 +214,9 @@ export function RecurringScheduleForm({
           existing ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               tone="danger"
+              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >
@@ -214,7 +224,7 @@ export function RecurringScheduleForm({
             </Button>
           ) : undefined
         }
-        onCancel={onClose}
+        onCancel={() => void close()}
         label={existing ? "Save" : "Create"}
         pendingLabel={existing ? "Saving…" : "Creating…"}
         pending={mutation.isPending}

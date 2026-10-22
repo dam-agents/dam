@@ -116,6 +116,11 @@ export interface OutboxRepo {
     agentId: string,
     kinds: RuntimeEventKind[],
   ): Promise<number>;
+  supersedePending(
+    agentId: string,
+    kind: RuntimeEventKind,
+    tx?: Db | DbTx,
+  ): Promise<void>;
   deleteExpiredEvents(): Promise<PendingEventRow[]>;
   deleteForAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
@@ -530,6 +535,22 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         )
         .returning({ id: runtimeEvents.id })) as { id: string }[];
       return rows.length;
+    },
+
+    async supersedePending(agentId, kind, tx = db): Promise<void> {
+      await tx
+        .update(runtimeEvents)
+        .set({
+          dispatchedAt: new Date(),
+          error: "superseded by a newer event of the same kind",
+        })
+        .where(
+          and(
+            eq(runtimeEvents.agentId, agentId),
+            eq(runtimeEvents.kind, kind),
+            isNull(runtimeEvents.dispatchedAt),
+          ),
+        );
     },
 
     async deleteForAgent(agentId): Promise<void> {

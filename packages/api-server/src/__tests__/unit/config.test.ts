@@ -1,3 +1,7 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { load } from "js-yaml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentsInstallSettings, loadConfig } from "../../config.js";
 
@@ -47,6 +51,44 @@ describe("loadConfig — turn watch invariants", () => {
     const config = loadConfig();
     expect(config.approvalHoldSeconds).toBe(1800);
     expect(config.acpTurnStallProbeSeconds).toBe(1800);
+  });
+});
+
+describe("loadConfig — version", () => {
+  const managed = [...Object.keys(REQUIRED_ENV), "PLATFORM_APP_VERSION"];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("recommends the CLI of a tagged release", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.24";
+    expect(loadConfig()).toMatchObject({
+      appVersion: "0.2.24",
+      recommendedClientCliVersion: "0.2.24",
+    });
+    process.env.PLATFORM_APP_VERSION = "0.2.24-rc3";
+    expect(loadConfig().recommendedClientCliVersion).toBe("0.2.24-rc3");
+  });
+
+  // TEST_SCENARIO: CD stamps a build from main `<version>-dev-<sha>`, a version npm never publishes. Recommending it would warn every CLI that is behind a release nobody can install.
+  it("recommends no CLI for a build from main", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.24-dev-db35e8abf4bd";
+    const config = loadConfig();
+    expect(config.appVersion).toBe("0.2.24-dev-db35e8abf4bd");
+    expect(config.recommendedClientCliVersion).toBeUndefined();
   });
 });
 
@@ -106,13 +148,33 @@ describe("loadConfig — object storage", () => {
   });
 });
 
+const CA_PEM = `-----BEGIN CERTIFICATE-----
+MIICDjCCAbQCCQD5R1rtVWLcEjAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDAptb2Rl
+bC1jYS1hMB4XDTI2MTAxNjA4MTcyNloXDTM2MTAxMzA4MTcyNlowFTETMBEGA1UE
+AwwKbW9kZWwtY2EtYTCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQEC
+IQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAA
+AAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2
+O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOk
+QPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/
+UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAARe0Xtx
+RxQuJB2S/fgWU9jWEItXXyPbL5kEm/3hg8sbI+dSSjMbpGab+YWuZYVKhsQUhnDx
+LBIAQ7cYs+pcVa7JMAoGCCqGSM49BAMCA0gAMEUCIQDXOFH5iFHkU+nhfJ6T9+jt
+mmkBNIQHEZyNseqNrUDmwQIgTMRmxAc+KqNdi/HNDz1fCYGZvkoVYMgLYZM0W/aS
+1f8=
+-----END CERTIFICATE-----`;
+
 describe("agentsInstallSettings — what every agents module is built with", () => {
   const managed = [
     ...Object.keys(REQUIRED_ENV),
-    "RUNTIME_MIGRATION_RETENTION",
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
+    "FEATURE_DEFAULT_MODE",
+    "PLATFORM_PROVIDER_BASE_URL",
+    "PLATFORM_PROVIDER_MODEL",
+    "PLATFORM_PROVIDER_API_KEY",
+    "PLATFORM_PROVIDER_CA_FILE",
+    "CURVE_BENDER_DEPLOYMENT_API_KEY",
     "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
   ];
@@ -133,14 +195,12 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     }
   });
 
-  // TEST_SCENARIO: the chart sets the retention window on the api-server as a Go duration. Every composition root takes the agents module's install facts from this one reading, so the migration plan the UI gets names the install's window, disk default and default mounts rather than none.
-  it("carries the chart's retention window, disk default and default mounts", () => {
-    process.env.RUNTIME_MIGRATION_RETENTION = "72h";
+  // TEST_SCENARIO: the chart sets the disk default and default mounts on the api-server. Every composition root takes the agents module's install facts from this one reading, so the migration decision names the install's disk default and default mounts rather than none.
+  it("carries the chart's disk default and default mounts", () => {
     process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
     process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
       virtualizationEnabled: true,
-      vmForced: false,
       defaultHarness: "claude-code",
       telemetry: false,
       agentDefaultStorageSize: "20Gi",
@@ -148,20 +208,92 @@ describe("agentsInstallSettings — what every agents module is built with", () 
         { path: "/home/agent", persist: true },
         { path: "/tmp", persist: false },
       ],
-      runtimeMigrationRetentionMs: 72 * 3600_000,
     });
   });
 
-  // TEST_SCENARIO: an operator who pins the new sandbox runtime on makes every create a microVM, whichever path it comes from; the pin means nothing on an install that cannot run one.
-  it("forces the vm backend only when the runtime is pinned on and virtualization is enabled", () => {
-    process.env.FEATURE_MODES = JSON.stringify({ "vm-sandboxes": "on" });
-    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
-    process.env.VIRTUALIZATION_ENABLED = "true";
-    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(true);
-    process.env.FEATURE_MODES = JSON.stringify({
-      "vm-sandboxes": "experimental",
+  // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
+  it("reads every feature the chart does not name as the default mode", () => {
+    expect(loadConfig().featureModes["agent-telemetry"]).toBe("experimental");
+    process.env.FEATURE_DEFAULT_MODE = "off";
+    process.env.FEATURE_MODES = JSON.stringify({ "agent-telemetry": "on" });
+    expect(loadConfig().featureModes).toMatchObject({
+      "agent-telemetry": "on",
+      "custom-avatars": "off",
     });
-    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
+  });
+
+  // TEST_SCENARIO: the built-in provider is offered only where the operator named a model server and its key; without a base URL or without a key the feature is off even when the chart pins it on, a configured base URL loses its trailing slash, and a plain-HTTP one leaves the feature off without failing the boot.
+  it("turns the platform provider off without a base URL or key", () => {
+    process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
+    expect(loadConfig().platformProvider).toBeNull();
+    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+    process.env.PLATFORM_PROVIDER_BASE_URL = "https://llm.models.svc:8443/";
+    process.env.PLATFORM_PROVIDER_MODEL = "m";
+    expect(loadConfig().platformProvider).toBeNull();
+    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+    process.env.PLATFORM_PROVIDER_API_KEY = "sk-operator";
+    expect(loadConfig().platformProvider).toEqual({
+      baseUrl: "https://llm.models.svc:8443",
+      model: "m",
+      apiKey: "sk-operator",
+    });
+    expect(loadConfig().featureModes["platform-provider"]).toBe("on");
+    process.env.PLATFORM_PROVIDER_BASE_URL = "http://llm.models.svc:8000";
+    expect(loadConfig().platformProvider).toBeNull();
+    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+  });
+
+  // TEST_SCENARIO: the deployment's CurveBender is offered only where the install sets its key; without one the install configures no shared CurveBender rather than failing the boot.
+  it("offers the deployment CurveBender only with its key", () => {
+    expect(loadConfig().curveBenderDeployment).toBeNull();
+    process.env.CURVE_BENDER_DEPLOYMENT_API_KEY = "sk-deployment";
+    expect(loadConfig().curveBenderDeployment).toEqual({
+      apiKey: "sk-deployment",
+    });
+  });
+
+  // TEST_SCENARIO: the chart mounts the model server's CA as a file; the api-server carries its certificate for the gateway, and a CA file that is set but missing or holds no certificate leaves the feature off without failing the boot.
+  it("reads the platform provider's CA file, and turns the feature off when it is unreadable", () => {
+    const dir = mkdtempSync(join(tmpdir(), "platform-ca-"));
+    const caFile = join(dir, "service-ca.crt");
+    writeFileSync(caFile, `${CA_PEM}\n`);
+    process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
+    process.env.PLATFORM_PROVIDER_BASE_URL = "https://llm.models.svc:8443";
+    process.env.PLATFORM_PROVIDER_API_KEY = "sk-operator";
+    process.env.PLATFORM_PROVIDER_CA_FILE = caFile;
+    expect(loadConfig().platformProvider?.ca).toBe(CA_PEM);
+    expect(loadConfig().featureModes["platform-provider"]).toBe("on");
+    for (const bad of [join(dir, "missing.crt"), dir]) {
+      process.env.PLATFORM_PROVIDER_CA_FILE = bad;
+      expect(loadConfig().platformProvider).toBeNull();
+      expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+    }
+    writeFileSync(caFile, "not a certificate");
+    process.env.PLATFORM_PROVIDER_CA_FILE = caFile;
+    expect(loadConfig().platformProvider).toBeNull();
+  });
+
+  // TEST_SCENARIO: the chart's own price list is what every install boots with, so each row must pass the config schema, the built-in provider's DeepSeek row included.
+  it("accepts the chart's price list", () => {
+    const values = load(
+      readFileSync(
+        new URL("../../../../../helm/values.yaml", import.meta.url),
+        "utf8",
+      ),
+    ) as { apiServer: { spend: { priceOverrides: unknown[] } } };
+    process.env.SPEND_PRICE_OVERRIDES = JSON.stringify(
+      values.apiServer.spend.priceOverrides,
+    );
+    try {
+      expect(loadConfig().spendPriceOverrides).toContainEqual(
+        expect.objectContaining({
+          provider: "platform-llm",
+          model: "deepseek-v4.1-flash",
+        }),
+      );
+    } finally {
+      delete process.env.SPEND_PRICE_OVERRIDES;
+    }
   });
 
   /** TEST_SCENARIO: The chart names the harness new agents start on, and any
@@ -182,20 +314,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       defaultHarness: "codex",
       telemetry: true,
     });
-  });
-
-  it("defaults the retention window to a week", () => {
-    expect(
-      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
-    ).toBe(7 * 24 * 3600_000);
-  });
-
-  // TEST_SCENARIO: the controller keeps a volume whose window it cannot read, so the api-server must not invent one either.
-  it("reads a retention window it cannot parse as unknown", () => {
-    process.env.RUNTIME_MIGRATION_RETENTION = "7d";
-    expect(
-      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
-    ).toBeNull();
   });
 });
 

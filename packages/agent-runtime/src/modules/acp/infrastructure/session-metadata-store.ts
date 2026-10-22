@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sessionSettingsSchema } from "agent-runtime-api";
+import { sessionDefaultKind, sessionSettingsSchema } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
 export const platformSessionMetaSchema = z.object({
@@ -15,6 +15,8 @@ export const platformSessionMetaSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
+  follows: sessionDefaultKind.nullable().optional(),
+  followsAfter: z.number().int().nonnegative().optional(),
   title: z.string().optional(),
   customTitle: z.string().optional(),
 });
@@ -28,6 +30,7 @@ const sessionMetaEntrySchema = z.object({
   runTotalMs: z.number().optional(),
   runCount: z.number().optional(),
   runStarts: z.array(z.string()).optional(),
+  unstored: z.boolean().optional(),
 });
 
 const RUN_STARTS_CAP = 500;
@@ -58,6 +61,8 @@ export interface SessionMetadataStore {
   startRun(sessionId: string): string | null;
   finishRun(sessionId: string): void;
   runStartsOf(sessionId: string): string[];
+  markUnstored(sessionId: string): void;
+  markStored(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
   adopt(
     sessionId: string,
@@ -212,6 +217,22 @@ export function createSessionMetadataStore(
     },
     runStartsOf(sessionId) {
       return [...(store.read().sessions[sessionId]?.runStarts ?? [])];
+    },
+    markUnstored(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing || existing.unstored) return;
+      store.write({
+        tombstones,
+        sessions: { ...sessions, [sessionId]: { ...existing, unstored: true } },
+      });
+    },
+    markStored(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing?.unstored) return;
+      const { unstored: _stored, ...rest } = existing;
+      store.write({ tombstones, sessions: { ...sessions, [sessionId]: rest } });
     },
     all() {
       return store.read().sessions;

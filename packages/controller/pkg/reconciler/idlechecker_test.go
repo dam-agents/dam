@@ -8,13 +8,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 func idleCheckerCfg(timeout time.Duration) *config.Config {
@@ -355,12 +359,282 @@ func TestIdleChecker_ZeroPerAgentTimeoutNeverHibernates(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, checker.checkInterval(), "an always-on agent does not speed the sweep up")
 }
 
-// TEST_SCENARIO: A vm agent starts fast enough that nobody plans around its sleep, so it always takes the chart's vm idle timeout and ignores its own override, "0s" included.
-func TestEffectiveIdleTimeout_VMIgnoresOverride(t *testing.T) {
+func runnerDeployment(annotations map[string]string) *appsv1.Deployment {
+	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name:        "platform-vm-runner-owner-1",
+		Namespace:   "test-agents",
+		Annotations: annotations,
+		Labels: map[string]string{
+			"app.kubernetes.io/component": vmRunnerComponent,
+			envoyOwnerLabel:               testOwner,
+		},
+	}}
+}
+
+// TEST_SCENARIO: A runner roll waits for every machine that was ready before it to be ready again, and a hibernated machine never comes back ready, so the idle checker must leave a machine listed in the runner's `runner-awaiting` alone until the roll settles or gives up. Without the pin the sweep hibernates it a fraction of a second after the roll starts, and the roll waits out its settle timeout.
+func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("rolled-agent", staleTime, nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	ss := agentStatefulSet("rolled-agent", 1)
+	runner := runnerDeployment(map[string]string{
+		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
+		annRunnerAwaiting: "rolled-agent,another-agent",
+	})
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runner)
+	checker.config.VM.Enabled = true
+	checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "rolled-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "a machine the roll awaits stays up")
+}
+
+// TEST_SCENARIO: The pin is the roll's own record, so it is released the moment the roll settles or gives up: the runner's `runner-awaiting` and its roll stamp are cleared in one write, and the sweep hibernates a machine the next pass finds idle again.
+func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	settle := func(t *testing.T, annotations map[string]string) int32 {
+		t.Helper()
+		agent := idleAgentCR("rolled-agent", staleTime, nil)
+		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+		agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+		ss := agentStatefulSet("rolled-agent", 1)
+		checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runnerDeployment(annotations))
+		checker.config.VM.Enabled = true
+		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+
+		checker.check(context.Background())
+
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "rolled-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		return *gotSS.Spec.Replicas
+	}
+
+	rolling := map[string]string{
+		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
+		annRunnerAwaiting: "rolled-agent",
+	}
+	assert.Equal(t, int32(1), settle(t, rolling), "the roll pins the machine while it holds the wait")
+	assert.Equal(t, int32(0), settle(t, map[string]string{}), "a settled roll leaves nothing behind to pin the machine")
+	assert.Equal(t, int32(0), settle(t, map[string]string{annRunnerAwaiting: "rolled-agent"}), "a wait with no roll stamp behind it is no roll")
+	stalled := map[string]string{
+		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
+		annRunnerAwaiting: "rolled-agent",
+		annRunnerStalled:  time.Now().UTC().Format(time.RFC3339),
+	}
+	assert.Equal(t, int32(0), settle(t, stalled), "a roll whose own pod never started is waiting on nothing of the owner's")
+}
+
+// TEST_SCENARIO: An install without virtualization runs no runner and its controller holds no grant on Deployments, so the read that finds the machines a roll waits on must not be attempted there: a refused read on every sweep would leave every idle agent awake for good.
+func TestIdleChecker_SweepsOnAnInstallWithoutVirtualization(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("idle-agent", staleTime, nil)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("idle-agent", 1))
+	listed := false
+	checker.client.(*fake.Clientset).PrependReactor("list", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+		listed = true
+		return true, nil, k8serrors.NewForbidden(schema.GroupResource{Resource: "deployments"}, "", nil)
+	})
+
+	checker.check(context.Background())
+
+	assert.False(t, listed, "the sweep must not ask for Deployments the controller holds no grant on")
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "the sweep hibernates without that read")
+}
+
+// TEST_SCENARIO: A runner roll starts while the sweep is probing the machine it will wait on. The probe is the last thing the sweep does before it hibernates, so a pin read before it would be stale and the machine would be halted under the roll. The sweep must read the pin under the owner's lock, the one a roll start takes, and leave that machine up.
+func TestIdleChecker_RollStartingDuringTheSweepKeepsItsMachineAwake(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	raw, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	raw.SetAnnotations(map[string]string{annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Update(ctx, raw, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine).WithOwnerLock(r.OwnerLock)
+	checker.busyProbe = func(context.Context, string) bool {
+		changeRunnerPod(r)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "my-agent", dep.Annotations[annRunnerAwaiting])
+		return false
+	}
+
+	checker.check(ctx)
+
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *ss.Spec.Replicas, "a machine a roll started waiting on is not scaled down")
+	assert.True(t, nodes[testOwner].spec("my-agent").Running, "a machine a roll started waiting on is not halted")
+}
+
+// TEST_SCENARIO: The pin read and the halt must be one decision, taken under the owner's lock, the one a runner roll start takes. A pin read before the probe, or a halt taken outside that lock, lets a roll begin in between and wait on a machine the sweep then stops. This asserts the lock is held at the moment of the halt, which is what closes that window.
+func TestIdleChecker_HaltsUnderTheOwnersLock(t *testing.T) {
+	agent := idleAgentCR("locked-agent", time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339), nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("locked-agent", 1))
+	checker.config.AgentBase.VMIdleTimeout = config.Duration(time.Hour)
+	lock := checker.lockOf(testOwner)
+	inside := false
+	checker.halt = func(context.Context, string, string) error {
+		inside = !lock.TryLock()
+		if !inside {
+			lock.Unlock()
+		}
+		return nil
+	}
+
+	checker.check(context.Background())
+
+	assert.True(t, inside, "the halt runs inside the owner's lock, so a roll start cannot land between the pin read and the halt")
+}
+
+// TEST_SCENARIO: The last runner of an upgrade is already on the pod it should run, so its turn never asks for a place in the roll, and a machine that never comes back would leave its wait standing for good. The roll's own turn must give the wait up at the settle timeout, and the pin with it, so the machine hibernates again.
+func TestIdleChecker_LastRollReleasesItsPinAtTheSettleTimeout(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStarting})
+	setRolledAt(t, r, testOwner, time.Now().Add(-time.Hour))
+	dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Annotations[annRunnerAwaiting] = "my-agent"
+	_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithOwnerLock(r.OwnerLock)
+
+	r.ReconcileRunnerRollout(ctx)
+
+	dep, err = r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, dep.Annotations[annRunnerAwaiting], "the last unchanged runner gives its wait up at the settle timeout too")
+	pinned, err := checker.machinesAwaitingRoll(ctx, testOwner)
+	require.NoError(t, err)
+	assert.False(t, pinned["my-agent"], "a wait that timed out pins nothing")
+}
+
+// TEST_SCENARIO: A runner already on the pod it should run whose new pod never becomes ready asks for no place in the roll, so nothing else ever evaluates its wait. Its turn must give the wait up at the settle timeout too: the roll is marked stalled, so the release goes no further, and the pin on the owner's machines ends with the wait.
+func TestIdleChecker_LastUnreadyPodRollReleasesItsPin(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStarting})
+	setRolledAt(t, r, testOwner, time.Now().Add(-time.Hour))
+	dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Annotations[annRunnerAwaiting] = "my-agent"
+	dep.Status.ReadyReplicas = 0
+	_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	r.ReconcileRunnerRollout(ctx)
+
+	dep, err = r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, dep.Annotations[annRunnerStalled], "a pod that never started keeps the release from advancing, marked stalled")
+	raw, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	raw.SetAnnotations(map[string]string{annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Update(ctx, raw, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+
+	checker.check(ctx)
+
+	gotSS, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "a stalled roll pins nothing, so its machine hibernates again")
+}
+
+// TEST_SCENARIO: A vm agent reads the chart's vm idle timeout only when it carries no override of its own; one that carries an override honours it as a container agent does, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.
+func TestEffectiveIdleTimeout(t *testing.T) {
 	base := config.AgentBase{IdleTimeout: config.Duration(time.Hour), VMIdleTimeout: config.Duration(5 * time.Minute)}
 	never := &metav1.Duration{}
-	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(never, true, base))
+	hour := &metav1.Duration{Duration: time.Hour}
+	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, true, base))
 	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(nil, true, base))
+	assert.Equal(t, time.Hour, effectiveIdleTimeout(hour, true, base))
 	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, false, base))
 	assert.Equal(t, time.Hour, effectiveIdleTimeout(nil, false, base))
+}
+
+// TEST_SCENARIO: A vm agent that carries a never-hibernate override outlives the chart's vm idle timeout, and one past its own positive override hibernates inside it.
+func TestIdleChecker_VMHonoursItsOwnTimeout(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	swept := func(t *testing.T, override time.Duration) int32 {
+		t.Helper()
+		agent := withHibernationTimeout(idleAgentCR("vm-agent", staleTime, nil), override)
+		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+		checker, client := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 1))
+		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+
+		checker.check(context.Background())
+
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "vm-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		return *gotSS.Spec.Replicas
+	}
+
+	assert.Equal(t, int32(1), swept(t, 0), "a never-hibernate vm agent outlives the chart's vm idle timeout")
+	assert.Equal(t, int32(0), swept(t, time.Minute), "a vm agent past its own short override hibernates")
+}
+
+// TEST_SCENARIO: A vm agent woken five minutes ago is idle by its activity stamp, but its idle clock runs from the moment it turned ready, and a boot in progress is not idle; a boot copying a disk is held past the cap, since the runner bounds it; a decided start failure, a refused start, a boot past the cap, a hibernation the runner has not confirmed, and a ready that aged out are hibernated as before.
+func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
+	now := time.Now().UTC()
+	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
+	cond := func(typ string, ok bool, reason string, ago time.Duration) metav1.Condition {
+		status := metav1.ConditionFalse
+		if ok {
+			status = metav1.ConditionTrue
+		}
+		return metav1.Condition{Type: typ, Status: status, Reason: reason, LastTransitionTime: metav1.NewTime(now.Add(-ago))}
+	}
+	booting := cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonNotReady, time.Hour)
+	notReady := cond(apiv1.ConditionReady, false, "PodsNotReady", time.Hour)
+	tests := []struct {
+		name         string
+		lastActivity time.Duration
+		conds        []metav1.Condition
+		replicas     int32
+		hibernated   bool
+	}{
+		{"booting", 6 * time.Minute, []metav1.Condition{booting, notReady}, 1, false},
+		{"ready since a minute", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", time.Minute)}, 1, false},
+		{"ready since long", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", 6*time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", 6*time.Minute)}, 1, true},
+		{"start failed", 6 * time.Minute, []metav1.Condition{booting, notReady, cond(apiv1.ConditionStartFailed, true, apiv1.ReasonNeverReady, time.Minute)}, 1, true},
+		{"boot failed", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonBootFailed, time.Hour), notReady}, 1, true},
+		{"boot past the cap", 21 * time.Minute, []metav1.Condition{booting, notReady}, 1, true},
+		{"copying a disk past the cap", 3 * time.Hour, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonCopyingDisk, time.Hour), notReady}, 1, false},
+		{"halt unconfirmed", 6 * time.Minute, []metav1.Condition{booting, notReady}, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := idleAgentCR("vm-agent", at(tt.lastActivity), nil)
+			agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+			agent.Status.Conditions = tt.conds
+			checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", tt.replicas))
+			checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+			probed := false
+			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+
+			checker.check(context.Background())
+
+			assert.Equal(t, tt.hibernated, probed)
+		})
+	}
 }

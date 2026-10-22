@@ -16,8 +16,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { useStore } from "../../../store.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { DirContents } from "./dir-contents.js";
 import {
@@ -35,13 +37,14 @@ export function FilesPanel({
   onOpenFile,
 }: {
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const controller = useFilesPanelController({ open, onOpenFile });
+  const newLayout = useNewLayout();
   const showHiddenFiles = useStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const hiddenFilesLabel = showHiddenFiles
@@ -50,26 +53,28 @@ export function FilesPanel({
 
   const headerActions = (
     <div className="flex items-center gap-1">
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={hiddenFilesLabel}
-        aria-pressed={showHiddenFiles}
-        tooltip={hiddenFilesLabel}
-        onClick={() => setShowHiddenFiles(!showHiddenFiles)}
-      >
-        {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
-      </Button>
+      {open && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={hiddenFilesLabel}
+          aria-pressed={showHiddenFiles}
+          tooltip={hiddenFilesLabel}
+          onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+        >
+          {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
+        </Button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
-            size="xs"
-            className="text-sm"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Add"
             disabled={controller.isUploading}
-            tooltip={controller.isUploading ? "Upload in progress…" : undefined}
+            tooltip={controller.isUploading ? "Upload in progress…" : "Add"}
           >
-            <Add size={14} /> Add
+            <Add size={16} />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -97,7 +102,8 @@ export function FilesPanel({
       onToggle={onToggle}
       headerRight={headerActions}
       className={className}
-      headerClassName="border-t border-border"
+      // UNIT_BOUNDARY_DESCRIPTION: under JanUI the Files tab is the whole of the panel, so the rule that divided it from the section above it would draw a line nothing else has.
+      headerClassName={newLayout ? undefined : "border-t border-border"}
       style={style}
       ref={ref}
     >
@@ -142,9 +148,7 @@ export function FilesPanel({
             )}
             {controller.rootLoading && <FileListSkeleton />}
             {controller.rootIsLoadedEmpty && (
-              <p className="px-4 py-5 text-xs text-muted-foreground">
-                No files yet
-              </p>
+              <EmptyState bordered={false}>No files yet.</EmptyState>
             )}
             <DirContents path="" depth={0} />
           </FilesPanelContext.Provider>

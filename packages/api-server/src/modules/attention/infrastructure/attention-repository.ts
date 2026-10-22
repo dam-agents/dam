@@ -37,6 +37,11 @@ export interface AttentionRepository {
     at: Date,
   ): Promise<void>;
   deleteSessions(agentId: string, sessionIds: readonly string[]): Promise<void>;
+  deleteDismissals(
+    userSub: string,
+    kind: AttentionItemKind,
+    itemIds: readonly string[],
+  ): Promise<void>;
   deleteOlderThan(days: number): Promise<number>;
   listAgentIds(): Promise<string[]>;
   deleteForAgent(agentId: string): Promise<void>;
@@ -51,6 +56,8 @@ function toRecord(row: RawRecord): AttentionRecordRow {
     type: row.type,
     title: row.title,
     scheduleId: row.scheduleId,
+    threadTs: row.threadTs,
+    harness: row.harness,
     createdAt: row.createdAt,
     activityAt: row.activityAt,
     seenAt: row.seenAt,
@@ -132,6 +139,8 @@ export function createAttentionRepository(db: Db): AttentionRepository {
             type: row.type,
             title: row.title,
             scheduleId: row.scheduleId,
+            threadTs: row.threadTs,
+            harness: row.harness,
             createdAt: row.createdAt,
             activityAt: row.activityAt,
             seenAt: row.seenAt,
@@ -181,6 +190,19 @@ export function createAttentionRepository(db: Db): AttentionRepository {
           ],
           set: { dismissedAt: at, updatedAt: at },
         });
+    },
+
+    async deleteDismissals(userSub, kind, itemIds) {
+      if (itemIds.length === 0) return;
+      await db
+        .delete(attentionState)
+        .where(
+          and(
+            eq(attentionState.userSub, userSub),
+            eq(attentionState.itemKind, kind),
+            inArray(attentionState.itemId, [...itemIds]),
+          ),
+        );
     },
 
     async deleteSessions(agentId, sessionIds) {

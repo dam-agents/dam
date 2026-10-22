@@ -44,6 +44,8 @@
   --color-icon-ochre: #8a7351;
   --color-icon-rose: #8b6672;
   --color-icon-teal: #4a7b83;
+  --color-icon-teal-deep: #3f6a72;
+  --color-icon-litellm: #4962ab;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -77,6 +79,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
+  --color-chrome: var(--chrome);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
@@ -99,7 +102,8 @@
 
   /* ── z-index ladder — the ordered source of truth for stacking.
      Use the matching z-* utilities below; never raw z numbers.
-     The Sonner toaster manages its own (higher) z-index and sits above z-toast. ── */
+     The Sonner toaster manages its own (higher) z-index and sits above z-toast,
+     modals included: an error a dialog raises must stay readable over its backdrop. ── */
   --z-content: 10;
   --z-raised: 20;
   --z-nav: 30;
@@ -108,6 +112,11 @@
   --z-popover: 60;
   --z-tooltip: 70;
   --z-toast: 80;
+}
+
+/* A Radix modal sets pointer-events: none on the body; keep the toasts above it dismissable. */
+[data-sonner-toaster] {
+  pointer-events: auto;
 }
 
 @utility z-content {
@@ -165,6 +174,7 @@
   --background: #ffffff;
   --foreground: #121619;
   --card: #ffffff;
+  --chrome: var(--background);
   --card-foreground: #121619;
   --popover: #ffffff;
   --popover-foreground: #121619;
@@ -214,6 +224,7 @@
   --background: #161616;
   --foreground: #fafaf9;
   --card: #161616;
+  --chrome: var(--background);
   --card-foreground: #fafaf9;
   --popover: #161616;
   --popover-foreground: #fafaf9;
@@ -229,6 +240,14 @@
   --border-ui: #393939;
   --input: #393939;
   --ring: #ffffff;
+}
+
+/* JanUI sets its side chrome apart from the page. */
+:root[data-layout="new"] {
+  --chrome: #fafafa;
+}
+:root.dark[data-layout="new"] {
+  --chrome: #0e0e0e;
 }
 
 @layer base {
@@ -460,6 +479,17 @@
 }
 .prose p:last-child {
   margin: 0;
+}
+.prose-flush > :first-child {
+  margin-top: 0;
+}
+.prose-flush > :last-child {
+  margin-bottom: 0;
+}
+.prose-caption {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
 }
 .prose h1,
 .prose h2,

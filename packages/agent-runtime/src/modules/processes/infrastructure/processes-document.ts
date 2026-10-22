@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { finishedRowSchema } from "agent-runtime-api";
+import { finishedRowSchema, processContainerSchema } from "agent-runtime-api";
 import type {
   DocumentStore,
   DocumentStoreBackend,
@@ -16,6 +16,7 @@ const trackedRowSchema: z.ZodType<TrackedRow> = z.object({
   outputPath: z.string().nullable(),
   keepsAwake: z.boolean(),
   keepSource: z.enum(["default", "agent", "user"]),
+  container: processContainerSchema.nullable().default(null),
 });
 
 const keepMarkSchema = z.object({

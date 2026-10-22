@@ -1,6 +1,7 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
 import { FileTooLargeError } from "./slack-gateway.js";
+import { renderSlackPostText } from "./slack-post-text.js";
 import { classifySlackSender } from "./slack-sender.js";
 import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
@@ -79,6 +80,7 @@ function toSlackMessage(m: {
   user?: string;
   text?: string;
   blocks?: unknown;
+  attachments?: unknown;
   edited?: unknown;
   thread_ts?: string;
   reply_count?: number;
@@ -120,7 +122,7 @@ function toSlackMessage(m: {
   return {
     ts: m.ts,
     user: m.user,
-    text: m.text,
+    text: renderSlackPostText(m),
     blocks: m.blocks as SlackMessage["blocks"],
     ...(m.edited ? { edited: true } : {}),
     ...(m.thread_ts ? { threadTs: m.thread_ts } : {}),
@@ -266,7 +268,7 @@ export function createBoltSlackGateway(
         appToken: deps.appToken,
         socketMode: true,
         ignoreSelf: false,
-        logLevel: LogLevel.DEBUG,
+        logLevel: LogLevel.INFO,
         authorize: async ({ teamId }) => {
           const auth = await testedAuthFor(teamId ?? NO_WORKSPACE);
           if (!auth) throw new Error(`${INSTALL_TOKEN_MISSING}: ${teamId}`);
@@ -301,7 +303,7 @@ export function createBoltSlackGateway(
           channel: event.channel,
           ts: event.ts,
           threadTs: event.thread_ts,
-          text: event.text ?? "",
+          text: renderSlackPostText(event),
           files: (event as { files?: SlackImageFile[] }).files,
           teamId: workspace,
           channelType: (event as { channel_type?: string }).channel_type,
@@ -315,6 +317,7 @@ export function createBoltSlackGateway(
           ts: string;
           thread_ts?: string;
           text?: string;
+          attachments?: unknown;
           team?: string;
           files?: SlackImageFile[];
         };
@@ -328,7 +331,7 @@ export function createBoltSlackGateway(
           channel: msg.channel,
           ts: msg.ts,
           threadTs: msg.thread_ts,
-          text: msg.text ?? "",
+          text: renderSlackPostText(msg),
           files: msg.files,
           teamId: workspace,
           channelType: msg.channel_type,
@@ -362,6 +365,16 @@ export function createBoltSlackGateway(
           channel: joined.channel,
           inviter: joined.inviter,
           teamId: workspace,
+        });
+      });
+
+      bolt.event("agent_session_stopped", async ({ event, context }) => {
+        await handlers.onSessionStopped({
+          channel: event.channel,
+          threadTs: event.thread_ts,
+          user: event.user,
+          streamingMessageTs: event.streaming_message_ts ?? [],
+          teamId: context.teamId ?? NO_WORKSPACE,
         });
       });
 
@@ -583,12 +596,23 @@ export function createBoltSlackGateway(
       if (!app) throw new Error("slack app not started");
       const token = await tokenFor(args.teamId);
       if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      await app.client.assistant.threads.setStatus({
+      const session = {
         token,
         channel_id: args.channel,
         thread_ts: args.threadTs,
-        status: args.status,
-      });
+      };
+      try {
+        await app.client.agents.sessions.setStatus({
+          ...session,
+          status: args.status ? "processing" : "active",
+        });
+      } catch (err) {
+        if (slackRefusal(err) === null) throw err;
+        await app.client.assistant.threads.setStatus({
+          ...session,
+          status: args.status,
+        });
+      }
     },
 
     async addReaction(args) {

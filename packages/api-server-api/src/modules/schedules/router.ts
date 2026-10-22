@@ -13,9 +13,11 @@ import {
   scheduleGetInputSchema,
   scheduleListForOwnerInputSchema,
   scheduleListInputSchema,
+  scheduleClearSessionChoicesInputSchema,
   scheduleResetSessionInputSchema,
   scheduleRunNowInputSchema,
   scheduleToggleInputSchema,
+  scheduleUpdateCronInputSchema,
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
@@ -33,7 +35,10 @@ function toView(sched: Schedule) {
     type: sched.spec.type,
     task: sched.spec.task ?? null,
     precheck: sched.spec.precheck ?? null,
+    harness: sched.spec.harness ?? null,
     model: sched.spec.model ?? null,
+    settings: sched.spec.settings ?? null,
+    migrationNote: sched.spec.migrationNote ?? null,
     sessionTitle: sched.spec.sessionTitle ?? null,
     enabled: sched.spec.enabled,
     sessionMode: sched.spec.sessionMode,
@@ -107,6 +112,14 @@ export const schedulesRouter = t.router({
       return toView(sched);
     }),
 
+  updateCron: manageAgentsProcedure
+    .input(scheduleUpdateCronInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const sched = await ctx.schedules.updateCron(input);
+      if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
+      return toView(sched);
+    }),
+
   createRRule: manageAgentsProcedure
     .input(scheduleCreateRRuleInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -147,6 +160,24 @@ export const schedulesRouter = t.router({
       const sched = await ctx.schedules.toggle(input.id, input.enabled);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
+    }),
+
+  clearSessionChoices: manageAgentsProcedure
+    .input(scheduleClearSessionChoicesInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const failed: { id: string; reason: string }[] = [];
+      for (const id of input.ids) {
+        try {
+          if (!(await ctx.schedules.clearSessionChoices(id)))
+            failed.push({ id, reason: "schedule not found" });
+        } catch (err) {
+          failed.push({
+            id,
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return { failed };
     }),
 
   resetSession: manageAgentsProcedure

@@ -44,6 +44,7 @@ function agent(overrides?: Partial<InfraAgent>): InfraAgent {
     ready: false,
     hibernated: true,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     podRestarts: 0,
     ...overrides,
@@ -183,9 +184,9 @@ describe("imageMove", () => {
     ).toBe("if-pod-idle");
   });
 
-  // TEST_SCENARIO: a vm agent's idle timeout is the install's, so its own
-  // TEST_SCENARIO: override does not make it always-on.
-  it("waits for a vm agent with a never-hibernate override to hibernate", () => {
+  // TEST_SCENARIO: a vm agent honours its own never-hibernate override, as a
+  // TEST_SCENARIO: container agent does, so it is moved only after the quiet wait.
+  it("moves a quiet vm agent with a never-hibernate override once its pod says idle", () => {
     expect(
       move(
         alwaysOn({
@@ -193,6 +194,23 @@ describe("imageMove", () => {
             name: "a",
             image: OLD_DEFAULT_IMAGE,
             hibernationTimeout: "0s",
+            backend: { type: "vm" },
+          },
+        }),
+      ),
+    ).toBe("if-pod-idle");
+  });
+
+  it("waits for a vm agent without an override to hibernate on its own", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          spec: {
+            name: "a",
+            image: OLD_DEFAULT_IMAGE,
             backend: { type: "vm" },
           },
         }),
@@ -321,7 +339,7 @@ describe("image update tick", () => {
   });
 
   // TEST_SCENARIO: the pod's idle flag covers a running turn, queued prompts,
-  // TEST_SCENARIO: an open terminal and kept background work; any of them
+  // TEST_SCENARIO: a live terminal and kept background work; any of them
   // TEST_SCENARIO: keeps the agent where it is, and so does a failed probe.
   it.each([
     ["is busy", async () => false],
@@ -462,6 +480,178 @@ describe("image update tick", () => {
     });
   });
 
+  // TEST_SCENARIO: a start the node refused — its runner cannot reach the image
+  // TEST_SCENARIO: cache, so no image at all is fetched there — is not the image's
+  // TEST_SCENARIO: fault. The agent stays on the new image and nothing is recorded
+  // TEST_SCENARIO: as refused, which would strand it on the image it came from for
+  // TEST_SCENARIO: good; the reason is said once, so the upgrade is seen waiting.
+  it("holds a move the node's image cache refused instead of moving it back", async () => {
+    const m = update([
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      }),
+    ]);
+    await m.tick();
+    await m.tick();
+    expect(m.writeSpec).not.toHaveBeenCalled();
+    const held = m.log.mock.calls.filter((call) =>
+      String(call[0]).includes("holds its move"),
+    );
+    expect(held).toHaveLength(1);
+    expect(String(held[0]![0])).toContain("MachineImageCacheUnreachable");
+  });
+
+  // TEST_SCENARIO: the same node fault holds a second move too. A marker
+  // TEST_SCENARIO: keyed on the reason alone would keep the first move's line
+  // TEST_SCENARIO: and say nothing about the move to another image, which the
+  // TEST_SCENARIO: owner would then read as dropped.
+  it("announces a second move held on the same node fault", async () => {
+    const heldTo = (image: string) =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    let live = heldTo("repo:next");
+    const m = update([live], { live: () => live });
+    await m.tick();
+    live = heldTo("repo:later");
+    await m.tick();
+    expect(m.writeSpec).not.toHaveBeenCalled();
+    const held = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(held).toHaveLength(2);
+    expect(held[0]).toContain("repo:next");
+    expect(held[1]).toContain("repo:later");
+  });
+
+  // TEST_SCENARIO: a machine that comes up ready reads ready inside the move, on
+  // TEST_SCENARIO: the way to the hold it started from; the move has not ended,
+  // TEST_SCENARIO: so a fault that returns is the same hold and not news again.
+  it("says a hold once when a ready read comes back to the same fault", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    live = {
+      ...held(),
+      specStart: "ready",
+      readySince: new Date(Date.now() - 1000),
+      agentPodNotReadyReason: undefined,
+    };
+    listed[0] = live;
+    await m.tick();
+    live = held();
+    listed[0] = live;
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the marker only keeps a line from repeating while the move
+  // TEST_SCENARIO: lasts. A move that ended and started again on the same image,
+  // TEST_SCENARIO: held again on the same fault, is news the second time too.
+  it("announces a hold on the same image again after the move ended", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    live = agent({
+      hibernated: false,
+      spec: { name: "a", image: DEFAULT_IMAGE },
+      specStart: "ready",
+    });
+    listed[0] = live;
+    await m.tick();
+    live = held();
+    listed[0] = live;
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(2);
+  });
+
+  // TEST_SCENARIO: a spec write unsets the start state for the passes before the
+  // TEST_SCENARIO: conditions catch up, and a runner roll does it mid-move. The
+  // TEST_SCENARIO: move has not ended, so its notice is not news again.
+  it("says a hold once through a start state that goes unset mid-move", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    live = { ...held(), specStart: undefined };
+    listed[0] = live;
+    await m.tick();
+    live = held();
+    listed[0] = live;
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: an Agent deleted while its move is held leaves the service
+  // TEST_SCENARIO: for good, so a marker kept for it is never read again and
+  // TEST_SCENARIO: the map only grows. A later Agent on that id says its hold.
+  it("forgets a hold of an agent the tick no longer lists", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    listed.length = 0;
+    await m.tick();
+    live = held();
+    listed.push(live);
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(2);
+  });
+
   it("waits while a moved agent has not started on its new image", async () => {
     const m = update([
       agent({
@@ -590,11 +780,24 @@ describe("parseInfraAgent", () => {
     },
   );
 
+  // TEST_SCENARIO: a machine its node refused could not start either, so the
+  // TEST_SCENARIO: agent reads as a failed start rather than as one still
+  // TEST_SCENARIO: coming up. What failed is the node and not the image, which
+  // TEST_SCENARIO: the image update job decides on the reason.
+  it("reads a refusal by the node's image cache as a failed start", () => {
+    expect(
+      parse({}, { conditions: [agentPod("MachineImageCacheUnreachable")] })
+        .specStart,
+    ).toBe("failed");
+  });
+
   // TEST_SCENARIO: the pod a roll replaces exits on SIGTERM at the new
   // TEST_SCENARIO: generation, and memory fails on any image, so neither
   // TEST_SCENARIO: says the new image is bad without the controller's
-  // TEST_SCENARIO: StartFailed about the current pod.
-  it.each(["ContainerTerminated", "OutOfMemory"])(
+  // TEST_SCENARIO: StartFailed about the current pod. A vm boot that
+  // TEST_SCENARIO: copies its disk is still booting, and a move back
+  // TEST_SCENARIO: would stop the copy and start it again from nothing.
+  it.each(["ContainerTerminated", "OutOfMemory", "MachineCopyingDisk"])(
     "does not read %s as a failed start",
     (reason) => {
       expect(

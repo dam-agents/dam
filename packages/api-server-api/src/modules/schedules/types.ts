@@ -5,6 +5,7 @@ import type {
   scheduleCreateCronInputSchema,
   scheduleCreateOnceInputSchema,
   scheduleCreateRRuleInputSchema,
+  scheduleUpdateCronInputSchema,
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
@@ -19,7 +20,10 @@ export interface ScheduleSpecCron {
   cron: string;
   task?: string;
   precheck?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
+  migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
@@ -34,7 +38,10 @@ export interface ScheduleSpecRRule {
   quietHours?: QuietWindow[];
   task?: string;
   precheck?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
+  migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
@@ -54,7 +61,10 @@ export interface ScheduleSpecOnce {
   at: string;
   timezone: string;
   origin?: ScheduleOnceOrigin;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
+  migrationNote?: string;
   sessionTitle?: string;
   task?: string;
   precheck?: undefined;
@@ -90,6 +100,9 @@ export interface Schedule {
 export type ScheduleCreateCronInput = z.infer<
   typeof scheduleCreateCronInputSchema
 >;
+export type ScheduleUpdateCronInput = z.infer<
+  typeof scheduleUpdateCronInputSchema
+>;
 export type ScheduleCreateRRuleInput = z.infer<
   typeof scheduleCreateRRuleInputSchema
 >;
@@ -115,6 +128,7 @@ export interface SchedulesService {
     input: ScheduleCreateRRuleInput,
     createdBy?: ScheduleCreator,
   ) => Promise<Schedule>;
+  updateCron: (input: ScheduleUpdateCronInput) => Promise<Schedule | null>;
   updateRRule: (input: ScheduleUpdateRRuleInput) => Promise<Schedule | null>;
   createOnce: (
     input: ScheduleCreateOnceInput,
@@ -124,6 +138,7 @@ export interface SchedulesService {
   updateOnce: (input: ScheduleUpdateOnceInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string, enabled?: boolean) => Promise<Schedule | null>;
+  clearSessionChoices: (id: string) => Promise<Schedule | null>;
   resetSession: (id: string) => Promise<void>;
   runNow: (id: string) => Promise<void>;
 }

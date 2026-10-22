@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { avatarCharacter, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
+import { parseAvatar, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import {
   annotateSpan,
@@ -15,6 +15,7 @@ import {
   type SlackTurnRoster,
   type SlackTurnWhisper,
   postDeletedNotice,
+  supersededTurnNote,
 } from "./slack-turn-copy.js";
 import { match, P } from "ts-pattern";
 import type { SlackConversationStanding } from "../services/slack-workspace-probe.js";
@@ -24,6 +25,7 @@ import {
   slackThreadKey,
   ChannelType,
   SessionType,
+  type Agent,
   type AgentsService,
   type SlackConversationLabel,
 } from "api-server-api";
@@ -72,8 +74,10 @@ import {
 import {
   turnFailureReasonToken,
   turnFailureUserCopy,
+  noDefaultModelUserCopy,
 } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
+import { isNoDefaultModelError } from "../../harness-config/index.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -98,6 +102,11 @@ import {
   type PodRestartState,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import {
+  slackResetTime,
+  spendHoldUserCopy,
+  type ChannelSpendHold,
+} from "./spend-hold-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
@@ -115,6 +124,7 @@ import type {
   SlackPostMessage,
   SlackReservedFile,
   SlackFileInfo,
+  SlackSessionStoppedEvent,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -172,6 +182,7 @@ import {
   matchRosterName,
   orderAmbientReaders,
   parseWhisperRequest,
+  sameAgentName,
   peerTaggedBy,
   routeMention,
   senderReaches,
@@ -183,6 +194,10 @@ import type {
   SlackIgnoredApps,
 } from "./slack-ignored-apps-repository.js";
 import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
+import {
+  createThreadSupersede,
+  type HeldTurn,
+} from "../domain/thread-supersede.js";
 import {
   parseWhisperSession,
   whisperSessionMetadata,
@@ -1058,15 +1073,18 @@ function workspaceOf(
   );
 }
 
+type RefuseOutsideReach = (
+  conversationId: string,
+  teamId: SlackWorkspace,
+  directMessage?: { user: string | null },
+) => Promise<{ error: string } | null>;
+
 async function resolveOutboundTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
   turnWorkspace: TurnWorkspace,
-  refuseOutsideOwnerReach: (
-    conversationId: string,
-    teamId: SlackWorkspace,
-  ) => Promise<{ error: string } | null>,
+  refuseOutsideOwnerReach: RefuseOutsideReach,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
     if (bound.length === 1)
@@ -1074,7 +1092,8 @@ async function resolveOutboundTarget(
     return {
       error:
         `this agent is connected to ${bound.length} Slack conversations ` +
-        `(${bound.map((c) => c.id).join(", ")}) — pass chatId to say which one`,
+        `(${bound.map((c) => c.id).join(", ")}) and cannot tell which one ` +
+        "you mean — pass one of these ids as chatId",
     };
   }
   const boundTarget = bound.find((c) => c.id === conversationId);
@@ -1093,6 +1112,10 @@ async function resolveOutboundTarget(
   }
 
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
+    const refused = await refuseOutsideOwnerReach(conversationId, teamId, {
+      user: conversationId,
+    });
+    if (refused) return refused;
     try {
       return {
         id: await gateway.openDirectMessage(conversationId, teamId),
@@ -1103,9 +1126,6 @@ async function resolveOutboundTarget(
         error: `could not open a direct message with ${conversationId}: ${formatError(err)}`,
       };
     }
-  }
-  if (conversationId.startsWith("D")) {
-    return { id: conversationId, teamId };
   }
   let lookup: SlackConversationLookup;
   try {
@@ -1129,8 +1149,12 @@ async function resolveOutboundTarget(
       error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
     };
   }
-  if (!info.isDirectMessage) {
-    const refused = await refuseOutsideOwnerReach(conversationId, teamId);
+  if (!info.isGroupDirectMessage) {
+    const refused = await refuseOutsideOwnerReach(
+      conversationId,
+      teamId,
+      info.isDirectMessage ? { user: info.directMessageUser } : undefined,
+    );
     if (refused) return refused;
   }
   return { id: conversationId, teamId };
@@ -1222,24 +1246,29 @@ async function hasScope(
   return !scopes || scopes.has(scope);
 }
 
+function signsAgentPosts(scopes: Set<string> | null): boolean {
+  return !scopes?.has("chat:write.customize");
+}
+
 const SCOPE_WITHHELD_USERS =
   "this workspace did not grant the permission to look people up (users:read)";
 const SCOPE_WITHHELD_REACTIONS =
   "this workspace did not grant the permission to read reactions (reactions:read)";
 
-const AGENT_SIGNATURE_RE = /^:[a-z0-9_'+-]+: \*[^*\n]*\*\n\n/;
+const AGENT_SIGNATURE_RE = /^\S+\s+\*[^*\n]*\*\s+/;
 
 type AgentPersona = {
   persona: Pick<SlackPostMessage, "username" | "iconUrl">;
   sign: (text: string, bold: "*" | "**") => string;
+  emoji: string;
 };
 
-function withoutAgentSignature<T extends { text: string; sender: SlackSender }>(
-  event: T,
-): T {
-  return event.sender.kind === "agent"
-    ? { ...event, text: event.text.replace(AGENT_SIGNATURE_RE, "") }
-    : event;
+async function withoutAgentSignature<
+  T extends { text: string; sender: SlackSender; teamId: SlackWorkspace },
+>(gw: SlackGateway, event: T): Promise<T> {
+  if (event.sender.kind !== "agent") return event;
+  if (!signsAgentPosts(await grantedScopes(gw, event.teamId))) return event;
+  return { ...event, text: event.text.replace(AGENT_SIGNATURE_RE, "") };
 }
 
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
@@ -1317,6 +1346,7 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
+  agentsFor: (owner: string) => AgentsService;
   ignoredApps: SlackIgnoredApps;
   setSlackDefault: (
     agentId: string,
@@ -1324,6 +1354,7 @@ export type SlackWorkerDeps = {
   ) => Promise<boolean>;
   brand: { name: string; short: string };
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
   workspaceFiles: AgentWorkspaceFilesFactory;
@@ -1347,10 +1378,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
+    agentsFor,
     ignoredApps,
     setSlackDefault,
     brand,
     isTermsAccepted,
+    spendHold,
     uiBaseUrl,
     attendance,
     workspaceFiles,
@@ -1383,12 +1416,62 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return reach;
   }
 
+  async function mayMessageDirectly(
+    gw: SlackGateway,
+    instanceName: string,
+    userId: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean> {
+    const owner = await getInstanceOwner(instanceName);
+    if (owner) {
+      const ownerUsers = await identityLinks.externalUsersOf("slack", owner);
+      if (ownerUsers.includes(userId)) return true;
+    }
+    const bound = (
+      await channelRegistry.resolveSlackChannelsByInstance(instanceName)
+    ).filter((c) => c.teamId === teamId);
+    for (const { id } of bound.filter((c) => isDirectMessageId(c.id))) {
+      const lookup = await gw.getConversationInfo(id, teamId);
+      if (lookup.kind === "found" && lookup.directMessageUser === userId)
+        return true;
+    }
+    const boundIds = new Set(bound.map((c) => c.id));
+    const shared = await gw.listSharedChannels(userId, teamId);
+    return shared.some((id) => boundIds.has(id));
+  }
+
   async function refuseOutsideOwnerReach(
     gw: SlackGateway,
     instanceName: string,
     conversationId: string,
     teamId: SlackWorkspace,
+    directMessage?: { user: string | null },
   ): Promise<{ error: string } | null> {
+    if (directMessage) {
+      const { user } = directMessage;
+      if (!user) {
+        return {
+          error: `could not tell who ${conversationId} is a direct message with, so it is not one you may post into`,
+        };
+      }
+      let allowed: boolean;
+      try {
+        allowed = await mayMessageDirectly(gw, instanceName, user, teamId);
+      } catch (err) {
+        return {
+          error: `could not check whether you may message ${user} directly: ${formatError(err)}`,
+        };
+      }
+      return allowed
+        ? null
+        : {
+            error:
+              `${user} is not your owner, nor in a conversation you are ` +
+              `connected to. You may message directly only your owner, the ` +
+              `person in a 1:1 DM you are connected to, and the members of ` +
+              `channels you are connected to`,
+          };
+    }
     let reach: Set<string> | "unlinked";
     try {
       reach = await ownerReach(gw, instanceName, teamId);
@@ -1532,6 +1615,66 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
 
+  const threadSupersede = createThreadSupersede();
+
+  type SupersedableTurn = { turn: HeldTurn; signal: AbortSignal };
+
+  function holdSupersedable(
+    instanceName: string,
+    channel: string,
+    sessionKey: string,
+    carries: () => readonly string[],
+  ): SupersedableTurn & { end: () => void } {
+    const cancelled = new AbortController();
+    const turn = threadSupersede.hold(instanceName, {
+      channel,
+      sessionKey,
+      carries,
+      cancel: () => cancelled.abort(),
+    });
+    return { turn, signal: cancelled.signal, end: () => turn.end() };
+  }
+
+  async function waitForSupersededTurns(
+    instanceName: string,
+    channel: string,
+    rootTs: string,
+  ): Promise<string> {
+    const earlier = threadSupersede.supersede(instanceName, {
+      channel,
+      rootTs,
+      sessionKey: slackThreadKey(channel, rootTs),
+    });
+    if (!earlier) return "";
+    const turns = await earlier;
+    getLogger().info(
+      {
+        agentId: instanceName,
+        channelId: channel,
+        threadTs: rootTs,
+        cancelled: turns.filter((turn) => turn.cancelled).length,
+        waited: turns.length,
+      },
+      "slack.turn.superseded_earlier",
+    );
+    return supersededTurnNote(turns);
+  }
+
+  const turnReplies = (refs: TurnRef[]) =>
+    refs.flatMap((ref) => ref.replyTexts ?? []);
+
+  function noteCarriedByThread(
+    instanceName: string,
+    threadKey: string,
+    tss: readonly string[],
+  ): void {
+    if (tss.length === 0) return;
+    replaceSeenAbove(instanceName, threadKey, [
+      ...readSeenAbove(instanceName, threadKey),
+      ...tss,
+    ]);
+  }
+
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
   function beginTurn(instanceName: string, ref: TurnRef) {
@@ -1565,6 +1708,35 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
       lingering.set(ref, Date.now() + TURN_LINGER_MS);
     }
+  }
+
+  type StoppableTurn = {
+    instanceName: string;
+    startedBy: (slackUserId: string) => boolean;
+    sessionIds: Set<string>;
+    stop: () => Promise<void>;
+  };
+
+  const stoppableTurns = new Map<string, Set<StoppableTurn>>();
+
+  function holdStoppableTurn(
+    channel: string,
+    threadTs: string,
+    turn: StoppableTurn,
+  ): () => void {
+    const key = `${channel} ${threadTs}`;
+    let held = stoppableTurns.get(key);
+    if (!held) {
+      held = new Set();
+      stoppableTurns.set(key, held);
+    }
+    held.add(turn);
+    return () => {
+      const live = stoppableTurns.get(key);
+      if (!live) return;
+      live.delete(turn);
+      if (live.size === 0) stoppableTurns.delete(key);
+    };
   }
 
   const watchedTurnRefs = new Map<string, Set<TurnRef>>();
@@ -2062,41 +2234,50 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     instanceName: string,
     conversation: { id: string; teamId: SlackWorkspace },
   ): Promise<AgentPersona> {
-    const scopes = await grantedScopes(gw, conversation.teamId);
-    const customize = scopes?.has("chat:write.customize");
+    const signs = signsAgentPosts(await grantedScopes(gw, conversation.teamId));
     const [{ name: username, avatar }, owner, bound] = await Promise.all([
       resolveAgentIdentity(instanceName),
       getInstanceOwner(instanceName).catch(() => null),
-      customize
-        ? []
-        : channelRegistry
-            .resolveSlackChannelsByInstance(instanceName)
-            .catch((err: unknown) => {
-              getLogger().warn(
-                { instanceName, err: formatError(err) },
-                "slack.persona.bindings_unavailable: posting with the robot face",
-              );
-              return [];
-            }),
+      channelRegistry
+        .resolveSlackChannelsByInstance(instanceName)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            { instanceName, err: formatError(err) },
+            "slack.persona.bindings_unavailable: posting with the robot face",
+          );
+          return [];
+        }),
     ]);
-    const character = owner ? avatarCharacter(avatar, owner, username) : null;
-    if (!customize) {
-      const custom =
-        character &&
-        bound.find((c) => c.id === conversation.id)?.customEmoji?.[
-          SLACK_EMOJI_INDEX[character]
-        ];
-      const emoji = custom ? `:${custom}:` : ":robot_face:";
+    const parsed = owner ? parseAvatar(avatar, owner, username) : null;
+    const custom =
+      parsed?.kind === "character" &&
+      bound.find((c) => c.id === conversation.id)?.customEmoji?.[
+        SLACK_EMOJI_INDEX[parsed.character]
+      ];
+    const emoji =
+      parsed?.kind === "emoji"
+        ? parsed.emoji
+        : custom
+          ? `:${custom}:`
+          : ":robot_face:";
+    if (signs) {
       const name = username.replace(/[*<>&]/g, "");
       return {
         persona: {},
         sign: (text, bold) => `${emoji} ${bold}${name}${bold}\n\n${text}`,
+        emoji,
       };
     }
-    const iconUrl = agentIcon && character ? await agentIcon(character) : null;
+    const iconUrl = agentIcon && parsed ? await agentIcon(parsed) : null;
+    if (agentIcon && parsed && !iconUrl)
+      getLogger().warn(
+        { agentId: instanceName, avatar: parsed.kind },
+        "slack.agent_icon.missing",
+      );
     return {
       persona: { username, ...(iconUrl ? { iconUrl } : {}) },
       sign: (text) => text,
+      emoji,
     };
   }
 
@@ -2109,10 +2290,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return {
       uiBaseUrl,
       agentId: instanceName,
-      label: agentFooterLabel(
-        brand,
-        resolved === instanceName ? undefined : resolved,
-      ),
+      label: agentFooterLabel(resolved === instanceName ? undefined : resolved),
       ...(sessionId ? { sessionId } : {}),
       ...(ambientRound ? { ambientRound } : {}),
     };
@@ -2449,13 +2627,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "This was whispered to you privately, so its answer is never sent " +
           "to the channel. Reply without alsoSendToChannel.",
       };
-    const [footer, { persona, sign }] = await Promise.all([
+    const [base, { persona, sign, emoji }] = await Promise.all([
       agentFooter(instanceName, turn.sessionId),
       agentPersona(gw, instanceName, {
         id: turn.channel,
         teamId: turn.teamId,
       }),
     ]);
+    const footer = { ...base, emoji };
     try {
       await gw.postEphemeral({
         channel: turn.channel,
@@ -2698,6 +2877,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     onSession?: (sessionId: string) => void;
     onGhostTurn?: () => void;
     legacyThreadKey?: string;
+    signal?: AbortSignal;
   }): Promise<string> {
     const platformMeta = {
       type: SessionType.ChannelSlack,
@@ -2718,11 +2898,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onImagesDropped: args.onImagesDropped,
         onUpdate: args.onUpdate,
         onSession: args.onSession,
+        signal: args.signal,
       };
       const send = async (
         built: BuiltPrompt,
         opts: Parameters<typeof acp.sendPrompt>[1],
       ) => {
+        args.signal?.throwIfAborted();
         const answer = await acp.sendPrompt(built.prompt, opts);
         built.commit();
         return answer;
@@ -2777,6 +2959,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
     onSession?: (sessionId: string) => void;
+    held?: SupersedableTurn;
   }) {
     if (!gateway) return;
     const gw = gateway;
@@ -2888,13 +3071,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
       ...contractContext,
     });
-    const guidance = addressedGuidance({
-      isDirectMessage,
-      botUserId,
-      forwardedFrom: ctx.forwardedFrom,
-      ambiguousName: ctx.ambiguousName ?? null,
-      ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
-    });
+    const earlierTurn =
+      hasThread && !ctx.whisper
+        ? await waitForSupersededTurns(instanceName, ctx.channel, ctx.threadTs)
+        : "";
+    const guidance = [
+      addressedGuidance({
+        isDirectMessage,
+        botUserId,
+        forwardedFrom: ctx.forwardedFrom,
+        ambiguousName: ctx.ambiguousName ?? null,
+        ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
+      }),
+      ...(earlierTurn ? [earlierTurn] : []),
+    ].join("\n\n");
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -2939,6 +3129,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let ghostTurn = false;
     let restartsAtStart: Promise<PodRestartState | null> | undefined;
+    const stopper = new AbortController();
+    const stopped = () => stopper.signal.aborted;
     const runTurn = async () => {
       await runSessionTurn({
         instanceName,
@@ -2991,7 +3183,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ),
         onWaking,
         onImagesDropped,
-        onUpdate: presenter.onUpdate,
+        onUpdate: (update) => {
+          presenter.onUpdate(update);
+          if (update.kind === "tool") ctx.held?.turn.noteTool(update.title);
+        },
         onSession: (sessionId) => {
           seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
@@ -3000,6 +3195,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onGhostTurn: () => {
           ghostTurn = true;
         },
+        signal: stopper.signal,
       });
     };
 
@@ -3007,11 +3203,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const postFailure = async (err: unknown) => {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
-        : isAgentWakeTimeoutError(err)
-          ? wakeFailureReasonToken(err.failure)
-          : err instanceof AcpTurnAbandonedError
-            ? turnFailureReasonToken(err)
-            : "acp-error";
+        : isNoDefaultModelError(err)
+          ? "no-default-model"
+          : isAgentWakeTimeoutError(err)
+            ? wakeFailureReasonToken(err.failure)
+            : err instanceof AcpTurnAbandonedError
+              ? turnFailureReasonToken(err)
+              : "acp-error";
       getLogger().warn(
         {
           agentId: instanceName,
@@ -3023,16 +3221,38 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
         return;
       const text = isAgentStoppedError(err)
-        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
-        : isAgentWakeTimeoutError(err)
-          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
-          : err instanceof AcpTurnAbandonedError
-            ? `${turnFailureUserCopy(err)}${renderTurnFiles(ctx)}`
-            : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
+        ? err.disabled
+          ? `This agent is disabled by its owner — ask them to enable it.${renderTurnFiles(ctx)}`
+          : `This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.${renderTurnFiles(ctx)}`
+        : isNoDefaultModelError(err)
+          ? `${noDefaultModelUserCopy(err, uiBaseUrl, instanceName)}${renderTurnFiles(ctx)}`
+          : isAgentWakeTimeoutError(err)
+            ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
+            : err instanceof AcpTurnAbandonedError
+              ? `${turnFailureUserCopy(err)}${renderTurnFiles(ctx)}`
+              : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
       await postNotice(text);
       failurePosted = true;
     };
 
+    const releaseStoppable = holdStoppableTurn(ctx.channel, replyThreadTs, {
+      instanceName,
+      startedBy: (slackUserId) =>
+        verdictRefs().some((ref) => ref.slackUserId === slackUserId),
+      sessionIds: seenSessionIds,
+      stop: async () => {
+        stopper.abort();
+        await presenter.clearStatus();
+      },
+    });
+    let superseded = false;
+    const onSuperseded = () => {
+      superseded = true;
+      stopper.abort();
+      void presenter.clearStatus();
+    };
+    if (ctx.held?.signal.aborted) onSuperseded();
+    ctx.held?.signal.addEventListener("abort", onSuperseded, { once: true });
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
       await runWhileAgentStarts(runTurn, {
@@ -3046,6 +3266,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       });
       outcome = "success";
     } catch (err) {
+      if (superseded)
+        noteCarriedByThread(
+          instanceName,
+          threadKey,
+          verdictRefs().map((ref) => ref.eventTs),
+        );
+      if (stopped()) {
+        outcome = "success";
+        getLogger().info(
+          { agentId: instanceName, error: formatError(err) },
+          "slack.turn.stopped_with_error",
+        );
+        return;
+      }
       await postFailure(err);
       const sessionId = turnSessionId();
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
@@ -3054,6 +3288,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
       }
     } finally {
+      releaseStoppable();
+      ctx.held?.signal.removeEventListener("abort", onSuperseded);
+      ctx.held?.turn.noteReplies(turnReplies(verdictRefs()));
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
@@ -3068,6 +3305,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (
         failureReason === undefined &&
         !ghostTurn &&
+        !stopped() &&
         !deliveredBy(settledRefs, "clean")
       ) {
         getLogger().warn(
@@ -3099,7 +3337,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ? { externalActorId: ctx.externalActorId }
           : {}),
         outcome,
-        ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ...(failureReason !== undefined
+          ? { reason: failureReason }
+          : superseded
+            ? { reason: "superseded" }
+            : stopped()
+              ? { reason: "stopped" }
+              : {}),
       });
     }
   }
@@ -3406,6 +3650,93 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
+  async function handleSessionStopped(event: SlackSessionStoppedEvent) {
+    const gw = gateway;
+    if (!gw) return;
+    const { channel, threadTs, teamId, user } = event;
+    for (const ts of event.streamingMessageTs) {
+      await gw
+        .stopStream({ channel, ts, teamId })
+        .catch((err) =>
+          getLogger().debug(
+            { channelId: channel, ts, err: formatError(err) },
+            "slack.stop.stream_stop_failed",
+          ),
+        );
+    }
+    const running = [...(stoppableTurns.get(`${channel} ${threadTs}`) ?? [])];
+    if (running.length === 0) {
+      await gw
+        .setStatus({ channel, threadTs, teamId, status: "" })
+        .catch((err) =>
+          getLogger().debug(
+            { channelId: channel, threadTs, err: formatError(err) },
+            "slack.stop.status_clear_failed",
+          ),
+        );
+      return;
+    }
+    const invoker = await identityLinks
+      .resolve("slack", user)
+      .catch(() => null);
+    const mayStop = async (turn: StoppableTurn) =>
+      turn.startedBy(user) ||
+      (invoker !== null &&
+        invoker ===
+          (await getInstanceOwner(turn.instanceName).catch(() => null)));
+    const allowed: StoppableTurn[] = [];
+    for (const turn of running) if (await mayStop(turn)) allowed.push(turn);
+    const agentName = await resolveAgentName(
+      (allowed[0] ?? running[0]!).instanceName,
+    );
+    if (allowed.length === 0) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: invoker ? "user" : "external",
+        surface: "slack",
+        agentId: running[0]!.instanceName,
+        decision: "deny",
+        reason: "not-starter-or-owner",
+        detail: { slackUserId: user, channelId: channel, trigger: "stop" },
+      });
+      await ephemeral(
+        channel,
+        user,
+        threadTs,
+        `Only the person who asked, or \`${agentName}\`'s owner, can stop it.`,
+        teamId,
+      );
+      return;
+    }
+    for (const turn of allowed) {
+      securityLog("info", "channel.authz", {
+        category: "channel",
+        actor: invoker,
+        actorKind: invoker ? "user" : "external",
+        surface: "slack",
+        agentId: turn.instanceName,
+        decision: "allow",
+        detail: {
+          basis: turn.startedBy(user) ? "starter" : "owner",
+          trigger: "stop",
+          slackUserId: user,
+          channelId: channel,
+        },
+      });
+      await turn.stop();
+      for (const sid of turn.sessionIds)
+        turnRecovery.dismiss(turn.instanceName, sid);
+    }
+    await ephemeral(
+      channel,
+      user,
+      threadTs,
+      `Stopped \`${agentName}\`.`,
+      teamId,
+    );
+  }
+
   async function handleBotJoinedChannel(event: SlackBotJoinedChannelEvent) {
     if (!gateway || !event.inviter) return;
     await gateway.postEphemeral({
@@ -3592,6 +3923,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           type: EventType.SlackDisconnected,
           agentId: binding.instanceName,
           slackChannelId: command.channelId,
+          ownerSub: agentOwner ?? binding.owner,
         });
         const remaining = picked.roster.filter(
           (entry) => entry.instanceName !== binding.instanceName,
@@ -3622,11 +3954,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await handleDefaultCommand(rest, command, ack);
       })
       .with("whisper", async () => {
-        await handleWhisperCommand(command, ack);
+        const { action, nameArg } = parseSwitchArgs(rest);
+        if (action && parseWhisperRequest(rest).message === null)
+          await handleWhisperSwitchCommand(action, nameArg, command, ack);
+        else await handleWhisperCommand(command, ack);
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -3691,6 +4026,27 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
     const target = picked.entry;
+    const takes = await takesWhispers(target.instanceName);
+    if (takes === null) {
+      await ack({
+        text: `Couldn't check whether \`${target.name}\` takes whispers. Try again in a moment.`,
+      });
+      return;
+    }
+    if (!takes) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: target.instanceName,
+        decision: "deny",
+        reason: "whisper-off",
+        detail: { slackUserId: command.userId, channelId: command.channelId },
+      });
+      await ack({ text: whisperOffText(target.name) });
+      return;
+    }
 
     if (request.message !== null) {
       await ack({
@@ -3722,6 +4078,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           privateReply: true,
           command: usage,
         },
+      });
+      await noticeWhispersTurnedOff(target.instanceName, {
+        channel: command.channelId,
+        teamId: command.teamId,
+        whisperer: command.userId,
+        origin: command.channelId,
+        threadTs: undefined,
       });
       return;
     }
@@ -3867,6 +4230,28 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!entry) {
       deny("whisper-unbound");
       await ended(`its agent is no longer connected to <#${session.origin}>`);
+      return;
+    }
+    const takes = await takesWhispers(entry.instanceName);
+    if (takes === null) {
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        threadTs,
+        "Couldn't check whether this agent still takes whispers, so this message wasn't passed on. Send it again in a moment.",
+        event.teamId,
+      );
+      return;
+    }
+    if (!takes) {
+      deny("whisper-off");
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        threadTs,
+        whispersOffEndedText(session.origin),
+        event.teamId,
+      );
       return;
     }
     if (session.checksMembership) {
@@ -4329,6 +4714,158 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
+  function whisperOffText(name: string): string {
+    return (
+      `Whispers to \`${name}\` are turned off. ` +
+      "Mention it in the conversation instead."
+    );
+  }
+
+  function whispersOffEndedText(origin: string): string {
+    return (
+      "This whisper has ended: the agent's owner turned whispers off. " +
+      `To keep talking to it, mention it in <#${origin}>.`
+    );
+  }
+
+  async function noticeWhispersTurnedOff(
+    instanceName: string,
+    where: {
+      channel: string;
+      teamId: SlackWorkspace;
+      whisperer: string;
+      origin: string;
+      threadTs: string | undefined;
+    },
+  ) {
+    if ((await takesWhispers(instanceName)) !== false) return;
+    await ephemeral(
+      where.channel,
+      where.whisperer,
+      where.threadTs,
+      whispersOffEndedText(where.origin),
+      where.teamId,
+    );
+  }
+
+  async function takesWhispers(instanceName: string): Promise<boolean | null> {
+    try {
+      const agent = await agents().get(instanceName);
+      return agent !== null && agent.spec.whispersOff !== true;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, error: formatError(err) },
+        "slack.whisper.setting_unread",
+      );
+      return null;
+    }
+  }
+
+  async function handleWhisperSwitchCommand(
+    action: "on" | "off",
+    nameArg: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const usage = `/${brandShort} whisper <agent> ${action}`;
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        decision: "deny",
+        reason: "unlinked",
+        detail: { slackUserId: command.userId, channelId: command.channelId },
+      });
+      await ack({
+        text: `Link your account first: run \`/${brandShort} login\`, then \`${usage}\` again.`,
+      });
+      return;
+    }
+
+    const owned = agentsFor(invoker);
+    let candidates: Agent[];
+    try {
+      const mine = await owned.list();
+      if (nameArg) {
+        candidates = mine.filter((agent) => sameAgentName(agent.name, nameArg));
+      } else {
+        const here = new Set(
+          (await resolveRoster(command.channelId)).map((e) => e.instanceName),
+        );
+        candidates = mine.filter((agent) => here.has(agent.id));
+      }
+    } catch (err) {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.whisper.switch_lookup_failed",
+      );
+      await ack({
+        text: "Couldn't look up your agents. Try again in a moment.",
+      });
+      return;
+    }
+    if (candidates.length !== 1) {
+      const names = candidates.map((agent) => `\`${agent.name}\``).join(", ");
+      await ack({
+        text:
+          candidates.length > 1
+            ? `More than one of your agents matches: ${names}. Name one, or use the platform UI.`
+            : nameArg
+              ? `You have no agent called \`${nameArg}\`. Only an agent's owner can change its whispers.`
+              : `Name one of your agents: \`${usage}\`.`,
+      });
+      return;
+    }
+    const target = candidates[0]!;
+
+    const enable = action === "on";
+    if (enable === (target.spec.whispersOff !== true)) {
+      await ack({
+        text: `Whispers to \`${target.name}\` are already ${action}.`,
+      });
+      return;
+    }
+
+    let updated: Agent | null;
+    try {
+      updated = await owned.update({ id: target.id, whisper: enable });
+    } catch (err) {
+      getLogger().warn(
+        { agentId: target.id, error: formatError(err) },
+        "slack.whisper.switch_failed",
+      );
+      updated = null;
+    }
+    if (!updated) {
+      await ack({
+        text: `Couldn't change whispers for \`${target.name}\`. Try again in a moment.`,
+      });
+      return;
+    }
+    securityLog("info", "channel.whisper_toggled", {
+      category: "authz-list",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: target.id,
+      result: "success",
+      detail: {
+        slackUserId: command.userId,
+        channelId: command.channelId,
+        whisper: enable,
+      },
+    });
+
+    await ack({
+      text: enable
+        ? `Whispers to \`${target.name}\` turned on. Anyone in a conversation it is connected to can talk to it privately with \`/${brandShort} whisper\`, and you can read every whisper in its sessions. Run \`/${brandShort} whisper ${target.name} off\` to turn them off again.`
+        : `Whispers to \`${target.name}\` turned off in every conversation it is connected to. Open whisper threads with it end at their next message.`,
+    });
+  }
+
   async function handleAmbientCommand(
     rest: string,
     command: SlackSlashCommand,
@@ -4551,7 +5088,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ) {
     if (!gateway) return;
 
-    const event = withoutAgentSignature(signedEvent);
+    const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
     if (
@@ -4721,9 +5258,38 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return createConversationQueue<AddressedPending>({
       settleMs,
       canSteer: (msg) => !carriesAttachments(msg),
-      runTurn: async (batch, onSession) => {
+      runTurn: async (queued, onSession) => {
+        const threadKey = slackThreadKey(
+          conversation.channelId,
+          conversation.threadTs,
+        );
+        const isCarriedByThread = (m: AddressedPending) =>
+          !conversation.oneThread &&
+          threadSupersede.isSuperseded(
+            conversation.instanceName,
+            conversation.channelId,
+            m.eventTs,
+          );
+        noteCarriedByThread(
+          conversation.instanceName,
+          threadKey,
+          queued.filter(isCarriedByThread).map((m) => m.eventTs),
+        );
+        const batch = queued.filter((m) => !isCarriedByThread(m));
+        const latest = batch.at(-1);
+        if (!latest) return;
         const { kept, dropped } = batchFiles(batch);
-        const latest = batch.at(-1)!;
+        const held = conversation.oneThread
+          ? null
+          : holdSupersedable(
+              conversation.instanceName,
+              conversation.channelId,
+              threadKey,
+              () => [
+                ...batch.map((m) => m.eventTs),
+                ...steeredRefs.map((ref) => ref.eventTs),
+              ],
+            );
         await relaySharedTurn({
           channel: conversation.channelId,
           teamId: conversation.teamId,
@@ -4752,7 +5318,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...(conversation.whisper ? { whisper: conversation.whisper } : {}),
           siblingRefs: () => steeredRefs,
           onSession,
-        });
+          ...(held ? { held } : {}),
+        }).finally(() => held?.end());
+        if (conversation.whisper)
+          await noticeWhispersTurnedOff(conversation.instanceName, {
+            channel: conversation.channelId,
+            teamId: conversation.teamId,
+            whisperer: conversation.whisper.whisperer,
+            origin: conversation.whisper.origin,
+            threadTs: conversation.threadTs,
+          });
       },
       steer: async (sessionId, batch) => {
         const outcome = await makeAcpClient(conversation.instanceName).steer(
@@ -4868,6 +5443,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
     onSession?: (sessionId: string) => void;
+    held?: SupersedableTurn;
   }) {
     if (!gateway) return;
 
@@ -4909,6 +5485,31 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
 
+    const held = await spendHold?.(args.instanceName);
+    if (held) {
+      const text = spendHoldUserCopy(
+        held,
+        `\`${await resolveAgentName(args.instanceName)}\``,
+        brand.name,
+        slackResetTime(new Date()),
+      );
+      if (args.slackUserId)
+        await gateway.postEphemeral({
+          channel: args.channel,
+          user: args.slackUserId,
+          teamId: args.teamId,
+          text,
+        });
+      else
+        await gateway.postMessage({
+          channel: args.channel,
+          teamId: args.teamId,
+          threadTs: args.threadTs,
+          text,
+        });
+      return;
+    }
+
     await relayOwnerTurn({
       instanceName: args.instanceName,
       channel: args.channel,
@@ -4934,6 +5535,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ...(args.whisper ? { whisper: args.whisper } : {}),
       ...(args.siblingRefs ? { siblingRefs: args.siblingRefs } : {}),
       ...(args.onSession ? { onSession: args.onSession } : {}),
+      ...(args.held ? { held: args.held } : {}),
     });
   }
 
@@ -4962,6 +5564,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     roster?: RosterEntry[];
     readers?: RosterEntry[];
     answeredAlready?: AmbientPeerReply[];
+    earlierTurn?: string;
+    held?: SupersedableTurn;
   }): Promise<{
     posted: boolean;
     replyText: string | null;
@@ -5028,13 +5632,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       roster: rosterCopy(args.roster, args.instanceName),
       ...contractContext,
     });
-    const guidance = ambientGuidance(
-      brand,
-      agentName,
-      rosterCopy(args.readers ?? args.roster, args.instanceName),
-      args.answeredAlready ?? [],
-      args.hasThread,
-    );
+    const guidance = [
+      ambientGuidance(
+        brand,
+        agentName,
+        rosterCopy(args.readers ?? args.roster, args.instanceName),
+        args.answeredAlready ?? [],
+        args.hasThread,
+      ),
+      ...(args.earlierTurn ? [args.earlierTurn] : []),
+    ].join("\n\n");
 
     let delivery: Promise<TurnDelivery>;
     const deliverFiles = () =>
@@ -5105,7 +5712,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onGhostTurn: () => {
           ghostTurn = true;
         },
+        ...(args.held
+          ? {
+              signal: args.held.signal,
+              onUpdate: (update: PromptUpdate) => {
+                if (update.kind === "tool")
+                  args.held?.turn.noteTool(update.title);
+              },
+            }
+          : {}),
       });
+    const superseded = () => args.held?.signal.aborted === true;
 
     try {
       for (const ref of turnRefs) {
@@ -5114,13 +5731,28 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runWhileAgentStarts(runTurn, wakeWait);
       outcome = "success";
     } catch (err) {
+      if (superseded()) {
+        outcome = "success";
+        noteCarriedByThread(
+          args.instanceName,
+          args.threadKey,
+          args.messages.map((m) => m.eventTs),
+        );
+        getLogger().info(
+          { agentId: args.instanceName, error: formatError(err) },
+          "slack.ambient_turn.superseded",
+        );
+        return { posted: false, replyText: null, replies: [] };
+      }
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
-        : isAgentWakeTimeoutError(err)
-          ? wakeFailureReasonToken(err.failure)
-          : err instanceof AcpTurnAbandonedError
-            ? turnFailureReasonToken(err)
-            : "acp-error";
+        : isNoDefaultModelError(err)
+          ? "no-default-model"
+          : isAgentWakeTimeoutError(err)
+            ? wakeFailureReasonToken(err.failure)
+            : err instanceof AcpTurnAbandonedError
+              ? turnFailureReasonToken(err)
+              : "acp-error";
       getLogger().warn(
         {
           agentId: args.instanceName,
@@ -5139,6 +5771,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         for (const sid of seenSessionIds)
           turnRecovery.dismiss(args.instanceName, sid);
       }
+      args.held?.turn.noteReplies(
+        turnRefs.flatMap((ref) => ref.replyTexts ?? []),
+      );
       annotateSpan({
         "platform.channel.outcome": outcome,
         ...(failureReason !== undefined && {
@@ -5152,7 +5787,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         actorSub: null,
         externalActorId: args.externalActorId,
         outcome,
-        ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ...(failureReason !== undefined
+          ? { reason: failureReason }
+          : superseded()
+            ? { reason: "superseded" }
+            : {}),
         ambient: true,
       });
     }
@@ -5225,14 +5864,22 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const readers: RosterEntry[] = [];
         for (const entry of roster) {
           if (!entry.ambient) continue;
-          if (await isTermsAccepted(entry.owner)) {
-            readers.push(entry);
+          if (!(await isTermsAccepted(entry.owner))) {
+            getLogger().debug(
+              { agentId: entry.instanceName, channelId },
+              "slack.ambient_turn.skipped_terms",
+            );
             continue;
           }
-          getLogger().debug(
-            { agentId: entry.instanceName, channelId },
-            "slack.ambient_turn.skipped_terms",
-          );
+          const held = await spendHold?.(entry.instanceName);
+          if (held) {
+            getLogger().debug(
+              { agentId: entry.instanceName, channelId, reason: held },
+              "slack.ambient_turn.skipped_spend",
+            );
+            continue;
+          }
+          readers.push(entry);
         }
         if (readers.length === 0) return;
 
@@ -5248,9 +5895,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
             continue;
           }
-          const shown = batch.filter((m) => senderReaches(m.sender, reader));
+          const reached = batch.filter((m) => senderReaches(m.sender, reader));
+          const isCarriedByThread = (m: PendingMessage) =>
+            !inThread &&
+            threadSupersede.isSuperseded(
+              reader.instanceName,
+              channelId,
+              m.eventTs,
+            );
+          noteCarriedByThread(
+            reader.instanceName,
+            ambientThreadKey(channelId),
+            reached.filter(isCarriedByThread).map((m) => m.eventTs),
+          );
+          const shown = reached.filter((m) => !isCarriedByThread(m));
           const last = shown.at(-1);
           if (!last) continue;
+          const earlierTurn = inThread
+            ? await waitForSupersededTurns(
+                reader.instanceName,
+                channelId,
+                threadTs,
+              )
+            : "";
           const { kept, dropped } = batchFiles(shown);
           securityLog("info", "channel.authz", {
             category: "channel",
@@ -5267,7 +5934,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               channelId,
             },
           });
+          const held = inThread
+            ? null
+            : holdSupersedable(
+                reader.instanceName,
+                channelId,
+                ambientThreadKey(channelId),
+                () => shown.map((m) => m.eventTs),
+              );
           const { posted, replyText, replies } = await relayAmbientTurn({
+            ...(earlierTurn ? { earlierTurn } : {}),
+            ...(held ? { held } : {}),
             teamId: reader.teamId,
             roster,
             readers,
@@ -5290,7 +5967,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
-          });
+          }).finally(() => held?.end());
           if (posted)
             answeredAlready.push({ name: reader.name, text: replyText });
           botUserId ??= await gateway
@@ -5368,7 +6045,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function handleChannelMessage(signedEvent: SlackChannelMessageEvent) {
     if (!gateway) return;
-    const event = withoutAgentSignature(signedEvent);
+    const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const conversation = botPostConversation(event.channel, event.threadTs);
@@ -5438,6 +6115,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onDirectMessage: handleDirectMessage,
         onBotJoinedChannel: handleBotJoinedChannel,
         onViewSubmission: handleViewSubmission,
+        onSessionStopped: handleSessionStopped,
       });
       if (!connected) {
         gatewayFailed = true;
@@ -5592,16 +6270,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         conversationId,
         turnWorkspace(instanceName),
-        (id, teamId) => refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+        (id, teamId, dm) =>
+          refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) {
         return target;
       }
 
-      const [footer, { persona, sign }] = await Promise.all([
+      const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName),
         agentPersona(gw, instanceName, target),
       ]);
+      const footer = { ...base, emoji };
       const contextBlock = agentContextBlock(footer);
 
       try {
@@ -5728,6 +6408,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             `"${target.name}" cannot take turns yet — whoever connected it ` +
             "must accept the Terms of Use first. Answer it yourself, or say " +
             "you can't.",
+        };
+      const held = await spendHold?.(target.instanceName);
+      if (held)
+        return {
+          error:
+            `"${target.name}" reached ` +
+            (held === "limit"
+              ? "its spend limit"
+              : "its owner's spend ceiling") +
+            " for today, so it cannot take turns. Answer it yourself, or " +
+            "say you can't.",
         };
 
       const self = await resolveAgentName(instanceName);
@@ -5892,17 +6583,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               boundChannelIds,
               args.conversationId ?? turn?.channel,
               turnWorkspace(instanceName),
-              async (id, teamId) =>
+              async (id, teamId, dm) =>
                 id === turn?.channel
                   ? null
-                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
             );
       if ("error" in target) return target;
 
-      const [footer, { persona, sign }] = await Promise.all([
+      const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName, turn?.sessionId, turn?.ambient),
         agentPersona(gw, instanceName, target),
       ]);
+      const footer = { ...base, emoji };
       if (attachmentOnly) {
         try {
           await gw.uploadFile({
@@ -5999,10 +6691,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         args.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId) =>
+        async (id, teamId, dm) =>
           id === turnChannel
             ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) return target;
 
@@ -6159,10 +6851,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         query.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId) =>
+        async (id, teamId, dm) =>
           id === turnChannel
             ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) return target;
 

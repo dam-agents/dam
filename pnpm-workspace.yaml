@@ -6,26 +6,14 @@ packages:
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
-  # The pi-agent image pins @earendil-works/pi-coding-agent 1.0.4 (2026-10-05)
-  # and the pi-dynamic-providers extension type-checks against the same
-  # version; the fork publishes all its packages in lockstep. Drop these once
-  # the release ages past the floor (2026-10-12).
-  - "@earendil-works/chord@1.0.4"
-  - "@earendil-works/pi-agent-core@1.0.4"
-  - "@earendil-works/pi-ai@1.0.4"
-  - "@earendil-works/pi-codemode@1.0.4"
-  - "@earendil-works/pi-coding-agent@1.0.4"
-  - "@earendil-works/pi-mcp@1.0.4"
-  - "@earendil-works/pi-telemetry@1.0.4"
-  - "@earendil-works/pi-tui@1.0.4"
-  # vite 8.3.3 (2026-10-06) fixes GHSA-rq7h-c2jc-7f22, GHSA-vfpm-58rq-9qcg
-  # and GHSA-9jrq-w75r-8gcw, dev-server reads outside `server.fs.allow`.
-  # Drop this once it ages past the floor (2026-10-13).
-  - "vite@8.3.3"
-  # zod 4.6.6 (2026-10-11) mitigates CVE-2023-54404 (GHSA-mrhx-c7xc-m3w5):
-  # its #6652 rejects an array, set or map over its `.max()` before parsing
-  # any element. Drop this once it ages past the floor (2026-10-18).
-  - "zod@4.6.6"
+  # qs 6.16.1 (2026-10-14) fixes CVE-2026-110816, reached through express's
+  # body-parser. Drop this once it ages past the floor (2026-10-21).
+  - "qs@6.16.1"
+  # undici 8.12.2 and 7.30.1 (2026-10-15) are the first releases that fix
+  # CVE-2026-109383, CVE-2026-109829, CVE-2026-109869 and CVE-2026-87018.
+  # Drop this once they age past the floor (2026-10-22).
+  - "undici@8.12.2"
+  - "undici@7.30.1"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
@@ -48,6 +36,7 @@ trustPolicyExclude:
 allowBuilds:
   '@carbon/icon-helpers': false
   '@carbon/icons-react': false
+  '@carbon/pictograms-react': false
   '@google/genai': true
   '@ibm/plex': false
   esbuild: true
@@ -59,7 +48,15 @@ allowBuilds:
 overrides:
   "esbuild@<0.25.0": "0.25.12"
   "esbuild@>=0.27.3 <0.28.1": "0.28.1"
-  "serialize-javascript@<7.0.5": "7.0.5"
+  # CVE-2026-109383, -109829, -109869 and -87018 are fixed only in undici
+  # 7.30.1 and 8.12.2. The vulnerable copies come from peer resolutions no
+  # direct bump reaches: @slack/socket-mode's ^7 peer and pi-ai's optional 8
+  # peer. Drop both once those peers resolve at or above the fix.
+  "undici@^7": "7.30.1"
+  "undici@^8": "8.12.2"
+  # CVE-2026-111997 is fixed in ip-address 10.7.4. socks and
+  # express-rate-limit both allow it, and keep 10.7.2 in the lock.
+  "ip-address@<10.7.4": "10.7.4"
 
 packageExtensions:
   "drizzle-kit":

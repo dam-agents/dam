@@ -6,7 +6,7 @@ import { SectionHeader } from "@/components/ui/list-section";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { AgentStoppedCallout } from "../../../agents/components/agent-stopped-callout.js";
+import { AgentSleepingCallout } from "../../../agents/components/agent-sleeping-callout.js";
 import { SkillSourceList } from "./skills-source-list.js";
 
 const MAX_CHIPS = 8;
@@ -60,8 +60,8 @@ export function SkillsStoppedPanel({
   loadingBySource,
   revalidatingBySource,
   errorBySource,
-  addSourceButton,
-  callout,
+  addSourceRow,
+  disabledNotice,
   comingUp,
   onStart,
   onRescan,
@@ -77,8 +77,8 @@ export function SkillsStoppedPanel({
   loadingBySource: Record<string, boolean>;
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
-  addSourceButton: ReactNode;
-  callout?: ReactNode;
+  addSourceRow: ReactNode;
+  disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
@@ -87,11 +87,12 @@ export function SkillsStoppedPanel({
 }) {
   return (
     <div className="flex flex-col gap-8">
-      {callout && <div className="-mb-4">{callout}</div>}
-      <AgentStoppedCallout comingUp={comingUp} onStart={onStart}>
-        — its skills are read-only until it runs again. Start the agent to
-        change them.
-      </AgentStoppedCallout>
+      {disabledNotice ?? (
+        <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
+          — its skills are read-only until it wakes. Wake the agent to change
+          them.
+        </AgentSleepingCallout>
+      )}
 
       <section>
         <SectionHeader label="Skills at next start" />
@@ -121,16 +122,10 @@ export function SkillsStoppedPanel({
             </SnapshotRow>
           ))}
         </Card>
-        <p className="mt-2.5 text-sm text-muted-foreground">
-          Search, bulk actions and per-skill toggles need the agent running —
-          they&rsquo;re left out here rather than shown greyed out.
-        </p>
       </section>
 
       <section>
-        <SectionHeader label="Connected sources">
-          {addSourceButton}
-        </SectionHeader>
+        <SectionHeader label="Connected sources" />
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}
@@ -143,6 +138,9 @@ export function SkillsStoppedPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           Sources stay editable while stopped. Reading what a private one
           contains needs the agent running.

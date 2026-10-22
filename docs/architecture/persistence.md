@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-13
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -28,9 +28,10 @@ Platform persists state on four durable substrates, split cleanly between the pl
 - **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod.
   The agent process reads and writes here freely; it has no direct access to Postgres or to the custom resources that describe it.
   Persists across hibernation; reclaimed when the Agent is deleted.
+  On the `vm` Backend there are none: a machine keeps one disk on its owner's runner instead, which [vm storage](vm-storage.md) owns.
 
 Alongside the durable substrates, the platform runs a **Redis** the api-server cannot boot without — a bundled single-replica instance by default, or an external endpoint chosen at deploy time.
-It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)).
+It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, pending [connection secret requests](connections.md#connection), and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)).
 Losing this state signs restricted viewers out, interrupts pending sign-ins and invalidates outstanding render grants; viewers must sign in again or reload the share page.
 No artifact content or viewer allowlist is lost; Postgres stays the source of truth for anything durable, and the scheduled sweeps re-assert their registrations so a dataset loss cannot silently stop them ([platform-topology](platform-topology.md)).
 
@@ -91,7 +92,9 @@ Postgres carries application state the api-server owns end-to-end — anything t
   A second, narrower index admits at most one row per conversation marked default — at most, never exactly one, so having no default is a state the schema permits and the routing handles.
   Each binding carries its own ambient and default flags (absent = off).
   `slack_ignored_apps` holds each conversation's ignored apps, keyed by bot id.
-  `telegram_conversations` records the conversation→Agent binding for Telegram, plus the binding owner's sub: different shapes by design, since Slack has a workspace and Telegram does not.
+  `public_image_urls` holds the public URL of each image uploaded to the image host for Slack agent icons, keyed by a hash of the image.
+  `avatar_images` holds each uploaded [agent avatar](agent-avatars.md#custom-avatars) as a PNG, keyed by its hash.
+  `telegram_conversations` records the chat→Agent binding for Telegram, one row per chat, plus its ambient flag and its owner's sub: different shapes by design, since Slack has a workspace and Telegram does not.
   `identity_links` maps a messenger user to a Keycloak sub, keyed by provider, so it serves any future workspace channel; a second workspace leaves it untouched, since inside one enterprise organization a user id already identifies one person and re-keying it would make anyone who linked in one workspace link again in the next.
   `slack_installs` is one row per workspace that completed the install handshake or whose Helm bot token was imported, holding the workspace's name, who connected it, and whether its credential still works — the bot token itself lives in a Kubernetes Secret the row points at, so no credential is stored here ([channels](channels.md)).
   That Secret is platform-owned rather than per-Agent: the api-server reads it, and no agent gateway is ever handed it, so it sits outside the per-`(owner, connection)` credential classes on [security-and-credentials](security-and-credentials.md).
@@ -102,7 +105,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`).
   Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary.
   Owned by [usage-tracking](usage-tracking.md).
-- **session directory** — the kind of each Session (`agent_sessions`), reported by the agent that owns it.
+- **session directory** — the kind of each Session, reported by its agent.
   A deliberate copy of agent-owned state, kept only so spend can still be attributed to how the work was started once the agent hibernates or is deleted; it is not a Session store and no Session is read from it.
   Owned by [metrics](metrics.md#session-directory).
 - **schedules** — RRULE, quiet hours, task payload, session mode, the optional Precheck, and firing bookkeeping (`schedules`) — the last of which separates runs from declined occurrences and from a Precheck that broke.
@@ -125,7 +128,10 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
-- **delegation records** — one row per Invocation (`invocations`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **delegation records** — one row per Invocation, kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; and the owner's daily limits.
+  Redis caches the day totals.
+  Owned by [spend-limits](spend-limits.md#ledger).
 
 Several of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile and the attention record store the real sub, as channel bindings already do.
 The difference is the requirement, not an oversight — a public page names its Agent's owner and a feed names a person's own sessions back to them, and a hash cannot be resolved back to a person.
@@ -198,11 +204,12 @@ Together these hold:
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
 - **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store.
   The session store is what a cold re-attach reads after a pod restart, whichever verb the harness advertises for it ([sessions](sessions.md#session-inside-the-pod)).
-  The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's source of truth for per-session mode, type, `scheduleId`, `threadTs`, a title the platform set, the session's own reference and the session a one-time run reports to, `createdAt`, the time of the session's last genuine message, and run accounting for scheduled fires (how many the session has served, their summed duration — timed only for machine-driven turns so a human reply never counts — and the start time of each fire, kept as a bounded newest-wins list so a reader can see where each run in view began), surfaced over ACP `_meta.platform` and (for mode and type alone) mirrored into the session directory above — those stamps and the totals are durable, but the marker for the fire currently in flight is not: it cannot outlive the process that set it, so the totals under-count a fire the pod restart interrupted — alongside the trigger-binding, runtime-channel and [processes](agent-processes.md) state files.
-  The same directory holds the **undelivered-prompts document**: the whole content of user prompts that never reached the harness (inline images capped, file attachments by name), written only when a prompt is recorded, sent again, or deleted — never on a routine turn — and deliberately separate from session metadata so a corrupt metadata write cannot take user text with it.
+  The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's source of truth for per-session mode, type, `scheduleId`, `threadTs`, a title the platform set, a flag for a session the harness has not stored yet, the session's own reference and the session a one-time run reports to, `createdAt`, the time of the session's last genuine message, and run accounting for scheduled fires (how many the session has served, their summed duration — timed only for machine-driven turns so a human reply never counts — and the start time of each fire, kept as a bounded newest-wins list), surfaced over ACP `_meta.platform` and (for mode and type alone) mirrored into the session directory above — those stamps and the totals are durable, but the marker for the fire currently in flight is not: it cannot outlive the process that set it, so the totals under-count a fire the pod restart interrupted — alongside the trigger-binding, runtime-channel and [processes](agent-processes.md) state files; its Startup Items are in `~/.config/rc`.
+  The same directory holds the **undelivered-prompts document**: the whole content of user prompts that never reached the harness, and of a prompt the harness took for a session it has not stored yet when the harness exits before it answers (inline images capped, file attachments by name), written only when a prompt is recorded, sent again, or deleted — never on a routine turn — and deliberately separate from session metadata so a corrupt metadata write cannot take user text with it.
   A record outlives session teardown and pod restarts; it goes when the user resends or deletes it, with its Session, or — the document is byte-capped — when another session's write needs the room, evicting whole sessions oldest-first ([agent-lifecycle](agent-lifecycle.md) owns the delivery contract).
-  A third document, **active-turns**, marks each session while a turn runs and clears it on every turn end agent-runtime observes; a marker still present at the next boot names a turn whose end it never saw — the process was SIGKILLed (an OOM group-kill, an eviction) mid-turn — which agent-lifecycle's recovery consumes to resume that session automatically — only markers inherited from the previous process, since a turn the new process began before recovery runs is live work and resuming it would answer it twice — its own document again so a corrupt write cannot take run accounting or user text with it.
-  The directory also holds the **run-results document**: for each `cli_run` Session and each Session a one-time run reports from, the newest finished turn's outcome — prompt identity, stop reason, accumulated assistant text (size-capped per turn, marked when cut) — written at turn end so a detached headless caller can read the result after the in-memory session log is reaped.
+  A third document, **active-turns**, marks each session while a turn runs and clears it on every turn end agent-runtime observes; a marker still present at the next boot names a turn whose end it never saw — the process went down mid-turn, SIGKILLed (an OOM group-kill) or shut down by SIGTERM (a Sleep, an eviction; that shutdown marks the marker *stopped*) — which agent-lifecycle's recovery consumes to resume that session automatically — only markers inherited from the previous process, since a turn the new process began before recovery runs is live work and resuming it would answer it twice — its own document again so a corrupt write cannot take run accounting or user text with it.
+  The marker of a session the harness has not stored yet also keeps the turn's prompt, the only copy that survives the process.
+  The directory also holds the **run-results document**: for each `cli_run` Session and each Session a one-time run reports from, the newest finished run's outcome — prompt identity, stop reason, accumulated assistant text (size-capped per run, marked when cut) — written when the run ends so a detached headless caller can read the result after the in-memory session log is reaped.
   One record per Session, newest turn wins; it goes with its Session or, under a byte cap of its own with the same evict-oldest rule, when another write needs the room ([cli](cli.md#headless-runs) owns the concept).
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`.
   Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
@@ -220,56 +227,11 @@ A full home keeps agent-runtime up, unsaved state in memory; the chat says so.
 The entrypoint discards at boot the caches no shipped tool reads — Go's module cache, pnpm store layouts the shipped pnpm does not name (aube names its own), npm's once redirected — moved aside and deleted in the background.
 Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
 
-**The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
-A machine has a single disk, and it has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — so what the owner's disks take is what they write, and an Agent's `storageSize`, a mount's size and a starter kit's storage size only containers.
-Only a runner that has reported the machine's disk is sent the pool, since an older runner would restart a running machine to grow it; until then the machine keeps the size the Agent's spec gives, and a new machine boots once at that size.
-The path the disk holds apart from the root is `HOME`.
-That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
-The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
-It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
-An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
-
-**The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation — an integer an image declares in its env and bumps only on a change that breaks an older root; an image declaring none is its own generation.
-The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
-smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
-Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them — and smolvm's trim returns the freed space to the runner's volume.
-Once the image runs, the disk is reachable only through what platform-init mounted from it.
-
-Mounting the disk is the platform's job rather than the image's.
-The runner hands every machine a read-only share holding the MITM CA and **platform-init** (and, for a migrated machine until its migration completes, the copied home), and runs platform-init as the machine's entrypoint; it claims the disk, refuses to boot when the disk did not attach, moves the image onto its fresh root, seeds `HOME` once from whatever the image ships there — or, on a machine a [runtime migration](vm-runtime-migration.md) made, from the copy of the old volume the runner holds for it — bind-mounts it, and starts the image's own entrypoint, which it then supervises ([vm-runner](vm-runner.md)).
-Any image therefore keeps its agent's home, even one that has never heard of this platform: platform-init is linked statically and needs nothing from the image.
-The storage model is a constant; what varies is a migration's copy, whose entries the guest refuses when they would land outside `HOME`.
-**Nothing from `HOME` is ever run.** The home is the agent's to write, so every step platform-init takes as root comes from the share or from platform-init itself: neither an image that drops to an unprivileged user nor an old volume carried across can plant one, and a `.platform/boot.d` an older home carries is ignored.
-Beside the agent's home, in a namespace of its own so a `log` directory in that home cannot collide with it, the disk holds the platform state a machine's root cannot keep: the guest's boot log, where an agent's output goes since the harness never writes to the console, kept one boot deep so a machine that died still explains itself on the boot after, and bounded while it is written so an agent that logs without pause cannot fill its disk; and a directory an image's boot may keep its extracted trust store in rather than rebuilding it, which the platform's own images, whose rebuild is quick, leave unused.
-Both are rebuilt or resumed by the next boot rather than being state an Agent can lose.
-
-**A disk that has lost its home fails the boot.** smolvm formats a storage disk it cannot mount even after its own repair, and a formatted disk looks exactly like one never seeded.
-So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
-A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
-A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
-The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
-The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
-The loss is refused, not prevented.
-
-**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
-The runtime's disk templates live there too, sparse enough to need no share of it.
-It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
-A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
-
-**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
-So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and marks every machine's share, so each guest gives back its scratch, until use is back under 70%.
-Past 90% it creates, starts, restarts and grows no machine and takes no seed, and reports the refusal as `MachineStorageFull` with how full the storage is and how to free it; it never stops a running machine, which would free nothing and lose what the guest holds in memory.
-An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
-A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
-The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
-Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
-Past 90%, and again past 98% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
+A machine keeps no PVCs: its storage is one disk on the owner's runner, and [vm storage](vm-storage.md) owns it.
 
 ### The machine image cache
 
-A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on the runner's own claim by default or on a node directory an install shares.
-It is the one part of the runner's storage an install may move off its claim; [vm-image-cache](vm-image-cache.md) owns it.
+A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory the install's runners share, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
 
 ### Warm PVC pool
 
@@ -288,7 +250,7 @@ The claim decision is made once at create and reconstructed from the live Statef
 ### Storage migration (transitional)
 
 Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (the since-removed Slack per-person fork and `dam-run` executor) could write into a live agent's workspace.
-Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a hard-stop-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state; an Agent the runtime migration takes over instead has its gate released and that copy abandoned.
+Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a sleep-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state; an Agent the runtime migration takes over instead has its gate released and that copy abandoned.
 Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume.
 Throttled fleet-wide, skipping an Agent mid-way through a [runtime migration](vm-runtime-migration.md); a no-op once no RWX workspace volume remains.
 The same machinery also drains workspaces whose class is not the configured destination, and an Agent's storage-class pin overrides that destination for its own volumes — pinning the class a workspace already sits on exempts that Agent from the drain, which is how part of a fleet stays on a faster class while the rest moves.
@@ -308,14 +270,15 @@ Operators keep the old shared filesystem available until the last RWX volume dra
 | Satellite delete         | satellite row, grants and jobs removed          | n/a                                                                                                            | n/a                    | n/a                        |
 
 **Agent-scoped rows follow the Agent.** No Postgres table references an Agent by foreign key — the custom resource is the authoritative record, so the database cannot cascade on its own and the api-server owns the cleanup.
-An API delete runs one cleanup per record kind from a single declared list: schedules (their queued fires cancelled), runtime-delivery outbox and events, egress rules, pending approvals, connection grants, environment variables, API-key scopes, satellite grants and jobs, the image-pull Secret, channel bindings, skills, knowledge-base shares (revoked, snapshots purged), the attention record, the usage mirror (marked deleted) and the public profile (retired); running Invocations the Agent drove are failed and its delegation records deleted.
+An API delete runs one cleanup per agent-scoped record kind, from a single list declared in the code; most delete the rows.
+Some do more: they cancel queued schedule fires, revoke knowledge-base shares and purge their snapshots, mark the usage mirror deleted, retire the public profile, and fail running Invocations the Agent drove.
 A periodic orphan sweep backstops that list: it diffs every kind's agent ids against the live custom resources and re-runs every cleanup for each id that no longer resolves.
 The deletion event carries no cleanup; both paths emit it only to notify runtime reactions — the UI hint and the Slack worker registration.
 The sweep names the owner on it only when a surviving channel, schedule or share row still records one; the UI hint is the one consumer that needs it, and the agent watch already delivers that hint when the custom resource disappears.
 It re-reads the candidate's CR right before reaping, so a row written after its Agent existed is never reaped from a live one.
 The sweep is what makes a deletion done directly in the cluster, or one the api-server crashed halfway through, end in the same state as an API delete.
 The attention record is trimmed on age as well as on delete: a periodic job removes rows past 90 days, so feed cost tracks recent activity rather than an Agent's whole history.
-Kept on purpose: the usage row (soft-deleted, its runtime and config snapshots cleared so a later Agent under the same name starts clean), library artifacts, the activity log, and the session directory (kept so spend stays attributable).
+Kept on purpose: the usage row (soft-deleted, its runtime and config snapshots cleared so a later Agent under the same name starts clean), library artifacts, the activity log, the session directory (kept so spend stays attributable), and the spend ledger.
 Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
 
 Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion.

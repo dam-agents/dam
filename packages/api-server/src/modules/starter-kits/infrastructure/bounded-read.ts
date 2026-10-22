@@ -49,7 +49,7 @@ export const OVER_BUDGET = Symbol("over-budget");
 export async function readFileWithin(
   fullPath: string,
   maxBytes: number,
-): Promise<string | null | typeof OVER_BUDGET> {
+): Promise<Buffer | null | typeof OVER_BUDGET> {
   const chunks: Buffer[] = [];
   let total = 0;
   const stream = createReadStream(fullPath);
@@ -68,5 +68,5 @@ export async function readFileWithin(
   } finally {
     stream.destroy();
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
 }

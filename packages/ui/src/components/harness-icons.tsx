@@ -4,7 +4,13 @@ import type { ComponentType, SVGProps } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { BobFilledIcon, ClaudeIcon, CodexIcon, PiIcon } from "./brand-icons.js";
+import {
+  BobFilledIcon,
+  ClaudeIcon,
+  CodexIcon,
+  CopilotIcon,
+  PiIcon,
+} from "./brand-icons.js";
 
 export const HARNESS_ICONS: Record<
   HarnessFamily,
@@ -12,6 +18,7 @@ export const HARNESS_ICONS: Record<
     label: string;
     Icon: ComponentType<SVGProps<SVGSVGElement>>;
     bg: string;
+    fg: string;
     iconClass?: string;
   }
 > = {
@@ -19,33 +26,47 @@ export const HARNESS_ICONS: Record<
     label: "Bob",
     Icon: BobFilledIcon,
     bg: "bg-icon-violet",
+    fg: "text-icon-violet",
   },
   "claude-code": {
     label: "Claude",
     Icon: ClaudeIcon,
     bg: "bg-icon-clay",
+    fg: "text-icon-clay",
     iconClass: "scale-110",
   },
   codex: {
     label: "Codex",
     Icon: CodexIcon,
     bg: "bg-icon-green",
+    fg: "text-icon-green",
     iconClass: "scale-90",
+  },
+  copilot: {
+    label: "Copilot",
+    Icon: CopilotIcon,
+    bg: "bg-icon-teal",
+    fg: "text-icon-teal",
   },
   pi: {
     label: "Pi",
     Icon: PiIcon,
     bg: "bg-icon-blue",
+    fg: "text-icon-blue",
   },
 };
 
+export const HARNESS_ORDER = Object.keys(HARNESS_ICONS) as HarnessFamily[];
+
 export function HarnessIcons({
-  harnesses = ["bob", "claude-code", "codex", "pi"],
+  harnesses = HARNESS_ORDER,
   size = "md",
+  focusable = size !== "xs",
   className,
 }: {
   harnesses?: readonly string[];
   size?: "xs" | "sm" | "md";
+  focusable?: boolean;
   className?: string;
 }) {
   if (harnesses.length === 0) return null;
@@ -62,7 +83,7 @@ export function HarnessIcons({
               key={name}
               role="img"
               aria-label={label}
-              tabIndex={size === "xs" ? undefined : 0}
+              tabIndex={focusable ? 0 : undefined}
               className={cn(
                 "inline-flex shrink-0 items-center justify-center",
                 size === "xs"
@@ -81,7 +102,7 @@ export function HarnessIcons({
               />
             </span>
           );
-          return size === "xs" ? (
+          return !focusable ? (
             icon
           ) : (
             <Tooltip key={name} content={label}>

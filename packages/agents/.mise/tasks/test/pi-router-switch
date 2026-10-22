@@ -1,0 +1,152 @@
+#!/usr/bin/env node
+//MISE description="Test that Pi registers one provider from the Model Router's catalog and switches among a GPT, a GLM and a Claude model in one session, each on its own API"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", "test-lib/acp-client.mjs", ".mise/tasks/test/pi-router-switch", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { messagesText, responsesText } from "../../../test-lib/acp-client.mjs";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const extension = join(root, "rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts");
+const cli = join(dirname(extension), "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const home = mkdtempSync(join(tmpdir(), "pi-router-switch-"));
+
+const GPT = "ibm/gpt-5.5";
+const GLM = "cb/rits/zai-org/glm-5-3";
+const CLAUDE = "ibm/aws/claude-sonnet-4-6";
+const entry = (id, alias, upstreamId, dialects, extra = {}) => ({
+  id, object: "model", owned_by: alias, display_name: upstreamId, description: alias,
+  metadata: { alias, upstreamId, dialects, contextWindow: 200000, maxOutputTokens: 8192, reasoning: true, vision: true, cacheControl: null, thinkingFormat: null, prices: null, ...extra },
+});
+const all = ["anthropic-messages", "openai-chat", "openai-responses"];
+const catalog = [
+  entry(GPT, "ibm", "gpt-5.5", all),
+  entry(GLM, "cb", "rits/zai-org/glm-5-3", all, { thinkingFormat: "zai", vision: false }),
+  entry(CLAUDE, "ibm", "aws/claude-sonnet-4-6", all, { cacheControl: "anthropic" }),
+];
+const seen = [];
+const router = createServer((req, res) => {
+  const url = new URL(req.url, "http://127.0.0.1");
+  const path = url.pathname.replace(/^\/v1\/v1\//, "/v1/");
+  if (req.method === "GET" && path === "/v1/models") {
+    res.setHeader("content-type", "application/json");
+    return res.end(JSON.stringify({ data: catalog, has_more: false }));
+  }
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
+  req.on("end", () => {
+    const json = JSON.parse(body);
+    seen.push({ path, model: json.model, harness: req.headers["x-platform-harness"], auth: req.headers.authorization, beta: req.headers["anthropic-beta"], stream_options: json.stream_options, thinking: json.thinking, extra: json });
+    const stream = json.stream === true;
+    const reply = path === "/v1/messages"
+      ? messagesText(json.model, "ok", stream)
+      : path === "/v1/responses"
+        ? responsesText(json.model, "ok", stream)
+        : { contentType: "text/event-stream", body: `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: json.model, choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: "stop" }] })}\n\ndata: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", model: json.model, choices: [], usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 } })}\n\ndata: [DONE]\n\n` };
+    res.setHeader("content-type", reply.contentType);
+    res.end(reply.body);
+  });
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+const routerUrl = `http://127.0.0.1:${router.address().port}`;
+
+const shared = join(home, ".pi/agent");
+mkdirSync(shared, { recursive: true });
+writeFileSync(join(shared, "settings.json"), JSON.stringify({ defaultProvider: "anthropic", defaultModel: "claude-sonnet-4-6", packages: [] }));
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${dirname(dirname(extension))}`);
+writeFileSync(join(home, "pi-platform"), wrapper);
+
+const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+  cwd: home,
+  env: {
+    PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
+    PLATFORM_MODEL_ROUTER_URL: routerUrl, PLATFORM_PROVIDER: "conn-ibm", PLATFORM_MODEL: GPT,
+    OPENAI_API_KEY: "platform:conn:conn-ibm", OPENAI_BASE_URL: "https://ete-litellm.example", ANTHROPIC_AUTH_TOKEN: "sk-platform:conn:conn-ibm",
+  },
+  stdio: ["pipe", "pipe", "pipe"],
+});
+let errors = "";
+child.stderr.on("data", (d) => { errors += d; });
+const responses = new Map();
+let output = "";
+child.stdout.on("data", (data) => {
+  output += data;
+  const lines = output.split("\n");
+  output = lines.pop() ?? "";
+  for (const line of lines) {
+    let message;
+    try { message = JSON.parse(line); } catch { continue; }
+    if (message.type === "response" && message.id && responses.has(message.id)) responses.get(message.id)(message);
+    if (message.type === "agent_end" && responses.has("agent_end")) responses.get("agent_end")(message);
+  }
+});
+const rpc = (msg, timeoutMs = 60_000) => new Promise((resolve, reject) => {
+  const id = msg.id ?? `${msg.type}-${Math.random().toString(36).slice(2)}`;
+  const timer = setTimeout(() => reject(new Error(`${msg.type} timed out: ${errors.slice(-800)}`)), timeoutMs);
+  responses.set(id, (m) => { clearTimeout(timer); responses.delete(id); resolve(m); });
+  child.stdin.write(`${JSON.stringify({ ...msg, id })}\n`);
+});
+const turn = async (text) => {
+  const before = seen.length;
+  const ended = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`turn timed out: ${errors.slice(-800)}`)), 60_000);
+    responses.set("agent_end", (m) => { clearTimeout(timer); responses.delete("agent_end"); resolve(m); });
+  });
+  child.stdin.write(`${JSON.stringify({ type: "prompt", message: text })}\n`);
+  await ended;
+  return seen.slice(before);
+};
+child.once("exit", (code) => {
+  for (const resolve of responses.values()) resolve({ type: "exit", code, errors });
+});
+
+try {
+  // TEST_SCENARIO: With the router URL set, Pi lists one provider, "platform", with the catalog's names and no built-in openai or anthropic model, and starts on the session's model even with a stale Anthropic default saved.
+  const state = await rpc({ type: "get_state" });
+  assert.equal(state.success, true, JSON.stringify(state).slice(0, 500));
+  assert.equal(state.data.model?.provider, "platform");
+  assert.equal(state.data.model?.id, GPT);
+  const models = await rpc({ type: "get_available_models" });
+  const ids = models.data.models.map((m) => `${m.provider}:${m.id}`);
+  assert.deepEqual(ids.filter((m) => m.startsWith("platform:")).sort(), [GLM, GPT, CLAUDE].map((m) => `platform:${m}`).sort(), ids.join(", "));
+  assert.equal(ids.some((m) => m.startsWith("openai:") || m.startsWith("anthropic:")), false, ids.join(", "));
+  assert.equal(errors.includes("unavailable"), false, errors);
+
+  // TEST_SCENARIO: A GPT model speaks Responses, a GLM model chat completions with its thinking format and usage counts, a Claude model the Messages API; switching among them in one session sends each call on its own route to the router with the harness marker.
+  const gpt = await turn("Say ok (1).");
+  assert.equal(gpt.at(-1)?.path, "/v1/responses", JSON.stringify(gpt));
+  assert.equal(gpt.at(-1)?.model, GPT);
+  assert.equal(gpt.at(-1)?.harness, "pi");
+  const setGlm = await rpc({ type: "set_model", provider: "platform", modelId: GLM });
+  assert.equal(setGlm.success, true, JSON.stringify(setGlm).slice(0, 300));
+  const glm = await turn("Say ok (2).");
+  assert.equal(glm.at(-1)?.path, "/v1/chat/completions", JSON.stringify(glm));
+  assert.equal(glm.at(-1)?.model, GLM);
+  assert.equal(glm.at(-1)?.extra.max_completion_tokens, 8192);
+  assert.deepEqual(glm.at(-1)?.stream_options, { include_usage: true });
+  const setClaude = await rpc({ type: "set_model", provider: "platform", modelId: CLAUDE });
+  assert.equal(setClaude.success, true, JSON.stringify(setClaude).slice(0, 300));
+  const claude = await turn("Say ok (3).");
+  assert.equal(claude.at(-1)?.path, "/v1/messages", JSON.stringify(claude));
+  assert.equal(claude.at(-1)?.model, CLAUDE);
+  // TEST_SCENARIO: IBM's proxy hands Claude to Bedrock, which refuses the whole request over a per-tool eager_input_streaming field; Pi omits it on every provider but Anthropic itself and asks for tool streaming through the beta header instead.
+  const tools = claude.at(-1)?.extra.tools ?? [];
+  assert.ok(tools.length > 0, "the turn carried no tools");
+  assert.equal(tools.some((t) => "eager_input_streaming" in t), false, JSON.stringify(tools.map((t) => Object.keys(t))));
+  assert.match(String(claude.at(-1)?.beta), /fine-grained-tool-streaming/);
+  console.log("pi registers the router's catalog as one provider and switches APIs per model in one session");
+} finally {
+  if (child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  router.close();
+  rmSync(home, { recursive: true, force: true });
+}

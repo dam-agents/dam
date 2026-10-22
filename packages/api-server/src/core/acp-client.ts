@@ -8,6 +8,7 @@ import {
   steeringSupported,
   type AcpPermissionOption,
 } from "api-server-api";
+import { NO_MODEL_REASON, PIN_MODEL_METHOD } from "agent-runtime-api";
 import { z } from "zod";
 import {
   client,
@@ -154,6 +155,7 @@ export interface PlatformSessionMeta {
   initialization?: boolean;
   threadTs?: string;
   createdAt?: string;
+  customTitle?: string;
 }
 
 export interface AcpSessionInfo {
@@ -170,6 +172,7 @@ const platformSessionMetaSchema = z.object({
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
+  customTitle: z.string().optional(),
 });
 
 export interface TriggerSessionResult {
@@ -224,6 +227,7 @@ export type SendPromptOpts = (
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;
   onSession?: (sessionId: string) => void;
+  signal?: AbortSignal;
 };
 
 export type TriggerSessionOpts = {
@@ -442,12 +446,14 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-function pairMeta(pair: SessionPair | undefined): Record<string, string> {
+function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
   if (!pair) return {};
   return {
+    follows: "channel",
     harness: pair.harness,
     ...(pair.provider !== null && { provider: pair.provider }),
     ...(pair.model !== null && { model: pair.model }),
+    ...(pair.settings && { settings: pair.settings }),
   };
 }
 
@@ -462,6 +468,38 @@ async function resolvePair(
       "no model provider granted to this agent can run its harness",
     );
   return pair;
+}
+
+const refusedForNoModel = (err: unknown): boolean =>
+  (err as { data?: { platform?: { reason?: unknown } } } | null)?.data?.platform
+    ?.reason === NO_MODEL_REASON;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a session from before the Model Router carries
+ * no model, and the runtime refuses its turn rather than pick one. It ran on
+ * the agent's one provider and its default model, so that saved default is
+ * pinned on it and the turn sent once more; an agent with no default throws
+ * NoDefaultModelError from firePair. A runtime that never refuses (one older
+ * than the refusal) is never pinned, so a session's own model is kept.
+ */
+export async function promptPinningDefault<T>(
+  connection: ClientConnection,
+  sessionId: string,
+  prompt: () => Promise<T>,
+  firePair: (() => Promise<SessionPair | undefined>) | undefined,
+): Promise<T> {
+  try {
+    return await prompt();
+  } catch (err) {
+    if (!refusedForNoModel(err) || !firePair) throw err;
+    const pair = await firePair();
+    if (!pair?.model) throw err;
+    await connection.agent.request(PIN_MODEL_METHOD, {
+      sessionId,
+      model: pair.model,
+    });
+    return prompt();
+  }
 }
 
 export function createAcpClient(opts: {
@@ -606,11 +644,31 @@ export function createAcpClient(opts: {
             await sendOpts.onImagesDropped?.();
           }
 
+          const { signal } = sendOpts;
+          signal?.throwIfAborted();
           live = true;
-          await connection.agent.request("session/prompt", {
-            sessionId,
-            prompt: finalBlocks,
-          });
+          const send = () =>
+            connection.agent.request("session/prompt", {
+              sessionId,
+              prompt: finalBlocks,
+            });
+          const cancel = () => {
+            connection.agent
+              .notify("session/cancel", { sessionId })
+              .catch((err) =>
+                getLogger().debug({ err, sessionId }, "acp cancel failed"),
+              );
+          };
+          signal?.addEventListener("abort", cancel, { once: true });
+          try {
+            await ("resumeSessionId" in sendOpts
+              ? promptPinningDefault(connection, sessionId, send, () =>
+                  resolvePair(opts.firePair, agentId),
+                )
+              : send());
+          } finally {
+            signal?.removeEventListener("abort", cancel);
+          }
         },
       );
 
@@ -706,10 +764,16 @@ export function createAcpClient(opts: {
             await triggerOpts.onSessionCreated(sessionId);
           }
 
-          const r = await connection.agent.request("session/prompt", {
-            sessionId,
-            prompt: [{ type: "text", text: triggerOpts.prompt }],
-          });
+          const send = () =>
+            connection.agent.request("session/prompt", {
+              sessionId,
+              prompt: [{ type: "text", text: triggerOpts.prompt }],
+            });
+          const r = await ("resumeSessionId" in triggerOpts
+            ? promptPinningDefault(connection, sessionId, send, () =>
+                resolvePair(opts.firePair, agentId),
+              )
+            : send());
 
           return { sessionId, stopReason: r.stopReason };
         },

@@ -5,6 +5,10 @@ import { buildVersionCommand } from "./commands/version.js";
 import { defaultConfigPath } from "./infrastructure/config-path.js";
 import { createTomlConfigStore } from "./infrastructure/config-store.js";
 import { createProcessEnvReader } from "./infrastructure/env-reader.js";
+import {
+  createHttpNpmLatestProbe,
+  DEFAULT_NPM_REGISTRY,
+} from "./infrastructure/npm-latest-probe.js";
 import { createHttpVersionProbe } from "./infrastructure/version-probe.js";
 import {
   createCompatService,
@@ -16,6 +20,8 @@ import {
 } from "./services/config-service.js";
 
 declare const __CLI_VERSION__: string | undefined;
+
+const NPM_REGISTRY_ENV_VAR = "npm_config_registry";
 
 export interface CliModule {
   commands: ReadonlyArray<Command>;
@@ -43,6 +49,9 @@ export function composeCliModule(): CliModule {
       buildPingCommand({ service: compatService, configService }),
       buildVersionCommand({
         service: compatService,
+        npm: createHttpNpmLatestProbe({
+          registry: envReader.get(NPM_REGISTRY_ENV_VAR) ?? DEFAULT_NPM_REGISTRY,
+        }),
         localCliVersion: cliVersion,
       }),
     ],

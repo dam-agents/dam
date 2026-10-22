@@ -1,13 +1,24 @@
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TemplateService } from "../template/index.js";
-import type { TrpcClient } from "../shared/trpc/trpc-client.js";
+import type { TokenProvider } from "../auth/index.js";
+import {
+  createAgentTrpcClient,
+  type TrpcClient,
+} from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
+import { buildDisableCommand } from "./commands/disable.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
+import { buildModelsCommand } from "./commands/models.js";
 import { buildRestartCommand } from "./commands/restart.js";
+import { buildUpdateCommand } from "./commands/update.js";
+import {
+  createAgentModelsService,
+  type AgentModelsService,
+} from "./services/agent-models-service.js";
 import {
   createAgentService,
   type AgentService,
@@ -15,6 +26,7 @@ import {
 
 export interface AgentModuleOptions {
   buildTrpc: (host: string) => TrpcClient;
+  tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
   templateService: (host: string) => TemplateService;
@@ -29,17 +41,32 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   const createService = (host: string): AgentService =>
     createAgentService({ trpc: opts.buildTrpc(host) });
 
+  const createModelsService = (host: string): AgentModelsService =>
+    createAgentModelsService({
+      trpc: opts.buildTrpc(host),
+      agentTrpc: (agentId) =>
+        createAgentTrpcClient({
+          host,
+          agentId,
+          tokenProvider: opts.tokenProvider,
+        }),
+    });
+
   const shared = {
     compatService: opts.compatService,
     configService: opts.configService,
     createAgentService: createService,
+  };
+  const withModels = {
+    ...shared,
+    createAgentModelsService: createModelsService,
   };
 
   const parent = new Command("agent").description(
     "Address Agents by name or ID",
   );
   parent.addCommand(buildListCommand(shared), { isDefault: true });
-  parent.addCommand(buildGetCommand(shared));
+  parent.addCommand(buildGetCommand(withModels));
   const createDeps = {
     ...shared,
     createTemplateService: opts.templateService,
@@ -47,8 +74,12 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   };
   parent.addCommand(buildCreateCommand(createDeps));
   parent.addCommand(buildCreateInteractiveCommand(createDeps));
+  parent.addCommand(buildUpdateCommand(withModels));
+  parent.addCommand(buildModelsCommand(withModels));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
+  parent.addCommand(buildDisableCommand(shared, true));
+  parent.addCommand(buildDisableCommand(shared, false));
 
   return { commands: [parent], exports: { createService } };
 }

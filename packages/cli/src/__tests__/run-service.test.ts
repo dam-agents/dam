@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
 
-import { resolvePrompt } from "../modules/chat/commands/run.js";
+import {
+  choicesOrInvalid,
+  resolvePrompt,
+} from "../modules/chat/commands/run.js";
 import { ok } from "../result.js";
 import {
   createRunService,
@@ -30,6 +33,7 @@ interface FakeRelay {
 
 function startRelay(
   onFrame: (ws: WebSocket, frame: Frame, connection: number) => void,
+  initializeResult: unknown = {},
 ): FakeRelay {
   const wss = new WebSocketServer({ port: 0 });
   const relay: FakeRelay = {
@@ -43,7 +47,13 @@ function startRelay(
     ws.on("message", (data) => {
       const frame = JSON.parse(String(data)) as Frame;
       if (frame.method === "initialize") {
-        ws.send(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }));
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: frame.id,
+            result: initializeResult,
+          }),
+        );
         return;
       }
       onFrame(ws, frame, connection);
@@ -144,6 +154,107 @@ describe("run service", () => {
       ok({ kind: "completed", sessionId: "sess-1", stopReason: "end_turn" }),
     );
     expect(printed()).toBe("hello world");
+  });
+
+  /**
+   * TEST_SCENARIO: #4010. Claude Code answers the prompt while its background
+   * agents still report, and works on in an Autonomous Turn. A runtime that
+   * announces `runEnded` sends `platform/runEnded` once the harness is idle,
+   * and the run must end there, not at the prompt answer: the text of the
+   * Autonomous Turn is printed, and the outcome carries the run's stop reason.
+   */
+  it("ends the run at platform/runEnded when the runtime announces it", async () => {
+    relay = startRelay(
+      (ws, frame) => {
+        if (frame.method === "session/new") {
+          reply(ws, frame.id, { sessionId: "sess-1" });
+          return;
+        }
+        if (frame.method === "session/prompt") {
+          const promptId = (
+            frame.params as { _meta: { platform: { promptId: string } } }
+          )._meta.platform.promptId;
+          chunk(ws, "sess-1", "A=1 ");
+          reply(ws, frame.id, { stopReason: "end_turn" });
+          setTimeout(() => {
+            chunk(ws, "sess-1", "C=3");
+            notify(ws, "platform/runEnded", {
+              sessionId: "sess-1",
+              promptId,
+              stopReason: "cancelled",
+            });
+          }, 50);
+        }
+      },
+      { _meta: { platform: { runEnded: true } } },
+    );
+    const { service, printed } = serviceFor(relay);
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "fan out",
+      timeoutSeconds: 10,
+    });
+
+    expect(result).toEqual(
+      ok({ kind: "completed", sessionId: "sess-1", stopReason: "cancelled" }),
+    );
+    expect(printed()).toBe("A=1 C=3");
+  });
+
+  /**
+   * TEST_SCENARIO: `dam run get --wait` on a run whose prompt was answered
+   * while the harness still works: the record stays `pending` until
+   * `platform/runEnded`, and the wait must end on that signal with the full
+   * record.
+   */
+  it("finishes get --wait on platform/runEnded", async () => {
+    let ended = false;
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "platform/runResult") {
+        reply(
+          ws,
+          frame.id,
+          ended
+            ? {
+                status: "done",
+                result: {
+                  promptId: "p1",
+                  stopReason: "end_turn",
+                  finalText: "A=1 C=3",
+                  truncated: false,
+                  endedAt: "2026-01-01T00:00:00Z",
+                },
+              }
+            : { status: "pending" },
+        );
+        return;
+      }
+      if (frame.method === "session/load") {
+        reply(ws, frame.id, {});
+        setTimeout(() => {
+          ended = true;
+          notify(ws, "platform/runEnded", {
+            sessionId: "sess-1",
+            promptId: "p1",
+            stopReason: "end_turn",
+          });
+        }, 50);
+      }
+    });
+    const { service } = serviceFor(relay);
+
+    const result = await service.get({
+      agentRef: "agent-1",
+      sessionId: "sess-1",
+      wait: true,
+      timeoutSeconds: 10,
+    });
+
+    expect(result.ok && result.value.kind === "done").toBe(true);
+    expect(
+      result.ok && result.value.kind === "done" && result.value.result,
+    ).toMatchObject({ finalText: "A=1 C=3" });
   });
 
   /**
@@ -374,6 +485,161 @@ describe("run service", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(cancels).toEqual([]);
   });
+
+  /**
+   * TEST_SCENARIO: The relay accepts the socket and then closes it because it
+   * could not wake the agent, as it does for an agent waiting for memory. The
+   * run says the agent could not start and why, read from the agent's state,
+   * rather than only that it could not connect.
+   */
+  it("says why the agent could not start when the relay closes before answering", async () => {
+    const wss = new WebSocketServer({ port: 0 });
+    wss.on("connection", (ws) =>
+      ws.close(1011, "agent not ready: over-budget"),
+    );
+    const { port } = wss.address() as { port: number };
+    relay = {
+      host: `http://127.0.0.1:${String(port)}`,
+      connections: 0,
+      close: () => wss.close(),
+    };
+    const service = createRunService({
+      bootstrap: () =>
+        Promise.resolve(
+          ok({ host: relay!.host, token: "t", agentId: "agent-1" }),
+        ),
+      out: () => {},
+      errOut: () => {},
+      whyNotStarted: async () => "your VM agents' memory is full",
+    });
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "hi",
+      timeoutSeconds: 10,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: "agent-unreachable",
+        why: "your VM agents' memory is full",
+      },
+    });
+  });
+});
+
+describe("run service: session choices", () => {
+  let relay: FakeRelay | undefined;
+
+  afterEach(() => {
+    relay?.close();
+    relay = undefined;
+  });
+
+  /**
+   * TEST_SCENARIO: `dam run --harness/--model/--setting` is a one-off choice
+   * for the new session: it travels in `session/new` as the web chat's pick
+   * does, and the session keeps its own choice instead of following the
+   * chat default.
+   */
+  it("sends the chosen harness, model and settings in session/new", async () => {
+    let meta: unknown;
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        meta = (frame.params as { _meta: { platform: unknown } })._meta
+          .platform;
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt")
+        reply(ws, frame.id, { stopReason: "end_turn" });
+    });
+    const { service } = serviceFor(relay);
+
+    await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      choices: {
+        harness: "codex",
+        model: "ibm/gpt-5.5",
+        settings: { effort: "high" },
+      },
+      timeoutSeconds: 10,
+    });
+
+    expect(meta).toEqual({
+      mode: "chat",
+      type: "cli_run",
+      harness: "codex",
+      model: "ibm/gpt-5.5",
+      settings: { effort: "high" },
+      follows: null,
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: with no choice the frame names none, so the relay fills
+   * in the agent's chat default and the session follows it.
+   */
+  it("names no harness or model without a choice", async () => {
+    let meta: unknown;
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        meta = (frame.params as { _meta: { platform: unknown } })._meta
+          .platform;
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt")
+        reply(ws, frame.id, { stopReason: "end_turn" });
+    });
+    const { service } = serviceFor(relay);
+
+    await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      timeoutSeconds: 10,
+    });
+
+    expect(meta).toEqual({ mode: "chat", type: "cli_run" });
+  });
+
+  /**
+   * TEST_SCENARIO: the runtime refuses a session with no model and names the
+   * web app's Providers page; the CLI adds the commands that fix it from
+   * the terminal.
+   */
+  it("adds the CLI's way out to a no-model refusal", async () => {
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new")
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: {
+              code: -32001,
+              message: "This session has no model.",
+              data: { platform: { reason: "no-model" } },
+            },
+          }),
+        );
+    });
+    const { service } = serviceFor(relay);
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "go",
+      timeoutSeconds: 10,
+    });
+
+    expect(result.ok).toBe(false);
+    const reason =
+      !result.ok && "reason" in result.error ? result.error.reason : "";
+    expect(reason).toContain("This session has no model.");
+    expect(reason).toContain("dam agent models <agent>");
+    expect(reason).toContain("dam agent update <agent> --model");
+  });
 });
 
 describe("stallLine", () => {
@@ -423,5 +689,22 @@ describe("resolvePrompt", () => {
     expect(resolvePrompt({ prompt: "hi", promptFile: "f", readFile }).ok).toBe(
       false,
     );
+  });
+});
+
+describe("choicesOrInvalid", () => {
+  /**
+   * TEST_SCENARIO: a session from --session already runs on its own pair,
+   * so a choice beside it is refused instead of ignored.
+   */
+  it("takes choices for a new session only", () => {
+    expect(choicesOrInvalid({ setting: [] })).toEqual(ok(undefined));
+    expect(
+      choicesOrInvalid({ model: "ibm/gpt-5.5", setting: ["effort=high"] }),
+    ).toEqual(ok({ model: "ibm/gpt-5.5", settings: { effort: "high" } }));
+    expect(
+      choicesOrInvalid({ session: "s", model: "ibm/gpt-5.5", setting: [] }).ok,
+    ).toBe(false);
+    expect(choicesOrInvalid({ setting: ["effort"] }).ok).toBe(false);
   });
 });

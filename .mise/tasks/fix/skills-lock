@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="List every contributor skill under .agents/skills in skills-lock.json; `-- --check` only reports drift"
+#USAGE flag "--check"
+# `npx skills add dam-agents/dam` leaves out the .agents/skills entries that
+# skills-lock.json lists, so it offers only the skills under skills/. The
+# entries are `local`, which `npx skills update` and restore never refetch.
+set -euo pipefail
+lock=$(git ls-files -co --exclude-standard -- '.agents/skills/*/SKILL.md' |
+  jq -R -n '{version: 1, skills: ([inputs | split("/")[2]] | unique | map({(.): {source: "./.agents/skills/\(.)", sourceType: "local"}}) | add // {})}')
+if [ "${usage_check:-false}" = true ]; then
+  diff <(printf '%s\n' "$lock") skills-lock.json || {
+    echo "skills-lock.json does not list exactly the skills under .agents/skills: run 'mise run fix:skills-lock'" >&2
+    exit 1
+  }
+else
+  printf '%s\n' "$lock" >skills-lock.json
+fi

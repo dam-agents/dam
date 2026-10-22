@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# The image's docker on a vm machine. In no runlevel: the agent starts it, or
+# adds it to the default runlevel to start it at every boot.
+description="Docker daemon"
+command=$(command -v dockerd)
+command_background=yes
+pidfile=/run/dockerd.pid
+output_log=/var/log/dockerd.log
+error_log=/var/log/dockerd.log
+# A tighter umask makes image layers a non-root container cannot traverse.
+umask=022
+# docker's builder runs the first runc on PATH: the share's platform-runc,
+# which the entrypoint links there to give containers the platform CA.
+export PATH="/run/platform/bin:$PATH"
+# openrc may start it before the entrypoint, so it builds the CA bundle its
+# pulls trust itself.
+start_pre() {
+	platform-ca-bundle
+}

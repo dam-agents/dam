@@ -6,15 +6,17 @@ import { cn } from "@/lib/utils";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The trash button that removes one row from a
  * list. One look everywhere: muted at rest, red on hover, with the label as
- * both its accessible name and its tooltip.
+ * its accessible name and, unless a shorter verb is given, its tooltip.
  */
 export function RemoveButton({
   label,
+  tooltip = label,
   onClick,
   disabled,
   className,
 }: {
   label: string;
+  tooltip?: string;
   onClick: () => void;
   disabled?: boolean;
   className?: string;
@@ -26,7 +28,7 @@ export function RemoveButton({
       tone="danger"
       size="icon-sm"
       aria-label={label}
-      tooltip={label}
+      tooltip={tooltip}
       disabled={disabled}
       onClick={onClick}
       className={cn("shrink-0 text-muted-foreground", className)}

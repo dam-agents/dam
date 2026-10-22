@@ -1,4 +1,4 @@
-import { Close } from "@carbon/icons-react";
+import { TrashCan } from "@carbon/icons-react";
 import type { ConnectionStatus, ConnectionView } from "api-server-api";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -98,7 +98,7 @@ export function CatalogConnectionRow({
             onClick={onRemove}
             data-testid={`catalog-remove-${connection.id}`}
           >
-            <Close size={16} />
+            <TrashCan size={16} />
           </Button>
         )}
       </div>

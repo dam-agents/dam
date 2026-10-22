@@ -2,7 +2,7 @@
 
 Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
 
-The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), come from the node's harness tools, and its files live at their image paths under [`rootfs/`](rootfs/).
+The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), are baked into the default image's harness tools layer, and its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 
@@ -29,6 +29,8 @@ usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp patch")
   extensions/pi-dynamic-providers/
     index.ts             ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
+  extensions/pi-platform-telemetry/
+    index.ts             ← loaded with -e on every start; exports per-call cost as OTLP log records (see "Session cost")
 app/
   runtime-manifest.yaml  ← runtime driver config; the platform writes ~/.pi/agent/mcp.json at runtime (not seeded)
   working-dir/           ← seeds /home/agent/ on first boot
@@ -47,6 +49,14 @@ Pi names them `mcp__<server>__<tool>` with `-` replaced by `_`, e.g. `mcp__platf
 
 ## Providers and models
 
+### The Model Router
+
+On the platform every model call Pi makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback.
+When `PLATFORM_MODEL_ROUTER_URL` is set, [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) registers one provider, `platform`, from the router's `/v1/models`: every granted provider's models under qualified names (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`), each on the API it speaks best among its provider's dialects (Responses for OpenAI-family ids, Messages for Claude ids, chat completions otherwise), with limits, reasoning, cache marks and thinking format from the catalog's metadata and prices as Pi's per-million costs.
+The router owns the credential, so the provider's key is a placeholder for pi-acp's auth gate, and Pi's built-in `openai` and `anthropic` providers are turned off.
+`pi-platform` starts Pi on `--provider platform --model <session model>` with one shared config directory; a session switching among a GPT, a GLM and a Claude model sends each call on its own API to the router.
+The sections below describe Pi's native providers, which a routed runtime does not use (Bedrock included).
+
 Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, DeepSeek, Cerebras, xAI, OpenRouter, Gemini, Fireworks, Hugging Face, ZAI, MiniMax, …) plus any OpenAI-Completions / OpenAI-Responses / Anthropic-Messages / Google-Generative-AI compatible endpoint via [`models.json`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) or [extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md).
 Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
 
@@ -59,13 +69,8 @@ The flow is the same for every provider — only the host pattern and (occasiona
 Three steps to enable any pi built-in provider:
 
 1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider.
-   Add to the harness config (`[oci.env]` in [`image.toml`](image.toml)), the agent template, or per-instance via the Configure Agent UI:
-
-   ```toml
-   [oci.env]
-   OPENAI_API_KEY = "dummy-placeholder"
-   ```
-
+   Set it as the connection's env mapping (for example `OPENAI_API_KEY` with the placeholder `dummy-placeholder`), not in the image env or the agent's env.
+   The platform rewrites the connection's placeholder to name the connection, which an agent that requires named connections needs, and an env var set elsewhere overrides it.
    The literal value pi sends on the wire is rewritten by the Envoy sidecar before the request leaves the pod.
 
 2. **Create a generic secret on the platform** scoped to the provider's host.
@@ -244,6 +249,17 @@ Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` t
 **To remove it** once a pi-acp release fixes #152 and #72 and reports `max_tokens`: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
 A release that fixes only some of the three lets you drop just their edits.
 That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
+
+## Session cost
+
+Pi prices every model call itself, at the per-token rates of the model it registered.
+A model behind an OpenAI-compatible proxy (`openai-proxy`, `rits`) comes with no rates, so `pi-dynamic-providers` gives it the list price of the same model at its vendor in Pi's built-in catalog, matched by the id without its routing prefix (`aws/claude-opus-4-8` costs what `anthropic`'s `claude-opus-4-8` costs).
+Only vendors count (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI), not resellers such as Bedrock that list the same model at a markup; a model no vendor lists stays free.
+
+Pi has no OpenTelemetry exporter, so the `pi-platform-telemetry` extension posts one OTLP/HTTP JSON log record per model call (`pi.api_request`, with the token counters, `cost_usd_micros`, `session.id` and `prompt.id`) and one per prompt (`pi.user_prompt`) to `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs`.
+It stays off unless `OTEL_LOGS_EXPORTER=otlp`, which the harness catalog's `pi` telemetry rail sets when the telemetry backend is on.
+The platform reads those records like Claude Code's, so the session list and Usage show a Pi session's cost (see [observability](../../../docs/architecture/observability.md#agent-export)).
+No prompt text or reply leaves the agent.
 
 ## Memory scopes
 

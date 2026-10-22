@@ -2,7 +2,7 @@ name: Security
 
 # Scans what a CI/CD run on main published, the lockfiles it built from and
 # the third-party images the chart runs, and keeps one summary issue open
-# while any finding stands. cd.yml calls it once the run's images are merged
+# while any finding stands. build.yml calls it once the run's images are merged
 # and its mirrored tags copied, so every image list-third-party names exists:
 # on every push to main and in the nightly run, which rebuilds every image.
 # The nightly run also checks the base image pins. The github context is the
@@ -124,7 +124,7 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::govulncheck: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: findings-go-vuln
@@ -165,7 +165,7 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::cargo audit: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: findings-cargo-audit
@@ -203,7 +203,7 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::pnpm audit: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: findings-npm-audit
@@ -230,8 +230,14 @@ jobs:
           persist-credentials: false
 
       - name: Install Mend CLI
+        env:
+          # downloads.mend.io serves the latest release under a fixed URL, so a
+          # Mend release fails this check: `curl -fsSL <the url> | sha256sum`
+          # gives the hash to paste here.
+          MEND_CLI_SHA256: b8400fc4e7cffa596144e73b39e694156fea78b7e4fe2ee365add00b01395bd0
         run: |
           curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend
+          echo "$MEND_CLI_SHA256  /usr/local/bin/mend" | sha256sum -c -
           chmod +x /usr/local/bin/mend
 
       - name: Detect vulnerabilities
@@ -252,7 +258,7 @@ jobs:
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::Mend SCA: $(jq length findings.json) finding(s)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: findings-mend-sca
@@ -320,9 +326,26 @@ jobs:
           echo "artifact=findings-trivy-${IMAGE//[^A-Za-z0-9._-]/_}" >> "$GITHUB_OUTPUT"
           echo '[]' > findings.json
           # trivy.yaml at the repo root sets ignore-unfixed.
-          report=$(trivy image --quiet --format json "$IMAGE") || {
+          # A layer read from a registry or mirror fails now and then (an EOF,
+          # an unknown blob) on an image the commit did not change: an image
+          # that must scan gets three tries before it fails the build.
+          # A missing :${SHA} image fails the same way every time, so it gets one.
+          tries=3
+          if [[ "$IMAGE" == *":${SHA}" ]]; then tries=1; fi
+          scanned=false
+          for try in $(seq "$tries"); do
+            if report=$(trivy image --quiet --format json "$IMAGE"); then
+              scanned=true
+              break
+            fi
+            if (( try < tries )); then
+              echo "::warning::Trivy could not scan ${IMAGE} (try ${try} of ${tries}); retrying"
+              sleep $(( try * 15 ))
+            fi
+          done
+          "$scanned" || {
             if [[ "$IMAGE" != *":${SHA}" ]]; then
-              echo "::error::Trivy could not scan ${IMAGE}; see log"
+              echo "::error::Trivy could not scan ${IMAGE} in ${tries} tries; see log"
               exit 1
             fi
             echo "::notice::Trivy scan skipped for ${IMAGE} (reused unchanged, or its build failed); see log"
@@ -349,10 +372,11 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           SHA: ${{ github.sha }}
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tools="$(mktemp -d)"
-          docker run --rm --user 0 --entrypoint install-harness-tools \
+          docker run --rm --user 0 --entrypoint install-harness-tools -e MISE_GITHUB_TOKEN \
             -v "$tools:/usr/share/mise" "$IMAGE" > install.log 2>&1 || {
             tail -n 40 install.log
             if [[ "$IMAGE" != *":${SHA}" ]]; then
@@ -376,7 +400,7 @@ jobs:
           jq -s 'add' findings.json <(printf '%s\n' "${out:-[]}") > merged.json
           mv merged.json findings.json
           echo "::notice::Trivy (${IMAGE} harness tools): $(echo "${out:-[]}" | jq length) finding(s)"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: ${{ steps.scan.outputs.artifact }}
@@ -394,7 +418,7 @@ jobs:
       issues: write
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: findings-*
           path: findings

@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+#MISE description="A cluster-path script drives an init system only inside a check that it is the one running"
+#MISE sources=["etc/lima/*.yaml", ".mise/tasks/cluster/*", ".mise/lib/*.sh", ".mise/tasks/check/cluster-init"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# The cluster path runs both in Lima VMs (systemd) and in sandboxes (OpenRC, or
+# no init at all), so a bare systemctl fails on OpenRC and a bare rc-service
+# fails on every VM. #5381 shipped a `systemctl enable --now` that aborted the
+# provision in every non-systemd sandbox; this catches the next one. It reads
+# each file line by line, so the guard has to cover the call it protects: one in
+# a comment, or in another function, no longer counts. The guard state resets at
+# every if/elif/else/fi, so a call after a nested block inside a guarded branch
+# reads as unguarded — a coarse reading of the shell, which a parser would nest
+# properly, in the shape that fails safe. A `limactl shell` call runs in the Lima
+# VM, which boots systemd, so it needs no guard.
+set -euo pipefail
+
+# A word of its own, so a `systemctl` at the end of a line or in quotes counts
+# and a name that merely contains one does not.
+SYSTEMD_CALL='(^|[^[:alnum:]_])(systemctl|journalctl|systemd-run)([^[:alnum:]_]|$)|/etc/systemd/system([^[:alnum:]_]|$)'
+OPENRC_CALL='(^|[^[:alnum:]_])rc-(service|update)([^[:alnum:]_]|$)'
+SYSTEMD_GUARD='/run/systemd/system'
+OPENRC_GUARD='/etc/init[.]d/|/sbin/openrc-run|command -v rc-service'
+
+# guards <line> <guard regex>: 1 when the line opens a branch on that test, and
+# 0 when it does not, or inverts it — `! [ -d /run/systemd/system ]` holds
+# exactly where systemd is absent, so it authorizes nothing.
+guards() {
+  local before
+  [[ $1 =~ $2 ]] || return 1
+  before="${1%%"${BASH_REMATCH[0]}"*}"
+  [[ $before != *'!'* ]]
+}
+
+# scan <label> <script>: names every init-system call that its guard does not
+# cover, and returns 1 when it found one.
+scan() {
+  local label="$1" line line_no=0 systemd_ok=0 openrc_ok=0 found=0
+  while IFS= read -r line; do
+    line_no=$((line_no + 1))
+    # A comment runs nothing, and naming a guard in one proves nothing.
+    if [[ $line =~ ^[[:space:]]*# ]]; then continue; fi
+    if [[ $line =~ ^[[:space:]]*(if|elif)[[:space:]] ]]; then
+      guards "$line" "$SYSTEMD_GUARD" && systemd_ok=1 || systemd_ok=0
+      guards "$line" "$OPENRC_GUARD" && openrc_ok=1 || openrc_ok=0
+    elif [[ $line =~ ^[[:space:]]*(else|fi)([[:space:]]|$|;) ]]; then
+      systemd_ok=0 openrc_ok=0
+    fi
+    if [[ $line =~ $SYSTEMD_CALL ]] && [ "$systemd_ok" = 0 ] && ! [[ $line =~ limactl[[:space:]]+shell ]]; then
+      echo "FAIL: $label:$line_no drives systemd outside a $SYSTEMD_GUARD test: $line" >&2
+      found=1
+    fi
+    if [[ $line =~ $OPENRC_CALL ]] && [ "$openrc_ok" = 0 ]; then
+      echo "FAIL: $label:$line_no drives OpenRC outside a service-file test: $line" >&2
+      found=1
+    fi
+    # A block that opens and closes on one line guards that line and no other.
+    if [[ $line =~ (^|[^[:alnum:]_])fi([^[:alnum:]_]|$) ]]; then systemd_ok=0 openrc_ok=0; fi
+  done <<<"$2"
+  return "$found"
+}
+
+fail=0
+for f in etc/lima/*.yaml .mise/tasks/cluster/* .mise/lib/*.sh; do
+  case "$f" in
+    *.yaml) script="$(yq -r '[.provision[]?.script, .probes[]?.script] | join("\n")' "$f")" \
+              || { echo "FAIL: yq cannot read the provision scripts in $f" >&2; fail=1; continue; } ;;
+    *) script="$(cat "$f")" ;;
+  esac
+  scan "$f" "$script" || fail=1
+done
+
+# The shapes the rule is about. The check carries its own cases, as
+# check:pack-image does: nothing else would notice the guard reading rot.
+expect() { # <label> <1 to fail | 0 to pass> <script on stdin>
+  local rc=0
+  scan "self-test: $1" "$(cat)" 2>/dev/null || rc=1
+  [ "$rc" = "$2" ] || { echo "FAIL: the check misjudges $1" >&2; fail=1; }
+}
+expect "a guard in another function" 1 <<'SH'
+guarded() { [ -d /run/systemd/system ]; }
+stop_it() { as_root systemctl stop k3s; }
+SH
+expect "a guard only in a comment" 1 <<'SH'
+# this host runs /run/systemd/system, so a unit is fine
+as_root systemctl stop k3s
+SH
+expect "a systemctl at the end of a line" 1 <<'SH'
+as_root systemctl
+SH
+expect "a quoted systemctl" 1 <<'SH'
+as_root sh -c "systemctl stop k3s"
+SH
+expect "a journalctl" 1 <<'SH'
+as_root journalctl -u k3s
+SH
+expect "a systemd-run" 1 <<'SH'
+as_root systemd-run --unit=x sleep 5
+SH
+expect "a unit written under /etc/systemd/system" 1 <<'SH'
+as_root tee /etc/systemd/system/k3s.service >/dev/null
+SH
+expect "a systemd call in the else arm of its guard" 1 <<'SH'
+if [ -d /run/systemd/system ]; then
+  echo systemd
+else
+  as_root systemctl stop k3s
+fi
+SH
+expect "a guard that closes on its own line" 1 <<'SH'
+if [ -d /run/systemd/system ]; then :; fi
+as_root systemctl restart k3s
+SH
+expect "a negated guard, its call inside it" 1 <<'SH'
+if ! [ -d /run/systemd/system ]; then
+  as_root systemctl restart k3s
+fi
+SH
+expect "a negated guard, its call after it" 1 <<'SH'
+if ! [ -d /run/systemd/system ]; then echo no systemd; fi
+as_root systemctl restart k3s
+SH
+expect "a systemd call under its guard, unit file and all" 0 <<'SH'
+if [ -d /run/systemd/system ]; then
+  cat > /etc/systemd/system/transparent-hugepage.service << 'THP'
+[Service]
+Type=oneshot
+THP
+  systemctl enable --now transparent-hugepage.service
+fi
+SH
+expect "a guard and its call on one line" 0 <<'SH'
+if [ -d /run/systemd/system ]; then as_root systemctl stop k3s; fi
+SH
+expect "a systemd call inside the Lima VM" 0 <<'SH'
+limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
+SH
+expect "an rc-service under its service-file test" 0 <<'SH'
+if [ -x /etc/init.d/k3s ]; then as_root rc-service k3s stop; fi
+SH
+expect "an rc-service with no test at all" 1 <<'SH'
+as_root rc-service k3s stop
+SH
+exit "$fail"

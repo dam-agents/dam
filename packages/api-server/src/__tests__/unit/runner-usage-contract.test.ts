@@ -22,7 +22,11 @@ describe("the runner's usage read", () => {
   it("reads every field the runner writes", () => {
     const at = new Date("2026-10-13T12:00:00Z");
     expect(parseRunnerUsage(fixture("runner-usage.json"), at)).toEqual({
-      storage: { usedBytes: 32212254720, usableBytes: 107374182400 },
+      storage: {
+        usedBytes: 32212254720,
+        usableBytes: 107374182400,
+        seedBytes: 2147483648,
+      },
       memory: { limitMiB: 12288, committedMiB: 3072 },
       cpu: {
         limitMilli: 9000,
@@ -38,6 +42,7 @@ describe("the runner's usage read", () => {
           diskGiB: 100,
           diskUsedBytes: 8589934592,
           cpuMilli: 350,
+          homeFull: true,
         },
       ],
       observedAt: at.toISOString(),

@@ -56,8 +56,6 @@ type AgentBase struct {
 	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
 
 	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
-
-	ToolsHostPath string `json:"toolsHostPath,omitempty"`
 }
 
 type AgentIptablesInit struct {
@@ -75,6 +73,12 @@ type VMConfig struct {
 	Enabled          bool               `json:"enabled,omitempty"`
 	Runner           VMRunnerSpec       `json:"runner,omitempty"`
 	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
+	Gateway          VMGateway          `json:"gateway,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether vm Agents egress through one gateway pod per owner instead of a gateway pod each. Off by default, so an install switches to it on purpose and can switch back.
+type VMGateway struct {
+	PerOwner bool `json:"perOwner,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each. `CloneSource` says whether the copy reads a CSI clone of a single-node home volume rather than the volume itself; unset means it does.
@@ -98,24 +102,21 @@ type VMRunnerSpec struct {
 	BootMiB              int                           `json:"bootMiB,omitempty"`
 	MachineCPUs          int                           `json:"machineCPUs,omitempty"`
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
-	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
-	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
-	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
-	DNSPolicy            string                        `json:"dnsPolicy,omitempty"`
-	DNSCIDRs             []string                      `json:"dnsCidrs,omitempty"`
-	ClusterDNS           VMRunnerClusterDNS            `json:"clusterDns,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
+	Affinity             *corev1.Affinity              `json:"affinity,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: set, every vm machine runs on one runner outside the cluster, reached at this address, instead of on per-owner runner pods. It is for a local cluster on a laptop, whose hypervisor the runner uses directly rather than nesting one inside the cluster's VM; the chart renders that runner's token and certificate, and the install starts it.
 	HostAddress string `json:"hostAddress,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: the node directory a stager DaemonSet copies each runner release into. Set, a runner pod keeps the image it was created with and its loader takes a new release from here without restarting the machines; empty, every new runner image rolls the pod and reboots its machines.
+	// UNIT_BOUNDARY_DESCRIPTION: the node directory a stager DaemonSet copies each runner release into. A runner pod keeps the image it was created with, and its loader takes a new release from here without restarting the machines. Required for runner pods.
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: set, a runner release built against another VM runtime than the pod's is not taken in place but rolls the pod, as before runtimes travelled with releases. It is the switch back for a runtime that turns out not to manage machines another one started.
-	ReleaseSameRuntimeOnly bool `json:"releaseSameRuntimeOnly,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `enforce`.
+	Seccomp string `json:"seccomp,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the PriorityClass every runner pod runs under, rendered by the chart above the pods of agents and above the platform's own control plane, which the chart leaves at no class. A node under memory pressure evicts, and a full node preempts, the lowest priority first, and a runner going down takes every machine of its owner with it — a whole owner's agents for one pod — where an agent pod going down costs one agent. Empty leaves runner pods at the cluster default.
+	PriorityClassName string `json:"priorityClassName,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {
@@ -124,16 +125,29 @@ type VMRunnerClusterDNS struct {
 	Ports     []int32           `json:"ports,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through.
+// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through. Peers are in-cluster pods an install opens to every gateway, such as a self-hosted model server, selected by namespace and non-empty pod labels, on their own TCP ports; Mesh marks a peer in the ambient mesh, which also opens HBONE 15008, and over HBONE ztunnel carries any inner port, so the port list binds only peers outside the mesh.
 type GatewayEgress struct {
-	ExtraCIDRs []string           `json:"extraCidrs,omitempty"`
-	ClusterDNS VMRunnerClusterDNS `json:"clusterDns,omitempty"`
+	ExtraCIDRs []string            `json:"extraCidrs,omitempty"`
+	ClusterDNS VMRunnerClusterDNS  `json:"clusterDns,omitempty"`
+	Peers      []GatewayEgressPeer `json:"peers,omitempty"`
+}
+
+type GatewayEgressPeer struct {
+	Namespace string            `json:"namespace"`
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	Ports     []int32           `json:"ports"`
+	Mesh      bool              `json:"mesh,omitempty"`
 }
 
 type VMRunnerRollout struct {
-	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
-	SettleTimeout Duration `json:"settleTimeout,omitempty"`
-	IdleWait      Duration `json:"idleWait,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how many runners may be mid-roll or mid-hand-off at once: a count, or, when MaxConcurrentPercent is set, that share of the runners the install has. A count alone cannot express a width that keeps up: one runner at a time takes an install of a thousand owners days to roll.
+	MaxConcurrent int `json:"maxConcurrent,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the roll's width as a share of the runners the install has, 1 to 100, rounded up to at least one runner. Zero leaves the width to MaxConcurrent.
+	MaxConcurrentPercent int `json:"maxConcurrentPercent,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how long a roll may hold its place in the width while its new pod never becomes ready. A pod that does not start is a broken release, so the roll keeps its place and halts the fleet for a while — but not for good while another runner is ready on the same pod: past this the place is released, the runner keeps its stalled mark, and the next runner may roll, so one owner's stall cannot freeze every owner's upgrade. With no ready runner on the new pod the hold has no bound.
+	StalledTimeout Duration `json:"stalledTimeout,omitempty"`
+	SettleTimeout  Duration `json:"settleTimeout,omitempty"`
+	IdleWait       Duration `json:"idleWait,omitempty"`
 }
 
 type AgentProbes struct {

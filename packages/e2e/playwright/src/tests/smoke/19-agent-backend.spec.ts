@@ -16,6 +16,7 @@ import {
   createAgentOn,
   deleteBackendHost,
   expectHomeFile,
+  inGuest,
   laneBackend,
   refreshingToken,
   requireBackend,
@@ -34,6 +35,10 @@ const token = refreshingToken();
 let agentId = "";
 let agentName = "";
 const marker = `home-survives-${randomUUID()}`;
+const probeService = "e2e-probe";
+const probeStopped = `/home/agent/${probeService}.stopped`;
+const startupItem = "e2e-item";
+const startupItemRuns = `/home/agent/${startupItem}.runs`;
 
 async function chatTurn(
   page: Page,
@@ -47,7 +52,7 @@ async function chatTurn(
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
   await requireBackend(api, laneBackend);
   await acceptTerms(api);
@@ -63,12 +68,12 @@ test.afterAll(async () => {
 
 // TEST_SCENARIO: the first boot. On the vm Backend it may wait for the owner's VM runner to be created and the image to be mounted, so the wait is minutes rather than a pod's seconds. The chat turn proves the relay reaches the harness on this Backend.
 test("boots and holds a chat turn", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await waitAgentState(api, agentId, "running");
   await chatTurn(page, "hello-backend", "backend-reply-first-boot");
 });
 
-// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate and the runner grows it to its size once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner's log of a successful grow is the evidence that the guest put the added RAM online.
+// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate, 1 GiB in this lane, and the runner grows it to its size, half the runner's pool, once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner logs a grow as done only once the guest's virtio-mem driver plugged all the added RAM and its agent put it online. A guest that adds more than 1 GiB must not stall: smolvm before 1.28.1 plugged no more once 1 GiB waited offline (smol-machines/smolvm#1745), so the grow must add at least 3 GiB, and the lane's sizes cannot shrink below the bug unnoticed.
 test("grows its machine past the boot RAM", async () => {
   test.skip(laneBackend !== "vm", "only a vm machine boots small and grows");
   test.setTimeout(120_000);
@@ -76,17 +81,152 @@ test("grows its machine past the boot RAM", async () => {
     .poll(
       () =>
         runnerGrows(agentId).some(
-          (grow) => grow.message !== "machine operation failed",
+          (grow) => grow.memory_mib - grow.boot_mib >= 3072,
         ),
       {
         timeout: 60_000,
         intervals: [3_000],
-        message: "the runner logged no successful grow",
+        message:
+          "the runner logged no done grow of this agent's machine that added at least 3 GiB",
       },
     )
     .toBe(true);
 });
 
+// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is the root of a btrfs subvolume of its own, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
+test("keeps HOME on a compressed btrfs subvolume with its own UUID, and swaps to zram", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has a disk and a kernel of its own",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep ' /home/agent ' /proc/self/mountinfo; for d in /sys/fs/btrfs/*-*; do echo \"fsid ${d##*/} metadata $(cat $d/metadata_uuid)\"; done; cat /proc/swaps; cat /sys/block/zram0/comp_algorithm",
+  );
+  expect(guest).toMatch(
+    /^\S+ \S+ \S+ \/agent \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/m,
+  );
+  const [, fsid, metadata] = /^fsid (\S+) metadata (\S+)$/m.exec(guest) ?? [];
+  expect(fsid, "the guest mounted one btrfs filesystem").toBeDefined();
+  expect(
+    metadata,
+    "the disk keeps the template's UUID as its metadata UUID",
+  ).not.toEqual(fsid);
+  expect(guest).toMatch(/^\/dev\/zram0\s+partition/m);
+  expect(guest).toContain("[zstd]");
+});
+
+// TEST_SCENARIO: the guest's boot log, which holds the harness's output, is readable in the guest at /var/log/platform and cannot be rewritten there; the disk it lives on is detached after the boot, and the host never reads it.
+test("shows the boot log read-only at /var/log/platform", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "test -s /var/log/platform/agent-runtime.log && echo readable; touch /var/log/platform/x 2>/dev/null || echo read-only",
+  );
+  expect(guest).toContain("readable");
+  expect(guest).toContain("read-only");
+});
+
+// TEST_SCENARIO: /tmp and /var/tmp are plain directories of the machine's root, not mounts of their own, and are open to every user as a temporary folder is; platform-init empties them at each boot.
+test("keeps /tmp and /var/tmp as directories of the root", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep -cE ' /(var/)?tmp ' /proc/self/mountinfo; stat -c '%a %U' /tmp /var/tmp",
+  );
+  expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
+});
+
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
+test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "echo softlevel $(cat /run/openrc/softlevel); echo entrypoint $(wc -l < /sys/fs/cgroup/entrypoint/cgroup.procs)",
+  );
+  expect(guest).toMatch(/^softlevel default$/m);
+  const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
+  expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
+  expect(
+    inGuest(agentId, "find /etc/runlevels -mindepth 2 -printf '%P\\n'").trim(),
+    "a fresh machine starts only the agent's own services",
+  ).toBe("default/user.root");
+  inGuest(
+    agentId,
+    [
+      `cat > /etc/init.d/${probeService} <<'EOF'`,
+      "#!/sbin/openrc-run",
+      "command=/bin/sleep",
+      "command_args=infinity",
+      "command_background=yes",
+      `pidfile=/run/${probeService}.pid`,
+      `stop_post() { touch ${probeStopped}; }`,
+      "EOF",
+      `chmod 755 /etc/init.d/${probeService}`,
+      `rm -f ${probeStopped}`,
+      `/sbin/rc-update add ${probeService} default >/dev/null`,
+      `/sbin/rc-service ${probeService} start >/dev/null`,
+      `rm -f ${startupItemRuns}`,
+      "mkdir -p /home/agent/.config/rc/init.d /home/agent/.config/rc/runlevels/default",
+      `cat > /home/agent/.config/rc/init.d/${startupItem} <<'EOF'`,
+      "#!/sbin/openrc-run",
+      "command=/bin/sh",
+      `command_args="-c 'echo run >> ${startupItemRuns}; echo env \\\${PLATFORM_GH_TOKEN_AVAILABLE:-unset} >> ${startupItemRuns}; exec sleep infinity'"`,
+      "EOF",
+      `chmod 755 /home/agent/.config/rc/init.d/${startupItem}`,
+      `ln -sf /home/agent/.config/rc/init.d/${startupItem} /home/agent/.config/rc/runlevels/default/${startupItem}`,
+      `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} start >/dev/null`,
+    ].join("\n"),
+  );
+  await expect
+    .poll(() => inGuest(agentId, `cat ${startupItemRuns} 2>/dev/null; true`), {
+      timeout: 30_000,
+      message: "rc-service --user starts the item at once",
+    })
+    .toMatch(/^run$/m);
+  expect(
+    inGuest(agentId, `cat ${startupItemRuns}`),
+    "the item has the runtime's env, which openrc's filter alone would drop",
+  ).toMatch(/^env (true|false)$/m);
+});
+
+// TEST_SCENARIO: the image's docker is an openrc service the agent starts from its own shell. The daemon answers, gets the agent's gateway but no other variable of the agent's environment, has platform-runc first on its PATH, and openrc stops it again.
+test("starts docker as an openrc service with only the gateway of the agent's environment", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  test.setTimeout(120_000);
+  const guest = inGuest(
+    agentId,
+    [
+      "agent=$(head -1 /sys/fs/cgroup/entrypoint/cgroup.procs)",
+      "xargs -0 sh -c 'exec env -i \"$@\" /sbin/rc-service docker start' _ < /proc/$agent/environ >/dev/null",
+      "docker=$(dirname $(readlink /proc/$(cat /run/dockerd.pid)/exe))/docker",
+      "for i in $(seq 60); do $docker info >/dev/null 2>&1 && break; sleep 1; done",
+      "echo info $($docker info --format '{{.DockerRootDir}}')",
+      "env=$(tr '\\0' '\\n' < /proc/$(cat /run/dockerd.pid)/environ)",
+      'echo "$env" | grep -q ^HTTPS_PROXY= && echo proxy',
+      'echo "$env" | grep -q ^PLATFORM_AGENT_ID= && echo agent-id',
+      'echo "$env" | grep -q ^PATH=/run/platform/bin: && echo runc-first',
+      "/sbin/rc-service docker stop >/dev/null; echo stopped $(/sbin/rc-service docker status 2>&1 | grep -c stopped)",
+    ].join("\n"),
+  );
+  expect(guest).toMatch(/^info \/home\/agent\/\.local\/share\/docker$/m);
+  expect(guest, "dockerd pulls through the gateway").toMatch(/^proxy$/m);
+  expect(guest, "no other variable reaches dockerd").not.toMatch(/^agent-id$/m);
+  expect(guest, "dockerd runs platform-runc").toMatch(/^runc-first$/m);
+  expect(guest).toMatch(/^stopped 1$/m);
+});
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
 test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
@@ -148,20 +288,48 @@ test("takes a scheduled fire", async () => {
   }
 });
 
-// TEST_SCENARIO: stop hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
+// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot. The openrc service the agent added to the default runlevel ran its stop_post on the stop, and runs again after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
-  test.setTimeout(900_000);
-  await api.agents.stop.mutate({ id: agentId });
+  test.setTimeout(300_000);
+  await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running");
   await expectHomeFile(token, agentId, markerPath, marker);
+  if (laneBackend === "vm") {
+    const guest = inGuest(
+      agentId,
+      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; echo item-runs $(grep -c '^run$' ${startupItemRuns}); echo item-env $(grep -cE '^env (true|false)$' ${startupItemRuns}); true`,
+    );
+    expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
+      /^stopped$/m,
+    );
+    expect(
+      guest,
+      "the service in the default runlevel started at the boot",
+    ).toMatch(/status: started/);
+    expect(guest, "the Startup Item started again at the boot").toMatch(
+      /^item-runs 2$/m,
+    );
+    expect(
+      guest,
+      "the item has the runtime's env at the boot, before the runtime starts",
+    ).toMatch(/^item-env 2$/m);
+    inGuest(
+      agentId,
+      [
+        `/sbin/rc-update del ${probeService} default >/dev/null`,
+        `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} stop >/dev/null`,
+        `rm -f /home/agent/.config/rc/runlevels/default/${startupItem} /home/agent/.config/rc/init.d/${startupItem}`,
+      ].join("\n"),
+    );
+  }
   await chatTurn(page, "hello-after-wake", "backend-reply-after-wake");
 });
 
 // TEST_SCENARIO: the restart verb takes the agent down and up again without a hibernation. The agent must be seen to leave running, or the verb did nothing, and it must come back with HOME intact.
 test("restarts with HOME intact", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await api.agents.restart.mutate({ id: agentId });
   await expect
     .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
@@ -179,7 +347,7 @@ test("restarts with HOME intact", async ({ page }) => {
 test("comes back after its host pod is deleted, with HOME intact", async ({
   page,
 }) => {
-  test.setTimeout(1_200_000);
+  test.setTimeout(300_000);
   await deleteBackendHost(agentId, laneBackend);
   await waitAgentState(api, agentId, "running", { failOnError: false });
   await expectHomeFile(token, agentId, markerPath, marker);

@@ -11,7 +11,11 @@ description: >
 
 Publish with `create_artifact({ ..., interactive: true })`.
 Only HTML supports prompt buttons and shared state.
-The artifact remains private and cannot later become shareable; publish a separate static copy for sharing.
+The artifact can never be public.
+The owner can share it with named people in the app's Share dialog; you cannot.
+Those people use the page as the owner does: its requests reach your server, and its buttons send you prompts, under the owner's authority.
+A viewer's prompt arrives in a Session of its own, named after the viewer and the page, and it tells you who sent it.
+The viewer sees only the page, never your reply, so show them a result through the data the page reads from you, or a new version of the artifact.
 Omit `interactive` for ordinary pages.
 
 The platform injects `platform.sendPrompt(text)` into the page.
@@ -25,10 +29,11 @@ Call it from a button click or a form handler that prevents the default submissi
 
 The owner must enable Interactive artifacts and open the latest artifact version beside an existing chat with its publishing agent.
 The prompt is sent as a normal chat message, using the chat's existing queue and error handling.
+On a page shared with named people, a viewer's prompt starts or continues that viewer's own Session with you instead, and the page shows them a short notice that it was sent.
 The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
 
-Buttons do not send prompts from library previews, shared pages, historical versions, another agent's chat, or while the feature is disabled.
+Buttons do not send prompts from library previews, historical versions, another agent's chat, or while the feature is disabled.
 Keep the page readable without this capability.
 Send prompts only in response to user actions, never automatically on load or on a timer.
 Prompts must be nonempty strings of at most 16,384 characters.
@@ -94,8 +99,8 @@ Only `content-type` passes through: the platform drops every other request and r
 
 ### Where it works
 
-The same rules as `sendPrompt`: only in the owner's docked preview beside a chat with the publishing agent, on the latest version, with the feature enabled.
-Elsewhere, the call rejects with `timeout` after 3 minutes.
+The same rules as `sendPrompt`: in the owner's docked preview beside a chat with the publishing agent, and on the page shared with named people, on the latest version, with the feature enabled.
+In the app elsewhere, the call rejects with `timeout` after 3 minutes.
 The wait is that long because waking a hibernated agent can take up to 2 minutes.
 Show a loading state while you wait.
 

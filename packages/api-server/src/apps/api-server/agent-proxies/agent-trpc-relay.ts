@@ -1,4 +1,5 @@
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
+import { keepAlive } from "./heartbeat.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -14,7 +15,6 @@ import { readyOrAnswering } from "./ready-or-answering.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_INTERVAL_MS = 30_000;
-const PING_INTERVAL_MS = 30_000;
 
 export interface AgentTrpcRelay {
   handleUpgrade(
@@ -77,20 +77,7 @@ export function createAgentTrpcRelay(
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
 
-      let alive = true;
-      client.on("pong", () => {
-        alive = true;
-      });
-      const heartbeat = setInterval(() => {
-        if (!alive) {
-          client.terminate();
-          return;
-        }
-        alive = false;
-        try {
-          client.ping();
-        } catch {}
-      }, PING_INTERVAL_MS);
+      keepAlive(client);
 
       const activity = setInterval(
         () => void bumpActivity(agentId),
@@ -105,7 +92,6 @@ export function createAgentTrpcRelay(
         } catch {}
       };
       client.on("close", () => {
-        clearInterval(heartbeat);
         clearInterval(activity);
         clientGone = true;
         closeWs(upstream);

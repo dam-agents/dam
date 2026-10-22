@@ -7,6 +7,7 @@ import type {
   SpendByAgent,
   SpendByDay,
   TokenSpendByModel,
+  TokenSpendByProvider,
 } from "api-server-api";
 
 import type { SessionSpend } from "../domain/spend-by-session-type.js";
@@ -17,7 +18,6 @@ export interface MetricsWindow {
   fromIso?: string;
   toIso?: string;
   sessionId?: string;
-  sessionIds?: readonly string[];
 }
 
 export type { SessionSpend };
@@ -50,6 +50,10 @@ export interface MetricsReader {
     agentIds: readonly string[],
     window: MetricsWindow,
   ): Promise<TokenSpendByModel[]>;
+  tokenSpendByProvider(
+    agentIds: readonly string[],
+    window: MetricsWindow,
+  ): Promise<TokenSpendByProvider[]>;
   spendByAgent(
     agentIds: readonly string[],
     window: MetricsWindow,
@@ -107,48 +111,74 @@ export function createMetricsService(deps: {
   listOwnedAgents: () => Promise<readonly OwnedAgent[]>;
   isInvocationTargetName: (name: string) => boolean;
   sessionTypeSpend: SessionTypeSpend;
+  connectionNames?: () => Promise<ReadonlyMap<string, string>>;
 }): MetricsService {
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a provider row is labelled from the
+   * platform's registry, never from telemetry; a deleted Connection keeps
+   * its alias alone.
+   */
+  const labelled = async (
+    rows: TokenSpendByProvider[],
+  ): Promise<TokenSpendByProvider[]> => {
+    if (rows.length === 0) return rows;
+    const names = (await deps.connectionNames?.()) ?? new Map<string, string>();
+    return rows.map((r) => ({
+      ...r,
+      connectionName: names.get(r.connectionId) ?? null,
+    }));
+  };
   return {
     async overview(query: MetricsQuery) {
       const ids = ownedScope(await deps.listOwnedAgents(), query.agentId);
       if (ids.length === 0) {
         return {
           tokenSpendByModel: [],
+          tokenSpendByProvider: [],
           runtimeBySession: [],
           contextPerCall: [],
         };
       }
       const window = { hours: query.sinceHours, sessionId: query.sessionId };
-      const [tokenSpendByModel, runtimeBySession, contextPerCall] =
-        await Promise.all([
-          deps.reader.tokenSpendByModel(ids, window),
-          deps.reader.runtimeBySession(ids, window),
-          deps.reader.contextPerCall(ids, window, query.limit),
-        ]);
-      return { tokenSpendByModel, runtimeBySession, contextPerCall };
-    },
-
-    async sessionCosts(query) {
-      const ids = ownedScope(await deps.listOwnedAgents(), query.agentId);
-      if (ids.length === 0) return [];
-      return deps.reader.runtimeBySession(ids, {
-        ...(query.from === undefined ? {} : { fromIso: query.from }),
-        sessionIds: query.sessionIds,
-      });
+      const [
+        tokenSpendByModel,
+        tokenSpendByProvider,
+        runtimeBySession,
+        contextPerCall,
+      ] = await Promise.all([
+        deps.reader.tokenSpendByModel(ids, window),
+        deps.reader.tokenSpendByProvider(ids, window).then(labelled),
+        deps.reader.runtimeBySession(ids, window),
+        deps.reader.contextPerCall(ids, window, query.limit),
+      ]);
+      return {
+        tokenSpendByModel,
+        tokenSpendByProvider,
+        runtimeBySession,
+        contextPerCall,
+      };
     },
 
     async spendBreakdown(query) {
       const owned = await deps.listOwnedAgents();
       const ids = ownedScope(owned, query.agentId);
       if (ids.length === 0)
-        return { byModel: [], byAgent: [], byDay: [], bySessionType: [] };
+        return {
+          byModel: [],
+          byProvider: [],
+          byAgent: [],
+          byDay: [],
+          bySessionType: [],
+        };
       const window = { fromIso: query.from, toIso: query.to };
-      const [byModel, byAgent, byDay, bySessionType] = await Promise.all([
-        deps.reader.tokenSpendByModel(ids, window),
-        deps.reader.spendByAgent(ids, window),
-        deps.reader.spendByDay(ids, window, query.timeZone),
-        deps.sessionTypeSpend.breakdown(ids, window),
-      ]);
+      const [byModel, byProvider, byAgent, byDay, bySessionType] =
+        await Promise.all([
+          deps.reader.tokenSpendByModel(ids, window),
+          deps.reader.tokenSpendByProvider(ids, window).then(labelled),
+          deps.reader.spendByAgent(ids, window),
+          deps.reader.spendByDay(ids, window, query.timeZone),
+          deps.sessionTypeSpend.breakdown(ids, window),
+        ]);
       const liveName = new Map(
         owned.flatMap((a) =>
           a.name === null ? [] : [[a.id, a.name] as const],
@@ -156,6 +186,7 @@ export function createMetricsService(deps: {
       );
       return {
         byModel,
+        byProvider,
         byAgent: byAgent
           .map((r) => ({
             ...r,
@@ -180,5 +211,5 @@ export function createDisabledMetricsService(): MetricsService {
       message: "Agent metrics backend is not enabled on this deployment.",
     });
   };
-  return { overview: fail, sessionCosts: fail, spendBreakdown: fail };
+  return { overview: fail, spendBreakdown: fail };
 }

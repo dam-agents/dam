@@ -10,6 +10,8 @@ import {
 import {
   contribution as contributionSchema,
   event as eventSchema,
+  planSourceFetch,
+  type EgressDenies,
 } from "agent-runtime-api";
 import {
   PROVIDER_TEMPLATE_IDS,
@@ -55,15 +57,19 @@ export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
+  agentName: (agentId: string) => Promise<string | null>;
+  egressDenies: (agentId: string) => EgressDenies;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [userEnv, granted, skills] = await Promise.all([
+      const [userEnv, granted, skills, agentName] = await Promise.all([
         readUserEnvContributions(deps.db, agentId),
         readGrantedContributions(deps.db, agentId),
-        readSkillRefContributions(deps.db, agentId),
+        readSkillRefContributions(deps.db, agentId, deps.egressDenies(agentId)),
+        deps.agentName(agentId),
       ]);
       const builtin = deps.builtin.for(agentId, {
+        agentName,
         sharedKnowledgeBases: granted.templateIds.has(SHARED_KB_TEMPLATE_ID),
         harnesses: capabilities.harnesses ?? [],
       });
@@ -158,7 +164,11 @@ async function readGrantedContributions(
       if (!result.success) continue;
       parsed.push(
         provider && result.data.kind === "env"
-          ? { ...result.data, provider: row.id }
+          ? {
+              ...result.data,
+              provider: row.id,
+              providerTemplate: row.templateId,
+            }
           : result.data,
       );
     }
@@ -182,6 +192,7 @@ async function readGrantedContributions(
 async function readSkillRefContributions(
   db: Db,
   agentId: string,
+  denies: EgressDenies,
 ): Promise<Contribution[]> {
   const rows = await db
     .select({
@@ -193,13 +204,22 @@ async function readSkillRefContributions(
     .from(agentSkills)
     .where(eq(agentSkills.agentId, agentId))
     .orderBy(asc(agentSkills.source), asc(agentSkills.name));
-  return rows.map((r): Contribution => ({
-    kind: "skill-ref",
-    sourceUrl: r.source,
-    name: r.name,
-    version: r.version,
-    ...(r.path !== null ? { path: r.path } : {}),
-  }));
+  return Promise.all(
+    rows.map(async (r): Promise<Contribution> => {
+      const plan = await planSourceFetch(
+        { url: r.source, version: r.version, path: r.path ?? undefined },
+        denies,
+      );
+      return {
+        kind: "skill-ref",
+        sourceUrl: r.source,
+        name: r.name,
+        version: r.version,
+        ...(r.path !== null ? { path: r.path } : {}),
+        ...(plan.kind === "directory" ? { fetch: "directory" as const } : {}),
+      };
+    }),
+  );
 }
 
 function toEvent(row: PendingEventRow): Event | null {

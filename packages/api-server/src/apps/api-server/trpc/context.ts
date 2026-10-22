@@ -6,9 +6,15 @@ import {
 } from "../../../modules/agents/index.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
-import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
+import { TRPCError } from "@trpc/server";
+import {
+  composeDefaultModelNotices,
+  composeHarnessConfigModule,
+  isNoDefaultModelError,
+} from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
+import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -29,9 +35,16 @@ import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
+import {
+  composeChatFormPreferencesForOwner,
+  createChatFormPreferencesReader,
+} from "../../../modules/chat-forms/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
-import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
+import {
+  composeConnectionsForOwner,
+  composeSecretRequestsForOwner,
+} from "../../../modules/connections/compose.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -59,15 +72,20 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telegramBindFlows,
     slackBindFlows,
     seedSources,
+    spendForOwner,
+    providerStatus,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    environmentsFor,
     secretStore,
     runtimeMutator,
+    outboxRepo,
     contributionsProgress,
     onboardingChecklists,
     gettingStarted,
+    sidebarOrder,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -84,6 +102,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
+    linkedKits,
     firePair,
     reposService,
     connectionsBoot,
@@ -98,6 +117,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     cpu: config.agentDefaultCpuLimit,
     memory: config.agentDefaultMemoryLimit,
   };
+  const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   return (user: UserIdentity, surface: string): ApiContext => {
     const connections = composeConnectionsForOwner({
@@ -115,6 +135,22 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderKey: config.platformProvider?.apiKey ?? null,
+      platformProviderCa: config.platformProvider?.ca ?? null,
+      curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
+      harnesses,
+      platformProviderEnabled: async () =>
+        (await features.flags())["platform-provider"],
+    });
+    const secretRequests = composeSecretRequestsForOwner({
+      ownerId: user.sub,
+      db,
+      uiBaseUrl: config.uiBaseUrl,
+      stores: connectionsBoot.secretRequestStores,
+      templates: connectionsBoot.templates,
+      connections,
+      agentName: async (agentId) =>
+        (await agentsRepo.get(agentId, user.sub))?.name ?? null,
     });
     const { budgets, resizeGate, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
@@ -125,6 +161,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         memory: config.defaultUserMemoryBudget,
       },
       slotSize: defaultLimits,
+      isSlackUnlinked: async () =>
+        channelManager.availableChannels()[ChannelType.Slack] === true &&
+        (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
+          .length === 0,
+      vmPool: {
+        storage: config.vmPoolStorage,
+        memory: config.vmPoolMemory,
+      },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -244,14 +288,33 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
-      sessionPair: (agentId) => firePair(agentId, {}),
+      sessionPair: (agentId) =>
+        firePair(agentId, "chat", {}).catch((err: unknown) => {
+          if (isNoDefaultModelError(err))
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,
+            });
+          throw err;
+        }),
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
+      linkedKits,
       virtualizationEnabled: config.virtualizationEnabled,
+      chatFormPreferences: (agentId) =>
+        readChatFormPreferences(
+          agentId,
+          async () => (await features.flags())["chat-forms"],
+        ),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
+    const chatFormPreferences = composeChatFormPreferencesForOwner({
+      db,
+      ownerSub: user.sub,
+      isAgentOwnedBy,
+    });
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
@@ -276,6 +339,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
       ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
+      defaultModelNotices: async () =>
+        composeDefaultModelNotices(db)(
+          (await agentsRepo.list(user.sub)).map((agent) => agent.id),
+        ),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -291,6 +358,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: harnessConfig } = composeHarnessConfigModule({
       catalog: harnesses,
       db,
+      outboxRepo,
       ownerSub: user.sub,
       surface,
       runtimeMutator,
@@ -331,6 +399,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           reader: metricsReader,
           listOwnedAgents,
           isInvocationTargetName,
+          connectionNames: async () =>
+            new Map(
+              (await connections.listConnections()).map((c) => [c.id, c.name]),
+            ),
           sessionTypeSpend: createSessionTypeSpend({
             readSpend: (agentIds, window) =>
               metricsReader.spendBySession(agentIds, window),
@@ -354,18 +426,22 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         telegramBotUsername: () => channelManager.telegramBotUsername(),
       },
       connections,
+      secretRequests,
       skills,
       approvals,
       attention,
       egressRules,
       invocationsQuery,
+      environments: environmentsFor(user.sub),
       invocationsControl,
       starterKits,
       kbShares,
       artifactLibrary,
       caseStudies,
       features,
+      chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
+      sidebarOrder: sidebarOrder.forOwner(user.sub),
       files,
       harnessConfig,
       links: config.links,
@@ -379,10 +455,18 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       satellites,
       satelliteWorker: satellitesBoot.workerOps,
       budgets,
+      spend: spendForOwner({
+        ownerSub: user.sub,
+        agentBinding: user.agentIds,
+        isAgentOwnedBy: (agentId, ownerSub) =>
+          agentsRepo.isOwnedBy(agentId, ownerSub),
+      }),
+      providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
       featureModes: config.featureModes,
+      telemetryBackend: telemetryReader !== null,
     };
   };
 }

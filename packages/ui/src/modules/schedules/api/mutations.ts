@@ -1,10 +1,13 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
+import { getErrorMessage } from "../../../lib/errors.js";
+import { emitToast } from "../../../lib/toast.js";
 import { trpc } from "../../../trpc.js";
+import { runNowErrorText } from "../lib/schedule-format.js";
 
 const invalidatesScheduleList = {
-  invalidates: [trpc.schedules.pathKey()],
+  invalidates: [trpc.schedules.pathKey(), trpc.attention.pathKey()],
 };
 
 interface CreateScheduleInput {
@@ -16,7 +19,9 @@ interface CreateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
   sessionTitle?: string;
 }
 
@@ -36,6 +41,34 @@ export function useCreateSchedule() {
   });
 }
 
+export interface UpdateCronScheduleInput {
+  id: string;
+  name: string;
+  cron: string;
+  task: string;
+  sessionMode: "fresh" | "continuous";
+  precheck: string | null;
+  harness: string | null;
+  model: string | null;
+  settings: Record<string, string> | null;
+  sessionTitle: string | null;
+}
+
+export function useUpdateCronSchedule() {
+  return useMutation({
+    mutationFn: (input: UpdateCronScheduleInput) =>
+      api.schedules.updateCron.mutate({
+        ...input,
+        sessionMode:
+          input.sessionMode === "fresh" ? undefined : input.sessionMode,
+      }),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Couldn't update schedule",
+    },
+  });
+}
+
 interface UpdateScheduleInput {
   id: string;
   name: string;
@@ -45,7 +78,9 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
   sessionTitle: string | null;
 }
 
@@ -70,7 +105,9 @@ export interface CreateOnceScheduleInput {
   task: string;
   timezone: string;
   at?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
   sessionTitle?: string;
 }
 
@@ -91,7 +128,9 @@ export interface UpdateOnceScheduleInput {
   task: string;
   timezone: string;
   at: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
   sessionTitle?: string;
 }
 
@@ -112,6 +151,16 @@ export function useToggleSchedule() {
     meta: {
       ...invalidatesScheduleList,
       errorToast: "Couldn't toggle schedule",
+    },
+  });
+}
+
+export function useClearScheduleChoices() {
+  return useMutation({
+    ...trpc.schedules.clearSessionChoices.mutationOptions(),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Couldn't move the schedules to the scheduled default",
     },
   });
 }
@@ -141,7 +190,12 @@ export function useRunScheduleNow() {
     ...trpc.schedules.runNow.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't run schedule",
+      suppressErrorToast: true,
     },
+    onError: (error) =>
+      emitToast({
+        kind: "error",
+        message: runNowErrorText(getErrorMessage(error, "")),
+      }),
   });
 }

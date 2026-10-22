@@ -11,7 +11,11 @@ This identity also owns them. A runner belongs to an owner rather than to any
 one Agent, so no Agent can own it; an owner reference may not cross a
 namespace, so the ServiceAccount is rendered beside the runners in the agent
 namespace. Removing it — uninstall, rollback, or virtualization.enabled going
-false — collects every runner, disk and credential with it.
+false — collects every runner and credential with it. The disk claims are
+left unowned, so recreating this account never takes users' disks; after an
+uninstall an operator deletes them by label (docs/architecture/vm-runner.md).
+
+The priority class they run under is rendered here too.
 */}}
 {{- $name := include "platform.vmRunner.serviceAccountName" . }}
 apiVersion: v1
@@ -22,37 +26,42 @@ metadata:
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: vm-runner
-{{- with .Values.virtualization.runner.scc }}
----
-{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-runner" "scc" .) }}
-{{- end }}
-{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
 ---
 {{- /*
-A runner that caches images on its own claim needs exactly what the chart's
-own SCC already grants agents: run as uid 0 and add DAC_OVERRIDE,
-CHOWN, FOWNER and FSETID, with no privileged container and no host volumes. Custom
-SCCs get no auto-generated ClusterRole, so this binds the one agent-scc.yaml
-renders. An install that sets `runner.scc` as well gets both — admission
-picks the one that admits the pod, preferring the narrower. This SCC refuses
-the hostPath that `imageCache.hostPath` and `imageArchiveHostPath` mount, so
-those runners need `runner.scc`.
+The class the runners of this release run under unless the install names one.
+Always rendered, and named after the release either way: helm deletes an object
+it stops rendering, and a runner Deployment keeps the class it was rolled with
+until its pod rolls again, so an install that switches to a class of its own
+would leave live templates naming a class that is gone, and their next pod
+refused at admission. It is above the agent pods, which carry no class unless
+the install gives them one, and above the platform's own control plane, which
+this chart leaves at no class; an install that wants its control plane above
+the runners gives it a class above this one. It never preempts anything to be
+placed. Cluster-scoped, so its name carries the release: installs share nodes.
+Its name carries the priority as well, because a class's value is immutable:
+an install that changes `runner.priority` renders a class of its own rather
+than an update Kubernetes refuses, so both the upgrade and a rollback between
+the two values apply. The class left behind is kept — a pod that outlives the
+change still names it — and a runner pod takes the new one at its next roll.
 */}}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
 metadata:
-  name: {{ $name }}-anyuid-cap-net
-  namespace: {{ .Values.agentNamespace }}
+  name: {{ include "platform.vmRunner.ownPriorityClassName" . }}
+  annotations:
+    # Kept on uninstall and rollback: a runner pod that outlives either still
+    # names this class, and a pod naming a class that is gone is refused at
+    # admission. The name carries the release, so nothing else can claim it.
+    helm.sh/resource-policy: keep
   labels:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: vm-runner
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
-subjects:
-  - kind: ServiceAccount
-    name: {{ $name }}
-    namespace: {{ .Values.agentNamespace }}
+value: {{ .Values.virtualization.runner.priority }}
+globalDefault: false
+preemptionPolicy: Never
+description: "The VM runner of one owner: every machine that owner has runs as a process of this pod."
+{{- with .Values.virtualization.runner.scc }}
+---
+{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-runner" "scc" .) }}
 {{- end }}
 {{- end }}

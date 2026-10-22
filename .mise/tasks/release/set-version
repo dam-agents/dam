@@ -18,6 +18,10 @@ set -x
 yq -i ".version = \"$usage_version\""    helm/Chart.yaml
 yq -i ".appVersion = \"$usage_version\"" helm/Chart.yaml
 yq -i ".version = \"$usage_version\""    packages/cli/package.json
+# A hotfix branch cut from a tag older than the skill has no skill to stamp.
+if [[ -f skills/dam/SKILL.md ]]; then
+  sed -i -E "s/^(This page describes \`dam\` CLI )[^ ]+\.$/\1$usage_version./" skills/dam/SKILL.md
+fi
 git add .
 git commit --signoff --no-verify -m "bump: v$usage_version"
 set +x

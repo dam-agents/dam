@@ -34,6 +34,31 @@ describe("resolveSessionPair", () => {
     expect(resolveSessionPair(inputs({ remembered }))).toEqual(remembered);
   });
 
+  /** TEST_SCENARIO: The migration qualified a saved model with its provider,
+   * but this agent still runs an image from before qualified names, which
+   * knows the model only as it listed it: the fire sends that spelling
+   * (Claude Code's own `claude/<id>`), or the upstream id when the runtime
+   * has listed nothing yet. */
+  it("sends an old runtime the spelling it listed", () => {
+    const remembered = {
+      harness: "claude-code",
+      provider: "lite",
+      model: "ibm/azure/gpt-5.5",
+    };
+    expect(
+      resolveSessionPair(
+        inputs({
+          remembered,
+          availableModels: () => ["claude/azure/gpt-5.5", "sonnet"],
+        }),
+      ),
+    ).toEqual({ ...remembered, model: "claude/azure/gpt-5.5" });
+    expect(resolveSessionPair(inputs({ remembered }))).toEqual({
+      ...remembered,
+      model: "azure/gpt-5.5",
+    });
+  });
+
   /** TEST_SCENARIO: An agent nobody has picked for runs its own harness on
    * the first provider that harness can use. */
   it("starts an unpicked agent on its harness and first fitting provider", () => {
@@ -122,6 +147,114 @@ describe("resolveSessionPair", () => {
   });
 });
 
+describe("resolveSessionPair on a runtime that routes by model name", () => {
+  const routed = (over: Partial<SessionPairInputs>) =>
+    resolveSessionPair(inputs({ routed: true, ...over }));
+
+  /** TEST_SCENARIO: The saved pair is for this harness and its provider is
+   * still granted, so the run keeps its qualified model and settings. */
+  it("keeps the saved qualified model and settings for its own harness", () => {
+    const remembered = {
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high" },
+    };
+    expect(
+      routed({
+        remembered,
+        granted: [
+          { id: "lite", type: "ibm-litellm" },
+          { id: "oai", type: "openai" },
+        ],
+      }),
+    ).toEqual(remembered);
+  });
+
+  /** TEST_SCENARIO: The saved model's provider is gone. The run stays on the
+   * saved harness but takes no other provider or model in its place, so it
+   * reports that the agent has no default model rather than running on one
+   * the person never picked. */
+  it("stays on the harness and leaves the model unset when its provider is gone", () => {
+    expect(
+      routed({
+        remembered: { harness: "codex", provider: "gone", model: "cb/glm" },
+        granted: [
+          { id: "oai", type: "openai" },
+          { id: "lite", type: "ibm-litellm" },
+        ],
+        availableModels: () => [
+          "openai/gpt-5.5",
+          "ibm/gpt-5.5",
+          "ibm/aws/opus",
+        ],
+      }),
+    ).toEqual({ harness: "codex", provider: null, model: null });
+  });
+
+  /** TEST_SCENARIO: A schedule names a model on a provider other than the
+   * agent's default for the harness. The run goes to the provider the model
+   * names, since the agent holds it and the harness accepts it. */
+  it("takes the provider the remembered model names over the default", () => {
+    expect(
+      routed({
+        remembered: {
+          harness: "codex",
+          provider: null,
+          model: "openai/gpt-5.5",
+        },
+        granted: [
+          { id: "lite", type: "ibm-litellm" },
+          { id: "oai", type: "openai" },
+        ],
+      }),
+    ).toEqual({ harness: "codex", provider: "oai", model: "openai/gpt-5.5" });
+  });
+
+  /** TEST_SCENARIO: No granted provider fits the saved harness, so the run
+   * fails rather than jumping to the platform default harness. */
+  it("fails on the saved harness instead of moving to the default one", () => {
+    expect(
+      routed({
+        remembered: { harness: "codex", provider: null, model: null },
+        granted: [{ id: "claude", type: "anthropic" }],
+      }),
+    ).toBeNull();
+  });
+
+  /** TEST_SCENARIO: A run asked for on a harness with no pair saved for it
+   * (the fire resolver passes an empty pair for the requested harness) takes
+   * no provider or model the person did not pick. */
+  it("leaves provider and model unset for a harness with nothing saved", () => {
+    expect(
+      routed({
+        remembered: { harness: "codex", provider: null, model: null },
+        agentHarness: "claude-code",
+        granted: [{ id: "lite", type: "ibm-litellm" }],
+      }),
+    ).toEqual({ harness: "codex", provider: null, model: null });
+  });
+
+  /** TEST_SCENARIO: Claude Code's own spelling of a saved model folds into
+   * the canonical name; a bare saved name is no model on this runtime. */
+  it("canonicalises Claude Code's spelling and drops bare names", () => {
+    expect(
+      routed({
+        remembered: {
+          harness: "claude-code",
+          provider: "lite",
+          model: "claude/ibm/aws/claude-opus-4-8",
+        },
+      })?.model,
+    ).toBe("ibm/aws/claude-opus-4-8");
+    expect(
+      routed({
+        remembered: { harness: "claude-code", provider: "lite", model: "opus" },
+      })?.model,
+    ).toBeNull();
+  });
+});
+
 describe("resolveFirePair", () => {
   /** TEST_SCENARIO: A schedule saved with only a model was set up against the
    * provider the person last picked for this harness, so it fires there, not
@@ -135,7 +268,6 @@ describe("resolveFirePair", () => {
             provider: "second",
             model: "old",
           }),
-          write: async () => {},
           grantedProviders: async () => [
             { id: "first", type: "ibm-litellm" },
             { id: "second", type: "anthropic" },
@@ -168,6 +300,7 @@ describe("resolveFirePair", () => {
         }),
       },
       "agent-1",
+      "scheduled",
       { model: "opus" },
     );
     expect(pair).toEqual({
@@ -188,7 +321,6 @@ describe("resolveRememberedPair before the agent's first hello", () => {
         {
           pairRepo: {
             read: async () => null,
-            write: async () => {},
             grantedProviders: async () => [
               { id: "claude", type: "anthropic" },
               { id: "oai", type: "openai" },
@@ -218,6 +350,7 @@ describe("resolveRememberedPair before the agent's first hello", () => {
           getCapabilities: async () => null,
         },
         "agent-1",
+        "chat",
       ),
     ).toEqual({ harness: "codex", provider: "oai", model: null });
   });
@@ -236,7 +369,6 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
             provider: "curve",
             model: "rits/zai-org/glm-5-3",
           }),
-          write: async () => {},
           grantedProviders: async () => [{ id: "curve", type: "curve-bender" }],
         },
         catalog: {
@@ -259,6 +391,7 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
         }),
       },
       "agent-1",
+      "scheduled",
       {},
     );
     expect(pair).toBeUndefined();
@@ -274,7 +407,6 @@ describe("resolveFirePair on a harness outside the catalog", () => {
       {
         pairRepo: {
           read: async () => null,
-          write: async () => {},
           grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
         },
         catalog: {
@@ -291,6 +423,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
         }),
       },
       "agent-1",
+      "scheduled",
       {},
     );
     expect(pair).toBeUndefined();
@@ -305,7 +438,6 @@ describe("resolveFirePair on a harness outside the catalog", () => {
         {
           pairRepo: {
             read: async () => null,
-            write: async () => {},
             grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
           },
           catalog: {
@@ -330,6 +462,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
           }),
         },
         "agent-1",
+        "chat",
       ),
     ).toBeNull();
   });

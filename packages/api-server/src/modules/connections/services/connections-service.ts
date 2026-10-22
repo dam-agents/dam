@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  displayNameForTemplate,
+  PLATFORM_LLM_TEMPLATE_ID,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   type ConnectionStatus,
@@ -16,10 +20,19 @@ import {
   type ConnectionView,
   type Contribution,
   type ProviderBalance,
+  type ProviderKeyCheck,
+  type ProviderKeyRecheck,
   type SecretRef,
   preferenceGroupOf,
   signingTargetOf,
   unaddressableRivalHost,
+  aliasForProviderType,
+  orderByAlias,
+  providerAliasConflict,
+  harnessFits,
+  type ConnectionProviderView,
+  type HarnessCatalog,
+  type ProviderPresetType,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -55,6 +68,7 @@ import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  UPSTREAM_CA_SECRET_FIELD,
 } from "../domain/connection-sds.js";
 import {
   awsCredentialsFile,
@@ -71,7 +85,11 @@ import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
 } from "../domain/s3-credential-probe.js";
-import type { ProviderKeyProbe } from "../domain/provider-key-probe.js";
+import {
+  providerKeyTargetOf,
+  type ProviderKeyProbe,
+  type ProviderKeyProbeOutcome,
+} from "../domain/provider-key-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -90,6 +108,10 @@ import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { recordAccountLabel } from "./account-label.js";
 import { accountLabelOf } from "../domain/account-label.js";
+import {
+  KEY_CHECK_INPUT_KEY,
+  keyCheckOf,
+} from "../domain/provider-key-check.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -107,6 +129,13 @@ function assertNoUnaddressableRival(
   desired: readonly Connection[],
 ): void {
   for (const connection of added) {
+    const conflict = providerAliasConflict(desired, connection);
+    if (conflict) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `this agent already has a ${conflict.displayName} provider ('${conflict.held.name}'); an agent holds one '${conflict.alias}' provider, so remove it before granting '${connection.name}'`,
+      });
+    }
     for (const other of desired) {
       const host = unaddressableRivalHost(connection, other);
       if (host === undefined) continue;
@@ -116,6 +145,24 @@ function assertNoUnaddressableRival(
       });
     }
   }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a provider Connection the deployment owns: the
+ * template exists only while the deployment configures it, its key is the
+ * deployment's, and the user never enters or changes it.
+ */
+export interface ManagedProvider {
+  templateId: string;
+  name: string;
+  key: string | null;
+  ca: string | null;
+  refusal: string;
+  enabled: () => Promise<boolean>;
+}
+
+export interface ManagedProviderConnections {
+  reconcileManagedConnections(): Promise<void>;
 }
 
 export function createConnectionsService(deps: {
@@ -143,12 +190,65 @@ export function createConnectionsService(deps: {
     reachable: boolean;
   } | null>;
   maxSharedKbConnections?: number;
-}): ConnectionsService {
+  platformProviderEnabled: () => Promise<boolean>;
+  platformProviderKey: string | null;
+  platformProviderCa?: string | null;
+  curveBenderDeploymentKey?: string | null;
+  harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
+}): ConnectionsService & ManagedProviderConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
-  function toView(conn: Connection): ConnectionView {
+
+  function providerView(templateId: string): ConnectionProviderView | null {
+    const type = providerTypeForTemplateId(templateId);
+    if (type === null) return null;
+    return {
+      alias: aliasForProviderType(type),
+      harnesses: deps.harnesses.harnesses
+        .filter((h) => harnessFits(deps.harnesses, h.name, type, templateId))
+        .map((h) => h.name),
+    };
+  }
+
+  async function firstProviderPerAlias(
+    fits: (type: ProviderPresetType, templateId: string) => boolean,
+    harness?: string,
+    upTo?: string,
+  ): Promise<{ id: string; type: ProviderPresetType }[]> {
+    const oldest = await deps.repo.listByOwnerOldestFirst(deps.ownerId);
+    const cutoff =
+      upTo === undefined ? -1 : oldest.findIndex((c) => c.id === upTo);
+    const usable = (
+      cutoff === -1 ? oldest : oldest.slice(0, cutoff + 1)
+    ).flatMap((c) => {
+      const type = providerTypeForTemplateId(c.templateId);
+      return type !== null &&
+        fits(type, c.templateId) &&
+        PROVIDER_IS_ACTIVE[deriveStatus(c)]
+        ? [{ id: c.id, type }]
+        : [];
+    });
+    const aliases = new Set<string>();
+    return orderByAlias(usable, harness).filter((c) => {
+      const alias = aliasForProviderType(c.type);
+      if (aliases.has(alias)) return false;
+      aliases.add(alias);
+      return true;
+    });
+  }
+
+  async function preferredProviderId(): Promise<string | undefined> {
+    const harness = deps.harnesses.default;
+    const granted = await firstProviderPerAlias((type, templateId) =>
+      harnessFits(deps.harnesses, harness, type, templateId),
+    );
+    return orderByAlias(granted, harness)[0]?.id;
+  }
+
+  function toView(conn: Connection, preferredId?: string): ConnectionView {
     const template = deps.templates.get(conn.templateId);
     const accountLabel = accountLabelOf(conn);
+    const keyCheck = keyCheckOf(conn);
     const hosts = [
       ...new Set(
         conn.contributions.flatMap((c) =>
@@ -201,6 +301,7 @@ export function createConnectionsService(deps: {
               : {}),
           }
         : {};
+    const provider = providerView(conn.templateId);
     return {
       id: conn.id,
       ownerId: conn.ownerId,
@@ -212,7 +313,11 @@ export function createConnectionsService(deps: {
       contributions: conn.contributions,
       hosts,
       ...(accountLabel ? { accountLabel } : {}),
+      ...(keyCheck ? { keyCheck } : {}),
       ...oauthExtras,
+      ...(provider
+        ? { provider: { ...provider, preferred: conn.id === preferredId } }
+        : {}),
     };
   }
 
@@ -325,6 +430,28 @@ export function createConnectionsService(deps: {
       ),
       ...pinned,
     ];
+  }
+
+  async function putConnectionSecret(
+    connectionId: string,
+    templateId: string,
+    path: string,
+    fields: Record<string, string>,
+    contributions: Contribution[],
+  ): Promise<void> {
+    await deps.secretStore.put(
+      { storeId: deps.secretStore.storeId, path, field: "" },
+      fields,
+      {
+        owner: deps.ownerId,
+        purpose: `connection:${templateId}`,
+        extraLabels: {
+          "agent-platform.ai/secret-type": "connection",
+          "agent-platform.ai/connection": connectionId,
+        },
+        extraAnnotations: connectionSecretAnnotations(contributions),
+      },
+    );
   }
 
   async function rotateHeaderValue(
@@ -593,13 +720,15 @@ export function createConnectionsService(deps: {
     });
   }
 
-  async function assertProviderKeyAccepted(
+  function recordProviderKeyOutcome(
+    outcome: ProviderKeyProbeOutcome,
     templateId: string,
-    key: string,
     connectionId: string,
-  ): Promise<void> {
-    const outcome = await deps.providerKeyProbe.probe(templateId, key);
-    if (outcome.ok) return;
+  ): ProviderKeyCheck | null {
+    const checkedAt = new Date().toISOString();
+    if (outcome.ok) {
+      return outcome.unchecked ? null : { result: "ok", checkedAt };
+    }
     securityLog("warn", "connection.provider_key_probe_failed", {
       category: "credential",
       actor: deps.ownerId,
@@ -609,15 +738,71 @@ export function createConnectionsService(deps: {
       reason: outcome.reason,
       detail: { templateId, probe: outcome.detail },
     });
-    if (outcome.reason !== "refused") return;
+    return { result: outcome.reason, detail: outcome.detail, checkedAt };
+  }
+
+  async function assertProviderKeyAccepted(
+    templateId: string,
+    key: string,
+    connectionId: string,
+    contributions: readonly Contribution[],
+  ): Promise<ProviderKeyCheck | null> {
+    const check = recordProviderKeyOutcome(
+      await deps.providerKeyProbe.probe(
+        templateId,
+        key,
+        providerKeyTargetOf(contributions),
+      ),
+      templateId,
+      connectionId,
+    );
+    if (check?.result !== "refused") return check;
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
-        `The provider refused this key (${outcome.detail}). Check that it is complete and still valid.` +
+        `The provider refused this key (${check.detail}). Check that it is complete and still valid.` +
         (templateId === "ibm-litellm"
           ? ` There are two ETE LiteLLM instances, and only keys from https://${IBM_LITELLM_HOST}/ui?page=api-keys work with ${deps.brandName}.`
           : ""),
     });
+  }
+
+  async function probeStoredProviderKey(
+    conn: Connection,
+    valueRef: SecretRef,
+  ): Promise<ProviderKeyProbeOutcome> {
+    let key: string | null;
+    try {
+      key = await deps.secretStore.getField(valueRef);
+    } catch (err) {
+      return {
+        ok: false,
+        reason: "unverified",
+        detail: `the stored key could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (!key)
+      return { ok: false, reason: "refused", detail: "no key is stored" };
+    return deps.providerKeyProbe.probe(
+      conn.templateId,
+      key,
+      providerKeyTargetOf(conn.contributions),
+    );
+  }
+
+  async function recheckProviderKey(
+    conn: Connection,
+  ): Promise<ProviderKeyCheck | null> {
+    if (conn.auth.kind !== "header") return null;
+    const check = recordProviderKeyOutcome(
+      await probeStoredProviderKey(conn, conn.auth.valueRef),
+      conn.templateId,
+      conn.id,
+    );
+    if (check) {
+      await deps.repo.mergeInputs(conn.id, { [KEY_CHECK_INPUT_KEY]: check });
+    }
+    return check;
   }
 
   async function rotateSigv4Keys(
@@ -662,11 +847,13 @@ export function createConnectionsService(deps: {
       }
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: rejection
-          ? `The provider rejected the credential (${reviveFailureReason(err)}).`
-          : err instanceof Error
-            ? err.message
-            : "The credential was rejected.",
+        message:
+          rejection?.userMessage ??
+          (rejection
+            ? `The provider rejected the credential (${reviveFailureReason(err)}).`
+            : err instanceof Error
+              ? err.message
+              : "The credential was rejected."),
       });
     }
   }
@@ -751,7 +938,7 @@ export function createConnectionsService(deps: {
     });
   }
 
-  return {
+  const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
       const family = templates.some(inheritsFamily)
@@ -763,13 +950,22 @@ export function createConnectionsService(deps: {
         const preset = creds
           ? { clientId: creds.clientId, hasSecret: !!creds.clientSecretRef }
           : undefined;
-        return templateToView(t, deps.oauthCallbackUrl, preset);
+        const provider = providerView(t.id);
+        return {
+          ...templateToView(t, deps.oauthCallbackUrl, preset),
+          ...(provider ? { provider } : {}),
+        };
       });
     },
 
     async listConnections(): Promise<ConnectionView[]> {
       const conns = await deps.repo.listByOwner(deps.ownerId);
-      const views = conns.map(toView);
+      const preferredId = conns.some((c) =>
+        PROVIDER_TEMPLATE_IDS.has(c.templateId),
+      )
+        ? await preferredProviderId()
+        : undefined;
+      const views = conns.map((conn) => toView(conn, preferredId));
       await Promise.all(
         views.map(async (view, i) => {
           const conn = conns[i]!;
@@ -798,7 +994,10 @@ export function createConnectionsService(deps: {
 
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
-      return conn ? toView(conn) : null;
+      if (!conn) return null;
+      return PROVIDER_TEMPLATE_IDS.has(conn.templateId)
+        ? toView(conn, await preferredProviderId())
+        : toView(conn);
     },
 
     async validateProviderConnection(id: string): Promise<void> {
@@ -824,20 +1023,9 @@ export function createConnectionsService(deps: {
       }
     },
 
-    async defaultProviderConnection(fits) {
-      const usable = (
-        await deps.repo.listByOwnerOldestFirst(deps.ownerId)
-      ).filter((c) => {
-        const type = providerTypeForTemplateId(c.templateId);
-        return (
-          type !== null &&
-          fits(type, c.templateId) &&
-          PROVIDER_IS_ACTIVE[deriveStatus(c)]
-        );
-      });
-      return (
-        (usable.find((c) => c.templateId === "ibm-litellm") ?? usable[0])?.id ??
-        null
+    async defaultProviderConnections(fits, harness, upTo) {
+      return (await firstProviderPerAlias(fits, harness, upTo)).map(
+        (c) => c.id,
       );
     },
 
@@ -872,6 +1060,18 @@ export function createConnectionsService(deps: {
           message: "the provider did not report a balance",
         });
       }
+    },
+
+    async recheckProviderKeys(): Promise<ProviderKeyRecheck[]> {
+      const providers = (await deps.repo.listByOwner(deps.ownerId)).filter(
+        (c) => PROVIDER_TEMPLATE_IDS.has(c.templateId) && !isManaged(c),
+      );
+      return Promise.all(
+        providers.map(async (conn) => ({
+          connectionId: conn.id,
+          check: await recheckProviderKey(conn),
+        })),
+      );
     },
 
     async validateGrantSet(connectionIds: string[]): Promise<void> {
@@ -909,8 +1109,16 @@ export function createConnectionsService(deps: {
               ? singleValueOf(credential)
               : credential.value;
           if (value) {
-            await assertProviderKeyAccepted(conn.templateId, value, conn.id);
+            const check = await assertProviderKeyAccepted(
+              conn.templateId,
+              value,
+              conn.id,
+              conn.contributions,
+            );
             await rotateHeaderValue(conn, conn.auth, value);
+            await deps.repo.mergeInputs(conn.id, {
+              [KEY_CHECK_INPUT_KEY]: check,
+            });
           }
           if (contributions) {
             await deps.repo.updateContributions(conn.id, contributions);
@@ -1228,11 +1436,14 @@ export function createConnectionsService(deps: {
             message: `template ${template.id}: missing privateKey`,
           });
         }
-        const minted = await mintGitHubAppToken(deps.githubAppEngine, {
-          connectionRef: `connection:${id}:${template.id}`,
-          auth,
-          privateKeyPem,
-        });
+        const appAuth = auth;
+        const minted = await rejectIfInvalid(() =>
+          mintGitHubAppToken(deps.githubAppEngine, {
+            connectionRef: `connection:${id}:${template.id}`,
+            auth: appAuth,
+            privateKeyPem,
+          }),
+        );
         auth = {
           ...auth,
           connectedAt: Math.floor(Date.now() / 1000),
@@ -1274,27 +1485,26 @@ export function createConnectionsService(deps: {
         auth.kind === "header" && secretPath
           ? built.secrets.get(secretPath)?.["value"]
           : undefined;
-      if (headerValue) {
-        await assertProviderKeyAccepted(template.id, headerValue, id);
-      }
+      const keyCheck = headerValue
+        ? await assertProviderKeyAccepted(
+            template.id,
+            headerValue,
+            id,
+            contributions,
+          )
+        : null;
 
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
           contributions,
           CONNECTION_TOKEN_PLACEHOLDER,
         );
-        await deps.secretStore.put(
-          { storeId: deps.secretStore.storeId, path: secretPath, field: "" },
+        await putConnectionSecret(
+          id,
+          template.id,
+          secretPath,
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
-          {
-            owner: deps.ownerId,
-            purpose: `connection:${template.id}`,
-            extraLabels: {
-              "agent-platform.ai/secret-type": "connection",
-              "agent-platform.ai/connection": id,
-            },
-            extraAnnotations: connectionSecretAnnotations(contributions),
-          },
+          contributions,
         );
       }
 
@@ -1303,7 +1513,11 @@ export function createConnectionsService(deps: {
         ownerId: deps.ownerId,
         templateId: template.id,
         name: connectionName,
-        inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
+        inputs: {
+          ...stripSecretsFromInputs(input),
+          ...sharedKbInputs,
+          ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
+        },
         auth,
         contributions,
       };
@@ -1540,6 +1754,213 @@ export function createConnectionsService(deps: {
       });
     },
   };
+
+  const managedProviders: readonly ManagedProvider[] = [
+    {
+      templateId: PLATFORM_LLM_TEMPLATE_ID,
+      name: deps.brandName,
+      key: deps.platformProviderKey,
+      ca: deps.platformProviderCa ?? null,
+      refusal:
+        "The built-in provider is managed by its feature. Turn the feature on or off in Settings instead.",
+      enabled: deps.platformProviderEnabled,
+    },
+    {
+      templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      name: displayNameForTemplate(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!,
+      key: deps.curveBenderDeploymentKey ?? null,
+      ca: null,
+      refusal:
+        "This provider is managed by the deployment, so it can be neither connected nor changed by hand.",
+      enabled: async () => true,
+    },
+  ];
+
+  const isManaged = (c: Connection) =>
+    managedProviders.some((p) => p.templateId === c.templateId);
+
+  async function managedState(provider: ManagedProvider) {
+    const template = deps.templates.get(provider.templateId);
+    const { key, ca } = provider;
+    const wanted =
+      template !== null && key !== null && (await provider.enabled());
+    const owned = await deps.repo.listByOwner(deps.ownerId);
+    const held = owned.filter((c) => c.templateId === provider.templateId);
+    const [keep] = wanted ? held.filter((c) => c.auth.kind === "header") : [];
+    const remove = held.filter((c) => c !== keep);
+    const name = managedConnectionName(
+      provider.name,
+      new Set(
+        owned
+          .filter((c) => c.templateId !== provider.templateId)
+          .map((c) => c.name),
+      ),
+    );
+    const stored =
+      keep?.auth.kind === "header"
+        ? await deps.secretStore.get(keep.auth.valueRef)
+        : null;
+    const rotated =
+      keep?.auth.kind === "header" &&
+      (stored?.[keep.auth.valueRef.field] !== key ||
+        (stored?.[UPSTREAM_CA_SECRET_FIELD] ?? null) !== ca);
+    const stale =
+      keep !== undefined &&
+      (keep.name !== name ||
+        rotated ||
+        !isDeepStrictEqual(keep.contributions, template?.contributions));
+    return {
+      owned,
+      template: wanted ? template : null,
+      key,
+      ca,
+      keep,
+      remove,
+      name,
+      rotated,
+      settled: !remove.length && (!wanted || (keep !== undefined && !stale)),
+    };
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a deployment-owned provider is one Connection
+   * per user: it exists while the deployment configures it (and, for the
+   * built-in provider, while the feature flag is on), follows the
+   * deployment's current key and name, and is removed otherwise, never
+   * through the user's own create or delete. The flag and the key are read
+   * rather than taken from the change event, because a user can record a flag
+   * that the install's mode overrides. Flag changes, listings and the boot
+   * sweep can all reconcile at once, on any replica, so the flag and the
+   * user's Connections are read only under one per-owner lock: whichever runs
+   * last sees the last flag. Its Secret holds a copy of the deployment's key,
+   * and its CA when one is configured, and is rewritten whole when the key,
+   * the CA or the endpoint changes, since the endpoint names the hosts the
+   * gateway injects on. A keyless one from before the provider was metered has
+   * no Secret to rewrite, so it is replaced.
+   */
+  async function reconcileManagedProvider(
+    provider: ManagedProvider,
+  ): Promise<void> {
+    await deps.connectionLock(
+      `${provider.templateId}:${deps.ownerId}`,
+      async () => {
+        const { owned, template, key, ca, keep, remove, name, rotated } =
+          await managedState(provider);
+        for (const conn of remove) await service.deleteConnection(conn.id);
+        if (!template || key === null) return;
+        if (!keep) {
+          await service.createFromTemplate({
+            templateId: provider.templateId,
+            name,
+            authKind: "header",
+            value: key,
+            ...(ca ? { caData: ca } : {}),
+          });
+          return;
+        }
+        if (keep.name !== name) await deps.repo.updateName(keep.id, name);
+        const moved = !isDeepStrictEqual(
+          keep.contributions,
+          template.contributions,
+        );
+        if ((moved || rotated) && keep.auth.kind === "header") {
+          await putConnectionSecret(
+            keep.id,
+            provider.templateId,
+            keep.auth.valueRef.path,
+            {
+              value: key,
+              ...(ca ? { [UPSTREAM_CA_SECRET_FIELD]: ca } : {}),
+              ...buildConnectionSdsFields(template.contributions, key),
+            },
+            template.contributions,
+          );
+          if (moved) {
+            await deps.repo.updateContributions(
+              keep.id,
+              template.contributions,
+            );
+          }
+          await fanOutToAgents(
+            keep.id,
+            await deps.repo.listAgentsForConnection(keep.id),
+            new Set(owned.map((c) => c.id)),
+            "connection.update.fanout_failed",
+          );
+        }
+      },
+    );
+  }
+
+  async function reconcileManagedConnections(): Promise<void> {
+    for (const provider of managedProviders)
+      await reconcileManagedProvider(provider);
+  }
+
+  const refuseUserManaged = (templateId: string) =>
+    new TRPCError({
+      code: "FORBIDDEN",
+      message: managedProviders.find((p) => p.templateId === templateId)!
+        .refusal,
+    });
+
+  return {
+    ...service,
+    async listAndReconcileConnections() {
+      try {
+        for (const provider of managedProviders) {
+          if ((await managedState(provider)).settled) continue;
+          await reconcileManagedConnections();
+          break;
+        }
+      } catch (err) {
+        securityLog("warn", "connection.platform_provider_reconcile_failed", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        });
+      }
+      return service.listConnections();
+    },
+    async createFromTemplate(input) {
+      if (managedProviders.some((p) => p.templateId === input.templateId)) {
+        throw refuseUserManaged(input.templateId);
+      }
+      return service.createFromTemplate(input);
+    },
+    async deleteConnection(id) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn && isManaged(conn)) {
+        throw refuseUserManaged(conn.templateId);
+      }
+      return service.deleteConnection(id);
+    },
+    async update(id, credential) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn && isManaged(conn)) {
+        throw refuseUserManaged(conn.templateId);
+      }
+      return service.update(id, credential);
+    },
+    reconcileManagedConnections,
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Connection names are unique per user, so a user
+ * who already named a Connection after a deployment-owned provider would
+ * block it forever; it takes the first free name of the provider, then the
+ * provider followed by "LLM", then that numbered from 2, so every replica
+ * picks the same.
+ */
+function managedConnectionName(brand: string, taken: Set<string>): string {
+  if (!taken.has(brand)) return brand;
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `${brand} LLM` : `${brand} LLM ${n}`;
+    if (!taken.has(name)) return name;
+  }
 }
 
 function githubAppScopeView(

@@ -1,4 +1,6 @@
 import {
+  type PlatformContinuedFrom,
+  type PlatformUndeliveredPrompt,
   type QueuedPrompt,
   SESSION_CATEGORIES,
   type SessionCategory,
@@ -22,10 +24,19 @@ import { acpSessionsKeys } from "../api/keys.js";
 import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
+import {
+  clearUndelivered,
+  readUndelivered,
+  rememberUndelivered,
+} from "../lib/undelivered-store.js";
 
-const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
+const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
 
 export type RewriteMode = "rewind" | "fork";
+
+export type ChatRequest =
+  | { kind: "open"; sessionId: string; mode: SessionMode | null }
+  | { kind: "new" };
 
 export interface Rewriting {
   messageId: string;
@@ -42,6 +53,7 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  continuedFrom: PlatformContinuedFrom | null;
   queuedPrompts: QueuedPrompt[];
   harnessForks: boolean;
   harnessSteers: boolean;
@@ -54,7 +66,9 @@ export interface SessionsSlice {
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
-  sessionsSectionOpen: boolean;
+  pendingResumeFresh: boolean;
+  chatRequest: ChatRequest | null;
+  toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (
@@ -63,19 +77,24 @@ export interface SessionsSlice {
   ) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
-  setSessionsSectionOpen: (open: boolean) => void;
+  requestChat: (request: ChatRequest | null) => void;
+  setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
+  setContinuedFrom: (copy: PlatformContinuedFrom | null) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
   setHarnessForks: (forks: boolean) => void;
   setHarnessSteers: (steers: boolean) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
+  clearNextSessionPair: (agentId: string) => void;
   setSessionError: (e: SessionError | null) => void;
-  toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
+  continueInNewSessionDraft: (agentId: string, invocationId: string) => void;
+  dropDraftContinuation: (agentId: string) => void;
+  clearDraftContent: (key: string) => void;
   clearDraft: (key: string) => void;
   migrateDraft: (fromKey: string, toKey: string) => void;
   consumeDroppedAttachments: (key: string) => void;
@@ -84,9 +103,16 @@ export interface SessionsSlice {
   applyForeignDraft: (key: string, draft: SessionDraft | null) => void;
   setBusy: (busy: boolean) => void;
 
-  deleteSession: (sessionId: string) => Promise<boolean>;
+  deleteSession: (sessionId: string, agentId?: string) => Promise<boolean>;
+  reopenUnstoredSession: (
+    sessionId: string,
+    undelivered: PlatformUndeliveredPrompt[],
+  ) => Promise<void>;
+  discardSessionToDraft: (sessionId: string, text: string) => Promise<void>;
 
   resetChatContext: () => void;
+  confirmDockDiscard: () => Promise<boolean>;
+  leaveChatContext: (navigate: () => void) => void;
 }
 
 export const createSessionsSlice: StateCreator<
@@ -129,9 +155,22 @@ export const createSessionsSlice: StateCreator<
     });
   };
 
+  const forgetSession = async (agentId: string, sessionId: string) => {
+    if (get().sessionId === sessionId) get().resetChatContext();
+    await queryClient.cancelQueries({
+      queryKey: acpSessionsKeys.agent(agentId),
+    });
+    removeSessionFromCache(agentId, sessionId);
+    get().clearDraft(draftKey(agentId, sessionId));
+    queryClient.invalidateQueries({
+      queryKey: acpSessionsKeys.agent(agentId),
+    });
+  };
+
   return {
     sessionId: null,
     runStarts: [],
+    continuedFrom: null,
     queuedPrompts: [],
     harnessForks: false,
     harnessSteers: false,
@@ -146,25 +185,33 @@ export const createSessionsSlice: StateCreator<
     terminalPaused: false,
     pendingResumeSessionId: null,
     pendingResumeSessionMode: null,
-    sessionsSectionOpen: readPersistedFlag(
-      SESSIONS_SECTION_OPEN_STORAGE_KEY,
-      true,
+    pendingResumeFresh: false,
+    chatRequest: null,
+    toolActivityExpanded: readPersistedFlag(
+      TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
+      false,
     ),
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
-      set({ pendingResumeSessionId: id, pendingResumeSessionMode: mode }),
+      set({
+        pendingResumeSessionId: id,
+        pendingResumeSessionMode: mode,
+        pendingResumeFresh: false,
+      }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
-    setSessionsSectionOpen: (open) => {
-      writePersistedFlag(SESSIONS_SECTION_OPEN_STORAGE_KEY, open);
-      set({ sessionsSectionOpen: open });
+    requestChat: (request) => set({ chatRequest: request }),
+    setToolActivityExpanded: (expanded) => {
+      writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
+      set({ toolActivityExpanded: expanded });
     },
     setMessages: (updater) =>
       set((s) => ({
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setContinuedFrom: (copy) => set({ continuedFrom: copy }),
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
     setHarnessSteers: (steers) => set({ harnessSteers: steers }),
@@ -173,24 +220,27 @@ export const createSessionsSlice: StateCreator<
       set((state) => ({
         nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
       })),
+    clearNextSessionPair: (agentId) =>
+      set((state) => ({
+        nextSessionPair: Object.fromEntries(
+          Object.entries(state.nextSessionPair).filter(
+            ([id]) => id !== agentId,
+          ),
+        ),
+      })),
     addRunStart: (at) =>
       set((s) =>
         s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
       ),
     setSessionError: (e) => set({ sessionError: e }),
-    toggleSessionFilter: (category) =>
-      set((s) => ({
-        sessionFilter: s.sessionFilter.includes(category)
-          ? s.sessionFilter.filter((c) => c !== category)
-          : [...s.sessionFilter, category],
-      })),
     setDraft: (key, patch) =>
       updateDrafts((drafts) => {
         const next = { ...(drafts[key] ?? EMPTY_DRAFT), ...patch };
         const empty =
           next.text.length === 0 &&
           next.attachments.length === 0 &&
-          !next.droppedAttachmentNames?.length;
+          !next.droppedAttachmentNames?.length &&
+          next.continuesInvocation === undefined;
         if (empty && !(key in drafts)) return false;
         if (empty) delete drafts[key];
         else drafts[key] = next;
@@ -205,6 +255,25 @@ export const createSessionsSlice: StateCreator<
           text: current.text.length > 0 ? `${current.text}\n\n${text}` : text,
         };
         return true;
+      }),
+    continueInNewSessionDraft: (agentId, invocationId) =>
+      updateDrafts((drafts) => {
+        const key = draftKey(agentId, null);
+        drafts[key] = {
+          ...(drafts[key] ?? EMPTY_DRAFT),
+          continuesInvocation: invocationId,
+        };
+        return true;
+      }),
+    dropDraftContinuation: (agentId) =>
+      get().setDraft(draftKey(agentId, null), {
+        continuesInvocation: undefined,
+      }),
+    clearDraftContent: (key) =>
+      get().setDraft(key, {
+        text: "",
+        attachments: [],
+        droppedAttachmentNames: undefined,
       }),
     clearDraft: (key) =>
       updateDrafts((drafts) => {
@@ -257,6 +326,7 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        continuedFrom: null,
         queuedPrompts: [],
         rewriting: null,
         sessionError: null,
@@ -266,32 +336,84 @@ export const createSessionsSlice: StateCreator<
         openDelegation: null,
         openBrowserAgentId: null,
         openProcessOutputKey: null,
+        openChangesAgentId: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,
         pendingPermissions: [],
         pendingResumeSessionId: null,
+        chatRequest: null,
       }),
 
-    deleteSession: async (sessionId) => {
-      const agentId = get().selectedAgent;
+    confirmDockDiscard: async () => {
+      const { openArtifactDirty, openFileDirty, showConfirm } = get();
+      if (!openArtifactDirty && !openFileDirty) return true;
+      return showConfirm("Your edits are lost.", "Discard unsaved changes?", {
+        kind: "destructive",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      });
+    },
+
+    leaveChatContext: (navigate) => {
+      const leave = () => {
+        get().resetChatContext();
+        navigate();
+      };
+      const { openArtifactDirty, openFileDirty } = get();
+      if (!openArtifactDirty && !openFileDirty) return leave();
+      void get()
+        .confirmDockDiscard()
+        .then((ok) => {
+          if (ok) leave();
+        });
+    },
+
+    deleteSession: async (
+      sessionId,
+      agentId = get().selectedAgent ?? undefined,
+    ) => {
       if (!agentId) return false;
       const ok = await runAction(
         () => deleteAgentSession(agentId, sessionId),
         "Failed to delete session",
       );
       if (ok === ACTION_FAILED) return false;
-      if (get().sessionId === sessionId) get().resetChatContext();
-      await queryClient.cancelQueries({
-        queryKey: acpSessionsKeys.agent(agentId),
-      });
-      removeSessionFromCache(agentId, sessionId);
-      get().clearDraft(draftKey(agentId, sessionId));
-      queryClient.invalidateQueries({
-        queryKey: acpSessionsKeys.agent(agentId),
-      });
+      await forgetSession(agentId, sessionId);
       emitToast({ kind: "success", message: "Session deleted" });
       return true;
+    },
+
+    reopenUnstoredSession: async (sessionId, undelivered) => {
+      const agentId = get().selectedAgent;
+      if (!agentId) return;
+      const own = draftKey(agentId, sessionId);
+      const prompts = [...readUndelivered(own), ...undelivered];
+      for (const prompt of prompts)
+        rememberUndelivered(draftKey(agentId, null), prompt);
+      clearUndelivered(own);
+      await deleteAgentSession(agentId, sessionId).catch(() => {});
+      await forgetSession(agentId, sessionId);
+      emitToast({
+        kind: "info",
+        message:
+          prompts.length > 0
+            ? "The agent stopped before it saved this conversation. Your message is back in a new chat."
+            : "The agent stopped before it saved this conversation, so it was removed.",
+      });
+    },
+
+    discardSessionToDraft: async (sessionId, text) => {
+      const agentId = get().selectedAgent;
+      if (!agentId) return;
+      const continuation =
+        get().sessionId === sessionId
+          ? get().continuedFrom?.invocationId
+          : undefined;
+      await deleteAgentSession(agentId, sessionId);
+      await forgetSession(agentId, sessionId);
+      get().appendNewSessionDraft(agentId, text);
+      if (continuation) get().continueInNewSessionDraft(agentId, continuation);
     },
   };
 };

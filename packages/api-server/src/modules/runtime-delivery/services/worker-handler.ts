@@ -4,10 +4,12 @@ import type {
 } from "../infrastructure/outbox-repo.js";
 import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.js";
 import type { StateBuilder } from "./state-builder.js";
+import { deliveryCapabilities } from "../domain/capability-filter.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
-import type { DriverFailure } from "api-server-api";
+import type { DriverFailure, HelloInput } from "api-server-api";
 import {
   isWorkspaceMutationEventKind,
+  type Event,
   type HarnessConfigCurrent,
 } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
@@ -16,6 +18,11 @@ import type { EventLifecycleNotifier } from "./event-lifecycle.js";
 export interface IsAgentRunning {
   isRunning(agentId: string): Promise<boolean>;
 }
+
+export type PendingEventResolver = (
+  agentId: string,
+  event: Event,
+) => Promise<Event | null>;
 
 export interface WorkerHandlerDeps {
   outboxRepo: OutboxRepo;
@@ -26,6 +33,7 @@ export interface WorkerHandlerDeps {
   clientFor(agentId: string): AgentRuntimeClient;
   resolveOwner: (agentId: string) => Promise<string | null>;
   notifyLifecycle?: EventLifecycleNotifier;
+  resolveEvent?: PendingEventResolver;
   log: (msg: string) => void;
 }
 
@@ -93,18 +101,21 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       return;
     }
 
-    const capabilities = runtimeState.runtimeCapabilities as {
-      contributions: never;
-      events: never;
-      harnesses?: { name: string }[];
-    };
-    const payload = await deps.stateBuilder.build(agentId, {
-      contributions: capabilities.contributions,
-      events: capabilities.events,
-      ...(capabilities.harnesses && {
-        harnesses: capabilities.harnesses.map((h) => h.name),
-      }),
-    });
+    const built = await deps.stateBuilder.build(
+      agentId,
+      deliveryCapabilities(
+        runtimeState.runtimeCapabilities as HelloInput["capabilities"],
+      ),
+    );
+    const resolve = deps.resolveEvent;
+    const payload = resolve
+      ? {
+          ...built,
+          events: (
+            await Promise.all(built.events.map((e) => resolve(agentId, e)))
+          ).filter((e): e is Event => e !== null),
+        }
+      : built;
 
     if (payload.droppedContributionKinds.length > 0) {
       deps.log(

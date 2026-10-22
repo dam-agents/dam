@@ -4,5 +4,7 @@
 version = "0.4.0"
 
 [oci.env]
+# Its root generation segment, after the default image's key (oci's build_thin).
+PLATFORM_ROOT_GENERATION = "openevolve-1"
 OPENEVOLVE_VENV = "/opt/openevolve-venv"
 OPENEVOLVE_OUTPUT_ROOT = "/home/agent/work/openevolve-runs"

@@ -20,6 +20,8 @@ const row = (
   type: "regular",
   title: `title ${sessionId}`,
   scheduleId: null,
+  threadTs: null,
+  harness: null,
   createdAt: new Date("2026-10-01T10:00:00Z"),
   activityAt: new Date("2026-10-02T10:00:00Z"),
   seenAt: null,
@@ -47,6 +49,8 @@ function service(ownerSub: string, owned: readonly string[]) {
       ownerSub,
       ownsApproval: async () => false,
       ownsAgent: async (agentId) => owned.includes(agentId),
+      defaultModelNotices: async () => [],
+      log: () => {},
     }),
   };
 }
@@ -62,6 +66,8 @@ describe("attention.sessionsForAgent service", () => {
         type: "regular",
         title: "title s1",
         scheduleId: null,
+        threadTs: null,
+        harness: null,
         createdAt: "2026-10-01T10:00:00.000Z",
         activityAt: "2026-10-02T10:00:00.000Z",
         seenAt: null,

@@ -21,9 +21,18 @@ import type {
   SkillSetApplyResult,
   SkillSetEntry,
   SkillSetSkipReason,
+  SkillSetSourceHiddenInput,
 } from "api-server-api";
-import { canonicalSourceLocation, parseGithubRepo } from "agent-runtime-api";
-import type { SourceLocation } from "agent-runtime-api";
+import {
+  canonicalSourceLocation,
+  parseGithubRepo,
+  planSourceFetch,
+} from "agent-runtime-api";
+import type {
+  EgressDenies,
+  SourceFetchPlan,
+  SourceLocation,
+} from "agent-runtime-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
 import type {
   ContributionsProgress,
@@ -70,10 +79,15 @@ import { sourcePathFailure } from "../domain/scan-failure.js";
 import type { GithubCredentialPort } from "../infrastructure/github-credential-port.js";
 import { getLogger } from "../../../core/logger.js";
 
-function templateSourceId(templateId: string, gitUrl: string): string {
+function templateSourceId(
+  templateId: string,
+  gitUrl: string,
+  path?: string,
+): string {
+  const dir = canonicalPath(path);
   const hash = crypto
     .createHash("sha256")
-    .update(gitUrl)
+    .update(dir === undefined ? gitUrl : `${gitUrl}\0${dir}`)
     .digest("hex")
     .slice(0, 12);
   return `template:${templateId}:${hash}`;
@@ -109,6 +123,7 @@ export interface SkillsServiceDeps {
     dir: string,
   ) => Promise<string>;
   brandName: string;
+  egressDenies: (agentId: string) => EgressDenies;
 }
 
 function enrichSource(s: SkillSource): SkillSource {
@@ -138,7 +153,7 @@ async function loadTemplateSources(
   return template.spec.skillSources.map((seed) => {
     const location = templateSourceLocation(seed);
     return {
-      id: templateSourceId(template.id, location.gitUrl),
+      id: templateSourceId(template.id, location.gitUrl, location.path),
       name: seed.name,
       ...location,
       fromTemplate: { templateId: template.id, templateName: template.name },
@@ -155,11 +170,14 @@ async function resolveTemplateSource(
   const [, templateId, hash] = parts;
   const template = await deps.templatesRepo.get(templateId);
   if (!template?.spec.skillSources?.length) return null;
-  const seed = template.spec.skillSources.find((s) =>
-    templateSourceId(templateId, templateSourceLocation(s).gitUrl).endsWith(
-      `:${hash}`,
-    ),
-  );
+  const seed = template.spec.skillSources.find((s) => {
+    const location = templateSourceLocation(s);
+    return templateSourceId(
+      templateId,
+      location.gitUrl,
+      location.path,
+    ).endsWith(`:${hash}`);
+  });
   if (!seed) return null;
   return {
     id,
@@ -195,28 +213,74 @@ function sortSources(list: SkillSource[]): SkillSource[] {
   });
 }
 
-function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
+function canonicalPath(path: string | null | undefined): string | undefined {
+  const dir = path?.split("/").filter(Boolean).join("/");
+  return dir || undefined;
+}
+
+function sourceIdentity(s: { gitUrl: string; path?: string }): string {
+  return `${s.gitUrl}\0${canonicalPath(s.path) ?? ""}`;
+}
+
+function dedupeBySourceIdentity(list: SkillSource[]): SkillSource[] {
   const seen = new Set<string>();
   const out: SkillSource[] = [];
   for (const s of list) {
-    if (seen.has(s.gitUrl)) continue;
-    seen.add(s.gitUrl);
+    const key = sourceIdentity(s);
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(s);
   }
   return out;
 }
 
-async function sourcePathsByGitUrl(
+async function connectedSources(
   deps: SkillsServiceDeps,
   agentId: string,
-): Promise<Map<string, string | undefined>> {
+): Promise<SkillSource[]> {
   const [owned, template] = await Promise.all([
     deps.repo.list(deps.owner),
     loadTemplateSources(deps, agentId),
   ]);
   const seeds = deps.seedSources.map(seedToSkillSource);
-  const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
-  return new Map(merged.map((s) => [s.gitUrl, s.path]));
+  return dedupeBySourceIdentity([...owned, ...seeds, ...template]);
+}
+
+function pickSource(
+  sources: SkillSource[],
+  gitUrl: string,
+  path: string | undefined,
+): SkillSource | null | "ambiguous" {
+  const sameRepo = sources.filter((s) => s.gitUrl === gitUrl);
+  const dir = canonicalPath(path);
+  if (dir !== undefined) {
+    return sameRepo.find((s) => canonicalPath(s.path) === dir) ?? null;
+  }
+  const pathless = sameRepo.find((s) => canonicalPath(s.path) === undefined);
+  if (pathless) return pathless;
+  if (sameRepo.length > 1) return "ambiguous";
+  return sameRepo[0] ?? null;
+}
+
+function installPath(
+  sources: SkillSource[],
+  installed: SkillRef[],
+  entry: { source: string; name: string; path?: string },
+): string | undefined {
+  if (entry.path === undefined) {
+    const current = installed.find(
+      (r) => r.source === entry.source && r.name === entry.name,
+    );
+    if (current) return canonicalPath(current.path);
+  }
+  const picked = pickSource(sources, entry.source, entry.path);
+  if (picked === "ambiguous") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${entry.source} is connected with several paths; say which path to install ${entry.name} from.`,
+    });
+  }
+  return picked ? canonicalPath(picked.path) : canonicalPath(entry.path);
 }
 
 function asPodVerdict(err: unknown): unknown {
@@ -401,7 +465,19 @@ async function runScanForSource(
       { kind: "agent", owner: deps.owner, agentId },
       src.gitUrl,
       src.path,
-      (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
+      async (gitUrl) => {
+        const plan = await planFetchOrThrow(deps, agentId, {
+          url: gitUrl,
+          path: src.path,
+          version: "HEAD",
+        });
+        return deps.runtimeClient.scan(
+          agentId,
+          gitUrl,
+          src.path,
+          plan.kind === "directory" ? "directory" : undefined,
+        );
+      },
     );
     return {
       skills,
@@ -416,10 +492,28 @@ async function runScanForSource(
   }
 }
 
+async function planFetchOrThrow(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  source: { url: string; path?: string; version: string },
+): Promise<SourceFetchPlan> {
+  const plan = await planSourceFetch(source, deps.egressDenies(agentId));
+  if (plan.kind !== "blocked") return plan;
+  const repo = parseGithubRepo(source.url);
+  const name = repo ? `${repo.owner}/${repo.repo}` : source.url;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message:
+      plan.reason === "no-path"
+        ? `This agent's egress rules block downloading ${name}. Set a path on the skill source that the agent may read.`
+        : `This agent's egress rules block downloading ${name} and reading its path ${source.path}. Allow GET api.github.com /repos/${name}/contents/${source.path}/* and /repos/${name}/contents/${source.path}?* for the agent, or set another path. For a private repository, also allow GET /repos/${name} and /repos/${name}/git/refs/heads/<default branch>, which the scan reads.`,
+  });
+}
+
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   const applyBatchWith = async (
     input: SkillApplyBatchInput,
-    sourcePaths?: ReadonlyMap<string, string | undefined>,
+    knownSources?: SkillSource[],
   ): Promise<SkillRef[]> => {
     const { agentId, install, uninstall } = input;
 
@@ -447,11 +541,22 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     }
 
     await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
-    const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
+    const sources = knownSources ?? (await connectedSources(deps, agentId));
+    const installed = await deps.agentSkillsRepo.listSkills(agentId);
+    const paths = new Map(
+      install.map((entry) => [entry, installPath(sources, installed, entry)]),
+    );
+    for (const entry of install) {
+      await planFetchOrThrow(deps, agentId, {
+        url: entry.source,
+        path: paths.get(entry),
+        version: entry.version,
+      });
+    }
 
     await deps.unitOfWork(async (tx) => {
       for (const entry of install) {
-        const path = paths.get(entry.source);
+        const path = paths.get(entry);
         await deps.agentSkillsRepo.upsertSkill(
           agentId,
           {
@@ -539,28 +644,29 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     }
 
     const sources = await service.listSources(agentId);
-    const connected = new Map(sources.map((s) => [s.gitUrl, s]));
-    const sourcePaths = new Map(sources.map((s) => [s.gitUrl, s.path]));
 
     const skipped: (SkillSetEntry & { reason: SkillSetSkipReason })[] = [];
-    const byGitUrl = new Map<string, SkillSetEntry[]>();
+    const bySource = new Map<string, SkillSetEntry[]>();
+    const connected = new Map<string, SkillSource>();
     for (const entry of wanted.values()) {
-      const source = connected.get(entry.source);
-      if (!source) {
+      const source = pickSource(sources, entry.source, entry.path);
+      if (!source || source === "ambiguous") {
         skipped.push({ ...entry, reason: "source-not-connected" });
         continue;
       }
-      const list = byGitUrl.get(entry.source) ?? [];
+      connected.set(source.id, source);
+      const list = bySource.get(source.id) ?? [];
       list.push(entry);
-      byGitUrl.set(entry.source, list);
+      bySource.set(source.id, list);
     }
 
     const installedKeys = new Set(
       (await deps.agentSkillsRepo.listSkills(agentId)).map(skillKey),
     );
     const toInstall: SkillApplyBatchInput["install"] = [];
-    for (const [gitUrl, entries] of byGitUrl) {
-      const source = connected.get(gitUrl)!;
+    for (const [sourceId, entries] of bySource) {
+      const source = connected.get(sourceId)!;
+      const gitUrl = source.gitUrl;
       let scanned: Map<string, Skill>;
       try {
         const { skills } = await service.list(source.id, agentId);
@@ -587,28 +693,38 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           name: match.name,
           version: match.version,
           contentHash: match.contentHash,
+          ...(source.path !== undefined ? { path: source.path } : {}),
         });
       }
     }
 
     const after = await applyBatchWith(
       { agentId, install: toInstall, uninstall: [] },
-      sourcePaths,
+      sources,
     );
     return { installed: after, skipped, added: toInstall.length };
   }
 
   const service: SkillsService = {
     async listSources(agentId?: string) {
-      const [owned, template] = await Promise.all([
+      const [owned, template, hidden] = await Promise.all([
         deps.repo.list(deps.owner),
         agentId
           ? loadTemplateSources(deps, agentId)
           : Promise.resolve<SkillSource[]>([]),
+        agentId ? deps.agentSkillsRepo.listHiddenSources(agentId) : [],
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
-      const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
-      return sortSources(merged.map(enrichSource));
+      const merged = dedupeBySourceIdentity([...owned, ...seeds, ...template]);
+      const hiddenKeys = new Set(hidden.map(sourceIdentity));
+      return sortSources(
+        merged.map((s) => {
+          const enriched = enrichSource(s);
+          return hiddenKeys.has(sourceIdentity(s))
+            ? { ...enriched, hidden: true }
+            : enriched;
+        }),
+      );
     },
     async getSource(id) {
       const s = await resolveSource(deps, id);
@@ -627,10 +743,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
         return enrichSource(created);
       } catch (err) {
-        if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
+        if (isUniqueViolation(err, "skill_sources_owner_git_url_path_idx")) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: "a skill source for this git URL is already registered",
+            message:
+              "a skill source for this git URL and path is already registered",
           });
         }
         throw err;
@@ -666,6 +783,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         await deps.agentSkillsRepo.removeBySource(
           instances.map((i) => i.id),
           src.gitUrl,
+          canonicalPath(src.path),
         );
       }
     },
@@ -684,8 +802,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         src,
         agentId,
       );
+      const path = canonicalPath(src.path);
       return {
-        skills,
+        skills:
+          path === undefined ? skills : skills.map((s) => ({ ...s, path })),
         scannedAt: new Date(scannedAt).toISOString(),
         visibility,
       };
@@ -776,9 +896,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async install(input: SkillInstallInput) {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
-      const path = (await sourcePathsByGitUrl(deps, input.agentId)).get(
-        input.source,
+      const path = installPath(
+        await connectedSources(deps, input.agentId),
+        await deps.agentSkillsRepo.listSkills(input.agentId),
+        input,
       );
+      await planFetchOrThrow(deps, input.agentId, {
+        url: input.source,
+        path,
+        version: input.version,
+      });
       const ref: SkillRef = {
         source: input.source,
         name: input.name,
@@ -1063,6 +1190,42 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const source = await resolveSource(deps, input.sourceId);
       if (source) deps.invalidateScan(source.gitUrl, source.path);
       return result;
+    },
+
+    async setSourceHidden({ agentId, id, hidden }: SkillSetSourceHiddenInput) {
+      const [agent, source] = await Promise.all([
+        deps.agentsRepo.get(agentId, deps.owner),
+        resolveSource(deps, id),
+      ]);
+      if (!agent) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+      }
+      if (!source) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "skill source not found",
+        });
+      }
+      const path = canonicalPath(source.path);
+      if (hidden) {
+        const installed = await deps.agentSkillsRepo.listSkills(agentId);
+        if (
+          installed.some(
+            (r) => r.source === source.gitUrl && canonicalPath(r.path) === path,
+          )
+        ) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "turn off this source's skills on the agent before hiding it",
+          });
+        }
+      }
+      await deps.agentSkillsRepo.setSourceHidden(
+        agentId,
+        { gitUrl: source.gitUrl, path },
+        hidden,
+      );
     },
 
     async refreshSource(id: string): Promise<void> {

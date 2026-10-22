@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP, BOB_CLI or COPILOT_CLI name them) that each manifest's declared initialize capabilities match what the live harness answers"
+//MISE sources=["*/rootfs/app/runtime-manifest.yaml", "test-lib/acp-client.mjs", ".mise/tasks/test/harness-initialize-capabilities"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { acpClient } from "../../../test-lib/acp-client.mjs";
+
+const require = createRequire(fileURLToPath(new URL("../../../../agent-runtime/package.json", import.meta.url)));
+const yaml = require("js-yaml");
+const manifest = (name) => yaml.load(readFileSync(fileURLToPath(new URL(`../../../${name}/rootfs/app/runtime-manifest.yaml`, import.meta.url)), "utf8"));
+
+const home = mkdtempSync(join(tmpdir(), "harness-initialize-"));
+const base = { PATH: process.env.PATH, HOME: home, NO_PROXY: "127.0.0.1,localhost" };
+const targets = [
+  { name: "claude-code", bin: process.env.CLAUDE_AGENT_ACP, args: (b) => ["node", [b]], env: { ANTHROPIC_API_KEY: "x", DISABLE_TELEMETRY: "1", DISABLE_AUTOUPDATER: "1" } },
+  { name: "codex", bin: process.env.CODEX_ACP, args: (b) => ["node", [b]], env: { OPENAI_API_KEY: "x", CODEX_HOME: home } },
+  { name: "pi-agent", bin: process.env.PI_ACP, args: (b) => ["node", [b]], env: { PI_OFFLINE: "1" } },
+  { name: "copilot", bin: process.env.COPILOT_CLI, args: (b) => [b, ["--acp", "--stdio"]], env: { COPILOT_PROVIDER_BASE_URL: "http://127.0.0.1:1/v1", COPILOT_MODEL: "x", COPILOT_OFFLINE: "true", COPILOT_AUTO_UPDATE: "false" }, authMethods: () => [] },
+  { name: "bob", bin: process.env.BOB_CLI, args: (b) => ["node", [b, "acp", "--trust", "--accept-license", "--auto-approve", "--disable-mcp"]], env: { BOB_GATEWAY_URL: "http://127.0.0.1:1", BOB_API_KEY: "x", BOB_LOG_LEVEL: "error" } },
+];
+let checked = 0;
+try {
+  for (const t of targets) {
+    const declared = manifest(t.name).initializeCapabilities;
+    assert.ok(declared?.agentCapabilities, `${t.name}: the manifest declares no initializeCapabilities`);
+    if (!t.bin) {
+      console.log(`${t.name}: skipped (binary not named)`);
+      continue;
+    }
+    const [cmd, args] = t.args(t.bin);
+    const c = acpClient(cmd, args, { env: { ...base, ...t.env }, cwd: home, name: t.name, onRequest: () => { throw new Error("none"); } });
+    try {
+      // TEST_SCENARIO: The runtime answers a client's initialize from the manifest before any harness runs, so what it declares must be what the pinned harness itself answers: capabilities and auth methods, field for field.
+      const live = await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true }, clientInfo: { name: "dam", version: "0" } }, 60_000);
+      assert.deepEqual(live.agentCapabilities, declared.agentCapabilities, `${t.name}: agentCapabilities drifted`);
+      assert.deepEqual(t.authMethods ? t.authMethods(live.authMethods) : (live.authMethods ?? []), declared.authMethods ?? [], `${t.name}: authMethods drifted`);
+      if (declared.agentInfo) assert.deepEqual({ name: live.agentInfo?.name, title: live.agentInfo?.title }, declared.agentInfo, `${t.name}: agentInfo drifted`);
+      checked++;
+      console.log(`${t.name}: manifest matches ${live.agentInfo?.name ?? t.name} ${live.agentInfo?.version ?? ""}`);
+    } finally {
+      await c.close();
+    }
+  }
+  console.log(`${checked} harness(es) checked against their live initialize`);
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}

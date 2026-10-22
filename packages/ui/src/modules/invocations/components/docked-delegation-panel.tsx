@@ -1,5 +1,5 @@
-import { Bot, Close, Locked } from "@carbon/icons-react";
-import type { DelegationNode } from "api-server-api";
+import { AddComment, Bot, Locked } from "@carbon/icons-react";
+import { type DelegationNode, delegationTitle } from "api-server-api";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,16 @@ import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import {
   useDelegationTranscript,
   useDelegationTree,
   useInvocationTurns,
 } from "../api/queries.js";
-import { delegationState, firstLine } from "../lib/delegation-state.js";
+import { useContinueInNewChat } from "../hooks/use-continue-in-new-chat.js";
+import { delegationState } from "../lib/delegation-state.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -57,20 +60,12 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={node?.prompt}
         >
-          {node ? firstLine(node.prompt) : id}
+          {node ? delegationTitle(node) : id}
         </span>
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => close(null)}
-        >
-          <Close size={16} />
-        </Button>
+        <SidePanelCloseButton onClose={() => close(null)} />
       </div>
       {node ? (
         <PanelBody
@@ -106,9 +101,11 @@ function PanelBody({
     driverAgentId,
     ids,
     telemetryEnabled,
-    node.status === "running",
+    [node],
   );
   const turn = telemetry?.available ? telemetry.turns[node.id] : undefined;
+  const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
+  const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
   const finished = node.status !== "running";
   const transcript = useDelegationTranscript(
     driverAgentId,
@@ -120,6 +117,7 @@ function PanelBody({
     [transcript.data],
   );
   const owners = useDelegationOwners(messages);
+  const continueInNewChat = useContinueInNewChat(driverAgentId, node.id);
 
   return (
     <>
@@ -130,6 +128,7 @@ function PanelBody({
             agentId={driverAgentId}
             invocationId={node.id}
             turn={turn}
+            spend={turnSpend?.get(turn.turnId)}
             className="w-full"
           />
         )}
@@ -169,7 +168,13 @@ function PanelBody({
       {finished && (
         <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <Locked size={14} aria-hidden />
-          Read-only. The agent was released when it reported.
+          <span className="min-w-0 flex-1">
+            Read-only. The agent was released when it reported.
+          </span>
+          <Button variant="outline" size="xs" onClick={continueInNewChat}>
+            <AddComment size={14} />
+            Continue in new chat
+          </Button>
         </div>
       )}
     </>

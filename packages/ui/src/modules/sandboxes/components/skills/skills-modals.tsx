@@ -61,6 +61,8 @@ export function SkillsModals({
       return (
         <AddSkillSourceModal
           sources={surface.sources}
+          hiddenSources={surface.hiddenSources}
+          onShowSource={(id) => surface.setSourceHidden(id, false)}
           onClose={onClose}
           onCreate={surface.createSource}
           onCreateSkills={surface.createLocalSkills}
@@ -76,7 +78,7 @@ export function SkillsModals({
           loadFailed={surface.setsFailed}
           available={derived.availableKeys}
           installedKeys={derived.installedKeys}
-          unreadableSources={derived.unreadableSources}
+          resolveSetEntry={derived.resolveSetEntry}
           ready={derived.previewReady}
           applying={surface.applyingSets}
           onApply={surface.applySets}
@@ -90,9 +92,7 @@ export function SkillsModals({
         <SaveSkillSetModal
           groups={derived.setGroups}
           omitted={derived.saveOmitted}
-          isOn={(skill) =>
-            surface.installedRef(skill.source, skill.name) !== undefined
-          }
+          isOn={(skill) => surface.installedRef(skill) !== undefined}
           existingNames={derived.existingSetNames}
           onCreate={surface.createSet}
           onClose={onClose}
@@ -110,7 +110,7 @@ export function SkillsModals({
       );
 
     case "render": {
-      const ref = surface.installedRef(open.skill.source, open.skill.name);
+      const ref = surface.installedRef(open.skill);
       return (
         <SkillRenderModal
           source={open.source}

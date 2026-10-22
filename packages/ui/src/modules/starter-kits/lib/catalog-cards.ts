@@ -6,8 +6,6 @@ import type {
 
 import { connectionRequirements, describeAccepts } from "./setup.js";
 
-export const VM_BACKEND_LABEL = "New sandbox runtime";
-
 export const EGRESS_PRESET_LABEL: Record<EgressPreset, string> = {
   none: "No web access",
   trusted: "Trusted sites only",
@@ -40,6 +38,14 @@ export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   research: "Research",
 };
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a kit's agent is created on the new runtime: the kit asks for a machine, or a kit that names no backend follows the install, which makes one unless the create says otherwise. Undefined while the install's answer has not arrived and the kit alone does not settle it, so the kit page shows neither a size nor a machine's.
+export function kitRunsOnVm(
+  kit: Pick<StarterKitView, "backend">,
+  installVm: boolean | undefined,
+): boolean | undefined {
+  return kit.backend === "vm" || installVm;
+}
+
 interface KitBadge {
   key: string;
   label: string;
@@ -55,7 +61,6 @@ export function kitBadges(
     | "skills"
     | "skillsInKit"
     | "knowledgeBase"
-    | "backend"
     | "egressPreset"
   >,
   templates: readonly ConnectionTemplateView[],
@@ -66,7 +71,7 @@ export function kitBadges(
   if (kit.schedules.length > 0) {
     badges.push({
       key: "schedules",
-      label: `${kit.schedules.length} ${kit.schedules.length === 1 ? "Schedule" : "Schedules"}`,
+      label: `${kit.schedules.length} ${kit.schedules.length === 1 ? "schedule" : "schedules"}`,
     });
   }
 
@@ -93,9 +98,6 @@ export function kitBadges(
 
   if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
-  if (kit.backend === "vm")
-    badges.push({ key: "backend", label: VM_BACKEND_LABEL });
-
   if (kit.egressPreset && kit.egressPreset !== "trusted")
     badges.push({
       key: "egress",
@@ -106,7 +108,7 @@ export function kitBadges(
   if (skills > 0) {
     badges.push({
       key: "skills",
-      label: `${skills} ${skills === 1 ? "Skill" : "Skills"}`,
+      label: `${skills} ${skills === 1 ? "skill" : "skills"}`,
     });
   }
   return badges;

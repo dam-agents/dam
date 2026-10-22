@@ -1,30 +1,15 @@
-import { WarningAltFilled } from "@carbon/icons-react";
-import type { PoolLevel } from "api-server-api";
+import { type CarbonIconType, WarningAltFilled } from "@carbon/icons-react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { LEVEL_ICON, segmentFill } from "../lib/pool-colors.js";
 import type { PoolBarView, PoolSegment } from "../lib/pools.js";
-
-export const LEVEL_FILL: Record<PoolLevel, string> = {
-  ok: "bg-slate-500 dark:bg-slate-400",
-  warning:
-    "bg-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:bg-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
-  critical: "bg-rose-600 dark:bg-red-400/60",
-};
-
-const LEVEL_ICON: Record<PoolLevel, string> = {
-  ok: "",
-  warning:
-    "text-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:text-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
-  critical: "text-rose-600 dark:text-red-400",
-};
-
-const REST_FILL = "bg-slate-300 dark:bg-slate-600";
 
 interface Props {
   title: string;
+  icon: CarbonIconType;
   value: string;
   bar: PoolBarView;
   valueText: string;
@@ -34,6 +19,7 @@ interface Props {
 
 export function PoolBar({
   title,
+  icon: Icon,
   value,
   bar,
   valueText,
@@ -44,6 +30,7 @@ export function PoolBar({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="flex items-center gap-1.5 text-foreground">
+          <Icon size={16} aria-hidden className="shrink-0" />
           {title}
           {bar.level !== "ok" && (
             <Tooltip content={warning}>
@@ -81,7 +68,7 @@ export function PoolBar({
           <Segment
             key={segment.agentId ?? segment.label}
             segment={segment}
-            fill={segment.filled ? LEVEL_FILL[bar.level] : REST_FILL}
+            fill={segmentFill(bar.level, segment.filled)}
           />
         ))}
       </div>

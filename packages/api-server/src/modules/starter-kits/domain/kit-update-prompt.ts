@@ -1,5 +1,10 @@
-import type { ResolvedStarterKit, SeedStamp } from "api-server-api";
-import { describeAccepts } from "./onboarding-prompt.js";
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
+import {
+  LINKED_KIT_CATALOG,
+  type ResolvedStarterKit,
+  type SeedStamp,
+} from "api-server-api";
+import { chatFormLines, describeAccepts } from "./onboarding-prompt.js";
 import { type GrantedTemplate, satisfiesRequirement } from "./requirements.js";
 
 export const KIT_UPDATE_PREFERENCES_FILE = "info/kit-update-preferences.md";
@@ -13,6 +18,7 @@ export interface KitUpdateFacts {
   schedules: { name: string; enabled: boolean }[];
   env: { name: string; value?: string }[];
   familyTitles: ReadonlyMap<string, string>;
+  chatForms?: ChatFormPreferences | null;
 }
 
 function checkoutDir(kit: ResolvedStarterKit | null): string {
@@ -67,7 +73,9 @@ function platformHalf(facts: KitUpdateFacts): string[] {
   const { kit } = facts;
   if (!kit)
     return [
-      `The kit ${facts.kitRef} is no longer listed in the catalog, so only the definition updates.`,
+      facts.kitRef.startsWith(`${LINKED_KIT_CATALOG}/`)
+        ? `The kit ${facts.kitRef} was created from a link rather than a catalog, so only the definition updates.`
+        : `The kit ${facts.kitRef} is no longer listed in the catalog, so only the definition updates.`,
     ];
   return [
     "What the kit's current catalog entry declares, against this agent's state right now:",
@@ -101,5 +109,6 @@ export function composeKitUpdatePrompt(facts: KitUpdateFacts): string {
     `8. When the checkout contains ${targetCommit} (git merge-base --is-ancestor ${targetCommit} HEAD) and the user is done, call report_kit_updated with commit ${targetCommit}, even if the user declined every change. If the user wants to stop without updating, call cancel_kit_update instead.`,
     "",
     ...platformHalf(facts),
+    ...chatFormLines(facts.chatForms),
   ].join("\n");
 }

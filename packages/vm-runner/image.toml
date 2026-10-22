@@ -8,14 +8,11 @@
 # crate, fetches the smolvm release smolvm.pin names and crane, and copies them
 # in.
 
-# tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
-# expands the ext4 templates onto the runner's claim, once per release, so the
-# first agent created after a roll does not wait for it. crane fetches images
-# over TLS, against the system trust store.
+# tar unpacks image archives, zstd expands each new machine's btrfs disk from
+# its template. crane fetches images over TLS, against the system trust store.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"
-"apt:e2fsprogs" = "latest"
 "apt:tar" = "latest"
 "apt:util-linux" = "latest"
 "apt:zstd" = "latest"
@@ -25,7 +22,9 @@
 # per-machine bookkeeping and the image cache, each with a lifetime of its own.
 # catatonit reaps whatever is orphaned to PID 1 — the VMMs of a runner the
 # loader replaced among them; the runner reaps the VMMs it spawned itself. The
-# loader runs the runner release the controller names and passes it every
+# loader runs the runner release the controller names — the runner, the guest
+# binaries and, in this very directory, the loader itself, since a release
+# carries the one above it — and passes the runner every
 # argument after `--`. The entrypoint names every path that is this image's layout
 # and not the controller's to choose — the smolvm release's launcher, beside
 # which the runner finds the libraries its VMMs load, the guest agent and the

@@ -13,13 +13,10 @@ uv = "latest"
 python = "3.12"
 kubectl = "latest"
 k3s = "latest"
-"npm:playwright" = "1.63.0"
-"npm:agent-browser" = "0.38.2"
+"npm:playwright" = "1.64.0"
+"npm:agent-browser" = "0.39.0"
 
 # The static bundle: trixie's docker.io is a release line behind.
-# 29.9.0 (2026-10-08) is younger than the release-age floor; it fixes the Go
-# stdlib, grpc, x/net and x/crypto CVEs of 29.8's bundle. Drop this note once
-# it ages past the floor (2026-10-15).
 [tools."http:docker"]
 version = "29.9.0"
 
@@ -47,12 +44,14 @@ entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
 cmd = ["node", "dist/main.js"]
 
 [oci.env]
-# mise prepends the tool bin directories. The agent's own aube globals come
-# last, so nothing in the home shadows an image tool.
-PATH = "/usr/local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/share/aube/bin"
+# mise prepends the tool bin directories, so an image tool comes before the
+# agent's mise shims in the home. The agent's own aube globals come last.
+PATH = "/home/agent/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/share/aube/bin"
 HOME = "/home/agent"
-SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
-REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+# The bundle the entrypoint builds at every boot: the image's roots and the
+# platform CAs. The distribution's bundle path links to it too.
+SSL_CERT_FILE = "/run/platform/ca-certificates.crt"
+REQUESTS_CA_BUNDLE = "/run/platform/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
 # apt-get on a machine never waits on a prompt nobody can answer.
@@ -64,22 +63,21 @@ PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 # sound, on a profile that keeps the user's sign-ins. A flag still overrides
 # its variable. Containers have no user namespaces for Chromium's sandbox, and
 # a container's 64 MB /dev/shm crashes a heavy page's renderer, so Chromium
-# keeps its shared memory in /tmp. Chromium's own Google account check and
-# push-messaging check-in point at a closed loopback port: the gateway would
-# hold each one for approval, though no page asked for it. The rest of its
-# background traffic is off by policy (/etc/opt/chrome_for_testing/policies).
-AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/chromium"
+# keeps its shared memory in /tmp. Chromium's own Google account check,
+# push-messaging check-in and component updater point at a closed loopback
+# port, and its autofill server queries are off: the gateway would hold each
+# one for approval, though no page asked for it. The rest of its background
+# traffic is off by policy (/etc/opt/chrome_for_testing/policies).
+# agent-browser passes a --disable-features of its own (Translate), which this
+# one may replace; the policy turns Translate off either way.
+# It starts through platform-browser, which launches it the way the panel's
+# Browser testing mode switch chose, for every caller.
+AGENT_BROWSER_EXECUTABLE_PATH = "/usr/local/bin/platform-browser"
 AGENT_BROWSER_HEADED = "1"
 AGENT_BROWSER_NO_XVFB = "1"
 AGENT_BROWSER_PROFILE = "/home/agent/.local/share/platform/browser"
 AGENT_BROWSER_SOCKET_DIR = "/tmp/agent-browser"
-AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11,--gaia-url=http://127.0.0.1:9/,--gcm-checkin-url=http://127.0.0.1:9/checkin,--gcm-mcs-endpoint=http://127.0.0.1:9,--gcm-registration-url=http://127.0.0.1:9/register"
+AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11,--gaia-url=http://127.0.0.1:9/,--gcm-checkin-url=http://127.0.0.1:9/checkin,--gcm-mcs-endpoint=http://127.0.0.1:9,--gcm-registration-url=http://127.0.0.1:9/register,--component-updater=url-source=http://127.0.0.1:9/,--disable-features=AutofillServerCommunication"
 DISPLAY = ":99"
 XDG_RUNTIME_DIR = "/tmp/platform-display"
 PULSE_SERVER = "unix:/tmp/platform-display/pulse/native"
-# A vm machine keeps its whole root while it boots images of one generation,
-# so a deploy keeps what the agent installed outside HOME. Bump it only for a
-# change that breaks a root an older image left: a new Debian release, or a
-# file the entrypoint rewrites on every boot (/etc/passwd) changing in the
-# image. A bump starts every machine on an empty root.
-PLATFORM_ROOT_COMPAT = "1"

@@ -4,10 +4,8 @@ import { useMemo } from "react";
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { formatUsd } from "../../metrics/lib/format.js";
 import {
   buildWaterfall,
-  logCostUsd,
   logEventLabel,
   placementOf,
   rowKeyOf,
@@ -57,7 +55,6 @@ export function TraceWaterfall({
     const key = rowKeyOf(row);
     const selected = selectedKey === key;
     const isSpan = row.kind === "span";
-    const cost = isSpan ? null : logCostUsd(row.log);
     const placement = isSpan ? null : placementOf(row.log);
 
     return (
@@ -137,9 +134,7 @@ export function TraceWaterfall({
         <span className="text-right font-mono text-2xs tabular-nums text-muted-foreground">
           {isSpan
             ? formatDurationMs(row.span.durationMs)
-            : cost !== null
-              ? formatUsd(cost)
-              : offsetLabel(row.offsetMs)}
+            : offsetLabel(row.offsetMs)}
         </span>
       </button>
     );

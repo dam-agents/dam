@@ -1,3 +1,4 @@
+import type { Duplex } from "node:stream";
 import { serve } from "@hono/node-server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
@@ -30,7 +31,7 @@ import {
 import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
 import { createApiContextFactory } from "./trpc/context.js";
-import { createTrpcHttpHandler } from "./trpc/http.js";
+import { createTrpcHttpRoutes } from "./trpc/http.js";
 import { createTrpcWsEndpoint } from "./trpc/ws.js";
 
 export const securityHeaders: MiddlewareHandler = async (c, next) => {
@@ -71,6 +72,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
 
   const app = new Hono<{ Variables: ApiVariables }>();
 
+  app.use("*", deps.environmentGate.middleware);
   app.use("*", deps.shareHostGate);
   app.use("*", securityHeaders);
   app.use(
@@ -88,7 +90,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     ),
   );
   mountRoutes(app, deps);
-  app.all("/api/trpc/*", createTrpcHttpHandler({ composeApiContext }));
+  app.route("/api/trpc", createTrpcHttpRoutes({ composeApiContext }));
   app.all(
     "/api/agents/:id/trpc/*",
     createAgentTrpcProxy({
@@ -139,6 +141,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
     deps.approvalsRelay,
     deps.sessionPresence,
+    deps.firePair,
   );
   const terminalRelay = createTerminalRelay(
     config.namespace,
@@ -162,30 +165,31 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
   );
 
-  server.on(
-    "upgrade",
-    createUpgradeHandler({
-      "/api/trpc-ws": selfAuthenticated(trpcWs),
-      "/api/agents/:id/acp": relayRoute(relayAdmission, acpRelay, "acp"),
-      "/api/agents/:id/terminal": relayRoute(
-        relayAdmission,
-        terminalRelay,
-        "terminal",
-      ),
-      "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
-      "/api/public/browser-stream/:id/api/websockets": relayRoute(
-        relayAdmission,
-        browserStreamRelay,
-        "browser",
-        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
-      ),
-      "/api/agents/:id/trpc-ws": relayRoute(
-        relayAdmission,
-        agentTrpcRelay,
-        "trpc",
-      ),
-    }),
-  );
+  const pathUpgrades = createUpgradeHandler({
+    "/api/trpc-ws": selfAuthenticated(trpcWs),
+    "/api/agents/:id/acp": relayRoute(relayAdmission, acpRelay, "acp"),
+    "/api/agents/:id/terminal": relayRoute(
+      relayAdmission,
+      terminalRelay,
+      "terminal",
+    ),
+    "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+    "/api/public/browser-stream/:id/api/websockets": relayRoute(
+      relayAdmission,
+      browserStreamRelay,
+      "browser",
+      (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
+    ),
+    "/api/agents/:id/trpc-ws": relayRoute(
+      relayAdmission,
+      agentTrpcRelay,
+      "trpc",
+    ),
+  });
+  server.on("upgrade", (req, socket, head) => {
+    if (deps.environmentGate.handleUpgrade(req, socket as Duplex, head)) return;
+    void pathUpgrades(req, socket as Duplex, head);
+  });
 
   return {
     server,

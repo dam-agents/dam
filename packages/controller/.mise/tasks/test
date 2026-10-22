@@ -3,6 +3,8 @@
 # The vm runner's contract fixtures are inputs: the machine API client and the
 # runner's Deployment are tested against them, and the runner's own tests read
 # the same files, so a fixture the runner's side changed must rerun these. The
+# controller's own contract fixtures are inputs too: the idle-override cases
+# are read here and by the api-server's tests, in another language. The
 # chart's image cache DaemonSet names the socket every runner is told to dial,
 # and a test holds the two to one path, so it is an input too. Go's
 # own test cache does not see them — it tracks only the files a test opens
@@ -10,8 +12,11 @@
 # its result cache is bypassed with -count=1 and this task's cache, which does
 # key on them, decides when the suite runs. The test binaries still come from
 # the build cache.
-#MISE sources=["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml", "{{vars.repo_root}}/packages/vm-runner/contract/*.json", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml"]
+#MISE sources=["**/*.go", "go.mod", "go.sum", "{{vars.repo_root}}/helm/crds/*.yaml", "{{vars.repo_root}}/packages/vm-runner/contract/*.json", "{{vars.repo_root}}/packages/controller/contract/*.json", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
-go test -count=1 ./... "$@"
+# Without cgo, as the image's build compiles: in CI, the Go cache this run
+# fills is the one the image builds restore, and a cgo build of net and every
+# package above it is a different build there.
+CGO_ENABLED=0 go test -count=1 ./... "$@"

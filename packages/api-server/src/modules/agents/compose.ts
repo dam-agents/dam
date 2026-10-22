@@ -1,4 +1,5 @@
 import { PROVIDER_TEMPLATE_IDS, type HarnessCatalog } from "api-server-api";
+import type { InfraAgent } from "./infrastructure/agent-mappers.js";
 import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
@@ -15,6 +16,7 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
   createAgentsService,
@@ -65,12 +67,8 @@ type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 
 export interface AgentsInstallSettings {
   virtualizationEnabled: boolean;
-  vmForced: boolean;
   defaultHarness: string;
   telemetry: boolean;
-  agentDefaultStorageSize: string;
-  agentDefaultMounts: AgentsServiceDeps["agentDefaultMounts"];
-  runtimeMigrationRetentionMs: number | null;
 }
 
 export function composeAgentsModule(deps: {
@@ -102,6 +100,7 @@ export function composeAgentsModule(deps: {
   const k8s = createK8sClient(deps.api, deps.namespace);
   const repo = createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
+  const agentsRuntimeRepo = createAgentsRuntimeRepo(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   const owner = deps.owner ?? "";
   return {
@@ -110,18 +109,16 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
-      agentDefaultMounts: deps.install.agentDefaultMounts,
       virtualizationEnabled: deps.install.virtualizationEnabled,
-      vmForced: deps.install.vmForced,
       defaultHarness: deps.install.defaultHarness,
       telemetry: deps.install.telemetry,
-      runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       storageGate: deps.storageGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
+      lastHelloAt: async (agentId) =>
+        (await agentsRuntimeRepo.get(agentId))?.runtimeLastHelloAt ?? null,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
@@ -210,15 +207,50 @@ export function composePublicAgentPage(deps: {
   };
 }
 
+type ProvisionerConnections = Pick<
+  ConnectionsService,
+  | "validateProviderConnection"
+  | "validateGrantSet"
+  | "setAgentConnections"
+  | "defaultProviderConnections"
+  | "listConnections"
+>;
+
+async function fittingProviders(
+  connections: ProvisionerConnections,
+  catalog: Pick<HarnessCatalog, "harnesses">,
+  connectionIds: string[],
+  { harness, providers }: { harness?: string; providers?: readonly string[] },
+  upTo?: string,
+): Promise<string[]> {
+  const chosen = new Set(connectionIds);
+  const holdsProvider = (await connections.listConnections()).some(
+    (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
+  );
+  return holdsProvider
+    ? []
+    : connections.defaultProviderConnections(
+        (type, templateId) =>
+          harness !== undefined &&
+          catalog.harnesses.some((h) => h.name === harness)
+            ? harnessFits(catalog, harness, type, templateId)
+            : !providers || providers.includes(type),
+        harness,
+        upTo,
+      );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a new Agent is granted besides the
+ * Connections its create names. With no provider among them it gets one: the
+ * first provider of the owner's its harness runs on, in the harness's alias
+ * order, the order a default provider is resolved in. One provider, not every
+ * fitting one, so the default its runtime saves at its first hello has one
+ * provider to sit on and is the image's preset model, and no call goes to a
+ * provider the owner never chose for this Agent.
+ */
 export function connectionGrantProvisioner(
-  connections: Pick<
-    ConnectionsService,
-    | "validateProviderConnection"
-    | "validateGrantSet"
-    | "setAgentConnections"
-    | "defaultProviderConnection"
-    | "listConnections"
-  >,
+  connections: ProvisionerConnections,
   catalog: Pick<HarnessCatalog, "harnesses">,
 ): NonNullable<AgentsServiceDeps["grantProvisioner"]> {
   return {
@@ -230,23 +262,63 @@ export function connectionGrantProvisioner(
         grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
       };
     },
-    async defaultProvider(connectionIds, { harness, providers }) {
-      const chosen = new Set(connectionIds);
-      const holdsProvider = (await connections.listConnections()).some(
-        (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
-      );
-      return holdsProvider
-        ? null
-        : connections.defaultProviderConnection((type, templateId) =>
-            harness !== undefined &&
-            catalog.harnesses.some((h) => h.name === harness)
-              ? harnessFits(catalog, harness, type, templateId)
-              : !providers || providers.includes(type),
-          );
+    async defaultProviders(connectionIds, template) {
+      return (
+        await fittingProviders(connections, catalog, connectionIds, template)
+      ).slice(0, 1);
     },
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)
         await connections.setAgentConnections(agentId, sel.connectionIds);
     },
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Gives a just-connected provider to each of the
+ * owner's agents that holds none, when it is the first provider that agent's
+ * default would grant: the agent predates every provider its harness runs
+ * on. Age decides, not the count of the owner's providers, because several
+ * providers created together all exist before this runs: the default is read
+ * as of this connection, and the ones created after it are cut off. An agent
+ * whose default holds an older provider was detached on purpose and is left
+ * without one, and an Environment never gets one: only its owner grants it a
+ * connection, in the app. One agent failing does not keep the provider from
+ * the rest.
+ */
+export async function attachProviderToBareAgents(
+  connections: ProvisionerConnections &
+    Pick<ConnectionsService, "getAgentConnections" | "updateAgentConnections">,
+  catalog: Pick<HarnessCatalog, "harnesses">,
+  agents: readonly {
+    id: string;
+    spec: Pick<InfraAgent["spec"], "harness" | "environmentOf">;
+  }[],
+  connectionId: string,
+): Promise<void> {
+  const failed: unknown[] = [];
+  for (const agent of agents) {
+    if (agent.spec.environmentOf) continue;
+    try {
+      const { connections: grants } = await connections.getAgentConnections(
+        agent.id,
+      );
+      const chosen = await fittingProviders(
+        connections,
+        catalog,
+        grants.map((g) => g.connectionId),
+        agent.spec.harness ? { harness: agent.spec.harness } : {},
+        connectionId,
+      );
+      if (chosen.length === 1 && chosen[0] === connectionId)
+        await connections.updateAgentConnections(agent.id, {
+          grant: [connectionId],
+          revoke: [],
+        });
+    } catch (err) {
+      failed.push(err);
+    }
+  }
+  if (failed.length > 0)
+    throw new AggregateError(failed, `${failed.length} agent(s) not attached`);
 }

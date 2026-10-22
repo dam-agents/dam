@@ -13,6 +13,7 @@ function agent(overrides: Partial<Watched> = {}): Watched {
     id: "a1",
     name: "Scout",
     state: "running",
+    vm: true,
     podRestarts: 0,
     ...overrides,
   };
@@ -42,8 +43,8 @@ describe("nextCrashNotices", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the agent died because its home volume is full. The notice must name the disk, not a generic crash.
-  it("names a full home volume as the restart cause", () => {
+  // TEST_SCENARIO: the agent died because its storage is full. The notice must name storage and what to do, not a generic crash.
+  it("names full storage as the restart cause", () => {
     expect(
       replay(
         [agent({ podRestarts: 1 })],
@@ -51,7 +52,9 @@ describe("nextCrashNotices", () => {
       ),
     ).toEqual([
       [],
-      ["Scout ran out of space in its home volume and restarted"],
+      [
+        "Scout ran out of storage and restarted — ask it to delete files it no longer needs, or request more storage",
+      ],
     ]);
   });
 
@@ -72,13 +75,19 @@ describe("nextCrashNotices", () => {
     ).toEqual([[]]);
   });
 
-  // TEST_SCENARIO: the count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
+  // TEST_SCENARIO: a container agent's count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
   it("treats a reset count as a new baseline", () => {
     expect(
       replay(
-        [agent({ podRestarts: 2 })],
-        [agent({ state: "hibernated", podRestarts: 0 })],
-        [agent({ podRestarts: 1, podRestartReason: "OutOfMemory" })],
+        [agent({ vm: false, podRestarts: 2 })],
+        [agent({ vm: false, state: "hibernated", podRestarts: 0 })],
+        [
+          agent({
+            vm: false,
+            podRestarts: 1,
+            podRestartReason: "OutOfMemory",
+          }),
+        ],
       ),
     ).toEqual([
       [],
@@ -87,6 +96,23 @@ describe("nextCrashNotices", () => {
         "Scout ran out of memory and restarted — give it a larger size in its settings",
       ],
     ]);
+  });
+
+  // TEST_SCENARIO: a vm agent's count is the runner's and survives the machine's stop, while hibernation publishes zero. Waking it, here seconds after its user put it to sleep, brings the old count back, which is not a crash; a restart once it runs again still is.
+  it("does not report a vm agent's old count, back after it slept, as a crash", () => {
+    const restarted = {
+      podRestarts: 1,
+      podRestartReason: "GuestStoppedAnswering",
+    };
+    expect(
+      replay(
+        [agent(restarted)],
+        [agent({ state: "hibernated", podRestarts: 0 })],
+        [agent({ ...restarted, state: "starting" })],
+        [agent(restarted)],
+        [agent({ ...restarted, podRestarts: 2 })],
+      ),
+    ).toEqual([[], [], [], [], ["Scout stopped responding and restarted"]]);
   });
 
   // TEST_SCENARIO: a refresh caught the not-ready window and the termination cause was announced. The restart count that follows is the same crash and must not raise a second notice.
@@ -132,6 +158,55 @@ describe("nextCrashNotices", () => {
       [],
       [again],
       [again],
+    ]);
+  });
+
+  // TEST_SCENARIO: one runner OOM kill restarts every running VM agent of the owner at once. The user must get one notice naming them all, not one toast per agent.
+  it("announces a runner out-of-memory kill once for all its agents", () => {
+    const oom = (id: string, name: string) =>
+      agent({
+        id,
+        name,
+        state: "starting",
+        podTerminationCode: "RunnerOutOfMemory",
+        podTerminationReason: "its owner's VM memory ran out",
+      });
+    expect(
+      replay(
+        [
+          agent({ id: "a", name: "Ada" }),
+          agent({ id: "b", name: "Bo" }),
+          agent({ id: "c", name: "Cy" }),
+        ],
+        [oom("a", "Ada"), oom("b", "Bo"), oom("c", "Cy")],
+      ),
+    ).toEqual([
+      [],
+      [
+        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Disable agents you aren't using to free memory.",
+      ],
+    ]);
+  });
+
+  // TEST_SCENARIO: a VM agent refused for full storage did not crash. The notice must say it can't start and carry the storage next step, without the console tail.
+  it("says a storage refusal can't start rather than crashed", () => {
+    expect(
+      replay(
+        [agent()],
+        [
+          agent({
+            state: "error",
+            podTerminationCode: "MachineStorageFull",
+            podTerminationReason:
+              "delete an agent you no longer need\nthe guest console ends:\nboot log",
+          }),
+        ],
+      ),
+    ).toEqual([
+      [],
+      [
+        "Scout can't start: your VM agents' storage is full. Delete an agent you no longer need",
+      ],
     ]);
   });
 });

@@ -1,18 +1,8 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 
+import { badgeLabel } from "../modules/agents/lib/state-label.js";
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
-
-const stateLabel: Record<AgentDisplayState, string> = {
-  running: "Running",
-  starting: "Starting",
-  preparing_workspace: "Preparing workspace",
-  hibernating: "Hibernating",
-  hibernated: "Hibernating",
-  error: "Error",
-  over_budget: "Over budget",
-  migrating: "Migrating",
-};
 
 const stateVariant: Record<
   AgentDisplayState,
@@ -23,6 +13,7 @@ const stateVariant: Record<
   preparing_workspace: "info",
   hibernating: "muted",
   hibernated: "muted",
+  disabled: "muted",
   error: "danger",
   over_budget: "warning",
   migrating: "info",
@@ -34,6 +25,7 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   preparing_workspace: "bg-info",
   hibernating: "bg-muted-foreground",
   hibernated: "bg-muted-foreground",
+  disabled: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
   migrating: "bg-info",
@@ -43,10 +35,14 @@ export function StatusBadge({
   state,
   working,
   keptWork = 0,
+  vm,
+  refused,
   className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
+  vm: boolean;
+  refused: boolean;
   keptWork?: number;
   className?: string;
 }) {
@@ -58,7 +54,7 @@ export function StatusBadge({
     ? working
       ? "Working"
       : "Idle"
-    : stateLabel[state];
+    : badgeLabel(state, vm, refused);
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
   return (
     <Badge variant={variant} className={className}>
@@ -97,7 +93,7 @@ export function AlwaysOnTag() {
   return (
     <Tooltip
       side="top"
-      content="This agent never hibernates on its own and keeps its compute reserved."
+      content="This agent never sleeps on its own, so it keeps using its share of resources."
     >
       <span className="inline-flex" tabIndex={0}>
         <Badge variant="muted" data-testid="always-on-tag">

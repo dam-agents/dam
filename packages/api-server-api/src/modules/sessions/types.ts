@@ -1,3 +1,4 @@
+import type { SessionRepository } from "agent-runtime-api";
 import { z } from "zod";
 
 export const SessionType = {
@@ -7,6 +8,7 @@ export const SessionType = {
   ScheduleCron: "schedule_cron",
   ScheduleOnce: "schedule_once",
   CliRun: "cli_run",
+  Invocation: "invocation",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -54,6 +56,8 @@ export interface SessionView {
   scheduleId?: string | null;
   initialization?: boolean | null;
   title?: string | null;
+  customTitle?: string | null;
+  autoTitle?: string | null;
   updatedAt?: string | null;
   threadTs?: string | null;
   running?: boolean;
@@ -65,7 +69,8 @@ export interface SessionView {
   provider?: string | null;
   model?: string | null;
   settings?: Record<string, string>;
-  spend?: { unit: string; cost: number };
+  follows?: "chat" | "channel" | "scheduled" | null;
+  repositories?: SessionRepository[];
 }
 
 export {

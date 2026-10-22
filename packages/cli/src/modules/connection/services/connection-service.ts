@@ -2,8 +2,13 @@ import type {
   ClusterCaProbe,
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
+  ConnectionRequestSecretInput,
   ConnectionTemplateView,
   ConnectionView,
+  GitHubAppInstallationProbe,
+  GitHubUserTokenProbe,
+  SecretRequestState,
+  SecretRequestTicket,
 } from "api-server-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
@@ -23,6 +28,12 @@ export interface ConnectionService {
     credential: ConnectionCredentialUpdate,
   ): Promise<ConnResult<void>>;
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
+  requestSecret(
+    input: ConnectionRequestSecretInput,
+  ): Promise<ConnResult<SecretRequestTicket>>;
+  secretRequestStatus(
+    requestId: string,
+  ): Promise<ConnResult<SecretRequestState>>;
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
   probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
@@ -36,6 +47,20 @@ export interface ConnectionService {
     remove: readonly string[],
   ): Promise<ConnResult<readonly string[]>>;
   disconnect(id: string): Promise<ConnResult<void>>;
+  probeGitHubUserToken(id: string): Promise<ConnResult<GitHubUserTokenProbe>>;
+  probeGitHubApp(id: string): Promise<ConnResult<GitHubAppInstallationProbe>>;
+  updateGitHubUserTokenScope(input: {
+    id: string;
+    targetId?: number;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<ConnResult<void>>;
+  updateGitHubAppScope(input: {
+    id: string;
+    repositories?: string;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<ConnResult<void>>;
 }
 
 export function createConnectionService(deps: {
@@ -66,6 +91,14 @@ export function createConnectionService(deps: {
     async startOAuth(connectionId) {
       return trpcCall(() =>
         deps.trpc.connections.startOAuth.mutate({ connectionId }),
+      );
+    },
+    async requestSecret(input) {
+      return trpcCall(() => deps.trpc.connections.requestSecret.mutate(input));
+    },
+    async secretRequestStatus(requestId) {
+      return trpcCall(() =>
+        deps.trpc.connections.secretRequestStatus.query({ requestId }),
       );
     },
     async discoverMcp(url) {
@@ -108,6 +141,30 @@ export function createConnectionService(deps: {
     async disconnect(id) {
       return trpcCall(async () => {
         await deps.trpc.connections.delete.mutate({ id });
+      });
+    },
+    async probeGitHubUserToken(id) {
+      return trpcCall(() =>
+        deps.trpc.connections.probeGitHubUserTokenForConnection.mutate({
+          connectionId: id,
+        }),
+      );
+    },
+    async probeGitHubApp(id) {
+      return trpcCall(() =>
+        deps.trpc.connections.probeGitHubAppInstallationForConnection.mutate({
+          connectionId: id,
+        }),
+      );
+    },
+    async updateGitHubUserTokenScope(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.updateGitHubUserTokenScope.mutate(input);
+      });
+    },
+    async updateGitHubAppScope(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.updateGitHubAppScope.mutate(input);
       });
     },
   };

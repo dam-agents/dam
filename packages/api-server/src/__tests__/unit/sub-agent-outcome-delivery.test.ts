@@ -44,6 +44,7 @@ function row(patch: Partial<InvocationRow> = {}): InvocationRow {
     transcriptCaptured: false,
     transcriptTruncated: false,
     harnessConfig: null,
+    driverSessionId: null,
     ...patch,
   };
 }
@@ -67,6 +68,7 @@ function harness(opts: {
   const logs: string[] = [];
   let call = 0;
   const deps: SubAgentOutcomeDeliveryDeps = {
+    pairFields: async () => ({}),
     repo: {
       markAwaited: async () => {},
       markCollected: async () => {},
@@ -243,6 +245,7 @@ describe("the hourly retry", () => {
   it("keeps the rows for the next hour when the wake throws", async () => {
     const h = harness({ unwoken: [row()] });
     const failing = createSubAgentOutcomeWakeRetry({
+      pairFields: async () => ({}),
       repo: {
         markAwaited: async () => {},
         markCollected: async () => {},

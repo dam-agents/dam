@@ -1,4 +1,4 @@
-import type { AcpPermissionOption } from "api-server-api";
+import type { AcpPermissionOption, ApprovalVerdict } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
@@ -22,6 +22,7 @@ interface RecordAcpNativePendingInput {
   toolName: string;
   toolCallId?: string;
   args: unknown;
+  idsWhole?: boolean;
   options: readonly AcpPermissionOption[];
 }
 
@@ -31,12 +32,23 @@ export interface ApprovalsRelayService {
   ): Promise<string | null>;
   resolveAcpNativeFromInSession(
     rowId: string,
-    outcome: { outcome?: unknown; optionId?: unknown },
-  ): Promise<void>;
+    outcome: { outcome?: unknown; optionId?: unknown; kind?: unknown },
+    opts?: { authoritative?: boolean },
+  ): Promise<"settled" | "absent">;
+  expireAcpNative(rowId: string): Promise<"settled" | "absent">;
+  settleAbsentAcpNative(input: SettleAbsentInput): Promise<void>;
   subscribeFrameInjects(
     agentId: string,
     listener: (frame: string) => void,
   ): () => void;
+}
+
+interface SettleAbsentInput {
+  agentId: string;
+  sessionId: string;
+  rpcId: number | string;
+  ownerSub: string;
+  outcome?: { outcome?: unknown; optionId?: unknown; kind?: unknown };
 }
 
 interface CreateApprovalsRelayServiceDeps {
@@ -93,7 +105,65 @@ async function expireSupersededRows(
 export function createApprovalsRelayService(
   deps: CreateApprovalsRelayServiceDeps,
 ): ApprovalsRelayService {
+  const settle: Pick<
+    ApprovalsRelayService,
+    "resolveAcpNativeFromInSession" | "expireAcpNative"
+  > = {
+    async resolveAcpNativeFromInSession(rowId, outcome, opts) {
+      const row = await deps.repo.getPending(rowId);
+      if (!row) return "absent";
+      if (row.payload.kind !== "acp_native") return "settled";
+      const verdict = verdictOfOutcome(row.payload.options ?? [], outcome, {
+        reportedByRuntime: opts?.authoritative === true,
+      });
+      const casWon =
+        row.status === "pending" &&
+        (await deps.repo.resolvePending(row.id, verdict, "in-session", {
+          markDelivered: true,
+        }));
+      const corrected =
+        !casWon &&
+        opts?.authoritative === true &&
+        (await deps.repo.correctResolvedVerdict(row.id, verdict));
+      if (!casWon && opts?.authoritative === true) {
+        await deps.repo.markDelivered(row.id);
+      }
+      if (!casWon && !corrected) return "settled";
+      emit({
+        type: EventType.ApprovalResolved,
+        approvalId: row.id,
+        agentId: row.agentId,
+        ownerSub: row.ownerSub,
+        resolution: verdict,
+      });
+      return "settled";
+    },
+
+    async expireAcpNative(rowId) {
+      const row = await deps.repo.getPending(rowId);
+      if (!row) return "absent";
+      if (row.payload.kind !== "acp_native") return "settled";
+      if (
+        row.status === "resolved" ||
+        !(await deps.repo.expirePending(row.id))
+      ) {
+        await deps.repo.markDelivered(row.id);
+        return "settled";
+      }
+      emit({
+        type: EventType.ApprovalResolved,
+        approvalId: row.id,
+        agentId: row.agentId,
+        ownerSub: row.ownerSub,
+        resolution: "expired",
+      });
+      return "settled";
+    },
+  };
+
   return {
+    ...settle,
+
     async recordAcpNativePending(input) {
       if (input.sessionId.startsWith(SYNTHETIC_SESSION_PREFIX)) return null;
       const rowId = acpNativeRowId(input.agentId, input.sessionId, input.rpcId);
@@ -107,8 +177,9 @@ export function createApprovalsRelayService(
           optionId: o.optionId,
           kind: o.kind,
         })),
+        ...(input.idsWhole === true && { optionsWhole: true as const }),
       };
-      const written = await deps.repo.insertPending({
+      const written = await deps.repo.insertIfAbsent({
         id: rowId,
         type: "acp_native",
         agentId: input.agentId,
@@ -137,26 +208,48 @@ export function createApprovalsRelayService(
       return rowId;
     },
 
-    async resolveAcpNativeFromInSession(rowId, outcome) {
-      const row = await deps.repo.getPending(rowId);
-      if (!row || row.status !== "pending" || row.payload.kind !== "acp_native")
-        return;
-      const verdict = verdictOfOutcome(row.payload.options ?? [], outcome);
-      const casWon = await deps.repo.resolvePending(
-        row.id,
-        verdict,
-        "in-session",
-        { markDelivered: true },
+    async settleAbsentAcpNative(input) {
+      const rowId = acpNativeRowId(input.agentId, input.sessionId, input.rpcId);
+      const verdict =
+        input.outcome === undefined
+          ? undefined
+          : verdictOfOutcome([], input.outcome, { reportedByRuntime: true });
+      const written = await deps.repo.insertSettled(
+        {
+          id: rowId,
+          type: "acp_native",
+          agentId: input.agentId,
+          ownerSub: input.ownerSub,
+          sessionId: input.sessionId,
+          payload: {
+            kind: "acp_native",
+            toolName: "tool call",
+            rpcId: input.rpcId,
+            options: [],
+          },
+          expiresAt: new Date(Date.now() + ACP_NATIVE_TTL_MS),
+        },
+        verdict === undefined
+          ? { status: "expired" }
+          : { status: "resolved", verdict },
       );
-      if (casWon) {
+      if (written) {
         emit({
           type: EventType.ApprovalResolved,
-          approvalId: row.id,
-          agentId: row.agentId,
-          ownerSub: row.ownerSub,
-          resolution: verdict,
+          approvalId: rowId,
+          agentId: input.agentId,
+          ownerSub: input.ownerSub,
+          resolution: verdict ?? "expired",
         });
+        return;
       }
+      if (input.outcome === undefined) {
+        await settle.expireAcpNative(rowId);
+        return;
+      }
+      await settle.resolveAcpNativeFromInSession(rowId, input.outcome, {
+        authoritative: true,
+      });
     },
 
     subscribeFrameInjects(agentId, listener) {

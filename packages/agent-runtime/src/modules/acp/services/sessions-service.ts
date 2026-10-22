@@ -2,7 +2,9 @@ import type {
   SessionHistory,
   SessionListQuery,
   SessionPage,
+  SessionRepository,
   SessionsService,
+  SessionSubAgentContext,
 } from "agent-runtime-api";
 
 import { noticeStream } from "../../../core/notice-stream.js";
@@ -12,11 +14,9 @@ import {
   type ListedHarnessSession,
 } from "../domain/session-list.js";
 import { historyTailStart } from "../domain/replay-tail.js";
-import { spendBySession, spendTotal } from "../domain/session-spend.js";
 import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
 import type { HistoryProvider } from "../infrastructure/history-provider.js";
 import type { InProcessCaller } from "../infrastructure/in-process-request.js";
-import type { SpendProvider } from "../infrastructure/spend-provider.js";
 import type { PlatformSessionOf } from "../infrastructure/terminal-session-pins.js";
 import type {
   PlatformSessionMeta,
@@ -45,7 +45,9 @@ const HARNESS_ONLY_META: PlatformSessionMeta = { mode: "terminal" };
 const MAX_HARNESS_PAGES = 200;
 
 interface HarnessListPage {
-  sessions?: ListedHarnessSession[];
+  sessions?: (ListedHarnessSession & {
+    _meta?: { platform?: { autoTitle?: string | null } };
+  })[];
   nextCursor?: string | null;
 }
 
@@ -71,11 +73,13 @@ async function readHarnessListing(
       cwd: ".",
       ...(cursor !== undefined && { cursor }),
     });
-    for (const { sessionId, title, updatedAt } of result.sessions ?? []) {
+    for (const { sessionId, title, updatedAt, _meta } of result.sessions ??
+      []) {
+      const autoTitle = _meta?.platform?.autoTitle;
       if (!byId.has(sessionId))
         byId.set(sessionId, {
           sessionId,
-          title: title ?? null,
+          title: (autoTitle !== undefined ? autoTitle : title) ?? null,
           updatedAt: updatedAt ?? null,
         });
     }
@@ -85,7 +89,18 @@ async function readHarnessListing(
   return [...byId.values()];
 }
 
+export interface RuntimeSessionsService extends SessionsService {
+  adoptHarnessTitle(sessionId: string): Promise<void>;
+}
+
+const firstLine = (title: string | null | undefined): string =>
+  (title ?? "").trim().split("\n")[0]!.trim();
+
 export function createSessionsService(deps: {
+  defaultHarness?: string;
+  subAgentContextOf: (
+    meta: PlatformSessionMeta,
+  ) => Omit<SessionSubAgentContext, "settings">;
   openCaller: () => InProcessCaller;
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
@@ -93,12 +108,13 @@ export function createSessionsService(deps: {
   sessionFrames: (sessionId: string) => SessionHistory;
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
-  spendProvider?: SpendProvider;
   terminalSessionPins?: () => PlatformSessionOf;
+  sessionRepositories?: (sessionId: string) => SessionRepository[];
   log: (msg: string) => void;
   now?: () => number;
-}): SessionsService {
+}): RuntimeSessionsService {
   const now = deps.now ?? Date.now;
+  const adopting = new Set<string>();
   let listing:
     | {
         readAt: number;
@@ -163,46 +179,30 @@ export function createSessionsService(deps: {
     return { listed: lastListed, complete: false };
   }
 
+  function withRepositories(page: SessionPage): SessionPage {
+    const repositoriesOf = deps.sessionRepositories;
+    if (!repositoriesOf) return page;
+    return {
+      ...page,
+      sessions: page.sessions.map((session) => {
+        const repositories = repositoriesOf(session.sessionId);
+        return repositories.length > 0 ? { ...session, repositories } : session;
+      }),
+    };
+  }
+
   return {
     async list(query?: SessionListQuery): Promise<SessionPage> {
       const platformSessionOf = deps.terminalSessionPins?.();
-      const [{ listed, complete }, spendRows] = await Promise.all([
-        listedWithinGrace(),
-        deps.spendProvider?.read() ?? Promise.resolve(null),
-      ]);
+      const { listed, complete } = await listedWithinGrace();
       const composed = composeSessionList(listed, deps.sessionMetadata.all(), {
         isTombstoned: (sessionId) =>
           deps.sessionMetadata.isTombstoned(sessionId),
         isRunning: deps.isRunning,
         platformSessionOf,
       });
-      const paged = pageSessions(composed, query);
-      const page: SessionPage = complete
-        ? paged
-        : { ...paged, incomplete: true };
-      if (!deps.spendProvider || !spendRows) return page;
-      const spend = spendBySession(
-        spendRows,
-        deps.spendProvider.unit,
-        platformSessionOf,
-      );
-      return {
-        ...page,
-        sessions: page.sessions.map((session) => {
-          const cost = spend.get(session.sessionId);
-          return cost ? { ...session, spend: cost } : session;
-        }),
-      };
-    },
-
-    async spend({ from, to }) {
-      if (!deps.spendProvider) return null;
-      const rows = await deps.spendProvider.read();
-      if (!rows) throw new Error("the harness did not report session spend");
-      return spendTotal(rows, deps.spendProvider.unit, {
-        from: Date.parse(from),
-        to: Date.parse(to),
-      });
+      const paged = withRepositories(pageSessions(composed, query));
+      return complete ? paged : { ...paged, incomplete: true };
     },
 
     /**
@@ -221,6 +221,61 @@ export function createSessionsService(deps: {
       return stored
         ? newestTail({ frames: stored, truncated: false }, opts?.tail)
         : EMPTY_HISTORY;
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: a terminal Session sends no prompt over ACP,
+     * so the platform never derives its title; only its harness knows one.
+     * The list read never starts a harness, so the title is asked for once
+     * the terminal detaches or exits, from that harness's own listing, and
+     * kept as the Session's title. A title already kept or set by a person
+     * stays.
+     */
+    async adoptHarnessTitle(sessionId) {
+      const entry = deps.sessionMetadata.get(sessionId);
+      if (
+        !entry ||
+        entry.meta.mode !== "terminal" ||
+        entry.meta.title ||
+        entry.meta.customTitle ||
+        adopting.has(sessionId)
+      )
+        return;
+      adopting.add(sessionId);
+      const caller = deps.openCaller();
+      try {
+        await caller.request("initialize", {
+          protocolVersion: 1,
+          clientCapabilities: { fs: {} },
+          clientInfo: { name: "platform-sessions", version: "1.0.0" },
+        });
+        const harness = entry.meta.harness ?? deps.defaultHarness;
+        if (harness === undefined) return;
+        let cursor: string | undefined;
+        let title = "";
+        for (let page = 0; page < MAX_HARNESS_PAGES && !title; page++) {
+          const result = await caller.request<HarnessListPage>("session/list", {
+            cwd: ".",
+            _meta: { platform: { harness } },
+            ...(cursor !== undefined && { cursor }),
+          });
+          title = firstLine(
+            result.sessions?.find((s) => s.sessionId === sessionId)?.title,
+          );
+          cursor = result.nextCursor ?? undefined;
+          if (cursor === undefined) break;
+        }
+        const fresh = deps.sessionMetadata.get(sessionId);
+        if (title && fresh && !fresh.meta.title && !fresh.meta.customTitle)
+          deps.sessionMetadata.set(sessionId, { ...fresh.meta, title });
+      } catch (error) {
+        deps.log(
+          `session ${sessionId}: the harness title could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        caller.close();
+        adopting.delete(sessionId);
+      }
     },
 
     async setTitle(input) {
@@ -248,6 +303,27 @@ export function createSessionsService(deps: {
         input.title === null ? meta : { ...meta, customTitle: input.title },
       );
       return true;
+    },
+
+    async settings(input) {
+      const sessionId = deps.sessionMetadata.findByRef(input.ref);
+      if (
+        sessionId === undefined ||
+        deps.sessionMetadata.isTombstoned(sessionId)
+      )
+        return null;
+      const meta = deps.sessionMetadata.get(sessionId)?.meta ?? {};
+      return { settings: meta.settings ?? {}, ...deps.subAgentContextOf(meta) };
+    },
+
+    async byRef(ref) {
+      const sessionId = deps.sessionMetadata.findByRef(ref);
+      if (
+        sessionId === undefined ||
+        deps.sessionMetadata.isTombstoned(sessionId)
+      )
+        return null;
+      return sessionId;
     },
 
     async storeDelegationFrames(input) {

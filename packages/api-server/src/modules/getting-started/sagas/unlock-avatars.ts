@@ -1,4 +1,8 @@
-import type { GettingStartedTask } from "api-server-api";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  GETTING_STARTED_TASKS,
+  type GettingStartedTask,
+} from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { concatMap, merge, type Observable, type Subscription } from "rxjs";
 import { filter, map } from "rxjs/operators";
@@ -12,6 +16,7 @@ import {
   type ConnectionCreated,
   events$,
   EventType,
+  type GettingStartedReset,
   ofType,
   type ScheduleCreated,
   type SessionTurnRelayed,
@@ -43,6 +48,7 @@ function tasksDone(): Observable<TaskDone> {
     ),
     e.pipe(
       ofType<ConnectionCreated>(EventType.ConnectionCreated),
+      filter((ev) => ev.templateId !== CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID),
       map((ev) => ({ owner: ev.actorSub, task: "create-connection" as const })),
     ),
     e.pipe(
@@ -76,11 +82,21 @@ function tasksDone(): Observable<TaskDone> {
  * through the UI, the CLI or an Agent's own tools. The events are handled one
  * at a time, so a starter kit that sets up several things at once unlocks
  * them in a stable order. A task this replica already recorded is skipped
- * without a database read, because a message is sent on every prompt.
+ * without a database read, because a message is sent on every prompt. A
+ * reset forgets the user's tasks on this replica only; another replica skips
+ * a task it recorded before the reset until it restarts. The deployment's own
+ * CurveBender Connection arrives for every user, so it is no connection the
+ * user made and finishes nothing; the built-in provider still counts.
  */
 export function startUnlockAvatarsSaga(recorder: UnlockRecorder): Subscription {
   const recorded = new Set<string>();
-  return tasksDone()
+  const resets = events$()
+    .pipe(ofType<GettingStartedReset>(EventType.GettingStartedReset))
+    .subscribe((ev) => {
+      for (const task of GETTING_STARTED_TASKS)
+        recorded.delete(`${ev.ownerSub}\n${task}`);
+    });
+  const unlocks = tasksDone()
     .pipe(
       filter((done) => done.owner !== ""),
       filter((done) => !recorded.has(`${done.owner}\n${done.task}`)),
@@ -97,4 +113,6 @@ export function startUnlockAvatarsSaga(recorder: UnlockRecorder): Subscription {
       }),
     )
     .subscribe();
+  unlocks.add(resets);
+  return unlocks;
 }

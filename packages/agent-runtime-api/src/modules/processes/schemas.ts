@@ -2,9 +2,28 @@ import { z } from "zod";
 
 export const PROCESS_OUTPUT_MAX_BYTES = 64 * 1024;
 
-export const processKindSchema = z.enum(["turn", "harness-task", "detached"]);
+export const processKindSchema = z.enum([
+  "turn",
+  "harness-task",
+  "detached",
+  "startup-item",
+]);
 
 export const keepSourceSchema = z.enum(["default", "agent", "user"]);
+
+export const containerEngineSchema = z.enum(["docker", "k3s", "containerd"]);
+
+export const processContainerSchema = z.discriminatedUnion("role", [
+  z.object({
+    role: z.literal("container"),
+    engine: containerEngineSchema,
+    id: z.string(),
+  }),
+  z.object({
+    role: z.literal("runtime"),
+    engine: containerEngineSchema,
+  }),
+]);
 
 export const processRowSchema = z.object({
   key: z.string(),
@@ -17,6 +36,7 @@ export const processRowSchema = z.object({
   outputPath: z.string().nullable(),
   keepsAwake: z.boolean(),
   keepSource: keepSourceSchema,
+  container: processContainerSchema.nullable().default(null),
 });
 
 export const finishedRowSchema = z.object({
@@ -29,6 +49,7 @@ export const finishedRowSchema = z.object({
   outputPath: z.string().nullable(),
   keptAwake: z.boolean(),
   keepSource: keepSourceSchema,
+  container: processContainerSchema.nullable().default(null),
 });
 
 export const pendingRestartSchema = z.object({
@@ -41,10 +62,24 @@ export const pendingRestartSchema = z.object({
   }),
 });
 
+export const startupItemIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
+
+export const startupItemSchema = z.object({
+  id: startupItemIdSchema,
+  command: z.string(),
+  disabled: z.boolean(),
+  running: z.boolean(),
+  listed: z.boolean().default(true),
+  outputPath: z.string(),
+});
+
 export const processListSchema = z.object({
   running: z.array(processRowSchema),
   finished: z.array(finishedRowSchema),
   pendingRestart: pendingRestartSchema.nullable(),
+  startupItems: z.array(startupItemSchema).default([]),
 });
 
 export const processKeyInputSchema = z.object({
@@ -53,6 +88,14 @@ export const processKeyInputSchema = z.object({
 
 export const setKeepInputSchema = processKeyInputSchema.extend({
   keepsAwake: z.boolean(),
+});
+
+export const startupItemInputSchema = z.object({
+  id: startupItemIdSchema,
+});
+
+export const setStartupItemEnabledInputSchema = startupItemInputSchema.extend({
+  enabled: z.boolean(),
 });
 
 const markedPidSchema = z.number().int().positive();

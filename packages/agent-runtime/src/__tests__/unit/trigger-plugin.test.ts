@@ -31,6 +31,7 @@ const scheduleMeta = (scheduleId: string) => ({
   type: SessionType.ScheduleCron,
   mode: SessionMode.Chat,
   scheduleId,
+  follows: null,
 });
 
 const allows: PrecheckRunner = async () => ({ verdict: "allowed" });
@@ -46,9 +47,9 @@ const handlerFor = (
 ) =>
   createTriggerPlugin({
     runPrecheck: allows,
-    harnessDefault: async () => null,
     log: () => {},
     reporter: { report: async () => {} },
+    invocationWatch: { watch: () => {} },
     ...deps,
   }).bindEvent!(kind, { impl: "trigger" });
 
@@ -71,20 +72,27 @@ describe("trigger plugin", () => {
   /** TEST_SCENARIO: A schedule fires on the harness, provider and model it
    * remembers, so its session opens on that pair rather than the agent's
    * default harness, whose default model would not exist there. */
-  it("opens the session on the fire's own harness, provider and model", async () => {
+  // TEST_SCENARIO: on a fresh pod the env rail and the trigger arrive together, so the session opens only once the model catalog has listed (or its wait ran out), else the harness process would start with no provider.
+  it("opens the session on the fire's own harness, provider and model, once the catalog has listed", async () => {
     const { driver, calls } = fakeDriver();
     const stateStore: TriggerStateStore = {
       getSessionForSchedule: () => undefined,
       setSessionForSchedule: vi.fn(),
       clearSessionForSchedule: vi.fn(),
     };
-    await createTriggerPlugin({
+    let listed = () => {};
+    const catalogListed = () =>
+      new Promise<void>((resolve) => {
+        listed = resolve;
+      });
+    const run = createTriggerPlugin({
       runPrecheck: allows,
-      harnessDefault: async () => "default-harness-model",
       log: () => {},
       reporter: { report: async () => {} },
+      invocationWatch: { watch: () => {} },
       driver,
       stateStore,
+      catalogListed,
     }).bindEvent!("trigger", { impl: "trigger" })(
       {
         scheduleId: "sch-p",
@@ -95,6 +103,10 @@ describe("trigger plugin", () => {
       },
       ctx,
     );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toEqual([]);
+    listed();
+    await run;
     expect(calls[0]?.platformMeta).toEqual({
       ...scheduleMeta("sch-p"),
       harness: "codex",
@@ -293,6 +305,7 @@ describe("trigger plugin one-time tasks", () => {
         runPrecheck: allows,
         log: () => {},
         reporter: { report: async () => {} },
+        invocationWatch: { watch: () => {} },
         findSessionByRef: () => found,
       }).bindEvent!("trigger", { impl: "trigger" });
     const payload = {

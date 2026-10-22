@@ -18,8 +18,8 @@ use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    clear_for_start, discard_overlay, grown_storage, image_env_beside, kill_orphans, orphan_pids,
-    timed, updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
+    clear_for_start, grown_storage, image_env_beside, kill_orphans, orphan_pids, timed,
+    updated_env, vmms_left, workload, Machine, Runtime, Update, VmmKilled, GUEST_AGENT_PORT,
     VMM_EXIT_WAIT,
 };
 
@@ -29,7 +29,7 @@ pub struct Smolvm {
     db: SmolvmDb,
     proc_root: PathBuf,
     nested: bool,
-    tools: Option<PathBuf>,
+    btrfs: PathBuf,
 }
 
 const USER: &str = "root";
@@ -56,26 +56,42 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 // UNIT_BOUNDARY_DESCRIPTION: the label smolvm stores on every machine this runner creates. smolvm never reads it; it is how an operator listing smolvm's machines tells the runner's own from anything else in the same database.
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
+// UNIT_BOUNDARY_DESCRIPTION: the longest name smolvm binds a unix socket under in a machine's directory: the VMM's control socket, which grow speaks to. Every other socket there (agent.sock, agent.ready, egress.sock, ports.sock) is shorter.
+pub const LONGEST_MACHINE_SOCKET: &str = "control.sock";
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes a unix socket path may hold, NUL included: sockaddr_un's sun_path, 104 on macOS and 108 on Linux. libkrun refuses a longer path as it starts the VM, so a machine whose directory does not leave room for it never boots.
+#[cfg(target_os = "macos")]
+const SUN_PATH_LEN: usize = 104;
+#[cfg(not(target_os = "macos"))]
+const SUN_PATH_LEN: usize = 108;
+
+// UNIT_BOUNDARY_DESCRIPTION: refuses a machine directory whose sockets would not fit a unix socket path. smolvm puts every machine at one fixed depth under HOME, so one check at start, on the directory a machine of any name would get, covers them all, and the refusal names the path and the limit, where a boot under it says only that libkrun rejected its configuration.
+pub fn machine_sockets_fit(machine_dir: &Path) -> anyhow::Result<()> {
+    let longest = machine_dir.join(LONGEST_MACHINE_SOCKET);
+    let len = longest.as_os_str().len();
+    anyhow::ensure!(
+        len < SUN_PATH_LEN,
+        "a machine's sockets would not fit a unix socket path: {} is {len} bytes and this host allows {}; run the runner under a shorter HOME",
+        longest.display(),
+        SUN_PATH_LEN - 1
+    );
+    Ok(())
+}
+
 impl Smolvm {
-    pub fn open(allow_nesting: bool, tools: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn open(allow_nesting: bool, btrfs: PathBuf) -> anyhow::Result<Self> {
         let nested = allow_nesting && host_nests(Path::new("/sys"));
         tracing::info!(
             allow_nesting,
             nested,
             "nested virtualization for this runner's machines"
         );
-        let tools = tools
-            .map(|dir| {
-                dir.canonicalize()
-                    .with_context(|| format!("the tools dir {}", dir.display()))
-            })
-            .transpose()?;
         Ok(Self {
             runtime: EmbeddedRuntime::new().context("opening the smolvm runtime")?,
             db: SmolvmDb::open().context("opening the smolvm database")?,
             proc_root: PathBuf::from("/proc"),
             nested,
-            tools,
+            btrfs,
         })
     }
 
@@ -94,14 +110,27 @@ impl Smolvm {
             return Ok(());
         };
         let dir = vm_data_dir(id);
-        let vmms = orphan_pids(&self.proc_root, &dir);
+        let vmms = orphan_pids(&self.proc_root, &dir)
+            .map(|found| found.pids())
+            .unwrap_or_default();
         if vmms.is_empty() {
             return Err(refused.into());
         }
         tracing::warn!(machine = id, error = %refused, "the guest did not stop cleanly; powering it off");
         kill_orphans(&self.proc_root, &dir);
-        vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
+        let _ = vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
         Ok(end()?)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine directory no record owns. smolvm forgets a machine before it removes its directory, so a delete cut short between the two — a killed runner, a removal that failed — leaves the disk with no record, and smolvm then neither deletes it nor creates over it: a machine created again under the name would boot on the deleted one's home. Any VMM still holding that directory is killed first.
+    fn remove_unowned(&self, id: &str) -> anyhow::Result<()> {
+        let dir = vm_data_dir(id);
+        if !dir.exists() || self.record(id)?.is_some() {
+            return Ok(());
+        }
+        tracing::warn!(machine = id, dir = %dir.display(), "removing a machine directory no record owns");
+        kill_orphans(&self.proc_root, &dir);
+        std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))
     }
 }
 
@@ -117,9 +146,14 @@ impl Runtime for Smolvm {
         })
     }
 
+    fn vm_dir(&self, id: &str) -> Option<PathBuf> {
+        Some(vm_data_dir(id))
+    }
+
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()> {
         let secrets: Vec<&str> = machine.spec.env.values().map(String::as_str).collect();
         timed("create", id, &secrets, || {
+            self.remove_unowned(id)?;
             let (spec, workload) = embedded_spec(id, machine)?;
             let storage_gib = spec.resources.storage_gib;
             self.runtime.create_machine_with_workload(
@@ -129,7 +163,12 @@ impl Runtime for Smolvm {
                 Some(USER.to_string()),
             )?;
             if let Some(gib) = storage_gib {
-                raw_storage_disk(id, gib)?;
+                if let Err(e) = raw_storage_disk(id, gib, &self.btrfs) {
+                    if let Err(deleted) = self.runtime.delete_machine(id) {
+                        tracing::warn!(machine = id, error = %deleted, "could not delete a machine whose disk was not made");
+                    }
+                    return Err(e);
+                }
             }
             record_gateway_host_port(id, machine.spec)?;
             let resolver = guest_resolver(machine.spec)?;
@@ -156,10 +195,12 @@ impl Runtime for Smolvm {
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
                 let dir = vm_data_dir(id);
-                let vmms = orphan_pids(&self.proc_root, &dir);
+                let vmms = orphan_pids(&self.proc_root, &dir)
+                    .map(|found| found.pids())
+                    .unwrap_or_default();
                 let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &dir);
-                vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
+                let _ = vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
                 record = self.existing(id)?;
             }
             if !matches!(
@@ -219,12 +260,13 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
-        let boot = u32::try_from(boot_mib).context("boot memory")?;
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. Every start keeps only the share among the recorded mounts, so a machine an earlier runner booted with the node's harness tools boots without them.
+    fn start(&self, id: &str, boot_mib: i32, _memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
-            let vmms = orphan_pids(&self.proc_root, &dir);
+            let vmms = orphan_pids(&self.proc_root, &dir)
+                .map(|found| found.pids())
+                .unwrap_or_default();
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
@@ -233,26 +275,44 @@ impl Runtime for Smolvm {
         if record.as_ref().is_some_and(|r| r.allowed_cidrs.is_none()) {
             anyhow::bail!("smolvm machine start: {id} records no egress allowlist, which smolvm reads as no filter");
         }
-        let image_env = record
-            .as_ref()
-            .and_then(|r| recorded_image_env(r.image.as_deref()));
         if let Some(record) = &record {
             write_boot_image(record)?;
+            write_launch(record)?;
         }
+        let boot = u32::try_from(boot_mib).context("boot memory")?;
+        let rootfs = AgentManager::default_rootfs_path()?;
+        crate::files::write(
+            &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
+            rootfs.as_os_str().as_encoded_bytes(),
+            0o644,
+        )
+        .context("recording the guest agent root the machine boots")?;
         self.db.update_vm(id, |r| {
             r.mem = boot;
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
             r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
-            r.mounts = boot_mounts(id, &r.mounts, self.tools.as_deref(), image_env.as_deref());
+            r.mounts = boot_mounts(&r.mounts);
         })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
+            // UNIT_BOUNDARY_DESCRIPTION: smolvm reads the status of a VMM it is still waiting for itself, so a machine killed during its boot is not this process's to reap, and the only thing left of the kill is the signal smolvm kept. It goes in the error for the runner to report as the reason the machine restarted.
+            let killed = booting_vmm_pid(&dir)
+                .and_then(|pid| {
+                    smolvm::process::peek_exit_signal(pid).map(|signal| VmmKilled { pid, signal })
+                })
+                .or_else(|| launch_exit(&dir));
             kill_orphans(&self.proc_root, &dir);
+            if let Some(killed) = killed {
+                return Err(result
+                    .err()
+                    .unwrap_or_else(|| anyhow::anyhow!("smolvm machine start"))
+                    .context(killed));
+            }
         }
         result
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The guest kernel is first told to online each memory block as it adds it: it leaves added RAM offline by default, its virtio-mem driver plugs no more once 1 GiB of it waits offline, and the guest agent onlines a range only once every block of it exists, so left to the agent a grow past 1 GiB never finishes. The VMM then maps the added RAM, and once it reports all of it plugged, the guest agent confirms the range is online. That check is retried until the wait runs out, since a block the agent finds offline can be onlined by the kernel before the agent's own write, which then fails. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
+    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the grow ends once the VMM reports all of it plugged, the order smolvm's own resize takes. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
     fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
         let target = u32::try_from(memory_mib).context("memoryMiB")?;
         timed("grow", id, &[], || {
@@ -265,27 +325,6 @@ impl Runtime for Smolvm {
             if added == 0 {
                 return Ok(());
             }
-            let manager = AgentManager::for_vm(id)?;
-            manager.detach();
-            let mut client = AgentClient::connect(manager.vsock_socket())?;
-            let (code, _, stderr) = client.vm_exec(
-                [
-                    "/bin/sh",
-                    "-c",
-                    "echo online_kernel > /sys/devices/system/memory/auto_online_blocks",
-                ]
-                .map(String::from)
-                .to_vec(),
-                Vec::new(),
-                None,
-                Some(Duration::from_secs(10)),
-                None,
-            )?;
-            anyhow::ensure!(
-                code == 0,
-                "the guest did not turn on onlining added RAM: {}",
-                String::from_utf8_lossy(&stderr).trim()
-            );
             if added > geometry.mapped {
                 let reply =
                     control_socket_cmd(&socket, &format!("PROTOTYPE_GROW_MEMORY {}", added >> 20))?;
@@ -295,43 +334,46 @@ impl Runtime for Smolvm {
                     reply.trim()
                 );
             }
+            let manager = AgentManager::for_vm(id)?;
+            manager.detach();
+            AgentClient::connect(manager.vsock_socket())?
+                .online_memory(geometry.base, added)
+                .context("the guest did not put its added RAM online")?;
             let deadline = std::time::Instant::now() + RAM_PLUG_WAIT;
             loop {
                 let plugged = info()?.plugged;
-                let online = if plugged == added {
-                    client
-                        .online_memory(geometry.base, added)
-                        .map_err(anyhow::Error::from)
-                } else {
-                    Err(anyhow::anyhow!("{plugged} of {added} bytes plugged"))
-                };
-                let Err(e) = online else { break };
+                if plugged == added {
+                    break;
+                }
                 anyhow::ensure!(
                     std::time::Instant::now() < deadline,
-                    "the guest did not put its added RAM to use within {RAM_PLUG_WAIT:?}: {e:#}"
+                    "the guest plugged {plugged} of {added} bytes of its added RAM within {RAM_PLUG_WAIT:?}"
                 );
                 std::thread::sleep(Duration::from_millis(25));
             }
             let total = geometry.boot_mib + u32::try_from(added >> 20).context("added RAM")?;
             self.db.update_vm(id, |r| r.mem = total)?;
+            tracing::info!(
+                machine = id,
+                boot_mib = geometry.boot_mib,
+                memory_mib = total,
+                "the guest has all its added RAM online"
+            );
             Ok(())
         })
     }
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
-        terminate_workload(id);
-        let dir = vm_data_dir(id);
-        let vmms = orphan_pids(&self.proc_root, &dir);
         timed("stop", id, &[], || {
             self.ended(id, || self.runtime.stop_machine(id))
         })?;
-        discard_overlay(id, &self.proc_root, &dir, vmms);
         Ok(())
     }
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || {
-            self.ended(id, || self.runtime.delete_machine(id))
+            self.ended(id, || self.runtime.delete_machine(id))?;
+            self.remove_unowned(id)
         })
     }
 
@@ -349,6 +391,10 @@ impl Runtime for Smolvm {
         console::machine_tail(&vm_data_dir(id))
     }
 
+    fn kernel_log(&self, id: &str) -> Option<std::path::PathBuf> {
+        Some(vm_data_dir(id).join(console::VMM_LOG))
+    }
+
     fn nests(&self) -> bool {
         self.nested
     }
@@ -361,6 +407,12 @@ impl Runtime for Smolvm {
         resident_mib(&self.proc_root, record.pid?)
     }
 
+    fn holds_vmm(&self, id: &str) -> bool {
+        // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look, or one that left a process the kernel would not describe, has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
+        orphan_pids(&self.proc_root, &vm_data_dir(id))
+            .map_or(true, |found| !found.named.is_empty() || found.unknown > 0)
+    }
+
     fn cpu_usec(&self, id: &str) -> Option<u64> {
         let record = self.record(id).ok()??;
         if !record.is_process_alive() {
@@ -371,6 +423,37 @@ impl Runtime for Smolvm {
 
     fn disk_used_bytes(&self, id: &str) -> Option<u64> {
         allocated_bytes(&vm_data_dir(id))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid of the machine's VMM, given only while that pid still names the process the record was written for. A pid is reused after its process ends, and the reap reads the exit status of the pid it is given, so a record whose pid now belongs to some other process would report that process's death as this machine's: the start time the record kept tells the two apart, and a pid the kernel no longer lists is the record's own, dead child. A VMM still booting is named by smolvm's own pid file, which it writes before it waits for the guest: its record carries no pid until the boot succeeds, and a VMM killed during that boot is exactly the death the runner has to name.
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        let record = self.record(id).ok()??;
+        if let Some(pid) = record.pid {
+            return match (
+                record.pid_start_time,
+                smolvm::process::process_start_time(pid),
+            ) {
+                (Some(recorded), Some(now)) if recorded != now => None,
+                _ => Some(pid),
+            };
+        }
+        booting_vmm_pid(&vm_data_dir(id))
+    }
+
+    fn vmm_start_time(&self, id: &str) -> Option<u64> {
+        // UNIT_BOUNDARY_DESCRIPTION: the identity smolvm wrote down when it booted this machine's VMM, which is the only thing left to compare a record against once the VMM is gone: a record carries the start time the kernel gave its process, and the kernel answers for a live process alone. A VMM still booting is named by its pid file, which carries the same pair.
+        let record = self.record(id).ok()??;
+        record
+            .pid_start_time
+            .or_else(|| booting_vmm_start_time(&vm_data_dir(id)))
+    }
+
+    fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
+        smolvm::process::peek_exit_signal(pid)
+    }
+
+    fn forget_vmm_exit(&self, pid: i32) {
+        smolvm::process::forget_exit_signal(pid);
     }
 }
 
@@ -414,6 +497,11 @@ fn ram_to_add(geometry: &RamGeometry, target_mib: u32) -> u64 {
 const RAM_GROW_UNIT: u64 = 128 << 20;
 
 fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        let (bytes, _) = crate::runtime::darwin::task_usage(pid)?;
+        return i32::try_from(bytes >> 20).ok();
+    }
     let status = std::fs::read_to_string(proc_root.join(pid.to_string()).join("status")).ok()?;
     let kib: i64 = status
         .lines()
@@ -427,6 +515,10 @@ fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
 
 // UNIT_BOUNDARY_DESCRIPTION: utime plus stime from /proc/<pid>/stat, in microseconds. The fields after the command name are counted from its closing parenthesis, since the name itself may hold spaces.
 fn cpu_usec(proc_root: &Path, pid: i32) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        return crate::runtime::darwin::task_usage(pid).map(|(_, usec)| usec);
+    }
     let stat = std::fs::read_to_string(proc_root.join(pid.to_string()).join("stat")).ok()?;
     let mut fields = stat
         .get(stat.rfind(')')? + 1..)?
@@ -450,62 +542,6 @@ fn allocated_bytes(dir: &Path) -> Option<u64> {
         };
     }
     Some(total)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: how long a stop gives the guest's workload to exit on SIGTERM before the guest is frozen and powered off. smolvm's own stop only quiesces the disks and kills the VMM, so without this the agent never hears it is being stopped, and what it has not yet written is lost with it.
-pub const WORKLOAD_TERM_GRACE: Duration = Duration::from_secs(5);
-
-// UNIT_BOUNDARY_DESCRIPTION: the guest agent runs the workload as a crun container under this root and binary, as the pinned smolvm release lays out its agent root filesystem. They are not smolvm library API, so a smolvm upgrade that moves them makes the SIGTERM a no-op, never a failed stop; the test pins them to be looked at with every bump.
-const GUEST_CRUN: &str = "/usr/bin/crun --root /storage/containers/crun";
-
-// UNIT_BOUNDARY_DESCRIPTION: the shell the guest agent runs, in its own root and not the image's, to send SIGTERM to every container it runs — the machine's one workload — and wait up to `grace` for them to stop. Every failure is swallowed: the stop goes on to quiesce and power off either way.
-fn workload_term_script(grace: Duration) -> String {
-    format!(
-        r#"crun="{GUEST_CRUN}"
-ids=$($crun list -q 2>/dev/null) || exit 0
-[ -n "$ids" ] || exit 0
-for id in $ids; do $crun kill "$id" TERM 2>/dev/null; done
-end=$(( $(date +%s) + {secs} ))
-while [ "$(date +%s)" -lt "$end" ]; do
-  up=0
-  for id in $ids; do $crun state "$id" 2>/dev/null | grep -q '"status": *"running"' && up=1; done
-  [ "$up" = 0 ] && exit 0
-  sleep 0.2 2>/dev/null || sleep 1
-done
-exit 0
-"#,
-        secs = grace.as_secs()
-    )
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: asks the guest agent, over its vsock socket, to send the workload SIGTERM and wait for it, as a pod's container gets before its kill. The workload is platform-init exec'd into the image's entrypoint, so the signal reaches what the image runs as its first process. A guest that cannot be reached is not waited on. The manager is detached at once: dropped attached, it would shut the machine down itself.
-fn terminate_workload(id: &str) {
-    let Ok(manager) = AgentManager::for_vm(id) else {
-        return;
-    };
-    manager.detach();
-    let Ok(mut client) = AgentClient::connect_for_state_probe(manager.vsock_socket()) else {
-        return;
-    };
-    let command = vec![
-        "/bin/sh".to_string(),
-        "-c".to_string(),
-        workload_term_script(WORKLOAD_TERM_GRACE),
-    ];
-    let limit = WORKLOAD_TERM_GRACE + Duration::from_secs(5);
-    match client.vm_exec(command, Vec::new(), None, Some(limit), None) {
-        Ok((0, _, _)) => {}
-        Ok((code, _, _)) => {
-            tracing::warn!(
-                machine = id,
-                code,
-                "the workload's SIGTERM did not run cleanly; stopping the guest anyway"
-            )
-        }
-        Err(e) => {
-            tracing::warn!(machine = id, error = %e, "the workload could not be sent SIGTERM; stopping the guest anyway")
-        }
-    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
@@ -548,6 +584,36 @@ fn embedded_spec(
     Ok((smolvm_spec, workload))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: writes the share's launch record (guest::Launch) for the boot about to run, from the machine's record, which every create and update keeps current: platform-init is the guest's init and reads what it runs from there. A machine an older runner created records platform-init in front of the image's command, as the workload smolvm ran in a container; that is dropped, or the init would start a second platform-init inside the image. It is written whole and renamed into place, so a guest never reads half of it, and is readable by the guest's root alone, since the env holds the agent's secrets.
+fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
+    let Some((share, _, _)) = record
+        .mounts
+        .iter()
+        .find(|(_, target, _)| target == SHARE_PATH)
+    else {
+        anyhow::bail!(
+            "machine {} has no share to write its launch record into",
+            record.name
+        );
+    };
+    // UNIT_BOUNDARY_DESCRIPTION: the strip goes once no runner logs this line, at any start of any machine: a record's command is rewritten only when the machine's image changes (update's relaunch), so a machine that kept one image since an older runner recorded it still holds that form.
+    let command = match record.cmd.split_first() {
+        Some((first, rest)) if first == crate::guest::INIT_PATH => {
+            tracing::info!(machine = %record.name, "the machine's record still runs platform-init in front of the image's command, as an older runner recorded it; the launch record drops it");
+            rest.to_vec()
+        }
+        _ => record.cmd.clone(),
+    };
+    let launch = crate::guest::Launch {
+        command,
+        env: record.env.clone(),
+        workdir: record.workdir.clone(),
+    };
+    let path = Path::new(share).join(crate::guest::LAUNCH_FILE);
+    crate::files::write(&path, &serde_json::to_vec(&launch)?, 0o600)
+        .with_context(|| format!("writing the launch record {}", path.display()))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: writes the share's image record for the boot about to run, or removes it for a record that names no image. A record that cannot be written fails the start, after an attempt to remove it: a stale record naming the last image would have platform-init keep that image's root under a new one.
 fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
     let Some((share, _, _)) = record
@@ -580,17 +646,17 @@ fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's root to platform-init, which keeps the root while the line stays the same. An image that declares its root's compatibility generation in its own env (ROOT_COMPAT_ENV) is named by that generation alone, so a new image of the same generation keeps what the agent wrote outside HOME, and only a bump starts an empty root. Any other image is named exactly: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway. Only the image's env is read, never the spec's.
+// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's root to platform-init, which keeps the root while the line stays the same. An image that declares its root generation in its own env (ROOT_GENERATION_ENV) is named by that key alone, so a new image of the same key keeps what the agent wrote outside HOME, and any other key, an extending image's included, starts an empty root. The key is compared whole and never parsed. Any other image is named exactly: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway. Only the image's env is read, never the spec's.
 fn image_identity(image: &str, image_env: Option<&[String]>) -> String {
     use std::os::unix::fs::MetadataExt;
     let generation = image_env
         .unwrap_or_default()
         .iter()
         .rev()
-        .find_map(|var| var.strip_prefix(ROOT_COMPAT_ENV)?.strip_prefix('='))
-        .and_then(|value| value.parse::<u32>().ok());
+        .find_map(|var| var.strip_prefix(ROOT_GENERATION_ENV)?.strip_prefix('='))
+        .filter(|key| !key.trim().is_empty());
     if let Some(generation) = generation {
-        return format!("root-compat {generation}");
+        return format!("root-generation {generation}");
     }
     match packed_layers_dir_for_ref(image).and_then(|dir| std::fs::metadata(dir).ok()) {
         Some(dir) => format!(
@@ -610,49 +676,16 @@ fn recorded_image_env(image: Option<&str>) -> Option<Vec<String>> {
         .and_then(|rootfs| image_env_beside(&rootfs))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image env var that declares which generation of root an image boots, as a decimal integer its build bumps on a change that breaks what an older image's root kept: a new base distribution release, or a file the boot rewrites that the new image changes too. Images of one generation keep each other's root.
-pub const ROOT_COMPAT_ENV: &str = "PLATFORM_ROOT_COMPAT";
+// UNIT_BOUNDARY_DESCRIPTION: the image env var that names which root generation an image boots, as a key its build changes on a change that breaks what an older image's root kept: a new base distribution release, or a file the image changes that an agent's writes would hide. The default image's key is one segment, such as `default-1`, and an image built on another appends its own, such as `default-1/gepa-1`, so the key names the image's lineage. Images of one key keep each other's root. It replaces PLATFORM_ROOT_COMPAT, whose roots hold the boot's writes to /etc/passwd and the trust store, so no root kept under that one is kept again.
+pub const ROOT_GENERATION_ENV: &str = "PLATFORM_ROOT_GENERATION";
 
-// UNIT_BOUNDARY_DESCRIPTION: the image env var that asks for the node's harness tools, naming the absolute guest path they are mounted at. Only the image's own env is read for it, never the spec's, which carries the owner's values: an owner cannot mount the node's tools over a path of their choosing.
-pub const TOOLS_VOLUME_ENV: &str = "PLATFORM_TOOLS_VOLUME";
-
-// UNIT_BOUNDARY_DESCRIPTION: the mounts a machine boots with: the share its create recorded, and the runner's tools dir, read-only, when the runner has one and the image names where it goes. Any other recorded mount is dropped. A path that is not absolute and plain, or that holds or sits inside the share, is refused with a warning, since mounting there would hide the share or a part of it from platform-init.
-fn boot_mounts(
-    id: &str,
-    recorded: &[(String, String, bool)],
-    tools: Option<&Path>,
-    image_env: Option<&[String]>,
-) -> Vec<(String, String, bool)> {
-    let mut mounts: Vec<_> = recorded
+// UNIT_BOUNDARY_DESCRIPTION: the mounts a machine boots with: the share its create recorded. Any other recorded mount is dropped, such as the node's harness tools an earlier runner mounted for an image from before the default image baked them.
+fn boot_mounts(recorded: &[(String, String, bool)]) -> Vec<(String, String, bool)> {
+    recorded
         .iter()
         .filter(|(_, target, _)| target == SHARE_PATH)
         .cloned()
-        .collect();
-    let asked = image_env
-        .unwrap_or_default()
-        .iter()
-        .rev()
-        .find_map(|var| var.strip_prefix(TOOLS_VOLUME_ENV)?.strip_prefix('='));
-    let (Some(tools), Some(target)) = (tools, asked) else {
-        return mounts;
-    };
-    let path = Path::new(target);
-    let plain = path.is_absolute()
-        && path
-            .components()
-            .skip(1)
-            .all(|c| matches!(c, std::path::Component::Normal(_)));
-    let share = Path::new(SHARE_PATH);
-    if !plain || path.starts_with(share) || share.starts_with(path) {
-        tracing::warn!(machine = id, path = target, "the image asks for the node's tools at a path they cannot be mounted at; booting without them");
-        return mounts;
-    }
-    mounts.push((
-        tools.to_string_lossy().into_owned(),
-        target.to_string(),
-        true,
-    ));
-    mounts
+        .collect()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the allowlist as a create records it: none for a spec that names none, and each range in smolvm's own normal form otherwise, so an update writes what a create of the same spec would. A gateway on the host's loopback denies every range, which smolvm records as an empty list; the one port the guest keeps is the host service its VMM maps.
@@ -676,6 +709,40 @@ fn allowed_cidrs(spec: &MachineSpec) -> anyhow::Result<Option<Vec<String>>> {
 fn guest_dns(record: &mut VmRecord, resolver: std::net::Ipv4Addr) {
     record.dns = Some(resolver);
     record.dns_filter_hosts = (resolver == GUEST_DNS_SINK).then(Vec::new);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the kill smolvm read while it booted a machine, from the record it leaves when the launch failed because its VMM was reaped with a signal. Read once, so the reason it names is reported once.
+fn launch_exit(dir: &Path) -> Option<VmmKilled> {
+    let path = dir.join(crate::runtime::LAUNCH_EXIT_FILE);
+    let text = std::fs::read_to_string(&path).ok()?;
+    let mut lines = text.lines();
+    let killed = VmmKilled {
+        pid: lines.next()?.trim().parse().ok()?,
+        signal: lines.next()?.trim().parse().ok()?,
+    };
+    let _ = std::fs::remove_file(&path);
+    Some(killed)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the pid file smolvm writes for a machine it is booting, which is the only naming of a VMM whose record carries no pid yet. Its first line is the pid, its second the process's start time; a pid the kernel has since reused fails that comparison and is refused, and one written without a start time is taken as it is, as a record without one is.
+fn booting_vmm_start_time(dir: &Path) -> Option<u64> {
+    let text = std::fs::read_to_string(dir.join("agent.pid")).ok()?;
+    text.lines().nth(1)?.trim().parse().ok()
+}
+
+fn booting_vmm_pid(dir: &Path) -> Option<i32> {
+    let text = std::fs::read_to_string(dir.join("agent.pid")).ok()?;
+    let mut lines = text.lines();
+    let pid: i32 = lines.next()?.trim().parse().ok()?;
+    match lines
+        .next()
+        .and_then(|start| start.trim().parse::<u64>().ok())
+    {
+        Some(recorded) => {
+            (smolvm::process::process_start_time(pid) == Some(recorded)).then_some(pid)
+        }
+        None => Some(pid),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: smolvm maps one gateway port to the host's loopback per VMM process, so the port a machine may reach is written beside its boot config, where its own VMM reads it before it boots (see GATEWAY_HOST_PORT_FILE). A machine without one has the file removed, so an update that drops the port also drops the mapping.
@@ -704,7 +771,7 @@ fn record_gateway_host_port(id: &str, spec: &MachineSpec) -> anyhow::Result<()> 
         .with_context(|| format!("recording the gateway host port in {}", file.display()))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image as the record must name it. A directory becomes a `local-dir:` reference smolvm boots in place, which is what lets every machine of an image share one unpacked tree. An archive is staged into smolvm's own cache and named `local:`. A registry reference passes through. The CLI resolves the same way before it writes a record; the embedding API does not, so it is done here.
+// UNIT_BOUNDARY_DESCRIPTION: the image as the record must name it. A directory becomes a `local-dir:` reference smolvm boots in place, which is what lets every machine of an image share one unpacked tree. A registry reference passes through. The CLI resolves the same way before it writes a record; the embedding API does not, so it is done here.
 fn resolved_image(image: &str) -> anyhow::Result<String> {
     Ok(match resolve(classify(image))? {
         ResolvedImage::Registry(reference) => reference,
@@ -712,10 +779,94 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing, and smolvm formats it on first boot as it does any other size.
-fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
-    StorageDisk::open_or_create_at(&storage_disk_path(id), gib)?;
+// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot, made btrfs from the template (format_btrfs). Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the ext4 template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A disk that cannot be made fails the create, which then deletes the machine: smolvm would otherwise make a disk of its own at the next start. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
+fn raw_storage_disk(id: &str, gib: u64, template: &Path) -> anyhow::Result<()> {
+    let disk = storage_disk_path(id);
+    let fresh = !disk.exists();
+    StorageDisk::open_or_create_at(&disk, gib)?;
+    if fresh {
+        if let Err(e) = format_btrfs(&disk, gib, template) {
+            let _ = std::fs::remove_file(&disk);
+            return Err(e.context(format!(
+                "making {} btrfs from {}",
+                disk.display(),
+                template.display()
+            )));
+        }
+    }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the btrfs template, beside the smolvm release: an empty 256 MiB btrfs with mixed block groups (see the image build: a guard file that preallocates the guest's room must not starve its metadata) and single profiles, compressed with zstd to a few KiB.
+pub const BTRFS_TEMPLATE: &str = "storage-template.btrfs.zst";
+
+// UNIT_BOUNDARY_DESCRIPTION: makes a fresh sparse disk btrfs by expanding the template over its first 256 MiB, sparse, so only the few MiB that hold data are written, puts the file back at its full size, and gives it a UUID of its own. The guest grows the filesystem to the disk while it mounts it. A format that succeeds writes smolvm's format marker, so smolvm never copies its ext4 template over the disk.
+fn format_btrfs(disk: &Path, gib: u64, template: &Path) -> anyhow::Result<()> {
+    let out = std::process::Command::new("zstd")
+        .args(["-d", "-q", "-f", "--sparse", "-o"])
+        .arg(disk)
+        .arg(template)
+        .output()
+        .context("running zstd")?;
+    anyhow::ensure!(
+        out.status.success(),
+        "zstd: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(disk)?
+        .set_len(gib << 30)?;
+    give_unique_fsid(disk)?;
+    std::fs::write(disk.with_extension("formatted"), "1")?;
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a btrfs superblock copy sits that the template can hold: the primary at 64 KiB and the first mirror at 64 MiB. The second mirror, at 256 GiB, is past the template's end.
+const BTRFS_SUPERBLOCKS: [u64; 2] = [0x1_0000, 0x400_0000];
+const BTRFS_INCOMPAT_METADATA_UUID: u64 = 1 << 10;
+
+// UNIT_BOUNDARY_DESCRIPTION: gives a disk made from the btrfs template a filesystem UUID of its own, as `btrfstune -m` does: the superblocks take a random UUID, keep the template's as the metadata UUID (the METADATA_UUID incompat flag) so no tree block is rewritten, and get their crc32c again. Two disks from one template would otherwise share a UUID, and a guest or host that sees both would take them for one filesystem. A superblock copy that is not btrfs, or not checksummed with crc32c, fails the format.
+fn give_unique_fsid(disk: &Path) -> std::io::Result<()> {
+    use std::io::Read;
+    use std::os::unix::fs::FileExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(disk)?;
+    let mut fsid = [0u8; 16];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut fsid)?;
+    fsid[6] = fsid[6] & 0x0f | 0x40;
+    fsid[8] = fsid[8] & 0x3f | 0x80;
+    for offset in BTRFS_SUPERBLOCKS {
+        let mut sb = [0u8; 4096];
+        file.read_exact_at(&mut sb, offset)?;
+        if &sb[64..72] != b"_BHRfS_M" || sb[196..198] != [0, 0] {
+            return Err(std::io::Error::other(format!(
+                "no crc32c btrfs superblock at {offset:#x}"
+            )));
+        }
+        let incompat = u64::from_le_bytes(sb[188..196].try_into().expect("8 bytes"));
+        if incompat & BTRFS_INCOMPAT_METADATA_UUID == 0 {
+            sb.copy_within(32..48, 571);
+            sb[188..196].copy_from_slice(&(incompat | BTRFS_INCOMPAT_METADATA_UUID).to_le_bytes());
+        }
+        sb[32..48].copy_from_slice(&fsid);
+        sb[..32].fill(0);
+        let crc = crc32c(&sb[32..]);
+        sb[..4].copy_from_slice(&crc.to_le_bytes());
+        file.write_all_at(&sb, offset)?;
+    }
+    file.sync_all()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: CRC-32C (Castagnoli, reflected 0x82F63B78), bit by bit: it runs over two 4 KiB superblocks once per new disk, so a table or a crate buys nothing.
+fn crc32c(data: &[u8]) -> u32 {
+    !data.iter().fold(!0u32, |crc, &byte| {
+        (0..8).fold(crc ^ u32::from(byte), |crc, _| {
+            (crc >> 1) ^ (0x82F6_3B78 & (crc & 1).wrapping_neg())
+        })
+    })
 }
 
 fn storage_disk_path(id: &str) -> PathBuf {
@@ -754,6 +905,70 @@ mod tests {
         }
     }
 
+    // TEST_SCENARIO: smolvm binds a machine's sockets at a fixed depth under HOME, and a unix socket path holds a bounded number of bytes, so a long HOME makes every boot fail with libkrun's EINVAL. The runner refuses such a directory at start, naming the path and the limit, and takes one with room.
+    #[test]
+    fn a_machine_directory_whose_sockets_cannot_fit_is_refused() {
+        let room = SUN_PATH_LEN - 1 - LONGEST_MACHINE_SOCKET.len() - 1;
+        let fits = PathBuf::from(format!("/{}", "d".repeat(room - 1)));
+        machine_sockets_fit(&fits).unwrap();
+        let over = PathBuf::from(format!("/{}", "d".repeat(room)));
+        let err = machine_sockets_fit(&over).unwrap_err().to_string();
+        assert!(err.contains(&format!("{SUN_PATH_LEN} bytes")), "{err}");
+        assert!(
+            err.contains(&format!("allows {}", SUN_PATH_LEN - 1)),
+            "{err}"
+        );
+    }
+
+    // TEST_SCENARIO: a launch whose VMM was killed names the kill smolvm left in the machine's directory, once: the pid file that boot was waited on goes with the launch, so this record is all there is, and a record missing its signal line names nothing rather than a clean exit.
+    #[test]
+    fn a_launch_that_failed_on_a_kill_carries_its_signal() {
+        let _home = Home::new("launch-exit");
+        let dir = vm_data_dir("m1");
+        fs::create_dir_all(&dir).unwrap();
+        let record = dir.join(crate::runtime::LAUNCH_EXIT_FILE);
+        assert!(launch_exit(&dir).is_none(), "no record, no kill");
+        fs::write(&record, "4242\n").unwrap();
+        assert!(
+            launch_exit(&dir).is_none(),
+            "a record with no signal names no kill"
+        );
+        assert!(
+            record.exists(),
+            "the record is left for the read that can name it"
+        );
+        fs::write(&record, "4242\n31").unwrap();
+        let killed = launch_exit(&dir).expect("the record names the kill");
+        assert_eq!((killed.pid, killed.signal), (4242, 31));
+        assert!(!record.exists(), "read once");
+    }
+
+    // TEST_SCENARIO: a machine that is still booting has no pid in its record yet, so the pid file smolvm writes as it boots is the only naming of its VMM — and a pid the kernel has handed to another process must not be read as that VMM, or its status is taken from whatever holds the pid now.
+    #[test]
+    fn a_booting_vmm_is_named_only_while_its_pid_is_that_process() {
+        let _home = Home::new("booting-pid");
+        let dir = vm_data_dir("m1");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(booting_vmm_pid(&dir).is_none());
+        let mut vmm = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+        let file = dir.join("agent.pid");
+        fs::write(&file, format!("{pid}\n{started}")).unwrap();
+        assert_eq!(booting_vmm_pid(&dir), Some(pid));
+        fs::write(&file, format!("{pid}\n{}", started + 1)).unwrap();
+        assert_eq!(
+            booting_vmm_pid(&dir),
+            None,
+            "a pid whose process is another one is refused"
+        );
+        let _ = vmm.kill();
+        let _ = vmm.wait();
+    }
+
     fn spec() -> MachineSpec {
         MachineSpec {
             image: "quay.io/x/vm:1".into(),
@@ -776,7 +991,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is read back from smolvm's own database rather than from what this code meant to write.
+    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is read back from smolvm's own database rather than from what this code meant to write. A start keeps the share as the only mount, dropping the node's harness tools that an earlier runner recorded.
     #[test]
     fn a_created_machine_is_recorded_as_its_spec_says() {
         let home = Home::new("create");
@@ -784,7 +999,7 @@ mod tests {
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
         fs::create_dir_all(&share).unwrap();
         fs::create_dir_all(&tree).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
 
@@ -818,7 +1033,7 @@ mod tests {
         assert_eq!(record.ports, vec![(32000, GUEST_AGENT_PORT)]);
         assert_eq!(record.user.as_deref(), Some(USER));
         assert_eq!(record.workdir.as_deref(), Some("/app"));
-        assert_eq!(record.cmd, vec![crate::guest::INIT_PATH, "/entry"]);
+        assert_eq!(record.cmd, vec!["/entry"]);
         assert_eq!(
             record.env,
             vec![
@@ -839,35 +1054,58 @@ mod tests {
         );
         assert!(!record.ephemeral, "a machine must survive a stop");
         assert_eq!(smolvm.state("m1").unwrap(), State::Stopped);
+        use std::os::unix::fs::PermissionsExt;
+        write_launch(&record).unwrap();
+        let launch = share.join(crate::guest::LAUNCH_FILE);
+        assert_eq!(
+            serde_json::from_slice::<crate::guest::Launch>(&fs::read(&launch).unwrap()).unwrap(),
+            crate::guest::Launch {
+                command: vec!["/entry".into()],
+                env: record.env.clone(),
+                workdir: Some("/app".into()),
+            },
+            "platform-init runs what the record says, and only that"
+        );
+        assert_eq!(
+            fs::metadata(&launch).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let mut legacy = record.clone();
+        legacy.cmd.insert(0, crate::guest::INIT_PATH.into());
+        write_launch(&legacy).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<crate::guest::Launch>(&fs::read(&launch).unwrap())
+                .unwrap()
+                .command,
+            vec!["/entry".to_string()],
+            "a record an older runner wrote names platform-init first, which is the init itself now"
+        );
         assert_eq!(
             (record.dns, record.dns_filter_hosts),
             (Some(GUEST_DNS_SINK), Some(Vec::new())),
             "with no resolver named, the gateway relays guest DNS past the allowlist, so it must answer every query itself"
         );
 
-        let tools = home.path.join("tools");
-        fs::create_dir_all(&tools).unwrap();
-        fs::write(
-            tree.parent().unwrap().join(crate::launch::LAUNCH_FILE),
-            format!(r#"{{"env":["{TOOLS_VOLUME_ENV}=/usr/local/share/mise"]}}"#),
-        )
-        .unwrap();
-        let mut smolvm = smolvm;
-        smolvm.tools = Some(tools.canonicalize().unwrap());
-        let _ = smolvm.start("m1", 1024);
+        smolvm
+            .db
+            .update_vm("m1", |r| {
+                r.mounts.push((
+                    "/var/lib/platform/tools".into(),
+                    "/usr/share/mise".into(),
+                    true,
+                ))
+            })
+            .unwrap();
+        let _ = smolvm.start("m1", 1024, 1024);
         assert_eq!(
             smolvm.record("m1").unwrap().unwrap().mem,
             1024,
             "a start boots the RAM it is given, not the size the record held"
         );
         assert_eq!(
-            smolvm.record("m1").unwrap().unwrap().mounts[1],
-            (
-                tools.canonicalize().unwrap().to_string_lossy().into_owned(),
-                "/usr/local/share/mise".to_string(),
-                true
-            ),
-            "a start must mount the node's tools where the image the record boots asks"
+            smolvm.record("m1").unwrap().unwrap().mounts,
+            record.mounts,
+            "a start must drop the node's tools an earlier runner mounted, keeping the share alone"
         );
         assert_eq!(
             fs::read_to_string(share.join(crate::share::IMAGE_FILE)).unwrap(),
@@ -904,20 +1142,33 @@ mod tests {
         assert_ne!(image_identity(&image, None), first);
     }
 
-    // TEST_SCENARIO: an image that declares its root's generation is named by that generation alone, so the next image of the same generation keeps the machine's root and a bumped one does not. A value that is not a plain integer declares nothing, and the image is named exactly, as one with no declaration is.
+    // TEST_SCENARIO: an image that declares its root generation is named by that key alone, so the next image of the same key keeps the machine's root. Any other key starts an empty one: a bumped key, an image that extends the default one and appends its segment, and the old integer generation, whose roots hold the boot's writes. An empty key declares nothing, and the image is named exactly, as one with no declaration is.
     #[test]
     fn images_of_one_root_generation_share_a_root() {
-        let gen = |n: &str| {
+        let gen = |key: &str| {
             vec![
-                format!("{ROOT_COMPAT_ENV}={n}"),
+                format!("{ROOT_GENERATION_ENV}={key}"),
                 "PATH=/usr/bin".to_string(),
             ]
         };
-        let one = image_identity("quay.io/x/default:1", Some(&gen("1")));
-        assert_eq!(one, image_identity("quay.io/x/default:2", Some(&gen("1"))));
-        assert_ne!(one, image_identity("quay.io/x/default:3", Some(&gen("2"))));
+        let one = image_identity("quay.io/x/default:1", Some(&gen("default-1")));
+        assert_eq!(one, "root-generation default-1");
         assert_eq!(
-            image_identity("quay.io/x/custom:1", Some(&gen("one"))),
+            one,
+            image_identity("quay.io/x/default:2", Some(&gen("default-1")))
+        );
+        for other in [
+            image_identity("quay.io/x/default:3", Some(&gen("default-2"))),
+            image_identity("quay.io/x/gepa:1", Some(&gen("default-1/gepa-1"))),
+            image_identity(
+                "quay.io/x/default:1",
+                Some(&["PLATFORM_ROOT_COMPAT=1".to_string()]),
+            ),
+        ] {
+            assert_ne!(one, other);
+        }
+        assert_eq!(
+            image_identity("quay.io/x/custom:1", Some(&gen(""))),
             "quay.io/x/custom:1"
         );
         assert_eq!(
@@ -926,83 +1177,13 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine boots with the node's tools only when its runner has a tools dir and its image names a guest path for them, and then read-only at that path beside the share. A mount an earlier start recorded is dropped once either side stops offering it, and a path that is relative, climbs with `..`, is the root, or holds or sits inside the share is refused, since it would hide the share from platform-init.
-    #[test]
-    fn the_nodes_tools_are_mounted_only_where_the_image_asks() {
-        let share = ("/m/share".to_string(), SHARE_PATH.to_string(), true);
-        let tools = Path::new("/var/lib/platform/tools");
-        let asks = |path: &str| {
-            vec![
-                "PATH=/bin".to_string(),
-                format!("{TOOLS_VOLUME_ENV}={path}"),
-            ]
-        };
-        let mounted = |path: &str| {
-            vec![
-                share.clone(),
-                (tools.display().to_string(), path.to_string(), true),
-            ]
-        };
-        let mise = asks("/usr/local/share/mise");
-        assert_eq!(
-            boot_mounts("m1", std::slice::from_ref(&share), Some(tools), Some(&mise)),
-            mounted("/usr/local/share/mise")
-        );
-        let earlier = mounted("/old");
-        assert_eq!(
-            boot_mounts("m1", &earlier, Some(tools), Some(&mise)),
-            mounted("/usr/local/share/mise")
-        );
-        assert_eq!(
-            boot_mounts("m1", &earlier, None, Some(&mise)),
-            vec![share.clone()]
-        );
-        assert_eq!(
-            boot_mounts(
-                "m1",
-                &earlier,
-                Some(tools),
-                Some(&["PATH=/bin".to_string()])
-            ),
-            vec![share.clone()]
-        );
-        assert_eq!(
-            boot_mounts("m1", &earlier, Some(tools), None),
-            vec![share.clone()]
-        );
-        let prefixed = vec![format!("{TOOLS_VOLUME_ENV}_X=/opt")];
-        assert_eq!(
-            boot_mounts("m1", &earlier, Some(tools), Some(&prefixed)),
-            vec![share.clone()]
-        );
-        for refused in [
-            "",
-            "opt/mise",
-            "/",
-            "/opt/../etc",
-            SHARE_PATH,
-            &format!("{SHARE_PATH}/ca"),
-        ] {
-            assert_eq!(
-                boot_mounts(
-                    "m1",
-                    std::slice::from_ref(&share),
-                    Some(tools),
-                    Some(&asks(refused))
-                ),
-                vec![share.clone()],
-                "{refused:?} must be refused"
-            );
-        }
-    }
-
     // TEST_SCENARIO: a runner outside the cluster reaches the machine's gateway on its own loopback. Allowing the gateway address would open every loopback port, so the record denies every range and the VMM is told the one port it maps; an update that drops the port drops the mapping too, and the machine is back on its allowlist.
     #[test]
     fn a_gateway_on_the_hosts_loopback_is_the_machines_only_egress() {
         let home = Home::new("loopback");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let looped = MachineSpec {
             allow_cidrs: Vec::new(),
             gateway_host_port: 30100,
@@ -1080,7 +1261,7 @@ mod tests {
         let home = Home::new("nested");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let mut smolvm = Smolvm::open(false, None).unwrap();
+        let mut smolvm = Smolvm::open(false, test_template()).unwrap();
         smolvm.nested = true;
         let plain = MachineSpec {
             gateway_host_port: 30100,
@@ -1122,10 +1303,10 @@ mod tests {
             assert_eq!(nested(&smolvm, "m1"), Some(want));
         }
 
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
         assert_eq!(nested(&smolvm, "m1"), Some(true));
         smolvm.nested = false;
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
         assert_eq!(nested(&smolvm, "m1"), Some(false));
         assert!(!smolvm.nests());
     }
@@ -1136,7 +1317,7 @@ mod tests {
         let home = Home::new("open");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let launch = launch();
         smolvm
             .create(
@@ -1155,7 +1336,7 @@ mod tests {
             .update_vm("m1", |r| r.allowed_cidrs = None)
             .unwrap();
 
-        let err = smolvm.start("m1", 2048).unwrap_err();
+        let err = smolvm.start("m1", 2048, 2048).unwrap_err();
 
         assert!(
             format!("{err:#}").contains("no egress allowlist"),
@@ -1169,7 +1350,7 @@ mod tests {
         let home = Home::new("dns");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = MachineSpec {
             gateway_host_port: 30100,
             ..spec()
@@ -1195,7 +1376,7 @@ mod tests {
             })
             .unwrap();
 
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
 
         let record = smolvm.record("m1").unwrap().unwrap();
         assert_eq!(record.dns, Some(GUEST_DNS_SINK));
@@ -1213,7 +1394,7 @@ mod tests {
         let home = Home::new("resolver");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let named = MachineSpec {
             guest_resolver: "10.96.0.7".into(),
             ..spec()
@@ -1238,7 +1419,7 @@ mod tests {
         };
         assert_eq!(dns(&smolvm), relayed);
 
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
         assert_eq!(dns(&smolvm), relayed);
 
         let unnamed = spec();
@@ -1288,7 +1469,7 @@ mod tests {
         let home = Home::new("raw");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1310,7 +1491,7 @@ mod tests {
         assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
-    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's empty disk is still formatted from the template.
+    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, and leave a fresh machine's disk, which the create made btrfs, btrfs.
     #[test]
     fn a_start_never_copies_the_template_over_a_disk_that_holds_a_filesystem() {
         use std::os::unix::fs::FileExt;
@@ -1340,7 +1521,7 @@ mod tests {
             &home.path.join(".smolvm/storage-template.ext4"),
             b"TEMPLATE",
         );
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         for id in ["used", "fresh"] {
@@ -1370,7 +1551,186 @@ mod tests {
         }
 
         assert_eq!(&payload(&storage_disk_path("used")), b"HOMEDATA");
-        assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
+        let mut magic = [0; 8];
+        fs::File::open(storage_disk_path("fresh"))
+            .unwrap()
+            .read_exact_at(&mut magic, 0x10040)
+            .unwrap();
+        assert_eq!(&magic, b"_BHRfS_M");
+    }
+
+    fn test_template() -> PathBuf {
+        static TEMPLATE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        TEMPLATE
+            .get_or_init(|| {
+                use std::os::unix::fs::FileExt;
+                let dir = std::env::temp_dir()
+                    .join(format!("vm-runner-btrfs-template-{}", std::process::id()));
+                fs::create_dir_all(&dir).unwrap();
+                let image = dir.join("template");
+                let file = fs::File::create(&image).unwrap();
+                file.set_len(256 << 20).unwrap();
+                for at in BTRFS_SUPERBLOCKS {
+                    file.write_all_at(b"TEMPLATEFSIDXXXX", at + 32).unwrap();
+                    file.write_all_at(b"_BHRfS_M", at + 64).unwrap();
+                }
+                let template = dir.join(BTRFS_TEMPLATE);
+                assert!(std::process::Command::new("zstd")
+                    .args(["-q", "-f", "-o"])
+                    .arg(&template)
+                    .arg(&image)
+                    .status()
+                    .expect("the tests need zstd")
+                    .success());
+                template
+            })
+            .clone()
+    }
+
+    // TEST_SCENARIO: a new machine's disk is the btrfs template expanded over a sparse file at its full size, marked formatted so smolvm never copies its ext4 template over it, under a UUID of its own: both superblock copies take it, and keep the template's as the metadata UUID. A template that cannot be expanded fails the create rather than leaving a disk smolvm would format, and the next create starts again on no disk.
+    #[test]
+    fn a_new_disk_is_the_btrfs_template_at_its_full_size_with_its_own_uuid() {
+        use std::os::unix::fs::{FileExt, MetadataExt};
+        let _home = Home::new("btrfs");
+        let at = |disk: &Path, offset: u64| {
+            let mut read = [0; 16];
+            fs::File::open(disk)
+                .unwrap()
+                .read_exact_at(&mut read, offset)
+                .unwrap();
+            read
+        };
+
+        fs::create_dir_all(vm_data_dir("m1")).unwrap();
+        raw_storage_disk("m1", 20, &test_template()).unwrap();
+        let disk = storage_disk_path("m1");
+        assert_eq!(&at(&disk, 0x10040)[..8], b"_BHRfS_M");
+        assert!(
+            disk.with_extension("formatted").exists(),
+            "the btrfs disk is not marked"
+        );
+        assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
+        assert!(
+            fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 20,
+            "expanding the template filled the sparse disk"
+        );
+        let fsid = at(&disk, 0x10000 + 32);
+        assert_ne!(
+            &fsid, b"TEMPLATEFSIDXXXX",
+            "the disk kept the template's UUID"
+        );
+        for sb in BTRFS_SUPERBLOCKS {
+            assert_eq!(at(&disk, sb + 32), fsid, "the superblock copies disagree");
+            assert_eq!(
+                &at(&disk, sb + 571),
+                b"TEMPLATEFSIDXXXX",
+                "the metadata UUID is not the template's"
+            );
+        }
+
+        fs::create_dir_all(vm_data_dir("m3")).unwrap();
+        raw_storage_disk("m3", 20, &test_template()).unwrap();
+        assert_ne!(
+            at(&storage_disk_path("m3"), 0x10000 + 32),
+            fsid,
+            "two disks share a UUID"
+        );
+
+        fs::create_dir_all(vm_data_dir("m2")).unwrap();
+        assert!(raw_storage_disk("m2", 20, Path::new("/nonexistent/template.zst")).is_err());
+        assert!(
+            !storage_disk_path("m2").exists(),
+            "a failed format left a disk"
+        );
+    }
+
+    // TEST_SCENARIO: a create whose disk cannot be made btrfs fails and leaves no machine: a record left behind would boot at its next start on a disk smolvm makes itself, from its ext4 template.
+    #[test]
+    fn a_create_whose_disk_cannot_be_made_leaves_no_machine() {
+        let home = Home::new("no-template");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, PathBuf::from("/nonexistent/template.zst")).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let created = smolvm.create(
+            "m1",
+            &Machine {
+                spec: &spec,
+                image: "quay.io/x/vm:1",
+                host_port: 32000,
+                share: &share,
+                launch: &launch,
+            },
+        );
+        assert!(created.is_err());
+        assert!(
+            smolvm.db.get_vm("m1").unwrap().is_none(),
+            "the failed create left its record"
+        );
+        assert!(
+            !storage_disk_path("m1").exists(),
+            "the failed create left a disk"
+        );
+    }
+
+    // TEST_SCENARIO: the kernel refuses a superblock whose crc32c is wrong, so the checksum is the standard CRC-32C, checked against its published check value.
+    #[test]
+    fn the_superblock_checksum_is_crc32c() {
+        assert_eq!(crc32c(b"123456789"), 0xE306_9283);
+    }
+
+    // TEST_SCENARIO: a disk the runner gave its own UUID must still be a btrfs filesystem that btrfs-progs checks clean, with the new UUID and the template's as its metadata UUID. Runs where mkfs.btrfs and btrfs are installed.
+    #[test]
+    fn a_disk_with_its_own_uuid_checks_clean() {
+        let dir = crate::testdir::TempDir::new("btrfs-uuid");
+        let image = dir.path().join("disk");
+        let run = |args: &[&str]| {
+            std::process::Command::new(args[0])
+                .args(&args[1..])
+                .output()
+        };
+        fs::File::create(&image)
+            .unwrap()
+            .set_len(256 << 20)
+            .unwrap();
+        let Ok(made) = run(&[
+            "mkfs.btrfs",
+            "-q",
+            "-M",
+            "-d",
+            "single",
+            "-m",
+            "single",
+            image.to_str().unwrap(),
+        ]) else {
+            eprintln!("skipping: no mkfs.btrfs on this host");
+            return;
+        };
+        assert!(made.status.success(), "{made:?}");
+        let uuid = |field: &str| {
+            let out = run(&[
+                "btrfs",
+                "inspect-internal",
+                "dump-super",
+                image.to_str().unwrap(),
+            ])
+            .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .find_map(|line| line.strip_prefix(field).map(|v| v.trim().to_string()))
+                .unwrap()
+        };
+        let before = uuid("fsid");
+        give_unique_fsid(&image).unwrap();
+        assert_ne!(uuid("fsid"), before);
+        assert_eq!(uuid("metadata_uuid"), before);
+        let checked = run(&["btrfs", "check", "--readonly", image.to_str().unwrap()]).unwrap();
+        assert!(
+            checked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
     }
 
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
@@ -1379,7 +1739,7 @@ mod tests {
         let home = Home::new("update");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let applied = spec();
         let launch = launch();
         smolvm
@@ -1435,7 +1795,7 @@ mod tests {
         let home = Home::new("grow-unknown");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let created = spec();
         let launch = launch();
         smolvm
@@ -1470,21 +1830,11 @@ mod tests {
         assert_eq!(smolvm.record("m1").unwrap().unwrap().storage_gb, Some(25));
     }
 
-    // TEST_SCENARIO: a stop sends the workload SIGTERM through the guest agent, in the agent's own root where crun runs it, before smolvm freezes the guest. The crun root and binary are the pinned smolvm release's layout and not its API, so they are pinned here to be checked on every smolvm bump, and the wait is bounded by the grace.
-    #[test]
-    fn a_stop_signals_the_workload_where_the_guest_agent_runs_it() {
-        let script = workload_term_script(WORKLOAD_TERM_GRACE);
-        assert!(script.contains(r#"crun="/usr/bin/crun --root /storage/containers/crun""#));
-        assert!(script.contains(r#"$crun kill "$id" TERM"#));
-        assert!(script.contains("+ 5 ))"), "{script}");
-        assert_eq!(WORKLOAD_TERM_GRACE, Duration::from_secs(5));
-    }
-
     // TEST_SCENARIO: a failure's text reaches the Agent's status, and the env it was given holds the Agent's Secret values. Neither may appear in it.
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
         let home = Home::new("redact");
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let mut spec = spec();
         spec.env.insert("TOKEN".into(), "hunter22".into());
         spec.cpus = 0;
@@ -1507,13 +1857,18 @@ mod tests {
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a test's stand-in VMM has exited. On a Mac the runner reaps an exited child itself, so the test's own wait finds no child, which means it is gone too.
+    fn vmm_gone(vmm: &mut std::process::Child) -> bool {
+        vmm.try_wait().map_or(true, |status| status.is_some())
+    }
+
     // TEST_SCENARIO: a live VMM whose guest agent does not answer its ping is what a busy guest looks like, so it reads as running: the health prober decides whether it is restarted, after the unhealthy grace, and it keeps being counted against the runner's memory. Read as stopped, the next reconcile would start it, and the start would kill a guest that was only busy. An update that still finds such a VMM under a record that says running — a stop that did not finish — takes it down and applies, rather than leaving the machine stuck.
     #[test]
     fn a_vmm_whose_agent_does_not_answer_reads_running_and_an_update_takes_it_down() {
         let home = Home::new("zombie");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1558,7 +1913,7 @@ mod tests {
             .unwrap();
         assert_eq!(smolvm.record("m1").unwrap().unwrap().cpus, 1);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while vmm.try_wait().unwrap().is_none() {
+        while !vmm_gone(&mut vmm) {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the dead agent's VMM was left running"
@@ -1573,7 +1928,7 @@ mod tests {
         let home = Home::new("unconfirmed");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1616,7 +1971,7 @@ mod tests {
 
         smolvm.stop("m1").unwrap();
         assert!(
-            vmm.try_wait().unwrap().is_some(),
+            vmm_gone(&mut vmm),
             "the unconfirmed guest's VMM was left running"
         );
         assert_eq!(
@@ -1631,7 +1986,7 @@ mod tests {
         let home = Home::new("delete");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         smolvm.delete("never-created").unwrap();
 
         let spec = spec();
@@ -1653,6 +2008,39 @@ mod tests {
         assert!(!vm_data_dir("m1").exists());
     }
 
+    // TEST_SCENARIO: a delete was cut short after smolvm forgot the machine and before its directory went, leaving the disk with no record. The controller's retried delete must remove that disk, and a machine created again under the name must never boot on a disk such a delete left.
+    #[test]
+    fn a_disk_an_interrupted_delete_left_is_removed_and_never_reused() {
+        let home = Home::new("leftover");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let machine = Machine {
+            spec: &spec,
+            image: "quay.io/x/vm:1",
+            host_port: 32000,
+            share: &share,
+            launch: &launch,
+        };
+        let interrupted = |smolvm: &Smolvm| {
+            smolvm.create("m1", &machine).unwrap();
+            fs::write(vm_data_dir("m1").join("home-of-the-deleted"), "secret").unwrap();
+            smolvm.db.remove_vm("m1").unwrap();
+            assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
+        };
+
+        interrupted(&smolvm);
+        smolvm.delete("m1").unwrap();
+        assert!(!vm_data_dir("m1").exists());
+
+        interrupted(&smolvm);
+        smolvm.create("m1", &machine).unwrap();
+        assert!(!vm_data_dir("m1").join("home-of-the-deleted").exists());
+        assert!(storage_disk_path("m1").exists());
+    }
+
     // TEST_SCENARIO: a new image and a new allowlist are applied to the same machine. smolvm reads the image, the command it launches, its workdir, env and allowlist from the record at every start, so the update rewrites those fields and nothing else: the record is the one the create wrote, the port is kept, and the storage disk holds the same bytes. The env is rebuilt from the new image's, so a variable only the old image set is gone.
     #[test]
     fn a_new_image_and_allowlist_are_written_to_the_same_machine() {
@@ -1664,7 +2052,7 @@ mod tests {
         for dir in [&share, &old_tree, &new_tree] {
             fs::create_dir_all(dir).unwrap();
         }
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let old = spec();
         let old_launch = launch();
         smolvm
@@ -1714,10 +2102,7 @@ mod tests {
             Some(format!("local-dir:{}", new_tree.canonicalize().unwrap().display()).as_str())
         );
         assert!(record.entrypoint.is_empty());
-        assert_eq!(
-            record.cmd,
-            vec![crate::guest::INIT_PATH, "/entry2", "serve"]
-        );
+        assert_eq!(record.cmd, vec!["/entry2", "serve"]);
         assert_eq!(record.workdir.as_deref(), Some("/srv"));
         assert_eq!(
             record.env,
@@ -1753,7 +2138,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a grow reads the VMM's RAM area from the control socket's one-line answer, and asks it for whole 128 MiB units: a size that is not one boot plus whole units is rounded down, never past what admission was told, and the area's capacity caps it. A reply in any other shape fails the grow, so the machine is booted again whole rather than left small.
+    // TEST_SCENARIO: a grow reads the VMM's RAM area from the control socket's one-line answer, and asks it for whole 128 MiB units: a size that is not one boot plus whole units is rounded down, never past what admission was told, and the area's capacity caps it. A reply in any other shape fails the grow, which the server then handles as a machine that cannot grow.
     #[test]
     fn a_grow_asks_for_whole_units_within_the_area() {
         let geometry = ram_geometry(
@@ -1776,6 +2161,27 @@ mod tests {
         assert_eq!(ram_to_add(&geometry, 1024), 0);
         assert_eq!(ram_to_add(&geometry, 200 << 10), 64 << 30);
         assert!(ram_geometry("ERR EIO RAM hot-add topology is unavailable\n").is_err());
+    }
+
+    // TEST_SCENARIO: a Mac has no /proc, so a VMM's memory and CPU time are read from the kernel's task info instead: this test process holds the buffer it just touched, and the CPU it burned shows up, scaled to microseconds whatever the machine's timebase.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mac_reads_a_processs_memory_and_cpu_without_proc() {
+        let no_proc = Path::new("/proc");
+        let pid = i32::try_from(std::process::id()).unwrap();
+        let held = vec![1u8; 64 << 20];
+        let mib = resident_mib(no_proc, pid).unwrap();
+        assert!(mib >= 64, "resident {mib} MiB");
+        let before = cpu_usec(no_proc, pid).unwrap();
+        let started = std::time::Instant::now();
+        let mut spin = 0u64;
+        while started.elapsed() < Duration::from_millis(200) {
+            spin = std::hint::black_box(spin.wrapping_add(1));
+        }
+        let burned = cpu_usec(no_proc, pid).unwrap() - before;
+        assert!((100_000..2_000_000).contains(&burned), "burned {burned} us");
+        assert_eq!(resident_mib(no_proc, i32::MAX), None);
+        drop(held);
     }
 
     // TEST_SCENARIO: a VMM's command name may hold spaces and parentheses, so its CPU time is read from the fields after the name's last parenthesis; and a sparse disk as large as the pool counts only what was written to it.

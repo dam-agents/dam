@@ -27,6 +27,24 @@ cleanup() {
     echo "--- Events (recent, all namespaces) ---"
     kubectl get events -A --sort-by=.lastTimestamp 2>&1 | tail -50 || true
     echo ""
+    for ns in default platform-agents; do
+      echo "--- Events in $ns (last 150, oldest first: last seen, first seen, count, type, reason, object, message) ---"
+      kubectl get events -n "$ns" -o json 2>/dev/null \
+        | jq -r '.items | sort_by(.lastTimestamp // .eventTime) | .[] | [.lastTimestamp // .eventTime, .firstTimestamp // .eventTime, .count // 1, .type, .reason, "\(.involvedObject.kind)/\(.involvedObject.name)", .message] | map(tostring) | join("  ")' \
+        | tail -150 || true
+      echo ""
+    done
+    echo "--- Platform pods recreated during the suite or not Ready (projected fields only) ---"
+    for ns in default platform-agents; do
+      kubectl get pods -n "$ns" -o json 2>/dev/null \
+        | jq -r --arg since "${suite_started:-9999}" '.items[]
+            | select(.status.phase != "Succeeded") | select(.metadata.creationTimestamp > $since or .metadata.deletionTimestamp or ([.status.conditions[]? | select(.type == "Ready") | .status] != ["True"]))
+            | "### \(.metadata.namespace)/\(.metadata.name) created=\(.metadata.creationTimestamp) deleting=\(.metadata.deletionTimestamp) phase=\(.status.phase) node=\(.spec.nodeName)",
+              (.status.conditions[]? | "  condition \(.type)=\(.status) since \(.lastTransitionTime) \(.reason // "")"),
+              ((.status.initContainerStatuses // []) + (.status.containerStatuses // []) | .[] | "  container \(.name) ready=\(.ready) restarts=\(.restartCount) state=\(.state | tojson) lastState=\(.lastState | tojson)")' \
+        | head -200 || true
+    done
+    echo ""
     echo "--- Describe not-ready pods ---"
     kubectl get pods -A -o json 2>/dev/null \
       | jq -r '.items[] | select(.status.phase != "Running" or ([.status.containerStatuses[]?.ready] | all | not)) | "\(.metadata.namespace) \(.metadata.name)"' \
@@ -41,6 +59,42 @@ cleanup() {
           done
           echo ""
         done
+    echo ""
+    echo "--- Agent conditions that are not True (a vm machine's carry its guest console) ---"
+    kubectl get agents -A -o json 2>/dev/null \
+      | jq -r '.items[] | "### \(.metadata.name)", (.status.conditions[]? | select(.status != "True") | "\(.type) \(.reason): \(.message)")' || true
+    echo ""
+    echo "--- VM runner machine consoles (each VMM's log holds its guest kernel's console) ---"
+    kubectl get pods -A -l app.kubernetes.io/component=vm-runner -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' 2>/dev/null \
+      | while read -r ns name; do
+          kubectl exec -n "$ns" "$name" -- sh -c 'for f in $(find /var/lib/platform -name agent-startup-error.log 2>/dev/null); do echo "### $f"; grep -v "muxer\|connection" "$f" | grep -viE "relay failed|guest TCP SYN|balloon stats" | tail -n 40; done' </dev/null 2>&1 || true
+        done
+    echo ""
+    echo "--- VM runner VMM processes (threads, smolvm-tcp-* relay threads, CPU seconds) and runner metrics ---"
+    # A VMM is a `smolvm _boot-vm` process (the bracket keeps this script's own text from matching); a spinning relay shows as many smolvm-tcp-* threads and climbing CPU.
+    vmm_procs='port=$1 tck=$(getconf CLK_TCK) n=0
+      for d in /proc/[0-9]*; do
+        case "$(tr "\0" " " < "$d/cmdline" 2>/dev/null)" in *[_]boot-vm*) ;; *) continue ;; esac
+        p=${d#/proc/}; s=$(cat "$d/stat" 2>/dev/null) || continue; set -- ${s##*)}
+        n=$((n + 1)); [ "$n" -le 20 ] || { echo "(more VMMs not shown)"; break; }
+        echo "pid=$p ppid=$2 comm=$(cat "$d/comm") threads=$(ls "$d/task" | wc -l) smolvm_tcp_threads=$(cat "$d"/task/*/comm 2>/dev/null | grep -c "^smolvm-tcp-") cpu_seconds=$(( (${12} + ${13}) / tck ))"
+      done
+      [ -z "$port" ] || bash -c "exec 3<>/dev/tcp/127.0.0.1/$port && printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3 && cat <&3" | grep "^platform_vm_runner_" | grep -v "_bucket" | head -n 40'
+    kubectl get pods -A -l app.kubernetes.io/component=vm-runner -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name} {.spec.containers[0].ports[?(@.name=="metrics")].containerPort}{"\n"}{end}' 2>/dev/null \
+      | while read -r ns name port; do
+          echo "### $ns/$name ###"
+          kubectl exec -n "$ns" "$name" -- sh -c "$vmm_procs" sh "$port" </dev/null 2>&1 || true
+        done
+    echo ""
+    echo "--- api-server error lines, whole log (current, then previous container) ---"
+    # The per-pod logs below keep the last 200 lines; a 500 early in the suite is long gone from them by the time it fails.
+    for pod in $(kubectl get pods -n default -l app.kubernetes.io/component=apiserver -o name 2>/dev/null); do
+      for previous in false true; do
+        echo "### $pod (previous=$previous) ###"
+        kubectl logs -n default "$pod" -c apiserver --previous="$previous" 2>&1 \
+          | grep -E '"level":"(error|fatal)"' | tail -n 300 || true
+      done
+    done
     echo ""
     echo "--- Logs from Platform pods ---"
     for ns in default platform-agents; do
@@ -97,7 +151,7 @@ mise run //packages/e2e/playwright:install-browsers
 #
 # E2E_HOST_PROVISIONED says the caller provisioned k3s on this host for this
 # run, so there is nothing stale to nuke: CI's e2e job starts k3s on its fresh
-# runner at the top of the job, beside its own setup (see cd.yml).
+# runner at the top of the job, beside its own setup (see e2e.yml).
 if [ -n "${E2E_HOST_PROVISIONED:-}" ]; then
   echo "Keeping the k3s this run provisioned (E2E_HOST_PROVISIONED)."
 else
@@ -116,9 +170,10 @@ mise run e2e:install
 rm -f packages/e2e/playwright/.auth/*.json
 
 e2e_mark "suite started"
+suite_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 suite_rc=0
-PLATFORM_BASE_URL="http://localhost:5555" \
-PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
+PLATFORM_BASE_URL="http://localhost:6555" \
+PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:6555" \
   mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
 e2e_mark "suite finished"
 exit "$suite_rc"

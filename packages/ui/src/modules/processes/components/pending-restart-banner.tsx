@@ -26,7 +26,7 @@ export function useApplyPendingRestartWithConfirm(
     pending: apply.isPending,
     apply: async () => {
       const confirmed = await showConfirm(
-        `The agent reloads its settings, and this stops ${describeRestartStops(pendingRestart.stops)} now. Stopping ${one ? "the task" : "the tasks"} it waits for yourself, or letting ${one ? "it" : "them"} stop at hibernation, also lets the change apply.`,
+        `The agent reloads its settings, and this stops ${describeRestartStops(pendingRestart.stops)} now. Stopping ${one ? "the task" : "the tasks"} it waits for yourself, or letting ${one ? "it" : "them"} stop when the agent sleeps, also lets the change apply.`,
         "Apply the settings change now?",
         {
           confirmLabel: `Apply now (stops ${countRestartStops(pendingRestart.stops)})`,

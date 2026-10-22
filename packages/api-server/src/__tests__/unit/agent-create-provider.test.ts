@@ -11,7 +11,10 @@ import { markTermsProven } from "api-server-api/trpc";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
-import { connectionGrantProvisioner } from "../../modules/agents/compose.js";
+import {
+  attachProviderToBareAgents,
+  connectionGrantProvisioner,
+} from "../../modules/agents/compose.js";
 
 type AgentsDeps = Parameters<typeof createAgentsService>[0];
 type ConnectionsDeps = Parameters<typeof createConnectionsService>[0];
@@ -59,6 +62,9 @@ function setup(
   templates: Record<string, Partial<TemplateSpec>> = {},
 ) {
   const connections = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
+    platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner-1",
     repo: unused<ConnectionsDeps["repo"]>({
@@ -92,7 +98,7 @@ function setup(
   const applyGrants = vi.fn(async () => {});
   const writeEnv = vi.fn(async () => {});
   const runtimeBump = vi.fn(async () => 1);
-  const defaultProvider = vi.fn(async () => null);
+  const defaultProviders = vi.fn(async (): Promise<string[]> => []);
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
@@ -107,7 +113,6 @@ function setup(
     }),
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
-    agentDefaultMounts: [],
     agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     cleanupHooks: [],
     readTemplateSpec: async (id) =>
@@ -124,7 +129,7 @@ function setup(
           );
         return { grantedConnectionIds: sel.connectionIds };
       },
-      defaultProvider,
+      defaultProviders,
       applyAfterCreate: applyGrants,
     },
     listChannelsByOwner: async () => new Map(),
@@ -157,7 +162,7 @@ function setup(
     applyGrants,
     writeEnv,
     runtimeBump,
-    defaultProvider,
+    defaultProviders,
     connections,
     agents,
   };
@@ -275,10 +280,10 @@ describe("the harness and default provider a new agent gets", () => {
    * lands on the one default template and keeps the harness that id named,
    * and the default provider is chosen for that harness. */
   it("keeps the harness a retired template id named", async () => {
-    const { caller, persist, defaultProvider } = setup([], templates);
+    const { caller, persist, defaultProviders } = setup([], templates);
     await caller.agents.create({ name: "a", templateId: "codex" });
     expect(persist.mock.calls[0]?.[0]).toMatchObject({ harness: "codex" });
-    expect(defaultProvider).toHaveBeenCalledWith([], { harness: "codex" });
+    expect(defaultProviders).toHaveBeenCalledWith([], { harness: "codex" });
   });
 
   /** TEST_SCENARIO: An install that ships no default template has nothing
@@ -307,29 +312,31 @@ describe("the harness and default provider a new agent gets", () => {
    * no provider, so it still gets the default one, among the providers the
    * template lists. */
   it("leaves a custom template without a harness alone", async () => {
-    const { caller, persist, defaultProvider } = setup([], {
+    const { caller, persist, defaultProviders } = setup([], {
       mine: { image: "example.com/mine:latest", providers: ["openai"] },
     });
     await caller.agents.create({ name: "a", templateId: "mine" });
     expect(persist.mock.calls[0]?.[0]?.harness).toBeUndefined();
-    expect(defaultProvider).toHaveBeenCalledWith([], { providers: ["openai"] });
+    expect(defaultProviders).toHaveBeenCalledWith([], {
+      providers: ["openai"],
+    });
   });
 
   /** TEST_SCENARIO: A create from an image picks no template and so takes no
    * default provider; it holds only what the caller names. */
   it("grants no default provider to an image create", async () => {
-    const { caller, defaultProvider } = setup([], templates);
+    const { caller, defaultProviders } = setup([], templates);
     await caller.agents.create({ name: "a", image: "example.com/x:1" });
-    expect(defaultProvider).not.toHaveBeenCalled();
+    expect(defaultProviders).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: A sub-agent receives only the connections its spawn
    * names, so its creation never takes the owner's default provider. */
   it("grants no default provider to a create that opts out", async () => {
-    const { agents, persist, defaultProvider } = setup([], templates);
+    const { agents, persist, defaultProviders } = setup([], templates);
     await agents.create({ name: "a", noDefaultProvider: true });
     expect(persist).toHaveBeenCalledOnce();
-    expect(defaultProvider).not.toHaveBeenCalled();
+    expect(defaultProviders).not.toHaveBeenCalled();
   });
 
   /** TEST_SCENARIO: The default provider is one the agent's harness can run
@@ -339,11 +346,54 @@ describe("the harness and default provider a new agent gets", () => {
     const openai = { ...provider, id: "conn-openai", templateId: "openai" };
     const { connections } = setup([provider, openai]);
     expect(
-      await connections.defaultProviderConnection((t) => t === "openai"),
-    ).toBe("conn-openai");
+      await connections.defaultProviderConnections((t) => t === "openai"),
+    ).toEqual(["conn-openai"]);
     expect(
-      await connections.defaultProviderConnection((t) => t === "bob"),
-    ).toBeNull();
+      await connections.defaultProviderConnections((t) => t === "bob"),
+    ).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: The fitting providers come at most one per alias, since
+   * an alias names one provider in every qualified model name; of two, the
+   * older wins. They come in alias order, the harness's home provider first. */
+  it("lists the oldest fitting provider of each alias, in alias order", async () => {
+    const ibm = { ...provider, id: "conn-ibm", templateId: "ibm-litellm" };
+    const second = { ...provider, id: "conn-anthropic-2" };
+    const { connections } = setup([provider, ibm, second]);
+    expect(await connections.defaultProviderConnections(() => true)).toEqual([
+      "conn-ibm",
+      "conn-provider",
+    ]);
+    expect(
+      await connections.defaultProviderConnections(() => true, "claude-code"),
+    ).toEqual(["conn-provider", "conn-ibm"]);
+  });
+
+  /** TEST_SCENARIO: An owner holding an IBM and an Anthropic provider creates
+   * an agent. It gets one provider, the one its default resolves to (Claude
+   * Code's home provider), not both: with two, the default its runtime saves
+   * at its first hello would have no model, and the agent's onboarding turn
+   * would never run (#5578). */
+  it("grants a new agent one provider, the one its default runs on", async () => {
+    const ibm = { ...provider, id: "conn-ibm", templateId: "ibm-litellm" };
+    const { connections } = setup([ibm, provider]);
+    const provisioner = connectionGrantProvisioner(
+      { ...connections, listConnections: async () => [] },
+      {
+        harnesses: [
+          {
+            name: "claude-code",
+            displayName: "Claude",
+            providers: ["ibm-litellm", "anthropic"],
+            tags: [],
+            experimental: false,
+          },
+        ],
+      },
+    );
+    expect(
+      await provisioner.defaultProviders([], { harness: "claude-code" }),
+    ).toEqual(["conn-provider"]);
   });
 });
 
@@ -366,9 +416,9 @@ describe("the default provider's fit", () => {
         ],
       },
     );
-    expect(await provisioner.defaultProvider([], { harness: "pi" })).toBe(
+    expect(await provisioner.defaultProviders([], { harness: "pi" })).toEqual([
       "key",
-    );
+    ]);
   });
 
   const openai = { ...provider, id: "conn-openai", templateId: "openai" };
@@ -392,22 +442,82 @@ describe("the default provider's fit", () => {
 
   /** TEST_SCENARIO: A catalog harness takes a provider it runs on. */
   it("follows the catalog for a harness it lists", async () => {
-    expect(await provisioner().defaultProvider([], { harness: "codex" })).toBe(
-      "conn-openai",
-    );
+    expect(
+      await provisioner().defaultProviders([], { harness: "codex" }),
+    ).toEqual(["conn-openai"]);
   });
 
   /** TEST_SCENARIO: A custom template's own harness, such as the e2e mock, is
-   * not in the catalog; it takes the providers the template lists, or any. */
+   * not in the catalog; it takes the first provider the template lists, or
+   * the first of any. */
   it("follows the template for a harness the catalog does not list", async () => {
-    expect(await provisioner().defaultProvider([], { harness: "mock" })).toBe(
-      "conn-provider",
-    );
     expect(
-      await provisioner().defaultProvider([], {
+      await provisioner().defaultProviders([], { harness: "mock" }),
+    ).toEqual(["conn-provider"]);
+    expect(
+      await provisioner().defaultProviders([], {
         harness: "mock",
         providers: ["openai"],
       }),
-    ).toBe("conn-openai");
+    ).toEqual(["conn-openai"]);
+  });
+});
+
+describe("attachProviderToBareAgents", () => {
+  const attach = async (owned: Connection[], connectionId: string) => {
+    const { connections } = setup(owned);
+    const grants: Record<string, string[]> = {
+      bare: [],
+      held: [owned[0]!.id],
+      environment: [],
+    };
+    const granted: string[] = [];
+    const deps = {
+      ...connections,
+      listConnections: async () => owned,
+      getAgentConnections: async (agentId: string) => ({
+        agentId,
+        connections: grants[agentId]!.map((id) => ({
+          connectionId: id,
+          grantedAt: "",
+          preferred: false,
+        })),
+      }),
+      updateAgentConnections: async (agentId: string) => {
+        granted.push(agentId);
+      },
+    } as unknown as Parameters<typeof attachProviderToBareAgents>[0];
+    const agents = [
+      { id: "bare", spec: {} },
+      { id: "held", spec: {} },
+      { id: "environment", spec: { environmentOf: "bare" } },
+    ];
+    await attachProviderToBareAgents(
+      deps,
+      { harnesses: [] },
+      agents,
+      connectionId,
+    );
+    return granted;
+  };
+  const old = { ...provider, id: "old" };
+
+  /** TEST_SCENARIO: A user's first agent is created before they connect a
+   * provider, so it holds none. Connecting one gives it to that agent, so its
+   * first message has a model key; an agent that already holds a provider is
+   * left as it is, and an Environment, which holds none either, never gets
+   * the owner's provider. */
+  it("gives the owner's first provider to agents that hold none", async () => {
+    expect(await attach([old], "old")).toEqual(["bare"]);
+  });
+
+  /** TEST_SCENARIO: An agent holding no provider while the owner already has
+   * one was detached on purpose, so a later provider, of the same alias or
+   * another, does not land on it. */
+  it("leaves an agent detached on purpose without a provider", async () => {
+    const fresh = { ...provider, id: "fresh" };
+    const other = { ...provider, id: "other", templateId: "openai" };
+    expect(await attach([old, fresh], "fresh")).toEqual([]);
+    expect(await attach([old, other], "other")).toEqual([]);
   });
 });

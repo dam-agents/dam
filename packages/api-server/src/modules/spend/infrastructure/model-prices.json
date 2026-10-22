@@ -1,0 +1,237 @@
+{
+  "source": "https://github.com/BerriAI/litellm/blob/b2f0f4d54c5dace1c1f6ad7b3c2f3bc68cb5982b/model_prices_and_context_window.json",
+  "commit": "b2f0f4d54c5dace1c1f6ad7b3c2f3bc68cb5982b",
+  "committedAt": "2026-10-19T21:01:05Z",
+  "models": {
+    "claude-fable-5": {
+      "cache_creation_input_token_cost": 0.0000125,
+      "cache_creation_input_token_cost_above_1hr": 0.00002,
+      "cache_read_input_token_cost": 0.000001,
+      "input_cost_per_token": 0.00001,
+      "output_cost_per_token": 0.00005,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-fable-5-1": {
+      "cache_creation_input_token_cost": 0.0000125,
+      "cache_creation_input_token_cost_above_1hr": 0.00002,
+      "cache_read_input_token_cost": 2.5e-7,
+      "input_cost_per_token": 0.00001,
+      "output_cost_per_token": 0.00005,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-haiku-4-5": {
+      "cache_creation_input_token_cost": 0.00000125,
+      "cache_creation_input_token_cost_above_1hr": 0.000002,
+      "cache_read_input_token_cost": 1e-7,
+      "input_cost_per_token": 0.000001,
+      "output_cost_per_token": 0.000005
+    },
+    "claude-haiku-4-5-20251001": {
+      "cache_creation_input_token_cost": 0.00000125,
+      "cache_creation_input_token_cost_above_1hr": 0.000002,
+      "cache_read_input_token_cost": 1e-7,
+      "input_cost_per_token": 0.000001,
+      "output_cost_per_token": 0.000005
+    },
+    "claude-haiku-5-5": {
+      "cache_creation_input_token_cost": 1.25e-7,
+      "cache_creation_input_token_cost_above_100k_tokens": 6.25e-7,
+      "cache_creation_input_token_cost_above_1hr": 2e-7,
+      "cache_creation_input_token_cost_above_1hr_above_100k_tokens": 0.000001,
+      "cache_read_input_token_cost": 1e-8,
+      "cache_read_input_token_cost_above_100k_tokens": 5e-8,
+      "input_cost_per_token": 1e-7,
+      "input_cost_per_token_above_100k_tokens": 5e-7,
+      "output_cost_per_token": 5e-7,
+      "output_cost_per_token_above_100k_tokens": 0.0000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-mythos-5": {
+      "cache_creation_input_token_cost": 0.0000125,
+      "cache_creation_input_token_cost_above_1hr": 0.00002,
+      "cache_read_input_token_cost": 0.000001,
+      "input_cost_per_token": 0.00001,
+      "output_cost_per_token": 0.00005,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-mythos-5-1": {
+      "cache_creation_input_token_cost": 0.0000125,
+      "cache_creation_input_token_cost_above_1hr": 0.00002,
+      "cache_read_input_token_cost": 2.5e-7,
+      "input_cost_per_token": 0.00001,
+      "output_cost_per_token": 0.00005,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-mythos-preview": {
+      "cache_creation_input_token_cost": 0.0000125,
+      "cache_creation_input_token_cost_above_1hr": 0.00002,
+      "cache_read_input_token_cost": 0.000001,
+      "input_cost_per_token": 0.00001,
+      "output_cost_per_token": 0.00005,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-opus-4-5": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01
+    },
+    "claude-opus-4-5-20251101": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01
+    },
+    "claude-opus-4-6": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-opus-4-6-20260205": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-opus-4-7": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-opus-4-7-20260416": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-opus-4-8": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "fast": 2,
+        "us": 1.1
+      }
+    },
+    "claude-opus-5": {
+      "cache_creation_input_token_cost": 0.00000625,
+      "cache_creation_input_token_cost_above_1hr": 0.00001,
+      "cache_read_input_token_cost": 5e-7,
+      "input_cost_per_token": 0.000005,
+      "output_cost_per_token": 0.000025,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "fast": 2,
+        "us": 1.1
+      }
+    },
+    "claude-opus-5-5": {
+      "cache_creation_input_token_cost": 0.000005,
+      "cache_creation_input_token_cost_above_1hr": 0.000008,
+      "cache_read_input_token_cost": 2e-7,
+      "input_cost_per_token": 0.000004,
+      "output_cost_per_token": 0.00002,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "fast": 2,
+        "us": 1.1
+      }
+    },
+    "claude-sonnet-4-5": {
+      "cache_creation_input_token_cost": 0.00000375,
+      "cache_creation_input_token_cost_above_1hr": 0.000006,
+      "cache_read_input_token_cost": 3e-7,
+      "input_cost_per_token": 0.000003,
+      "output_cost_per_token": 0.000015,
+      "web_search_cost_per_query": 0.01
+    },
+    "claude-sonnet-4-5-20250929": {
+      "cache_creation_input_token_cost": 0.00000375,
+      "cache_creation_input_token_cost_above_1hr": 0.000006,
+      "cache_read_input_token_cost": 3e-7,
+      "input_cost_per_token": 0.000003,
+      "output_cost_per_token": 0.000015,
+      "web_search_cost_per_query": 0.01
+    },
+    "claude-sonnet-4-6": {
+      "cache_creation_input_token_cost": 0.00000375,
+      "cache_creation_input_token_cost_above_1hr": 0.000006,
+      "cache_read_input_token_cost": 3e-7,
+      "input_cost_per_token": 0.000003,
+      "output_cost_per_token": 0.000015,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-sonnet-5": {
+      "cache_creation_input_token_cost": 0.0000025,
+      "cache_creation_input_token_cost_above_1hr": 0.000004,
+      "cache_read_input_token_cost": 2e-7,
+      "input_cost_per_token": 0.000002,
+      "output_cost_per_token": 0.00001,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    },
+    "claude-sonnet-5-5": {
+      "cache_creation_input_token_cost": 0.0000025,
+      "cache_creation_input_token_cost_above_1hr": 0.000004,
+      "cache_read_input_token_cost": 1e-7,
+      "input_cost_per_token": 0.000002,
+      "output_cost_per_token": 0.00001,
+      "web_search_cost_per_query": 0.01,
+      "price_factors": {
+        "us": 1.1
+      }
+    }
+  }
+}

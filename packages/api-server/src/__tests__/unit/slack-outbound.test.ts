@@ -64,6 +64,7 @@ function harness(opts: {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,
@@ -241,11 +242,15 @@ describe("slack outbound — cross-workspace reach", () => {
   });
 
   it("a user id opens a direct message and posts into it", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.post("psst", { conversationId: "UTEAMMATE" })).toEqual({
+    const h = harness({
+      boundChannelId: BOUND,
+      channels: workspace,
+      ownerSlackUsers: ["UOWNER"],
+    });
+    expect(await h.post("psst", { conversationId: "UOWNER" })).toEqual({
       ok: true,
     });
-    expect(h.messages()).toMatchObject([{ channel: "D-UTEAMMATE" }]);
+    expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
 
   it("refuses a comma-separated user list — DMs are single-user, never group DMs", async () => {
@@ -266,11 +271,15 @@ describe("slack outbound — cross-workspace reach", () => {
   });
 
   it("an existing DM conversation id passes through untouched", async () => {
-    const h = harness({ boundChannelId: BOUND, channels: workspace });
-    expect(await h.post("again", { conversationId: "D-EXISTING" })).toEqual({
+    const h = harness({
+      boundChannelId: BOUND,
+      channels: workspace,
+      ownerSlackUsers: ["UOWNER"],
+    });
+    expect(await h.post("again", { conversationId: "D-UOWNER" })).toEqual({
       ok: true,
     });
-    expect(h.messages()).toMatchObject([{ channel: "D-EXISTING" }]);
+    expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
 
   it("attachments follow the resolved target", async () => {
@@ -365,12 +374,31 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
   it("refuses an omitted chatId and names the candidates — there is no single default", async () => {
     const h = multi();
     expect(await h.post("hello")).toMatchObject({
-      error: expect.stringContaining("pass chatId"),
+      error: expect.stringContaining("as chatId"),
     });
     expect(await h.post("hello")).toMatchObject({
       error: expect.stringContaining(SECOND),
     });
     expect(h.messages()).toHaveLength(0);
+  });
+
+  it("a reply into a thread no live turn knows asks for one of the bound ids as chatId, and goes out once given one (#3753)", async () => {
+    const h = multi();
+    await h.worker.start("agent-1");
+    const stale = { text: "late answer", threadTs: "1700000000.000200" };
+    const refused = await h.worker.reply("agent-1", stale);
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("as chatId"),
+    });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining(`${BOUND}, ${SECOND}`),
+    });
+    expect(
+      await h.worker.reply("agent-1", { ...stale, conversationId: SECOND }),
+    ).toEqual({ ok: true });
+    expect(h.messages()).toMatchObject([
+      { channel: SECOND, threadTs: stale.threadTs },
+    ]);
   });
 
   it("either bound conversation is a valid chatId", async () => {
@@ -496,5 +524,73 @@ describe("slack outbound — reach follows the owner (#4165)", () => {
       error: expect.stringContaining("owner is not a member"),
     });
     expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
+  });
+});
+
+describe("slack outbound — a direct message stays within reach (#5509)", () => {
+  const channels: FakeSlackChannel[] = [
+    {
+      id: BOUND,
+      name: "agent-home",
+      botIsMember: true,
+      members: ["UOWNER", "UTEAMMATE"],
+    },
+    {
+      id: "C-THEIRS",
+      name: "their-team",
+      botIsMember: true,
+      members: ["USTRANGER"],
+    },
+  ];
+
+  /**
+   * TEST_SCENARIO: The shared bot can open a DM with anyone in the
+   * workspace. An agent may message directly only its owner and the people
+   * in a conversation it is connected to — by user id or by DM id alike —
+   * and no DM is opened with anyone else.
+   */
+  it("messages the owner and a member of a bound conversation, and refuses a stranger", async () => {
+    const h = harness({
+      boundChannelId: BOUND,
+      channels,
+      ownerSlackUsers: ["UOWNER"],
+    });
+    expect(await h.post("hi", { conversationId: "UOWNER" })).toEqual({
+      ok: true,
+    });
+    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toEqual({
+      ok: true,
+    });
+    for (const conversationId of ["USTRANGER", "D-USTRANGER"]) {
+      expect(await h.post("hello", { conversationId })).toMatchObject({
+        error: expect.stringContaining("USTRANGER is not your owner"),
+      });
+    }
+    expect(h.messages()).toMatchObject([
+      { channel: "D-UOWNER" },
+      { channel: "D-UTEAMMATE" },
+    ]);
+  });
+
+  it("messages the person on the other end of a bound DM", async () => {
+    const h = harness({
+      boundChannelId: BOUND,
+      extraBoundChannelIds: ["D-UFRIEND"],
+      channels,
+    });
+    expect(await h.post("hi", { conversationId: "UFRIEND" })).toEqual({
+      ok: true,
+    });
+    expect(h.messages()).toMatchObject([{ channel: "D-UFRIEND" }]);
+  });
+
+  it("an owner with no linked Slack identity reaches only members of bound conversations", async () => {
+    const h = harness({ boundChannelId: BOUND, channels, ownerSlackUsers: [] });
+    expect(await h.post("hi", { conversationId: "UTEAMMATE" })).toEqual({
+      ok: true,
+    });
+    expect(
+      await h.post("hello", { conversationId: "USTRANGER" }),
+    ).toMatchObject({ error: expect.stringContaining("is not your owner") });
   });
 });

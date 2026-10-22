@@ -46,7 +46,7 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	return now.Sub(t) <= idleTimeout
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether an Agent should run, with its runtime migration taken into account: nothing runs while the migration holds it down, and a boot the migration waits on runs whatever the activity says, unless a stop the user asked for since it began holds it or a storage migration gates it.
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent should run, with its runtime migration taken into account: nothing runs while the migration holds it down, and a boot the migration waits on runs whatever the activity or a stop says, unless a storage migration gates it.
 func shouldRunMigrating(annotations map[string]string, m runtimeMigration, idleTimeout time.Duration, now time.Time) bool {
 	if m.holdsDown() {
 		return false
@@ -57,12 +57,13 @@ func shouldRunMigrating(annotations map[string]string, m runtimeMigration, idleT
 	return shouldRun(annotations, idleTimeout, now)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the idle window an Agent hibernates after: its own override, else the chart-wide default, which is a separate value for vm Agents. A vm Agent is not offered the setting, so it reads the vm default; one that carries an override anyway — a Template or starter kit seed, or one whose Backend moved — honours it, as a container Agent does.
 func effectiveIdleTimeout(override *metav1.Duration, vm bool, base config.AgentBase) time.Duration {
+	if override != nil {
+		return override.Duration
+	}
 	if vm {
 		return base.VMIdleTimeout.AsDuration()
 	}
-	if override == nil {
-		return base.IdleTimeout.AsDuration()
-	}
-	return override.Duration
+	return base.IdleTimeout.AsDuration()
 }

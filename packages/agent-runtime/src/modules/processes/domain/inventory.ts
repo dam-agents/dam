@@ -1,6 +1,12 @@
-import type { FinishedRow, KeepSource, ProcessRow } from "agent-runtime-api";
+import type {
+  FinishedRow,
+  KeepSource,
+  ProcessContainer,
+  ProcessRow,
+} from "agent-runtime-api";
 import type { ReportedTask } from "../../acp/index.js";
 import { commandLabel, type ProcessTree } from "./classify.js";
+import { containerOf } from "./container.js";
 import type { KeepMark, KeepOverride, KeepResolution } from "./keep.js";
 import { CLK_TCK, procKey, type ScannedProcess } from "./snapshot.js";
 
@@ -17,6 +23,7 @@ export interface TrackedRow {
   outputPath: string | null;
   keepsAwake: boolean;
   keepSource: KeepSource;
+  container: ProcessContainer | null;
 }
 
 export interface ProcessesDocument {
@@ -73,6 +80,7 @@ export function finishedFrom(
     outputPath: row.outputPath,
     keptAwake: row.keepsAwake,
     keepSource: row.keepSource,
+    container: row.container,
   };
 }
 
@@ -83,8 +91,8 @@ export function finishedFrom(
  * finished: it ended by exit. A Harness Task whose matched process is gone
  * also finished, even while the harness still reports it, because the harness
  * reports only at the end of a turn. It is held back as exited until the report
- * drops it, so a later match cannot list it twice. Turn Processes keep no
- * history. CPU is the tick delta of the whole tree against a baseline sample.
+ * drops it, so a later match cannot list it twice. Turn Processes and Startup
+ * Items keep no history: an item's log is its history. CPU is the tick delta of the whole tree against a baseline sample.
  */
 export function assembleInventory(input: {
   trees: ProcessTree[];
@@ -138,9 +146,12 @@ export function assembleInventory(input: {
       outputPath: tree.shown?.outputPath ?? tree.root?.outputPath ?? null,
       keepsAwake,
       keepSource,
+      container: tree.shown
+        ? containerOf(commandLabel(tree.shown.cmdline))
+        : null,
     };
     running.push(row);
-    if (tree.kind === "turn") continue;
+    if (tree.kind === "turn" || tree.kind === "startup-item") continue;
     tracked.push({
       identity: tree.identity,
       key: row.key,
@@ -151,6 +162,7 @@ export function assembleInventory(input: {
       outputPath: row.outputPath,
       keepsAwake: row.keepsAwake,
       keepSource: row.keepSource,
+      container: row.container,
     });
   }
 

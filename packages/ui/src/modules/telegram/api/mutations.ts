@@ -8,7 +8,10 @@ export function useUnbindTelegramChat() {
     ...trpc.agents.unbindTelegramChat.mutationOptions(),
     meta: {
       errorToast: "Couldn't disconnect the Telegram chat",
-      invalidates: [trpc.agents.listTelegramChats.queryKey()],
+      invalidates: [
+        trpc.agents.listTelegramChats.queryKey(),
+        trpc.attention.pathKey(),
+      ],
     },
   });
 }
@@ -20,6 +23,7 @@ export function useBindTelegramChat() {
       invalidates: [
         agentsKeys.listWithChannels(),
         trpc.agents.listTelegramChats.queryKey(),
+        trpc.attention.pathKey(),
       ],
     },
   });

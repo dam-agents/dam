@@ -1,7 +1,14 @@
-import type { ProviderPresetType } from "../../../types.js";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  displayNameForTemplate,
+} from "api-server-api";
 
-interface ProviderRowDef {
+import { getBrand } from "../../../brand.js";
+import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
+
+export interface ProviderRowDef {
   type: ProviderPresetType;
+  templateId?: string;
   description: string;
 }
 
@@ -9,15 +16,46 @@ export const IBM_LITELLM_DESCRIPTION =
   "IBM's LiteLLM proxy for Claude, GPT and other models — Anthropic, OpenAI Chat and Responses APIs.";
 
 export const CURVE_BENDER_DESCRIPTION =
-  "GLM 5.3 on RITS via LiteLLM. Nemotron is reserved for Claude's auto-permission classifier.";
+  "Open-source models hosted internally in IBM.";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the built-in provider is named by the brand, not
+ * by the codename its preset carries; any other preset takes its template's
+ * name when it has one, so a user-keyed provider and the deployment's read
+ * differently.
+ */
+export function providerName(
+  type: ProviderPresetType,
+  templateId?: string,
+): string {
+  if (type === "platform") return getBrand().name;
+  return (
+    (templateId ? displayNameForTemplate(templateId) : null) ??
+    PROVIDERS[type].displayName
+  );
+}
+
+export function providerRowName(row: ProviderRowDef): string {
+  return providerName(row.type, row.templateId);
+}
 
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
+  {
+    type: "platform",
+    description: "Models this install serves itself, with no API key.",
+  },
   {
     type: "ibm-litellm",
     description: IBM_LITELLM_DESCRIPTION,
   },
   {
     type: "curve-bender",
+    templateId: "curve-bender",
+    description: CURVE_BENDER_DESCRIPTION,
+  },
+  {
+    type: "curve-bender",
+    templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
     description: CURVE_BENDER_DESCRIPTION,
   },
   {

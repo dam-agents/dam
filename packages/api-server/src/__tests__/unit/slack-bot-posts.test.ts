@@ -148,6 +148,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps,
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
@@ -218,7 +219,10 @@ describe("an agent's post addressing another agent", () => {
    *  instead of the shared bot's user id. */
   it("starts a turn for the agent it names", async () => {
     const h = harness();
-    await h.mention(fromAlpha, "<@UBOT> Beta, can you check the deploy?");
+    await h.mention(
+      fromAlpha,
+      ":robot_face: *Alpha*  <@UBOT> Beta, can you check the deploy?",
+    );
     expect(h.prompts["agent-b"]).toHaveLength(1);
     expect(h.prompts["agent-b"]![0]).toContain("Alpha (another agent):");
     expect(h.prompts["agent-a"]).toHaveLength(0);

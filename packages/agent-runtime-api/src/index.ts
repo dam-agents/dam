@@ -15,22 +15,29 @@ export type {
   SessionListCursor,
   SessionListQuery,
   SessionPage,
-  SessionSpend,
-  SessionSpendInput,
-  SessionSpendTotal,
   SessionsService,
+  SessionSubAgentContext,
   SetSessionTitleInput,
   StoreDelegationFramesInput,
   DelegationFrames,
 } from "./modules/sessions/types.js";
 export {
   PIN_MODEL_METHOD,
+  NO_MODEL_REASON,
   CONFIGURE_SESSION_METHOD,
 } from "./modules/sessions/types.js";
 export {
   sessionSettingsSchema,
+  modelConstraintsFor,
+  startModeFor,
   sessionSettingsError,
+  SUBAGENT_MODEL_SETTING,
+  PLATFORM_SUBAGENT_PREFIX,
+  isPlatformSubagentSetting,
+  platformSubagentChoice,
+  platformSubagentSettingsError,
   type SessionSettings,
+  type SubAgentHarnessConfig,
 } from "./modules/harness-config/session-settings.js";
 export {
   podSessionModeSchema,
@@ -48,6 +55,12 @@ export {
   sessionCategoryOf,
   sessionMatchesQuery,
 } from "./modules/sessions/session-query.js";
+export {
+  resultObjectTexts,
+  terminalOutputPart,
+  toolNameOf,
+  toolOutputTexts,
+} from "./modules/sessions/tool-output.js";
 
 export { ok, err } from "./result.js";
 export type {
@@ -97,6 +110,15 @@ export {
   normalizeGitUrl,
   parseGithubRepo,
 } from "./modules/skills/git-url.js";
+export {
+  SOURCE_FETCH_MODES,
+  planSourceFetch,
+} from "./modules/skills/source-fetch.js";
+export type {
+  EgressDenies,
+  SourceFetchMode,
+  SourceFetchPlan,
+} from "./modules/skills/source-fetch.js";
 export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 
 export type {
@@ -105,16 +127,34 @@ export type {
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
 export type {
+  HarnessCatalogView,
+  CatalogProviderView,
+  CatalogProviderStatus,
+  CatalogModelView,
+  CatalogModelPrices,
+  CatalogMetadataSource,
+} from "./modules/harness-config/types.js";
+export type {
   HarnessConfigNotice,
   HarnessConfigService,
 } from "./modules/harness-config/types.js";
 export { harnessConfigNoticeSchema } from "./modules/harness-config/schemas.js";
+export {
+  CLAUDE_TIERS,
+  chatModels,
+  claudeTierOf,
+  compareModelVersions,
+  newestOfTier,
+  type ClaudeTier,
+} from "./modules/harness-config/model-tiers.js";
 export type {
+  ContainerEngine,
   FinishedRow,
   KeepMarkRequest,
   KeepSource,
   NothingPending,
   PendingRestart,
+  ProcessContainer,
   ProcessesDomainError,
   ProcessesService,
   ProcessKind,
@@ -122,17 +162,46 @@ export type {
   ProcessNotice,
   ProcessOutput,
   ProcessRow,
+  StartupItem,
 } from "./modules/processes/types.js";
 export {
   finishedRowSchema,
   keepMarkRequestSchema,
   PROCESS_OUTPUT_MAX_BYTES,
+  processContainerSchema,
   processListSchema,
   processNoticeSchema,
   processOutputSchema,
   processRowSchema,
   setKeepInputSchema,
+  startupItemIdSchema,
+  startupItemSchema,
 } from "./modules/processes/schemas.js";
+
+export type {
+  ChangeSet,
+  ChangeSetDiff,
+  ChangeSetList,
+  ChangesDomainError,
+  ChangesNotice,
+  ChangesService,
+  CompareTo,
+  DiffStat,
+  FileChangeStatus,
+  FileDiff,
+  PullRequestLink,
+  SessionRepository,
+} from "./modules/changes/types.js";
+export {
+  changeSetDiffSchema,
+  changeSetListSchema,
+  changeSetSchema,
+  changesNoticeSchema,
+  compareToSchema,
+  fileDiffSchema,
+  pullRequestLinkSchema,
+  sessionRepositorySchema,
+} from "./modules/changes/schemas.js";
 
 export {
   backgroundWorkReportSchema,
@@ -156,15 +225,21 @@ export {
   harnessConfigCurrentByHarness,
   harnessCapability,
   routesSessionPairs,
+  routesByModelName,
   fileFormat,
   mergeMode,
   eventReportInput,
   SESSION_REF_HEADER,
+  RESULT_ACCEPTED_FIELD,
   PLATFORM_MCP_ENTRY_NAME,
   onceOrigin,
   onceOriginMode,
   initializationEventPayload,
+  sessionDefaultKind,
+  sessionDefaultsEventPayload,
+  satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
+  sessionMessageEventPayload,
   workspaceCommandEventPayload,
   workspaceSeedEventPayload,
   helloInput,
@@ -188,7 +263,11 @@ export type {
   EventStage,
   EventReportInput,
   SatelliteOutcomeEventPayload,
+  SessionDefaultKind,
+  SessionDefaultPair,
+  SessionDefaultsEventPayload,
   SubAgentOutcomeEventPayload,
+  SessionMessageEventPayload,
   ScheduleResetEventPayload,
   WorkspaceSeedEventPayload,
   HarnessConfigEventPayload,
@@ -230,6 +309,7 @@ export type { ArtifactApiService } from "./modules/artifact-api/types.js";
 export {
   browserSnapshotSchema,
   pageStateSchema,
+  tabStateSchema,
 } from "./modules/browser/schemas.js";
 export type {
   BrowserAction,
@@ -238,4 +318,6 @@ export type {
   BrowserSnapshot,
   BrowserState,
   PageState,
+  TabAction,
+  TabState,
 } from "./modules/browser/types.js";

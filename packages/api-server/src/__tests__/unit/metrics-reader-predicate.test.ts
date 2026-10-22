@@ -23,13 +23,41 @@ describe("ownedApiRequests", () => {
     const gates = sql.match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(3);
+    expect(gates).toHaveLength(9);
   });
 
-  it("scopes to Claude Code telemetry by Body, not template ServiceName", () => {
+  it("scopes to call records by Body, not template ServiceName", () => {
     const sql = ownedApiRequests({ hours: 24 });
-    expect(sql).toContain("Body = 'claude_code.api_request'");
+    expect(sql).toContain(
+      "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')",
+    );
+    expect(sql).toContain("Body = 'platform.model_call'");
     expect(sql).not.toContain("ServiceName");
+  });
+
+  /**
+   * TEST_SCENARIO: An agent on the Model Router exports one record per call
+   * from the router and, on Claude Code, a second from the harness. The read
+   * sums the router's records for every agent that has any in the window and
+   * the harness's (Claude Code's, Pi's) for the rest, decided from the data,
+   * each agent and invocation from its own first router record on. Claude Code on a
+   * subscription token or Bedrock runs outside the router, so its own record,
+   * which names the model without the `claude/` prefix, still counts.
+   */
+  it("prefers the router's records per agent and keeps the harness's records of calls the router never saw", () => {
+    const sql = ownedApiRequests({ hours: 24 });
+    const key =
+      "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
+    expect(sql).toContain(
+      `OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`,
+    );
+    expect(sql).toContain(
+      "OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id']) AS k, min(Timestamp) AS m FROM otel_logs",
+    );
+    expect(sql).not.toContain("SELECT min(Timestamp) FROM otel_logs");
+    expect(sql).toContain(
+      "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')",
+    );
   });
 
   it("bounds by the absolute range as half-open [from, to)", () => {
@@ -49,6 +77,7 @@ describe("ownedApiRequests", () => {
     const sql = ownedApiRequests({ hours: 24 });
     expect(sql).not.toContain("sessionId");
     expect(sql).not.toContain("TraceId");
+    expect(sql).not.toContain("session.id");
     expect(sql).toContain("toIntervalHour({hours:UInt32})");
   });
 });
@@ -74,8 +103,8 @@ describe("agent-scoped record predicates", () => {
 
   // TEST_SCENARIO: The events read serves every record the agent emitted — errors and tool decisions included — so unlike the spend reads it must not narrow to the LLM-call body.
   it("reads every emitted record, not only LLM calls", () => {
-    expect(ownedAgentLogs({ hours: 24 })).not.toContain("Body =");
-    expect(ownedApiRequests({ hours: 24 })).toContain("Body =");
+    expect(ownedAgentLogs({ hours: 24 })).not.toContain("Body IN");
+    expect(ownedApiRequests({ hours: 24 })).toContain("Body IN");
   });
 
   /**

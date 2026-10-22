@@ -6,12 +6,16 @@ import type {
   ConnectionView,
 } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
+import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
+import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
+
+const DEFAULT_TIMEOUT_SECONDS = 300;
 
 const SECRET_LABELS: Record<
   Exclude<ConnectionAuthKind, "none" | "sigv4">,
@@ -29,12 +33,16 @@ interface UpdateOptions {
   secretAccessKey?: string;
   server?: string;
   json?: boolean;
+  browser?: boolean;
+  prompt?: boolean;
+  timeout?: string;
 }
 
 export function buildUpdateCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createConnectionService: (host: string) => ConnectionService;
+  browserOpener: BrowserOpener;
 }): Command {
   return new Command("update")
     .description("Replace a connection's stored credential")
@@ -45,32 +53,43 @@ export function buildUpdateCommand(deps: {
     .option(
       "--value <value>",
       "the new secret — the injected value, client secret, or private key, " +
-        "depending on the connection's auth kind (prompts securely if omitted)",
+        "depending on the connection's auth kind (entered on a web page if omitted)",
     )
     .option(
       "--access-key-id <id>",
       "the new access key ID of an Object Storage connection " +
-        "(prompts if omitted)",
+        "(entered on a web page if both keys are omitted)",
     )
     .option(
       "--secret-access-key <key>",
       "the new secret access key of an Object Storage connection " +
-        "(prompts securely if omitted)",
+        "(entered on a web page if both keys are omitted)",
     )
     .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
     .option("--json", "emit { ok, id, name } as JSON")
+    .option("--no-browser", "print the secret-entry link instead of opening it")
+    .option(
+      "--prompt",
+      "ask for the secret at a hidden terminal prompt instead of on a web page",
+    )
+    .option(
+      "--timeout <seconds>",
+      "how long to wait for the secret to be entered on the web page",
+      String(DEFAULT_TIMEOUT_SECONDS),
+    )
     .addHelpText(
       "after",
       "\nExamples:\n" +
         "  dam connection update conn-61cc7b9137b0 --value sk-ant-...\n" +
-        "  dam connection update anthropic   # prompts for the value\n" +
-        '  dam connection update my-github-app --value "$(cat app.pem)"\n' +
+        "  dam connection update anthropic   # the user enters the value on a web page\n" +
+        "  dam connection update anthropic --prompt   # asks at a hidden prompt\n" +
         "  dam connection update my-bucket --access-key-id … --secret-access-key …\n" +
-        "\nA multi-line secret (a PEM private key) can't be typed at the\n" +
-        "prompt — pass it with --value, as in the third example.\n" +
+        "\nWithout the secret, the command opens a page of the server where the\n" +
+        "user enters it, waits until it is saved, and reports the result. Sign in\n" +
+        "there as the same user. The page also takes a multi-line PEM key.\n" +
         "\nAn Object Storage connection rotates both HMAC keys at once:\n" +
         "pass --access-key-id and --secret-access-key, or answer the prompts.\n" +
         "The new pair is verified against the endpoint before it is stored.\n" +
@@ -79,6 +98,7 @@ export function buildUpdateCommand(deps: {
         "  dam connection reauth <id-or-name>\n",
     )
     .action(async (ref: string, opts: UpdateOptions) => {
+      const timeoutSeconds = parseTimeout(opts.timeout);
       const host = await resolveActiveHost(deps, opts.server);
 
       const svc = deps.createConnectionService(host);
@@ -101,6 +121,30 @@ export function buildUpdateCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
+      if (
+        !opts.prompt &&
+        opts.value === undefined &&
+        opts.accessKeyId === undefined &&
+        opts.secretAccessKey === undefined &&
+        PAGE_SECRET_FIELDS[match.authKind]
+      ) {
+        const entered = await enterSecretOnPage({
+          svc,
+          host,
+          browserOpener: deps.browserOpener,
+          input: { action: "update", connectionId: match.id },
+          noBrowser: opts.browser === false,
+          timeoutSeconds,
+        });
+        if (entered.kind === "saved") {
+          emitUpdated(match, opts);
+          process.exit(EXIT_SUCCESS);
+        }
+        process.stderr.write(
+          "note: this server has no secret-entry page; asking here instead\n",
+        );
+      }
+
       const credential =
         match.authKind === "sigv4"
           ? await collectKeyPair(match, opts)
@@ -109,15 +153,27 @@ export function buildUpdateCommand(deps: {
       const result = await svc.update(match.id, credential);
       exitOnServiceError(result, host);
 
-      if (opts.json) {
-        process.stdout.write(
-          `${JSON.stringify({ ok: true, id: match.id, name: match.name })}\n`,
-        );
-      } else {
-        process.stdout.write(`✓ Updated ${match.name} (${match.id}).\n`);
-      }
+      emitUpdated(match, opts);
       process.exit(EXIT_SUCCESS);
     });
+}
+
+function emitUpdated(match: ConnectionView, opts: UpdateOptions): void {
+  if (opts.json) {
+    process.stdout.write(
+      `${JSON.stringify({ ok: true, id: match.id, name: match.name })}\n`,
+    );
+  } else {
+    process.stdout.write(`✓ Updated ${match.name} (${match.id}).\n`);
+  }
+}
+
+function parseTimeout(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
+  const n = Number(raw);
+  if (Number.isInteger(n) && n > 0) return n;
+  process.stderr.write("error: --timeout must be a positive integer\n");
+  process.exit(EXIT_INVALID_INPUT);
 }
 
 async function collectValue(
@@ -132,7 +188,11 @@ async function collectValue(
     process.exit(EXIT_INVALID_INPUT);
   }
   if (opts.value !== undefined) return { value: opts.value };
-  requireTty("pass --value <value> when not running interactively");
+  requireTty(
+    opts.prompt
+      ? "--prompt needs a terminal; drop it to enter the secret on a web page"
+      : "pass --value <value> when not running interactively",
+  );
   if (match.authKind === "github-app") {
     process.stderr.write(
       "note: a PEM key can't be typed at the prompt — " +

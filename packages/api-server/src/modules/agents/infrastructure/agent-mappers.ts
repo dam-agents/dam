@@ -7,6 +7,7 @@ import {
 
 import {
   GATEWAY_FAILURE_REASONS,
+  NODE_FAULT_REASONS,
   POD_FAILURE_REASONS,
 } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
@@ -18,6 +19,7 @@ import type {
   AgentReclaim,
   AgentSpec,
   AgentSpecCR,
+  AgentStartFailure,
   AgentState,
   ChannelConfig,
   ContributionKind,
@@ -42,14 +44,15 @@ import {
   INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   RECLAIMED_AT_KEY,
+  AGENT_POD_REASON_MACHINE_STOPPING,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
   RUNTIME_MIGRATING_CONDITION,
   RUNTIME_MIGRATION_KEY,
   RUNTIME_MIGRATION_MESSAGE_KEY,
-  RUNTIME_MIGRATION_SNAPSHOT_KEY,
   RUNTIME_MIGRATION_SOURCE_KEY,
   RUNTIME_MIGRATION_TARGET_KEY,
+  DISABLED_KEY,
   STOP_REQUESTED_KEY,
   STORAGE_MIGRATION_KEY,
   VERSION,
@@ -68,9 +71,7 @@ import {
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
-  runtimeMigrationRefusal,
   type RuntimeMigrationHold,
-  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
@@ -136,17 +137,19 @@ export interface InfraAgent {
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
+  disabled: boolean;
   runtimeMigration?: RuntimeMigration;
   runtimeMigrationHold?: RuntimeMigrationHold;
   runtimeMigrationTarget?: string;
-  runtimeMigrationSnapshot?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: AgentStartFailure;
   podRestarts: number;
   podRestartReason?: string;
   agentPodNotReadyReason?: string;
@@ -157,6 +160,7 @@ export interface InfraAgent {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit on AgentPodReady is left out: that condition does not say which pod exited, and the pod a roll replaces exits on SIGTERM at the new generation. The controller's StartFailed condition says it of the current pod or machine instead.
+// UNIT_BOUNDARY_DESCRIPTION: besides those, a machine's start is also a failed start when the node it runs on cannot serve it, which NODE_FAULT_REASONS names. That case is still a failed start of this spec, so the Agent reads as one, but the image is not what failed: the image update job holds the upgrade on it instead of moving the Agent back.
 const IMAGE_START_FAILURES = new Set([
   "ImagePullFailure",
   "InvalidImageName",
@@ -178,6 +182,8 @@ export function computeAgentState(
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
   if (infra.overBudget) return "over_budget";
+  if (infra.agentPodNotReadyReason === AGENT_POD_REASON_MACHINE_STOPPING)
+    return "hibernating";
   if (infra.agentPodReady === true && infra.gatewayPodReady === false)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (
@@ -285,7 +291,8 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
             startFailed.observedGeneration === generation) ||
           (agentPod?.status === "False" &&
             agentPod.observedGeneration === generation &&
-            IMAGE_START_FAILURES.has(agentPod.reason ?? ""))
+            (IMAGE_START_FAILURES.has(agentPod.reason ?? "") ||
+              NODE_FAULT_REASONS.has(agentPod.reason ?? "")))
         ? "failed"
         : ready?.status === "True" && ready.observedGeneration === generation
           ? "ready"
@@ -348,6 +355,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
+    disabled: !!annotations[DISABLED_KEY],
     ...(runtimeMigration ? { runtimeMigration } : {}),
     runtimeMigrationHold: runtimeMigrationHold(
       runtimeMigration,
@@ -355,11 +363,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ),
     ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
       ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
-      : {}),
-    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
-      ? {
-          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
-        }
       : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
@@ -378,11 +381,25 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       POD_FAILURE_REASONS.has(agentPod.reason)
         ? agentPod.message
         : undefined,
+    podTerminationCode:
+      agentPod?.status === "False" &&
+      agentPod.reason &&
+      POD_FAILURE_REASONS.has(agentPod.reason)
+        ? agentPod.reason
+        : undefined,
     notReadyMessage:
       agentPod?.status === "False" &&
       agentPod.message &&
       !POD_FAILURE_REASONS.has(agentPod.reason ?? "")
         ? agentPod.message
+        : undefined,
+    startFailure:
+      startFailed?.status === "True" &&
+      generation !== undefined &&
+      startFailed.observedGeneration === generation &&
+      startFailed.reason &&
+      startFailed.message
+        ? { reason: startFailed.reason, message: startFailed.message }
         : undefined,
     podRestarts:
       typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
@@ -415,7 +432,6 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
-  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -427,8 +443,6 @@ export function assembleAgent(
     ...(infra.runtimeMigration
       ? { runtimeMigration: infra.runtimeMigration }
       : {}),
-    runtimeMigratable:
-      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
@@ -438,11 +452,14 @@ export function assembleAgent(
     ),
     error: infra.error,
     stopRequested: infra.stopRequested,
+    disabled: infra.disabled,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     ...(infra.reclaimed ? { reclaimed: infra.reclaimed } : {}),
     podTerminationReason: infra.podTerminationReason,
+    podTerminationCode: infra.podTerminationCode,
     notReadyMessage: infra.notReadyMessage,
+    ...(infra.startFailure ? { startFailure: infra.startFailure } : {}),
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,
     gatewayFailure: infra.gatewayFailure,

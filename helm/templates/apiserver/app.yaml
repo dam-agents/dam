@@ -88,7 +88,8 @@ spec:
             "checksum/harness-templates" (include (print $.Template.BasePath "/harness-templates.yaml") . | sha256sum)
             "checksum/starter-kits" (include (print $.Template.BasePath "/starter-kits.yaml") . | sha256sum)
             "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum)
-            "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum) }}
+            "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum)
+            "checksum/extra-cas" (include (print $.Template.BasePath "/apiserver/extra-cas.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
       enableServiceLinks: false
@@ -149,6 +150,12 @@ spec:
             # to the database connection rather than the whole process.
             - name: DATABASE_CA_CERT_PATH
               value: /etc/platform/pg-ca/ca.crt
+            {{- end }}
+            {{- if .Values.controller.gatewayUpstreamExtraCAs }}
+            # Node reads it once at start; the extra-cas checksum restarts the pod
+            # when the CA changes.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/platform/extra-cas/extra-cas.crt
             {{- end }}
             {{- if .Values.clickstack.enabled }}
             # Agent-telemetry read path: HTTP-query the ClickStack ClickHouse
@@ -250,13 +257,53 @@ spec:
             {{- end }}
             - name: FEATURE_MODES
               value: {{ include "platform.featureModes" . | quote }}
+            - name: FEATURE_DEFAULT_MODE
+              value: {{ include "platform.featureDefault" . | quote }}
+            {{- with .Values.apiServer.platformProvider }}
+            {{- if and .baseUrl (or (dig "apiKeySecret" "name" "" .) .apiKey) }}
+            - name: PLATFORM_PROVIDER_BASE_URL
+              value: {{ .baseUrl | quote }}
+            - name: PLATFORM_PROVIDER_MODEL
+              value: {{ .model | quote }}
+            - name: PLATFORM_PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if dig "apiKeySecret" "name" "" . }}
+                  name: {{ .apiKeySecret.name }}
+                  key: {{ .apiKeySecret.key | default "api-key" }}
+                  {{- else }}
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_PROVIDER_API_KEY
+                  {{- end }}
+            {{- if dig "caConfigMap" "name" "" . }}
+            - name: PLATFORM_PROVIDER_CA_FILE
+              value: /etc/platform/platform-provider-ca/ca.crt
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with dig "curveBenderDeployment" dict .Values.apiServer }}
+            {{- if or (dig "apiKeySecret" "name" "" .) .apiKey }}
+            - name: CURVE_BENDER_DEPLOYMENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if dig "apiKeySecret" "name" "" . }}
+                  name: {{ .apiKeySecret.name }}
+                  key: {{ .apiKeySecret.key | default "api-key" }}
+                  {{- else }}
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: CURVE_BENDER_DEPLOYMENT_API_KEY
+                  {{- end }}
+            {{- end }}
+            {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
-            - name: RUNTIME_MIGRATION_RETENTION
-              value: {{ (.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString | quote }}
+            - name: VM_POOL_STORAGE
+              value: {{ .Values.virtualization.runner.storage | quote }}
+            - name: VM_POOL_MEMORY
+              value: {{ (((.Values.virtualization.runner.resources | default dict).limits) | default dict).memory | default "" | toString | quote }}
             {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
@@ -303,6 +350,8 @@ spec:
               value: {{ .Values.keycloak.cliClientId | quote }}
             - name: KEYCLOAK_SHARE_CLIENT_ID
               value: {{ .Values.keycloak.shareClientId | quote }}
+            - name: KEYCLOAK_ENVIRONMENTS_CLIENT_ID
+              value: {{ .Values.keycloak.environmentsClientId | quote }}
             - name: KEYCLOAK_API_AUDIENCE
               value: {{ .Values.keycloak.apiAudience | quote }}
             - name: KEYCLOAK_API_CLIENT_ID
@@ -457,6 +506,19 @@ spec:
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxOpen | quote }}
             - name: ONCE_SCHEDULE_AGENT_MAX_PER_HOUR
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxPerHour | quote }}
+            - name: ENVIRONMENTS_URL
+              value: {{ include "platform.url.environments" . | quote }}
+            - name: ENVIRONMENTS_MAX_PER_AGENT
+              value: {{ .Values.environments.maxPerAgent | quote }}
+            - name: ENVIRONMENT_EXPIRY_MAX_DAYS
+              value: {{ .Values.environments.expiryMaxDays | quote }}
+            - name: SPEND_PRICE_OVERRIDES
+              value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
+            {{- $defaultUserCeilingUsd := (.Values.apiServer.spend | default dict).defaultUserCeilingUsd }}
+            {{- if not (kindIs "invalid" $defaultUserCeilingUsd) }}
+            - name: SPEND_DEFAULT_USER_CEILING_USD
+              value: {{ $defaultUserCeilingUsd | quote }}
+            {{- end }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}
@@ -542,6 +604,8 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            - name: SIGN_UPS
+              value: {{ .Values.signUps | quote }}
             {{- if .Values.links.computeRequest }}
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
@@ -587,6 +651,16 @@ spec:
             {{- if .Values.apiServer.db.caCert }}
             - name: pg-ca
               mountPath: /etc/platform/pg-ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.controller.gatewayUpstreamExtraCAs }}
+            - name: extra-cas
+              mountPath: /etc/platform/extra-cas
+              readOnly: true
+            {{- end }}
+            {{- if dig "platformProvider" "caConfigMap" "name" "" .Values.apiServer }}
+            - name: platform-provider-ca
+              mountPath: /etc/platform/platform-provider-ca
               readOnly: true
             {{- end }}
           {{- if .Values.probes.enabled }}
@@ -665,4 +739,22 @@ spec:
         - name: pg-ca
           configMap:
             name: {{ include "platform.fullname" . }}-apiserver-db-ca
+        {{- end }}
+        {{- if .Values.controller.gatewayUpstreamExtraCAs }}
+        - name: extra-cas
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-extra-cas
+        {{- end }}
+        {{- with dig "platformProvider" "caConfigMap" dict .Values.apiServer }}
+        {{- if .name }}
+        # Optional: a missing ConfigMap or key leaves the built-in provider
+        # off, logged by the api-server, instead of blocking the pod's start.
+        - name: platform-provider-ca
+          configMap:
+            name: {{ .name }}
+            optional: true
+            items:
+              - key: {{ required "apiServer.platformProvider.caConfigMap.key is required with its name" .key }}
+                path: ca.crt
+        {{- end }}
         {{- end }}

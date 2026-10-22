@@ -73,11 +73,13 @@ export const createFilesSlice: StateCreator<
       openFileEdit: opts?.edit ?? false,
       ...(path !== null
         ? {
+            sidePanelTab: "files" as const,
             openArtifactId: null,
             openArtifactDirty: false,
             openDelegation: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : {}),
     }),

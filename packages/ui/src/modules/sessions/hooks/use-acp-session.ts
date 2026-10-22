@@ -1,5 +1,9 @@
 import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
-import { type PromptBlock, SessionMode } from "api-server-api";
+import {
+  type DefaultKind,
+  type PromptBlock,
+  SessionMode,
+} from "api-server-api";
 import {
   useCallback,
   useEffect,
@@ -19,6 +23,7 @@ import {
   resumeFailureKind,
   type SessionFailureKind,
   type SessionListing,
+  unstoredSessionPrompts,
 } from "../../acp/errors.js";
 import { framesToMessages } from "../../acp/frames-to-messages.js";
 import {
@@ -42,12 +47,14 @@ import {
 } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
+import { rewrittenThread } from "../lib/rewrite-messages.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import type { RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+import { useTakeBackPrompt } from "./use-take-back-prompt.js";
 
 async function classifyResumeFailure(
   agentId: string,
@@ -167,6 +174,7 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setContinuedFrom(null);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
@@ -179,6 +187,7 @@ export function useAcpSession(
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setContinuedFrom(null);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
@@ -220,6 +229,12 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
+        const unstored = unstoredSessionPrompts(e);
+        if (unstored !== null) {
+          setLoadingSession(false);
+          await useStore.getState().reopenUnstoredSession(sid, unstored);
+          return;
+        }
         setMessages([]);
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;
@@ -276,7 +291,7 @@ export function useAcpSession(
   });
 
   const chooseSessionModel = useCallback(
-    async (value: string) => {
+    async (value: string, onPinned?: () => void) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
       try {
@@ -285,7 +300,9 @@ export function useAcpSession(
         await live.connection.agent.request(PIN_MODEL_METHOD, {
           sessionId: sid,
           model: value,
+          follows: null,
         });
+        onPinned?.();
         await queryClient.invalidateQueries({
           queryKey: acpSessionsKeys.agent(selectedAgent),
         });
@@ -300,7 +317,11 @@ export function useAcpSession(
   );
 
   const configureSession = useCallback(
-    async (settings: Record<string, string>) => {
+    async (
+      settings: Record<string, string>,
+      follows: DefaultKind | null = null,
+      afterNextDefaults = false,
+    ) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
       try {
@@ -309,6 +330,8 @@ export function useAcpSession(
         await live.connection.agent.request(CONFIGURE_SESSION_METHOD, {
           sessionId: sid,
           settings,
+          follows,
+          ...(afterNextDefaults && { afterNextDefaults: true }),
         });
         await queryClient.invalidateQueries({
           queryKey: acpSessionsKeys.agent(selectedAgent),
@@ -365,23 +388,7 @@ export function useAcpSession(
       )) as { sessionId: string };
       bindEngagement(result.sessionId);
       setSessionId(result.sessionId);
-      setMessages((prev) => [
-        ...prev.slice(0, at),
-        {
-          id: promptId,
-          role: "user",
-          parts,
-          streaming: false,
-          at: new Date().toISOString(),
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          parts: [],
-          streaming: true,
-          promptId,
-        },
-      ]);
+      setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
       useStore.getState().setRewriting(null);
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
@@ -389,6 +396,13 @@ export function useAcpSession(
     },
     [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
   );
+
+  const takeBackPrompt = useTakeBackPrompt({
+    selectedAgent,
+    stopAgent,
+    ensureLive,
+    bindEngagement,
+  });
 
   const sendPrompt = useCallback(
     (
@@ -408,6 +422,7 @@ export function useAcpSession(
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,

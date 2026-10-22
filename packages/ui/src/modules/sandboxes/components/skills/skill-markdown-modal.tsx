@@ -92,11 +92,11 @@ export function SkillMarkdownModal({
           {content && <span className="shrink-0">{sizeLabel(content)}</span>}
           <span className="flex-1" />
           {linkHref && (
-            <Tooltip content="View SKILL.md on GitHub">
+            <Tooltip content="Open on GitHub">
               <a
                 href={linkHref}
                 {...externalLinkProps}
-                aria-label="View SKILL.md on GitHub"
+                aria-label="Open SKILL.md on GitHub"
                 className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Launch size={16} />

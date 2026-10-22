@@ -5,6 +5,7 @@ import {
   Renew,
   Time,
   TrashCan,
+  ViewOff,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
@@ -17,7 +18,10 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
+import { cn } from "@/lib/utils";
 
+import type { SkillIdentity } from "../../lib/skill-identity.js";
+import { selectionKey } from "../../lib/skill-identity.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SourceError } from "./skill-source-error.js";
@@ -78,6 +82,8 @@ export function SkillSourceCard({
   onToggle,
   onRescan,
   onRemove,
+  onHide,
+  hasInstalled,
   onUpdate,
   onOpenSkill,
   onManageConnections,
@@ -93,7 +99,7 @@ export function SkillSourceCard({
   error: ScanFailure | null;
   scannedAt?: string;
   visibility?: "public" | "private";
-  installedRef: (source: string, name: string) => SkillRef | undefined;
+  installedRef: (skill: SkillIdentity) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
   stateLoaded: boolean;
@@ -101,6 +107,8 @@ export function SkillSourceCard({
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
+  onHide?: () => void;
+  hasInstalled: boolean;
   onUpdate: (skill: Skill) => void;
   onOpenSkill: (skill: Skill) => void;
   suppressedNames?: ReadonlySet<string>;
@@ -111,12 +119,8 @@ export function SkillSourceCard({
 }) {
   const loaded = skills !== undefined;
   const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
-  const enabled = list.filter(
-    (s) => installedRef(s.source, s.name) !== undefined,
-  );
-  const available = list.filter(
-    (s) => installedRef(s.source, s.name) === undefined,
-  );
+  const enabled = list.filter((s) => installedRef(s) !== undefined);
+  const available = list.filter((s) => installedRef(s) === undefined);
   const sorted = [...enabled, ...available];
   const collapsible = enabled.length > 0 && available.length > 0;
 
@@ -140,10 +144,14 @@ export function SkillSourceCard({
 
   const bulkList = filtering ? visible : list;
   const bulkAllOn =
-    bulkList.length > 0 &&
-    bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
+    bulkList.length > 0 && bulkList.every((s) => installedRef(s) !== undefined);
 
   const canRemove = !source.system && !source.fromTemplate;
+  const hideBlocker = !stateLoaded
+    ? "Still reading this agent's skills…"
+    : hasInstalled
+      ? "Turn its skills off first"
+      : null;
 
   return (
     <div>
@@ -216,9 +224,29 @@ export function SkillSourceCard({
                 window.open(source.gitUrl, "_blank", "noopener,noreferrer")
               }
             >
-              <span className="flex-1">View repo</span>
+              <span className="flex-1">View on GitHub</span>
               <Launch size={14} />
             </DropdownMenuItem>
+            {onHide && !readOnly && (
+              <DropdownMenuItem
+                disabled={disabled || hideBlocker !== null}
+                onSelect={onHide}
+                className={cn(hideBlocker && "h-auto items-start py-2")}
+              >
+                <ViewOff
+                  size={14}
+                  className={cn("shrink-0", hideBlocker && "mt-0.5")}
+                />
+                <span className="flex-1">
+                  Hide for this agent
+                  {hideBlocker && (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {hideBlocker}
+                    </span>
+                  )}
+                </span>
+              </DropdownMenuItem>
+            )}
             {canRemove && (
               <DropdownMenuItem tone="danger" onSelect={onRemove}>
                 <TrashCan size={14} />
@@ -243,14 +271,14 @@ export function SkillSourceCard({
       )}
       {loaded &&
         visible.map((skill) => {
-          const ref = installedRef(skill.source, skill.name);
+          const ref = installedRef(skill);
           const hasDrift = isDrifted(ref, skill);
           return (
             <SkillRow
               key={skillKey(skill)}
               skill={skill}
               installed={ref !== undefined}
-              busy={busyKey === skillKey(skill)}
+              busy={busyKey === selectionKey(skill)}
               disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={

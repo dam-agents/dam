@@ -3,12 +3,17 @@
   "reasons": [
     "MachineNotReady",
     "MachineOutOfCapacity",
+    "MachineAwaitingAllocation",
     "MachineImageUnavailable",
+    "MachineImageCacheUnreachable",
     "MachineBootFailed",
     "MachineSeedMissing",
     "MachineStorageFull",
-    "MachineHomeFull"
+    "MachineHomeFull",
+    "MachineCopyingDisk",
+    "MachineOOMKilled",
+    "MachineSeccompKilled"
   ],
   "seedExitPermanent": 3,
-  "releaseHolds": ["unstaged", "runtime", "failed"]
+  "releaseHolds": ["unstaged", "runtime", "reboot", "failed"]
 }

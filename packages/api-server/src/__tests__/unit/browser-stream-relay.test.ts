@@ -268,7 +268,7 @@ describe("browser stream relay", () => {
     const { ws, messages } = await open(
       `ws://127.0.0.1:${port}/api/public/browser-stream/agent-1/api/websockets?token=secret`,
     );
-    await until(() => agent.sockets.length === 1);
+    await until(() => agent.sockets.length === 1 && held === 1);
     expect(ensured).toBe(1);
     expect(held).toBe(1);
     expect(agent.paths).toEqual([UPSTREAM_PATH]);
@@ -278,6 +278,59 @@ describe("browser stream relay", () => {
     agent.sockets[0]!.send("frame");
     await until(() => messages.includes("frame"));
 
+    ws.close();
+    await until(() => held === 0);
+  });
+
+  // TEST_SCENARIO: Selkies' web client reconnects by itself whenever its socket closes, as it does when the user puts the agent to sleep. Its reconnect must not wake the agent: the hold only waits out a wake asked for elsewhere, and the presence hold, which alone would wake the agent, is taken only once the agent's end is open.
+  it("never wakes the agent, and holds presence only once the stream opens", async () => {
+    const agent = await fakeAgent();
+    const asked: unknown[] = [];
+    let wake!: () => void;
+    const repo = {
+      ensureReady: (_id: string, opts: unknown) => {
+        asked.push(opts);
+        return new Promise<void>((r) => (wake = r));
+      },
+      peekCached: () => null,
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
+    let held = 0;
+    const presence = {
+      acquire: () => {
+        held++;
+        return () => {
+          held--;
+        };
+      },
+    } as unknown as SessionPresence;
+    const relay = createBrowserStreamRelay(
+      "ns",
+      repo,
+      presence,
+      UPSTREAM_PATH,
+      () => agent.base,
+    );
+    closers.push(() => relay.close());
+    const server = createServer();
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "web",
+        attached: () => {},
+      }),
+    );
+    const port = await listen(server);
+
+    const { ws } = await open(
+      `ws://127.0.0.1:${port}/api/public/browser-stream/agent-1/api/websockets`,
+    );
+    await until(() => asked.length === 1);
+    expect(asked).toEqual([{ waitOnly: true }]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(held).toBe(0);
+
+    wake();
+    await until(() => held === 1);
     ws.close();
     await until(() => held === 0);
   });

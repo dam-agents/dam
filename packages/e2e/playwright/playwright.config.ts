@@ -57,10 +57,22 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22)-.*\.spec\.ts$/
-        : /\/(17|18|19)-.*\.spec\.ts$/,
+        ? /\/(17|18|20|22|23|25|27|29)-.*\.spec\.ts$/
+        : /\/(17|18|19|25)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
+  {
+    name: "new-layout",
+    testMatch: /26-.*\.spec\.ts$/,
+    dependencies: ["chain", "own-agents"],
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
+  {
+    name: "platform-provider",
+    testMatch: /24-.*\.spec\.ts$/,
+    dependencies: ["api-keys", "live-events", "new-layout"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   ...(full
@@ -105,6 +117,19 @@ const suite: NamedProject[] = [
     : []),
 ];
 
+const prSkip =
+  process.env.E2E_SCOPE === "pr"
+    ? new RegExp(
+        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26|27" : "12|18|21|24"})-`,
+      )
+    : undefined;
+
+const prEmpty = new Set(
+  laneBackend === "vm"
+    ? ["platform-provider", "new-layout", "agent-backend"]
+    : ["platform-provider"],
+);
+
 const agentBackend: NamedProject = {
   name: "agent-backend",
   testMatch: /19-.*\.spec\.ts$/,
@@ -112,6 +137,26 @@ const agentBackend: NamedProject = {
   use: { ...devices["Desktop Chrome"], storageState },
 };
 
+const runnerRelease: NamedProject = {
+  name: "runner-release",
+  testMatch: /28-.*\.spec\.ts$/,
+  dependencies: [...suite, agentBackend]
+    .map(({ name }) => name)
+    .filter((name) => !prSkip || !prEmpty.has(name)),
+  use: { ...devices["Desktop Chrome"], storageState },
+};
+
+const projects = (
+  laneBackend === "vm" ? [...suite, agentBackend, runnerRelease] : suite
+).filter(({ name }) => !prSkip || !prEmpty.has(name));
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the smoke suite's Playwright projects: which specs a run
+ * takes, in what order, and on which Backend. E2E_VIRTUALIZATION picks the lane.
+ * E2E_SCOPE=pr narrows a pull request's run to the specs that fail for real there, and
+ * the merge queue, the nightly run and a tag take every one (docs/architecture/e2e.md).
+ * No spec a PR run keeps reads state an excluded spec creates.
+ */
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
@@ -136,5 +181,7 @@ export default defineConfig({
       ],
     },
   },
-  projects: laneBackend === "vm" ? [...suite, agentBackend] : suite,
+  projects: projects.map((project) =>
+    prSkip ? { ...project, testIgnore: prSkip } : project,
+  ),
 });

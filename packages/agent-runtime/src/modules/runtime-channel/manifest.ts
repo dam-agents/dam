@@ -30,6 +30,8 @@ const modelListing = z.object({
 export const modelDiscoverySpec = modelListing.extend({
   urlEnv: z.array(z.string().min(1)).nonempty(),
   tokenEnv: z.array(z.string().min(1)).optional(),
+  credentialHeader: z.enum(["authorization", "x-api-key"]).optional(),
+  headers: z.record(z.string().min(1), z.string()).optional(),
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
   namePrefix: z.string().min(1).optional(),
@@ -45,10 +47,24 @@ export const modelDiscoverySources = z.union([
 ]);
 export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how a session setting reaches the harness. An
+ * `env` setting is read at process start, so a session that picks one runs
+ * in a process of its own; a `router` setting is never sent, the Model
+ * Router reads the session's value itself on every call. A `mode` setting that
+ * opts in with `deriveStartMode` has no start mode of its own the runtime can
+ * rely on, so the runtime derives one from the catalog and the session's
+ * model; every other harness starts on its own, and its own sources of a start
+ * mode — a thinking level, a pinned persona — are left alone.
+ */
 export const sessionSettingBinding = z.union([
-  z.object({ mode: z.literal(true) }),
+  z.object({
+    mode: z.literal(true),
+    deriveStartMode: z.literal(true).optional(),
+  }),
   z.object({ configOption: z.string().min(1) }),
   z.object({ env: z.array(z.string().min(1)).nonempty() }),
+  z.object({ router: z.literal(true) }),
 ]);
 export type SessionSettingBinding = z.infer<typeof sessionSettingBinding>;
 
@@ -86,8 +102,67 @@ export const harnessConfigBinding = z.object({
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
+export const modelDialect = z.enum([
+  "anthropic-messages",
+  "openai-chat",
+  "openai-responses",
+]);
+export type ModelDialect = z.infer<typeof modelDialect>;
+
+export const sessionModelBinding = z.object({
+  configOption: z.string().min(1),
+  valuePrefix: z.string().optional(),
+});
+export type SessionModelBinding = z.infer<typeof sessionModelBinding>;
+
+export const initializeCapabilities = z.object({
+  agentCapabilities: z.record(z.string(), z.unknown()),
+  authMethods: z.array(z.unknown()).default([]),
+  agentInfo: z
+    .object({ name: z.string().min(1), title: z.string().min(1) })
+    .optional(),
+});
+export type InitializeCapabilities = z.infer<typeof initializeCapabilities>;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: providers a harness runs on outside the Model
+ * Router (Claude Code on Bedrock, whose SigV4 signing no header swap can do):
+ * a session on one runs in a process of its own with the Connection's env.
+ */
+export const nativeProvidersBinding = z.object({
+  templates: z.array(z.string().min(1)).nonempty(),
+  models: z.array(z.string().min(1)).nonempty(),
+});
+export type NativeProvidersBinding = z.infer<typeof nativeProvidersBinding>;
+
+export const modelRouterBinding = z.object({
+  dialects: z.array(modelDialect).nonempty(),
+  native: nativeProvidersBinding.optional(),
+  sessionModel: sessionModelBinding.optional(),
+  namePrefix: z.string().min(1).optional(),
+  lowercaseNames: z.boolean().optional(),
+  modelFromSession: z.boolean().optional(),
+  tierAliases: z.array(z.string().min(1)).optional(),
+  bareNamesFromSession: z.boolean().optional(),
+  claudeTiers: z.boolean().optional(),
+  credentialEnv: z.array(z.string().min(1)).optional(),
+  defaultModelEnv: z.array(z.string().min(1)).optional(),
+  sessionFromRunningTurn: z.boolean().optional(),
+  bobGateway: z.boolean().optional(),
+  nonClaudeModelEnv: z
+    .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
+    .optional(),
+});
+export type ModelRouterBinding = z.infer<typeof modelRouterBinding>;
+
 export const runtimeManifestSchema = z.object({
   manifestVersion: z.literal(1),
+
+  modelRouter: modelRouterBinding.optional(),
+
+  initializeCapabilities: initializeCapabilities.optional(),
+
+  harnessState: z.enum(["claude-code"]).optional(),
 
   drivers: z.record(z.string(), driverEntry).default({}),
 
@@ -104,11 +179,11 @@ export const runtimeManifestSchema = z.object({
 
   terminalSessionPins: z.string().min(1).optional(),
 
-  sessionSpend: z
-    .object({
-      command: z.array(z.string().min(1)).nonempty(),
-      unit: z.string().min(1),
-    })
+  sessionMcpEntry: z.boolean().default(true),
+
+  sessionEnvVar: z
+    .string()
+    .regex(/^[A-Z_][A-Z0-9_]*$/)
     .optional(),
 
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
@@ -173,6 +248,14 @@ const BUILTIN_DRIVERS: Record<
   },
   "sub-agent-outcome": {
     binding: { impl: "sub-agent-outcome" },
+    defaultOn: true,
+  },
+  "session-message": {
+    binding: { impl: "session-message" },
+    defaultOn: true,
+  },
+  "session-defaults": {
+    binding: { impl: "session-defaults" },
     defaultOn: true,
   },
 };

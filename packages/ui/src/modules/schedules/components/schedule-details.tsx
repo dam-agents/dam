@@ -3,17 +3,25 @@ import { Time } from "@carbon/icons-react";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useHarnessCatalogModels } from "../../sessions/api/session-pair.js";
+import {
+  modelGroups,
+  modelIndicatorLabel,
+} from "../../sessions/lib/catalog-groups.js";
 import {
   useHasHarnessDefault,
+  useScheduleDefault,
   useSessionModelChoices,
 } from "../api/session-model.js";
 import {
   clampText,
   declinedSummary,
   formatRunTime,
-  lastRunStatus,
+  runOutcomeLine,
 } from "../lib/schedule-format.js";
 
 function DetailCard({
@@ -31,7 +39,13 @@ function DetailCard({
   );
 }
 
-export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
+export function ScheduleDetails({
+  schedule,
+  onPickModel,
+}: {
+  schedule: Schedule;
+  onPickModel?: () => void;
+}) {
   const { task, precheck, model, timezone, sessionMode, enabled, status } =
     schedule;
   const stopReason = enabled ? status?.stopReason : undefined;
@@ -43,7 +57,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
         : stopReason
           ? "Stopped"
           : "Paused";
-  const lastStatus = lastRunStatus(status?.lastResult);
+  const outcome = runOutcomeLine(schedule);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
   return (
@@ -101,8 +115,10 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
                 {declined ? "(never ran)" : "Never run"}
               </span>
             )}
-            {lastStatus && (
-              <span className={lastStatus.className}>{lastStatus.label}</span>
+            {outcome?.resultText && (
+              <span className={cn("break-words", outcome.className)}>
+                {outcome.resultText}
+              </span>
             )}
           </div>
         </DetailCard>
@@ -112,9 +128,40 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
             <span className="capitalize">{sessionMode ?? "fresh"}</span>
           </DetailCard>
         )}
+        {schedule.harness && (
+          <DetailCard label="Harness">{schedule.harness}</DetailCard>
+        )}
         <DetailCard label="Model">
-          <ScheduleModel agentId={schedule.agentId} model={model} />
+          <ScheduleModel
+            agentId={schedule.agentId}
+            harness={schedule.harness}
+            model={model}
+          />
+          {schedule.migrationNote && (
+            <p className="mt-1 text-xs font-normal text-warning">
+              {schedule.migrationNote}
+              {onPickModel && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={onPickModel}
+                    className="underline underline-offset-2"
+                  >
+                    Pick a model
+                  </button>
+                </>
+              )}
+            </p>
+          )}
         </DetailCard>
+        {schedule.settings && Object.keys(schedule.settings).length > 0 && (
+          <DetailCard label="Settings">
+            {Object.entries(schedule.settings)
+              .map(([id, value]) => `${id}: ${value}`)
+              .join(" · ")}
+          </DetailCard>
+        )}
         {schedule.sessionTitle && (
           <DetailCard label="Session title">
             <span className="break-words">{schedule.sessionTitle}</span>
@@ -127,13 +174,40 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
 
 function ScheduleModel({
   agentId,
+  harness,
   model,
 }: {
   agentId: string;
+  harness: string | null;
   model: string | null;
 }) {
   const choices = useSessionModelChoices(agentId);
   const hasDefault = useHasHarnessDefault(agentId);
+  const { data: status } = useHarnessConfigStatus(agentId);
+  const routed = status?.modelRouter ?? false;
+  const { data: catalog } = useHarnessCatalogModels(
+    routed ? agentId : null,
+    harness ?? status?.defaultHarness ?? null,
+  );
+  const { data: fallback } = useScheduleDefault(
+    routed && !model ? agentId : null,
+    harness,
+  );
+  if (routed) {
+    const groups = modelGroups(catalog);
+    if (!model)
+      return (
+        <>
+          Scheduled default
+          {fallback?.model && (
+            <p className="mt-1 text-xs font-normal text-muted-foreground">
+              Now: {modelIndicatorLabel(groups, fallback.model)}
+            </p>
+          )}
+        </>
+      );
+    return <>{modelIndicatorLabel(groups, model)}</>;
+  }
   if (!model) return <>{hasDefault ? "Default" : "Same as agent"}</>;
   const choice = choices.find((c) => c.value === model);
   return (

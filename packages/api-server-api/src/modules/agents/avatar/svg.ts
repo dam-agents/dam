@@ -10,6 +10,13 @@ export const AVATAR_CHARACTERS = [
 ] as const;
 
 export type AvatarCharacter = (typeof AVATAR_CHARACTERS)[number];
+export const AVATAR_EMOJI_RE = new RegExp("^emoji:(\\p{RGI_Emoji})$", "v");
+export const AVATAR_IMAGE_RE = /^image:([0-9a-f]{64})$/;
+
+export type Avatar =
+  | { kind: "character"; character: AvatarCharacter }
+  | { kind: "emoji"; emoji: string }
+  | { kind: "image"; id: string };
 
 export const SLACK_EMOJI_INDEX: Record<AvatarCharacter, number> = {
   compass: 0,
@@ -22,9 +29,7 @@ export const SLACK_EMOJI_INDEX: Record<AvatarCharacter, number> = {
   wave: 7,
 };
 
-export type AvatarMood = "working" | "idle" | "asleep";
-
-export const ASLEEP_FILL = "#a2a9b0";
+export type AvatarMood = "awake" | "asleep";
 
 const PINK = "#E89DA8";
 const BLUE = "#5B76D2";
@@ -218,6 +223,21 @@ export function avatarCharacter(
     : hashedCharacter(`${owner}\n${name}`);
 }
 
+export function parseAvatar(
+  chosen: string | undefined,
+  owner: string,
+  name: string,
+): Avatar {
+  const emoji = chosen?.match(AVATAR_EMOJI_RE)?.[1];
+  if (emoji) return { kind: "emoji", emoji };
+  const id = chosen?.match(AVATAR_IMAGE_RE)?.[1];
+  if (id) return { kind: "image", id };
+  return { kind: "character", character: avatarCharacter(chosen, owner, name) };
+}
+
+export function emojiSvg(emoji: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="54" font-size="80" text-anchor="middle" dominant-baseline="central">${emoji}</text></svg>`;
+}
 export function leastUsedCharacter(
   used: readonly AvatarCharacter[],
   among: readonly AvatarCharacter[] = AVATAR_CHARACTERS,
@@ -237,24 +257,15 @@ export function avatarColors(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Both eye groups are always drawn and the one the
- * mood does not show carries display="none". That attribute alone is right for
- * a static render such as the Slack PNG, while page CSS outranks it, so the UI
- * can open an idle character's eyes on hover without a second drawing.
+ * mood does not show carries display="none", so a static render such as the
+ * Slack PNG is right without page CSS.
  */
 export function avatarSvg(
   character: AvatarCharacter,
-  mood: AvatarMood = "working",
+  mood: AvatarMood = "awake",
 ): string {
   const ch = CHARACTERS[character];
-  const c =
-    mood === "asleep"
-      ? {
-          eyes: ASLEEP_FILL,
-          body: ASLEEP_FILL,
-          wings: ASLEEP_FILL,
-          ink: ASLEEP_FILL,
-        }
-      : ch.colors;
+  const c = ch.colors;
   const closed = ch.eyes
     .map(
       ([cx, cy, r]) =>
@@ -270,8 +281,8 @@ export function avatarSvg(
   const hide = ' display="none"';
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ch.size} ${ch.size}" fill="none">` +
-    `<g class="avatar-eyes-closed"${mood === "working" ? hide : ""}>${closed}</g>` +
-    `<g class="avatar-eyes-open"${mood === "working" ? "" : hide}>${open}</g>` +
+    `<g class="avatar-eyes-closed"${mood === "awake" ? hide : ""}>${closed}</g>` +
+    `<g class="avatar-eyes-open"${mood === "awake" ? "" : hide}>${open}</g>` +
     ch.figure(c) +
     "</svg>"
   );

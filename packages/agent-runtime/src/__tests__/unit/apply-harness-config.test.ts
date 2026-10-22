@@ -59,12 +59,37 @@ describe("harness-config event handler", () => {
       binding,
       agentHome: home,
       envReader: asLease(noEnv),
-      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: () => {},
     }).apply(payload);
   const apply = (payload: HarnessConfigEventPayload) =>
     applyWith(BINDING, payload);
+
+  /** TEST_SCENARIO: The capability the runtime publishes names the settings
+   * whose start mode it derives, and names none for a harness that does not
+   * opt in, so the picker derives a mode only where the runtime does. */
+  it("publishes the settings whose start mode the runtime derives", () => {
+    const capability = (
+      sessionSettings: HarnessConfigBinding["sessionSettings"],
+    ) =>
+      createHarnessConfigPlugin({
+        harness: "test",
+        binding: { ...BINDING, sessionSettings },
+        agentHome: home,
+        envReader: asLease(noEnv),
+        discoverModels: noDiscovery,
+        log: () => {},
+      });
+    expect(
+      capability({
+        mode: { mode: true, deriveStartMode: true },
+        effort: { configOption: "effortLevel" },
+      }).derivedStartMode,
+    ).toEqual(["mode"]);
+    expect(capability({ mode: { mode: true } }).derivedStartMode).toBe(
+      undefined,
+    );
+  });
 
   const readSettings = () =>
     JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
@@ -177,7 +202,6 @@ describe("harness-config event handler (TOML)", () => {
       binding: TOML_BINDING,
       agentHome: home,
       envReader: asLease(noEnv),
-      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: () => {},
     }).apply(payload);

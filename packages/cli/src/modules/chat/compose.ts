@@ -3,6 +3,7 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TokenProvider } from "../auth/index.js";
 import type { AgentService } from "../agent/index.js";
+import { startFailure } from "../agent/commands/wait-or-exit.js";
 import { buildChatCommand } from "./commands/chat.js";
 import { buildRunCommand, trackStdout } from "./commands/run.js";
 import { buildSessionListCommand } from "./commands/session-list.js";
@@ -29,6 +30,36 @@ export function askModeSwitch(
       resolve(answer.trim().toLowerCase() === "y");
       rl.close();
     });
+  });
+}
+
+export const ATTACH_PAUSE_MS = 5000;
+
+export function pauseBeforeAttach(
+  input: NodeJS.ReadableStream,
+  output: NodeJS.WritableStream,
+  ms: number,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input, output });
+    let connect = true;
+    const timer = setTimeout(() => {
+      output.write("\n");
+      rl.close();
+    }, ms);
+    rl.on("SIGINT", () => {
+      connect = false;
+      output.write("\n");
+      rl.close();
+    });
+    rl.on("close", () => {
+      clearTimeout(timer);
+      resolve(connect);
+    });
+    rl.question(
+      `Press Enter to connect, or wait ${Math.round(ms / 1000)} s. `,
+      () => rl.close(),
+    );
   });
 }
 
@@ -66,6 +97,8 @@ export function composeChatModule({
       process.once("SIGINT", handler);
       return () => process.removeListener("SIGINT", handler);
     },
+    whyNotStarted: (ctx) =>
+      startFailure(createAgentService(ctx.host), ctx.agentId),
   });
 
   const sessionParent = new Command("session").description(
@@ -77,7 +110,11 @@ export function composeChatModule({
 
   return {
     commands: [
-      buildChatCommand({ chatService }),
+      buildChatCommand({
+        chatService,
+        pause: () =>
+          pauseBeforeAttach(process.stdin, process.stderr, ATTACH_PAUSE_MS),
+      }),
       buildRunCommand({ runService }),
       sessionParent,
     ],

@@ -2,6 +2,8 @@ import { z } from "zod";
 
 const schema = z.object({
   PORT: z.coerce.number().default(8080),
+  PLATFORM_MODEL_ROUTER_PORT: z.coerce.number().default(24180),
+  LEASE_IDLE_MS: z.coerce.number().default(10 * 60_000),
   PLATFORM_DEV: z
     .string()
     .default("false")
@@ -15,10 +17,6 @@ const schema = z.object({
     .default("on")
     .transform((v) => v !== "off"),
   API_SERVER_URL: z.string().default(""),
-  BACKGROUND_WORK_HOLDS: z
-    .string()
-    .default("on")
-    .transform((v) => v !== "off"),
   QUEUE_PARK_MS: z.coerce.number().int().positive().optional(),
   MEM_REAPER: z
     .string()

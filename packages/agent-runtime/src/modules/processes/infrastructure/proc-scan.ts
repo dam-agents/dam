@@ -4,33 +4,50 @@ import { CLK_TCK } from "../domain/snapshot.js";
 
 const CMDLINE_MAX_BYTES = 4096;
 const KEEP_VARIABLE = Buffer.from("PLATFORM_KEEP=");
+const USER_SERVICE_VARIABLE = Buffer.from("RC_USER_SERVICES=");
+const SERVICE_NAME_VARIABLE = Buffer.from("RC_SVCNAME=");
+const LINK_VARIABLE = Buffer.from("PLATFORM_LINK=");
 
 export interface ProcessTable {
   scan(): Promise<ProcSnapshot>;
   bootId(): Promise<string | null>;
 }
 
-function keepMarkOf(environ: Buffer): string | null {
+function variableOf(environ: Buffer, name: Buffer): string | null {
   let at = 0;
   while (at < environ.length) {
     const end = environ.indexOf(0, at);
     const stop = end === -1 ? environ.length : end;
     if (
-      stop - at > KEEP_VARIABLE.length &&
-      environ.subarray(at, at + KEEP_VARIABLE.length).equals(KEEP_VARIABLE)
+      stop - at > name.length &&
+      environ.subarray(at, at + name.length).equals(name)
     ) {
-      return environ.subarray(at + KEEP_VARIABLE.length, stop).toString("utf8");
+      return environ.subarray(at + name.length, stop).toString("utf8");
     }
     at = stop + 1;
   }
   return null;
 }
 
-async function readKeepMark(dir: string): Promise<string | null> {
+interface Marks {
+  keepMark: string | null;
+  startupItem: string | null;
+  link: string | null;
+}
+
+async function readMarks(dir: string): Promise<Marks> {
   try {
-    return keepMarkOf(await readFile(`${dir}/environ`));
+    const environ = await readFile(`${dir}/environ`);
+    return {
+      keepMark: variableOf(environ, KEEP_VARIABLE),
+      startupItem:
+        variableOf(environ, USER_SERVICE_VARIABLE) === "yes"
+          ? variableOf(environ, SERVICE_NAME_VARIABLE)
+          : null,
+      link: variableOf(environ, LINK_VARIABLE),
+    };
   } catch {
-    return null;
+    return { keepMark: null, startupItem: null, link: null };
   }
 }
 
@@ -73,9 +90,9 @@ async function readProcess(
       .trim();
     if (cmdline === "") return null;
     const startTicks = Number(fields[19]);
-    const [outputPath, keepMark] = await Promise.all([
+    const [outputPath, { keepMark, startupItem, link }] = await Promise.all([
       outputFileOf(dir, 1).then((path) => path ?? outputFileOf(dir, 2)),
-      readKeepMark(dir),
+      readMarks(dir),
     ]);
     return {
       pid,
@@ -91,6 +108,8 @@ async function readProcess(
       cmdline,
       outputPath,
       keepMark,
+      startupItem,
+      link,
     };
   } catch {
     return null;
@@ -102,8 +121,10 @@ async function readProcess(
  * process inventory. It reads each process's parent, process group, session,
  * start time, CPU ticks, resident memory, command line, and the regular file
  * behind stdout or stderr, if any. A process that vanishes mid-read is
- * skipped. From the environment it takes the PLATFORM_KEEP value alone and
- * drops every other variable at once, because agents hold credentials there.
+ * skipped. From the environment it takes the PLATFORM_KEEP, PLATFORM_LINK,
+ * RC_USER_SERVICES and RC_SVCNAME values alone — the last two name the
+ * agent's own openrc service a supervisor runs — and drops every other
+ * variable at once, because agents hold credentials there.
  */
 export function createProcessTable(procRoot = "/proc"): ProcessTable {
   return {

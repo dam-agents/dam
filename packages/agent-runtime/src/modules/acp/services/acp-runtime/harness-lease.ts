@@ -17,6 +17,7 @@ export interface PendingRecycle {
 export interface HarnessLease {
   ensure(): boolean;
   pid(): number | null;
+  lastExitCause(): string | null;
   send(frame: unknown): boolean;
   whenReady(cb: () => void): () => void;
   refreshEnv(opts: { force: boolean }): void;
@@ -65,8 +66,8 @@ export interface HarnessLeaseDeps {
  * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
  * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
  * between the paths. A crash is final for this lease, which the pod's lease
- * router then drops unless it is the default one; a recycle respawns on the
- * next attach. A forced recycle for env or config is held back while a kept
+ * router then drops so the next session respawns it; a recycle respawns on
+ * the next attach. A forced recycle for env or config is held back while a kept
  * Harness Task runs, because the recycle would kill it: the recycle stays owed
  * until the task ends or stops being kept, or a caller applies it now. An
  * unresponsive harness is forced anyway.
@@ -78,6 +79,7 @@ const RECYCLE_LOG: Partial<Record<HarnessTeardownReason, string>> = {
 
 export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let agent: AgentProcess | null = null;
+  let lastExitCause: string | null = null;
   let terminal = false;
   let envReady = deps.envReadyAtBoot;
   const readyWaiters = new Set<() => void>();
@@ -271,6 +273,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       a.onLine(deps.onFrame);
       void a.exited.then(() => {
         if (agent !== a) return;
+        lastExitCause = a.exitCause();
         agent = null;
         terminal = true;
         teardown("agent-exited");
@@ -280,6 +283,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
     pid() {
       return agent?.pid ?? null;
+    },
+
+    lastExitCause() {
+      return lastExitCause;
     },
 
     send(frame) {

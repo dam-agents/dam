@@ -36,9 +36,11 @@ function replica() {
     driverOpsFor: () => ({}),
     subAgentAwaitsFor: () => ({}),
     carriesInspectorRole: async () => false,
+    chatFormPreferences: async () => null,
     caseStudySubmissions: {},
     caseStudyInspection: {},
     agentImage: async () => null,
+    environments: async () => null,
     agentTelemetry: {},
   } as unknown as MountMcpDeps);
   return app;

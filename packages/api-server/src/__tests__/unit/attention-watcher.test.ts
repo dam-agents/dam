@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import type { AttentionRecordRow } from "../../modules/attention/domain/types.js";
 import type { AttentionRepository } from "../../modules/attention/infrastructure/attention-repository.js";
+import { createPodSessionClient } from "../../modules/attention/infrastructure/pod-session-watch.js";
 import { createSessionWatcher } from "../../modules/attention/services/session-watcher.js";
 
 /*
@@ -16,7 +17,11 @@ import { createSessionWatcher } from "../../modules/attention/services/session-w
 const CAPTURE_RETRY_MS = 15_000;
 const CAPTURE_DEBOUNCE_MS = 250;
 
-function session(sessionId: string, updatedAt: string | null): PodSession {
+function session(
+  sessionId: string,
+  updatedAt: string | null,
+  threadTs: string | null = null,
+): PodSession {
   return {
     sessionId,
     mode: "chat",
@@ -25,7 +30,7 @@ function session(sessionId: string, updatedAt: string | null): PodSession {
     updatedAt,
     title: null,
     scheduleId: null,
-    threadTs: null,
+    threadTs,
     seenAt: null,
     runStartedAt: null,
     runTotalMs: null,
@@ -42,6 +47,7 @@ function agent(id: string, owner: string): InfraAgent {
     ready: true,
     hibernated: false,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     sweepable: false,
     lifetimeMs: 0,
@@ -92,6 +98,7 @@ function harness(): Harness {
     listDismissals: async () => [],
     ownedSessionKeys: async () => new Set<string>(),
     setDismissals: async () => {},
+    deleteDismissals: async () => {},
     deleteSessions: async (_agentId, sessionIds) => {
       if (failWrite) {
         failWrite = false;
@@ -276,4 +283,158 @@ describe("createSessionWatcher", () => {
 
     h.watcher.stop();
   });
+
+  /*
+   * TEST_SCENARIO: a session's thread key changes while nothing else about it
+   * moves. The feed names the channel from that key, so the comparison that
+   * skips unchanged rows must count it as a change and write the row again.
+   */
+  it("rewrites a row whose thread key changed", async () => {
+    const h = harness();
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", "C1:1.0")]);
+
+    h.watcher.start();
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", "C2:1.0")]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1", "s1"]);
+
+    h.watcher.stop();
+  });
+
+  /*
+   * TEST_SCENARIO: a row captured before the record kept the harness. The
+   * sidebar shows the harness from the record while the Agent sleeps, so the
+   * next capture must count the harness as a change and write the row again.
+   */
+  it("rewrites a row whose harness changed", async () => {
+    const h = harness();
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")]);
+
+    h.watcher.start();
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.setSessions([
+      { ...session("s1", "2026-09-10T00:00:00.000Z"), harness: "codex" },
+    ]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1", "s1"]);
+
+    h.watcher.stop();
+  });
+
+  /*
+   * TEST_SCENARIO: an Agent is deleted seconds after it was created, before its
+   * pod ever answered. It has no live updates yet, so it is polled, and the
+   * poll's read is still waiting on a pod that will never exist. The delete
+   * must end that read, or its socket retries until the process restarts.
+   */
+  it("aborts a polled agent's read when the agent is deleted", async () => {
+    let agents = [agent("a1", "owner-1")];
+    const signals: AbortSignal[] = [];
+    const watcher = createSessionWatcher({
+      listAgents: async () => agents,
+      runtimeFeaturesFor: async () => new Map(),
+      pods: {
+        watchAgent: () => {
+          throw new Error("a polled agent opens no watch");
+        },
+        listSessions: (_agentId, signal) => {
+          signals.push(signal);
+          return new Promise(() => {});
+        },
+      },
+      repo: {} as AttentionRepository,
+      log: () => {},
+    });
+
+    watcher.start();
+    await flush();
+    expect(signals).toHaveLength(1);
+
+    agents = [];
+    watcher.agentsChanged();
+    await flush();
+    expect(signals[0]?.aborted).toBe(true);
+
+    watcher.stop();
+  });
+});
+
+describe("createPodSessionClient", () => {
+  const dials: string[] = [];
+
+  class UnreachablePodSocket extends EventTarget {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+    readyState = UnreachablePodSocket.CONNECTING;
+    binaryType = "blob";
+
+    constructor(url: string) {
+      super();
+      dials.push(url);
+      setTimeout(() => {
+        this.readyState = UnreachablePodSocket.CLOSED;
+        this.dispatchEvent(new Event("error"));
+        this.dispatchEvent(new Event("close"));
+      }, 0);
+    }
+
+    send() {}
+
+    close() {
+      this.readyState = UnreachablePodSocket.CLOSED;
+    }
+  }
+
+  beforeEach(() => {
+    dials.length = 0;
+  });
+
+  /*
+   * TEST_SCENARIO: a one-off read targets an Agent whose pod cannot be
+   * reached. Once the caller gives up, the read must fail and its socket must
+   * stop retrying, rather than keep dialling a name that no longer resolves.
+   * A dial already in flight at the abort may still fail once, so the count
+   * is taken after it settles. The socket is a fake that fails every dial, so
+   * the test opens no network connection and does not depend on a proxy.
+   */
+  it("stops a read and its retries when the caller aborts", async () => {
+    const errors: string[] = [];
+    const pods = createPodSessionClient(
+      "no-such-namespace.invalid",
+      (m) => errors.push(m),
+      UnreachablePodSocket as unknown as typeof WebSocket,
+    );
+    const reads = new AbortController();
+
+    const read = pods.listSessions("agent-gone", reads.signal);
+    await vi.waitFor(() => expect(errors.length).toBeGreaterThan(0));
+    reads.abort();
+    await expect(read).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+
+    expect(dials[0]).toBe(
+      "ws://agent-gone.no-such-namespace.invalid.svc:8080/api/trpc-ws",
+    );
+    const seenErrors = errors.length;
+    const seenDials = dials.length;
+    await new Promise((resolve) => setTimeout(resolve, 4_500));
+    expect(errors.length).toBe(seenErrors);
+    expect(dials.length).toBe(seenDials);
+  }, 15_000);
 });

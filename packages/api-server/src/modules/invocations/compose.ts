@@ -6,12 +6,22 @@ import type {
   SkillsService,
 } from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
+import { createInvocationLinks } from "./infrastructure/invocation-links.js";
+import {
+  createInvocationTasks,
+  type InvocationTasks,
+} from "./infrastructure/invocation-tasks.js";
+import {
+  createSpawnSessions,
+  type SpawnSessions,
+} from "./services/spawn-sessions.js";
 import { createDelegationControl } from "./services/delegation-control.js";
 import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
   type InvocationsService,
+  type SpendHoldGate,
 } from "./services/invocations-service.js";
 import {
   createInvocationLivenessSweep,
@@ -65,6 +75,7 @@ export function composeInvocationsForOwner(opts: {
   frames: DelegationFramesPort;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
+  spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
 }): InvocationsService {
@@ -79,6 +90,7 @@ export function composeInvocationsForOwner(opts: {
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
+    ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
   });
@@ -157,6 +169,17 @@ export function composeSubAgentAwaitMarks(
 
 export function createDriverResolutionAdapter(db: Db): DriverResolution {
   return createDriverResolution({ repo: createInvocationsRepository(db) });
+}
+
+export function createSpawnSessionsAdapter(db: Db): SpawnSessions {
+  return createSpawnSessions({
+    driverResolution: createDriverResolutionAdapter(db),
+    links: createInvocationLinks(db),
+  });
+}
+
+export function createInvocationTasksAdapter(db: Db): InvocationTasks {
+  return createInvocationTasks(db);
 }
 
 export function createInvocationsCleanupHook(opts: {

@@ -8,13 +8,15 @@ set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
 R="$HOST_RUNNER_DIR"
 pkg="$MISE_CONFIG_ROOT/packages/vm-runner"
-mkdir -p "$R"
+mkdir -p "$R" "$HOST_RUNNER_VM_HOME"
 
 mise run //packages/vm-runner:host
 install -m 755 "$pkg/dist/host/vm-runner" "$R/vm-runner.new"
 
 # The smolvm release the binary was built against, for what the VMM loads at
 # run time: libkrun, the guest agent's root filesystem and the disk templates.
+# The binary's loader path names this directory, so it must stay here, beside
+# the runner (//packages/vm-runner:host builds it in).
 tag="$(sed -n 's/^tag=//p' "$pkg/smolvm.pin")"
 sha="$(sed -n 's/^sha256-darwin-arm64=//p' "$pkg/smolvm.pin")"
 release="$R/smolvm-$tag"
@@ -27,37 +29,48 @@ if [ ! -x "$release/smolvm-bin" ]; then
   rm "$tarball"
   mv "$release.new" "$release"
 fi
-# The runner expands its disk templates with zstd, and smolvm formats a disk
-# it has no template for with mkfs.ext4; a Mac has neither. The k3s VM does,
-# so they are expanded there and carried back as a sparse tar, which keeps
-# their holes: each is a few MiB on disk for tens of GiB of size. An expanded
-# template beside its packed one is what the runner links as it is.
-if [ ! -f "$release/storage-template.ext4" ]; then
-  echo "Expanding the disk templates in $LIMA_INSTANCE..."
-  limactl copy "$release/storage-template.ext4.zst" "$release/overlay-template.ext4.zst" "$LIMA_INSTANCE:/tmp/"
-  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && for t in storage overlay; do zstd -d -q -f --sparse $t-template.ext4.zst -o $t-template.ext4 && rm $t-template.ext4.zst; done'
-  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
-fi
-
-# smolvm shrinks a disk asked for below the 20 GiB template with resize2fs, and
-# looks for Homebrew's keg-only e2fsprogs; without it the disk keeps 20 GiB.
-[ -x /opt/homebrew/opt/e2fsprogs/sbin/resize2fs ] || command -v resize2fs >/dev/null ||
-  echo "note: no resize2fs, so vm agent disks below 20 GiB are made at 20 GiB; brew install e2fsprogs honours their size" >&2
-
 # platform-init and platform-runc run inside the guest, so they are the static
-# Linux binaries from the runner image, not anything built for this Mac. The
-# image is rebuilt unless the caller just did (SKIP_IMAGE_BUILD), so they match
-# the runner built above.
+# Linux binaries from the runner image, not anything built for this Mac, as is
+# the btrfs disk template. The image is rebuilt when its sources changed, unless
+# the caller just ran that build (SKIP_IMAGE_BUILD), so they match the runner
+# built above.
+# The guest kernel is the runner image's too: libkrunfw rebuilt with
+# libkrunfw.patch, which adds btrfs and zram. The image build leaves that arm64
+# kernel, wrapped for macOS, in the build VM's cache (see oci), which the
+# task's skip cannot see: a recreated VM has none, and the caller's build was
+# a skip. So when this Mac needs the kernel and the VM lacks it, the build is
+# forced, whatever the caller did.
+. "$MISE_CONFIG_ROOT/.mise/lib/lima-build.sh"
 image="$pkg/dist/oci/vm-runner.tar"
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && [ -f "$image" ] || mise run //packages/vm-runner:oci
-for bin in platform-init platform-runc; do
+fw_id="$(sed -n 's/^libkrunfw-commit=//p' "$pkg/smolvm.pin")-$(git -C "$pkg" hash-object libkrunfw.patch)"
+fw_c=".cache/platform-vm-runner/libkrunfw-$fw_id-darwin.c"
+vm_sh() { limactl shell --workdir / "$LIMA_BUILD_VM" sh -c "$@"; }
+need_kernel=false
+[ "$(cat "$release/lib/libkrunfw.id" 2>/dev/null)" = "$fw_id" ] || need_kernel=true
+force=()
+if $need_kernel && ! vm_sh 'test -f ~/"$1"' _ "$fw_c"; then force=(--force); fi
+if [ ${#force[@]} -gt 0 ] || [ -z "${SKIP_IMAGE_BUILD:-}" ] || [ ! -f "$image" ]; then
+  mise run ${force[@]+"${force[@]}"} //packages/vm-runner:oci
+fi
+for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runner/platform-runc opt/smolvm/storage-template.btrfs.zst; do
+  bin="${path##*/}"
   for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
-    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "usr/local/libexec/vm-runner/$bin" > "$R/$bin.new" 2>/dev/null || true
+    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "$path" > "$R/$bin.new" 2>/dev/null || true
     [ ! -s "$R/$bin.new" ] || break
   done
   [ -s "$R/$bin.new" ] || { echo "FATAL: no $bin in $image" >&2; exit 1; }
   chmod 755 "$R/$bin.new"
 done
+
+# The guest kernel is compiled here in place of the release's libkrunfw.
+if $need_kernel; then
+  vm_sh 'cat ~/"$1"' _ "$fw_c" > "$R/kernel.c"
+  cc -fPIC -DABI_VERSION=5 -shared -O2 -install_name libkrunfw.5.dylib -o "$R/libkrunfw.5.dylib" "$R/kernel.c" 2>/dev/null
+  codesign -f -s - "$R/libkrunfw.5.dylib"
+  mv "$R/libkrunfw.5.dylib" "$release/lib/libkrunfw.5.dylib"
+  rm "$R/kernel.c"
+  echo "$fw_id" > "$release/lib/libkrunfw.id"
+fi
 
 # The chart renders the runner's token and asks cert-manager for its serving
 # certificate (virtualization.runner.hostAddress); the runner holds copies.
@@ -69,32 +82,33 @@ for _ in $(seq 1 60); do kubectl -n platform-agents get secret "$secret-tls" >/d
   kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$R/tls.crt"
   kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.key}' | base64 -d > "$R/tls.key"
 )
+# The runner boots only the trees cluster:install stages onto this volume: it
+# runs no node image cache service, so it fetches nothing from a registry.
 images="$(host_runner_images)"
 
-# The harness tools the default image boots with are installed on the k3s
-# node, which this runner does not see, so they are copied onto a volume of its
-# own once the node's installer is done. New versions land beside the old ones,
-# as on the node.
-tools="$(host_runner_volume tools)"
-echo "Waiting for the harness tools on the k3s node (the first install takes minutes)..."
-kubectl -n platform-agents rollout status daemonset/platform-harness-tools --timeout=30m
-rsync -rlpt --rsync-path="sudo rsync" -e "ssh -F $HOME/.lima/$LIMA_INSTANCE/ssh.config" \
-  "lima-$LIMA_INSTANCE:/var/lib/platform-harness-tools/" "$tools/"
-
 host_runner_stop
+# Machines from before they moved out of HOST_RUNNER_DIR (see host-runner.sh)
+# are carried over once, with their records, so no agent's home is lost.
+if [ -d "$R/Library" ] && [ ! -e "$HOST_RUNNER_VM_HOME/Library" ]; then
+  mv "$R/Library" "$HOST_RUNNER_VM_HOME/Library"
+fi
 mv "$R/vm-runner.new" "$R/vm-runner"
 mv "$R/platform-init.new" "$R/platform-init"
 mv "$R/platform-runc.new" "$R/platform-runc"
+mv "$R/storage-template.btrfs.zst.new" "$release/storage-template.btrfs.zst"
+# The guest's init, as in the runner image (see oci): platform-init, whose
+# first stage executes the release's copy from the share.
+install -m 755 "$R/platform-init" "$release/agent-rootfs/sbin/platform-init"
 mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
 (
   cd "$R"
-  HOME="$R" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$R/vm-runner" \
+  HOME="$HOST_RUNNER_VM_HOME" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$R/vm-runner" \
     --listen=127.0.0.1:4600 --publish-address=127.0.0.1 \
     --port-min="$HOST_RUNNER_PORT_MIN" --port-max="$HOST_RUNNER_PORT_MAX" \
     --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \
-    --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) --tools-dir="$tools" \
+    --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) \
     --memory-mib="$mem_mib" --reserve-mib=256 --boot-mib=2048 \
-    --smolvm="$release/smolvm" --platform-init="$R/platform-init" --platform-runc="$R/platform-runc" --crane="$(command -v crane)" \
+    --smolvm="$release/smolvm" --platform-init="$R/platform-init" --platform-runc="$R/platform-runc" \
     >> "$R/runner.log" 2>&1 &
   echo $! > "$R/runner.pid"
 )

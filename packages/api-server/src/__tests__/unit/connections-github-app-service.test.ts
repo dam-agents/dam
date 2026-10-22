@@ -1,6 +1,6 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import crypto from "node:crypto";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Connection, ConnectionAuthConfig } from "api-server-api";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -53,6 +53,8 @@ function makeRepoFake() {
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
+    updateName: async () => {},
+    listOwnersOfTemplate: async () => [],
   };
   return { repo, rows };
 }
@@ -116,6 +118,9 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
+    platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: OWNER,
     templates: createConnectionTemplateRegistry(buildCatalog()),
@@ -201,16 +206,63 @@ describe("github-app connection create", () => {
     const { svc, rows, stored } = makeService(
       () => new Response("Bad credentials", { status: 401 }),
     );
-    await expect(svc.createFromTemplate(createInput())).rejects.toThrow(/401/);
+    await expect(svc.createFromTemplate(createInput())).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringMatching(
+        /^GitHub rejected the app's credentials\. .* GitHub said: "Bad credentials"\.$/,
+      ),
+    });
     expect(rows.size).toBe(0);
     expect(stored.size).toBe(0);
+  });
+
+  it("tells the user which input GitHub rejected", async () => {
+    const respond = (message: string, status: number) => () =>
+      new Response(JSON.stringify({ message, status: String(status) }), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    const cases: [string, number, RegExp][] = [
+      ["Integration not found", 404, /^The App ID is wrong/],
+      ["Not Found", 404, /^The Installation ID is wrong/],
+      [
+        "A JSON web token could not be decoded",
+        401,
+        /^The private key does not belong to the app with App ID 123456/,
+      ],
+    ];
+    for (const [message, status, expected] of cases) {
+      const { svc, rows, stored } = makeService(respond(message, status));
+      await expect(svc.createFromTemplate(createInput())).rejects.toMatchObject(
+        { code: "BAD_REQUEST", message: expect.stringMatching(expected) },
+      );
+      expect(rows.size).toBe(0);
+      expect(stored.size).toBe(0);
+    }
+  });
+
+  it("rejects an Installation ID that is not a number before reaching GitHub", async () => {
+    const { svc, tokenCalls } = makeService();
+    await expect(
+      svc.createFromTemplate(
+        createInput({
+          installationId: "https://github.com/settings/installations/987654",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringMatching(/^The Installation ID must be a number/),
+    });
+    expect(tokenCalls).toHaveLength(0);
   });
 
   it("fails before persisting when the private key is invalid", async () => {
     const { svc, rows, stored } = makeService();
     await expect(
       svc.createFromTemplate(createInput({ privateKey: "not-a-key" })),
-    ).rejects.toThrow(/PEM-encoded/);
+    ).rejects.toThrow(
+      /^The private key is not valid: it must be a PEM-encoded/,
+    );
     expect(rows.size).toBe(0);
     expect(stored.size).toBe(0);
   });
@@ -435,6 +487,9 @@ describe("github-app scope editing", () => {
   });
 
   it("refuses a connection that is not a GitHub App installation", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ login: "octo", id: 1, name: null, email: null }),
+    );
     const { svc } = makeService(okToken);
     const id = await svc.createFromTemplate({
       templateId: "github-pat",

@@ -27,18 +27,20 @@ smolvm = { path = ".smolvm" }
 platform-init = { path = "platform-init" }
 anyhow = "1"
 axum = "0.8"
-axum-server = { version = "0.8", features = ["tls-rustls"] }
+# smolvm's major, so the lock holds one axum-server; move with smolvm's.
+# No provider of its own: its tls-rustls feature would build aws-lc, a C
+# library, beside the ring the runner installs.
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive"] }
 # kill(2) for a VMM that outlived its stop. Already in the lock by way of
 # smolvm, so this adds an edge and no crate.
 libc = "0.2"
 # Already in the lock by way of smolvm, so this adds a dependency edge and no
-# crate: an archive an install with no registry stages boots a machine, and the
-# config saying how is inside it.
+# crate: the seed of a machine's home is uploaded as a tar.
 tar = "0.4"
-# The TLS stack axum-server serves over. smolvm pulls in both of rustls's
-# crypto backends, so rustls cannot choose one itself and the runner installs
-# ring explicitly. Already in the lock by way of smolvm.
+# The TLS stack axum-server serves over, with ring as its one crypto backend:
+# smolvm.patch takes aws-lc out of smolvm's axum-server too. The runner still
+# installs ring explicitly. Already in the lock by way of smolvm.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # A kept disk template is named by the SHA-256 of the compressed one it was
 # expanded from. hex spells a digest, which sha2 0.11 no longer formats with
@@ -59,8 +61,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 http-body-util = "0.1"
 # The seed uploader's client: streamed request bodies over rustls, trusting
 # only the runner's CA. No provider of its own: vm-seed installs ring, as the
-# runner does. futures-util turns the uploader's channel into the body stream.
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream"] }
+# runner does. smolvm's major, so the lock holds one reqwest; move with
+# smolvm's. futures-util turns the uploader's channel into the body stream.
+# The image cache reads each gzip layer's trailer with the blocking client,
+# trusting the system store crane trusts; the uploader turns those roots off.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "rustls-tls-native-roots-no-provider", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false }
 
 [dev-dependencies]
@@ -78,3 +83,14 @@ smolvm-network = { path = ".smolvm/crates/smolvm-network" }
 
 [lints.clippy]
 all = "deny"
+
+# Full debug info is most of a dev build's disk, multiplied by every test
+# binary. Line tables keep a backtrace's file:line for the workspace's own
+# frames; dependency frames keep only their function names. For a debugger
+# session, build with CARGO_PROFILE_DEV_DEBUG=full and, for dependency frames,
+# --config 'profile.dev.package."*".debug="full"'.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

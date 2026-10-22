@@ -54,6 +54,25 @@ describe("HttpVersionProbe", () => {
     });
   });
 
+  it("returns the recommended CLI version when the server advertises one", async () => {
+    stubFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            serverVersion: "1.2.3",
+            recommendedClientVersion: "1.2.3",
+          }),
+          { status: 200 },
+        ),
+    );
+
+    const r = await createHttpVersionProbe().probe("http://api.example");
+    expect(r).toEqual({
+      ok: true,
+      value: { serverVersion: "1.2.3", recommendedClientVersion: "1.2.3" },
+    });
+  });
+
   it("non-2xx → Err(probe-error, non-ok-status)", async () => {
     stubFetch(async () => new Response("nope", { status: 503 }));
 

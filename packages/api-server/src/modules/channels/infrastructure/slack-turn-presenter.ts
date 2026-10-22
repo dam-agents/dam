@@ -24,46 +24,23 @@ export interface TurnPresenter {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Preserve Markdown blocks, but treat paired compact
- * triple-backtick fences as Slack code, with no language/title line. This is
- * not a Markdown parser; ambiguous standalone fences keep Markdown semantics.
- * Unclosed fences cost O(n²), so text above Slack's 12,000-character limit
- * bypasses normalization; supporting larger input needs a linear scanner.
+ * UNIT_BOUNDARY_DESCRIPTION: Slack opens a code block only on a line that
+ * holds just the fence and an optional language, and closes it only on a line
+ * that holds just the fence. A fence that ends a line moves to its own line,
+ * and text after an opening fence that is not one lowercase word moves below
+ * it. This works line by line: it leaves a fence pair that opens after prose
+ * as it is, and it also rewrites such lines inside a longer fence.
  */
 export function renderAssistantBlocks(
   footer: AgentFooter,
   text: string,
 ): SlackBlock[] {
-  if (text.length > 12_000) {
-    return [{ type: "markdown", text }, agentContextBlock(footer)];
-  }
-  const markdown = text.replace(
-    /(^[ \t>]*(`{3,})(?!`)[^`\n]*\n[\s\S]*?^[ \t>]*\2`*[ \t]*\r?$)|(?<!`)(`{3,})(?!`)([\s\S]*?)(?<!`)\3(?!`)/gm,
-    (
-      block: string,
-      markdownBlock: string | undefined,
-      _markdownFence: string | undefined,
-      fence: string,
-      code: string,
-      offset: number,
-    ) => {
-      if (markdownBlock || fence.length !== 3) return block;
-      const before = text.slice(0, offset);
-      const after = text.slice(offset + block.length);
-      const startsLine = /(?:^|\n) {0,3}$/.test(before);
-      const endsLine = /^[ \t]*(?:\r?\n|$)/.test(after);
-      if (/\n[ \t>]*$/.test(code) && endsLine) return block;
-      return (
-        (startsLine ? "" : "\n") +
-        fence +
-        (code.startsWith("\n") || code.startsWith("\r\n") ? "" : "\n") +
-        code +
-        (code.endsWith("\n") ? "" : "\n") +
-        fence +
-        (endsLine ? "" : "\n")
-      );
-    },
-  );
+  const markdown = text
+    .replace(/^([ \t]*```)(?!`|[a-z0-9+#-]*[ \t]*$)/gm, "$1\n")
+    .replace(
+      /```(?<!^[ \t>]*```|```.*```|[^\s`>][ \t]*```[^`]*```)(?<=[^\s`][ \t]*```)[ \t]*$/gm,
+      "\n```",
+    );
   return [
     { type: "markdown", text: markdown || "(no response)" },
     agentContextBlock(footer),
@@ -80,6 +57,7 @@ export function createTurnPresenter(
 
   let finished = false;
   let statusDisabled = false;
+  let statusSent = false;
   let currentStatus = "";
   let lastSentAt = 0;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,6 +65,7 @@ export function createTurnPresenter(
 
   function sendStatus(status: string) {
     if (statusDisabled) return;
+    statusSent = true;
     gw.setStatus({ channel, threadTs, teamId, status }).catch((err) => {
       statusDisabled = true;
       getLogger().debug(
@@ -162,7 +141,7 @@ export function createTurnPresenter(
     async clearStatus() {
       finished = true;
       stopTimers();
-      if (statusDisabled || currentStatus === "") return;
+      if (!statusSent || currentStatus === "") return;
       currentStatus = "";
       try {
         await gw.setStatus({ channel, threadTs, teamId, status: "" });

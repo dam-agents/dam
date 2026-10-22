@@ -1,0 +1,557 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  PROVIDER_TEMPLATE_IDS,
+  providerTypeForTemplateId,
+  type Connection,
+} from "api-server-api";
+
+import { attachProviderToBareAgents } from "../../modules/agents/compose.js";
+import {
+  buildCatalog,
+  type PlatformProviderEndpoint,
+} from "../../modules/connections/domain/catalog.js";
+import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
+import { startAttachFirstProviderSaga } from "../../modules/connections/sagas/attach-first-provider.js";
+import {
+  startPlatformProviderSaga,
+  sweepManagedConnections,
+} from "../../modules/connections/sagas/platform-provider.js";
+import type { XactLock } from "../../core/xact-lock.js";
+import {
+  type ConnectionsStore,
+  keyedMutex,
+  newConnectionsStore,
+  serviceHarness,
+  type StoredSecret,
+} from "../helpers/connections-service.js";
+import { configureLogger } from "../../core/logger.js";
+import { emit, events$, EventType } from "../../events.js";
+
+/**
+ * TEST_OVERVIEW: the built-in provider's Connection follows its feature flag:
+ * turning the flag on gives the user exactly one platform-llm Connection
+ * named after the brand, whose Secret holds the operator's key for the
+ * gateway to inject, and which the attach-first-provider saga grants to a
+ * bare agent; turning it off, or the operator dropping the model server or
+ * its key, removes it and revokes it from the agents holding it; an existing
+ * one follows the operator's endpoint, key and the brand; only the
+ * user-facing listing reconciles; and the user cannot create, update or
+ * delete it by hand.
+ */
+
+configureLogger({ level: "error", write: () => {} });
+
+const ENDPOINT: PlatformProviderEndpoint = {
+  baseUrl: "https://llm.models.svc:8443",
+  model: "m-flash",
+  name: "Acme",
+};
+
+const CA_A = `-----BEGIN CERTIFICATE-----
+MIICDjCCAbQCCQD5R1rtVWLcEjAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDAptb2Rl
+bC1jYS1hMB4XDTI2MTAxNjA4MTcyNloXDTM2MTAxMzA4MTcyNlowFTETMBEGA1UE
+AwwKbW9kZWwtY2EtYTCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQEC
+IQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAA
+AAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2
+O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOk
+QPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/
+UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAARe0Xtx
+RxQuJB2S/fgWU9jWEItXXyPbL5kEm/3hg8sbI+dSSjMbpGab+YWuZYVKhsQUhnDx
+LBIAQ7cYs+pcVa7JMAoGCCqGSM49BAMCA0gAMEUCIQDXOFH5iFHkU+nhfJ6T9+jt
+mmkBNIQHEZyNseqNrUDmwQIgTMRmxAc+KqNdi/HNDz1fCYGZvkoVYMgLYZM0W/aS
+1f8=
+-----END CERTIFICATE-----`;
+
+const CA_B = `-----BEGIN CERTIFICATE-----
+MIICDjCCAbQCCQDC68qrykSAhjAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDAptb2Rl
+bC1jYS1iMB4XDTI2MTAxNjA4MTcyNloXDTM2MTAxMzA4MTcyNlowFTETMBEGA1UE
+AwwKbW9kZWwtY2EtYjCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQEC
+IQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAA
+AAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2
+O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOk
+QPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/
+UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAAT5wClv
+53+QDucvchCZbh8N5CkgeEoySDEk+vioGHA8ay65yWRRF097pUUbS1SUrVaQbBp+
+gpmG4FXPs9BzzUPlMAoGCCqGSM49BAMCA0gAMEUCIHw6/ro6BBHZ7XK+QdasOxJz
++07B/kZ3zgTJBzmBtWvSAiEA10Zn91GrgkSDmMG9by5vvriHr4hMEh2ORNUGlDzg
+uoE=
+-----END CERTIFICATE-----`;
+
+function makeService(
+  opts: {
+    endpoint?: PlatformProviderEndpoint | null;
+    apiKey?: string | null;
+    ca?: string;
+    store?: ConnectionsStore;
+    lock?: XactLock;
+    flag?: { on: boolean };
+    curveBender?: boolean;
+  } = {},
+) {
+  const base = opts.endpoint === undefined ? ENDPOINT : opts.endpoint;
+  const endpoint = base && opts.ca ? { ...base, ca: opts.ca } : base;
+  const flag = opts.flag ?? { on: false };
+  const harness = serviceHarness({
+    templates: createConnectionTemplateRegistry(
+      buildCatalog(
+        {},
+        {
+          platformProvider: endpoint,
+          curveBenderDeployment: opts.curveBender ?? false,
+        },
+      ),
+    ),
+    ...(opts.store ? { store: opts.store } : {}),
+    ...(opts.lock ? { lock: opts.lock } : {}),
+    brandName: endpoint?.name ?? "Acme",
+    platformProviderEnabled: async () => flag.on,
+    platformProviderKey:
+      opts.apiKey === undefined ? "sk-operator" : opts.apiKey,
+    platformProviderCa: opts.ca ?? null,
+    curveBenderDeploymentKey: opts.curveBender ? "sk-deployment" : null,
+  });
+  return { ...harness, flag };
+}
+
+const platformRows = (rows: Map<string, Connection>) =>
+  [...rows.values()].filter((c) => c.templateId === "platform-llm");
+
+function secretOf(store: Pick<ConnectionsStore, "secrets">, conn: Connection) {
+  if (conn.auth.kind !== "header") throw new Error("not a header Connection");
+  return store.secrets.get(conn.auth.valueRef.path);
+}
+
+const injectionHosts = (secret: StoredSecret | undefined) =>
+  JSON.parse(secret?.annotations["agent-platform.ai/injection-hosts"] ?? "[]");
+
+const userConnection = (name: string): Connection => ({
+  id: `conn-${name}`,
+  ownerId: "owner",
+  templateId: "github",
+  name,
+  inputs: {},
+  auth: { kind: "none" },
+  contributions: [],
+});
+
+const subs: { unsubscribe(): void }[] = [];
+afterEach(() => {
+  for (const s of subs.splice(0)) s.unsubscribe();
+});
+
+function toggle(on: boolean, flag: { on: boolean }, owner = "owner") {
+  flag.on = on;
+  emit({
+    type: EventType.FeatureFlagChanged,
+    actorSub: owner,
+    surface: "test",
+    feature: "platform-provider",
+    enabled: on,
+  });
+}
+
+describe("platform provider connection", () => {
+  // TEST_SCENARIO: enabling the feature twice and listing in between leaves one Connection named after the brand, whose Secret holds the operator's key as the bearer the gateway injects on the server's host and port, and which the attach-first-provider saga grants to an agent holding no provider.
+  it("creates exactly one connection when the flag is turned on and grants it to a bare agent", async () => {
+    const { svc, rows, grants, secrets, flag } = makeService();
+    subs.push(startPlatformProviderSaga(() => svc));
+    subs.push(
+      startAttachFirstProviderSaga((_owner, connectionId) =>
+        attachProviderToBareAgents(
+          svc,
+          { harnesses: [] },
+          [{ id: "agent-1", spec: {} }],
+          connectionId,
+        ),
+      ),
+    );
+
+    toggle(true, flag);
+    await vi.waitFor(() => expect(platformRows(rows)).toHaveLength(1));
+    toggle(true, flag);
+    const views = await svc.listAndReconcileConnections();
+
+    const [conn] = platformRows(rows);
+    expect(platformRows(rows)).toHaveLength(1);
+    await vi.waitFor(() =>
+      expect(grants).toEqual(new Set([`${conn!.id}|agent-1`])),
+    );
+    const view = views.find((v) => v.templateId === "platform-llm")!;
+    expect(view).toMatchObject({
+      name: "Acme",
+      status: "active",
+      authKind: "header",
+      category: "app",
+      hosts: ["llm.models.svc"],
+    });
+    expect(view.contributions).toContainEqual({
+      kind: "egress-inject",
+      host: "llm.models.svc",
+      port: 8443,
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    });
+    expect(view.contributions).toContainEqual({
+      kind: "env",
+      name: "OPENAI_BASE_URL",
+      placeholder: "https://llm.models.svc:8443/v1",
+    });
+    const secret = secretOf({ secrets }, conn!);
+    expect(secret?.purpose).toBe("connection:platform-llm");
+    expect(secret?.fields.value).toBe("sk-operator");
+    expect(Object.values(secret!.fields)).toContainEqual(
+      expect.stringContaining('"Bearer sk-operator"'),
+    );
+    expect(injectionHosts(secret)).toEqual([
+      expect.objectContaining({ host: "llm.models.svc", port: 8443 }),
+    ]);
+    expect(PROVIDER_TEMPLATE_IDS.has("platform-llm")).toBe(true);
+    expect(providerTypeForTemplateId("platform-llm")).toBe("platform");
+  });
+
+  // TEST_SCENARIO: with the install's mode on there is no flag change, so the first user-facing listing provisions the Connection, while the internal listing agent paths use creates nothing.
+  it("provisions the connection lazily only on the user-facing listing", async () => {
+    const { svc, rows, flag } = makeService();
+    flag.on = true;
+    await svc.listConnections();
+    expect(platformRows(rows)).toHaveLength(0);
+    await svc.listAndReconcileConnections();
+    await svc.listAndReconcileConnections();
+    expect(platformRows(rows)).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: a listing with the flag off removes a Connection left over from when it was on.
+  it("removes a leftover connection on listing while the flag is off", async () => {
+    const { svc, rows, flag, fannedOut } = makeService();
+    flag.on = true;
+    await svc.reconcileManagedConnections();
+    flag.on = false;
+
+    await svc.listAndReconcileConnections();
+    expect(platformRows(rows)).toHaveLength(0);
+    expect(fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: disabling the feature removes the Connection and re-delivers the agents that held it.
+  it("removes the connection when the flag is turned off", async () => {
+    const { svc, rows, flag, fannedOut } = makeService();
+    flag.on = true;
+    await svc.reconcileManagedConnections();
+    subs.push(startPlatformProviderSaga(() => svc));
+
+    toggle(false, flag);
+    await vi.waitFor(() => expect(platformRows(rows)).toHaveLength(0));
+    expect(fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: a listing that read the flag on and an off-event racing it on another replica leave no Connection, because the flag is read under the per-owner lock.
+  it("leaves no connection when an off-event interleaves with a listing", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const mutex = keyedMutex();
+    const entered: string[] = [];
+    const lock: XactLock = async (key, fn) => {
+      if (key.startsWith("platform-llm:")) {
+        entered.push(key);
+        await gate;
+      }
+      return mutex(key, fn);
+    };
+    const store = newConnectionsStore();
+    const flag = { on: true };
+    const listing = makeService({ store, lock, flag });
+    const saga = makeService({ store, lock, flag });
+    subs.push(startPlatformProviderSaga(() => saga.svc));
+
+    const listed = listing.svc.listAndReconcileConnections();
+    await vi.waitFor(() => expect(entered).toHaveLength(1));
+    toggle(false, flag);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    open();
+    await listed;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(platformRows(store.rows)).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: one owner's slow reconcile does not hold up another owner's flag change.
+  it("serializes flag changes per owner, not globally", async () => {
+    const { svc, rows, flag } = makeService();
+    subs.push(
+      startPlatformProviderSaga((owner) =>
+        owner === "slow"
+          ? { reconcileManagedConnections: () => new Promise(() => {}) }
+          : svc,
+      ),
+    );
+
+    toggle(true, { on: true }, "slow");
+    toggle(true, flag);
+    await vi.waitFor(() => expect(platformRows(rows)).toHaveLength(1));
+  });
+
+  // TEST_SCENARIO: an existing Connection follows the operator's new model, endpoint and brand, its Secret names the new host for injection, and the agents holding it are re-delivered.
+  it("refreshes an existing connection when the operator changes the endpoint", async () => {
+    const store = newConnectionsStore();
+    const before = makeService({ store });
+    before.flag.on = true;
+    await before.svc.reconcileManagedConnections();
+    const [old] = platformRows(store.rows);
+
+    const after = makeService({
+      store,
+      endpoint: {
+        baseUrl: "https://other.svc:9443",
+        model: "m-pro",
+        name: "Zed",
+      },
+    });
+    after.flag.on = true;
+    await after.svc.listAndReconcileConnections();
+
+    const [conn] = platformRows(store.rows);
+    expect(conn!.id).toBe(old!.id);
+    expect(conn!.name).toBe("Zed");
+    expect(conn!.contributions).toContainEqual({
+      kind: "env",
+      name: "OPENAI_MODEL",
+      placeholder: "m-pro",
+    });
+    expect(conn!.contributions).toContainEqual(
+      expect.objectContaining({
+        kind: "egress-inject",
+        host: "other.svc",
+        port: 9443,
+      }),
+    );
+    expect(injectionHosts(secretOf(store, conn!))).toEqual([
+      expect.objectContaining({ host: "other.svc", port: 9443 }),
+    ]);
+    expect(after.fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: a user who already owns Connections named after the brand gets the built-in provider under the next free fallback name.
+  it("falls back to a free name when the brand name is taken", async () => {
+    const store = newConnectionsStore();
+    for (const name of ["Acme", "Acme LLM"])
+      store.rows.set(`conn-${name}`, userConnection(name));
+    const { svc, rows, flag } = makeService({ store });
+    flag.on = true;
+
+    await svc.listAndReconcileConnections();
+    await svc.listAndReconcileConnections();
+    expect(platformRows(rows).map((c) => c.name)).toEqual(["Acme LLM 2"]);
+  });
+
+  // TEST_SCENARIO: the boot sweep removes every built-in provider Connection once the operator no longer names a model server, re-delivering the agents.
+  it("sweeps leftover connections when no model server is configured", async () => {
+    const store = newConnectionsStore();
+    const before = makeService({ store });
+    before.flag.on = true;
+    await before.svc.reconcileManagedConnections();
+
+    const after = makeService({ store, endpoint: null });
+    after.flag.on = true;
+    await sweepManagedConnections(
+      async () => ["owner"],
+      () => after.svc,
+    );
+    expect(platformRows(store.rows)).toHaveLength(0);
+    expect(after.fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: the user's own delete, create and update paths refuse the built-in provider, so its Secret keeps the operator's key.
+  it("refuses to delete, create or update the connection by hand", async () => {
+    const { svc, rows, flag } = makeService();
+    flag.on = true;
+    await svc.reconcileManagedConnections();
+    const [conn] = platformRows(rows);
+
+    await expect(svc.deleteConnection(conn!.id)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringContaining(
+        "Turn the feature on or off in Settings",
+      ),
+    });
+    await expect(
+      svc.createFromTemplate({
+        templateId: "platform-llm",
+        name: "mine",
+        authKind: "none",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      svc.update(conn!.id, { value: "sk-mine" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(platformRows(rows)).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: when the operator rotates the key, the next listing rewrites the Connection's Secret with the new key in place and re-delivers the agents holding it, once.
+  it("rewrites the secret and fans out when the operator key rotates", async () => {
+    const store = newConnectionsStore();
+    const before = makeService({ store });
+    before.flag.on = true;
+    await before.svc.reconcileManagedConnections();
+    const [old] = platformRows(store.rows);
+
+    const after = makeService({ store, apiKey: "sk-rotated" });
+    after.flag.on = true;
+    await after.svc.listAndReconcileConnections();
+    await after.svc.listAndReconcileConnections();
+
+    const [conn] = platformRows(store.rows);
+    expect(conn!.id).toBe(old!.id);
+    const secret = secretOf(store, conn!);
+    expect(secret?.fields.value).toBe("sk-rotated");
+    expect(Object.values(secret!.fields)).toContainEqual(
+      expect.stringContaining('"Bearer sk-rotated"'),
+    );
+    expect(after.fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: an install that names the model server's CA gives the Connection's Secret that CA and marks the injected host to validate the server against it; without one the host carries no CA and the gateway falls back to system trust.
+  it("writes the operator's CA into the secret only when one is configured", async () => {
+    const withCa = makeService({ ca: CA_A });
+    withCa.flag.on = true;
+    await withCa.svc.reconcileManagedConnections();
+    const secret = secretOf(withCa, platformRows(withCa.rows)[0]!);
+    expect(secret?.fields["upstream-ca.crt"]).toBe(CA_A);
+    expect(injectionHosts(secret)).toEqual([
+      expect.objectContaining({
+        host: "llm.models.svc",
+        caKey: "upstream-ca.crt",
+      }),
+    ]);
+
+    const without = makeService();
+    without.flag.on = true;
+    await without.svc.reconcileManagedConnections();
+    const plain = secretOf(without, platformRows(without.rows)[0]!);
+    expect(plain?.fields).not.toHaveProperty("upstream-ca.crt");
+    expect(injectionHosts(plain)[0]).not.toHaveProperty("caKey");
+  });
+
+  // TEST_SCENARIO: the operator replacing the CA, adding one, or removing it rewrites the Connection's Secret in place on the next listing and re-delivers the agents holding it, once per change.
+  it("rewrites the secret and fans out when the operator's CA changes", async () => {
+    const store = newConnectionsStore();
+    const first = makeService({ store });
+    first.flag.on = true;
+    await first.svc.reconcileManagedConnections();
+    const [old] = platformRows(store.rows);
+
+    for (const [ca, caKey] of [
+      [CA_A, "upstream-ca.crt"],
+      [CA_B, "upstream-ca.crt"],
+      [undefined, undefined],
+    ] as const) {
+      const next = makeService({ store, ...(ca ? { ca } : {}) });
+      next.flag.on = true;
+      await next.svc.listAndReconcileConnections();
+      await next.svc.listAndReconcileConnections();
+      const [conn] = platformRows(store.rows);
+      expect(conn!.id).toBe(old!.id);
+      const secret = secretOf(store, conn!);
+      expect(secret?.fields["upstream-ca.crt"]).toBe(ca);
+      expect(injectionHosts(secret)[0]?.caKey).toBe(caKey);
+      expect(next.fannedOut).toEqual(["agent-1"]);
+    }
+  });
+
+  // TEST_SCENARIO: a keyless Connection left from before the provider was metered has no Secret to rewrite, so a listing replaces it with one holding the key.
+  it("replaces a keyless connection with a keyed one", async () => {
+    const store = newConnectionsStore();
+    store.rows.set("conn-old", {
+      ...userConnection("Acme"),
+      id: "conn-old",
+      templateId: "platform-llm",
+    });
+    const { svc, flag } = makeService({ store });
+    flag.on = true;
+
+    await svc.listAndReconcileConnections();
+    const [conn] = platformRows(store.rows);
+    expect(conn!.id).not.toBe("conn-old");
+    expect(secretOf(store, conn!)?.fields.value).toBe("sk-operator");
+  });
+
+  // TEST_SCENARIO: an install that names a model server but no key offers no built-in provider: a flag that reads on creates nothing, and a leftover Connection is removed.
+  it("creates nothing and removes a leftover without an operator key", async () => {
+    const store = newConnectionsStore();
+    const before = makeService({ store });
+    before.flag.on = true;
+    await before.svc.reconcileManagedConnections();
+
+    const after = makeService({ store, apiKey: null });
+    after.flag.on = true;
+    await after.svc.listAndReconcileConnections();
+    expect(platformRows(store.rows)).toHaveLength(0);
+    expect(store.secrets.size).toBe(0);
+  });
+
+  // TEST_SCENARIO: an install with no model server has no template, so even a flag that reads on creates nothing.
+  it("creates nothing without a configured base URL", async () => {
+    const { svc, rows, flag } = makeService({ endpoint: null });
+    flag.on = true;
+    await svc.listAndReconcileConnections();
+    expect(rows.size).toBe(0);
+    expect(buildCatalog().some((t) => t.id === "platform-llm")).toBe(false);
+  });
+
+  // TEST_SCENARIO: one listing creates the built-in provider and the deployment CurveBender, so both Connections exist before the attach saga's handler runs; a bare agent still gets exactly one, the older one, and a delayed handler does not change that.
+  it.each([0, 5])(
+    "grants one of two deployment providers created together (handler delay %i ms)",
+    async (delayMs) => {
+      const { svc, rows, grants, flag } = makeService({ curveBender: true });
+      flag.on = true;
+      subs.push(
+        startAttachFirstProviderSaga(async (_owner, connectionId) => {
+          if (delayMs)
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          await attachProviderToBareAgents(
+            svc,
+            {
+              harnesses: [
+                {
+                  name: "claude-code",
+                  providers: ["curve-bender", "platform"],
+                },
+              ],
+            } as never,
+            [{ id: "agent-1", spec: { harness: "claude-code" } }],
+            connectionId,
+          );
+        }),
+      );
+
+      await svc.listAndReconcileConnections();
+      await vi.waitFor(() => expect(grants.size).toBe(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(grants.size).toBe(1);
+      expect([...grants][0]!.split("|")[0]).toBe(platformRows(rows)[0]!.id);
+    },
+  );
+
+  // TEST_SCENARIO: control: with the built-in provider alone the same handler still attaches it, so choosing by age does not withhold a lone provider.
+  it("still grants a lone deployment provider", async () => {
+    const { svc, rows, grants, flag } = makeService();
+    flag.on = true;
+    subs.push(
+      startAttachFirstProviderSaga((_owner, connectionId) =>
+        attachProviderToBareAgents(
+          svc,
+          {
+            harnesses: [{ name: "claude-code", providers: ["platform"] }],
+          } as never,
+          [{ id: "agent-1", spec: { harness: "claude-code" } }],
+          connectionId,
+        ),
+      ),
+    );
+
+    await svc.listAndReconcileConnections();
+    await vi.waitFor(() => expect(grants.size).toBe(1));
+
+    expect([...grants][0]!.split("|")[0]).toBe(platformRows(rows)[0]!.id);
+  });
+});

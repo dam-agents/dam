@@ -2,10 +2,14 @@ import { z } from "zod";
 
 export const featureIdSchema = z.enum([
   "advanced-connections",
-  "vm-sandboxes",
   "interactive-artifacts",
   "agent-telemetry",
   "processes",
+  "chat-forms",
+  "custom-avatars",
+  "platform-provider",
+  "new-layout",
+  "environments",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

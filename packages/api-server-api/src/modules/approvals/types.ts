@@ -1,11 +1,13 @@
 import type { z } from "zod";
+import type { SpendLimitScope, SpendUnit } from "../spend/types.js";
 import type {
   approvalActionOutcomeSchema,
   approvalListOptionsSchema,
   approvalStatusSchema,
+  approvalTypeSchema,
 } from "./schemas.js";
 
-export type ApprovalType = "ext_authz" | "acp_native";
+export type ApprovalType = z.infer<typeof approvalTypeSchema>;
 
 export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 
@@ -18,6 +20,7 @@ interface ExtAuthzPayload {
   method: string;
   path: string;
   viaAgentId?: string;
+  viaEnvironment?: string;
 }
 
 export type AcpPermissionOptionKind =
@@ -35,9 +38,21 @@ interface AcpNativePayload {
   args?: unknown;
   rpcId?: number | string;
   options?: AcpPermissionOption[];
+  optionsWhole?: true;
 }
 
-export type ApprovalPayload = ExtAuthzPayload | AcpNativePayload;
+export interface SpendLimitPayload {
+  kind: "spend_limit";
+  limitId: string;
+  scope: SpendLimitScope;
+  unit: SpendUnit;
+  day: string;
+  amountMicros: number;
+  extensions: number;
+}
+
+export type ApprovalPayload =
+  ExtAuthzPayload | AcpNativePayload | SpendLimitPayload;
 
 export interface ApprovalView {
   id: string;
