@@ -1229,6 +1229,25 @@ apiServer:
     caConfigMap:
       name: ""
       key: ""
+  # -- CurveBender offered to every user of this install, called with the
+  # deployment's key instead of one each user enters. An empty key offers no
+  # shared CurveBender: the provider exists only where a key does, and every
+  # user otherwise connects their own. Name an existing Secret in the release
+  # namespace in `apiKeySecret`, or set `apiKey` from a secret values layer,
+  # which lands in the chart's credentials Secret. The api-server reads the key
+  # at start, so after rotating it in an existing Secret restart the api-server;
+  # it then rewrites the copy each user's Connection holds. Calls are metered
+  # per user like any other provider. The gateway injects it on four path
+  # prefixes alone -- /v1/models, /v1/messages, /v1/chat/completions and
+  # /v1/responses, each at a segment boundary -- so the proxy's management and
+  # shared-state routes are outside its scope, but that scope is no proof the
+  # key is limited: mint it for inference only, with LiteLLM
+  # `allowed_routes: ["llm_api_routes"]`.
+  curveBenderDeployment:
+    apiKeySecret:
+      name: ""
+      key: api-key
+    apiKey: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}

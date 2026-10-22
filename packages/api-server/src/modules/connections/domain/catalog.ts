@@ -5,6 +5,7 @@ import {
   BOB_INFERENCE_PREFIX_REWRITE,
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
@@ -183,27 +184,75 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
+function curveBenderContributions(
+  pathPatterns?: readonly string[],
+): Contribution[] {
+  return [
+    ...envContributions(curveBenderEnvMappings()),
+    ...(pathPatterns ?? [undefined]).map((pathPattern): Contribution => ({
+      kind: "egress-inject",
+      host: CURVE_BENDER_HOST,
+      ...(pathPattern
+        ? { pathPattern }
+        : { pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE] }),
+      headerName: "Authorization",
+      valueFormat: "Bearer {value}",
+    })),
+  ];
+}
+
 const CURVE_BENDER: HeaderConnectionTemplate = {
   id: "curve-bender",
-  name: "IBM ETE LiteLLM CurveBender",
+  name: "CurveBender custom key",
   category: "app",
   isCustom: false,
-  description: "LiteLLM proxy fronting open models hosted on RITS.",
+  description: "Open-source models hosted internally in IBM.",
   iconSlug: "ibm",
   authKind: "header",
   host: CURVE_BENDER_HOST,
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
-  contributions: [
-    ...envContributions(curveBenderEnvMappings()),
-    {
-      kind: "egress-inject",
-      host: CURVE_BENDER_HOST,
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-      pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
-    },
-  ],
+  contributions: curveBenderContributions(),
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: exactly the paths the platform's code calls on
+ * CurveBender, with no wider prefix. One key serves every user, so the
+ * proxy's management routes (`/key/*`, `/user/*`, `/spend/*`) would let any
+ * agent mint, read or delete it, and its shared-identity routes (`/v1/files`,
+ * `/v1/batches`, `/v1/vector_stores`, `/v1/assistants`, `/v1/threads`,
+ * `/v1/memory`, `/v1/mcp/*`, `/v1/traces`, …) would let one user's agent read
+ * what another stored under that one identity. The listing and the dialect
+ * paths are all a harness asks for: the runtime's discovery reads
+ * `/v1/models`, and the router forwards `/v1/messages` — whose
+ * `/messages/count_tokens` sits under the same prefix —,
+ * `/v1/chat/completions` and `/v1/responses`. Bob's prefix never reaches the
+ * gateway, because the router folds it in the pod before the call leaves.
+ */
+const CURVE_BENDER_DEPLOYMENT_PATHS = [
+  "/v1/models",
+  "/v1/messages",
+  "/v1/chat/completions",
+  "/v1/responses",
+] as const;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: CurveBender reached with the deployment's key,
+ * which the operator configures; it exists only where that key is, and the
+ * connection it feeds is the deployment's, never the user's.
+ */
+const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
+  id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  name: "CurveBender",
+  category: "app",
+  isCustom: false,
+  description: "Open-source models hosted internally in IBM.",
+  iconSlug: "ibm",
+  authKind: "header",
+  host: CURVE_BENDER_HOST,
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: curveBenderContributions(CURVE_BENDER_DEPLOYMENT_PATHS),
 };
 
 const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";
@@ -980,10 +1029,12 @@ export function buildCatalog(
   opts: {
     shareBaseUrl?: string;
     platformProvider?: PlatformProviderEndpoint | null;
+    curveBenderDeployment?: boolean;
   } = {},
 ): ConnectionTemplate[] {
   return assertContributionsParse([
     ...(opts.platformProvider ? [platformLlm(opts.platformProvider)] : []),
+    ...(opts.curveBenderDeployment ? [CURVE_BENDER_DEPLOYMENT] : []),
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
     ANTHROPIC_OAUTH,

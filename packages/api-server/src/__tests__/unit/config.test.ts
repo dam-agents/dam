@@ -174,6 +174,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "PLATFORM_PROVIDER_MODEL",
     "PLATFORM_PROVIDER_API_KEY",
     "PLATFORM_PROVIDER_CA_FILE",
+    "CURVE_BENDER_DEPLOYMENT_API_KEY",
     "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
   ];
@@ -240,6 +241,15 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     process.env.PLATFORM_PROVIDER_BASE_URL = "http://llm.models.svc:8000";
     expect(loadConfig().platformProvider).toBeNull();
     expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+  });
+
+  // TEST_SCENARIO: the deployment's CurveBender is offered only where the install sets its key; without one the install configures no shared CurveBender rather than failing the boot.
+  it("offers the deployment CurveBender only with its key", () => {
+    expect(loadConfig().curveBenderDeployment).toBeNull();
+    process.env.CURVE_BENDER_DEPLOYMENT_API_KEY = "sk-deployment";
+    expect(loadConfig().curveBenderDeployment).toEqual({
+      apiKey: "sk-deployment",
+    });
   });
 
   // TEST_SCENARIO: the chart mounts the model server's CA as a file; the api-server carries its certificate for the gateway, and a CA file that is set but missing or holds no certificate leaves the feature off without failing the boot.

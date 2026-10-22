@@ -43,7 +43,7 @@ export type SourceReading =
 export const SOURCE_TEMPLATES: Readonly<
   Record<PublicSource, readonly string[]>
 > = {
-  "curve-bender": ["curve-bender"],
+  "curve-bender": ["curve-bender", "curve-bender-deployment"],
   "ibm-litellm": ["ibm-litellm"],
   claude: ["anthropic", "anthropic-oauth"],
   openai: ["openai"],

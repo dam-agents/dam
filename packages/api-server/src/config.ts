@@ -201,6 +201,10 @@ const platformProviderSchema = z
     }
     return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey, ca };
   });
+// UNIT_BOUNDARY_DESCRIPTION: the key the deployment offers CurveBender to its users, sent by the gateway on every CurveBender call. An empty key means the deployment offers no shared CurveBender, so no template exists and every user keeps their own key.
+const curveBenderDeploymentSchema = z
+  .object({ apiKey: z.string().default("") })
+  .transform(({ apiKey }) => (apiKey === "" ? null : { apiKey }));
 const configSchema = z.object({
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
@@ -245,6 +249,7 @@ const configSchema = z.object({
   vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
   platformProvider: platformProviderSchema,
+  curveBenderDeployment: curveBenderDeploymentSchema,
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -459,6 +464,9 @@ export function loadConfig(): Config {
       model: process.env.PLATFORM_PROVIDER_MODEL,
       apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
       caFile: process.env.PLATFORM_PROVIDER_CA_FILE,
+    },
+    curveBenderDeployment: {
+      apiKey: process.env.CURVE_BENDER_DEPLOYMENT_API_KEY,
     },
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
