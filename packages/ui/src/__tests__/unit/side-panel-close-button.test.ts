@@ -58,6 +58,37 @@ function closeButton(node: ReactNode): { onClick: Click } {
   throw new Error("no close button");
 }
 
+// TEST_SCENARIO: Under JanUI the panel's header sits on the first rail tile's row, 40 high and 8 below the top with no rule under it, and the X is a 40 square that closes and hands the keyboard back like the small button.
+it("draws JanUI's header on the rail's row with a tile X", () => {
+  vi.stubGlobal("document", {
+    documentElement: { dataset: { layout: "new" } },
+  });
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidebarSection, {
+        title: "Files",
+        open: true,
+        headerClassName: "border-t border-border",
+        children: null,
+      }),
+    ),
+  );
+  const headerClass =
+    html.match(/class="([^"]*mt-2[^"]*h-10[^"]*)"/)?.[1] ?? "";
+  expect(headerClass.split(" ")).not.toContain("border-b");
+  expect(headerClass.split(" ")).not.toContain("border-t");
+  const closeTag =
+    html.match(/<button[^>]*data-testid="side-panel-close"[^>]*>/)?.[0] ?? "";
+  expect(closeTag).toContain("size-10");
+  expect(closeTag).toContain("[corner-shape:squircle]");
+  store.current.getState().setSidePanelTab("approvals");
+  closeButton(SidePanelCloseButton({})).onClick(outsidePanel);
+  expect(store.current.getState().sidePanelTab).toBeNull();
+  vi.unstubAllGlobals();
+});
+
 // TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them.
 it("ends the panel's top bar with the X, behind a border", () => {
   const html = renderToStaticMarkup(

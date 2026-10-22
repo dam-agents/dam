@@ -30,6 +30,9 @@ export function SidebarSection({
   ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
+  const tiles =
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.layout === "new";
   return (
     <div
       id={id}
@@ -39,9 +42,11 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-12 shrink-0 border-border",
-          open && "border-b",
+          "flex items-center gap-1 shrink-0 border-border",
+          tiles ? "mt-2 h-10 pl-2 pr-2" : "h-12 pl-3 pr-2",
+          open && !tiles && "border-b",
           headerClassName,
+          tiles && "border-t-0",
         )}
       >
         {headerLeft}

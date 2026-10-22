@@ -1,7 +1,13 @@
 import { Close } from "@carbon/icons-react";
-import { createContext, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  type MouseEvent,
+  type ReactNode,
+  useContext,
+} from "react";
 
 import { Button } from "@/components/ui/button";
+import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -32,13 +38,28 @@ function ShownWhereItCloses({
  * actions. It closes the whole panel and hands focus to the rail's open tab,
  * which stays on screen; with no rail, as in the classic chat, to the top
  * bar's open tab, or to the main region; a phone hides it, because the full-screen panel
- * there has its own back button, unless JanUI draws no such bar.
+ * there has its own back button, unless JanUI draws no such bar. Under JanUI
+ * it is a 40 px tile of the rail's size rather than the small ghost button.
  */
 export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
   // UNIT_BOUNDARY_DESCRIPTION: JanUI draws no bar of its own over a narrow panel, so its views keep the X; the layout is read off the root, which does not change without a reload.
   const tiles =
     typeof document !== "undefined" &&
     document.documentElement.dataset.layout === "new";
+  const close = (e: MouseEvent<HTMLButtonElement>) => {
+    const page = e.currentTarget.ownerDocument;
+    const bar = e.currentTarget
+      .closest('[data-testid="side-panel"]')
+      ?.querySelector('[data-testid="side-panel-bar"]');
+    (bar
+      ? (bar.querySelector<HTMLElement>('[aria-pressed="true"]') ??
+        bar.querySelector<HTMLElement>("button"))
+      : (page.querySelector<HTMLElement>(
+          '[data-testid^="side-panel-tab-"][aria-pressed="true"]',
+        ) ?? page.getElementById("main"))
+    )?.focus();
+    (onClose ?? (() => useStore.getState().setSidePanelTab(null)))();
+  };
   return (
     <ShownWhereItCloses ownClose={onClose !== undefined}>
       <div
@@ -47,29 +68,28 @@ export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
           !tiles && "max-md:hidden",
         )}
       >
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close panel"
-          tooltip="Close panel"
-          data-testid="side-panel-close"
-          onClick={(e) => {
-            const page = e.currentTarget.ownerDocument;
-            const bar = e.currentTarget
-              .closest('[data-testid="side-panel"]')
-              ?.querySelector('[data-testid="side-panel-bar"]');
-            (bar
-              ? (bar.querySelector<HTMLElement>('[aria-pressed="true"]') ??
-                bar.querySelector<HTMLElement>("button"))
-              : (page.querySelector<HTMLElement>(
-                  '[data-testid^="side-panel-tab-"][aria-pressed="true"]',
-                ) ?? page.getElementById("main"))
-            )?.focus();
-            (onClose ?? (() => useStore.getState().setSidePanelTab(null)))();
-          }}
-        >
-          <Close size={16} />
-        </Button>
+        {tiles ? (
+          <button
+            type="button"
+            aria-label="Close panel"
+            data-testid="side-panel-close"
+            className={railTile(false)}
+            onClick={close}
+          >
+            <Close size={RAIL_GLYPH} />
+          </button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close panel"
+            tooltip="Close panel"
+            data-testid="side-panel-close"
+            onClick={close}
+          >
+            <Close size={16} />
+          </Button>
+        )}
       </div>
     </ShownWhereItCloses>
   );
