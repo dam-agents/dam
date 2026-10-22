@@ -26,6 +26,10 @@ import { SidebarRail } from "./sidebar-rail.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane, in two states: expanded, it holds its place beside the page at the width the user resizes, or collapsed, it stays at one icon's width as a rail of Agent avatars, each opening that Agent's Sessions beside it, with the Pinned section under its pin icon. The rail is what a narrow viewport gets whatever the user last chose, and expanding it there opens the pane over the page, from the left edge up to the right rail, until a Session is picked, Escape is pressed or the browser goes back; the user's own choice of expanded or collapsed is left as it was.
  */
+// UNIT_BOUNDARY_DESCRIPTION: the tile the overlaid pane replaced, named once so the focus trap's dependencies stay still across renders; a new function each render would tear the trap down and grasp the pane's first row again.
+const railExpandTile = () =>
+  document.querySelector<HTMLElement>('[data-testid="sidebar-rail-expand"]');
+
 export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
@@ -63,9 +67,7 @@ export function SidebarV2() {
   const over = overlaid && mode === "rail";
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
-  useFocusTrap(navRef, over, () =>
-    document.querySelector<HTMLElement>('[data-testid="sidebar-rail-expand"]'),
-  );
+  useFocusTrap(navRef, over, railExpandTile);
   // UNIT_BOUNDARY_DESCRIPTION: the overlay belongs to the rail, so a window that widens enough for a pane drops it rather than opening the pane over the page again the next time the window narrows.
   useEffect(() => {
     if (mode !== "rail") setOverlaid(false);
