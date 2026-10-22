@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-23
+Last verified: 2026-10-22
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -123,9 +123,23 @@ The Pinned section reads a pinned Session from the record, and one the record do
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 Opening an Agent's list wakes a hibernated Agent the same way, and a list left waiting on an Agent that stays asleep offers the same retry; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
-An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals, and Changes is one only while the Agent has a git repository; a vm Agent's chat also has an Environments tab while the `environments` feature is on.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and a vm Agent's chat also has an Environments tab while the `environments` feature is on.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 An Agent's runtime migration badge reads on its row in the Agents list and in the overlay of an Agent that is not running; the chat header carries it only below the width where the row shows.
+
+## The Unified right toolbar experiment
+
+The **Unified right toolbar experiment** is an [experimental feature](features.md) of its own, independent of JanUI: it changes the right-hand icon bar and the top bar of the panel that bar opens, and leaves the rest of the shell to whichever layout the page uses.
+With it off, the right edge keeps the classic icon column, a 49 px bar of 48 px buttons under a 48 px panel header.
+With it on, the bar is 56 px wide and draws one column of 40 px tiles 8 px from the top, spaced 14 px apart, with the same muted fill and hairline for the item the user is on, the same hover shade, the same 8 px squircles and the same accent focus outline as the sidebar rail.
+Its tiles carry no tooltips: the accessible name stays on the button and the open panel's header names the tab.
+A count badge keeps its place on the icon's top-right corner.
+The panel's top bar becomes a 40 px row 8 px below the top of the panel, with no rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the panel's other controls keep their size.
+The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
+The tiled bar adds the Documentation tile; the rest of the rail's tab list, what each tab shows and the panel's own behavior do not depend on this flag.
+JanUI decides the shell around it, including the phone overlay from the left rail up to this bar, and a chat with JanUI off keeps its own column of sections instead of a rail.
+While JanUI is on as well, the navigation counts the bar this flag draws when it decides whether the page has room for the pane.
+With both experiments on, the page reads as one surface: the sidebar rail and the right rail draw the same tile.
 
 ## The producer
 

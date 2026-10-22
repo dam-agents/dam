@@ -12,9 +12,11 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
+import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { holdBackEntry } from "../../lib/back-entry.js";
 import {
+  CLASSIC_RIGHT_RAIL_W,
   RIGHT_RAIL_W,
   SIDEBAR_COLLAPSED_W,
   SIDEBAR_MIN_W,
@@ -42,15 +44,18 @@ export function SidebarV2() {
   });
   const { viewport } = useNarrowShell();
   const [overlaid, setOverlaid] = useState(false);
+  const rightToolbar = useUnifiedRightToolbar();
+  const rightRailWidth = rightToolbar ? RIGHT_RAIL_W : CLASSIC_RIGHT_RAIL_W;
 
   const railed = useRef(false);
   const maxWidth = sidebarMaxWidth({
     viewport,
-    rightRailWidth: RIGHT_RAIL_W,
+    rightRailWidth,
     contentMinWidth: MIN_CONTENT_WIDTH,
   });
   // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so a drag never collapses the pane; a window with no room for a pane keeps the rail whatever the drag does.
-  const paneFits = viewport - RIGHT_RAIL_W - MIN_CONTENT_WIDTH >= SIDEBAR_MIN_W;
+  const paneFits =
+    viewport - rightRailWidth - MIN_CONTENT_WIDTH >= SIDEBAR_MIN_W;
   const mode = resizing
     ? pinned && paneFits
       ? "layout"
@@ -58,7 +63,7 @@ export function SidebarV2() {
     : navigationMode({
         viewport,
         sidebarWidth: width,
-        rightRailWidth: RIGHT_RAIL_W,
+        rightRailWidth,
         railed: railed.current,
       });
   railed.current = mode === "rail";
@@ -120,7 +125,11 @@ export function SidebarV2() {
         )}
         style={
           // UNIT_BOUNDARY_DESCRIPTION: the pane reaches one pixel into the right rail so its own right border lands on the bar's left border, rather than beside it, and the two read as one line.
-          over ? { right: RIGHT_RAIL_W - 1 } : expanded ? { width } : undefined
+          over
+            ? { right: rightRailWidth - 1 }
+            : expanded
+              ? { width }
+              : undefined
         }
         data-testid="app-sidebar"
         data-pinned={expanded || undefined}

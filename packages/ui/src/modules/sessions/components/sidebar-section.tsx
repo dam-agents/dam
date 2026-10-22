@@ -1,8 +1,14 @@
-import type { CSSProperties, ReactNode, Ref } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  useContext,
+} from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
+import { RightToolbarTiles } from "./right-toolbar-tiles.js";
 import { SidePanelCloseButton } from "./side-panel-close-button.js";
 
 export function SidebarSection({
@@ -30,6 +36,7 @@ export function SidebarSection({
   ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
+  const tiles = useContext(RightToolbarTiles);
   return (
     <div
       id={id}
@@ -39,9 +46,11 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-12 shrink-0 border-border",
-          open && "border-b",
+          "flex items-center gap-1 shrink-0 border-border",
+          tiles ? "mt-2 h-10 pl-2 pr-2" : "h-12 pl-3 pr-2",
+          open && !tiles && "border-b",
           headerClassName,
+          tiles && "border-t-0",
         )}
       >
         {headerLeft}
