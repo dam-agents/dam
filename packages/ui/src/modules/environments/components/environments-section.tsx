@@ -11,6 +11,9 @@ import { useSetEnvironmentAccessList } from "../api/mutations.js";
 import { useEnvironmentAccessList, useEnvironments } from "../api/queries.js";
 import { EnvironmentCard } from "./environment-card.js";
 
+export const NO_ENVIRONMENTS =
+  "No Environments yet. The agent creates one with its create_environment tool, for example to run a pull request's build for you to open.";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An agent's Environments, which the agent creates
  * and controls, and the owner's controls over them: the list of people who may
@@ -36,7 +39,7 @@ export function EnvironmentsSection({
         loading={environments.isPending}
         error={environments.isError && "Couldn't load Environments."}
         isEmpty={list.length === 0}
-        empty="No Environments yet. The agent creates one with its create_environment tool, for example to run a pull request's build for you to open."
+        empty={NO_ENVIRONMENTS}
         separated
       >
         {list.map((environment) => (

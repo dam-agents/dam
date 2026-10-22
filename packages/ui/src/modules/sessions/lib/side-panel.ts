@@ -4,6 +4,7 @@ export type SidePanelTab =
   | "artifacts"
   | "browser"
   | "processes"
+  | "environments"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -32,6 +33,7 @@ export type SidePanelAvailability = {
   canOpenBrowser: boolean;
   changes: boolean;
   processesEnabled: boolean;
+  environments: boolean;
   gettingStarted: boolean;
 };
 
@@ -45,6 +47,7 @@ export function hiddenSidePanelTabs(
     delegation: available.agent,
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
+    environments: available.agent && available.environments,
     "getting-started": available.gettingStarted,
     approvals: true,
   };

@@ -24,6 +24,7 @@ const SHOWN = hiddenSidePanelTabs({
   canOpenBrowser: true,
   changes: true,
   processesEnabled: true,
+  environments: true,
   gettingStarted: true,
 });
 
@@ -55,6 +56,7 @@ describe("what the right-hand slot shows", () => {
       canOpenBrowser: true,
       changes: true,
       processesEnabled: true,
+      environments: true,
       gettingStarted: false,
     });
     expect(classicPanel("getting-started", hidden, true)).toBe("dock");
