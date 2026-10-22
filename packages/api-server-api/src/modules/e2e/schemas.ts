@@ -202,27 +202,6 @@ export const slackOutboundRecordSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
-      kind: z.literal("stream_start"),
-      teamId: z.string(),
-      channel: z.string(),
-      threadTs: z.string(),
-      ts: z.string(),
-      text: z.string(),
-      recipientTeamId: z.string().optional(),
-      recipientUserId: z.string().optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("stream_append"),
-      teamId: z.string(),
-      channel: z.string(),
-      ts: z.string(),
-      text: z.string(),
-    })
-    .strict(),
-  z
-    .object({
       kind: z.literal("stream_stop"),
       teamId: z.string(),
       channel: z.string(),
