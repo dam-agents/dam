@@ -92,8 +92,7 @@ export function SidePanelShell({
   // UNIT_BOUNDARY_DESCRIPTION: a tab is the whole of what the panel shows whenever the tiled rail is drawn, whatever shell is around it, so the panel lays over a narrow page and keeps its own top bar with its X instead of a column of sections with a back button.
   const tabbed = janui || rightToolbar;
   const barW = rightToolbar ? RIGHT_RAIL_W : CLASSIC_RIGHT_RAIL_W;
-  const openFilePath = useStore((s) => s.openFilePath);
-  const openArtifactId = useStore((s) => s.openArtifactId);
+  const openDock = useStore((s) => s.dock);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const sidePanelMaximized = useStore((s) => s.sidePanelMaximized);
   const setSidePanelMaximized = useStore((s) => s.setSidePanelMaximized);
@@ -126,8 +125,8 @@ export function SidePanelShell({
   const maximizable = maximizableView(
     activeTab,
     dockedShown,
-    openFilePath,
-    openArtifactId,
+    openDock?.kind === "file" ? openDock.path : null,
+    openDock?.kind === "artifact" ? openDock.id : null,
   );
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const sidePanelMinW = sidePanelMinWidth(activeTab);

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createStore } from "zustand/vanilla";
 
+import { createArtifactsSlice } from "../../modules/artifacts/store.js";
 import { createBrowserSlice } from "../../modules/browser/store.js";
-import { createChangesSlice } from "../../modules/changes/store.js";
 import { environmentsTabShown } from "../../modules/environments/lib/environments-tab.js";
 import { createFilesSlice } from "../../modules/files/store.js";
 import {
@@ -54,8 +54,8 @@ function panelStore() {
     (...a) =>
       ({
         ...createFilesSlice(...a),
+        ...createArtifactsSlice(...a),
         ...createBrowserSlice(...a),
-        ...createChangesSlice(...a),
         ...createSidePanelSlice(...a),
       }) as PlatformStore,
   );
@@ -216,14 +216,46 @@ describe("opening a docked item", () => {
     const store = panelStore();
     store.getState().setSidePanelTab(null);
 
-    store.getState().setOpenFilePath("/home/agent/a.md");
+    store
+      .getState()
+      .setDock({ kind: "file", path: "/home/agent/a.md", edit: false });
     expect(store.getState().sidePanelTab).toBe("files");
 
     store.getState().setOpenBrowser("agent-a");
     expect(store.getState().sidePanelTab).toBe("browser");
 
-    store.getState().setOpenChanges("agent-a");
+    store.getState().setDock({ kind: "changes", agentId: "agent-a" });
     expect(store.getState().sidePanelTab).toBe("changes");
+  });
+});
+
+describe("a docked item's draft", () => {
+  it("TEST_SCENARIO: the panel holds one docked item, so the draft the previous one kept is dropped when another opens", () => {
+    const store = panelStore();
+    store.getState().setDock({ kind: "file", path: "/a.md", edit: true });
+    expect(store.getState().openFileDirty).toBe(false);
+    expect(store.getState().openFileEdit).toBe(true);
+
+    store.getState().setDock({ kind: "file", path: "/a.md", edit: false });
+    store.getState().setOpenFileDirty(true);
+    store.getState().setDock({ kind: "artifact", id: "art-1", edit: false });
+    expect(store.getState().openFileDirty).toBe(false);
+    expect(store.getState().openFileEdit).toBe(false);
+
+    store.getState().setOpenArtifactEdit(true);
+    store.getState().setOpenArtifactDirty(true);
+    store.getState().setDock({ kind: "process-output", key: "proc-1" });
+    expect(store.getState().openArtifactDirty).toBe(false);
+    expect(store.getState().openArtifactEdit).toBe(false);
+  });
+
+  it("TEST_SCENARIO: reopening the artifact the panel already holds keeps its unsaved draft", () => {
+    const store = panelStore();
+    store.getState().setDock({ kind: "artifact", id: "art-1", edit: false });
+    store.getState().setOpenArtifactDirty(true);
+    store.getState().setDock({ kind: "artifact", id: "art-1", edit: true });
+    expect(store.getState().openArtifactDirty).toBe(true);
+    expect(store.getState().openArtifactEdit).toBe(true);
   });
 });
 

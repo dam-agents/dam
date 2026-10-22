@@ -37,7 +37,7 @@ vi.mock("../../store.js", () => {
     selectedAgent: "agent-a",
     expandedDirs: {},
     showHiddenFiles: false,
-    openFilePath: null,
+    dock: null,
   };
   const store = new Proxy(state, {
     get: (target, key: string) => (key in target ? target[key] : vi.fn()),

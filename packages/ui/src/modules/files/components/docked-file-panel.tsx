@@ -11,9 +11,11 @@ interface Props {
 
 export function DockedFilePanel({ onOpenFile }: Props) {
   const selectedAgent = useStore((s) => s.selectedAgent);
-  const openFilePath = useStore((s) => s.openFilePath);
+  const openFilePath = useStore((s) =>
+    s.dock?.kind === "file" ? s.dock.path : null,
+  );
   const openFileDirty = useStore((s) => s.openFileDirty);
-  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
+  const setDock = useStore((s) => s.setDock);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const { data: openFile, error } = useFileContentQuery(
@@ -24,8 +26,8 @@ export function DockedFilePanel({ onOpenFile }: Props) {
   useEffect(() => {
     const gone =
       error instanceof TRPCClientError && error.data?.code === "NOT_FOUND";
-    if (gone && !openFileDirty) setOpenFilePath(null);
-  }, [error, openFileDirty, setOpenFilePath]);
+    if (gone && !openFileDirty) setDock(null);
+  }, [error, openFileDirty, setDock]);
 
   const close = useCallback(async () => {
     if (
@@ -37,8 +39,8 @@ export function DockedFilePanel({ onOpenFile }: Props) {
       }))
     )
       return;
-    setOpenFilePath(null);
-  }, [openFileDirty, showConfirm, setOpenFilePath]);
+    setDock(null);
+  }, [openFileDirty, showConfirm, setDock]);
 
   if (!openFile) return null;
   return (

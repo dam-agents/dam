@@ -1,13 +1,16 @@
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
+import { type Dock, dockTab } from "../lib/dock.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
 export interface SidePanelSlice {
   sidePanelTab: SidePanelTab | null;
   sidePanelMaximized: string | null;
+  dock: Dock | null;
   setSidePanelTab: (tab: SidePanelTab | null) => void;
   setSidePanelMaximized: (view: string | null) => void;
+  setDock: (dock: Dock | null) => void;
 }
 
 export const createSidePanelSlice: StateCreator<
@@ -18,6 +21,7 @@ export const createSidePanelSlice: StateCreator<
 > = (set) => ({
   sidePanelTab: null,
   sidePanelMaximized: null,
+  dock: null,
   setSidePanelTab: (tab) =>
     set(
       tab === null
@@ -25,4 +29,19 @@ export const createSidePanelSlice: StateCreator<
         : { sidePanelTab: tab },
     ),
   setSidePanelMaximized: (view) => set({ sidePanelMaximized: view }),
+  setDock: (dock) =>
+    set((state) => ({
+      dock,
+      sidePanelTab: dock ? dockTab[dock.kind] : state.sidePanelTab,
+      sidePanelMaximized: null,
+      openFileDirty: false,
+      openFileEdit: dock?.kind === "file" ? dock.edit : false,
+      openArtifactDirty:
+        dock?.kind === "artifact" &&
+        state.dock?.kind === "artifact" &&
+        state.dock.id === dock.id
+          ? state.openArtifactDirty
+          : false,
+      openArtifactEdit: dock?.kind === "artifact" ? dock.edit : false,
+    })),
 });

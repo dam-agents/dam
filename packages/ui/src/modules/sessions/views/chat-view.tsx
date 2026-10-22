@@ -269,28 +269,14 @@ export function ChatView() {
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
-  const openFilePath = useStore((s) => s.openFilePath);
-  const openArtifactId = useStore((s) => s.openArtifactId);
-  const openBrowserAgentId = useStore((s) =>
-    s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
-  );
+  const dock = useStore((s) => s.dock);
   const openBrowser = useOpenBrowser();
   const closeBrowser = useStore((s) => s.setOpenBrowser);
-  const openChangesAgentId = useStore((s) =>
-    s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
-  );
   const toggleChanges = useToggleChanges();
-  const openDelegation = useStore((s) =>
-    s.openDelegation?.driverAgentId === s.selectedAgent
-      ? s.openDelegation
-      : null,
-  );
   const processesEnabled = useProcessesEnabled();
   const newLayout = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
-  const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
-  const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const runningProcesses = useRunningProcesses(
     processesEnabled ? selectedAgent : null,
@@ -740,13 +726,29 @@ export function ChatView() {
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const canOpenBrowser = agentView?.requireConnectionAddress === true;
+  // UNIT_BOUNDARY_DESCRIPTION: the browser, changes and delegation docks belong to one agent, so a dock left by a previously selected agent counts as nothing docked here.
+  const shownDock =
+    dock === null
+      ? null
+      : dock.kind === "browser" || dock.kind === "changes"
+        ? dock.agentId === selectedAgent
+          ? dock
+          : null
+        : dock.kind === "delegation"
+          ? dock.driverAgentId === selectedAgent
+            ? dock
+            : null
+          : dock.kind === "process-output" && !processesEnabled
+            ? null
+            : dock;
   const docked: DockedItems = {
-    file: openFilePath !== null,
-    artifact: openArtifactId !== null,
-    processOutput: openProcessOutputKey !== null && selectedAgent !== null,
-    changes: openChangesAgentId !== null,
-    browser: openBrowserAgentId !== null && canOpenBrowser,
-    delegation: openDelegation !== null,
+    file: shownDock?.kind === "file",
+    artifact: shownDock?.kind === "artifact",
+    processOutput:
+      shownDock?.kind === "process-output" && selectedAgent !== null,
+    changes: shownDock?.kind === "changes",
+    browser: shownDock?.kind === "browser" && canOpenBrowser,
+    delegation: shownDock?.kind === "delegation",
   };
   const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
   const changesAvailable = useChangesAvailable(selectedAgent, sessionId);
@@ -773,17 +775,7 @@ export function ChatView() {
     hiddenTabs,
     dockedTab !== null,
   );
-  const dockedItem =
-    dockedTab &&
-    [
-      dockedTab,
-      openBrowserAgentId,
-      openDelegation?.id,
-      openFilePath,
-      openArtifactId,
-      openChangesAgentId,
-      openProcessOutputKey,
-    ].join("\n");
+  const dockedItem = dockedTab && JSON.stringify(shownDock);
   const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
   const dockHiddenOnPhone =
     phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
@@ -827,38 +819,38 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
-  const dock =
-    openBrowserAgentId && canOpenBrowser ? (
+  const dockPanel =
+    shownDock?.kind === "browser" && canOpenBrowser ? (
       <DockedBrowserPanel
-        key={openBrowserAgentId}
-        agentId={openBrowserAgentId}
-        agentName={selectedAgentName ?? openBrowserAgentId}
+        key={shownDock.agentId}
+        agentId={shownDock.agentId}
+        agentName={selectedAgentName ?? shownDock.agentId}
       />
-    ) : openDelegation ? (
+    ) : shownDock?.kind === "delegation" ? (
       <DockedDelegationPanel
-        key={openDelegation.id}
-        driverAgentId={openDelegation.driverAgentId}
-        id={openDelegation.id}
+        key={shownDock.id}
+        driverAgentId={shownDock.driverAgentId}
+        id={shownDock.id}
       />
-    ) : openFilePath ? (
+    ) : shownDock?.kind === "file" ? (
       <DockedFilePanel onOpenFile={openFileHandler} />
-    ) : openArtifactId ? (
+    ) : shownDock?.kind === "artifact" ? (
       <DockedArtifactPanel
-        key={openArtifactId}
+        key={shownDock.id}
         agentId={selectedAgent}
         onSendPrompt={sendArtifactPrompt}
       />
-    ) : openChangesAgentId ? (
+    ) : shownDock?.kind === "changes" ? (
       <DockedChangesPanel
-        key={`${openChangesAgentId}:${sessionId ?? ""}`}
-        agentId={openChangesAgentId}
+        key={`${shownDock.agentId}:${sessionId ?? ""}`}
+        agentId={shownDock.agentId}
         sessionId={sessionId}
       />
-    ) : openProcessOutputKey && selectedAgent ? (
+    ) : shownDock?.kind === "process-output" && selectedAgent ? (
       <DockedProcessOutputPanel
-        key={openProcessOutputKey}
+        key={shownDock.key}
         agentId={selectedAgent}
-        outputKey={openProcessOutputKey}
+        outputKey={shownDock.key}
       />
     ) : null;
 
@@ -1329,7 +1321,7 @@ export function ChatView() {
               )}
             </>
           }
-          dock={dock}
+          dock={dockPanel}
         >
           <h1 className="sr-only">
             {[selectedAgentName, sessionView?.title]
@@ -1473,10 +1465,15 @@ export function ChatView() {
           onOpenFile={openFileHandler}
           panel={shownClassicPanel}
           dockHiddenOnPhone={dockHiddenOnPhone}
-          dock={dock}
+          dock={dockPanel}
           maximizable={
             shownClassicPanel === "dock"
-              ? maximizableView(dockedTab, true, openFilePath, openArtifactId)
+              ? maximizableView(
+                  dockedTab,
+                  true,
+                  shownDock?.kind === "file" ? shownDock.path : null,
+                  shownDock?.kind === "artifact" ? shownDock.id : null,
+                )
               : null
           }
           onClosePanel={() => {

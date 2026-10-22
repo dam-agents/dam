@@ -67,7 +67,9 @@ export function AppSidePanelButtons({
  * page offers Artifacts, listing the whole library.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
-  const openArtifactId = useStore((s) => s.openArtifactId);
+  const openArtifactId = useStore((s) =>
+    s.dock?.kind === "artifact" ? s.dock.id : null,
+  );
   const artifactDirty = useStore((s) => s.openArtifactDirty);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);

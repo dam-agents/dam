@@ -31,8 +31,10 @@ interface Props {
 }
 
 export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
-  const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifactId = useStore((s) =>
+    s.dock?.kind === "artifact" ? s.dock.id : null,
+  );
+  const setDock = useStore((s) => s.setDock);
   const openArtifactEdit = useStore((s) => s.openArtifactEdit);
   const setOpenArtifactEdit = useStore((s) => s.setOpenArtifactEdit);
   const setOpenArtifactDirty = useStore((s) => s.setOpenArtifactDirty);
@@ -81,8 +83,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
 
   const closePanel = useCallback(async () => {
     if (!(await confirmDiscard())) return;
-    setOpenArtifactId(null);
-  }, [confirmDiscard, setOpenArtifactId]);
+    setDock(null);
+  }, [confirmDiscard, setDock]);
 
   const showFrame = renderable && !editor.editing;
   const preview = useArtifactPreview(

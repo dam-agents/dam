@@ -8,7 +8,6 @@ export interface BrowserOpenRequest {
 }
 
 export interface BrowserSlice {
-  openBrowserAgentId: string | null;
   browserOpenRequest: BrowserOpenRequest | null;
   setOpenBrowser: (agentId: string | null, url?: string) => void;
   takeBrowserOpenRequest: () => BrowserOpenRequest | null;
@@ -20,27 +19,18 @@ export const createBrowserSlice: StateCreator<
   [],
   BrowserSlice
 > = (set, get) => ({
-  openBrowserAgentId: null,
   browserOpenRequest: null,
-  setOpenBrowser: (agentId, url) =>
-    set((state) =>
-      agentId
-        ? {
-            openBrowserAgentId: agentId,
-            sidePanelTab: "browser" as const,
-            browserOpenRequest: url
-              ? { url, id: (state.browserOpenRequest?.id ?? 0) + 1 }
-              : state.browserOpenRequest,
-            openFilePath: null,
-            openFileDirty: false,
-            openArtifactId: null,
-            openArtifactDirty: false,
-            openDelegation: null,
-            openProcessOutputKey: null,
-            openChangesAgentId: null,
-          }
-        : { openBrowserAgentId: null, sidePanelMaximized: null },
-    ),
+  setOpenBrowser: (agentId, url) => {
+    if (!agentId) return get().setDock(null);
+    get().setDock({ kind: "browser", agentId });
+    if (url)
+      set((state) => ({
+        browserOpenRequest: {
+          url,
+          id: (state.browserOpenRequest?.id ?? 0) + 1,
+        },
+      }));
+  },
   takeBrowserOpenRequest: () => {
     const request = get().browserOpenRequest;
     if (request) set({ browserOpenRequest: null });

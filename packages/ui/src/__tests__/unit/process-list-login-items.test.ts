@@ -28,7 +28,7 @@ vi.mock("../../modules/processes/hooks/use-toggle-process-output.js", () => ({
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
     select({
-      openProcessOutputKey: null,
+      dock: null,
       finishedListOpen: false,
       setFinishedListOpen: vi.fn(),
       showConfirm: vi.fn(),

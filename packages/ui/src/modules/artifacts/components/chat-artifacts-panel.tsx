@@ -89,7 +89,9 @@ export function ChatArtifactsPanel({
     [artifacts, term],
   );
   const shownBytes = shown.reduce((sum, a) => sum + a.sizeBytes, 0);
-  const openArtifactId = useStore((s) => s.openArtifactId);
+  const openArtifactId = useStore((s) =>
+    s.dock?.kind === "artifact" ? s.dock.id : null,
+  );
   const openArtifact = useOpenArtifact();
 
   const openRow = (id: string) =>
