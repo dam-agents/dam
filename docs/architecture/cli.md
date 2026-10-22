@@ -133,7 +133,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   `mcp` and `shell` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
   The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 - **`schedule`** — time-triggered tasks on an agent: recurrences, including the Precheck that decides each occurrence, and one-time schedules at a local moment or now, owned by [schedules.md](schedules.md).
-- **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit, owned by [spend-limits.md](spend-limits.md).
+- **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
   "Continue" at a limit is an `approval` verb, because the question is an approval.
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 

@@ -1,4 +1,7 @@
 import type {
+  SpendCeilingEntry,
+  SpendCeilingList,
+  SpendCeilingSetInput,
   SpendDailyInput,
   SpendDailyRow,
   SpendSetLimitInput,
@@ -19,6 +22,10 @@ export interface SpendService {
   status(input: SpendStatusInput): SpendResult<SpendStatus>;
   setLimit(input: SpendSetLimitInput): SpendResult<void>;
   turns(input: SpendTurnsInput): SpendResult<SpendTurns>;
+  listCeilings(): SpendResult<SpendCeilingList>;
+  setCeiling(
+    input: SpendCeilingSetInput,
+  ): SpendResult<SpendCeilingEntry | null>;
 }
 
 export function createSpendService(deps: { trpc: TrpcClient }): SpendService {
@@ -34,6 +41,12 @@ export function createSpendService(deps: { trpc: TrpcClient }): SpendService {
     },
     async turns(input) {
       return trpcCall(() => deps.trpc.spend.turns.query(input));
+    },
+    async listCeilings() {
+      return trpcCall(() => deps.trpc.spend.ceilings.list.query());
+    },
+    async setCeiling(input) {
+      return trpcCall(() => deps.trpc.spend.ceilings.set.mutate(input));
     },
   };
 }

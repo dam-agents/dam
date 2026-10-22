@@ -231,7 +231,7 @@ It counts the same spend as the own limit: the user's metered dollar spend on pa
 At the ceiling, the gate refuses the call and asks nothing, because "continue" cannot lift it.
 When the ceiling and a soft limit are both reached, the ceiling's refusal applies.
 
-A platform operator ([security-and-credentials](security-and-credentials.md#identity)) sets a user's own ceiling, and names the user by email.
+A platform operator ([security-and-credentials](security-and-credentials.md#identity)) sets a user's own ceiling with `dam spend ceiling`, and names the user by email.
 A ceiling that exists can also be changed or removed by the user's id, so a user without an email stays manageable; a new ceiling always needs the email.
 The api-server looks the email up in Keycloak, and keeps one row per user in Postgres: the amount, the operator who set it last, and when.
 It logs every set, change and removal with the operator and the amounts before and after, so a removed ceiling also leaves a trace.
