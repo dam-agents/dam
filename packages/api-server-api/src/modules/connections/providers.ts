@@ -79,8 +79,11 @@ const CURVE_BENDER_WORK_MODEL = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
  * UNIT_BOUNDARY_DESCRIPTION: the window the RITS deployment of the work model
  * serves, measured against its own vLLM router (max_model_len 1048576, a live
  * 270k-token prompt accepted, max_tokens refused above the same figure, so
- * input and output share it). Claude Code reads one window per process, so a
- * smaller number here compacts long sessions far below the real ceiling.
+ * input and output share it). It feeds the catalog's window for the models the
+ * endpoint does not describe, which Claude Code's per-model map and Pi read, so
+ * a smaller number compacts long sessions below the real ceiling. The endpoint
+ * serves other models on shorter windows, so a measured window for one of them
+ * outranks this constant (model-catalog metadata).
  */
 const CURVE_BENDER_CONTEXT_WINDOW = "1048576";
 

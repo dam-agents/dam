@@ -204,7 +204,7 @@ describe("curve-bender connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: Claude Code reads one window per process and knows nothing about the endpoint's models, so it must be told the deployment's real 1M — a smaller number compacts long sessions far below the ceiling the operator measured.
+  // TEST_SCENARIO: the endpoint does not describe its models, so the Connection must carry the deployment's real 1M into the catalog's window — a smaller number compacts long sessions far below the ceiling the operator measured.
   it("tells Claude Code the endpoint's 1M context", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
 

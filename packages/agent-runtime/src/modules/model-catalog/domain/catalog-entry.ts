@@ -10,7 +10,7 @@ export interface ModelPrices {
   cacheWritePerToken: number | null;
 }
 
-export type MetadataSource = "provider" | "table" | "preset" | "none";
+export type MetadataSource = "provider" | "table" | "known" | "preset" | "none";
 
 export interface ModelMetadata {
   contextWindow: number | null;

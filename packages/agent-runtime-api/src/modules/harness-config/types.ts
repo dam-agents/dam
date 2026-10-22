@@ -14,7 +14,8 @@ export interface CatalogModelPrices {
   cacheWritePerToken: number | null;
 }
 
-export type CatalogMetadataSource = "provider" | "table" | "preset" | "none";
+export type CatalogMetadataSource =
+  "provider" | "table" | "known" | "preset" | "none";
 
 export interface CatalogModelView {
   name: string;
