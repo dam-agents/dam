@@ -45,8 +45,9 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
     description: "Models this install serves itself, with no API key.",
   },
   {
-    type: "ibm-litellm",
-    description: IBM_LITELLM_DESCRIPTION,
+    type: "curve-bender",
+    templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    description: CURVE_BENDER_DESCRIPTION,
   },
   {
     type: "curve-bender",
@@ -54,13 +55,17 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
     description: CURVE_BENDER_DESCRIPTION,
   },
   {
-    type: "curve-bender",
-    templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-    description: CURVE_BENDER_DESCRIPTION,
+    type: "ibm-litellm",
+    description: IBM_LITELLM_DESCRIPTION,
   },
   {
     type: "bob",
     description: "IBM's model endpoint for Bob Shell.",
+  },
+  {
+    type: "bedrock",
+    description:
+      "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
   },
   {
     type: "anthropic",
@@ -71,10 +76,5 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
     type: "openai",
     description:
       "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
-  },
-  {
-    type: "bedrock",
-    description:
-      "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
   },
 ];
