@@ -15,6 +15,7 @@ import { holdBackEntry } from "../../lib/back-entry.js";
 import {
   RIGHT_RAIL_W,
   SIDEBAR_COLLAPSED_W,
+  SIDEBAR_MIN_W,
   sidebarMaxWidth,
   snapSidebarWidth,
 } from "../../lib/sidebar-layout.js";
@@ -59,6 +60,8 @@ export function SidebarV2() {
   const dragFrom = useRef<number | null>(null);
   const dragBy = useRef(0);
   const over = overlaid && mode === "rail";
+  // UNIT_BOUNDARY_DESCRIPTION: the edge is offered only where a pane fits beside the page at its narrowest, so a window too narrow for one opens the pane over the page instead.
+  const canResize = maxWidth >= SIDEBAR_MIN_W;
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
   useFocusTrap(navRef, over);
@@ -124,7 +127,7 @@ export function SidebarV2() {
         )}
       </nav>
       {/* UNIT_BOUNDARY_DESCRIPTION: one handle serves the rail and the pane, so a drag that crosses between them keeps its grip instead of being cut short when the other handle would have taken over. */}
-      {!over && (
+      {!over && canResize && (
         <div
           className="flex"
           data-testid={
