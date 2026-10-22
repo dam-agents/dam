@@ -11,10 +11,11 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 - The cert-manager and Gateway API manifests are `github.com` release files the inspector's kit opens (quality-inspector 3.1.0 or later); the `trusted` preset allows the hosts GitHub redirects them to, so `egress` names neither.
 - `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
   The inspector's VM kernel cannot run the Istio ambient dataplane, so the nested install runs without it; applied as a `file` prerequisite (quality-inspector 2.21.0 or later).
-- `sandbox` (quality-inspector 3.4.0 or later) — two throwaway accounts the inspector's operator creates once at onboarding: a GitHub organization with one repository and a fine-grained token (`sandbox/github.md`), and a Slack workspace with DAM's app and a test person (`sandbox/slack.md`).
-  The install connects the workspace through `apiServer.slackAppToken` and the legacy `apiServer.slackBotToken` import (overlay `@sandbox:slack`), and lets the nested gateways reach the VM's gateway (`controller.gatewayEgress.extraCidrs`, overlay `@sandbox:github`).
+- `sandbox` (quality-inspector 3.4.0 or later; the GitHub sign-in 3.9.0) — two throwaway accounts the inspector's operator creates once at onboarding: a GitHub test user with an organization, one repository, an OAuth App and a fine-grained token (`sandbox/github.md`), and a Slack workspace with DAM's app and a test person (`sandbox/slack.md`).
+  The install connects the workspace through `apiServer.slackAppToken` and the legacy `apiServer.slackBotToken` import (overlay `@sandbox:slack`), takes the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`) and lets the nested gateways reach the VM's gateway (`controller.gatewayEgress.extraCidrs`, both overlay `@sandbox:github`).
+  The GitHub sign-in's pages are the only `github.com` paths in `egress`, each with its method — the inspector's kit admits no other shape there; `suite/lib/sandbox.ts` → `githubSignIn` drives them, so a test never names GitHub.
   `controller.gatewayUpstreamExtraCAs` is the VM gateway's CA, so nested gateways and the api-server trust the TLS it intercepts.
-  `bin/sandbox check` proves the accounts; `suite/lib/sandbox.ts` is the test person; `egress` names only the sandbox repository's issue writes and Slack.
+  `bin/sandbox check` proves the accounts; `suite/lib/sandbox.ts` is the test person; `egress` names only the sandbox repository's issue writes, the GitHub sign-in and Slack.
 - `scenarios/` — the product team's flows the inspector replays nightly.
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, and what the nested install cannot do.
   User-facing only — never implementation detail.
@@ -39,7 +40,7 @@ Keep `.quality-inspector/` free of symlinks and submodules: the Contents API ans
 
 ## Sandbox accounts
 
-| Account  | The operator creates                                                                                     | Lines in `work/env/credentials.env`                                        |
-| -------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `github` | an organization, one repository, a fine-grained token (`sandbox/github.md`)                              | `E2E_SANDBOX_GITHUB_TOKEN`                                                 |
-| `slack`  | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`) | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID` |
+| Account  | The operator creates                                                                                                              | Lines in `work/env/credentials.env`                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `github` | a test user with an authenticator code, an organization, one repository, an OAuth App, a fine-grained token (`sandbox/github.md`) | `E2E_SANDBOX_GITHUB_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`, `_OAUTH_CLIENT_ID`, `_OAUTH_CLIENT_SECRET` |
+| `slack`  | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`)                          | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID`                                    |

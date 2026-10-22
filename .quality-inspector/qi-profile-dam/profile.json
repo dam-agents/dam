@@ -65,7 +65,10 @@
         "enabled": true, "harness": "mock", "description": "Scripted mock agent (QA)",
         "image": { "repository": "{{config_repo:mock_image}}", "tag": "{{config_tag:mock_image}}" },
         "env": [ { "name": "MOCK_DEFAULT_REPLY", "value": "Hello from the mock agent." } ] } } } },
-      { "when": "@sandbox:github", "values": { "controller": { "gatewayEgress": { "extraCidrs": ["{{gateway_ip}}/32"] } } } },
+      { "when": "@sandbox:github", "values": {
+        "controller": { "gatewayEgress": { "extraCidrs": ["{{gateway_ip}}/32"] } },
+        "apiServer": { "oauthAppDefaults": { "github": {
+          "clientId": "{{sandbox:github.OAUTH_CLIENT_ID}}", "clientSecret": "{{sandbox:github.OAUTH_CLIENT_SECRET}}" } } } } },
       { "when": "@sandbox:slack", "values": { "apiServer": {
         "slackAppToken": "{{sandbox:slack.APP_TOKEN}}", "slackBotToken": "{{sandbox:slack.BOT_TOKEN}}" } } }
     ]
@@ -79,6 +82,15 @@
     { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
     { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
+    { "host": "github.com", "method": "GET", "path": "/login", "why": "sandbox: the test user's GitHub sign-in — the login form" },
+    { "host": "github.com", "method": "GET", "path": "/login?*", "why": "sandbox: the login form, with its return_to" },
+    { "host": "github.com", "method": "POST", "path": "/session", "why": "sandbox: the test user's password" },
+    { "host": "github.com", "method": "GET", "path": "/sessions/two-factor/app", "why": "sandbox: the TOTP page" },
+    { "host": "github.com", "method": "POST", "path": "/sessions/two-factor", "why": "sandbox: the TOTP code" },
+    { "host": "github.com", "method": "GET", "path": "/login/oauth/authorize?*", "why": "sandbox: the OAuth App's authorize page" },
+    { "host": "github.com", "method": "POST", "path": "/login/oauth/authorize", "why": "sandbox: the test user's consent" },
+    { "host": "github.com", "method": "POST", "path": "/login/oauth/access_token", "why": "sandbox: DAM's api-server exchanges the code for the user's token" },
+    { "host": "github.githubassets.com", "method": "GET", "path": "/assets/*", "why": "sandbox: the sign-in pages' scripts and styles (the authorize button is enabled by a script)" },
     { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
     { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
   ],
@@ -86,8 +98,8 @@
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
   "sandbox": {
     "accounts": [
-      { "id": "github", "what": "a GitHub organization of its own with one repository, and a fine-grained token that may write issues in that repository only",
-        "guide": "sandbox/github.md", "credentials": ["TOKEN"] },
+      { "id": "github", "what": "a GitHub test user with a TOTP second factor, an organization of its own with one repository, an OAuth App there for DAM's GitHub sign-in, and the user's fine-grained token that may write issues in that repository only",
+        "guide": "sandbox/github.md", "credentials": ["TOKEN", "LOGIN", "PASSWORD", "TOTP_SECRET", "OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET"] },
       { "id": "slack", "what": "a free Slack workspace with one channel, DAM's Slack app in it, and a second person who writes to the agent",
         "guide": "sandbox/slack.md", "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"] }
     ]

@@ -41,9 +41,13 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - No outbound network from inside the nested cluster beyond the sandbox accounts below: real model providers (unless lent), Telegram, and any GitHub or Slack other than the sandbox's do not work.
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
-  - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`.
-    An agent reaches it through a **GitHub** connection made with a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN`.
-    The token may only read the repository and write its issues.
+  - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
+    An agent reaches it through a **GitHub** connection, made either way a user makes one:
+    **Connect with GitHub** (OAuth), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may only read the repository and write its issues.
+    With OAuth the install's GitHub OAuth App is the sandbox's, so the form needs no client ID; the browser leaves DAM for GitHub's sign-in.
+    Right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`: it signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.
+    Never drive GitHub's pages yourself, never type a GitHub value in a test, and never open another GitHub page: only the sign-in's own pages are reachable.
+    The connection then shows the test user's login (`sandbox.githubLogin()`) as its account; `sandbox.githubUser()` says whether this instance has the test user.
     Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
   - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
     An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
