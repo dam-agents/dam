@@ -3,9 +3,11 @@ import { TRPCError } from "@trpc/server";
 import { match } from "ts-pattern";
 import type {
   ConnectionsService,
+  CredentialCheck,
   SecretRequestsService,
   SecretRequestView,
 } from "api-server-api";
+import { CredentialCheckNotPassed } from "../domain/credential-check.js";
 import { securityLog } from "../../../core/security-log.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
@@ -38,6 +40,9 @@ export const SECRET_REQUEST_PATH = "/connections/secret";
  * user is no use to the sender. A request is used once, and expires after ten
  * minutes. Nobody can read a secret back: the status says only saved,
  * cancelled, expired or pending, and stays pending while a submit is saving.
+ * A credential whose template names a check is checked before it is saved:
+ * one that does not pass is held, and the link stays usable, until the user
+ * fixes it or confirms the save anyway; the saved status carries the result.
  */
 export function createSecretRequestsService(deps: {
   ownerId: string;
@@ -46,7 +51,10 @@ export function createSecretRequestsService(deps: {
   outcomes: TtlStore<SecretRequestOutcome>;
   templates: ConnectionTemplateRegistry;
   repo: Pick<ConnectionsRepository, "get" | "listAgentsForConnection">;
-  connections: Pick<ConnectionsService, "createFromTemplate" | "update">;
+  connections: Pick<
+    ConnectionsService,
+    "createFromTemplate" | "update" | "getConnection"
+  >;
   agentName: (agentId: string) => Promise<string | null>;
   now?: () => number;
 }): SecretRequestsService {
@@ -143,6 +151,7 @@ export function createSecretRequestsService(deps: {
           .with({ status: "saved" }, (o) => ({
             status: "saved" as const,
             connectionId: o.connectionId,
+            ...(o.check ? { check: o.check } : {}),
           }))
           .with({ status: "cancelled" }, () => ({
             status: "cancelled" as const,
@@ -214,7 +223,7 @@ export function createSecretRequestsService(deps: {
       } satisfies SecretRequestView;
     },
 
-    async submit({ requestId, fields }) {
+    async submit({ requestId, fields, saveAnyway }) {
       const pending = await owned(requestId);
       const kind =
         pending.action === "create"
@@ -241,16 +250,19 @@ export function createSecretRequestsService(deps: {
         ownerId: deps.ownerId,
         status: "saving",
       });
+      const policy = { holdUnlessPassed: saveAnyway !== true };
       let connectionId: string;
       try {
         if (claimed.action === "create") {
           connectionId = await deps.connections.createFromTemplate(
             withSecret(claimed.connection, secret),
+            policy,
           );
         } else {
           await deps.connections.update(
             claimed.connectionId,
             credentialUpdateOf(kind, secret),
+            policy,
           );
           connectionId = claimed.connectionId;
         }
@@ -259,12 +271,18 @@ export function createSecretRequestsService(deps: {
           await deps.pending.set(requestId, claimed);
         }
         await deps.outcomes.delete(requestId);
+        if (err instanceof CredentialCheckNotPassed) {
+          return { status: "check-not-passed", check: err.check };
+        }
         throw err;
       }
+      const check = (await deps.connections.getConnection(connectionId))
+        ?.check;
       await deps.outcomes.set(requestId, {
         ownerId: deps.ownerId,
         status: "saved",
         connectionId,
+        ...(check ? { check } : {}),
       });
       securityLog("info", "connection.secret_request_saved", {
         category: "credential",
@@ -274,7 +292,7 @@ export function createSecretRequestsService(deps: {
         result: "success",
         detail: { action: claimed.action },
       });
-      return { connectionId };
+      return { status: "saved", connectionId, ...(check ? { check } : {}) };
     },
 
     async cancel(requestId) {

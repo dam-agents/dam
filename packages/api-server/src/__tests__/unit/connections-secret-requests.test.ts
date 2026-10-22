@@ -1,10 +1,16 @@
 import { TRPCError } from "@trpc/server";
-import type { Connection, ConnectionCreateInput } from "api-server-api";
+import type {
+  Connection,
+  ConnectionCreateInput,
+  ConnectionView,
+  CredentialCheck,
+} from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
 import { configureLogger } from "../../core/logger.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { CredentialCheckNotPassed } from "../../modules/connections/domain/credential-check.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import type {
   PendingSecretRequest,
@@ -21,7 +27,9 @@ import {
  * the web app. The request holds every non-secret input, the page shows where
  * the secret will go, only the user who made the request can see it or
  * submit it, a request is used once, and the status the CLI polls never
- * carries the secret.
+ * carries the secret. A credential whose check does not pass is held: the
+ * request stays usable and the page gets the check, until the user fixes the
+ * secret or saves it anyway; the saved status carries the check's result.
  */
 
 configureLogger({ level: "error", write: () => {} });
@@ -34,6 +42,7 @@ function world(
     connections?: Connection[];
     grants?: Record<string, string[]>;
     createFromTemplate?: (input: ConnectionCreateInput) => Promise<string>;
+    check?: CredentialCheck;
   } = {},
 ) {
   const clock = opts.clock ?? { now: 1_000_000 };
@@ -49,6 +58,9 @@ function world(
     opts.createFromTemplate ?? (async () => "conn-000000000001"),
   );
   const update = vi.fn(async () => {});
+  const getConnection = vi.fn(async (id: string) =>
+    opts.check ? ({ id, check: opts.check } as ConnectionView) : null,
+  );
   const forOwner = (ownerId: string) =>
     createSecretRequestsService({
       ownerId,
@@ -62,7 +74,7 @@ function world(
           null,
         listAgentsForConnection: async (id) => opts.grants?.[id] ?? [],
       },
-      connections: { createFromTemplate, update },
+      connections: { createFromTemplate, update, getConnection },
       agentName: async (id) => (id === "agent-1" ? "reviewer" : null),
       now: () => clock.now,
     });
@@ -172,11 +184,14 @@ describe("secret requests", () => {
         requestId: ticket.requestId,
         fields: { value: " ghp_x " },
       }),
-    ).resolves.toEqual({ connectionId: "conn-000000000001" });
-    expect(w.createFromTemplate).toHaveBeenCalledWith({
-      ...githubPat.connection,
-      value: "ghp_x",
+    ).resolves.toEqual({
+      status: "saved",
+      connectionId: "conn-000000000001",
     });
+    expect(w.createFromTemplate).toHaveBeenCalledWith(
+      { ...githubPat.connection, value: "ghp_x" },
+      { holdUnlessPassed: true },
+    );
     expect(await alice.status(ticket.requestId)).toEqual({
       status: "saved",
       connectionId: "conn-000000000001",
@@ -228,6 +243,60 @@ describe("secret requests", () => {
     });
   });
 
+  // TEST_SCENARIO: a token whose check fails is held: the page gets the check to show the reason, nothing is saved, the link still works and the CLI keeps waiting, so the user can fix the token on the same page.
+  it("holds a credential whose check does not pass", async () => {
+    const check: CredentialCheck = {
+      status: "failed",
+      reason: "GitHub refused the token (Bad credentials)",
+      at: "2026-10-22T08:00:00.000Z",
+    };
+    const w = world({
+      createFromTemplate: async () => {
+        throw new CredentialCheckNotPassed(check);
+      },
+    });
+    const alice = w.forOwner("alice");
+    const ticket = await alice.request(githubPat);
+    await expect(
+      alice.submit({ requestId: ticket.requestId, fields: { value: "bad" } }),
+    ).resolves.toEqual({ status: "check-not-passed", check });
+    expect(await alice.status(ticket.requestId)).toEqual({
+      status: "pending",
+    });
+  });
+
+  // TEST_SCENARIO: the user confirms Save anyway; the save no longer holds on the check, and the status the CLI reads carries the failed check so the agent does not call the connection ready.
+  it("saves anyway and reports the check to the CLI", async () => {
+    const check: CredentialCheck = {
+      status: "failed",
+      reason: "GitHub refused the token (Bad credentials)",
+      at: "2026-10-22T08:00:00.000Z",
+    };
+    const w = world({ check });
+    const alice = w.forOwner("alice");
+    const ticket = await alice.request(githubPat);
+    await expect(
+      alice.submit({
+        requestId: ticket.requestId,
+        fields: { value: "bad" },
+        saveAnyway: true,
+      }),
+    ).resolves.toEqual({
+      status: "saved",
+      connectionId: "conn-000000000001",
+      check,
+    });
+    expect(w.createFromTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ value: "bad" }),
+      { holdUnlessPassed: false },
+    );
+    expect(await alice.status(ticket.requestId)).toEqual({
+      status: "saved",
+      connectionId: "conn-000000000001",
+      check,
+    });
+  });
+
   // TEST_SCENARIO: the page takes exactly the fields of the auth kind, so a request for a key pair needs both keys and no other field reaches the connection.
   it("takes the fields of the auth kind only", async () => {
     const w = world();
@@ -262,6 +331,7 @@ describe("secret requests", () => {
     });
     expect(w.createFromTemplate).toHaveBeenCalledWith(
       expect.objectContaining({ accessKeyId: "AKIA", secretAccessKey: "s" }),
+      { holdUnlessPassed: true },
     );
   });
 
@@ -309,7 +379,11 @@ describe("secret requests", () => {
       requestId: ticket.requestId,
       fields: { privateKey: "PEM" },
     });
-    expect(w.update).toHaveBeenCalledWith("conn-abc", { value: "PEM" });
+    expect(w.update).toHaveBeenCalledWith(
+      "conn-abc",
+      { value: "PEM" },
+      { holdUnlessPassed: true },
+    );
     await expect(
       w.forOwner("bob").request({ action: "update", connectionId: "conn-abc" }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });

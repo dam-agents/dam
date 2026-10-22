@@ -469,6 +469,7 @@ export {
   composeGitHubAccounts,
   githubAccountGroups,
   githubHostOf,
+  isGitHubEnterpriseServer,
 } from "./modules/connections/github-accounts.js";
 export type {
   GitHubAccountGroup,
@@ -564,6 +565,8 @@ export type {
   ProviderBalance,
   ProviderKeyCheck,
   ProviderKeyRecheck,
+  CredentialCheck,
+  CredentialCheckPolicy,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,
@@ -575,11 +578,13 @@ export type {
   SecretRequestStatus,
   SecretRequestTicket,
   SecretRequestView,
+  SecretRequestSubmitResult,
   SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
   authConfig as connectionAuthConfigSchema,
   providerKeyCheck as providerKeyCheckSchema,
+  credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";
 export {
   CONNECTION_ENV_NAME_HINT,
