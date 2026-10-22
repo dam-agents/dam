@@ -230,6 +230,13 @@ export interface ProviderPreset {
   alias: ProviderAlias;
   displayName: string;
   modes: readonly ProviderPresetMode[];
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the provider's own service answers Claude
+   * Code's auto-mode check on the model call itself, so a session there needs
+   * no classifier of its own and the router passes the classifier call
+   * through.
+   */
+  serverAutoMode?: boolean;
 }
 
 export const PROVIDERS = {
@@ -237,6 +244,7 @@ export const PROVIDERS = {
     id: "anthropic",
     alias: "anthropic",
     displayName: "Anthropic",
+    serverAutoMode: true,
     modes: [
       {
         key: "oauth",
@@ -257,6 +265,7 @@ export const PROVIDERS = {
     id: "ibm-litellm",
     alias: "ibm",
     displayName: "IBM ETE LiteLLM Proxy",
+    serverAutoMode: true,
     modes: [{ key: "api-key", label: "API token", templateId: "ibm-litellm" }],
   },
   "curve-bender": {
@@ -361,6 +370,20 @@ export function providerTypeForTemplateId(
 
 export function aliasForProviderType(type: ProviderPresetType): ProviderAlias {
   return PROVIDERS[type].alias;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the provider behind an alias answers
+ * Claude Code's auto-mode check itself, which decides if the router leaves a
+ * classifier call where the harness sent it.
+ */
+export function hasServerAutoMode(alias: ProviderAlias): boolean {
+  return PROVIDER_PRESET_TYPES.some(
+    (type) =>
+      PROVIDERS[type].alias === alias &&
+      "serverAutoMode" in PROVIDERS[type] &&
+      PROVIDERS[type].serverAutoMode === true,
+  );
 }
 
 export function aliasForTemplateId(templateId: string): ProviderAlias | null {

@@ -467,6 +467,7 @@ export {
   PROVIDER_ALIAS_RE,
   aliasForProviderType,
   aliasForTemplateId,
+  hasServerAutoMode,
   aliasOrder,
   HARNESS_HOME_PROVIDERS,
   templateIdsForAlias,
