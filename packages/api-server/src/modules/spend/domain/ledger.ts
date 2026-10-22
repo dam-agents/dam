@@ -56,6 +56,12 @@ export type DayCounter =
       readonly day: string;
       readonly agentId: string;
       readonly connectionId: string;
+    }
+  | {
+      readonly scope: "owner-connection";
+      readonly day: string;
+      readonly ownerSub: string;
+      readonly connectionId: string;
     };
 
 export const UNKNOWN_CONNECTION = "unknown";
@@ -98,6 +104,12 @@ export function dayCountersOf(row: SpendRow): readonly DayCounter[] {
       scope: "connection",
       day: row.day,
       agentId: row.payer,
+      connectionId: row.connectionId,
+    },
+    {
+      scope: "owner-connection",
+      day: row.day,
+      ownerSub: row.ownerSub,
       connectionId: row.connectionId,
     },
   ];

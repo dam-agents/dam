@@ -78,6 +78,7 @@ export interface SpendStatus {
   ceiling: SpendCeilingView | null;
   spent: SpendTotal[];
   spentByConnection: SpendConnectionTotal[];
+  ownerSpentByConnection: SpendConnectionTotal[];
 }
 
 export interface SpendAmount {

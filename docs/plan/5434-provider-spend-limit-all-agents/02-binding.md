@@ -6,7 +6,8 @@
 ## Context
 
 Today only the browser works out "this other limit stops the agent first", in dollars only
-(`packages/ui/src/modules/spend/lib/nearer-limit.ts`). This slice moves that rule into
+(`packages/ui/src/modules/spend/lib/nearer-limit.ts`).
+This slice moves that rule into
 `spend.status` as `binding` (contract pinned in the README), across every unit and Connection,
 and makes the agent's `describe_spend_limits` tool and `dam spend status` show it.
 
@@ -22,14 +23,17 @@ Apply **/typescript-engineering**.
      `agent` limit, the `owner` limit and the ceiling.
    - Subscription / Bob Connection: its `connection` and `owner-connection` limits only.
    - The `null` row: `agent`, `owner`, ceiling.
-   `stopsFirst` is the candidate with the least `leftMicros`; ties go to the narrower scope
-   (`connection` < `agent` < `owner-connection` < `owner` < ceiling) so the screen names the limit
-   the user set closest to the agent. `others` lists the rest. No candidate → no row.
-   This is the one place with tricky edges, so add a unit test next to the existing spend domain
-   tests (`packages/api-server/src/__tests__/unit/`) — the flagged exception to "no new tests".
+     `stopsFirst` is the candidate with the least `leftMicros`; ties go to the narrower scope
+     (`connection` < `agent` < `owner-connection` < `owner` < ceiling) so the screen names the limit
+     the user set closest to the agent.
+     `others` lists the rest.
+     No candidate → no row.
+     This is the one place with tricky edges, so add a unit test next to the existing spend domain
+     tests (`packages/api-server/src/__tests__/unit/`) — the flagged exception to "no new tests".
 2. **Status** — `services/spend-service.ts` `status`: when `input.agentId` is set, read the agent's
    granted Connections (the port already gives templates per grant) and fill
-   `binding: bindingOf(...)`; without an agent, `binding: []`. Add `SpendBinding` to
+   `binding: bindingOf(...)`; without an agent, `binding: []`.
+   Add `SpendBinding` to
    `api-server-api` `types.ts` and export it.
 3. **Agent tool** — `apps/harness-api-server/spend-limits-tool.ts`: add to `readable` a
    `stopsFirst` list: per binding, the Connection name (or "all paid providers"), what is left in
@@ -46,8 +50,8 @@ Apply **/typescript-engineering**.
 
 - [ ] `spend.status({ agentId })` returns `binding` rows; `spend.status({})` returns `binding: []`.
 - [ ] With an agent limit $5 (spent $1.10) and an all-agents Anthropic limit $20 (spent $19.50),
-      the Anthropic row names `owner-connection` with $0.50 left and lists the agent limit in
-      `others`.
+  the Anthropic row names `owner-connection` with $0.50 left and lists the agent limit in
+  `others`.
 - [ ] A subscription or Bob row never names `agent`, `owner` or the ceiling.
 - [ ] `describe_spend_limits` shows the stops-first line per provider.
 - [ ] `dam spend status <agent>` prints "Stops first" lines.

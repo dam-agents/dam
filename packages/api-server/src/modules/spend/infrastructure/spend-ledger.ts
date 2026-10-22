@@ -43,7 +43,7 @@ export interface SpendLedger {
   }): Promise<SpendDailyRow[]>;
   byConnection(query: {
     ownerSub: string;
-    agentId: string;
+    agentId: string | null;
     day: string;
   }): Promise<SpendConnectionTotal[]>;
   breakdownRows(query: {
@@ -201,6 +201,13 @@ export function createSpendLedger(db: Db): SpendLedger {
             eq(spendDaily.connectionId, c.connectionId),
           ),
         )
+        .with({ scope: "owner-connection" }, (c) =>
+          and(
+            eq(spendDaily.day, c.day),
+            eq(spendDaily.ownerSub, c.ownerSub),
+            eq(spendDaily.connectionId, c.connectionId),
+          ),
+        )
         .exhaustive();
       const [row] = await db
         .select({ total: sumOf("costMicros") })
@@ -289,7 +296,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         .where(
           and(
             eq(spendDaily.ownerSub, ownerSub),
-            eq(spendDaily.payerAgentId, agentId),
+            agentId === null ? undefined : eq(spendDaily.payerAgentId, agentId),
             eq(spendDaily.day, day),
           ),
         )

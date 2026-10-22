@@ -153,31 +153,40 @@ export function createSpendService(deps: {
     };
   };
 
+  const connectionUnit = (
+    template: string | null,
+    notFound: string,
+  ): SpendUnit => {
+    if (template === null) {
+      throw new TRPCError({ code: "NOT_FOUND", message: notFound });
+    }
+    const rule = connectionLimitRule(template);
+    if (!rule.limitable) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: connectionLimitRefusal(rule),
+      });
+    }
+    return rule.unit;
+  };
+
   const limitUnit = (scope: SpendLimitScope): Promise<SpendUnit> =>
     match(scope)
       .with({ kind: "agent" }, { kind: "owner" }, () =>
         Promise.resolve<SpendUnit>("usd"),
       )
-      .with({ kind: "connection" }, async ({ agentId, connectionId }) => {
-        const template = await deps.connections.templateOf(
-          agentId,
-          connectionId,
-        );
-        if (template === null) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "the Connection is not granted to this agent",
-          });
-        }
-        const rule = connectionLimitRule(template);
-        if (!rule.limitable) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: connectionLimitRefusal(rule),
-          });
-        }
-        return rule.unit;
-      })
+      .with({ kind: "connection" }, async ({ agentId, connectionId }) =>
+        connectionUnit(
+          await deps.connections.templateOf(agentId, connectionId),
+          "the Connection is not granted to this agent",
+        ),
+      )
+      .with({ kind: "owner-connection" }, async ({ connectionId }) =>
+        connectionUnit(
+          await deps.connections.ownedTemplateOf(deps.ownerSub, connectionId),
+          "the Connection is not yours",
+        ),
+      )
       .exhaustive();
 
   const scopedAgents = (agentId: string | undefined) =>
@@ -315,26 +324,32 @@ export function createSpendService(deps: {
       const day = utcDay(now);
       const agentId = input?.agentId;
       if (agentId) await requireOwned(agentId);
-      const [limits, ceiling, rows, byConnection] = await Promise.all([
-        deps.limits.applying(
-          { agentId: agentId ?? null, ownerSub: deps.ownerSub },
-          day,
-        ),
-        deps.ceilings.forOwner(deps.ownerSub),
-        deps.ledger.daily({
-          ownerSub: deps.ownerSub,
-          agentIds: scopedAgents(agentId),
-          from: day,
-          to: day,
-        }),
-        agentId
-          ? deps.ledger.byConnection({
-              ownerSub: deps.ownerSub,
-              agentId,
-              day,
-            })
-          : [],
-      ]);
+      const [limits, ceiling, rows, byConnection, ownerByConnection] =
+        await Promise.all([
+          deps.limits.applying(
+            { agentId: agentId ?? null, ownerSub: deps.ownerSub },
+            day,
+          ),
+          deps.ceilings.forOwner(deps.ownerSub),
+          deps.ledger.daily({
+            ownerSub: deps.ownerSub,
+            agentIds: scopedAgents(agentId),
+            from: day,
+            to: day,
+          }),
+          agentId
+            ? deps.ledger.byConnection({
+                ownerSub: deps.ownerSub,
+                agentId,
+                day,
+              })
+            : [],
+          deps.ledger.byConnection({
+            ownerSub: deps.ownerSub,
+            agentId: null,
+            day,
+          }),
+        ]);
       const spent = new Map<string, SpendTotal>();
       for (const row of rows) {
         const total = spent.get(row.unit) ?? {
@@ -353,11 +368,12 @@ export function createSpendService(deps: {
         ceiling: ceiling ? await ceilingView(ceiling, day) : null,
         spent: [...spent.values()],
         spentByConnection: byConnection,
+        ownerSpentByConnection: ownerByConnection,
       };
     },
 
     async setLimit({ scope, amountMicros }) {
-      if (scope.kind !== "owner") {
+      if (scope.kind === "agent" || scope.kind === "connection") {
         await requireOwned(scope.agentId);
         if (amountMicros !== null) await requirePayer(scope.agentId);
       }

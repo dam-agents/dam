@@ -133,6 +133,10 @@ export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
     agentId: z.string().min(1),
     connectionId: z.string().min(1),
   }),
+  z.object({
+    kind: z.literal("owner-connection"),
+    connectionId: z.string().min(1),
+  }),
 ]);
 
 export const spendLimitAmountSchema = z

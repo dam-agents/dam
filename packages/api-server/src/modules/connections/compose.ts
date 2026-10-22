@@ -168,12 +168,20 @@ export function listConnectionTemplateIds(db: Db): () => Promise<string[]> {
 
 export function createGrantedConnectionTemplates(db: Db): {
   templateOf(agentId: string, connectionId: string): Promise<string | null>;
+  ownedTemplateOf(
+    ownerSub: string,
+    connectionId: string,
+  ): Promise<string | null>;
 } {
   const repo = createConnectionsRepository(db);
   return {
     async templateOf(agentId, connectionId) {
       const granted = await repo.listConnectionsForAgent(agentId);
       return granted.find((c) => c.id === connectionId)?.templateId ?? null;
+    },
+    async ownedTemplateOf(ownerSub, connectionId) {
+      const owned = await repo.listByOwner(ownerSub);
+      return owned.find((c) => c.id === connectionId)?.templateId ?? null;
     },
   };
 }

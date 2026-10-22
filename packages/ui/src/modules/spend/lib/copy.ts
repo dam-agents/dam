@@ -228,6 +228,10 @@ export function connectionLimitName(connectionName: string): string {
   return `${connectionName} spend limit`;
 }
 
+export function allAgentsConnectionLimitName(connectionName: string): string {
+  return `Your ${connectionName} spend limit (all agents)`;
+}
+
 export function continueLabel(amountMicros: number, unit: SpendUnit): string {
   return `Continue (+${unit === "bobcoin" ? formatSpend(amountMicros, unit) : bareSpend(amountMicros, unit)})`;
 }

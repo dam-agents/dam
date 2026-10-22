@@ -97,6 +97,10 @@ export interface DayTotals {
 
 export interface GrantedConnections {
   templateOf(agentId: string, connectionId: string): Promise<string | null>;
+  ownedTemplateOf(
+    ownerSub: string,
+    connectionId: string,
+  ): Promise<string | null>;
 }
 
 export function createDayTotals(deps: {

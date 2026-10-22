@@ -49,6 +49,35 @@ function fail(message: string): never {
   process.exit(EXIT_INVALID_INPUT);
 }
 
+async function resolveConnection(
+  deps: LimitDeps,
+  host: string,
+  ref: string,
+): Promise<{
+  id: string;
+  name: string;
+  unit: SpendUnit;
+  refusal: string | null;
+}> {
+  const connections = await deps.createConnectionService(host).list();
+  exitOnServiceError(connections, host);
+  const connection = resolveConnectionRef(connections.value, ref);
+  if (!connection) {
+    process.stderr.write(
+      `error: unknown connection id or name: ${ref}\n` +
+        "hint: run `dam connection list` to see ids and names\n",
+    );
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const rule = connectionLimitRule(connection.templateId);
+  return {
+    id: connection.id,
+    name: connection.name,
+    unit: rule.limitable ? rule.unit : "usd",
+    refusal: rule.limitable ? null : connectionLimitRefusal(rule),
+  };
+}
+
 async function resolveTarget(
   deps: LimitDeps,
   host: string,
@@ -56,8 +85,17 @@ async function resolveTarget(
   opts: ScopeOptions,
 ): Promise<LimitTarget> {
   if (opts.me) {
-    if (ref !== undefined || opts.connection !== undefined) {
-      fail("--me takes no agent and no --connection");
+    if (ref !== undefined) fail("--me takes no agent");
+    if (opts.connection !== undefined) {
+      const connection = await resolveConnection(deps, host, opts.connection);
+      return {
+        scope: { kind: "owner-connection", connectionId: connection.id },
+        unit: connection.unit,
+        refusal: connection.refusal,
+        setText: (amount) =>
+          `Your ${connection.name} spend limit (all Agents) is now ${amount} a day.`,
+        clearText: `Your ${connection.name} spend limit (all Agents) is removed.`,
+      };
     }
     return {
       scope: { kind: "owner" },
@@ -80,29 +118,19 @@ async function resolveTarget(
       unit: "usd",
       refusal: null,
       setText: (amount) =>
-        `The Agent spend limit of ${agent.name} is now ${amount} a day. It counts paid API spend only: the Claude subscription and Bob need a Connection limit (--connection).`,
+        `The Agent spend limit of ${agent.name} is now ${amount} a day. It counts paid API spend only: the Claude subscription and Bob need a Connection limit (--connection), for this Agent or for all your Agents (--me).`,
       clearText: `${agent.name} has no Agent spend limit now.`,
     };
   }
-  const connections = await deps.createConnectionService(host).list();
-  exitOnServiceError(connections, host);
-  const connection = resolveConnectionRef(connections.value, opts.connection);
-  if (!connection) {
-    process.stderr.write(
-      `error: unknown connection id or name: ${opts.connection}\n` +
-        "hint: run `dam connection list` to see ids and names\n",
-    );
-    process.exit(EXIT_INVALID_INPUT);
-  }
-  const rule = connectionLimitRule(connection.templateId);
+  const connection = await resolveConnection(deps, host, opts.connection);
   return {
     scope: {
       kind: "connection",
       agentId: agent.id,
       connectionId: connection.id,
     },
-    unit: rule.limitable ? rule.unit : "usd",
-    refusal: rule.limitable ? null : connectionLimitRefusal(rule),
+    unit: connection.unit,
+    refusal: connection.refusal,
     setText: (amount) =>
       `The ${connection.name} spend limit of ${agent.name} is now ${amount} a day.`,
     clearText: `${agent.name} has no ${connection.name} spend limit now.`,
@@ -136,13 +164,13 @@ function parseAmount(flag: string, text: string): number {
 function buildSetCommand(deps: LimitDeps): Command {
   return new Command("set")
     .description(
-      "Set a daily spend limit: for one Agent or for all your Agents (--me), in US dollars of paid API spend; or for one Agent's Connection (--connection), in that Connection's unit. The Claude subscription and Bob count only in a Connection limit.",
+      "Set a daily spend limit: for one Agent or for all your Agents (--me), in US dollars of paid API spend; or on one Connection (--connection), for one Agent or for all your Agents (--me), in that Connection's unit. The Claude subscription and Bob count only in a Connection limit.",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID")
     .option("--me", "set your own limit for all your Agents together")
     .option(
       "--connection <id-or-name>",
-      "set the limit of the Agent's calls on this Connection",
+      "set the limit of the Agent's calls on this Connection; with --me, of all your Agents' calls on it",
     )
     .option("--usd <amount>", "dollars per UTC day, e.g. 10 or 0.25")
     .option(
@@ -159,7 +187,8 @@ function buildSetCommand(deps: LimitDeps): Command {
       "\nExamples:\n" +
         "  dam spend limit set my-agent --usd 10\n" +
         "  dam spend limit set --me --usd 50\n" +
-        "  dam spend limit set my-agent --connection bob --amount 0.5\n",
+        "  dam spend limit set my-agent --connection bob --amount 0.5\n" +
+        "  dam spend limit set --me --connection anthropic --amount 20\n",
     )
     .action(
       async (
@@ -196,13 +225,13 @@ function buildSetCommand(deps: LimitDeps): Command {
 function buildClearCommand(deps: LimitDeps): Command {
   return new Command("clear")
     .description(
-      "Remove a daily spend limit: an Agent's, yours for all your Agents (--me), or an Agent's limit on one Connection (--connection)",
+      "Remove a daily spend limit: an Agent's, yours for all your Agents (--me), or a limit on one Connection (--connection), for one Agent or for all your Agents (--me)",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID")
     .option("--me", "remove your own limit for all your Agents together")
     .option(
       "--connection <id-or-name>",
-      "remove the limit of the Agent's calls on this Connection",
+      "remove the limit of the Agent's calls on this Connection; with --me, of all your Agents' calls on it",
     )
     .option(
       "--server <url>",
@@ -214,7 +243,8 @@ function buildClearCommand(deps: LimitDeps): Command {
       "\nExamples:\n" +
         "  dam spend limit clear my-agent\n" +
         "  dam spend limit clear --me\n" +
-        "  dam spend limit clear my-agent --connection bob\n",
+        "  dam spend limit clear my-agent --connection bob\n" +
+        "  dam spend limit clear --me --connection anthropic\n",
     )
     .action(async (ref: string | undefined, opts: ScopeOptions) => {
       const host = await resolveActiveHost(deps, opts.server);

@@ -2296,6 +2296,7 @@ export async function bootstrap() {
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
+    spend.connectionLimitsSaga.unsubscribe();
     providerStatusSaga.unsubscribe();
     outageAlertsSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();

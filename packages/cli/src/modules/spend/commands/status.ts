@@ -31,7 +31,7 @@ const STATE_LABELS: Readonly<Record<SpendLimitState, string>> = {
 };
 
 const UNITS_NOTE =
-  "The Agent spend limit, your spend limit (all Agents) and the spend ceiling count paid API spend in US dollars only. The Claude subscription and Bob count only in their Connection limits.";
+  "The Agent spend limit, your spend limit (all Agents) and the spend ceiling count paid API spend in US dollars only. The Claude subscription and Bob count only in their Connection limits, for one Agent or for all your Agents.";
 
 function limitName(
   limit: SpendLimitView,
@@ -45,6 +45,8 @@ function limitName(
       return "Your spend limit (all Agents)";
     case "connection":
       return `${connectionNames.get(scope.connectionId) ?? scope.connectionId} spend limit`;
+    case "owner-connection":
+      return `Your ${connectionNames.get(scope.connectionId) ?? scope.connectionId} spend limit (all Agents)`;
   }
 }
 
@@ -123,7 +125,7 @@ async function connectionNamesOf(
   status: SpendStatus,
   connections: ConnectionService,
 ): Promise<ReadonlyMap<string, string>> {
-  if (!status.limits.some((limit) => limit.scope.kind === "connection")) {
+  if (!status.limits.some((limit) => "connectionId" in limit.scope)) {
     return new Map();
   }
   const listed = await connections.list();
