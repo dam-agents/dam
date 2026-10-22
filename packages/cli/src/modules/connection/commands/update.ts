@@ -159,11 +159,7 @@ export function buildUpdateCommand(deps: {
       exitOnServiceError(result, host);
 
       const updated = await svc.getConnection(match.id);
-      emitUpdated(
-        match,
-        opts,
-        updated.ok ? updated.value?.check : undefined,
-      );
+      emitUpdated(match, opts, updated.ok ? updated.value?.check : undefined);
       process.exit(EXIT_SUCCESS);
     });
 }

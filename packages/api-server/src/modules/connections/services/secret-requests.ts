@@ -276,8 +276,7 @@ export function createSecretRequestsService(deps: {
         }
         throw err;
       }
-      const check = (await deps.connections.getConnection(connectionId))
-        ?.check;
+      const check = (await deps.connections.getConnection(connectionId))?.check;
       await deps.outcomes.set(requestId, {
         ownerId: deps.ownerId,
         status: "saved",

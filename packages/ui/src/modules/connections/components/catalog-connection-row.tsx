@@ -80,6 +80,16 @@ export function CatalogConnectionRow({
               {STATUS_PRESENTATION[connection.status].label}
             </Badge>
           )}
+          {connection.status === "active" &&
+            connection.check?.status === "failed" && (
+              <Badge
+                variant="danger"
+                title={connection.check.reason}
+                data-testid={`catalog-connection-check-${connection.id}`}
+              >
+                Check failed
+              </Badge>
+            )}
         </div>
         <ConnectionRowActions
           connection={connection}
