@@ -127,7 +127,17 @@ export {
   TerminationCode,
 } from "./modules/agents/types.js";
 export { listedAgents, toAgentView } from "./modules/agents/view.js";
-export { storageFullSchema } from "./modules/budgets/schemas.js";
+export {
+  budgetCpuSchema,
+  budgetSizeSchema,
+  storageFullSchema,
+  USER_BUDGETS_PAGE_MAX,
+  userBudgetRemoveInputSchema,
+  userBudgetSetInputSchema,
+  userBudgetsListInputSchema,
+  userBudgetsSortSchema,
+  userBudgetUserSchema,
+} from "./modules/budgets/schemas.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
@@ -141,6 +151,15 @@ export type {
   PoolLevel,
   CpuCongestion,
   BudgetsService,
+  UserBudgetDefaults,
+  UserBudgetEntry,
+  UserBudgetPage,
+  UserBudgetRemoveInput,
+  UserBudgetSetInput,
+  UserBudgetsListInput,
+  UserBudgetsService,
+  UserBudgetsSort,
+  UserBudgetUser,
 } from "./modules/budgets/types.js";
 export {
   MICROS_PER_UNIT,

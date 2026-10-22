@@ -13,6 +13,7 @@ import {
 } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeStorageGate,
+  composeUserBudgetsAdmin,
   listRunnerUsageOwners,
   readRunnerUsage,
 } from "./modules/budgets/index.js";
@@ -2169,6 +2170,20 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     spendCeilingsForOperator: spend.ceilingsForOperator,
+    userBudgetsForOperator: composeUserBudgetsAdmin({
+      k8s: k8sClient,
+      users: {
+        subByEmail: (email) => userDirectory.resolveByEmail(email),
+        emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
+        subsMatching: (text, max) => userDirectory.searchSubs(text, max),
+      },
+      listAgents: () => agentsRepo.list(),
+      defaults: {
+        cpu: config.defaultUserCpuBudget,
+        memory: config.defaultUserMemoryBudget,
+        storage: config.virtualizationEnabled ? config.vmPoolStorage : null,
+      },
+    }),
     providerStatus: providerStatus.service,
     outageAlerts: outageAlerts.notices,
     approvalsRelay,
