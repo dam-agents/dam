@@ -98,10 +98,12 @@ On an agent with the default rules the second request is allowed, so it separate
 - `403` with no body → refused without a rule, so the path or the kind of turn is the cause.
 - `exit=28` (timed out, nothing back) on the failing request while the second one answers in a second → the platform is holding it for an approval.
   The sandbox and the gateway are proven fine, so the cause is a platform decision, not the network: the owner answers it on Home, or allows the host on the agent's Network access page.
-- `exit=35`, `exit=56`, or nothing comes back at once → the gateway or the upstream closed the connection.
+- `exit=35`, `exit=56`, or nothing comes back → the gateway or the upstream closed the connection.
   On a host the platform does not inspect, that is a rule, a refusal, a name that does not resolve or a host that is down, and you cannot tell which from here; the agent's Network access page lists every rule, so the owner can.
+  A close after a wait, rather than at once, is a held approval the connection gave up waiting for.
 - a `502` or `503` → the request left the platform and the upstream or its DNS failed: the host is down, not blocked.
 - `exit=28` on both → the control proves nothing; use a host you have already reached from this sandbox as the control instead.
 
-The probe files an approval for exactly the method and path you send, so the owner may see it on Home, and an identical retry joins it rather than filing another.
+The probe files an approval, so the owner may see it on Home, and an identical retry joins it rather than filing another.
+On an inspected host the approval names the method and path; on a host the platform does not inspect it names the host alone, because the gateway never saw the request.
 `--max-time 20` is deliberate: an unapproved request is held far longer than that, and you should not wait.
