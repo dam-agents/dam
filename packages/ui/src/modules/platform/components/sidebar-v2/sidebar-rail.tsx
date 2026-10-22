@@ -41,7 +41,6 @@ import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
-import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
@@ -57,6 +56,7 @@ import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { AddRow } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
+import { NewAgentMenu } from "./new-agent-menu.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
@@ -70,7 +70,6 @@ export function SidebarRail({
   onNavigate?: () => void;
 }) {
   const { agents, openAgentId, unreadAgentIds } = useSidebarAgents();
-  const defaultAgent = useCreateDefaultAgent();
   const approvals = useApprovalsForOwner().data;
   const activity = useActivitySessions();
   const homeOpen = useStore((s) => s.view === "home");
@@ -201,28 +200,26 @@ export function SidebarRail({
                 onNavigate={navigate}
               />
             ))}
-        <button
-          type="button"
-          aria-label="New agent"
-          data-testid="sidebar-rail-new-agent"
-          disabled={!defaultAgent.ready}
-          onClick={() => {
-            navigate();
-            void defaultAgent.create();
-          }}
-          className={cn(railTile(false), FOCUS_RING)}
-        >
-          <FaceAdd
-            size={RAIL_GLYPH}
-            aria-hidden
-            className="group-hover:hidden"
-          />
-          <FaceActivatedAdd
-            size={RAIL_GLYPH}
-            aria-hidden
-            className="hidden group-hover:block"
-          />
-        </button>
+        <NewAgentMenu side="right" onNavigate={navigate}>
+          <button
+            type="button"
+            aria-label="New agent"
+            aria-haspopup="menu"
+            data-testid="sidebar-rail-new-agent"
+            className={cn(railTile(false), FOCUS_RING)}
+          >
+            <FaceAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="group-hover:hidden"
+            />
+            <FaceActivatedAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="hidden group-hover:block"
+            />
+          </button>
+        </NewAgentMenu>
       </div>
       <button
         type="button"

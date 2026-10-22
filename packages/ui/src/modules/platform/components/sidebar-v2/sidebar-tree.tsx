@@ -30,7 +30,6 @@ import {
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
 import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on-sidebar-open.js";
-import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
@@ -60,6 +59,7 @@ import {
 } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
+import { NewAgentMenu } from "./new-agent-menu.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
@@ -122,7 +122,6 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const conversationOf = useActivityConversations(shownSessions, allAgents);
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
-  const defaultAgent = useCreateDefaultAgent();
   const homeOpen = useStore((s) => s.view === "home");
   const setView = useStore((s) => s.setView);
 
@@ -255,15 +254,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
           )}
           {groupBy === "agents" && (
             <div className="mt-1.5">
-              <AddRow
-                icon={FaceAdd}
-                hoverIcon={FaceActivatedAdd}
-                label="New agent"
-                avatar
-                testId="sidebar-new-agent-row"
-                disabled={!defaultAgent.ready}
-                onClick={() => void defaultAgent.create()}
-              />
+              <NewAgentMenu onNavigate={onNavigate}>
+                <AddRow
+                  icon={FaceAdd}
+                  hoverIcon={FaceActivatedAdd}
+                  label="New agent"
+                  avatar
+                  testId="sidebar-new-agent-row"
+                />
+              </NewAgentMenu>
             </div>
           )}
         </section>

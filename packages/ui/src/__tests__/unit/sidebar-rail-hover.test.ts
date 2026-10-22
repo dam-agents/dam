@@ -16,6 +16,7 @@ const env = vi.hoisted(() => ({
   filtered: vi.fn(),
   createAgent: vi.fn(),
   openSession: vi.fn(),
+  openKits: vi.fn(),
   sessions: [] as unknown[],
   filters: undefined as unknown,
   groupBy: "agents" as "agents" | "all",
@@ -29,6 +30,7 @@ vi.mock("../../store.js", () => ({
       setView: () => {},
       navigateToSettings: () => {},
       navigateToSandboxHome: () => {},
+      setKitBrowserOpen: env.openKits,
       sidebarGroupBy: env.groupBy,
       sidebarActivityFilters: env.filters,
     }),
@@ -325,21 +327,52 @@ it("leaves the popover open when the tile is clicked", () => {
   expect(popover()).not.toBeNull();
 });
 
-// TEST_SCENARIO: the rail ends its Agents with a New agent tile, which does what the New agent row closing the expanded list does.
-it("creates an agent from the rail's New agent tile", () => {
+// TEST_SCENARIO: the rail ends its Agents with a New agent tile, which asks which kind of Agent to make rather than making one at once, and stands where the New agent row closing the expanded list stands.
+it("asks which kind of Agent the New agent tile makes", () => {
   const newAgent = container.querySelector<HTMLButtonElement>(
     '[data-testid="sidebar-rail-new-agent"]',
   )!;
   expect(newAgent).not.toBeNull();
+  expect(newAgent.getAttribute("aria-haspopup")).toBe("menu");
   const tiles = [
     ...container.querySelectorAll(
       '[data-testid="sidebar-rail-agent"], [data-testid="sidebar-rail-new-agent"]',
     ),
   ];
   expect(tiles[tiles.length - 1]).toBe(newAgent);
-  act(() => newAgent.click());
+  act(() => {
+    newAgent.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  const generalist = document.querySelector<HTMLElement>(
+    '[data-testid="new-generalist-agent"]',
+  );
+  const fromKit = document.querySelector<HTMLElement>(
+    '[data-testid="new-agent-from-kit"]',
+  );
+  expect(generalist?.textContent).toBe("New generalist agent");
+  expect(fromKit?.textContent).toBe("New from a starter kit");
+  // UNIT_BOUNDARY_DESCRIPTION: opening the menu makes nothing; the Agent the tile used to make on its own waits behind the first item.
+  expect(env.createAgent).not.toHaveBeenCalled();
+  act(() => generalist!.click());
   expect(env.createAgent).toHaveBeenCalled();
   expect(env.navigated).toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: the second item opens the starter kits, so the collapsed rail reaches the kits a wide window reaches from the same row.
+it("opens the starter kits from the New agent tile", () => {
+  const newAgent = container.querySelector<HTMLButtonElement>(
+    '[data-testid="sidebar-rail-new-agent"]',
+  )!;
+  act(() => {
+    newAgent.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  act(() =>
+    document
+      .querySelector<HTMLElement>('[data-testid="new-agent-from-kit"]')!
+      .click(),
+  );
+  expect(env.openKits).toHaveBeenCalledWith(true);
+  expect(env.createAgent).not.toHaveBeenCalled();
 });
 
 // TEST_SCENARIO: with the grouping on All sessions the rail lists Sessions rather than Agents, and a click on one opens that Session where the tree's own row would, with no popover in the way.

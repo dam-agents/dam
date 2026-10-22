@@ -1,4 +1,5 @@
 import type { CarbonIconType } from "@carbon/icons-react";
+import { type ComponentPropsWithoutRef, forwardRef } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
@@ -21,35 +22,42 @@ export const TREE_LEADING = "flex w-10 shrink-0 justify-center";
 // UNIT_BOUNDARY_DESCRIPTION: the expanded row's avatar and the rail's are one size, so collapsing the sidebar does not resize it.
 export const TREE_AVATAR = RAIL_AVATAR;
 
-export function AddRow({
-  icon: Icon,
-  hoverIcon: HoverIcon,
-  label,
-  ariaLabel,
-  testId,
-  disabled = false,
-  current = false,
-  avatar = false,
-  onClick,
-}: {
-  icon: CarbonIconType;
-  hoverIcon?: CarbonIconType;
-  label: string;
-  ariaLabel?: string;
-  testId: string;
-  disabled?: boolean;
-  current?: boolean;
-  avatar?: boolean;
-  onClick: () => void;
-}) {
+// UNIT_BOUNDARY_DESCRIPTION: the row passes on the props a menu puts on its trigger, so the same row can open a menu rather than act on a click of its own.
+export const AddRow = forwardRef<
+  HTMLButtonElement,
+  {
+    icon: CarbonIconType;
+    hoverIcon?: CarbonIconType;
+    label: string;
+    ariaLabel?: string;
+    testId: string;
+    disabled?: boolean;
+    current?: boolean;
+    avatar?: boolean;
+  } & ComponentPropsWithoutRef<"button">
+>(function AddRow(
+  {
+    icon: Icon,
+    hoverIcon: HoverIcon,
+    label,
+    ariaLabel,
+    testId,
+    disabled = false,
+    current = false,
+    avatar = false,
+    ...rest
+  },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       type="button"
       data-testid={testId}
       aria-label={ariaLabel}
       aria-current={current ? "page" : undefined}
       disabled={disabled}
-      onClick={onClick}
+      {...rest}
       className={cn(
         SQUIRCLE,
         "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground aria-[current=page]:ring-1 aria-[current=page]:ring-border-ui disabled:pointer-events-none disabled:opacity-50",
@@ -75,7 +83,7 @@ export function AddRow({
       <span className={cn("truncate", TREE_LABEL_MAX)}>{label}</span>
     </button>
   );
-}
+});
 
 // UNIT_BOUNDARY_DESCRIPTION: Home, Settings and the row above the tree are one row, an icon in the tree's icon column and a label after it, so all three read as the same kind of thing and their labels start at one x.
 export function NavRow({
