@@ -93,6 +93,9 @@ A deferred or refused resize lands on nothing, so from then on nothing is pendin
 A runner that has just restarted is refused under a reason of its own instead: for ten minutes after the owner's runner pod started, a refusal for room is the machines the restart is bringing back holding the pool at their warm-up floors rather than the owner's memory being full ([vm-memory](vm-memory.md)).
 The Agent then carries `AwaitingWarmUp` on `Ready`, its sentence names the wave, and the owner's idle agents are left alone until the window is over, which the 90% pass holds to as well.
 Past the window it is an `OverBudget` refusal again, hibernating idle agents under the same rules as above.
+A refusal that hibernated one of those agents is published as `AwaitingMemory` instead, and reads as a start in progress: the memory the agent it put to sleep holds frees within seconds, so the owner is told the platform is making room rather than asked to disable an agent.
+A refusal that hibernated nobody is published that way for twenty seconds first, so a peer going idle a moment later is reclaimed rather than refused in the second the owner takes to read it; the grace is kept per start in the controller's memory and spent once, so a retry of the same refusal reads the refusal.
+That wait lasts the minute after the last agent a reclaim hibernated for the start; past it the start is an `OverBudget` refusal with the message that says what frees it.
 
 A denial is **remembered per wake attempt** (keyed by the `last-activity` value it was denied under, in leader memory): a parked agent does **not** start by itself when room frees — a spontaneous start would surprise the user and grab the freed room out from under whoever freed it.
 Only a *new deliberate start* (a fresh activity bump: the Start button, opening the sandbox, a schedule fire) retries the gate.
@@ -153,8 +156,10 @@ Four rules bound it:
   The pins carry this weight because the runtime's own idle flag reads an attached-but-turnless chat as idle: probe alone would reclaim a pod somebody is watching.
   Candidates are then probed as an ordinary hibernation probes, so declared in-flight work is spared, but only a candidate whose status says it is idle is reclaimed.
   Hibernation takes a silent agent as idle, so one that is down still sleeps; a reclaim does not, since an agent deep in a long turn with its guest saturated, or whose address just moved, is silent too.
-- **An idle floor** (3 minutes) beneath which nothing is reclaimed.
-  Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
+- **An idle floor** (3 minutes) beneath which nothing is reclaimed, for the passes that free room on their own initiative — the 90% pass and a vm runner's pressure signal.
+  The reclaim a blocked start asks for is the owner asking for a machine now, so its floor is half a minute, and none at all for a peer whose machine began holding memory inside that half minute: a machine woken to answer one request and left idle is the room it holds, while a readiness that recovered from a failed request is no wake and keeps the half minute.
+  What makes reclaim **non-recursive** is not the floor but the state a reclaim leaves: the agent it took is down, its gateway at zero and its activity stamp spent, by a stamp written to the sub-second precision the activity carries, so a reclaim in the activity's own second still outdates it; it is then neither up as a candidate nor holding anything, and the start that displaced it holds nothing while it waits.
+  That is what stops A-evicting-B-evicting-A from cycling, and a start whose machine is booting is not a victim either.
 - **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
   The one exception is a vm runner's own memory pressure signal, which hibernates what it can rather than nothing, since an OOM kill would take a machine down ([vm-memory](vm-memory.md)).
 - **A reclaimed agent stays down.** Its activity stamp is still inside its own timeout — that is the premise of reclaiming it early — so it is marked as having *spent* that stamp and only a **newer** activity bump revives it, back through the gate like any other start.
@@ -163,7 +168,9 @@ Four rules bound it:
 
 Each victim is read again immediately before it is put to sleep, because the idle probe takes time and the api-server writes pins and activity without taking the controller's owner lock.
 A victim that gained a pin, fresh activity, a stop request or a migration since it was chosen is left running, and the reclaim stamp is written only onto the version of the Agent that read saw, so a write landing between that read and the stamp fails it and spares the victim too.
+The floor that read is held to is the one that chose the victim, so a peer freed for a blocked start is still judged by the half minute.
 The other victims are still reclaimed, since the room the start needs is freed by whichever of them holds it.
+A victim left running counts nothing as room made: only the machines a reclaim actually put to sleep earn the start its wait.
 
 Reclaiming is **announced, not asked**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.

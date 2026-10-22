@@ -202,7 +202,7 @@ func TestReclaimEligibility(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, ok := reclaimEligible(tc.annotations, tc.timeout, now)
+			_, ok := reclaimEligible(&apiv1.Agent{ObjectMeta: metav1.ObjectMeta{Annotations: tc.annotations}}, tc.timeout, now, reclaimIdleFloor)
 			assert.Equal(t, tc.eligible, ok)
 		})
 	}

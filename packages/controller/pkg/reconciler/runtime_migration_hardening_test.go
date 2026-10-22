@@ -433,7 +433,7 @@ func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	agent.Annotations[annReclaimedAt] = now.Format(time.RFC3339)
 	m := runtimeMigrationOf(agent.Annotations, agent.Status)
 	assert.True(t, shouldRunMigrating(agent.Annotations, m, time.Hour, now), "idle for hours and reclaimed, a booting agent still runs")
-	_, eligible := reclaimEligible(agent.Annotations, time.Hour, now)
+	_, eligible := reclaimEligible(agent, time.Hour, now, reclaimIdleFloor)
 	assert.False(t, eligible)
 
 	unseeded := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, now)

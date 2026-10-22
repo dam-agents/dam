@@ -322,6 +322,15 @@ const ReasonAwaitingAllocation = "AwaitingAllocation"
 // is the pool's again, and the owner's idle agents are then the room it has left.
 const ReasonAwaitingWarmUp = "AwaitingWarmUp"
 
+// ReasonAwaitingMemory is stamped on Ready when a vm agent's start was refused
+// for room and that refusal already hibernated one of the owner's idle agents
+// for it. The room those machines hold frees within seconds, so the start is
+// not ReasonOverBudget: a wake waits for it the way it waits for any start in
+// progress, and the owner is not asked to disable an agent for room the
+// platform is making. The wait is bounded: a start nothing has freed room for in
+// the last memoryReclaimWait is a refusal again, and reads ReasonOverBudget.
+const ReasonAwaitingMemory = "AwaitingMemory"
+
 // ReasonAllocationUnreadable is stamped on Ready when a vm agent's start has
 // waited past the point where the node is merely late to report how much memory
 // it granted the owner's VM runner. The start keeps holding and is retried at

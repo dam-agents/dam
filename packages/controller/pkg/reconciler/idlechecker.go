@@ -364,17 +364,20 @@ func agentPodStatus(ctx context.Context, namespace, agentName string) (idle, ans
 }
 
 func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
+	_, err := hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
+	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers. A machine the runner is still stopping is no error: the agent reads as stopping, and its reconcile watches the machine and publishes hibernation once it reads stopped.
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
+// UNIT_BOUNDARY_DESCRIPTION: it answers whether the pair is down beside its error, because a status write that fails after the stop was accepted and the gateway scaled down has already freed the room: the caller that freed it for a refused start counts that room, and the error still retries the publication.
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) (bool, error) {
 	var haltErr error
 	if halt != nil {
 		haltErr = halt(ctx, owner, name)
 	}
+	down := haltErr == nil || errors.Is(haltErr, errMachineStopping)
 	if err := scaleAgentPairToZero(ctx, kube, nil, owner, namespace, name); err != nil {
-		return err
+		return false, err
 	}
 	if haltErr != nil {
 		stopping := errors.Is(haltErr, errMachineStopping)
@@ -386,14 +389,14 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, 0)
 			setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", 0)
 		}); err != nil {
-			return err
+			return down, err
 		}
 		if stopping {
-			return nil
+			return true, nil
 		}
-		return fmt.Errorf("stopping the machine of %s: %w", name, haltErr)
+		return false, fmt.Errorf("stopping the machine of %s: %w", name, haltErr)
 	}
-	return publishHibernated(ctx, dyn, namespace, name)
+	return true, publishHibernated(ctx, dyn, namespace, name)
 }
 
 func publishHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
