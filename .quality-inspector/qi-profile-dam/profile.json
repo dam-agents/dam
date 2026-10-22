@@ -29,18 +29,46 @@
       "secrets": ["keycloak_admin"]
     },
     "prerequisites": [
-      { "kind": "manifest", "name": "cert-manager",
+      {
+        "kind": "manifest",
+        "name": "cert-manager",
         "url": "https://github.com/cert-manager/cert-manager/releases/download/{{config:cert_manager_version}}/cert-manager.yaml",
-        "unless": "ns/cert-manager", "wait": { "namespace": "cert-manager", "deployments": true } },
-      { "kind": "manifest", "name": "gateway-api",
+        "unless": "ns/cert-manager",
+        "wait": { "namespace": "cert-manager", "deployments": true }
+      },
+      {
+        "kind": "manifest",
+        "name": "gateway-api",
         "url": "https://github.com/kubernetes-sigs/gateway-api/releases/download/{{config:gateway_api_version}}/standard-install.yaml",
-        "unless": "crd/gateways.gateway.networking.k8s.io" },
-      { "kind": "adopt-crds", "name": "gateway-api-for-traefik", "release": "traefik-crd", "namespace": "kube-system",
-        "crds": ["gatewayclasses.gateway.networking.k8s.io", "gateways.gateway.networking.k8s.io", "grpcroutes.gateway.networking.k8s.io",
-                 "httproutes.gateway.networking.k8s.io", "referencegrants.gateway.networking.k8s.io"] },
-      { "kind": "helm", "name": "istio-base", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "base",
-        "version": "{{config:istio_version}}", "namespace": "istio-system", "set": { "defaultRevision": "" } },
-      { "kind": "manifest", "name": "no-mesh-marker", "file": "no-mesh-marker.yaml" }
+        "unless": "crd/gateways.gateway.networking.k8s.io"
+      },
+      {
+        "kind": "adopt-crds",
+        "name": "gateway-api-for-traefik",
+        "release": "traefik-crd",
+        "namespace": "kube-system",
+        "crds": [
+          "gatewayclasses.gateway.networking.k8s.io",
+          "gateways.gateway.networking.k8s.io",
+          "grpcroutes.gateway.networking.k8s.io",
+          "httproutes.gateway.networking.k8s.io",
+          "referencegrants.gateway.networking.k8s.io"
+        ]
+      },
+      {
+        "kind": "helm",
+        "name": "istio-base",
+        "repo": "https://istio-release.storage.googleapis.com/charts",
+        "chart": "base",
+        "version": "{{config:istio_version}}",
+        "namespace": "istio-system",
+        "set": { "defaultRevision": "" }
+      },
+      {
+        "kind": "manifest",
+        "name": "no-mesh-marker",
+        "file": "no-mesh-marker.yaml"
+      }
     ],
     "values": {
       "domain": "localhost",
@@ -51,54 +79,240 @@
       "terms": { "version": "qa", "text": "Nested QA environment." },
       "keycloak": {
         "admin": { "password": "{{secret:keycloak_admin}}" },
-        "testUser": { "enabled": true, "username": "{{user:owner.username}}", "password": "{{user:owner.password}}" },
+        "testUser": {
+          "enabled": true,
+          "username": "{{user:owner.username}}",
+          "password": "{{user:owner.password}}"
+        },
         "extraTestUsers": [
-          { "username": "{{user:member.username}}", "password": "{{user:member.password}}", "firstName": "Member" },
-          { "username": "{{user:inspector.username}}", "password": "{{user:inspector.password}}", "firstName": "Inspector", "groups": ["inspectors"] },
-          { "username": "{{user:outsider.username}}", "password": "{{user:outsider.password}}", "firstName": "Outsider" }
+          {
+            "username": "{{user:member.username}}",
+            "password": "{{user:member.password}}",
+            "firstName": "Member"
+          },
+          {
+            "username": "{{user:inspector.username}}",
+            "password": "{{user:inspector.password}}",
+            "firstName": "Inspector",
+            "groups": ["inspectors"]
+          },
+          {
+            "username": "{{user:outsider.username}}",
+            "password": "{{user:outsider.password}}",
+            "firstName": "Outsider"
+          }
         ]
       },
       "controller": { "gatewayUpstreamExtraCAs": "{{gateway_ca}}" }
     },
     "overlays": [
-      { "when": "mock_image", "values": { "harnessTemplates": { "mock": {
-        "enabled": true, "harness": "mock", "description": "Scripted mock agent (QA)",
-        "image": { "repository": "{{config_repo:mock_image}}", "tag": "{{config_tag:mock_image}}" },
-        "env": [ { "name": "MOCK_DEFAULT_REPLY", "value": "Hello from the mock agent." } ] } } } },
-      { "when": "@sandbox:github", "values": { "controller": { "gatewayEgress": { "extraCidrs": ["{{gateway_ip}}/32"] } } } },
-      { "when": "@sandbox:slack", "values": { "apiServer": {
-        "slackAppToken": "{{sandbox:slack.APP_TOKEN}}", "slackBotToken": "{{sandbox:slack.BOT_TOKEN}}" } } }
+      {
+        "when": "mock_image",
+        "values": {
+          "harnessTemplates": {
+            "mock": {
+              "enabled": true,
+              "harness": "mock",
+              "description": "Scripted mock agent (QA)",
+              "image": {
+                "repository": "{{config_repo:mock_image}}",
+                "tag": "{{config_tag:mock_image}}"
+              },
+              "env": [
+                {
+                  "name": "MOCK_DEFAULT_REPLY",
+                  "value": "Hello from the mock agent."
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "when": "@sandbox:github",
+        "values": {
+          "controller": {
+            "gatewayEgress": { "extraCidrs": ["{{gateway_ip}}/32"] }
+          },
+          "apiServer": {
+            "oauthAppDefaults": {
+              "github": {
+                "clientId": "{{sandbox:github.OAUTH_CLIENT_ID}}",
+                "clientSecret": "{{sandbox:github.OAUTH_CLIENT_SECRET}}"
+              }
+            }
+          }
+        }
+      },
+      {
+        "when": "@sandbox:slack",
+        "values": {
+          "apiServer": {
+            "slackAppToken": "{{sandbox:slack.APP_TOKEN}}",
+            "slackBotToken": "{{sandbox:slack.BOT_TOKEN}}"
+          }
+        }
+      }
     ]
   },
-  "boundary": { "github_paths": ["actions/runs?per_page=1", "releases?per_page=1"], "urls": [] },
+  "boundary": {
+    "github_paths": ["actions/runs?per_page=1", "releases?per_page=1"],
+    "urls": []
+  },
   "egress": [
-    { "host": "quay.io", "method": "GET", "why": "chart and image pulls, tag listings" },
+    {
+      "host": "quay.io",
+      "method": "GET",
+      "why": "chart and image pulls, tag listings"
+    },
     { "host": "*.quay.io", "method": "GET", "why": "image layers" },
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
-    { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
-    { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
-    { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
-    { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
-    { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
-    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
+    {
+      "host": "mirror.gcr.io",
+      "method": "GET",
+      "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)"
+    },
+    {
+      "host": "istio-release.storage.googleapis.com",
+      "method": "GET",
+      "why": "Istio charts"
+    },
+    {
+      "host": "api.github.com",
+      "method": "POST",
+      "path": "/repos/{profile.sandbox_github_repo}/issues",
+      "why": "sandbox: an agent files the issue a test asks for"
+    },
+    {
+      "host": "api.github.com",
+      "method": "PATCH",
+      "path": "/repos/{profile.sandbox_github_repo}/issues/*",
+      "why": "sandbox: the agent or the test closes it"
+    },
+    {
+      "host": "github.com",
+      "method": "GET",
+      "path": "/login",
+      "why": "sandbox: the test user's GitHub sign-in — the login form"
+    },
+    {
+      "host": "github.com",
+      "method": "GET",
+      "path": "/login?*",
+      "why": "sandbox: the login form, with its return_to"
+    },
+    {
+      "host": "github.com",
+      "method": "POST",
+      "path": "/session",
+      "why": "sandbox: the test user's password"
+    },
+    {
+      "host": "github.com",
+      "method": "GET",
+      "path": "/sessions/two-factor/app",
+      "why": "sandbox: the TOTP page"
+    },
+    {
+      "host": "github.com",
+      "method": "POST",
+      "path": "/sessions/two-factor",
+      "why": "sandbox: the TOTP code"
+    },
+    {
+      "host": "github.com",
+      "method": "GET",
+      "path": "/login/oauth/authorize?*",
+      "why": "sandbox: the OAuth App's authorize page"
+    },
+    {
+      "host": "github.com",
+      "method": "POST",
+      "path": "/login/oauth/authorize",
+      "why": "sandbox: the test user's consent"
+    },
+    {
+      "host": "github.com",
+      "method": "POST",
+      "path": "/login/oauth/access_token",
+      "why": "sandbox: DAM's api-server exchanges the code for the user's token"
+    },
+    {
+      "host": "github.githubassets.com",
+      "method": "GET",
+      "path": "/assets/*",
+      "why": "sandbox: the sign-in pages' scripts and styles (the authorize button is enabled by a script)"
+    },
+    {
+      "host": "slack.com",
+      "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through"
+    },
+    {
+      "host": "*.slack.com",
+      "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through"
+    }
   ],
-  "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
-  "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
+  "canary": {
+    "thing": "agent, created from the Mock template (New agent)",
+    "field": "name"
+  },
+  "requires": {
+    "root": true,
+    "commands": ["k3s", "curl", "jq", "node"],
+    "memory_gi": 12
+  },
   "sandbox": {
     "accounts": [
-      { "id": "github", "what": "a GitHub organization of its own with one repository, and a fine-grained token that may write issues in that repository only",
-        "guide": "sandbox/github.md", "credentials": ["TOKEN"] },
-      { "id": "slack", "what": "a free Slack workspace with one channel, DAM's Slack app in it, and a second person who writes to the agent",
-        "guide": "sandbox/slack.md", "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"] }
+      {
+        "id": "github",
+        "what": "a GitHub test user with a TOTP second factor, an organization of its own with one repository, an OAuth App there for DAM's GitHub sign-in, and the user's fine-grained token that may write issues in that repository only",
+        "guide": "sandbox/github.md",
+        "credentials": [
+          "TOKEN",
+          "LOGIN",
+          "PASSWORD",
+          "TOTP_SECRET",
+          "OAUTH_CLIENT_ID",
+          "OAUTH_CLIENT_SECRET"
+        ]
+      },
+      {
+        "id": "slack",
+        "what": "a free Slack workspace with one channel, DAM's Slack app in it, and a second person who writes to the agent",
+        "guide": "sandbox/slack.md",
+        "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"]
+      }
     ]
   },
   "config": {
-    "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
-    "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },
-    "istio_version": { "default": "1.29.1", "about": "Istio CRDs only (istio-base), installed once in the nested cluster" },
-    "cert_manager_version": { "default": "v1.21.2", "about": "cert-manager, installed once" },
-    "gateway_api_version": { "default": "v1.2.0", "about": "Gateway API CRDs, installed once" },
-    "helm_version": { "default": "v3.19.0", "about": "helm downloaded into the home" },
-    "sandbox_github_repo": { "default": "", "ask": true, "about": "the sandbox repository an agent under test files issues in, <organization>/<repository>: an organization of its own, never the product's; empty = no GitHub sandbox" }
+    "chart_ref": {
+      "default": "oci://quay.io/dam-agents/charts/platform",
+      "about": "OCI chart the builds come from"
+    },
+    "mock_image": {
+      "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef",
+      "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none"
+    },
+    "istio_version": {
+      "default": "1.29.1",
+      "about": "Istio CRDs only (istio-base), installed once in the nested cluster"
+    },
+    "cert_manager_version": {
+      "default": "v1.21.2",
+      "about": "cert-manager, installed once"
+    },
+    "gateway_api_version": {
+      "default": "v1.2.0",
+      "about": "Gateway API CRDs, installed once"
+    },
+    "helm_version": {
+      "default": "v3.19.0",
+      "about": "helm downloaded into the home"
+    },
+    "sandbox_github_repo": {
+      "default": "",
+      "ask": true,
+      "about": "the sandbox repository an agent under test files issues in, <organization>/<repository>: an organization of its own, never the product's; empty = no GitHub sandbox"
+    }
   }
 }
