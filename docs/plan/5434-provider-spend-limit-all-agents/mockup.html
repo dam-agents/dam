@@ -61,7 +61,7 @@
   .meter { display: flex; flex-direction: column; gap: 6px; }
   .meter .line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .meter .line .lbl { display: flex; align-items: center; gap: 6px; }
-  .bar { position: relative; height: 6px; border-radius: 3px; overflow: hidden; display: flex; }
+  .bar { position: relative; height: 12px; border-radius: 3px; overflow: hidden; display: flex; }
   .bar.xs { height: 4px; border-radius: 2px; }
   .bar > i { display: block; height: 100%; }
   .ink { --accent: #121619; --accent-light: #e8eaed; --accent-mid: #8d9399; }
@@ -101,24 +101,47 @@
   .rows .who a { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
   .rows .amt { font-size: 12px; color: var(--muted-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .rows .meter { gap: 0; }
-  .rows .bar { height: 8px; border-radius: 2px; overflow: visible; gap: 2px; }
-  .rows .bar > .part { position: relative; height: 100%; border-radius: 2px; border: 0; padding: 0; cursor: default; flex: none; }
+  .rows .bar { height: 12px; border-radius: 3px; overflow: visible; gap: 2px; }
+  .rows .bar > .part { position: relative; height: 100%; border-radius: 3px; border: 0; padding: 0; cursor: default; flex: none; }
   .rows .bar > .part.track { flex: 1; background: transparent; }
   .ok .bar > .part.fill { background: var(--accent); } .warn .bar > .part.fill { background: var(--warning); } .reached .bar > .part.fill { background: var(--danger); }
   .part[data-tt]:hover::after, .part[data-tt]:focus-visible::after {
-    content: attr(data-tt); position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    content: attr(data-tt); position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
     background: #121619; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; z-index: 6; }
   .part[data-tt]:hover, .part[data-tt]:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
   .notice { font-size: 12px; padding: 6px 10px; border-radius: 6px; }
   .notice.warn { background: var(--warning-light); color: var(--warning-fg); }
   .notice.reached { background: var(--danger-light); color: var(--danger); }
+  .rows.pct { grid-template-columns: 1fr auto; gap: 4px 10px; }
+  .rows.pct .head { grid-column: 1 / 3; display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; }
+  .rows.pct .head:first-child { margin-top: 0; }
+  .rows.pct .pc { font-size: 12px; color: var(--muted-fg); font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+  .rows.pct .pc.t-warn { color: var(--warning-fg); } .rows.pct .pc.t-reached { color: var(--danger); }
+  .ok > .barrow > .bar { background: var(--accent-light); } .ok > .barrow > .bar > i { background: var(--accent); }
+  .warn > .barrow > .bar { background: var(--warning-light); } .warn > .barrow > .bar > i { background: var(--warning); }
+  .reached > .barrow > .bar { background: var(--danger-light); } .reached > .barrow > .bar > i { background: var(--danger); }
+  .barrow { display: flex; align-items: center; gap: 10px; }
+  .barrow .bar { flex: 1; }
+  .pc { font-size: 12px; color: var(--muted-fg); font-variant-numeric: tabular-nums; min-width: 36px; text-align: right; }
+  .pc.t-warn { color: var(--warning-fg); } .pc.t-reached { color: var(--danger); }
+  .rows3 { display: grid; grid-template-columns: 76px 1fr 40px; gap: 10px 10px; align-items: center; }
+  .rows3 .who { font-size: 12px; color: var(--muted-fg); white-space: nowrap; }
+  .rows3 .who a { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+  .rows3 .sub { grid-column: 2 / 3; font-size: 11px; color: var(--muted-fg); opacity: .8; font-variant-numeric: tabular-nums; margin: -8px 0 0; }
+  .rows3 .bar { height: 12px; border-radius: 3px; overflow: visible; gap: 2px; display: flex; }
+  .rows3 .bar > .part { position: relative; height: 100%; border-radius: 3px; border: 0; padding: 0; cursor: default; flex: none; }
+  .rows3 .bar > .part.track { flex: 1; }
+  .rows3 .meter { gap: 0; }
+  .rows3 .ok .part.fill.others { background: var(--accent-mid); }
+  .rows3 .warn .part.fill.others { background: var(--warning-mid); }
+  .rows3 .reached .part.fill.others { background: var(--danger-mid); }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Provider limits for all agents (v5)</h1>
-  <p class="lede">Third round. All limit bars are thin (6 px, 4 px in the summary), one colour per state: black when fine (switch at the bottom right to compare with brand blue), orange when close, red when reached. The track is a light tint of the same colour, so there's no grey. Figures sit in the text line above the bar. The agent's Providers page uses variant A. Purple boxes are design notes. Dark mode toggles at the bottom right.</p>
+  <h1>Provider limits for all agents (v9)</h1>
+  <p class="lede">Round 9. Limit bars are 12 px on every page, except the 4 px provider summary in Settings › Usage. Bars are black when fine, orange when close, red when reached, on a light tint of the same colour. Every bar shows its percentage on the right. The amounts show on hover; on Settings pages "$xx of $yy today" stays above the bar. Section 3 has a "Values" switch to also show the amounts small under each bar. Purple boxes are design notes. Black and dark mode switches are at the bottom right.</p>
 
   <!-- 1. SETTINGS › USAGE -->
   <section class="screen">
@@ -134,8 +157,8 @@
             <button class="btn">Change</button>
           </div>
           <div class="meter warn">
-            <div class="line"><span class="num">$38.80 of $40.00 today</span><span class="num small muted">$1.20 left</span></div>
-            <div class="bar"><i style="width:97%"></i></div>
+            <div class="line"><span class="num">$38.80 of $40.00 today</span></div>
+            <div class="barrow"><div class="bar" title="$38.80 of $40.00 today"><i style="width:97%"></i></div><span class="pc t-warn">97%</span></div>
             <p class="help t-warn">Close to the limit.</p>
           </div>
           <div class="divider stack" style="gap:10px">
@@ -145,14 +168,14 @@
             </div>
             <div class="mini">
               <span class="small">Anthropic</span>
-              <div class="meter warn"><div class="bar xs"><i style="width:87%"></i></div></div>
-              <span class="small num muted">$17.40 of $20.00</span>
+              <div class="meter warn" title="$17.40 of $20.00 today"><div class="bar xs"><i style="width:87%"></i></div></div>
+              <span class="small num t-warn">87%</span>
               <span class="small">Claude subscription</span>
-              <div class="meter ok"><div class="bar xs"><i style="width:31%"></i></div></div>
-              <span class="small num muted">$31.00 of $100.00</span>
+              <div class="meter ok" title="$31.00 of $100.00 covered today"><div class="bar xs"><i style="width:31%"></i></div></div>
+              <span class="small num muted">31%</span>
               <span class="small">Bob</span>
-              <div class="meter reached"><div class="bar xs"><i style="width:100%"></i></div></div>
-              <span class="small num t-reached">50 of 50 Bobcoins</span>
+              <div class="meter reached" title="50 of 50 Bobcoins today"><div class="bar xs"><i style="width:100%"></i></div></div>
+              <span class="small num t-reached">100%</span>
             </div>
           </div>
           <p class="small muted">Resets at 02:00 your time.</p>
@@ -161,10 +184,10 @@
       <div class="notes">
         <h4>Choices</h4>
         <ul>
-          <li>The amount and "left" share one line above the bar, so the bar can be thin. "Left" sits right-aligned, at the end the bar is heading to.</li>
-          <li>The track is the light tint of the state's colour (blue, orange, red), so one bar is one colour family.</li>
-          <li>The summary bars are 4 px with no state line; their colour and the red figure say enough.</li>
-          <li><b>Shared component:</b> <code>DailyLimitMeter</code> renders every limit meter, so this changes the agent's Usage card too. The Home resource bars use the same grey on purpose ("read as one design"). They stay grey unless you want them blue as well.</li>
+          <li>"$xx of $yy today" stays above the bar. The percentage sits right of the bar, in the state's colour; "left" is gone.</li>
+          <li>The track is a light tint of the state's colour, so one bar is one colour family.</li>
+          <li>The provider summary bars stay 4 px and show only a percentage; the amounts are on hover.</li>
+          <li><b>Shared component:</b> <code>DailyLimitMeter</code> renders every limit meter, so the agent's Usage card changes too. Home's memory and CPU bars take the same black fill.</li>
         </ul>
       </div>
     </div>
@@ -191,8 +214,8 @@
               <button class="btn">Change</button>
             </div>
             <div class="meter warn">
-              <div class="line"><span class="num">$17.40 of $20.00 today</span><span class="num small muted">$2.60 left</span></div>
-              <div class="bar"><i style="width:87%"></i></div>
+              <div class="line"><span class="num">$17.40 of $20.00 today</span></div>
+            <div class="barrow"><div class="bar" title="$17.40 of $20.00 today"><i style="width:87%"></i></div><span class="pc t-warn">87%</span></div>
               <p class="help t-warn">Close to the limit.</p>
             </div>
             <p class="small muted">Resets at 02:00 your time.</p>
@@ -228,8 +251,8 @@
               <button class="btn">Change</button>
             </div>
             <div class="meter reached">
-              <div class="line"><span class="num">50 of 50 Bobcoins today</span><span class="num small t-reached">None left</span></div>
-              <div class="bar"><i style="width:100%"></i></div>
+              <div class="line"><span class="num">50 of 50 Bobcoins today</span></div>
+            <div class="barrow"><div class="bar" title="50 of 50 Bobcoins today"><i style="width:100%"></i></div><span class="pc t-reached">100%</span></div>
               <p class="help t-reached">Limit reached. Calls of all your agents on Bob stop until 02:00 your time. You continued once today.</p>
             </div>
           </div>
@@ -248,7 +271,7 @@
   <!-- 3. AGENT › PROVIDERS -->
   <section class="screen">
     <h2>3 · Agent › Providers</h2>
-    <p class="why">One line says what's left and why; one short meter per limit shows how. Details are on hover or focus: point at a bar part for whose spend it is.</p>
+    <p class="why">The summary is this agent's own spend and limit. Each limit has a bar with its percentage; the amounts are on hover, or small under each bar with the "Values" switch.</p>
     <div class="controls" id="ctl-st" role="group" aria-label="State">
       <span class="cap">State</span>
       <button data-st="both-prov" aria-pressed="true">All-agents stops first</button>
@@ -258,23 +281,29 @@
       <button data-st="prov-reached" aria-pressed="false">All-agents reached</button>
       <button data-st="none" aria-pressed="false">No limits</button>
     </div>
-    <div class="controls" role="group" aria-label="Owner-wide">
-      <span class="cap">Paid, all providers</span>
-      <label><input type="checkbox" id="own"> Your spend limit (all agents) close</label>
-      <label><input type="checkbox" id="ownr"> … reached</label>
+    <div class="controls" id="ctl-lay" role="group" aria-label="Values">
+      <span class="cap">Values</span>
+      <button data-lay="hover" aria-pressed="false">On hover only</button>
+      <button data-lay="below" aria-pressed="true">Also small, below each bar (chosen)</button>
+    </div>
+    <div class="controls" id="ctl-own" role="group" aria-label="Total limit">
+      <span class="cap">Total limit</span>
+      <button data-own="off" aria-pressed="false">Not set</button>
+      <button data-own="ok" aria-pressed="true">Fine</button>
+      <button data-own="warn" aria-pressed="false">Close</button>
+      <button data-own="reached" aria-pressed="false">Reached</button>
     </div>
     <div class="grid">
       <div class="frame themed"><div class="card" style="padding:16px" id="vA"></div></div>
       <div class="notes">
-        <h4>What was cut, and where it went</h4>
+        <h4>Choices</h4>
         <ul>
-          <li><b>One summary line</b>: "$0.50 left today · Close to the limit". The state sits next to the figure it qualifies, in the state's colour.</li>
-          <li><b>"Stops first" is not a sentence any more.</b> The binding limit's label is in full weight, the other one muted. With only one limit there's nothing to compare, so no marker.</li>
-          <li><b>Meter rows</b>: one line each, "This agent" or "All agents" on the left and "$1.10 / $5.00" on the right. "Left" shows only in the summary, where it matters.</li>
-          <li><b>Bar parts are interactive</b>. On hover or keyboard focus, each part of the shared bar shows a tooltip: "This agent: $1.10", "Other agents: $18.40", and on the track "Left: $0.50". The split line is gone.</li>
-          <li><b>The link</b> is the "All agents" label itself, with a tooltip saying where it's set. Without a shared limit, "Set for all agents" is a quiet link at the end of the summary row.</li>
-          <li><b>The reset time</b> moves into the help tip on "Daily limit". When a limit is reached, the summary says the time instead: "Stopped until 02:00".</li>
-          <li>The paid-spend notice for all providers stays, as one short line: "Your spend limit (all agents): $0.30 left".</li>
+          <li><b>Summary</b>: this agent's spend and its own limit, "$4.20 of $5.00 today". "Close to the limit" or "Stopped until 02:00" shows only for this agent's own limit. With no agent limit: "$1.10 today · No limit for this agent".</li>
+          <li><b>Three bars</b>: This agent, All agents (on this provider), Total (all your agents, every paid provider; dollar providers only). Each shows its percentage on the right, in the state's colour.</li>
+          <li><b>Amounts on hover</b>: every bar part has a tooltip: "This agent: $1.10", "Other agents: $18.40", "Left: $0.50". With "Also small, below each bar", "$10.50 of $20.00" shows under each bar in small muted type.</li>
+          <li>On All agents and Total, this agent's part is solid and the other agents' part a lighter shade of the same colour, after a 2 px gap.</li>
+          <li>"All agents" and "Total" link to where they are set: Settings › Providers and Settings › Usage.</li>
+          <li>The reset time is in the help tip on "Daily limit".</li>
         </ul>
       </div>
     </div>
@@ -299,47 +328,49 @@ const STATES = {
   'none':        { mine: 1.10, others: 0,     agent: null, prov: null },
 };
 const stateOf = (spent, limit) => spent >= limit ? 'reached' : spent >= 0.8 * limit ? 'warn' : 'ok';
-let cur = 'both-prov';
+let cur = 'both-prov', ownLvl = 'ok', lay = 'below';
+const OWN = { off: null, ok: { limit: 40, mineAll: 3.50, othersAll: 20.50 }, warn: { limit: 40, mineAll: 3.50, othersAll: 35.30 }, reached: { limit: 40, mineAll: 3.50, othersAll: 36.50 } };
 
 function render() {
   const s = STATES[cur], total = s.mine + s.others;
   const a = s.agent != null ? { who: 'agent', left: Math.max(0, s.agent - s.mine), st: stateOf(s.mine, s.agent) } : null;
   const p = s.prov != null ? { who: 'prov', left: Math.max(0, s.prov - total), st: stateOf(total, s.prov) } : null;
-  const both = a && p;
-  const bind = [a, p].filter(Boolean).sort((x, y) => x.left - y.left)[0] || null;
+  const o = OWN[ownLvl] ? { who: 'own', ...OWN[ownLvl] } : null;
+  if (o) { o.total = o.mineAll + o.othersAll; o.left = Math.max(0, o.limit - o.total); o.st = stateOf(o.total, o.limit); }
+  const set = [a, p, o].filter(Boolean);
+  const many = set.length > 1;
+  const bind = set.sort((x, y) => x.left - y.left)[0] || null;
 
+  const bar = (st, parts, left) => `<div class="meter ${st}"><div class="bar" style="background:none">${parts.map(([pct, tt], i) => `<button class="part fill${i > 0 ? ' others' : ''}" style="width:calc(${pct}% - 1px)" data-tt="${tt}" aria-label="${tt}"></button>`).join('')}${left > 0 ? `<button class="part track" data-tt="Left: ${fmt(left)}" aria-label="${fmt(left)} left"></button>` : ''}</div></div>`;
   let sum;
-  if (!bind) sum = `<div class="sum"><span class="fig num">${fmt(s.mine)} today</span><span class="sep">·</span><span class="muted">No limit</span><a class="link end" href="#prov">Set for all agents</a></div>`;
-  else {
-    const stTxt = bind.st === 'reached' ? '<span class="sep">·</span><span class="t-reached">Stopped until 02:00</span>'
-                : bind.st === 'warn' ? '<span class="sep">·</span><span class="t-warn">Close to the limit</span>' : '';
-    const fig = bind.left === 0 ? `<span class="fig num t-reached">Nothing left today</span>` : `<span class="fig num">${fmt(bind.left)} left today</span>`;
-    const tip = `<span class="tip" tabindex="0" data-tip="What this agent can still spend on this provider today: the smaller of what its limits have left. Resets at 02:00 your time.">?</span>`;
+  {
+    const amount = a ? `${fmt(s.mine)} of ${fmt(s.agent)} today` : `${fmt(s.mine)} today`;
+    const stTxt = !a ? '<span class="sep">·</span><span class="muted">No limit for this agent</span>'
+                : a.st === 'reached' ? '<span class="sep">·</span><span class="t-reached">Stopped until 02:00</span>'
+                : a.st === 'warn' ? '<span class="sep">·</span><span class="t-warn">Close to the limit</span>' : '';
     const end = p ? '' : `<a class="link end" href="#prov">Set for all agents</a>`;
-    sum = `<div class="sum">${fig}${stTxt}${end}</div>`;
+    sum = `<div class="sum"><span class="fig num ${a && a.st === 'reached' ? 't-reached' : ''}">${amount}</span>${stTxt}${end}</div>`;
   }
 
   let rows = '';
+  const pcClass = (st) => st === 'ok' ? '' : ' t-' + st;
+  const row = (label, barHtml, spent, limit, st, unitTxt = '') =>
+    `<span class="who">${label}</span>${barHtml}<span class="pc${pcClass(st)}">${Math.min(100, Math.round(spent / limit * 100))}%</span>`
+    + (lay === 'below' ? `<span></span><span class="sub">${fmt(spent)} of ${fmt(limit)}${unitTxt}</span><span></span>` : '');
   if (a) {
-    const pct = Math.min(100, s.mine / s.agent * 100);
-    rows += `<span class="who ${both && bind.who === 'agent' ? 'bind' : ''}">This agent</span>
-      <div class="meter ${a.st}"><div class="bar" style="background:none">
-        <button class="part fill" style="width:${pct}%" data-tt="This agent: ${fmt(s.mine)}" aria-label="This agent spent ${fmt(s.mine)}"></button>
-        <button class="part track" data-tt="Left: ${fmt(a.left)}" aria-label="${fmt(a.left)} left"></button></div></div>
-      <span class="amt">${fmt(s.mine)} / ${fmt(s.agent)}</span>`;
+    rows += row('This agent', bar(a.st, [[Math.min(100, s.mine / s.agent * 100), `This agent: ${fmt(s.mine)} of ${fmt(s.agent)}`]], a.left), s.mine, s.agent, a.st);
   }
   if (p) {
     const pm = Math.min(100, s.mine / s.prov * 100), po = Math.min(100 - pm, s.others / s.prov * 100);
-    rows += `<span class="who ${both && bind.who === 'prov' ? 'bind' : ''}"><a href="#prov" title="Set in Settings › Providers">All agents</a></span>
-      <div class="meter ${p.st}"><div class="bar" style="background:none">
-        <button class="part fill" style="width:calc(${pm}% - 1px)" data-tt="This agent: ${fmt(s.mine)}" aria-label="This agent spent ${fmt(s.mine)}"></button>
-        <button class="part fill" style="width:calc(${po}% - 1px)" data-tt="Other agents: ${fmt(s.others)}" aria-label="Other agents spent ${fmt(s.others)}"></button>
-        ${p.left > 0 ? `<button class="part track" data-tt="Left: ${fmt(p.left)}" aria-label="${fmt(p.left)} left"></button>` : ''}</div></div>
-      <span class="amt">${fmt(total)} / ${fmt(s.prov)}</span>`;
+    rows += row(`<a href="#prov" title="Set in Settings › Providers">All agents</a>`,
+      bar(p.st, [[pm, `This agent: ${fmt(s.mine)}`], [po, `Other agents: ${fmt(s.others)}`]], p.left), total, s.prov, p.st);
   }
-  const r = document.getElementById('ownr').checked, w = document.getElementById('own').checked;
-  const own = r ? `<p class="notice reached">Your spend limit (all agents) is reached until 02:00.</p>`
-            : w ? `<p class="notice warn">Your spend limit (all agents): $0.30 left</p>` : '';
+  if (o) {
+    const pm = Math.min(100, o.mineAll / o.limit * 100), po = Math.min(100 - pm, o.othersAll / o.limit * 100);
+    rows += row(`<a href="#" title="Total daily limit: all your agents, every paid provider. Set in Settings › Usage">Total</a>`,
+      bar(o.st, [[pm, `This agent, all paid providers: ${fmt(o.mineAll)}`], [po, `Other agents: ${fmt(o.othersAll)}`]], o.left), o.total, o.limit, o.st, ' on all paid providers');
+  }
+  const own = '';
 
   document.getElementById('vA').innerHTML = `
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
@@ -349,7 +380,7 @@ function render() {
     <div class="divider stack">
       <div class="row-head"><p class="title">Daily limit <span class="tip" tabindex="0" data-tip="What this agent can still spend on this provider today: the smaller of what its limits have left. Resets at 02:00 your time.">?</span></p><button class="btn">${a ? 'Change' : 'Set a limit'}</button></div>
       ${sum}
-      ${rows ? `<div class="rows">${rows}</div>` : ''}
+      ${rows ? `<div class="rows3">${rows}</div>` : ''}
       ${own}
     </div>`;
   // track tint per meter
@@ -366,7 +397,8 @@ function wire(id, key, set) {
   }));
 }
 wire('ctl-st', 'st', (v) => cur = v);
-['own', 'ownr'].forEach((id) => document.getElementById(id).addEventListener('change', render));
+wire('ctl-own', 'own', (v) => ownLvl = v);
+wire('ctl-lay', 'lay', (v) => lay = v);
 document.getElementById('dark').addEventListener('change', (e) => document.querySelectorAll('.themed').forEach((f) => f.classList.toggle('dark', e.target.checked)));
 document.getElementById('ink').addEventListener('change', (e) => document.querySelectorAll('.themed').forEach((f) => f.classList.toggle('ink', e.target.checked)));
 document.querySelectorAll('.themed').forEach((f) => f.classList.add('ink'));

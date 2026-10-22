@@ -102,8 +102,9 @@ graph LR
   on screens "Your ‹Connection name› spend limit (all agents)"; titled "Daily limit for all agents"
   inside a provider row. Scope kind `owner-connection`.
 - **Agent provider limit** — the existing per-agent Connection limit (`connection` scope).
-- **Your spend limit (all agents)** — the existing `owner` dollar limit. **Spend ceiling** — the
-  operator's hard dollar maximum. Neither is drawn as a bar on a provider; they show as a message.
+- **Your spend limit (all agents)** — the existing `owner` dollar limit; on the agent's Providers
+  section it is the **Total** row ("total daily limit"). **Spend ceiling** — the operator's hard
+  dollar maximum; it has no bar on a provider.
 - **Stops first / binding** — the limit with the least left today among those counting a call.
 - **Left** — `max(0, effective − spent)`, effective = amount × (1 + extensions).
 - Apply **/typescript-engineering** for server-side TS (`api-server`, `api-server-api`, `cli`) and
@@ -115,19 +116,25 @@ graph LR
 [`mockup.html`](./mockup.html) (open it in a browser) is the design the operator approved. Its
 purple boxes are design notes. Decisions taken there:
 
-- **Meters are black**, `h-2` (8 px, the height of Home's compute slot bars), on a light tint of
-  the same colour; orange at 80 %, red when reached. No grey, no brand blue on bars; links stay
-  `text-accent`.
-- **A shared bar is one colour**, split by a 2 px gap where this agent's part ends.
+- **Meters are black** on a light tint of the same colour; orange at 80 %, red when reached. No grey,
+  no brand blue on bars; links stay `text-accent`.
+- **Bar height**: 12 px (`h-3`) for every limit meter (Settings › Usage, Settings › Providers, the
+  agent's Usage card and Providers section) and for Home's memory/CPU pool bars, which take the same
+  black fill. The provider summary in Settings › Usage stays 4 px (`h-1`).
+- **Percentages next to bars**: every limit bar has its percentage of the limit to its right, in the
+  state's colour. On the settings pages "‹spent› of ‹limit› today" stays above the bar and the
+  "‹x› left" figure is gone. The Usage summary shows only the percentage; amounts on hover.
+- **A shared bar** (all agents on a provider, total daily limit): this agent's part is solid, a
+  2 px gap, then the other agents' part in a lighter shade of the same colour. Every part, and the
+  empty track, has a tooltip with its amount.
 - **Settings › Providers** is where the all-agents limit is set. **Settings › Usage** shows only a
   small read-only summary inside the existing "Daily spend limit" card.
-- **Agent › Providers**: one summary line with what this agent may still spend on the provider and
-  the state inline ("$0.50 left today · Close to the limit"), then one compact row per limit, the
-  binding one in full weight. Bar parts carry tooltips instead of text; the reset time is in the
-  help tip.
-  "Your spend limit (all agents)" and the ceiling show only as a tinted message when close or
-  reached, on dollar Connections.
-- **Home's memory/CPU pool bars** take the same black fill and height.
+- **Agent › Providers**: the summary line is this agent's own spend and limit ("$1.10 of $5.00
+  today"; "$1.10 today · No limit for this agent" without one). "Close to the limit" / "Stopped
+  until ‹time›" follows this agent's own limit only. Below it, up to three bars — This agent, All
+  agents (this provider), Total (the total daily limit, dollar Connections only) — each with its
+  percentage on the right and "‹spent› of ‹limit›" small and muted under the bar. "All agents" and
+  "Total" link to where they are set; the reset time is in the help tip on "Daily limit".
 
 ## Whole-feature smoke test
 
@@ -139,10 +146,11 @@ On a local cluster (`mise run cluster:install`), signed in as one user:
 3. Run a turn on A, then on B. Once the shared spend passes $0.05, the next call of either agent is
    refused with "Spend limit reached"; Home asks one question naming "Your Anthropic spend limit
    (all agents)" and saying Continue lets all agents go on. LiteLLM calls still go through.
-4. On A's Providers page: the headline says "Nothing left today", the "All agents" meter is red
-   with a gap at A's part, the link points to Settings › Providers.
-5. Set A's own Anthropic limit to $0.02 and continue the shared one: A's headline now names its own
-   limit as stopping first; `dam spend status A` and A's `describe_spend_limits` say the same.
+4. On A's Providers page: the "All agents" bar is red at 100 %, A's part solid and the other
+   agents' part lighter; the summary still shows A's own spend and limit.
+5. Set A's own Anthropic limit to $0.02 and continue the shared one: A's summary turns to "Stopped
+   until ‹time›"; `dam spend status A` and A's `describe_spend_limits` name A's own limit as stopping
+   first.
 6. A scheduled fire on B while the shared limit is reached is held; a sub-agent spawned by A
    counts toward the shared limit.
 7. Delete agent B: today's spend still counts. Disconnect Anthropic: the limit is gone.

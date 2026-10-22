@@ -6,7 +6,7 @@
 ## Context
 
 The approved design ([`mockup.html`](./mockup.html), sections 1 and 2) replaces the 20 px grey
-limit meter with a thin black one, and puts the all-agents provider limit where providers live:
+limit meter with a 12 px black one with its percentage beside it, and puts the all-agents provider limit where providers live:
 Settings › Providers sets it, Settings › Usage only summarizes it. Home's memory and CPU pool bars
 take the same fill and height so every meter reads as one design. This slice restyles the shared
 meter and adds those two surfaces; the agent's Providers view is 04.
@@ -24,13 +24,15 @@ Apply **/react-ui-engineering**.
    design"). Check the spend-by-day chart and top-spender bars that import these still read well;
    they are not limit meters, so if black is too heavy there, give them their own constant
    rather than keeping grey in the shared one.
-2. **Meter** — `components/daily-limit-meter.tsx`: amount on the left and "‹x› left" right-aligned
-   on one line above the bar (`spentOfLimit` splits into the two parts in `lib/copy.ts`); the bar is
-   `SpendBarTrack` at `h-2 rounded-sm` (the height of `budgets/components/slot-bar.tsx`) on
-   `LIMIT_STATE_TRACK`; the state line stays below. Reached shows "None left" in danger.
+2. **Meter** — `components/daily-limit-meter.tsx`: "‹spent› of ‹limit› today" on the line above
+   the bar (drop the "‹x› left" part of `spentOfLimit` in `lib/copy.ts`); below it a row with the
+   bar — `SpendBarTrack` at `h-3 rounded-sm` on `LIMIT_STATE_TRACK` — and, to its right, the
+   percentage of the limit (`text-xs tabular-nums`, muted when ok, `LIMIT_STATE_TEXT` otherwise,
+   `min-w-9 text-right`); the bar's `aria-label` keeps the amounts. The state line stays below.
    `metrics/components/spend-bar.tsx` `SpendBarTrack`: take a `trackClassName` instead of the fixed
    `h-5 bg-muted`; its other callers pass the old classes so they don't change.
-3. **Home pool bars** — `budgets/components/pool-bar.tsx`: `h-3` → `h-2`.
+3. **Home pool bars** — `budgets/components/pool-bar.tsx`: `h-3` stays (12 px), now black on the
+   tint from step 1.
 4. **Settings › Providers** — `providers/components/provider-section.tsx` / `provider-row.tsx`:
    for a connected provider whose `connectionLimitRule(templateId).limitable`, render a new
    `spend/components/all-agents-provider-limit.tsx` under the row: title "Daily limit for all
@@ -45,7 +47,8 @@ Apply **/react-ui-engineering**.
    owner has at least one `owner-connection` limit, a divided block "Provider limits for all agents"
    with a help tip and a right-aligned link "Edit in Providers" (`navigateToSettings("providers")`),
    then a 3-column grid per limit: Connection name, a 4 px (`h-1`) bar in its state colour, and
-   "‹spent› of ‹limit›" (danger when reached). No buttons. Hidden when there are none.
+   its percentage (state colour). "‹spent› of ‹limit› today" is the bar's tooltip. No buttons.
+   Hidden when there are none.
 6. **Copy** — `spend/lib/copy.ts`: `OWN_LIMIT_HELP` drops "Subscriptions and Bob do not count: set
    those limits in each agent's Providers section" → points to Settings › Providers;
    `connectionLimitHelp` drops "Only this limit stops calls on this provider"; add
@@ -55,9 +58,10 @@ Apply **/react-ui-engineering**.
 
 ## Acceptance criteria
 
-- [ ] Every limit meter is 8 px, black on a light tint when fine, orange at 80 %, red when reached,
-      in light and dark mode; no grey and no blue fill remains on a limit meter.
-- [ ] Home's memory and CPU bars are 8 px and black on the same tint.
+- [ ] Every limit meter is 12 px with its percentage to the right, black on a light tint when fine,
+      orange at 80 %, red when reached, in light and dark mode; no grey and no blue fill remains on
+      a limit meter, and no "‹x› left" figure beside it.
+- [ ] Home's memory and CPU bars are 12 px and black on the same tint.
 - [ ] Settings › Providers shows "Daily limit for all agents" under each connected limitable
       provider; setting, changing and removing it works; free/unpriced providers show the reason.
 - [ ] Clicking the provider row's top part still opens its edit dialog; the limit button opens
@@ -72,7 +76,7 @@ Apply **/react-ui-engineering**.
 
 Then `mise run cluster:install` (or rebuild the UI on a running cluster) and, in the browser:
 Settings › Providers → Anthropic → "Set a limit" $20 → the meter appears; Settings › Usage shows the
-Anthropic summary bar; Home's memory bar is black and as tall as the compute slots; toggle dark mode
+Anthropic summary bar; Home's memory bar is black and 12 px; toggle dark mode
 and check all three.
 
 The implementing agent runs this itself, then prints a short manual smoke-test guide so the user

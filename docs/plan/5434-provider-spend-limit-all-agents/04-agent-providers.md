@@ -17,33 +17,41 @@ Apply **/react-ui-engineering**.
 1. **Provider limit block** — rework `packages/ui/src/modules/spend/components/connection-spend-limit.tsx`.
    Read the agent's `binding` row for this Connection from `useAgentSpendStatus(agentId)`, the
    agent's `connection` limit and the owner's `owner-connection` limit from `status.limits`.
-   The card is trimmed to the minimum text; details live in tooltips.
-   - Title "Daily limit" + help tip ("What this agent can still spend on this provider today: the
-     smaller of what its limits have left. Resets at ‹time› your time."). The reset time lives only
-     here — no reset line. The existing `SpendLimitButton` for the agent's own limit.
-   - **Summary, one line** (`flex items-baseline gap-2`): the figure in `text-[15px] font-semibold`
-     — "‹left› left today", or "Nothing left today" in danger — then, only when not ok, `·` and the
-     state inline in its colour: "Close to the limit" / "Stopped until ‹time›". With no limit:
-     "‹spent› today · No limit". When the owner has no all-agents limit on this Connection, a
-     right-aligned small `text-accent` link "Set for all agents" (`navigateToSettings("providers")`).
-     No "stops it first" sentence, no separate state line.
-   - **One row per limit**, a 3-column grid (label · bar · amount, `gap-x-3 gap-y-2.5`): label
-     "This agent" / "All agents" in small muted text; when both limits exist the binding one is
-     `text-foreground font-semibold`. Amount "‹spent› / ‹limit›" small, muted, tabular. "Left"
-     shows only in the summary. "All agents" is itself the link to Settings › Providers, with a
-     tooltip "Set in Settings › Providers" — no link line.
-   - **Interactive bar parts**: every part of a bar is a focusable element with a tooltip (the
-     existing `Tooltip` component, as `budgets/components/pool-bar.tsx` does per segment): "This
-     agent: ‹x›", "Other agents: ‹y›", and the empty track "Left: ‹z›". The shared bar is two
-     segments in the state's fill split by a 2 px gap. No "This agent ‹x›, other agents ‹y›" text.
-     This agent's spend is `status.spentByConnection`; all agents' is `status.ownerSpentByConnection`.
-   - **Owner-wide dollars** (dollar Connections only): when the binding row of `connectionId: null`
-     names `owner` or the ceiling and its state is warn/reached, one short tinted line
-     (`bg-warning/10 text-warning-fg` or `bg-danger/10 text-danger`, `rounded-md px-2.5 py-1.5
-     text-xs`): "Your spend limit (all agents): ‹x› left" / "Your spend limit (all agents) is reached
-     until ‹time›." Same for the ceiling with its name. Never a bar.
-   Split it into small components in `spend/components/` (`LimitSummary`, `LimitRowMeter`,
-   `SharedLimitBar`, `OwnerWideNotice`) per **/react-ui-engineering**; keep copy in `lib/copy.ts`.
+   - Title "Daily limit" + help tip ("What this agent can spend on this provider today, and the
+     limits that count it. Resets at ‹time› your time."). The reset time lives only here — no reset
+     line. The existing `SpendLimitButton` for the agent's own limit.
+   - **Summary, one line** (`flex items-baseline gap-2`): this agent's own spend and limit in
+     `text-[15px] font-semibold` — "‹spent› of ‹limit› today" — or, without an agent limit,
+     "‹spent› today · No limit for this agent". Then, **only from this agent's own limit's state**,
+     `·` and inline "Close to the limit" (warning) / "Stopped until ‹time›" (danger, the figure
+     turns danger too). The all-agents and total limits never set this state; their bars do.
+     When the owner has no all-agents limit on this Connection, a right-aligned small
+     `text-accent` link "Set for all agents" (`navigateToSettings("providers")`).
+   - **Up to three rows**, a 3-column grid (label `w-[76px]` · bar · percentage `w-10 text-right`,
+     `gap-x-2.5 gap-y-2.5`):
+     - **This agent** — the agent's `connection` limit; bar = this agent's spend on the Connection.
+     - **All agents** — the owner's `owner-connection` limit; bar = this agent's part, then the
+       other agents' part. Label links to Settings › Providers (tooltip "Set in Settings ›
+       Providers").
+     - **Total** — the owner's `owner` dollar limit ("total daily limit"), **dollar Connections
+       only**; bar = this agent's paid spend on all providers, then the other agents'. Label links
+       to Settings › Usage (tooltip "Total daily limit: all your agents, every paid provider").
+       The ceiling has no row.
+     Each row: label small muted; the bar 12 px (`h-3`, the 03 track); the percentage small,
+     tabular, in the row's state colour (muted when ok). Under the bar, in `text-[11px]
+     text-muted-foreground/80 tabular-nums`: "‹spent› of ‹limit›" (Total: "… on all paid
+     providers").
+   - **Shared bars** (All agents, Total): this agent's part in the state's fill, a 2 px gap
+     (`gap-0.5` on the flex track), then the other agents' part in a **lighter shade of the same
+     fill** (`LIMIT_STATE_SHARE`: ok `bg-foreground/45`, warn `bg-warning/45`, reached
+     `bg-danger/45`).
+   - **Interactive bar parts**: every part, and the empty track, is focusable with a tooltip (the
+     existing `Tooltip`, as `budgets/components/pool-bar.tsx` does per segment): "This agent: ‹x›",
+     "Other agents: ‹y›", "Left: ‹z›". Data: this agent on the Connection —
+     `status.spentByConnection`; all agents on it — `status.ownerSpentByConnection`; this agent's
+     paid spend — `status.spent` (usd); the owner's — the `owner` limit's `spentMicros`.
+   Split it into small components in `spend/components/` (`LimitSummary`, `LimitRow`,
+   `SharedLimitBar`) per **/react-ui-engineering**; keep copy in `lib/copy.ts`.
 2. **Dialog line** — `components/spend-limit-dialog.tsx`: take an optional `compare` prop
    `{ spentMicros, otherLeftMicros, otherName } | null`. Under the field, show "‹spent› spent
    today." and, as the user types, one `aria-live="polite"` line: already reached → danger
@@ -60,14 +68,14 @@ Apply **/react-ui-engineering**.
 
 ## Acceptance criteria
 
-- [ ] Each of the six mockup states renders as in the mockup: both limits with either one binding,
-      only the all-agents one, only the agent's, all-agents reached, no limits.
-- [ ] The "All agents" bar is one colour with a 2 px gap at this agent's part; each part and the
-      empty track show a tooltip on hover and keyboard focus, with figures matching
-      `spentByConnection` and `ownerSpentByConnection`.
-- [ ] The card has no reset line, no "stops first" sentence and no split line; the state sits
-      inline in the summary.
-- [ ] The owner-wide notice shows only on dollar Connections, only when close or reached.
+- [ ] Each of the six mockup states renders as in the mockup, with and without a total daily limit:
+      both provider limits (either one binding), only all-agents, only the agent's, all-agents
+      reached, no limits.
+- [ ] The summary shows this agent's own spend and limit; its state follows only that limit.
+- [ ] Every row shows its percentage to the right and "‹spent› of ‹limit›" small under the bar;
+      the Total row shows only on dollar Connections.
+- [ ] On shared bars this agent's part is solid and the other agents' part a lighter shade after a
+      2 px gap; each part and the empty track show a tooltip on hover and keyboard focus.
 - [ ] The dialog's line updates while typing and never blocks Save.
 - [ ] The agent's Usage card names the same stopping limit as `dam spend status <agent>`.
 - [ ] `nearer-limit.ts` is gone; `mise run check` and `mise run test` pass.
@@ -77,9 +85,9 @@ Apply **/react-ui-engineering**.
 `mise run check` and `mise run test`.
 
 Then on a local cluster: set agent A's Anthropic limit to $5 and the all-agents Anthropic limit to
-$0.05; spend a little on A and on B. A's Providers page shows "Nothing left today" (or the small
-amount left), "All agents · stops first", a gap between A's and B's part; raise the all-agents limit
-to $20 in Settings › Providers and the headline switches to A's own limit. Open "Change" on A's
+$0.05; spend a little on A and on B. A's Providers page shows A's own "‹spent› of $5.00 today", the
+"All agents" bar near or at 100 % with A's part solid and B's lighter; raise the all-agents limit
+to $20 in Settings › Providers and the All agents bar drops back. Open "Change" on A's
 limit and type 0.01, 2 and 50: the line under the field changes accordingly.
 
 The implementing agent runs this itself, then prints a short manual smoke-test guide so the user
