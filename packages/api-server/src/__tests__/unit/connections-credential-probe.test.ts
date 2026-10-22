@@ -98,7 +98,15 @@ describe("GitHub token check", () => {
     [
       "a network error",
       () => Promise.reject(new Error("connect ETIMEDOUT")),
-      /could not be reached: connect ETIMEDOUT/,
+      /^GitHub could not be reached$/,
+    ],
+    [
+      "a timeout",
+      () =>
+        Promise.reject(
+          Object.assign(new Error("aborted"), { name: "TimeoutError" }),
+        ),
+      /^GitHub did not answer in time$/,
     ],
   ] as const)("is unchecked on %s", async (_name, res, reason) => {
     stubFetch(res);
@@ -118,5 +126,15 @@ describe("GitHub token check", () => {
     );
     await probe(host);
     expect(calls[0]?.url).toBe(url);
+  });
+
+  // TEST_SCENARIO: a fetch error can quote the request it failed on, and the reason is stored on the Connection and shown to the user, so the reason never carries the error's text or the token.
+  it("keeps the error text and the token out of the reason", async () => {
+    stubFetch(() =>
+      Promise.reject(new Error("request with Bearer ghp_secret failed")),
+    );
+    const outcome = await probe("github.com", "ghp_secret");
+    expect(JSON.stringify(outcome)).not.toContain("ghp_secret");
+    expect(outcome.reason).toBe("GitHub could not be reached");
   });
 });

@@ -36,7 +36,7 @@ async function githubMessage(res: Response): Promise<string> {
   return parsed.success ? stripControlChars(parsed.data.message) : "";
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a token with the check its Connection Template names, before it is saved and when the owner asks again. A GitHub token is sent to the user endpoint of its host — api.github.com, `/api/v3` on a GitHub Enterprise Server, `api.` on a GHE.com tenancy: a 200 passes and names the login, the token's expiry and, for a classic token, its scopes; a 401 fails with GitHub's own message, and a 403 that asks for SSO authorization fails with that; any other answer, a timeout or a network error says nothing about the token and leaves it unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a token with the check its Connection Template names, before it is saved and when the owner asks again. A GitHub token is sent to the user endpoint of its host — api.github.com, `/api/v3` on a GitHub Enterprise Server, `api.` on a GHE.com tenancy: a 200 passes and names the login, the token's expiry and, for a classic token, its scopes; a 401 fails with GitHub's own message, and a 403 that asks for SSO authorization fails with that; any other answer, a timeout or a network error says nothing about the token and leaves it unchecked, with a fixed reason: an error's own text can carry the request, and the reason is stored and shown.
 export function createCredentialProbe(
   opts: { timeoutMs?: number } = {},
 ): CredentialProbe {
@@ -57,7 +57,10 @@ export function createCredentialProbe(
       } catch (err) {
         return {
           status: "unchecked",
-          reason: `GitHub could not be reached: ${err instanceof Error ? err.message : String(err)}`,
+          reason:
+            err instanceof Error && err.name === "TimeoutError"
+              ? "GitHub did not answer in time"
+              : "GitHub could not be reached",
         };
       }
       if (res.ok) {
