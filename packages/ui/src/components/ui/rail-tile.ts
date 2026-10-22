@@ -11,15 +11,16 @@ export const RAIL_COLUMN = `flex flex-col items-center ${RAIL_GAP} py-2`;
 
 // UNIT_BOUNDARY_DESCRIPTION: an expanded row is one tile high and its list leaves one rail gap after it, so a row and a tile are the same distance apart (54) and every icon keeps its place when the pane swaps between its tree and its rail.
 export const RAIL_ROW = "h-12";
+// UNIT_BOUNDARY_DESCRIPTION: the item of the page the user is on carries one mark wherever it is drawn, a muted fill inside a hairline with the same corners as a row, so Home reads the same in the tree and in the rail.
+export const ACTIVE_ITEM = "bg-muted text-foreground ring-1 ring-border-ui";
+
 // UNIT_BOUNDARY_DESCRIPTION: the tree spends 8 plus 32 on the label above its Agents, and the rail spends the same 40 on the hairline above them, which sits between two of its 6-pixel gaps.
 export const RAIL_SEPARATOR_SPACE = "h-7";
 
 export function railTile(active: boolean): string {
   return cn(
-    "group relative flex size-12 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-    active
-      ? "bg-muted text-foreground ring-1 ring-border-ui"
-      : "hover:bg-muted/60 hover:text-foreground",
+    "group relative flex size-12 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    active ? ACTIVE_ITEM : "hover:bg-muted/60 hover:text-foreground",
   );
 }
 

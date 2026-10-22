@@ -2,6 +2,7 @@ import type { CarbonIconType } from "@carbon/icons-react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
+  ACTIVE_ITEM,
   RAIL_AVATAR,
   RAIL_GLYPH,
   RAIL_ROW,
@@ -44,7 +45,7 @@ export function AddRow({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50",
+        "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground aria-[current=page]:ring-1 aria-[current=page]:ring-border-ui disabled:pointer-events-none disabled:opacity-50",
         avatar ? "pr-2" : "px-2",
         avatar ? RAIL_ROW : "h-[34px]",
         FOCUS_RING,
@@ -100,7 +101,7 @@ export function NavRow({
         RAIL_ROW,
         FOCUS_RING,
         current
-          ? "bg-muted text-foreground"
+          ? ACTIVE_ITEM
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >

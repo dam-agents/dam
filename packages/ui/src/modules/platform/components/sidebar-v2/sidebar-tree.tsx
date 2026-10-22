@@ -18,7 +18,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { RAIL_GAP, RAIL_ROW, SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
+import {
+  ACTIVE_ITEM,
+  RAIL_GAP,
+  RAIL_ROW,
+  SIDEBAR_GLYPH,
+} from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -398,7 +403,7 @@ function AgentNode({
           {...drag.dragProps}
           className={cn(
             "group/agent relative flex items-center rounded-lg transition-colors",
-            current && !newSessionPage ? "bg-muted" : "hover:bg-muted",
+            current && !newSessionPage ? ACTIVE_ITEM : "hover:bg-muted",
           )}
         >
           <button
