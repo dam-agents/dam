@@ -24,22 +24,14 @@ import {
   AcpTurnAbandonedError,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
-import {
-  turnFailureReasonToken,
-  turnFailureUserCopy,
-  noDefaultModelUserCopy,
-} from "./turn-failure-copy.js";
+import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
-  isAgentWakeTimeoutError,
   isTelegramPrivateChat,
   telegramChatOf,
-  wakeFailureReasonToken,
 } from "../../agents/index.js";
-import { wakeFailureUserCopy } from "./wake-failure-copy.js";
-import { isNoDefaultModelError } from "../../harness-config/index.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
@@ -733,31 +725,17 @@ export function createTelegramWorker(deps: {
       });
       outcome = "success";
     } catch (err) {
-      failureReason = isAgentWakeTimeoutError(err)
-        ? wakeFailureReasonToken(err.failure)
-        : err instanceof AcpTurnAbandonedError
-          ? turnFailureReasonToken(err)
-          : isNoDefaultModelError(err)
-            ? "no-default-model"
-            : "acp-error";
+      const failure = classifyTurnFailure(err);
+      failureReason = failure.reason;
       getLogger().warn(
         { agentId, reason: failureReason, error: String(err), ambientTurn },
         "telegram.turn.failed",
       );
-      if (ambientTurn) return;
-      if (isAgentWakeTimeoutError(err)) {
-        await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
-      } else if (err instanceof AcpTurnAbandonedError) {
-        await thread.post(turnFailureUserCopy(err)).catch(() => {});
-      } else if (isNoDefaultModelError(err)) {
+      const sleeping = isAgentStoppedError(err) && !err.disabled;
+      if (!ambientTurn && !sleeping)
         await thread
-          .post(noDefaultModelUserCopy(err, deps.uiBaseUrl, agentId))
+          .post(failure.copy({ uiBaseUrl: deps.uiBaseUrl, agentId }))
           .catch(() => {});
-      } else if (isAgentStoppedError(err) && err.disabled) {
-        await thread
-          .post("This agent is disabled by its owner — ask them to enable it.")
-          .catch(() => {});
-      }
     } finally {
       releaseAttendance();
       annotateSpan({
