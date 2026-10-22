@@ -72,6 +72,7 @@ import {
   isStarterKitSetupComplete,
   preselectedGrants,
   shortKitVersion,
+  startupItemCommandLine,
   toggleSkipped,
   withOverride,
 } from "../lib/setup.js";
@@ -645,6 +646,24 @@ function KitDetail({
               />
             ))}
           </Section>
+
+          {kit.startupItems.length > 0 && (
+            <Section label="Login items">
+              {kit.startupItems.map((item) => (
+                <Row
+                  key={item.name}
+                  title={item.name}
+                  detail={item.description}
+                  code={startupItemCommandLine(item)}
+                  tag={
+                    <Badge variant="muted" size="sm">
+                      {item.enabled ? "starts at every boot" : "off"}
+                    </Badge>
+                  }
+                />
+              ))}
+            </Section>
+          )}
 
           {kit.link && kit.install && (
             <Section label="Install command">

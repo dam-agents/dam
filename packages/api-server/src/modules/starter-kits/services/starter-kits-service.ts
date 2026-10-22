@@ -37,6 +37,7 @@ import { createInputFromSetup } from "../../agents/index.js";
 import {
   initializationEvent,
   type RuntimeMutator,
+  startupItemsEvent,
   workspaceCommandEvent,
 } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
@@ -362,6 +363,19 @@ export function createStarterKitsService(
               "kit-install",
               agent.id,
               kit.install.command,
+              new Date(),
+            ),
+          ]);
+          await deps.runtimeMutator.enqueueAfterCommit(agent.id);
+        }
+        if (kit.startupItems.length > 0) {
+          await deps.runtimeMutator.bump(agent.id, [
+            startupItemsEvent(
+              agent.id,
+              {
+                kit: kitRef(loaded.catalog, kit.id, version),
+                items: kit.startupItems,
+              },
               new Date(),
             ),
           ]);

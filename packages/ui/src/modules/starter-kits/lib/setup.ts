@@ -140,6 +140,18 @@ export function shortKitVersion(version: string): string {
   return FULL_SHA.test(version) ? version.slice(0, 9) : version;
 }
 
+const PLAIN_WORD = /^[A-Za-z0-9_@%+=:,./~-]+$/;
+
+export function startupItemCommandLine(
+  item: Pick<StarterKitView["startupItems"][number], "command" | "args">,
+): string {
+  return [item.command, ...item.args]
+    .map((word) =>
+      PLAIN_WORD.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`,
+    )
+    .join(" ");
+}
+
 function isProviderTemplate(id: string): id is ProviderPresetType {
   return PROVIDER_TEMPLATE_IDS.has(id);
 }

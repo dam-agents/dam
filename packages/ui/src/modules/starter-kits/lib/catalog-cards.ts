@@ -62,6 +62,7 @@ export function kitBadges(
     | "skillsInKit"
     | "knowledgeBase"
     | "egressPreset"
+    | "startupItems"
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
@@ -109,6 +110,14 @@ export function kitBadges(
     badges.push({
       key: "skills",
       label: `${skills} ${skills === 1 ? "skill" : "skills"}`,
+    });
+  }
+
+  const loginItems = kit.startupItems.length;
+  if (loginItems > 0) {
+    badges.push({
+      key: "login-items",
+      label: `${loginItems} ${loginItems === 1 ? "login item" : "login items"}`,
     });
   }
   return badges;

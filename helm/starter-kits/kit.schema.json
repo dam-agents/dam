@@ -27,12 +27,7 @@
     },
     "category": {
       "type": "string",
-      "enum": [
-        "knowledge",
-        "software",
-        "productivity",
-        "research"
-      ]
+      "enum": ["knowledge", "software", "productivity", "research"]
     },
     "icon": {
       "type": "string",
@@ -66,9 +61,7 @@
               "minLength": 1
             }
           },
-          "required": [
-            "path"
-          ]
+          "required": ["path"]
         }
       ]
     },
@@ -89,22 +82,14 @@
         },
         "harness": {
           "type": "string",
-          "enum": [
-            "claude-code",
-            "codex",
-            "pi",
-            "bob",
-            "copilot"
-          ]
+          "enum": ["claude-code", "codex", "pi", "bob", "copilot"]
         },
         "providers": {
           "type": "array",
           "items": {}
         }
       },
-      "required": [
-        "ref"
-      ]
+      "required": ["ref"]
     },
     "backend": {
       "type": "string",
@@ -112,11 +97,7 @@
     },
     "egressPreset": {
       "type": "string",
-      "enum": [
-        "none",
-        "trusted",
-        "all"
-      ]
+      "enum": ["none", "trusted", "all"]
     },
     "egressRules": {
       "default": [],
@@ -149,15 +130,10 @@
           "verdict": {
             "default": "allow",
             "type": "string",
-            "enum": [
-              "allow",
-              "deny"
-            ]
+            "enum": ["allow", "deny"]
           }
         },
-        "required": [
-          "host"
-        ]
+        "required": ["host"]
       }
     },
     "resources": {
@@ -194,9 +170,7 @@
           }
         }
       },
-      "required": [
-        "shareRoots"
-      ]
+      "required": ["shareRoots"]
     },
     "install": {
       "type": "object",
@@ -206,22 +180,14 @@
           "minLength": 1
         }
       },
-      "required": [
-        "command"
-      ]
+      "required": ["command"]
     },
     "harnesses": {
       "minItems": 1,
       "type": "array",
       "items": {
         "type": "string",
-        "enum": [
-          "claude-code",
-          "codex",
-          "pi",
-          "bob",
-          "copilot"
-        ]
+        "enum": ["claude-code", "codex", "pi", "bob", "copilot"]
       }
     },
     "providers": {
@@ -251,22 +217,15 @@
         "into": {
           "default": "work",
           "type": "string",
-          "enum": [
-            "work",
-            "home"
-          ]
+          "enum": ["work", "home"]
         }
       },
       "oneOf": [
         {
-          "required": [
-            "url"
-          ]
+          "required": ["url"]
         },
         {
-          "required": [
-            "self"
-          ]
+          "required": ["self"]
         }
       ]
     },
@@ -284,9 +243,7 @@
               "minLength": 1
             }
           },
-          "required": [
-            "prompt"
-          ]
+          "required": ["prompt"]
         },
         {
           "type": "object",
@@ -296,9 +253,7 @@
               "pattern": "^[a-z0-9][a-z0-9:_-]*$"
             }
           },
-          "required": [
-            "command"
-          ]
+          "required": ["command"]
         }
       ]
     },
@@ -324,9 +279,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "accepts"
-        ]
+        "required": ["accepts"]
       }
     },
     "channels": {
@@ -337,18 +290,13 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": [
-              "slack",
-              "telegram"
-            ]
+            "enum": ["slack", "telegram"]
           },
           "note": {
             "type": "string"
           }
         },
-        "required": [
-          "type"
-        ]
+        "required": ["type"]
       }
     },
     "schedules": {
@@ -377,10 +325,7 @@
               },
               "sessionMode": {
                 "type": "string",
-                "enum": [
-                  "continuous",
-                  "fresh"
-                ]
+                "enum": ["continuous", "fresh"]
               },
               "precheck": {
                 "type": "string",
@@ -392,11 +337,7 @@
                 "minLength": 1
               }
             },
-            "required": [
-              "name",
-              "task",
-              "cron"
-            ]
+            "required": ["name", "task", "cron"]
           },
           {
             "type": "object",
@@ -419,10 +360,7 @@
               },
               "sessionMode": {
                 "type": "string",
-                "enum": [
-                  "continuous",
-                  "fresh"
-                ]
+                "enum": ["continuous", "fresh"]
               },
               "precheck": {
                 "type": "string",
@@ -438,12 +376,7 @@
                 "minLength": 1
               }
             },
-            "required": [
-              "name",
-              "task",
-              "rrule",
-              "timezone"
-            ]
+            "required": ["name", "task", "rrule", "timezone"]
           }
         ]
       }
@@ -465,10 +398,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "source",
-          "name"
-        ]
+        "required": ["source", "name"]
       }
     },
     "bundledSkills": {
@@ -479,9 +409,7 @@
           "minLength": 1
         }
       },
-      "required": [
-        "path"
-      ]
+      "required": ["path"]
     },
     "env": {
       "default": [],
@@ -497,10 +425,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "name",
-          "value"
-        ]
+        "required": ["name", "value"]
       }
     },
     "hibernationTimeoutMin": {
@@ -510,13 +435,45 @@
     },
     "requireConnectionAddress": {
       "type": "boolean"
+    },
+    "startupItems": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\r\\n]*$"
+          },
+          "command": {
+            "type": "string",
+            "pattern": "^(?:(?!\\.\\.?$)[A-Za-z0-9._+-]+|~?(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9._+-]+)+)$"
+          },
+          "args": {
+            "default": [],
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[^\\r\\n\\0]*$"
+            }
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": ["name", "command"]
+      }
     }
   },
-  "required": [
-    "schemaVersion",
-    "id",
-    "name",
-    "description",
-    "category"
-  ]
+  "required": ["schemaVersion", "id", "name", "description", "category"]
 }

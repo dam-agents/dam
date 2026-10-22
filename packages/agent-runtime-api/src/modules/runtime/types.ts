@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
+import { startupItemDeclarationSchema } from "../processes/schemas.js";
 import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
 
 export const contributionKind = z.enum([
@@ -24,6 +25,7 @@ export const eventKind = z.enum([
   "sub-agent-outcome",
   "session-message",
   "session-defaults",
+  "startup-items",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -280,6 +282,20 @@ export const workspaceCommandEvent = z.object({
   payload: workspaceCommandEventPayload,
 });
 
+export const startupItemsEventPayload = z.object({
+  kit: z.string().min(1),
+  items: z.array(startupItemDeclarationSchema).min(1),
+});
+export type StartupItemsEventPayload = z.infer<typeof startupItemsEventPayload>;
+
+export const startupItemsEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("startup-items"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: startupItemsEventPayload,
+});
+
 export const initializationEventPayload = z.object({
   task: z.string().min(1),
   harness: z.string().min(1).optional(),
@@ -401,6 +417,7 @@ export const event = z.discriminatedUnion("kind", [
   subAgentOutcomeEvent,
   sessionMessageEvent,
   sessionDefaultsEvent,
+  startupItemsEvent,
 ]);
 export type Event = z.infer<typeof event>;
 

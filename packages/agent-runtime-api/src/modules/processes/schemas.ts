@@ -66,6 +66,27 @@ export const startupItemIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
 
+export const startupItemDeclarationSchema = z.object({
+  name: startupItemIdSchema,
+  description: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[^\r\n]*$/, "one line")
+    .optional(),
+  command: z
+    .string()
+    .regex(
+      /^(?:(?!\.\.?$)[A-Za-z0-9._+-]+|~?(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._+-]+)+)$/,
+      "a program: a name on PATH, an absolute path, or a path in the agent's home as ~/…",
+    ),
+  args: z
+    .array(z.string().regex(/^[^\r\n\0]*$/, "one line"))
+    .max(50)
+    .default([]),
+  enabled: z.boolean().default(true),
+});
+
 export const startupItemSchema = z.object({
   id: startupItemIdSchema,
   command: z.string(),
