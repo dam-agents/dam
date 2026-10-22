@@ -93,7 +93,9 @@ export function markTermsProven(ctx: ApiContext): void {
   termsProven.add(ctx);
 }
 
-const mapPgErrors = tBase.middleware(async ({ next }) => {
+const guards = initTRPC.create();
+
+export const mapPgErrors = guards.middleware(async ({ next }) => {
   const result = await next();
   if (result.ok) return result;
   const mapped = PG_ERRORS[pgErrorCode(result.error.cause) ?? ""];
@@ -101,7 +103,7 @@ const mapPgErrors = tBase.middleware(async ({ next }) => {
   throw new TRPCError({ ...mapped, cause: result.error.cause });
 });
 
-const rejectOversizedArrays = tBase.middleware(
+export const rejectOversizedArrays = guards.middleware(
   async ({ getRawInput, next }) => {
     if (hasOversizedArray(await getRawInput())) {
       throw new TRPCError({
