@@ -211,6 +211,7 @@ import {
   composeArtifactLibraryForOwner,
   composeShareAuth,
   composeShareRenderTokens,
+  composeShareBridge,
   composeShareViewer,
   createAgentApiPodClient,
   createByLinkHostGate,
@@ -564,42 +565,6 @@ export async function bootstrap() {
       ),
     namespace: config.namespace,
     brandName: config.brand.name,
-  });
-  const shareCookie = shareSessionCookie(config.shareBaseUrl);
-  const shareHostGate = createByLinkHostGate({
-    share: {
-      baseUrl: config.shareBaseUrl,
-      app: createShareHostApp({
-        auth: createShareAuthRoutes({
-          auth: shareAuth,
-          brandName: config.brand.name,
-          sessionCookie: shareCookie,
-        }),
-        viewer: createShareViewerApp({
-          viewer: shareViewer,
-          auth: shareAuth,
-          sessionCookie: shareCookie,
-          renderTokens: shareRenderTokens,
-          brandName: config.brand.name,
-          uiBaseUrl: config.uiBaseUrl,
-          contentBaseUrl: config.contentBaseUrl,
-        }),
-        kbMcp: composeKbShareServing({
-          db,
-          store: artifacts,
-          k8s: k8sClient,
-          grepDeadlineMs: config.kbShareGrepDeadlineMs,
-        }),
-      }),
-    },
-    content: {
-      baseUrl: config.contentBaseUrl,
-      app: createContentApp({
-        viewer: shareViewer,
-        renderTokens: shareRenderTokens,
-        shareBaseUrl: config.shareBaseUrl,
-      }),
-    },
   });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
@@ -1344,6 +1309,62 @@ export async function bootstrap() {
       firePair: (agentId) => channelFirePair(agentId, "channel"),
     });
 
+  const agentApiPodClient = createAgentApiPodClient(config.namespace);
+  const shareBridge = composeShareBridge({
+    featureOn: async (owner) =>
+      (
+        await composeFeaturesForOwner({
+          db,
+          owner,
+          surface: "system",
+          modes: config.featureModes,
+        }).features.flags()
+      )["interactive-artifacts"],
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    agentApi: agentApiPodClient,
+    makeAcpClient,
+    spendHold: channelSpendHold,
+    attendance: turnAttendance,
+  });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
+  const shareHostGate = createByLinkHostGate({
+    share: {
+      baseUrl: config.shareBaseUrl,
+      app: createShareHostApp({
+        auth: createShareAuthRoutes({
+          auth: shareAuth,
+          brandName: config.brand.name,
+          sessionCookie: shareCookie,
+        }),
+        viewer: createShareViewerApp({
+          viewer: shareViewer,
+          auth: shareAuth,
+          sessionCookie: shareCookie,
+          renderTokens: shareRenderTokens,
+          brandName: config.brand.name,
+          uiBaseUrl: config.uiBaseUrl,
+          contentBaseUrl: config.contentBaseUrl,
+          shareBaseUrl: config.shareBaseUrl,
+          bridge: shareBridge,
+        }),
+        kbMcp: composeKbShareServing({
+          db,
+          store: artifacts,
+          k8s: k8sClient,
+          grepDeadlineMs: config.kbShareGrepDeadlineMs,
+        }),
+      }),
+    },
+    content: {
+      baseUrl: config.contentBaseUrl,
+      app: createContentApp({
+        viewer: shareViewer,
+        renderTokens: shareRenderTokens,
+        shareBaseUrl: config.shareBaseUrl,
+      }),
+    },
+  });
+
   const agentIcons =
     slackGatewayFactory && config.imgbbApiKey
       ? createImgbbAgentIcons({
@@ -1641,7 +1662,6 @@ export async function bootstrap() {
     },
   );
 
-  const agentApiPodClient = createAgentApiPodClient(config.namespace);
   const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
     composeArtifactLibraryForOwner({
       db,

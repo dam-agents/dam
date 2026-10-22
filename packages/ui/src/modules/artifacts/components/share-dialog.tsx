@@ -9,6 +9,7 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Callout } from "@/components/ui/callout";
 import { CopyField } from "@/components/ui/copy-field";
 
 import { useShareForm } from "../hooks/use-share-form.js";
@@ -119,10 +120,16 @@ export function ShareDialog({ artifact, onClose }: Props) {
               />
               {visibility === "restricted" && viewerEditor}
               {artifact.interactive && visibility === "restricted" && (
-                <p className="text-xs text-muted-foreground">
-                  People you invite see the page, but its buttons do nothing for
-                  them: only you can ask your agent from it.
-                </p>
+                <Callout
+                  tone="warning"
+                  size="sm"
+                  role="note"
+                  className="text-xs"
+                >
+                  People you invite use this page as you do: it can read and
+                  change your agent&apos;s data, and its buttons send your agent
+                  prompts. Your agent acts on them under your account.
+                </Callout>
               )}
               {hasPendingViewer && (
                 <p role="status" className="text-xs text-muted-foreground">

@@ -218,12 +218,13 @@ function sharedPage() {
   return { platform: window.platform, postMessage, shown };
 }
 
-describe("artifact bridge on a shared page", () => {
+describe("artifact bridge on a public interactive page", () => {
   /**
-   * TEST_SCENARIO: A viewer the owner invited opens a shared interactive page
-   * and clicks its buttons. Nothing reaches the host, so the viewer can never
-   * make the owner's agent act. The calls fail at once, with no 3-minute
-   * wait, and the page shows one notice that says why.
+   * TEST_SCENARIO: A visitor opens a public interactive page, which the
+   * sharing rules forbid but an old row could still be, and clicks its
+   * buttons. Nothing reaches the host, so the visitor can never make the
+   * owner's agent act. The calls fail at once, with no 3-minute wait, and the
+   * page shows one notice that says why.
    */
   it("refuses a prompt at once and tells the viewer why", () => {
     const { platform, postMessage, shown } = sharedPage();

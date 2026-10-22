@@ -155,6 +155,7 @@ export interface PlatformSessionMeta {
   initialization?: boolean;
   threadTs?: string;
   createdAt?: string;
+  customTitle?: string;
 }
 
 export interface AcpSessionInfo {
@@ -171,6 +172,7 @@ const platformSessionMetaSchema = z.object({
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
+  customTitle: z.string().optional(),
 });
 
 export interface TriggerSessionResult {
