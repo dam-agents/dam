@@ -17,5 +17,3 @@ kits:
     url: https://github.com/dam-agents/software-developer
   - id: micro-manager
     url: https://github.com/dam-agents/micro-manager
-  - id: quality-assurance
-    url: https://github.com/dam-agents/quality-assurance
