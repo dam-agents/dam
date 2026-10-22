@@ -1,4 +1,5 @@
-// TEST_OVERVIEW: an agent row in the sidebar shows New session and Configure agent as icons, and the Agent actions kebab only when a Slack or Telegram channel is there to add the agent to; Configure agent opens the agent's configuration and is never inside the kebab.
+// TEST_OVERVIEW: an agent row in the sidebar shows New session and Configure agent as icons, and the Agent actions kebab only when a Slack or Telegram channel is there to add the agent to; Configure agent shows the wrench every other Configure agent button shows, opens the agent's configuration and is never inside the kebab.
+import { Tools } from "@carbon/icons-react";
 import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
@@ -80,6 +81,13 @@ it("opens the configuration from the Configure agent button", () => {
   const tree = SidebarAgentActions(props({ slack: true }, onConfigure));
   find(tree, (p) => p.label === "Configure agent")?.onClick?.();
   expect(onConfigure).toHaveBeenCalledOnce();
+});
+
+// TEST_SCENARIO: the Configure agent button shows the wrench (Tools), the icon of every other Configure agent button.
+it("shows the wrench on the Configure agent button", () => {
+  const tree = SidebarAgentActions(props({}));
+  const icon = find(tree, (p) => p.label === "Configure agent")?.children;
+  expect(isValidElement(icon) && icon.type).toBe(Tools);
 });
 
 // TEST_SCENARIO: the kebab holds the channel items alone, without Configure agent.
