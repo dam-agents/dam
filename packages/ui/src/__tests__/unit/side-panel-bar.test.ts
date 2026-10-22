@@ -155,6 +155,25 @@ it("marks only the open tab with the inner-edge bar", () => {
   expect(html).toContain('width="24"');
 });
 
+// TEST_SCENARIO: The rail holds the Agent's tabs at the top and the app's tabs at the bottom, which needs about 380 px; a landscape phone can be shorter, so the rail scrolls like the sidebar rail instead of putting the bottom tabs below the screen.
+it("scrolls the rail when the window cannot hold both clusters", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  const nav = html.match(/<nav[^>]*data-testid="side-panel-bar"[^>]*>/)?.[0];
+  expect(nav).toContain("min-h-0");
+  expect(nav).toContain("overflow-y-auto");
+});
+
 // TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 48 px rounded tiles with 22 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
 it("draws JanUI's tiles, with the bar on the right edge", () => {
   const html = renderToStaticMarkup(

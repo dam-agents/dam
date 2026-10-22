@@ -185,7 +185,10 @@ export function SidePanelBar({
       data-testid="side-panel-bar"
       className={cn(
         tiles
-          ? cn("w-14 shrink-0 border-l border-border bg-chrome", RAIL_COLUMN)
+          ? cn(
+              "w-14 min-h-0 shrink-0 overflow-y-auto border-l border-border bg-chrome",
+              RAIL_COLUMN,
+            )
           : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
