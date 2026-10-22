@@ -163,11 +163,11 @@ for c in ${stale[@]+"${stale[@]}"}; do
   if [ "$c" = mock ]; then
     ref="$IMAGE_PREFIX/mock:$($resolve source-sha mock)"
   elif [ "$c" = default ]; then
-    [ -d /tmp/digests-agents ] || gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-agents-amd64 -D /tmp/digests-agents
-    ref="$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests-agents/$c")"
+    [ -d ${RUNNER_TEMP:-/tmp}/digests-agents ] || gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-agents-amd64 -D ${RUNNER_TEMP:-/tmp}/digests-agents
+    ref="$IMAGE_PREFIX/$c@sha256:$(ls "${RUNNER_TEMP:-/tmp}/digests-agents/$c")"
   else
-    [ -d /tmp/digests ] || gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D /tmp/digests
-    ref="$IMAGE_PREFIX/$c@sha256:$(ls "/tmp/digests/$c")"
+    [ -d ${RUNNER_TEMP:-/tmp}/digests ] || gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n digests-images-amd64 -D ${RUNNER_TEMP:-/tmp}/digests
+    ref="$IMAGE_PREFIX/$c@sha256:$(ls "${RUNNER_TEMP:-/tmp}/digests/$c")"
   fi
   pull "$c" "$ref" &
   pids+=($!)
