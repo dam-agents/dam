@@ -186,6 +186,7 @@ Claude Code can lose its idle report, so a busy session that stays silent for te
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
 A session on a removed provider or an unknown harness closes with the reason.
+A terminal sitting at the harness's prompt sends nothing, so the api-server's relay pings its viewer every 30 seconds, as it pings SSH and browser viewers: the traffic keeps networks that close quiet connections (mobile carriers, proxies) from cutting it, and a viewer that leaves a ping unanswered is cut, which detaches the PTY as a closed tab does.
 Scrollback is tracked so that reattaching while the PTY lives replays it.
 A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.
 Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up.

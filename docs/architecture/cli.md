@@ -223,7 +223,8 @@ While attached, the window title carries the same hint and resume command: the b
 Session strategy is resolved **client-side**: sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay and resolves locally — mint a fresh id (new, the default), match the single most-recent terminal session (continue), or target a specific id (resume, prompting before a chat→terminal mode switch) — then builds the terminal-relay URL itself.
 There is no server-side session endpoint.
 A `--reset` flag tells the relay to kill the PTY and spawn a fresh one, which also clears the agent-side session.
-On disconnect or exit the CLI prints a ready-to-paste resume command and the leave hint again.
+The CLI sends no keepalive of its own: it answers the relay's 30-second ping ([sessions](sessions.md)), which keeps an attach open while the harness sits quiet.
+On disconnect or exit the CLI prints a ready-to-paste resume command and the leave hint again; it does not reconnect by itself.
 `dam session list` reads the same agent-owned session list.
 
 ## Headless runs
