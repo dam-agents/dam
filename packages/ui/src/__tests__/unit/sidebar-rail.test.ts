@@ -1,21 +1,31 @@
-// TEST_OVERVIEW: Collapsed, JanUI's sidebar stays in the layout one icon wide: a tile that expands it again, Home, the Pinned tile once the browser holds a pin, one tile per Agent in the tree's manual order with a dot while that Agent awaits an approval or holds an unread Session, a New agent tile closing them, and Settings.
+// TEST_OVERVIEW: Collapsed, JanUI's sidebar stays in the layout one icon wide: a tile that expands it again, Home, then what the tree lists under its Agents label — one tile per Agent in the tree's manual order with a dot while that Agent awaits an approval or holds an unread Session, or, while the grouping is All sessions, one tile per Session with its harness icon and its name in a tooltip — a New agent tile closing them, and Settings.
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
+import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
+
 vi.stubGlobal("window", new EventTarget());
 
 const env = vi.hoisted(() => ({
-  pins: new Set<string>(),
-  pinnedRows: [] as unknown[],
   agents: [] as { id: string; name: string; state: string }[],
   approvals: [] as unknown[],
   unread: new Set<string>(),
+  groupBy: "agents" as "agents" | "all",
+  filters: undefined as unknown,
+  sessions: [] as unknown[],
+  openSessionKey: null as string | null,
 }));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
-    select({ view: "home", drafts: {}, pendingPermissions: [] }),
+    select({
+      view: "home",
+      drafts: {},
+      pendingPermissions: [],
+      sidebarGroupBy: env.groupBy,
+      sidebarActivityFilters: env.filters,
+    }),
 }));
 vi.mock("../../modules/agents/hooks/use-sidebar-agents.js", () => ({
   useSidebarAgents: () => ({
@@ -27,8 +37,14 @@ vi.mock("../../modules/agents/hooks/use-sidebar-agents.js", () => ({
 vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForOwner: () => ({ data: env.approvals }),
 }));
-vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
-  usePinnedSessions: () => env.pins,
+vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
+  useActivitySessions: () => ({
+    items: env.sessions,
+    openSessionKey: env.openSessionKey,
+    complete: true,
+    loading: false,
+    unreadable: false,
+  }),
 }));
 vi.mock("../../modules/agents/api/mutations.js", () => ({
   useDeleteAgent: () => ({ mutate: () => {} }),
@@ -52,21 +68,19 @@ vi.mock("../../modules/sessions/hooks/use-start-session.js", () => ({
 vi.mock("@/components/ui/tooltip", async () => {
   const { createElement: h } = await import("react");
   return {
-    Tooltip: ({ children }: { children: ReactNode }) =>
-      h("div", null, children),
+    Tooltip: ({
+      content,
+      children,
+    }: {
+      content: string;
+      children: ReactNode;
+    }) => h("div", { "data-tooltip": content }, children),
   };
 });
 vi.mock(
   "../../modules/platform/components/sidebar-v2/agent-session-list.js",
   () => ({ AgentSessionList: () => null }),
 );
-vi.mock("../../modules/platform/components/sidebar-v2/pinned-rows.js", () => ({
-  PinnedList: () => null,
-  usePinnedRows: () => ({
-    rows: env.pinnedRows,
-    conversationOf: () => undefined,
-  }),
-}));
 
 const { SidebarRail } =
   await import("../../modules/platform/components/sidebar-v2/sidebar-rail.js");
@@ -76,12 +90,36 @@ const agents = [
   { id: "a2", name: "other", state: "running" },
 ];
 
+const session = (
+  sessionId: string,
+  title: string | null,
+  extra: Record<string, unknown> = {},
+) => ({
+  id: `a1:${sessionId}`,
+  agent: agents[0],
+  working: false,
+  unread: false,
+  needsApproval: false,
+  session: {
+    agentId: "a1",
+    sessionId,
+    mode: "chat",
+    type: "regular",
+    title,
+    harness: "claude-code",
+    working: false,
+    ...extra,
+  },
+});
+
 beforeEach(() => {
-  env.pins = new Set();
-  env.pinnedRows = [];
   env.agents = agents;
   env.approvals = [];
   env.unread = new Set();
+  env.groupBy = "agents";
+  env.filters = defaultActivityFilters();
+  env.sessions = [];
+  env.openSessionKey = null;
 });
 
 const render = () =>
@@ -115,13 +153,35 @@ it("ends the Agent tiles with a New agent tile", () => {
   expect(html).toContain("hidden group-hover:block");
 });
 
-// TEST_SCENARIO: the pin tile appears once there is a pinned Session to show in the popover, and a pin left behind by a Session that is gone leaves no tile at all.
-it("offers the Pinned tile only while a pinned Session resolves", () => {
-  expect(render()).not.toContain('data-testid="sidebar-rail-pinned"');
-  env.pins = new Set(["a1:s1"]);
-  expect(render()).not.toContain('data-testid="sidebar-rail-pinned"');
-  env.pinnedRows = [{ key: "a1:s1" }];
-  expect(render()).toContain('data-testid="sidebar-rail-pinned"');
+// TEST_SCENARIO: with the grouping on All sessions the rail draws the Sessions the tree's flat list would, in the same order, each named by its Agent and its title since the rail has no room for either.
+it("draws a tile per Session while the grouping is All sessions", () => {
+  env.groupBy = "all";
+  env.sessions = [session("s1", "Fix the parser"), session("s2", null)];
+  const html = render();
+  expect(
+    [...html.matchAll(/data-session-id="(\w+)"/g)].map((m) => m[1]),
+  ).toEqual(["s1", "s2"]);
+  expect(html).toContain('data-tooltip="dam — Fix the parser"');
+  expect(html).toContain('data-tooltip="dam — (no title · s2)"');
+  expect(html).toContain('aria-label="dam — Fix the parser"');
+  // UNIT_BOUNDARY_DESCRIPTION: the Agent avatars belong to the other grouping, and a Session is drawn by its harness rather than by its Agent.
+  expect(html).not.toContain('data-testid="sidebar-rail-agent"');
+  expect(html).toContain('aria-label="Claude"');
+});
+
+// TEST_SCENARIO: the header's filter narrows the Session tiles as it narrows the tree's list, and the Session the page holds is the one tile marked as current.
+it("narrows the Session tiles by the header filter and marks the open one", () => {
+  env.groupBy = "all";
+  env.sessions = [
+    session("s1", "Fix the parser", { working: true }),
+    { ...session("s2", "Idle one"), unread: true },
+  ];
+  env.openSessionKey = "a1:s2";
+  expect(render()).toContain('data-session-id="s1"');
+  env.filters = { channelTypes: new Set(["chat"]), state: "unread" };
+  const html = render();
+  expect(html).not.toContain('data-session-id="s1"');
+  expect(html).toContain('aria-current="page"');
 });
 
 // TEST_SCENARIO: an Agent awaiting an approval, or holding an unread Session, marks its tile, and its own accessible name says which, since the dot alone is a colour, and the name leads with the New session action its click takes.

@@ -1,38 +1,21 @@
 import { Settings } from "@carbon/icons-react";
-import { routesSessionPairs } from "agent-runtime-api";
-import type { SessionPair } from "api-server-api";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddRow } from "@/components/ui/list-section";
-import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
-  rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
   useProviderConnections,
-  useRememberedPair,
 } from "../../sessions/api/session-pair.js";
-import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import { DetachProviderMessage } from "../../sessions/components/detach-provider-message.js";
-import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
 import { useProviderUsage } from "../../sessions/hooks/use-provider-usage.js";
-import {
-  fittingProviders,
-  harnessOptions,
-  nextPair,
-  providerHarnesses,
-} from "../../sessions/lib/session-pair-options.js";
+import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
@@ -52,7 +35,6 @@ export function SandboxProvidersSection({
   const catalog = useHarnessCatalog().data?.harnesses;
   const root = useRootDriver(agentId);
   const usage = useProviderUsage(agentId);
-  const newLayout = useNewLayout();
 
   return (
     <div className="flex flex-col gap-3">
@@ -115,77 +97,7 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      {newLayout ? (
-        <DefaultPairPicker key={agentId} agentId={agentId} />
-      ) : (
-        <SessionDefaultsSection agentId={agentId} />
-      )}
+      <SessionDefaultsSection agentId={agentId} />
     </div>
-  );
-}
-
-function DefaultPairPicker({ agentId }: { agentId: string }) {
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data: status } = useHarnessConfigStatus(agentId);
-  const operable = useIsAgentOperable(agentId);
-  const { data: catalog } = useHarnessCatalog();
-  const { data: remembered } = useRememberedPair(agentId);
-  const { granted } = useProviderConnections(agentId);
-  const carried = status?.harnesses ?? [];
-  const views = catalog?.harnesses ?? [];
-  const fitting = fittingProviders(views, granted);
-  const harnesses = harnessOptions(
-    carried.map((h) => h.name),
-    views,
-  ).filter((h) => fitting(h.name).length > 0);
-  const routed = status?.modelRouter ?? false;
-  const [draft, setDraft] = useState<SessionPair | null>(null);
-  const saved = nextPair(
-    null,
-    remembered ?? null,
-    harnesses.map((h) => h.name),
-    fitting,
-    status?.defaultHarness,
-  );
-  const pair =
-    routed && draft !== null && draft.harness !== saved?.harness
-      ? draft
-      : saved;
-  if (status && !status.harnesses && !operable)
-    return (
-      <section className="mt-6">
-        <SectionLabel spaced>Default for new sessions</SectionLabel>
-        <AwakeModelsGate agentId={agentId} />
-      </section>
-    );
-  if (!pair || !routesSessionPairs(carried)) return null;
-  return (
-    <section className="mt-6">
-      <SectionLabel spaced>Default for new sessions</SectionLabel>
-      <div className="flex flex-col gap-2">
-        <SessionPairPicker
-          agentId={agentId}
-          carried={carried}
-          defaultHarness={status?.defaultHarness ?? pair.harness}
-          routed={routed}
-          onConnectProviders={() => navigateToSettings("providers")}
-          defaultPair={{
-            value: pair,
-            onChoose: (next) => {
-              if (routed && next.model === null) return setDraft(next);
-              rememberSessionPair(agentId, next);
-              setDraft(null);
-            },
-          }}
-        />
-        {pair !== saved ? (
-          <p role="status" className="pl-3 text-xs text-muted-foreground">
-            Pick a model to save this harness as the default.
-          </p>
-        ) : (
-          <DefaultModelNotice agentId={agentId} />
-        )}
-      </div>
-    </section>
   );
 }

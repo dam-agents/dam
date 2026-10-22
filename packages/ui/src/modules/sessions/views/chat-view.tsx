@@ -71,6 +71,7 @@ import { GatewayFailureBadge } from "../../agents/components/gateway-failure-bad
 import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
+import { AgentUpdateDot } from "../../agents/components/update-available-action.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
@@ -936,14 +937,21 @@ export function ChatView() {
                             )}
                           />
                         )}
-                        <span
-                          className={cn(
-                            "mt-3 text-xl font-bold text-foreground",
-                            !newLayout &&
-                              "underline-offset-4 group-hover:underline",
+                        <span className="mt-3 flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "text-xl font-bold text-foreground",
+                              !newLayout &&
+                                "underline-offset-4 group-hover:underline",
+                            )}
+                          >
+                            {selectedAgentName}
+                          </span>
+                          {newLayout && agentView && (
+                            <AgentUpdateDot
+                              available={!!agentView.templateUpdate}
+                            />
                           )}
-                        >
-                          {selectedAgentName}
                         </span>
                       </button>
                     </h2>

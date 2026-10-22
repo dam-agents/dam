@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDeleteAgent } from "../../../agents/api/mutations.js";
+import { AgentUpdateDot } from "../../../agents/components/update-available-action.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { defaultActivityFilters } from "../../../home/lib/activity-filter.js";
@@ -74,13 +75,19 @@ export function AgentRowActions({
             "hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover/agent:w-auto hover-capable:group-has-[:focus-visible]/agent:w-auto hover-capable:group-has-[[data-state=open]]/agent:w-auto hover-capable:has-[[aria-current=page]]:w-auto",
         )}
       >
-        <RowActionsMenu
-          label={`${agent.name} actions`}
-          testId="sidebar-agent-menu"
-          dense
-        >
-          <AgentMenuItems {...actions} />
-        </RowActionsMenu>
+        <span className="relative flex shrink-0">
+          <RowActionsMenu
+            label={`${agent.name} actions`}
+            testId="sidebar-agent-menu"
+            dense
+          >
+            <AgentMenuItems {...actions} />
+          </RowActionsMenu>
+          <AgentUpdateDot
+            available={!!agent.templateUpdate}
+            className="pointer-events-none absolute -right-px -top-px"
+          />
+        </span>
       </div>
     </div>
   );
@@ -92,10 +99,12 @@ export function AgentRowActions({
 export function AgentMenuItems({
   onConfigure,
   onRemove,
+  updateAvailable,
   menu = "dropdown",
 }: {
   onConfigure: () => void;
   onRemove: () => void;
+  updateAvailable: boolean;
   menu?: keyof typeof MENU_PARTS;
 }) {
   const { Item, Separator } = MENU_PARTS[menu];
@@ -103,6 +112,7 @@ export function AgentMenuItems({
     <>
       <Item onSelect={onConfigure}>
         <Tools size={14} /> Configure
+        <AgentUpdateDot available={updateAvailable} className="ml-auto" />
       </Item>
       <Separator />
       <Item tone="danger" onSelect={onRemove}>
@@ -126,6 +136,7 @@ function useAgentMenuActions({
   const confirmDelete = useConfirmDeleteAgent();
   const deleteAgent = useDeleteAgent();
   return {
+    updateAvailable: !!agent.templateUpdate,
     onConfigure: () => {
       navigateToSandboxHome(agent.id);
       onNavigate?.();

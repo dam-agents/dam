@@ -180,7 +180,8 @@ it("draws JanUI's tiles, with the bar on the right edge", () => {
     expect(bar.includes(" h-6")).toBe(tab === "files");
   }
   const open = buttons.find(([, tab]) => tab === "files")![0];
-  expect(open).toContain("size-12");
+  // UNIT_BOUNDARY_DESCRIPTION: the tile is one row high and as wide, so the mark it carries is a square of the same size a row of the tree carries.
+  expect(open).toContain("size-10");
   expect(open).toContain("bg-muted");
   expect(html).toContain('width="22"');
   expect(html).toContain('width="22"');
