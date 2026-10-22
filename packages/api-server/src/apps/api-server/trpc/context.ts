@@ -71,6 +71,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     seedSources,
     spendForOwner,
     providerStatus,
+    outageAlerts,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
@@ -327,6 +328,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         composeDefaultModelNotices(db)(
           (await agentsRepo.list(user.sub)).map((agent) => agent.id),
         ),
+      outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
     });
     const files = composeFilesModule(
       agentsRepo,

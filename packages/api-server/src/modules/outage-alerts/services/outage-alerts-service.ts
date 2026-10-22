@@ -1,3 +1,4 @@
+import type { OutageAlertNotice } from "api-server-api";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -6,6 +7,7 @@ import {
   type ProviderStatusEvaluated,
 } from "../../../events.js";
 import {
+  RECOVERED_SHOWN_DAYS,
   recovers,
   tellable,
   type AffectedAgent,
@@ -17,6 +19,7 @@ import {
   providerNameOf,
   recoveryMessage,
 } from "../domain/messages.js";
+import { noticeOf } from "../domain/notices.js";
 import type {
   OutageAlertsRepository,
   StoredAlert,
@@ -33,6 +36,7 @@ type EvaluatedOutage = ProviderStatusEvaluated["outages"][number];
 
 export interface OutageAlertsService {
   handle(event: ProviderStatusEvaluated): Promise<void>;
+  noticesFor(ownerSub: string, now: Date): Promise<OutageAlertNotice[]>;
 }
 
 export function createOutageAlertsService(deps: {
@@ -186,6 +190,15 @@ export function createOutageAlertsService(deps: {
             tell(ownerSub, outage, agents, event.checkedAt),
           );
       }
+    },
+
+    async noticesFor(ownerSub, now) {
+      const recoveredSince = new Date(
+        now.getTime() - RECOVERED_SHOWN_DAYS * 24 * 60 * 60 * 1000,
+      );
+      return (await deps.repo.listForOwner(ownerSub, recoveredSince)).map(
+        noticeOf,
+      );
     },
   };
 }

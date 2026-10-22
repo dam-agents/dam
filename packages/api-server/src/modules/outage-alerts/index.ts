@@ -1,1 +1,5 @@
-export { composeOutageAlerts, type OutageAlertsModule } from "./compose.js";
+export {
+  composeOutageAlerts,
+  type OutageAlertNotices,
+  type OutageAlertsModule,
+} from "./compose.js";

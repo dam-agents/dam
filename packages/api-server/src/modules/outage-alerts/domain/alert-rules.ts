@@ -1,9 +1,13 @@
-import type { ProviderOutageReason } from "api-server-api";
+import type {
+  OutageAlertAffectedBy,
+  ProviderOutageReason,
+} from "api-server-api";
+
+export type { OutageAlertAffectedBy };
 
 export type OutageAlertState = "told" | "recovered";
 
-export type OutageAlertAffectedBy =
-  "failed-calls" | "schedule" | "slack" | "telegram";
+export const RECOVERED_SHOWN_DAYS = 7;
 
 export interface AffectedAgent {
   readonly agentId: string;

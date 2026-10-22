@@ -605,6 +605,9 @@ export type {
   DefaultModelNotice,
   DefaultModelState,
   DismissedEntry,
+  OutageAlertAffectedBy,
+  OutageAlertAgent,
+  OutageAlertNotice,
 } from "./modules/attention/types.js";
 export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";

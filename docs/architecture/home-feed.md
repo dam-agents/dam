@@ -10,7 +10,7 @@ In an Agent's chat with the JanUI experiment off, the chat has no icon bar: the 
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) are a fourth, read beside them.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) and [outage alerts](#outage-alerts) are read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
@@ -145,6 +145,16 @@ A dismissal is dropped once its notice no longer holds, so the same state coming
 Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default.
 Any change that decides whether a notice holds reaches the owner's open tabs, not only the tab that made it: a Schedule change sends the schedules hint, and a Slack or Telegram binding added or removed — in the UI, in Slack, or in Telegram — sends the attention hint.
 An Agent's providers refresh the list in the tab that changed them.
+
+## Outage alerts
+
+The bell also lists the owner's [outage alerts](provider-status.md#outage-alerts): a provider outage that hits their Agents, with each Agent, why it is affected, and a way to switch its provider.
+It counts in the panel's badge like an approval, so it reaches an owner who never linked Slack.
+An alert shows while the owner is told about it, and for seven days after the provider works again.
+A dismissal is per owner and on the server, and names the provider's template, the outage's start time and whether it recovered: it holds on every device, and a new outage or the recovery shows the card again.
+A dismissal is dropped once its alert is gone.
+The banner on Home does not count an outage alert, because the provider status banner already names a live outage on every page but the chat.
+A new or recovered alert reaches open tabs through the attention hint.
 
 ## Seen, unread, and dismissed
 

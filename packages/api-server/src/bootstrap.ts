@@ -2097,6 +2097,7 @@ export async function bootstrap() {
     redisBus,
     spendForOwner: spend.forOwner,
     providerStatus: providerStatus.service,
+    outageAlerts: outageAlerts.notices,
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,

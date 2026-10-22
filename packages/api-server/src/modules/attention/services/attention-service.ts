@@ -5,11 +5,16 @@ import {
   type AttentionList,
   type AttentionService,
   type DefaultModelNotice,
+  type OutageAlertNotice,
   type SessionMode,
   type SessionType,
 } from "api-server-api";
 
-import type { AttentionRecordRow } from "../domain/types.js";
+import type {
+  AttentionItemKind,
+  AttentionRecordRow,
+  DismissalRow,
+} from "../domain/types.js";
 import type { AttentionRepository } from "../infrastructure/attention-repository.js";
 
 const AGENT_SESSIONS_LIMIT = 50;
@@ -34,40 +39,54 @@ function toItem(row: AttentionRecordRow): AttentionItem {
 const agentOfDefaultModelNoticeId = (id: string): string =>
   id.slice(0, Math.max(0, id.lastIndexOf(":")));
 
+function staleDismissals(
+  dismissals: readonly DismissalRow[],
+  kind: AttentionItemKind,
+  current: readonly { id: string }[] | null,
+): DismissalRow[] {
+  if (current === null) return [];
+  const ids = new Set(current.map((notice) => notice.id));
+  return dismissals.filter((d) => d.kind === kind && !ids.has(d.itemId));
+}
+
 export function createAttentionService(deps: {
   repo: AttentionRepository;
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
   defaultModelNotices: () => Promise<DefaultModelNotice[]>;
+  outageAlerts: () => Promise<OutageAlertNotice[]>;
   log: (message: string) => void;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, allDismissals, notices] = await Promise.all([
+      const [records, allDismissals, notices, alerts] = await Promise.all([
         deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
         deps.repo.listDismissals(deps.ownerSub),
         deps.defaultModelNotices().catch((err: Error) => {
           deps.log(`[attention] default-model notices: ${err.message}`);
           return null;
         }),
+        deps.outageAlerts().catch((err: Error) => {
+          deps.log(`[attention] outage alerts: ${err.message}`);
+          return null;
+        }),
       ]);
-      const current = new Set((notices ?? []).map((notice) => notice.id));
-      const resolved =
-        notices === null
-          ? []
-          : allDismissals.filter(
-              (d) => d.kind === "default-model" && !current.has(d.itemId),
-            );
-      if (resolved.length > 0)
-        await deps.repo.deleteDismissals(
-          deps.ownerSub,
-          "default-model",
-          resolved.map((d) => d.itemId),
-        );
+      const resolved = [
+        ...staleDismissals(allDismissals, "default-model", notices),
+        ...staleDismissals(allDismissals, "outage-alert", alerts),
+      ];
+      for (const kind of ["default-model", "outage-alert"] as const) {
+        const ids = resolved
+          .filter((d) => d.kind === kind)
+          .map((d) => d.itemId);
+        if (ids.length > 0)
+          await deps.repo.deleteDismissals(deps.ownerSub, kind, ids);
+      }
       const dismissals = allDismissals.filter((d) => !resolved.includes(d));
       return {
         defaultModels: notices ?? [],
+        outageAlerts: alerts ?? [],
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
@@ -113,12 +132,25 @@ export function createAttentionService(deps: {
           })),
       );
 
+      const outageAlerts = items.filter((item) => item.kind === "outage-alert");
+      const currentAlerts = new Set(
+        outageAlerts.length > 0
+          ? (
+              await deps.outageAlerts().catch((err: Error) => {
+                deps.log(`[attention] outage alerts: ${err.message}`);
+                return [];
+              })
+            ).map((alert) => alert.id)
+          : [],
+      );
+
       await deps.repo.setDismissals(
         deps.ownerSub,
         [
           ...sessions.filter((item) => owned.has(item.id)),
           ...approvals.filter((a) => a.owned).map((a) => a.item),
           ...defaultModels.filter((d) => d.owned).map((d) => d.item),
+          ...outageAlerts.filter((item) => currentAlerts.has(item.id)),
         ].map((item) => ({ kind: item.kind, itemId: item.id })),
         at,
       );

@@ -1,4 +1,4 @@
-import { and, eq, outageAlerts, type Db } from "db";
+import { and, eq, gte, or, outageAlerts, type Db } from "db";
 import { z } from "zod";
 
 import type { OutageAlert } from "../domain/alert-rules.js";
@@ -11,6 +11,7 @@ export interface StoredAlert {
 export interface OutageAlertsRepository {
   listTold(): Promise<StoredAlert[]>;
   read(ownerSub: string, templateId: string): Promise<StoredAlert | null>;
+  listForOwner(ownerSub: string, recoveredSince: Date): Promise<OutageAlert[]>;
   claim(seen: number | null, next: OutageAlert): Promise<boolean>;
 }
 
@@ -80,6 +81,22 @@ export function createOutageAlertsRepository(db: Db): OutageAlertsRepository {
         )
         .limit(1);
       return row && readable(row) ? toStored(row) : null;
+    },
+
+    async listForOwner(ownerSub, recoveredSince) {
+      const rows = await db
+        .select()
+        .from(outageAlerts)
+        .where(
+          and(
+            eq(outageAlerts.ownerSub, ownerSub),
+            or(
+              eq(outageAlerts.state, "told"),
+              gte(outageAlerts.recoveredAt, recoveredSince),
+            ),
+          ),
+        );
+      return rows.filter(readable).map((row) => toStored(row).alert);
     },
 
     // UNIT_BOUNDARY_DESCRIPTION: writes the next alert only if nobody wrote one since it was read, and says whether this caller won. A message goes out only after a won claim, so two evaluations on two replicas never send the same message twice; a send that then fails is lost rather than repeated.

@@ -6,6 +6,7 @@ import { startAlertOnOutageSaga } from "./sagas/alert-on-outage.js";
 import {
   createOutageAlertsService,
   type AgentFacts,
+  type OutageAlertsService,
 } from "./services/outage-alerts-service.js";
 import {
   createUnattendedAgentsOn,
@@ -14,7 +15,10 @@ import {
   type UnattendedCandidate,
 } from "./services/unattended-agents.js";
 
+export type OutageAlertNotices = Pick<OutageAlertsService, "noticesFor">;
+
 export interface OutageAlertsModule {
+  notices: OutageAlertNotices;
   startSaga(): Subscription;
 }
 
@@ -46,5 +50,8 @@ export function composeOutageAlerts(deps: {
     brandName: deps.brandName,
     delayMs: deps.delayMs,
   });
-  return { startSaga: () => startAlertOnOutageSaga({ service }) };
+  return {
+    notices: service,
+    startSaga: () => startAlertOnOutageSaga({ service }),
+  };
 }
