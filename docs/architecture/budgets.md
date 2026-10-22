@@ -59,7 +59,14 @@ For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory
 One number therefore raises both kinds of agent for a user who has both.
 
 The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed ceiling is rejected rather than silently parsed to zero.
-UserBudgets are operator-managed (`kubectl`/GitOps); there is no self-service path.
+UserBudgets are operator-managed; there is no self-service path.
+A platform operator ([security-and-credentials](security-and-credentials.md#identity)) lists, sets, changes and removes them in the Operator tab of Settings or with `dam budget`, with no cluster access; `kubectl` and GitOps still work.
+The api-server writes the UserBudget for them, so the controller keeps reading the one resource it enforces.
+A new budget names its user by email, which the api-server looks up in Keycloak; an existing one can also be named by the user's id, so a typo never creates a budget for nobody.
+A change sets only the fields it names, a field taken back to the default is dropped from the spec, and a budget left with no field is deleted.
+Each write records the operator and the time on the UserBudget's annotations (`agent-platform.ai/budget-set-by`, `agent-platform.ai/budget-updated-at`), and the api-server logs it with the sizes before and after (`budgets.user_budget_changed`); a budget written with `kubectl` has no such record and shows as set outside the platform.
+The list is found, sorted and paged by the api-server, so the screen asks for one page at a time and the identity directory is asked for that page's emails alone; a search by part of an email asks Keycloak which users match.
+Each row carries what the user's container agents reserve now, counted the same way as the user's own meter.
 Role-based budgets and approval flows are out of scope — when they arrive, richer policy in the api-server will *materialize* its results as UserBudget CRs, and the controller's contract stays a dumb numeric invariant.
 
 ## Enforcement

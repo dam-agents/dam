@@ -330,6 +330,7 @@ The screens:
   Its Spend ceilings section gives the default ceiling, then each user with a ceiling of their own: the amount, the operator who set it last, and when.
   An operator sets a ceiling by the user's email, changes one, or removes one after a confirmation.
   An email that no user has shows its error in the dialog.
+  The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-ceiling)).
 - **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
   Its help text gives the local time at which a day starts.
   The date range under the total starts at T when the period starts before T.

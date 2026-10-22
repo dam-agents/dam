@@ -2,7 +2,9 @@ export {
   composeBudgetsModule,
   composeSpawnSizeGate,
   composeStorageGate,
+  composeUserBudgetsAdmin,
 } from "./compose.js";
+export type { UserBudgetsForOperator } from "./services/user-budgets-admin.js";
 export {
   SizeNeverFitsError,
   type SpawnSizeGate,

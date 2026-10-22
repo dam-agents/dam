@@ -1,7 +1,10 @@
 import type { AgentsService } from "./modules/agents/types.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
-import type { BudgetsService } from "./modules/budgets/types.js";
+import type {
+  BudgetsService,
+  UserBudgetsService,
+} from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type {
@@ -97,6 +100,7 @@ export interface ApiContext {
   satellites: SatellitesService;
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
+  userBudgets: UserBudgetsService;
   spend: SpendService;
   spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;
