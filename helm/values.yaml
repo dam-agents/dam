@@ -1424,8 +1424,8 @@ apiServer:
     # paid providers that one user's Agents may spend in a UTC day. At the
     # ceiling the gateway refuses the next model call and asks nothing. A
     # quoted decimal string with at most two decimals, e.g. "50" or "12.50";
-    # null turns the default ceiling off. A UserSpendLimit object overrides it
-    # for one user.
+    # null turns the default ceiling off. A platform operator overrides it for
+    # one user, with `dam spend ceiling` or in the Operator tab of Settings.
     defaultUserCeilingUsd: null
     # -- Operator prices: dollars per million tokens, and dollars per web
     # search (`webSearch`). They win over every other price. A row can add a
