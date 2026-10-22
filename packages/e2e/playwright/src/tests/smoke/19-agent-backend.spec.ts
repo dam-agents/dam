@@ -25,6 +25,7 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
+import { prScope } from "../../lib/scope.js";
 
 const markerPath = "e2e-backend-marker.txt";
 
@@ -252,7 +253,7 @@ test("keeps a file written to HOME", async () => {
   });
 });
 
-// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part. The vm lane runs this spec alone at the end of the suite, so there it fires the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron. The container lane runs it beside the rest of the suite and waits for the cron itself, so the scheduler's own fire stays covered.
+// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part. The vm lane runs this spec alone at the end of the suite, and a pull request runs a reduced set, so on both it fires the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron. The merge queue and the nightly run wait for the cron itself on the container lane, so the scheduler's own fire stays covered. The schedule's next occurrence is read either way: run-now delivers the trigger without moving the cron, and a cron that parses to nothing would show here as no next run.
 test("takes a scheduled fire", async () => {
   test.setTimeout(300_000);
   const task = `e2e-backend-schedule-${randomUUID()}`;
@@ -264,7 +265,7 @@ test("takes a scheduled fire", async () => {
     sessionMode: "fresh",
   });
   try {
-    if (laneBackend === "vm")
+    if (laneBackend === "vm" || prScope)
       await api.schedules.runNow.mutate({ id: schedule.id });
     await expect
       .poll(
@@ -276,13 +277,14 @@ test("takes a scheduled fire", async () => {
         },
         {
           timeout: 180_000,
-          intervals: [3_000],
+          intervals: [1_000, 2_000, 3_000],
           message: "the scheduled task never reached the agent",
         },
       )
       .toBe(true);
     const { status } = await api.schedules.get.query({ id: schedule.id });
     expect(status?.lastResult).toBe("success");
+    expect(status?.nextRun, "the cron scheduled no next run").toBeTruthy();
   } finally {
     await api.schedules.delete.mutate({ id: schedule.id });
   }

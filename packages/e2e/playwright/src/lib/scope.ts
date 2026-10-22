@@ -1,0 +1,2 @@
+// UNIT_BOUNDARY_DESCRIPTION: whether this is a pull request's reduced run. A pull request takes the specs that fail for real there and skips the waits a full run keeps; the merge queue and the nightly run take the full set on the same tree, so a wait skipped here is still proved before the change reaches main. The Playwright config reads it to pick the specs, and a spec reads it to tell a reduced run from a full one. It has no dependencies, so the config can import it.
+export const prScope = process.env.E2E_SCOPE === "pr";

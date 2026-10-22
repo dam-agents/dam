@@ -297,7 +297,7 @@ test("Sessions are listed newest first, and a turn moves its Session to the top"
     await row(oldest).click();
     await expect(row(oldest)).toHaveAttribute("data-active", "true");
     await setMockLongTurnReply(api, agentId, {
-      holdMs: 15_000,
+      holdMs: 8_000,
       tail: "order-long-tail",
     });
     await sendMessageToAgent(page, "order-working");
