@@ -437,4 +437,32 @@ describe("createPodSessionClient", () => {
     expect(errors.length).toBe(seenErrors);
     expect(dials.length).toBe(seenDials);
   }, 15_000);
+  /*
+   * TEST_SCENARIO: a live watch's read targets a pod that stops answering.
+   * The read must be bounded like a one-off read, so a capture cannot wait on
+   * it until the watch is released. The bound is stubbed so the test does not
+   * wait the real ten seconds.
+   */
+  it("bounds a live watch's read in time", async () => {
+    const bound = new AbortController();
+    const timeout = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockReturnValue(bound.signal);
+    const pods = createPodSessionClient(
+      "no-such-namespace.invalid",
+      () => {},
+      UnreachablePodSocket as unknown as typeof WebSocket,
+    );
+    const watch = pods.watchAgent("agent-gone", () => {});
+
+    try {
+      const read = watch.listSessions();
+      expect(timeout).toHaveBeenCalledWith(10_000);
+      bound.abort();
+      await expect(read).rejects.toThrow();
+    } finally {
+      watch.close();
+      timeout.mockRestore();
+    }
+  });
 });
