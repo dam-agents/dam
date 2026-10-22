@@ -184,11 +184,21 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: CurveBender's host is allowed as a host, and the
+ * key alone is narrowed to a pathPattern. The egress gate decides by a rule's
+ * host and path glob, so a credential's path scope grants nothing there: the
+ * gateway injects on `/v1/messages/count_tokens` under a `/v1/messages` scope,
+ * while the scope matches no rule and no provider scope for that path, and the
+ * call is refused as an unknown host. One entry says the host may be reached,
+ * the other which paths carry the key.
+ */
 function curveBenderContributions(
   pathPatterns?: readonly string[],
 ): Contribution[] {
   return [
     ...envContributions(curveBenderEnvMappings()),
+    { kind: "egress-allow", host: CURVE_BENDER_HOST },
     ...(pathPatterns ?? [undefined]).map((pathPattern): Contribution => ({
       kind: "egress-inject",
       host: CURVE_BENDER_HOST,

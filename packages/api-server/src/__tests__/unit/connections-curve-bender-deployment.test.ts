@@ -10,6 +10,10 @@ import {
 } from "api-server-api";
 
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import {
+  providerEgressScopes,
+  scopeCovers,
+} from "../../modules/connections/domain/provider-egress-scopes.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { configureLogger } from "../../core/logger.js";
 
@@ -193,6 +197,30 @@ describe("deployment CurveBender connection", () => {
 
     const personal = catalog.find((t) => t.id === "curve-bender")!;
     expect(injectionScopes(personal.contributions)).toEqual(["(every path)"]);
+  });
+
+  // TEST_SCENARIO: the egress gate decides by a rule's host and path glob, not by the credential's segment-boundary scope, so a path under one of the four (Claude Code's /v1/messages/count_tokens) has to be granted for the host itself; the key still rides only the four scopes, so the proxy's other routes stay keyless.
+  it("allows the host on every path while the key stays on the four", () => {
+    const deployment = buildCatalog({}, { curveBenderDeployment: true }).find(
+      (t) => t.id === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    )!;
+    expect(injectionScopes(deployment.contributions)).toEqual(ALLOWED_PATHS);
+    expect(deployment.contributions).toContainEqual({
+      kind: "egress-allow",
+      host: CURVE_BENDER_HOST,
+    });
+
+    const scopes = providerEgressScopes([
+      {
+        templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+        contributions: deployment.contributions,
+      },
+    ]);
+    const request = { host: CURVE_BENDER_HOST, port: 443, tls: true };
+    for (const path of ["/v1/messages/count_tokens", "/v1/messages?beta=true"])
+      expect(
+        scopes.some((scope) => scopeCovers(scope, { ...request, path })),
+      ).toBe(true);
   });
 
   // TEST_SCENARIO: a listing checks a settled connection by reading its Secret once, not once for the key and again for a CA CurveBender never has.
