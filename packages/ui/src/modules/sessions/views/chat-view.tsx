@@ -153,7 +153,6 @@ import {
 } from "../components/rewritable-message.js";
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
-import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SetupInstructionsCard } from "../components/setup-instructions-card.js";
 import {
   appSidePanelTabs,
@@ -1175,29 +1174,27 @@ export function ChatView() {
                     : null
             }
           />
-          {!hasPendingPermission && pickable && (
+          {!hasPendingPermission && (pickable || pendingPairAgent) && (
             <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
               <ChatColumn>
-                <SessionPairPicker
-                  {...pickable}
-                  open={pairPickerOpen}
-                  onOpenChange={setPairPickerOpen}
-                  onConnectProviders={() => setProvidersModal(true)}
-                  newLayout={newLayout}
-                />
-              </ChatColumn>
-            </div>
-          )}
-          {!hasPendingPermission && pendingPairAgent && (
-            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-              <ChatColumn>
-                <SessionPairPlaceholder
-                  agentId={pendingPairAgent}
-                  agentHarness={agentView?.harness}
-                  open={pairPickerOpen}
-                  onOpenChange={setPairPickerOpen}
-                  onConnectProviders={() => setProvidersModal(true)}
-                />
+                {pickable ? (
+                  <SessionPairPicker
+                    {...pickable}
+                    open={pairPickerOpen}
+                    onOpenChange={setPairPickerOpen}
+                    onConnectProviders={() => setProvidersModal(true)}
+                    newLayout={newLayout}
+                  />
+                ) : (
+                  <SessionPairPicker
+                    agentId={pendingPairAgent!}
+                    agentHarness={agentView?.harness}
+                    pending
+                    open={pairPickerOpen}
+                    onOpenChange={setPairPickerOpen}
+                    onConnectProviders={() => setProvidersModal(true)}
+                  />
+                )}
               </ChatColumn>
             </div>
           )}

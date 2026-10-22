@@ -52,6 +52,7 @@ import {
   harnessDisplayName,
   harnessOptions,
   modelProviderLabel,
+  pairLabel,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
@@ -66,32 +67,42 @@ import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 
-interface Props {
+interface CommonProps {
   agentId: string;
-  carried: readonly HarnessCapability[];
-  defaultHarness: string;
-  routed?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
   newLayout?: boolean;
 }
 
+type Props = CommonProps &
+  (
+    | { pending: true; agentHarness: string | undefined }
+    | {
+        pending?: false;
+        carried: readonly HarnessCapability[];
+        defaultHarness: string;
+        routed?: boolean;
+      }
+  );
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the harness, model and session settings a new
- * session starts on. In JanUI providers are not attached or disconnected
- * here: a Manage providers row leads to the agent's Providers page instead.
+ * session starts on, or, while the agent's harness list still loads, the pair
+ * it expects with a loader in place of the body. In JanUI providers are not
+ * attached or disconnected here: a Manage providers row leads to the agent's
+ * Providers page instead.
  */
-export function SessionPairPicker({
-  agentId,
-  carried,
-  defaultHarness,
-  routed = false,
-  open,
-  onOpenChange,
-  onConnectProviders,
-  newLayout = false,
-}: Props) {
+export function SessionPairPicker(props: Props) {
+  const {
+    agentId,
+    open,
+    onOpenChange,
+    onConnectProviders,
+    newLayout = false,
+  } = props;
+  const carried = props.pending ? [] : props.carried;
+  const routed = props.pending ? false : (props.routed ?? false);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
@@ -121,10 +132,19 @@ export function SessionPairPicker({
 
   const views = catalog?.harnesses ?? [];
   const harnessName = (name: string) => harnessDisplayName(name, views);
-  const names = carried.map((h) => h.name);
+  const names = props.pending
+    ? [props.agentHarness ?? catalog?.default].filter((h) => h !== undefined)
+    : carried.map((h) => h.name);
   const harnesses = harnessOptions(names, views);
+  const defaultHarness = props.pending
+    ? (names[0] ?? "")
+    : props.defaultHarness;
   const next = useNextSessionPair(agentId, names, defaultHarness);
-  const pair = next;
+  const pair =
+    next ??
+    (props.pending && names[0]
+      ? { harness: names[0], provider: null, model: null }
+      : null);
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
     pair?.harness ??
@@ -186,8 +206,40 @@ export function SessionPairPicker({
     ).then((ok) => ok && revoke(id));
   };
 
-  if (providers.loaded && providers.owned.length === 0)
+  const connections = props.pending ? providers.granted : providers.owned;
+  if (providers.loaded && connections.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
+
+  if (props.pending)
+    return (
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <SessionPairTrigger
+            harness={pair?.harness}
+            label={
+              pair
+                ? pairLabel(pair, catalog?.harnesses, providers.granted)
+                : undefined
+            }
+            aria-busy
+          />
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          aria-label="New session harness and model"
+          className="w-[340px] p-3 text-sm"
+        >
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 text-muted-foreground"
+          >
+            <Spinner size={12} className="text-muted-foreground" />
+            Loading models…
+          </span>
+        </PopoverContent>
+      </Popover>
+    );
 
   const provider = providers.granted.find((p) => p.id === pair?.provider);
   const label = !pair
