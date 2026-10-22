@@ -119,6 +119,10 @@ urls:
   # share host (no cookie, no sign-in, no app route there). Routed to the
   # api-server, which host-gates it onto the content app.
   content: "" # default: {scheme}://content.{domain}{:port}
+  # Environment addresses, with `{host}` where each address's
+  # `<endpoint>-<environment>` label goes. Only with `environments.domain`,
+  # whose host it must name: `{host}.<environments.domain>`.
+  environments: "" # default: {scheme}://{host}.{environments.domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.
@@ -202,6 +206,7 @@ environments:
   # -- Domain under which each Environment endpoint gets an address of its
   # own, `<endpoint>-<environment>.<domain>`: one wildcard DNS name and one
   # wildcard certificate cover them all. Empty: Environments get no addresses.
+  # Their URLs take `scheme` and `port` unless `urls.environments` sets them.
   domain: ""
   # -- Most Environments one agent may hold at once.
   maxPerAgent: 5

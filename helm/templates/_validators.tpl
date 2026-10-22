@@ -27,6 +27,28 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.controllerGatewayEgress" . -}}
 {{- include "platform.validate.featureModes" . -}}
 {{- include "platform.validate.monitoringNeedsTheCollector" . -}}
+{{- include "platform.validate.environmentsUrlNamesTheDomain" . -}}
+{{- end -}}
+
+{{/*
+The api-server takes the environments domain from the Environments URL, and
+the wildcard Ingress takes it from environments.domain. If the two differ,
+every address the Ingress sends to the api-server is one it does not know.
+*/}}
+{{- define "platform.validate.environmentsUrlNamesTheDomain" -}}
+{{- with .Values.urls.environments -}}
+{{- $domain := $.Values.environments.domain -}}
+{{- if not $domain -}}
+{{- fail "urls.environments needs environments.domain: the wildcard Ingress for the addresses is rendered only with a domain." -}}
+{{- end -}}
+{{- if not (regexMatch "^https?://" .) -}}
+{{- fail (printf "urls.environments must be a complete URL with its scheme, got %q." .) -}}
+{{- end -}}
+{{- $host := include "platform.url.host" . -}}
+{{- if ne $host (printf "{host}.%s" $domain) -}}
+{{- fail (printf "urls.environments must name the host {host}.%s (environments.domain), got %q." $domain .) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
