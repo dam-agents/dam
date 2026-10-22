@@ -139,7 +139,8 @@ export function SidebarRail({
             RAIL_SEPARATOR_SPACE,
           )}
         >
-          <span className="h-px w-6 bg-border" />
+          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline stands where the tree's Agents label stood, so it fades in as the rail arrives rather than appearing under a word that has gone. */}
+          <span className="h-px w-6 animate-in bg-border fade-in-0 duration-200 motion-reduce:animate-none" />
         </div>
         {agents.map((agent) => (
           <AgentTile

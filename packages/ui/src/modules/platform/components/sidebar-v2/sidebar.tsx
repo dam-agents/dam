@@ -69,7 +69,7 @@ export function SidebarV2() {
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
   useFocusTrap(navRef, over, railExpandTile);
-  const { contentExpanded, lagging, collapse } = useCollapseContent({
+  const { contentExpanded, moving, collapse } = useCollapseContent({
     expanded,
     animated: !resizing && !prefersReducedMotion(),
     target: navRef,
@@ -111,7 +111,7 @@ export function SidebarV2() {
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           resizing && "transition-none",
           !expanded && !over && "w-14 overflow-visible",
-          lagging && "overflow-hidden",
+          moving && "overflow-hidden",
         )}
         style={
           // UNIT_BOUNDARY_DESCRIPTION: the pane reaches one pixel into the right rail so its own right border lands on the bar's left border, rather than beside it, and the two read as one line.
@@ -135,6 +135,9 @@ export function SidebarV2() {
               }}
             />
             <SidebarContent
+              // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the tree keeps the width the pane has when it is open, so the narrowing pane uncovers the tree rather than reflowing it, and the Home row, the Agent rows and their buttons keep their places throughout.
+              style={moving ? { width } : undefined}
+              collapsing={moving && !expanded}
               onNavigate={over ? () => setOverlaid(false) : undefined}
             />
           </>

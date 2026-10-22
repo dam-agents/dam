@@ -52,11 +52,11 @@ it("keeps the tree until the width transition ends", () => {
   act(() => api.collapse());
   render(false);
   expect(api.contentExpanded).toBe(true);
-  expect(api.lagging).toBe(true);
+  expect(api.moving).toBe(true);
 
   endWidthTransition();
   expect(api.contentExpanded).toBe(false);
-  expect(api.lagging).toBe(false);
+  expect(api.moving).toBe(false);
 });
 
 // TEST_SCENARIO: a pane that animates nothing, because it was already at its width, still swaps, on the fallback timer.
@@ -68,12 +68,15 @@ it("swaps on its own when no transition ends", () => {
   expect(api.contentExpanded).toBe(false);
 });
 
-// TEST_SCENARIO: expanding shows the tree at once, and the width follows.
+// TEST_SCENARIO: expanding shows the tree at once, and the width follows, so the content keeps its width while it does.
 it("shows the tree at the start of an expand", () => {
   render(false);
   render(true);
   expect(api.contentExpanded).toBe(true);
-  expect(api.lagging).toBe(false);
+  expect(api.moving).toBe(true);
+
+  endWidthTransition();
+  expect(api.moving).toBe(false);
 });
 
 // TEST_SCENARIO: the user collapses and expands again before the animation ends: the tree stays, and the swap the collapse had waiting never lands.
@@ -81,15 +84,15 @@ it("survives a re-toggle mid-animation", () => {
   render(true);
   act(() => api.collapse());
   render(false);
-  expect(api.lagging).toBe(true);
+  expect(api.moving).toBe(true);
 
   render(true);
   expect(api.contentExpanded).toBe(true);
-  expect(api.lagging).toBe(false);
 
   endWidthTransition();
   act(() => vi.advanceTimersByTime(1000));
   expect(api.contentExpanded).toBe(true);
+  expect(api.moving).toBe(false);
 });
 
 // TEST_SCENARIO: a reader who asked for no motion gets the rail at once.
@@ -101,9 +104,10 @@ it("swaps at once when the collapse does not animate", () => {
   expect(api.contentExpanded).toBe(false);
 });
 
-// TEST_SCENARIO: a window too narrow for a pane, or a drag, collapses the pane without the user asking for an animation, and the rail shows at once.
+// TEST_SCENARIO: a window too narrow for a pane, or a drag, collapses the pane without the user asking for an animation: the rail shows at once and the content is free to follow the width.
 it("swaps at once when the pane collapses for another reason", () => {
   render(true);
   render(false);
   expect(api.contentExpanded).toBe(false);
+  expect(api.moving).toBe(false);
 });
