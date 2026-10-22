@@ -76,7 +76,6 @@ import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
-import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
@@ -109,6 +108,7 @@ import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
+import { processesBadgeTone } from "../../processes/lib/process-summary.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
@@ -220,7 +220,6 @@ export function ChatView() {
 
   useSessionUrlSync(selectedAgent);
 
-  useSyncRestartingAgents();
   const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
@@ -1276,6 +1275,7 @@ export function ChatView() {
               processes: {
                 count: runningProcesses.running,
                 label: `Processes, ${String(runningProcesses.running)} running`,
+                tone: processesBadgeTone(runningProcesses),
               },
             }),
           }}
@@ -1317,83 +1317,85 @@ export function ChatView() {
               .filter(Boolean)
               .join(" · ")}
           </h1>
-          <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
-            <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
-              <MobileMenuButton />
-              <span
-                aria-hidden
-                className={cn(
-                  "h-2 w-2 shrink-0 rounded-full",
-                  agentView && "hidden @max-[149px]:block",
-                  dotColor,
-                )}
-              />
-              <button
-                type="button"
-                onClick={handleConfigureSandbox}
-                aria-label={`Configure ${selectedAgentName ?? "agent"}`}
-                className="flex min-w-0 items-center gap-2"
-              >
-                {agentView && (
-                  <AgentAvatar
-                    name={agentView.name}
-                    avatar={agentView.avatar}
-                    size={28}
-                    mood={avatarMood(agentDisplay?.state, agentView)}
-                    className="@max-[149px]:hidden"
-                  />
-                )}
-                <span className="flex min-w-0 flex-col items-start text-left">
-                  <span className="max-w-full truncate text-sm font-bold text-foreground">
-                    {selectedAgentName}
-                  </span>
-                  {sessionView?.title && (
-                    <span className="max-w-full truncate text-2xs text-muted-foreground">
-                      {sessionView.title}
-                    </span>
+          {!newLayout && (
+            <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
+              <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
+                <MobileMenuButton />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    agentView && "hidden @max-[149px]:block",
+                    dotColor,
                   )}
-                </span>
-              </button>
-              {agentView && (
-                <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                  <RuntimeMigrationBadge
-                    agent={agentView}
-                    labelClassName="@max-[279px]:sr-only"
-                  />
-                </span>
-              )}
-            </div>
-            <div
-              data-chat-status
-              className="flex shrink-0 items-center gap-2 md:ml-auto"
-            >
-              <ChatHeaderStatus
-                selectedAgent={selectedAgent}
-                agents={agents}
-                busy={busy}
-                connectionState={connectionState}
-                sessionId={sessionId}
-                processesEnabled={processesEnabled}
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-1 md:hidden">
-              {processesEnabled && (
-                <ProcessesIndicator agentId={selectedAgent} />
-              )}
-              <SidePanelTabButtons
-                tabs={SIDE_PANEL_TABS.filter(
-                  ({ tab }) => tab === "artifacts" || tab === "files",
+                />
+                <button
+                  type="button"
+                  onClick={handleConfigureSandbox}
+                  aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                  className="flex min-w-0 items-center gap-2"
+                >
+                  {agentView && (
+                    <AgentAvatar
+                      name={agentView.name}
+                      avatar={agentView.avatar}
+                      size={28}
+                      mood={avatarMood(agentDisplay?.state, agentView)}
+                      className="@max-[149px]:hidden"
+                    />
+                  )}
+                  <span className="flex min-w-0 flex-col items-start text-left">
+                    <span className="max-w-full truncate text-sm font-bold text-foreground">
+                      {selectedAgentName}
+                    </span>
+                    {sessionView?.title && (
+                      <span className="max-w-full truncate text-2xs text-muted-foreground">
+                        {sessionView.title}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                {agentView && (
+                  <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
+                    <RuntimeMigrationBadge
+                      agent={agentView}
+                      labelClassName="@max-[279px]:sr-only"
+                    />
+                  </span>
                 )}
-                active={null}
-                onSelect={(tab) => {
-                  setSidePanelTab(tab);
-                  setMobileScreen("files");
-                }}
-                placement="top-bar"
-              />
-              <AppSidePanelButtons />
-            </div>
-          </header>
+              </div>
+              <div
+                data-chat-status
+                className="flex shrink-0 items-center gap-2 md:ml-auto"
+              >
+                <ChatHeaderStatus
+                  selectedAgent={selectedAgent}
+                  agents={agents}
+                  busy={busy}
+                  connectionState={connectionState}
+                  sessionId={sessionId}
+                  processesEnabled={processesEnabled}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-1 md:hidden">
+                {processesEnabled && (
+                  <ProcessesIndicator agentId={selectedAgent} />
+                )}
+                <SidePanelTabButtons
+                  tabs={SIDE_PANEL_TABS.filter(
+                    ({ tab }) => tab === "artifacts" || tab === "files",
+                  )}
+                  active={null}
+                  onSelect={(tab) => {
+                    setSidePanelTab(tab);
+                    setMobileScreen("files");
+                  }}
+                  placement="top-bar"
+                />
+                <AppSidePanelButtons />
+              </div>
+            </header>
+          )}
           <div className="empty:hidden">{notices}</div>
           {conversation}
         </SidePanelShell>

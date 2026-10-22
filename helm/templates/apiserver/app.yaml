@@ -281,6 +281,20 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- with dig "curveBenderDeployment" dict .Values.apiServer }}
+            {{- if or (dig "apiKeySecret" "name" "" .) .apiKey }}
+            - name: CURVE_BENDER_DEPLOYMENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if dig "apiKeySecret" "name" "" . }}
+                  name: {{ .apiKeySecret.name }}
+                  key: {{ .apiKeySecret.key | default "api-key" }}
+                  {{- else }}
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: CURVE_BENDER_DEPLOYMENT_API_KEY
+                  {{- end }}
+            {{- end }}
+            {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
             {{- if .Values.virtualization.enabled }}

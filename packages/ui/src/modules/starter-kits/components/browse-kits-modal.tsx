@@ -13,6 +13,7 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
 import { CATEGORY_LABEL } from "../lib/catalog-cards.js";
 import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
+import { KitLinkForm } from "./kit-link-form.js";
 
 const DEFAULT_KIT = {
   name: "Generalist",
@@ -157,6 +158,7 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
           )}
         </>
       )}
+      <KitLinkForm onOpenKit={onOpenKit} />
     </>
   );
 }

@@ -20,13 +20,18 @@ export function manualOrder<T>(
   const ranked = items.filter((item) => rank.has(idOf(item)));
   const rest = items.filter((item) => !rank.has(idOf(item)));
   ranked.sort((a, b) => rank.get(idOf(a))! - rank.get(idOf(b))!);
+  // UNIT_BOUNDARY_DESCRIPTION: an Agent the stored order does not name yet is one the user has just made, and it joins the list at its foot rather than pushing everything else down.
   rest.sort((a, b) => {
     const [atA, atB] = [createdAt(createdAtOf(a)), createdAt(createdAtOf(b))];
-    if (atA !== atB) return atA > atB ? -1 : 1;
+    if (atA !== atB) {
+      if (!Number.isFinite(atA)) return 1;
+      if (!Number.isFinite(atB)) return -1;
+      return atA < atB ? -1 : 1;
+    }
     const [idA, idB] = [idOf(a), idOf(b)];
     return idA < idB ? -1 : idA > idB ? 1 : 0;
   });
-  return [...rest, ...ranked];
+  return [...ranked, ...rest];
 }
 
 function capped(order: string[], shown: ReadonlySet<string>): string[] {

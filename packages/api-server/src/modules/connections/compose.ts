@@ -1,8 +1,10 @@
 import type { Db } from "db";
 import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   PLATFORM_LLM_TEMPLATE_ID,
   type ConnectionsService,
   type HarnessCatalog,
+  type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
@@ -33,13 +35,18 @@ import {
 } from "./domain/catalog.js";
 import {
   createConnectionsService,
-  type PlatformLlmConnections,
+  type ManagedProviderConnections,
 } from "./services/connections-service.js";
 import {
   createContributionFanOut,
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import { createSecretRequestsService } from "./services/secret-requests.js";
+import type {
+  PendingSecretRequest,
+  SecretRequestOutcome,
+} from "./domain/secret-request.js";
 import {
   providerEgressScopes,
   scopeCovers,
@@ -58,8 +65,14 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
 
+export interface SecretRequestStores {
+  pending: TtlStore<PendingSecretRequest>;
+  outcomes: TtlStore<SecretRequestOutcome>;
+}
+
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  secretRequestStores: SecretRequestStores;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
@@ -72,9 +85,11 @@ export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
   pendingFlowStore: TtlStore<PendingFlow>;
+  secretRequestStores: SecretRequestStores;
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
   platformProvider?: PlatformProviderEndpoint | null;
+  curveBenderDeployment?: boolean;
   e2eEnabled?: boolean;
 }
 
@@ -85,6 +100,7 @@ export function composeConnectionsAtBoot(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
       platformProvider: opts.platformProvider ?? null,
+      curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );
 
@@ -115,6 +131,7 @@ export function composeConnectionsAtBoot(
 
   return {
     templates,
+    secretRequestStores: opts.secretRequestStores,
     oauthEngine,
     githubAppEngine,
     s3CredentialProbe,
@@ -135,10 +152,14 @@ export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
   return createConnectionsRepository(db).listDistinctGrantAgentIds();
 }
 
-export function listPlatformConnectionOwners(db: Db): Promise<string[]> {
-  return createConnectionsRepository(db).listOwnersOfTemplate(
-    PLATFORM_LLM_TEMPLATE_ID,
+export async function listManagedConnectionOwners(db: Db): Promise<string[]> {
+  const repo = createConnectionsRepository(db);
+  const owners = await Promise.all(
+    [PLATFORM_LLM_TEMPLATE_ID, CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID].map((id) =>
+      repo.listOwnersOfTemplate(id),
+    ),
   );
+  return [...new Set(owners.flat())];
 }
 
 export function listConnectionTemplateIds(db: Db): () => Promise<string[]> {
@@ -202,8 +223,9 @@ export function composeConnectionsForOwner(opts: {
   platformProviderEnabled: () => Promise<boolean>;
   platformProviderKey: string | null;
   platformProviderCa: string | null;
+  curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
-}): ConnectionsService & PlatformLlmConnections {
+}): ConnectionsService & ManagedProviderConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
 
@@ -255,9 +277,31 @@ export function composeConnectionsForOwner(opts: {
     platformProviderEnabled: opts.platformProviderEnabled,
     platformProviderKey: opts.platformProviderKey,
     platformProviderCa: opts.platformProviderCa,
+    curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),
+  });
+}
+
+export function composeSecretRequestsForOwner(opts: {
+  ownerId: string;
+  db: Db;
+  uiBaseUrl: string;
+  stores: SecretRequestStores;
+  templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  connections: Pick<ConnectionsService, "createFromTemplate" | "update">;
+  agentName: (agentId: string) => Promise<string | null>;
+}): SecretRequestsService {
+  return createSecretRequestsService({
+    ownerId: opts.ownerId,
+    uiBaseUrl: opts.uiBaseUrl,
+    pending: opts.stores.pending,
+    outcomes: opts.stores.outcomes,
+    templates: opts.templates,
+    repo: createConnectionsRepository(opts.db),
+    connections: opts.connections,
+    agentName: opts.agentName,
   });
 }

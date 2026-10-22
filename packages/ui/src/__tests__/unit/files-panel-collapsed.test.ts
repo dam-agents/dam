@@ -24,6 +24,9 @@ vi.mock("../../modules/agents/agent-trpc.js", () => ({
   agentTrpc: vi.fn(),
   agentTrpcHttp: vi.fn(),
 }));
+vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
+  useNewLayout: () => false,
+}));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   agentLacksLiveUpdates: () => false,
   useAgentLacksLiveUpdates: () => false,

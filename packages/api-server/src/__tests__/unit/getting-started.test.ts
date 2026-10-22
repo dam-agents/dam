@@ -326,6 +326,34 @@ describe("unlock avatars saga", () => {
     );
   });
 
+  /** TEST_SCENARIO: the deployment connects its CurveBender for every user, so it finishes nothing on the checklist, while the user's own Connection still does. */
+  it("ignores the deployment's own CurveBender connection", async () => {
+    const ctx = start();
+    await ctx.service("u1").progress();
+
+    emit({
+      type: EventType.ConnectionCreated,
+      actorSub: "u1",
+      connectionKey: "cb",
+      templateId: "curve-bender-deployment",
+      kind: "oauth_app",
+    });
+    await settle();
+    expect((await ctx.service("u1").progress()).unlocks).toHaveLength(0);
+
+    emit({
+      type: EventType.ConnectionCreated,
+      actorSub: "u1",
+      connectionKey: "cb-mine",
+      templateId: "curve-bender",
+      kind: "oauth_app",
+    });
+    await settle();
+    expect(
+      (await ctx.service("u1").progress()).unlocks.map((u) => u.task),
+    ).toEqual(["create-connection"]);
+  });
+
   /** TEST_SCENARIO: removing a skill or a Slack bind with no known owner does not finish a task. */
   it("ignores an uninstall and a Slack bind without an owner", async () => {
     const { service } = start();

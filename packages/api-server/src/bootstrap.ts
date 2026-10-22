@@ -211,6 +211,7 @@ import {
   composeArtifactLibraryForOwner,
   composeShareAuth,
   composeShareRenderTokens,
+  composeShareBridge,
   composeShareViewer,
   createAgentApiPodClient,
   createByLinkHostGate,
@@ -239,6 +240,7 @@ import {
   createGitRefResolver,
   createKitUpstream,
   createKitUpdateReporter,
+  createLinkedKits,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
   parseKitRef,
@@ -295,12 +297,13 @@ import {
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
-  listPlatformConnectionOwners,
+  listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
+import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import {
   startPlatformProviderSaga,
-  sweepPlatformConnections,
+  sweepManagedConnections,
 } from "./modules/connections/sagas/platform-provider.js";
 import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
@@ -454,6 +457,19 @@ export async function bootstrap() {
   });
   const kitRefs = createGitRefResolver(kitGitHosts);
   const kitUpstream = createKitUpstream({ hosts: kitGitHosts, refs: kitRefs });
+  const scanKitSkills = async (gitUrl: string, ref: string, subPath: string) =>
+    (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+    }));
+  const kitSourceForEntry = (gitUrl: string, ref: string) =>
+    createGitCatalogSource(kitGitHosts, gitUrl, ref);
+  const linkedKits = createLinkedKits({
+    refs: kitRefs,
+    appVersion: config.appVersion,
+    scanSkills: scanKitSkills,
+    sourceForEntry: kitSourceForEntry,
+  });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(
       config.starterKitsCatalogs,
@@ -477,14 +493,9 @@ export async function bootstrap() {
     }),
     repo: resolvedCatalog,
     refs: kitRefs,
-    sourceForEntry: (gitUrl, ref) =>
-      createGitCatalogSource(kitGitHosts, gitUrl, ref),
+    sourceForEntry: kitSourceForEntry,
     appVersion: config.appVersion,
-    scanSkills: async (gitUrl, ref, subPath) =>
-      (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-      })),
+    scanSkills: scanKitSkills,
     avatar: {
       maxBytes: MAX_AVATAR_BYTES,
       store: (bytes, ownerSub) =>
@@ -554,42 +565,6 @@ export async function bootstrap() {
       ),
     namespace: config.namespace,
     brandName: config.brand.name,
-  });
-  const shareCookie = shareSessionCookie(config.shareBaseUrl);
-  const shareHostGate = createByLinkHostGate({
-    share: {
-      baseUrl: config.shareBaseUrl,
-      app: createShareHostApp({
-        auth: createShareAuthRoutes({
-          auth: shareAuth,
-          brandName: config.brand.name,
-          sessionCookie: shareCookie,
-        }),
-        viewer: createShareViewerApp({
-          viewer: shareViewer,
-          auth: shareAuth,
-          sessionCookie: shareCookie,
-          renderTokens: shareRenderTokens,
-          brandName: config.brand.name,
-          uiBaseUrl: config.uiBaseUrl,
-          contentBaseUrl: config.contentBaseUrl,
-        }),
-        kbMcp: composeKbShareServing({
-          db,
-          store: artifacts,
-          k8s: k8sClient,
-          grepDeadlineMs: config.kbShareGrepDeadlineMs,
-        }),
-      }),
-    },
-    content: {
-      baseUrl: config.contentBaseUrl,
-      app: createContentApp({
-        viewer: shareViewer,
-        renderTokens: shareRenderTokens,
-        shareBaseUrl: config.shareBaseUrl,
-      }),
-    },
   });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
@@ -777,6 +752,7 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    curveBenderDeployment: config.curveBenderDeployment !== null,
     platformProvider: config.platformProvider && {
       baseUrl: config.platformProvider.baseUrl,
       model: config.platformProvider.model,
@@ -790,6 +766,18 @@ export async function bootstrap() {
       "oauth:connections",
       OAUTH_FLOW_TTL_MS,
     ),
+    secretRequestStores: {
+      pending: createRedisTtlStore(
+        sharedRedis,
+        "connections:secret-request",
+        SECRET_REQUEST_TTL_MS,
+      ),
+      outcomes: createRedisTtlStore(
+        sharedRedis,
+        "connections:secret-request-outcome",
+        SECRET_REQUEST_TTL_MS,
+      ),
+    },
     operatorCredentials: {
       ...(config.defaultGithubClientId && config.defaultGithubClientSecret
         ? {
@@ -843,6 +831,7 @@ export async function bootstrap() {
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderCa: config.platformProvider?.ca ?? null,
+      curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
       platformProviderEnabled: async () =>
         (
@@ -926,8 +915,8 @@ export async function bootstrap() {
       ),
   );
   const platformProviderSub = startPlatformProviderSaga(connectionsServiceFor);
-  sweepPlatformConnections(
-    () => listPlatformConnectionOwners(db),
+  sweepManagedConnections(
+    () => listManagedConnectionOwners(db),
     connectionsServiceFor,
   ).catch((err: unknown) =>
     getLogger().error(
@@ -1322,6 +1311,62 @@ export async function bootstrap() {
       firePair: (agentId) => channelFirePair(agentId, "channel"),
     });
 
+  const agentApiPodClient = createAgentApiPodClient(config.namespace);
+  const shareBridge = composeShareBridge({
+    featureOn: async (owner) =>
+      (
+        await composeFeaturesForOwner({
+          db,
+          owner,
+          surface: "system",
+          modes: config.featureModes,
+        }).features.flags()
+      )["interactive-artifacts"],
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    agentApi: agentApiPodClient,
+    makeAcpClient,
+    spendHold: channelSpendHold,
+    attendance: turnAttendance,
+  });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
+  const shareHostGate = createByLinkHostGate({
+    share: {
+      baseUrl: config.shareBaseUrl,
+      app: createShareHostApp({
+        auth: createShareAuthRoutes({
+          auth: shareAuth,
+          brandName: config.brand.name,
+          sessionCookie: shareCookie,
+        }),
+        viewer: createShareViewerApp({
+          viewer: shareViewer,
+          auth: shareAuth,
+          sessionCookie: shareCookie,
+          renderTokens: shareRenderTokens,
+          brandName: config.brand.name,
+          uiBaseUrl: config.uiBaseUrl,
+          contentBaseUrl: config.contentBaseUrl,
+          shareBaseUrl: config.shareBaseUrl,
+          bridge: shareBridge,
+        }),
+        kbMcp: composeKbShareServing({
+          db,
+          store: artifacts,
+          k8s: k8sClient,
+          grepDeadlineMs: config.kbShareGrepDeadlineMs,
+        }),
+      }),
+    },
+    content: {
+      baseUrl: config.contentBaseUrl,
+      app: createContentApp({
+        viewer: shareViewer,
+        renderTokens: shareRenderTokens,
+        shareBaseUrl: config.shareBaseUrl,
+      }),
+    },
+  });
+
   const agentIcons =
     slackGatewayFactory && config.imgbbApiKey
       ? createImgbbAgentIcons({
@@ -1619,7 +1664,6 @@ export async function bootstrap() {
     },
   );
 
-  const agentApiPodClient = createAgentApiPodClient(config.namespace);
   const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
     composeArtifactLibraryForOwner({
       db,
@@ -2094,6 +2138,7 @@ export async function bootstrap() {
     harnessCatalog,
     starterKitsRepo: resolvedCatalog,
     kitUpstream,
+    linkedKits,
     firePair,
     reposService,
     apiKeysModule,
@@ -2148,6 +2193,7 @@ export async function bootstrap() {
     agentsRepo,
     templatesRepo,
     harnessCatalog,
+    firePair,
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     environmentsFor: environments.environmentsFor,

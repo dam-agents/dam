@@ -101,7 +101,7 @@ export function grantedProviderRefs(
       ? [
           {
             id: c.id,
-            name: providerName(type),
+            name: providerName(type, c.templateId),
             type,
             templateId: c.templateId,
           },

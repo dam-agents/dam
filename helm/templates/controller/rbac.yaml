@@ -109,9 +109,10 @@ rules:
     resources: ["pods/resize"]
     verbs: ["update", "patch"]
   # watch: a runner's pod becoming ready requeues that owner's vm agents.
+  # patch: a settled roll's annotations are cleared as one merge patch.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "update", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # A runner's release ConfigMap, from controllers before releases were named
   # over the machine API, is owner-refed to its Deployment with
   # blockOwnerDeletion, which admission only permits with this. Remove once

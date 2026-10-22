@@ -271,6 +271,7 @@ export type {
   KitUpdateChanges,
 } from "./modules/starter-kits/types.js";
 export {
+  LINKED_KIT_CATALOG,
   onboardingStepSchema,
   starterKitApplyInputSchema,
   starterKitCatalogSchema,
@@ -433,6 +434,8 @@ export {
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
   CURVE_BENDER_HOST,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  displayNameForTemplate,
   BOB_HOST,
   BOB_INFERENCE_PREFIX_REWRITE,
   PROVIDER_TEMPLATE_IDS,
@@ -568,6 +571,13 @@ export type {
   AgentConnections,
   AuthConfig as ConnectionAuthConfig,
   AuthKind as ConnectionAuthKind,
+  SecretRequestDestination,
+  SecretRequestField,
+  SecretRequestState,
+  SecretRequestStatus,
+  SecretRequestTicket,
+  SecretRequestView,
+  SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
   authConfig as connectionAuthConfigSchema,
@@ -584,6 +594,9 @@ export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
   ConnectionUpdateInput,
+  ConnectionRequestSecretInput,
+  SecretlessConnectionCreateInput,
+  SecretRequestSubmitInput,
 } from "./modules/connections/schemas.js";
 
 export {

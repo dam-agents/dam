@@ -85,10 +85,17 @@ Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
-A provider that cannot say leaves the key unverified; a provider with no check (Bedrock) leaves it unchecked.
+A provider that cannot say leaves the key unverified; a provider with no check (the CurveBender deployment's key, the built-in platform provider) leaves it unchecked.
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, the built-in platform provider excepted, which replaces each result, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
+A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
+The client hands the api-server every input except the secret and gets a single-use link that expires after ten minutes; the request lives in Redis and the link carries only a random id.
+The page and its submit run as the signed-in user and refuse a request another user made, so a link sent to someone else collects nothing.
+Before the user types, the page shows what the save will do — the template, the name, every host the secret is sent to with its header, the env vars agents see, and for a rotation the agents it is granted to — computed by the same builder the create runs, and it warns when a host is not one the template presets.
+The submit then runs the ordinary create or rotation, with its validation; a refused secret leaves the link usable until it expires.
+The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
+The page covers the static and minting kinds; OAuth needs no secret here.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
 A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it.
 A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action.
@@ -103,6 +110,7 @@ One per-Connection Secret holds the client secret, the current access token, and
 
 A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret.
 The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry.
+When GitHub refuses the mint or the installation read, the error names the input at fault — an App ID with no app behind it, a private key of another app, an installation the app does not have — from GitHub's status and message, so the user knows which value to fix.
 The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
 
 A **GitHub sign-in** made through a GitHub App holds a user token rather than an installation token, and narrows the same way: to one account the app is installed on, optionally further to chosen repositories and permissions there.
@@ -285,11 +293,12 @@ Every harness reaches the endpoint through the [Model Router](harness-config.md#
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.
 
-### App preset: IBM ETE LiteLLM CurveBender
+### App preset: CurveBender custom key
 
 A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude and GPT.
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
+This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `CurveBender custom key` so it cannot be confused with the deployment's, below.
 
 Work runs on GLM.
 Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
@@ -297,6 +306,24 @@ The endpoint's model list names models but does not describe them, so the Connec
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.
+
+### Deployment preset: CurveBender
+
+The same proxy, reached with a key the deployment provides instead of the user's.
+The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
+It is not behind a feature flag: where the key is set, every user has it.
+The Connection is the deployment's, managed exactly like the built-in preset's below — provisioned by the user's own Connection listing, following the deployment's key, removed when the deployment drops the key, and refused to the user's own create, update and delete.
+It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
+Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance.
+Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
+Each prefix is matched at a segment boundary, so `/v1/messagesX` is a path outside the scope, not a longer match ([credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
+One key serves every user, and the gateway's scope keeps it off the rest of the proxy: the management routes (`/key/*`, `/user/*`, `/spend/*`), where a key that outlives its Connection could be minted, the shared key's spend read, or the key deleted for everyone, and the shared-identity routes (`/v1/files`, `/v1/batches`, `/v1/vector_stores`, `/v1/assistants`, `/v1/threads`, `/v1/memory`, `/v1/mcp/*`, `/v1/traces`, …), where every user's agent would read what another stored under the one identity the key names.
+The chain carrying this path-scoped credential matches whole path segments and refuses an escaped slash, so `/v1/messages/../../key/generate` cannot step out of its scope (the rules are on [credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
+The user-keyed preset above keeps injecting on its host's every path, since the key is that user's own.
+Bob never reaches this Connection through the gateway: the Model Router folds Bob's compiled-in `/inference` prefix in the pod and calls `/v1/chat/completions`, so the deployment preset carries no `/inference` rewrite.
+The scope is not evidence that the key itself is limited: the operator must still mint the deployment's key for inference only, with LiteLLM `allowed_routes: ["llm_api_routes"]`, so a path the gateway does not know about cannot manage keys or reach another user's stored state.
+Calls are metered and attributed to the Connection that made them, and the key never reaches the agent or a browser.
+Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
 
 ### Built-in preset: platform LLM
 
@@ -330,6 +357,7 @@ Models an organization hosts in AWS Bedrock, authenticated with a **Bedrock API 
 Such a key authenticates as a bearer token on both the Bedrock and Bedrock Runtime APIs, so this is an ordinary header Connection: the gateway overwrites `Authorization` with `Bearer <key>` on the region's runtime host, and the agent holds only a placeholder in `AWS_BEARER_TOKEN_BEDROCK`.
 The region is a required input at connect time and decides that host — `bedrock-runtime.<region>.amazonaws.com` — so a Connection serves one region; it also lands in `AWS_REGION`.
 The key is injected on the region's control-plane host too, `bedrock.<region>.amazonaws.com`, which the Connection names in `AWS_ENDPOINT_URL_BEDROCK`: that is where the region's inference profiles are listed, so an agent is offered only models Bedrock can invoke there.
+The key check lists those profiles too, before the key is saved: Bedrock answers a wrong, malformed or expired key with a 403 that says so, which refuses it, and any other answer leaves it unverified, since a key may invoke models without the right to list profiles.
 An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).

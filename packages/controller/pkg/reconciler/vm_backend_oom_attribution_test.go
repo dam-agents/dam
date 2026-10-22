@@ -42,7 +42,9 @@ func hibernate(t *testing.T, r *AgentReconciler, name string) {
 	u.SetAnnotations(ann)
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, u, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", name))
+	down, err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", name)
+	require.NoError(t, err)
+	require.True(t, down)
 }
 
 // TEST_SCENARIO: the platform records activity on the agent, which is what a wake is read off, and leaves the reconcile to the caller.
@@ -133,6 +135,7 @@ func TestAParkedVictimKeepsTheKillAcrossAControllerRestart(t *testing.T) {
 	require.NoError(t, patchAgentAnnotations(ctx, r.dynamic, "test-agents", agent.Name, map[string]*string{
 		annRunnerOOMKill: new("containerd://dead@" + expired.UTC().Format(time.RFC3339Nano)),
 	}))
+	spendTheMemoryGrace(t, r, reReadAgent(t, r, agent.Name))
 	require.NoError(t, r.Reconcile(ctx, reReadAgent(t, r, agent.Name)))
 	assert.Equal(t, apiv1.ReasonOverBudget, agentPodReady(t, r, agent.Name).Reason, "a kill past its episode explains nothing")
 
@@ -165,6 +168,7 @@ func TestAnAgentNeverOnTheRunnerKeepsItsOwnReason(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
 	node.set(agent.Name, vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonOutOfCapacity, Message: "room for one of two machines"})
+	spendTheMemoryGrace(t, r, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.Equal(t, apiv1.ReasonOverBudget, agentPodReady(t, r, agent.Name).Reason)
 	machineEpisode(t, r, agent.Name, time.Time{}, time.Now().Add(-time.Hour))
@@ -492,6 +496,7 @@ func TestAnAgentCreatedAfterTheKillIsNotAVictim(t *testing.T) {
 	r, node, _ := setupVMReconciler(t, agent)
 	killTheRunnerForMemory(t, r, time.Now().Add(-time.Minute).Truncate(time.Second))
 	node.set(agent.Name, vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonOutOfCapacity, Message: "room for one of two machines"})
+	spendTheMemoryGrace(t, r, agent)
 	require.NoError(t, r.Reconcile(ctx, reReadAgent(t, r, agent.Name)))
 	assert.Equal(t, apiv1.ReasonOverBudget, agentPodReady(t, r, agent.Name).Reason, "an agent created after the kill")
 }

@@ -81,6 +81,7 @@ import {
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
   createTerminalSessionLookup,
+  nonClaudeModelEnv,
   sessionDirectoryEntries,
 } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -460,6 +461,10 @@ const terminalModelEnv = (lease: {
   return {
     ...unroutedProviderEnv(lease.harness),
     ...routerEnvOf(lease.harness),
+    ...nonClaudeModelEnv(
+      harnessManifests[lease.harness]?.modelRouter?.nonClaudeModelEnv,
+      [lease.model],
+    ),
     ...(lease.model !== null && {
       PLATFORM_MODEL: renderSessionModel(
         lease.model,
@@ -538,6 +543,9 @@ const {
           }),
           ...(manifest.harnessState && {
             harnessState: manifest.harnessState,
+          }),
+          ...(manifest.modelRouter?.nonClaudeModelEnv && {
+            nonClaudeModelEnv: manifest.modelRouter.nonClaudeModelEnv,
           }),
           sessionSettings: harnessConfig?.sessionSettings,
           catalog: harnessConfig?.catalog,

@@ -16,6 +16,7 @@ import { noticeStream } from "../../../core/notice-stream.js";
 import type { HarnessWork } from "../../acp/index.js";
 import {
   classifyProcesses,
+  isUserServiceManager,
   platformOwnPids,
   taskIdentity,
   type ProcessTree,
@@ -135,7 +136,8 @@ function withDescendants(
  * read finds the last scan stale, and whenever the harness side signals a
  * change to its Harness Tasks or to a waiting restart. Each scan is diffed with the last: Harness Tasks and
  * Detached Processes that are gone move to the finished history in the
- * processes runtime document. The document carries the boot id. On a new
+ * processes runtime document, which is read without a record of openrc's
+ * user-services manager that an older scan wrote. The document carries the boot id. On a new
  * boot, the rows the last scan saw running are recorded as ended by
  * hibernation, and the marks and overrides are dropped, since nothing outlives
  * one. The agent marks work with `platform-keep`; the user overrides any
@@ -437,7 +439,9 @@ export function createProcessesService(
       const { running } = await fresh();
       return {
         running,
-        finished: deps.document.read().finished,
+        finished: deps.document
+          .read()
+          .finished.filter((row) => !isUserServiceManager(row.command)),
         pendingRestart: deps.harnessWork.pendingRestart(),
         startupItems: listStartupItems(running),
       };

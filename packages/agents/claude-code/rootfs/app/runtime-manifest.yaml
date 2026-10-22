@@ -21,6 +21,12 @@ modelRouter:
   native:
     templates: [bedrock]
     models: [fable, opus, sonnet, haiku]
+  # Auto mode asks the server to check each action on the model call itself,
+  # and only a Claude model answers; a reply without the check makes Claude
+  # Code warn and pay for classifier calls of its own. A session whose model or
+  # subagent model is not Claude runs in a Claude process that does not ask.
+  nonClaudeModelEnv:
+    CLAUDE_CODE_AUTO_MODE_SERVER: "0"
 
 # Claude Code sets the session's id on every shell command it runs, the same
 # id the platform knows the session by; git records it in its trace, so a

@@ -22,6 +22,7 @@ import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
 import { holdBackEntry } from "../../platform/lib/back-entry.js";
+import { RIGHT_RAIL_W } from "../../platform/lib/sidebar-layout.js";
 import {
   maximizableView,
   shownSidePanelWidth,
@@ -34,7 +35,6 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 360;
 const SIDE_PANEL_BAR_W = 49;
-const SIDE_PANEL_TILE_BAR_W = 60;
 const LAYER_ABOVE_SELECTOR =
   '[role="dialog"], [role="alertdialog"], [role="menu"]';
 
@@ -83,7 +83,7 @@ export function SidePanelShell({
   children: ReactNode;
 }) {
   const tiles = useNewLayout();
-  const barW = tiles ? SIDE_PANEL_TILE_BAR_W : SIDE_PANEL_BAR_W;
+  const barW = tiles ? RIGHT_RAIL_W : SIDE_PANEL_BAR_W;
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
@@ -112,7 +112,10 @@ export function SidePanelShell({
 
   const sidePanelOpen = activeTab !== null;
   const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
-  const mobilePanelOpen = mobileOnPanel || (sidePanelOpen && dockedShown);
+  // UNIT_BOUNDARY_DESCRIPTION: under JanUI a tab is the whole of what the panel shows, so an open tab is what a narrow viewport lays over the page.
+  const mobilePanelOpen = tiles
+    ? sidePanelOpen
+    : mobileOnPanel || (sidePanelOpen && dockedShown);
   const maximizable = maximizableView(
     activeTab,
     dockedShown,
@@ -130,14 +133,58 @@ export function SidePanelShell({
       ? null
       : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
 
+  // UNIT_BOUNDARY_DESCRIPTION: which page the panel was opened beside, told apart from what the panel itself shows, so that going somewhere else from the rail ends a panel that had taken the screen.
+  const pageKey = useStore((s) =>
+    [
+      s.view,
+      s.selectedAgent ?? s.agentId ?? "",
+      s.sessionId ?? "",
+      s.settingsTab ?? "",
+      s.sandboxSection ?? "",
+      s.starterKitCatalog ?? "",
+      s.starterKitId ?? "",
+    ].join("|"),
+  );
+  const beside = useRef(pageKey);
   const closeMobilePanel = useCallback(() => {
     setSidePanelTab(null);
     setMobileScreen("chat");
   }, [setSidePanelTab, setMobileScreen]);
   const mobileOverlay = mobilePanelOpen && !desktop;
   useEffect(() => {
+    if (beside.current === pageKey) return;
+    beside.current = pageKey;
+    if (tiles && mobileOverlay) closeMobilePanel();
+  }, [pageKey, tiles, mobileOverlay, closeMobilePanel]);
+  useEffect(() => {
     if (!mobileOverlay) return;
+    const before = document.activeElement as HTMLElement | null;
     mobileBackRef.current?.focus();
+    // UNIT_BOUNDARY_DESCRIPTION: over the page the panel is the only thing to reach, so Tab stays inside it; the element that opened it gets the keyboard back when it closes.
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || e.defaultPrevented || layerAbove()) return;
+      const root = filePanelRef.current;
+      if (!root) return;
+      const items = [
+        ...root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((el) => el.offsetParent !== null);
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      if (!root.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onTab);
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (layerAbove()) return;
@@ -154,7 +201,9 @@ export function SidePanelShell({
     });
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onTab);
       releaseBackEntry();
+      before?.focus();
     };
   }, [mobileOverlay, closeMobilePanel]);
 
@@ -195,8 +244,14 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-chrome relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-          !mobilePanelOpen && "max-md:hidden",
+          "flex bg-chrome relative z-content",
+          tiles
+            ? mobilePanelOpen &&
+                "max-md:fixed max-md:inset-y-0 max-md:left-14 max-md:right-0 max-md:z-overlay"
+            : cn(
+                "max-md:fixed max-md:inset-0 max-md:z-overlay",
+                !mobilePanelOpen && "max-md:hidden",
+              ),
           sidePanelFills
             ? "md:flex-1 md:min-w-0"
             : sidePanelOpen && sidePanelW === null
@@ -223,7 +278,13 @@ export function SidePanelShell({
               "md:border-l md:border-border",
             )}
           >
-            <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+            <div
+              className={cn(
+                "flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3",
+                // UNIT_BOUNDARY_DESCRIPTION: JanUI's panel fills the screen beside its rail at a narrow width, so it keeps its own top bar with its X instead of a back button and a title of its own.
+                tiles ? "hidden" : "md:hidden",
+              )}
+            >
               <Button
                 ref={mobileBackRef}
                 variant="ghost"

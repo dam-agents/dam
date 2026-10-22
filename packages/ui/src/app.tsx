@@ -9,7 +9,9 @@ import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentsList } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
@@ -77,7 +79,12 @@ export default function App() {
   useBrowserHistory();
 
   useEffect(() => {
-    if (view === "terms" || view === "telegram-bind" || view === "slack-bind")
+    if (
+      view === "terms" ||
+      view === "telegram-bind" ||
+      view === "slack-bind" ||
+      view === "connection-secret"
+    )
       document.title = documentTitle(
         { view, settingsTab: "account" },
         {},
@@ -108,6 +115,7 @@ export default function App() {
         <DialogOverlay />
       </>
     );
+  if (view === "connection-secret") return <ConnectionSecretView />;
   if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }
@@ -143,6 +151,7 @@ function MainApp() {
   }, [newLayout]);
 
   useLiveEvents();
+  useSyncRestartingAgents();
   useDocumentTitle();
   useAgentCrashToasts();
   useApprovalToasts();
@@ -201,7 +210,8 @@ function MainApp() {
             tabIndex={-1}
             className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
-            {!desktop && (
+            {/* UNIT_BOUNDARY_DESCRIPTION: JanUI's rail is the whole of the navigation and its right rail the whole of the panel, so the bar that stands in for both on a phone has nothing left to do there. */}
+            {!desktop && !newLayout && (
               <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
             <div

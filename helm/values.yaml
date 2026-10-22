@@ -412,8 +412,11 @@ virtualization:
     # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
     # pod rolls instead, and that roll does not wait for a busy agent, so the
     # fix reaches every machine within the roll rather than after `idleWait`.
-    # The key covers the pod's loader too, which a hand-off never replaces:
-    # only the pod's image carries it.
+    # The key covers what a machine booted alone: a release that changes only
+    # the pod's runner or its loader keeps the key before it and is taken in
+    # place. The loader travels in the release too, and the pod becomes it, so
+    # only the release that first ships a loader able to do that declares a key
+    # of its own, and that roll is what delivers it.
     # A pod built from a release that declares no key takes the release in
     # place, since there is nothing to compare it with.
     # A roll for a changed pod shape keeps its idle wait. A runner that
@@ -436,17 +439,22 @@ virtualization:
       stalledTimeout: 30m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
-    # release this chart's runner image carries: the runner and the two guest
-    # binaries it hands every machine. Required with runner pods. A runner
-    # pod keeps the image it was created with, and a new runner image reaches
+    # release this chart's runner image carries: the runner, the two guest
+    # binaries it hands every machine, and the loader above it. Required with
+    # runner pods. A runner pod keeps the image it was created with, and a
+    # new runner image reaches
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
     # the new one from this directory, and the new runner adopts every
     # machine still running, so no machine reboots, unless the release
     # declares a reboot key the pod it reaches does not run, which rolls the
     # pods to reboot the machines, while a pod whose own release declares no
-    # key takes it in place. A release built against another VM runtime
-    # (a new smolvm, libkrun or crane) brings its runtime along: machines
+    # key takes it in place. A release that carries another loader makes the
+    # pod's loader become it before it starts the release's runner, so a
+    # release that changes only the loader reaches the pods in place; a
+    # release's loader that cannot start leaves the pod on the loader and the
+    # release it has, held as failed. A release built against another VM
+    # runtime (a new smolvm, libkrun or crane) brings its runtime along: machines
     # already running keep the runtime they booted, and machines started after
     # the hand-off boot the new one. A release the pod's loader cannot load (a
     # newer base image's libc) rolls the pods through `rollout` too, as does
@@ -1221,6 +1229,25 @@ apiServer:
     caConfigMap:
       name: ""
       key: ""
+  # -- CurveBender offered to every user of this install, called with the
+  # deployment's key instead of one each user enters. An empty key offers no
+  # shared CurveBender: the provider exists only where a key does, and every
+  # user otherwise connects their own. Name an existing Secret in the release
+  # namespace in `apiKeySecret`, or set `apiKey` from a secret values layer,
+  # which lands in the chart's credentials Secret. The api-server reads the key
+  # at start, so after rotating it in an existing Secret restart the api-server;
+  # it then rewrites the copy each user's Connection holds. Calls are metered
+  # per user like any other provider. The gateway injects it on four path
+  # prefixes alone -- /v1/models, /v1/messages, /v1/chat/completions and
+  # /v1/responses, each at a segment boundary -- so the proxy's management and
+  # shared-state routes are outside its scope, but that scope is no proof the
+  # key is limited: mint it for inference only, with LiteLLM
+  # `allowed_routes: ["llm_api_routes"]`.
+  curveBenderDeployment:
+    apiKeySecret:
+      name: ""
+      key: api-key
+    apiKey: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}

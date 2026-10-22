@@ -161,7 +161,7 @@ func (r *AgentReconciler) startAnswer(a *apiv1.Agent) (string, bool) {
 		return reason, true
 	}
 	ready := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionReady)
-	if ready != nil && (ready.Reason == apiv1.ReasonOverBudget || ready.Reason == apiv1.ReasonAwaitingAllocation || ready.Reason == apiv1.ReasonAwaitingWarmUp || ready.Reason == apiv1.ReasonAllocationUnreadable) {
+	if ready != nil && (ready.Reason == apiv1.ReasonOverBudget || ready.Reason == apiv1.ReasonAwaitingAllocation || ready.Reason == apiv1.ReasonAwaitingWarmUp || ready.Reason == apiv1.ReasonAwaitingMemory || ready.Reason == apiv1.ReasonAllocationUnreadable) {
 		return ready.Reason, true
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the status carries the runner's reason, except that a full home is published as HomeVolumeFull, since the page and the UI name a volume rather than the runner's word for it.
@@ -171,10 +171,10 @@ func (r *AgentReconciler) startAnswer(a *apiv1.Agent) (string, bool) {
 	return "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget, or the reason that a start waits for the wave its owner's runner is bringing back — and one it refused for storage or for a full home leaves the Agent awake with no machine. Each holds nothing until a retry gets it running, so the demand leaves it out.
+// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget, or the reason that a start waits for the wave its owner's runner is bringing back, or the one that says a reclaim is freeing the room it lacks — and one it refused for storage or for a full home leaves the Agent awake with no machine. Each holds nothing until a retry gets it running, so the demand leaves it out.
 func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
 	reason, recorded := r.startAnswer(a)
-	return recorded && (refusedReason(reason) || reason == apiv1.ReasonOverBudget || reason == apiv1.ReasonAwaitingWarmUp || reason == apiv1.ReasonHomeVolumeFull)
+	return recorded && (refusedReason(reason) || reason == apiv1.ReasonOverBudget || reason == apiv1.ReasonAwaitingWarmUp || reason == apiv1.ReasonAwaitingMemory || reason == apiv1.ReasonHomeVolumeFull)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node holds nothing either, but it is not refused: its room is what the resize request has to grow by, so the demand counts it. Only a reclaim leaves it out, because the room it waits for is not in use by it, and hibernating it frees nothing while ending the start that was waiting.

@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -50,6 +50,8 @@ The Session's settings follow only its model: once the settings or the spawn nam
 A set harness binds: a spawn naming another is refused, and a spawn naming neither harness nor image gets it; a set model, mode or config option outranks the spawn's, and the result names what the settings set.
 The Session's harness supplies its model and each setting its harness binds, except model-valued ones, ones for the harness's own subagents, and a choice its catalog marks as waiting for a person's approval, since nobody is there to give one.
 A spawn on an image alone keeps its own choices, and a script spawn has no Session, so neither binds nor inherits.
+A script spawn that names no model takes the Driver's saved chat default instead, when that default runs on the harness the spawn names: the owner chose that model, so the sub-agent runs on it rather than being refused.
+A spawn on another harness, or from a Driver with no default model, is still refused, telling the script to name a model.
 A Session whose settings cannot be read refuses the spawn rather than run it without them; a Session the runtime does not track has none.
 The driver SDK's spawn route takes the same provider-qualified names, folds Claude Code's `claude/` spelling, and refuses a bare or tier name as a bad request.
 The sub-agent inherits the driver's Connection of the provider its model names, or the first in its harness's home order when it names none.

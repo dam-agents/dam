@@ -7,6 +7,8 @@ import (
 	"sort"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -119,20 +121,20 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: stop counting, under the owner's lock: the next
 // UNIT_BOUNDARY_DESCRIPTION: reclaim sees the room already freed instead of
 // UNIT_BOUNDARY_DESCRIPTION: choosing and counting the same agents again.
-func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, need func() (int, error), partial bool) (bool, error) {
+func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, need func() (int, error), partial, forRefusedStart bool) (int, error) {
 	if owner == "" {
-		return false, nil
+		return 0, nil
 	}
 	lock := r.ownerLock(owner)
 	lock.Lock()
 	defer lock.Unlock()
 	needMiB, err := need()
 	if err != nil || needMiB <= 0 {
-		return false, err
+		return 0, err
 	}
-	candidates, err := r.reclaimableAgents(ctx, self, owner)
+	candidates, err := r.reclaimableAgents(ctx, self, owner, forRefusedStart)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].idleSince.Before(candidates[j].idleSince) })
 	var chosen, silent []reclaimCandidate
@@ -166,10 +168,10 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		}
 	}
 	if len(chosen) == 0 || left > 0 && !partial {
-		return false, nil
+		return 0, nil
 	}
 	r.noteFreedUnderPressure(owner)
-	return true, r.hibernateReclaimed(ctx, chosen, owner, self, why)
+	return r.hibernateReclaimed(ctx, chosen, owner, self, why)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long after its runner pod started an owner's
@@ -345,7 +347,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 			return r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), nil
 		}
 		return 0, nil
-	}, pressure != nil)
+	}, pressure != nil, false)
 	if err != nil {
 		slog.WarnContext(ctx, "vm memory: reclaiming under pressure", "owner", owner, "error", err)
 	}
@@ -364,21 +366,44 @@ func roundedMiB(mib int) int {
 	return (mib + memoryRequestStepMiB - 1) / memoryRequestStepMiB * memoryRequestStepMiB
 }
 
-func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []reclaimCandidate, owner, forName, why string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+// UNIT_BOUNDARY_DESCRIPTION: puts the agents a reclaim chose to sleep, and answers how many of them it did. The idle probe they were chosen on takes time, and the api-server writes pins and activity without taking the owner's lock, so each victim is read again just before its stamp: one that gained a pin, fresh activity, a stop request or a migration since selection is left running, and so is one whose version moved between that read and the stamp. The other victims are still reclaimed, since the room the start needs is freed by whichever of them holds it. The count is what the caller counts as room made even when a later one fails: a failure stops the loop, so the agents it did hibernate are the side effects the retry finds and the ones it did not are the work a later pass repeats. A victim whose stop was accepted and whose gateway is down counts even when the status write that publishes it failed, because that room is freed and the next pass cannot choose it again; one it skipped counts nothing, since it still holds its room.
+func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []reclaimCandidate, owner, forName, why string) (int, error) {
+	now := r.clockNow().UTC()
+	stamp := now.Format(time.RFC3339Nano)
+	hibernated := 0
 	for _, c := range chosen {
-		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
-			return err
+		live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, c.name, metav1.GetOptions{})
+		if err != nil {
+			return hibernated, fmt.Errorf("re-reading reclaimed agent %s: %w", c.name, err)
+		}
+		peer, err := FromCacheObject[apiv1.Agent](live)
+		if err != nil {
+			return hibernated, err
+		}
+		if _, ok := reclaimEligible(peer, effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase), now, r.reclaimFloor(peer, now, c.forRefusedStart)); !ok {
+			slog.InfoContext(ctx, "left an agent running: it stopped being idle while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
+			continue
+		}
+		if err := r.stampReclaimed(ctx, c.name, stamp, live.GetResourceVersion()); err != nil {
+			if apierrors.IsConflict(err) {
+				slog.InfoContext(ctx, "left an agent running: it changed while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
+				continue
+			}
+			return hibernated, err
 		}
 		if c.vmMiB > 0 {
 			r.vmRunning.Store(c.name, false)
 		}
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name); err != nil {
-			return err
+		down, err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name)
+		if down {
+			hibernated++
+		}
+		if err != nil {
+			return hibernated, err
 		}
 		slog.InfoContext(ctx, why, "agent", c.name, "for", forName, "owner", owner, "idleFor", time.Since(c.idleSince).Round(time.Second))
 	}
-	return nil
+	return hibernated, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the owner reads while a start waits for the node: it is not their memory that is gone, so the message says what the platform is doing about it rather than quote a pool that has room. Where the node has deferred or refused the resize the controller frees that room from their idle agents itself, and the sentence stays true: the machine starts once the node grants what it holds.
@@ -394,6 +419,16 @@ const vmAwaitingAllocationMessage = "Your VM agent is waiting for the node to gr
 // UNIT_BOUNDARY_DESCRIPTION: platform waits rather than a promise of when the start runs.
 const vmAwaitingWarmUpMessage = "Your VM agents are still starting up after their runner restarted, so this one waits for them to settle instead of putting one of them to sleep. It starts on its own once room frees up."
 
+// UNIT_BOUNDARY_DESCRIPTION: what the owner reads while a start refused for room is
+// UNIT_BOUNDARY_DESCRIPTION: waited for rather than refused: the platform has already
+// UNIT_BOUNDARY_DESCRIPTION: put one of their idle agents to sleep for it, and that
+// UNIT_BOUNDARY_DESCRIPTION: machine's memory frees as it stops. Nothing is the
+// UNIT_BOUNDARY_DESCRIPTION: owner's to do, so the sentence names what the platform
+// UNIT_BOUNDARY_DESCRIPTION: is doing, and the wait ends as a refusal with
+// UNIT_BOUNDARY_DESCRIPTION: vmMemoryFullMessage once nothing has freed room for it
+// UNIT_BOUNDARY_DESCRIPTION: inside memoryReclaimWait.
+const vmAwaitingMemoryMessage = "Your VM agents' memory is full, so an idle agent of yours is being put to sleep to make room. This one starts on its own in a moment."
+
 // UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for memory frees the
 // UNIT_BOUNDARY_DESCRIPTION: room it lacks from the owner's idle agents, and
 // UNIT_BOUNDARY_DESCRIPTION: the parked retry starts it once their machines
@@ -402,8 +437,13 @@ const vmAwaitingWarmUpMessage = "Your VM agents are still starting up after thei
 // UNIT_BOUNDARY_DESCRIPTION: pool refused, and what the node holds for the
 // UNIT_BOUNDARY_DESCRIPTION: runner for one the node has not granted, where the
 // UNIT_BOUNDARY_DESCRIPTION: pool has room and its figure would free nothing.
-func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string, boundMiB func() (int, error)) error {
-	_, err := r.reclaimRunnerMemory(ctx, owner, agent.Name, func() (int, error) {
+// UNIT_BOUNDARY_DESCRIPTION: It answers how many agents it put to sleep, which is what
+// UNIT_BOUNDARY_DESCRIPTION: tells the caller the start is waiting for room it has
+// UNIT_BOUNDARY_DESCRIPTION: already freed rather than refused for room nothing gave,
+// UNIT_BOUNDARY_DESCRIPTION: and counts them past a later agent's failure: that agent's
+// UNIT_BOUNDARY_DESCRIPTION: Hibernate did not happen, the ones before it did.
+func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string, boundMiB func() (int, error)) (int, error) {
+	return r.reclaimRunnerMemory(ctx, owner, agent.Name, func() (int, error) {
 		bound, err := boundMiB()
 		if err != nil || bound <= 0 {
 			return 0, err
@@ -415,8 +455,7 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 		}
 		own := r.accountedMemoryMiB(ctx, owner, agent.Name, &agent.Spec)
 		return held.memoryMiB + own + r.config.VM.Runner.ReserveMiB - bound, nil
-	}, false)
-	return err
+	}, false, true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the refusal quotes the pool out of the same total Home shows, the runner's whole limit, and the room the start itself needs, since a start is refused for that need while the pool can still look half empty. A runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
@@ -442,6 +481,74 @@ func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.
 	}
 	return fmt.Sprintf("Your VM agents are using %.1f of %.1f GiB of memory, and starting this agent needs about %.1f GiB more, so it can't start yet. %s",
 		float64(min(demand.memoryMiB, limit))/1024, float64(pool)/1024, float64(max(with.memoryMiB-demand.memoryMiB, 0))/1024, next)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: when a reclaim last hibernated an agent for a refused
+// UNIT_BOUNDARY_DESCRIPTION: start, which is what makes that start wait instead of
+// UNIT_BOUNDARY_DESCRIPTION: reading as a refusal: the machine a reclaim hibernated
+// UNIT_BOUNDARY_DESCRIPTION: stops within seconds, so a start whose room was just
+// UNIT_BOUNDARY_DESCRIPTION: freed starts by itself. A reclaim that frees more room
+// UNIT_BOUNDARY_DESCRIPTION: moves the stamp, so a start that keeps needing room keeps
+// UNIT_BOUNDARY_DESCRIPTION: waiting while the owner's idle agents still cover it.
+// UNIT_BOUNDARY_DESCRIPTION: KNOWN CEILING: a start nothing freed room for inside the
+// UNIT_BOUNDARY_DESCRIPTION: window is a refusal again, a bound on how long the platform
+// UNIT_BOUNDARY_DESCRIPTION: waits rather than proof that no room can be freed: past it
+// UNIT_BOUNDARY_DESCRIPTION: the parked tick keeps retrying, and the message says what
+// UNIT_BOUNDARY_DESCRIPTION: frees the room.
+// UNIT_BOUNDARY_DESCRIPTION: The deadline is stamped on the Agent rather than kept beside
+// UNIT_BOUNDARY_DESCRIPTION: the reconciler: a controller restarted while a reclaimed
+// UNIT_BOUNDARY_DESCRIPTION: machine still stops has no idle agent left to choose, and
+// UNIT_BOUNDARY_DESCRIPTION: nothing in its memory would tell it that room was freed a
+// UNIT_BOUNDARY_DESCRIPTION: second before it started, so it would read the wait as a
+// UNIT_BOUNDARY_DESCRIPTION: refusal and fail a wake on memory already being handed back.
+// UNIT_BOUNDARY_DESCRIPTION: The stamp is the deadline, so a restart reads how long is
+// UNIT_BOUNDARY_DESCRIPTION: left rather than restarting the clock, and it stays out of
+// UNIT_BOUNDARY_DESCRIPTION: the activity and hibernation stamps: a start waiting for
+// UNIT_BOUNDARY_DESCRIPTION: room it freed is not a start someone asked for.
+const memoryReclaimWait = time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: the moment a start refused for room is given before the
+// UNIT_BOUNDARY_DESCRIPTION: refusal is read as the pool's, when no reclaim freed
+// UNIT_BOUNDARY_DESCRIPTION: anything: the page shows the loader first and the refusal
+// UNIT_BOUNDARY_DESCRIPTION: second, so a start that a machine going idle a few seconds
+// UNIT_BOUNDARY_DESCRIPTION: later would have fitted is not refused in the second it takes
+// UNIT_BOUNDARY_DESCRIPTION: the owner to read it. It is spent once per start, never
+// UNIT_BOUNDARY_DESCRIPTION: renewed, and a reclaim inside it takes over the wait with the
+// UNIT_BOUNDARY_DESCRIPTION: minute it earns.
+const memoryGraceWait = 20 * time.Second
+
+// UNIT_BOUNDARY_DESCRIPTION: a deadline whose write has not landed is still a deadline: the room it stamps was freed by a hibernation nothing can undo, so the wait is read from what is kept beside the reconciler until that write lands, and it is the deadline earned rather than a fresh minute, expiring on its own clock whether or not it ever lands.
+func (r *AgentReconciler) memoryWaiting(agent *apiv1.Agent) bool {
+	until := agent.Annotations[annMemoryWaitUntil]
+	if kept, ok := r.memoryWaitWrites.Load(agent.Name); ok {
+		until = kept.(string)
+	}
+	at, err := time.Parse(time.RFC3339, until)
+	return err == nil && r.clockNow().Before(at)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the retry of that same write, before this refusal is read as the pool's, so a write lost once costs another attempt rather than the start's wake. What it tried to write is kept until the wait itself ends, because the Agent the next reconcile reads may still be the one cached before the write landed.
+func (r *AgentReconciler) retryMemoryWait(ctx context.Context, name string) {
+	if until, ok := r.memoryWaitWrites.Load(name); ok {
+		_ = r.stampAnnotation(ctx, name, annMemoryWaitUntil, until.(string), "")
+	}
+}
+
+func (r *AgentReconciler) noteMemoryWait(ctx context.Context, name string) error {
+	until := r.clockNow().Add(memoryReclaimWait).UTC().Format(time.RFC3339)
+	err := r.stampAnnotation(ctx, name, annMemoryWaitUntil, until, "")
+	if err != nil {
+		r.memoryWaitWrites.Store(name, until)
+	}
+	return err
+}
+
+func (r *AgentReconciler) clearMemoryWait(ctx context.Context, agent *apiv1.Agent) error {
+	r.memoryWaitWrites.Delete(agent.Name)
+	if agent.Annotations[annMemoryWaitUntil] == "" {
+		return nil
+	}
+	return r.stampAnnotation(ctx, agent.Name, annMemoryWaitUntil, "", "")
 }
 
 func (r *AgentReconciler) beginMemoryPass(owner string) bool {

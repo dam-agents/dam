@@ -148,9 +148,10 @@ func TestHibernateAgentPair_ClearsRestarts(t *testing.T) {
 	restarts, _ := agentRestartStatus(t, r, "my-agent")
 	require.Equal(t, int64(3), restarts, "precondition: the count was published")
 
-	require.NoError(t, hibernateAgentPair(
+	_, err := hibernateAgentPair(
 		context.Background(), client, r.dynamic, nil, "", "test-agents", "my-agent",
-	))
+	)
+	require.NoError(t, err)
 
 	restarts, reason := agentRestartStatus(t, r, "my-agent")
 	assert.Zero(t, restarts)

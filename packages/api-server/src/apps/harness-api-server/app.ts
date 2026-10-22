@@ -54,7 +54,12 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
-import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
+import {
+  createDriverOps,
+  driverDefaultModel,
+  type DriverOpsDeps,
+} from "./driver-ops.js";
+import type { FirePair } from "../../modules/harness-config/index.js";
 import { createAgentImageReader } from "./agent-image.js";
 import {
   limitRequestBody,
@@ -92,6 +97,7 @@ export interface HarnessApiServerAppDeps {
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
   harnessCatalog: HarnessCatalog;
+  firePair: FirePair;
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
   environmentsFor: (owner: string) => EnvironmentsServiceImpl;
@@ -130,6 +136,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsRepo,
     templatesRepo,
     harnessCatalog,
+    firePair,
     artifactLibraryFor,
     agentsServiceFor,
     connectionsServiceFor,
@@ -243,6 +250,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     connectionsServiceFor,
     templates: templatesRepo,
     harnesses: harnessCatalog,
+    defaultModel: driverDefaultModel(firePair),
     budgetsFor: (owner) =>
       composeBudgetsModule({
         k8s: k8sClient,

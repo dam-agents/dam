@@ -4,11 +4,10 @@ import { BOB_HOST } from "api-server-api";
 import { createProviderKeyProbe } from "../../modules/connections/infrastructure/provider-key-probe.js";
 
 /**
- * TEST_OVERVIEW: the provider key probe asks the provider itself whether a
- * key works. Bob's key is tried on Bob's model list with the Apikey scheme
- * and a User-Agent naming Bob. Bob's own invalid-key 401 is a refusal; its
- * Cloudflare 403, a 5xx or a network error says nothing about the key and
- * comes back unverified. Bedrock has no check and stays unchecked.
+ * TEST_OVERVIEW: a Bob Shell key is tried on Bob's model list with the Apikey
+ * scheme and a User-Agent naming Bob. Bob's own invalid-key 401 is a refusal;
+ * its Cloudflare 403, a 5xx or a network error says nothing about the key and
+ * comes back unverified.
  */
 
 const BOB_INVALID_KEY = JSON.stringify({
@@ -73,15 +72,5 @@ describe("provider key probe for Bob", () => {
       ok: false,
       reason: "unverified",
     });
-  });
-
-  // TEST_SCENARIO: Bedrock has no key check, so its key is accepted unchecked without a request.
-  it("leaves a Bedrock key unchecked", async () => {
-    const calls = stubFetch(() => new Response("{}", { status: 200 }));
-    await expect(probe("bedrock")).resolves.toEqual({
-      ok: true,
-      unchecked: true,
-    });
-    expect(calls).toHaveLength(0);
   });
 });

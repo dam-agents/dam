@@ -16,6 +16,7 @@ const (
 	annStorageMigration           = "agent-platform.ai/storage-migration"
 	annStorageMigrationWasRunning = "agent-platform.ai/storage-migration-was-running"
 	annReclaimedAt                = "agent-platform.ai/reclaimed-at"
+	annMemoryWaitUntil            = "agent-platform.ai/memory-wait-until"
 	annSweepable                  = "agent-platform.ai/sweepable"
 )
 

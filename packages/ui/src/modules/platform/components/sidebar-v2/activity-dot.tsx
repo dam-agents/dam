@@ -41,7 +41,7 @@ export function ActivityDot({
       ) : tone === "draft" ? (
         <Pen size={12} aria-hidden className="text-muted-foreground" />
       ) : (
-        <span className={cn("size-2 rounded-full", DOT[tone])} />
+        <span className={cn("size-2.5 rounded-full", DOT[tone])} />
       )}
     </span>
   );

@@ -38,6 +38,7 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 		Reason:  vmrunner.ReasonOutOfCapacity,
 		Message: "this machine's 1024 MiB does not fit",
 	}
+	spendTheMemoryGrace(t, r, agent)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
@@ -51,17 +52,18 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
 }
 
-// TEST_SCENARIO: a start the node has not yet granted the memory for is refused under MachineAwaitingAllocation, which is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in the same reconcile, so the Agent is retried at the machine watch's 3 s cadence rather than at the parked tick, no idle agent is hibernated for room the node is already being asked for, and the person reads that their agent is waiting for the node rather than that their memory is gone.
+// TEST_SCENARIO: a start the node has not yet granted the memory for is refused under MachineAwaitingAllocation, which is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in the same reconcile, so the Agent is retried at the machine watch's 3 s cadence rather than at the parked tick, no idle agent is hibernated for room the node is already being asked for, and the person reads that their agent is waiting for the node rather than that their memory is gone. A start the pool itself refused frees that room from the owner's idle agents and reads as one waiting for room it has already freed, retried at the same cadence, since the machine a reclaim hibernated stops within seconds.
 func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
 		reason    string
 		published string
 		reclaimed bool
+		retried   bool
 		message   string
 	}{
-		{reason: vmrunner.ReasonAwaitingAllocation, published: apiv1.ReasonAwaitingAllocation, message: "waiting for the node"},
-		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonOverBudget, reclaimed: true, message: "can't start yet"},
+		{reason: vmrunner.ReasonAwaitingAllocation, published: apiv1.ReasonAwaitingAllocation, retried: true, message: "waiting for the node"},
+		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonAwaitingMemory, reclaimed: true, retried: true, message: "put to sleep to make room"},
 	} {
 		agent := vmAgentCR()
 		r, node, requeued := setupVMReconciler(t, agent)
@@ -107,8 +109,10 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 		assert.Equal(t, tc.reclaimed, hibernated > 0,
 			"%s: an idle agent is hibernated only when the owner's own memory is what the start lacks", tc.reason)
 		if !tc.reclaimed {
-			assert.Equal(t, vmReadinessPoll, requeued.last(), "retried at the machine watch's cadence, not at the parked tick")
 			assert.NotContains(t, cond.Message, "disable an agent", "nothing the owner disables frees memory the node has not granted")
+		}
+		if tc.retried {
+			assert.Equal(t, vmReadinessPoll, requeued.last(), "retried at the machine watch's cadence, not at the parked tick")
 		}
 	}
 }
@@ -224,6 +228,7 @@ func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
+	spendTheMemoryGrace(t, r, agent)
 	r.config.VM.Runner.HostAddress = "192.168.5.2"
 	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
 		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
@@ -235,6 +240,7 @@ func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
 		Reason:  vmrunner.ReasonOutOfCapacity,
 		Message: "this machine's 1024 MiB does not fit",
 	}
+	spendTheMemoryGrace(t, r, agent)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 

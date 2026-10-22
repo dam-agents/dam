@@ -50,6 +50,8 @@ export function documentTitle(
         return ["Connect Telegram"];
       case "slack-bind":
         return ["Connect Slack"];
+      case "connection-secret":
+        return ["Enter a secret"];
       case "analytics":
         return ["Usage analytics"];
       case "not-found":

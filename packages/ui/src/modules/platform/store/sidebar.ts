@@ -42,12 +42,12 @@ export interface SidebarSlice {
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgentOpen: Readonly<Record<string, boolean>>;
   setSidebarAgentOpen: (agentId: string, open: boolean) => void;
+  sidebarWakeDecided: ReadonlySet<string>;
+  setSidebarWakeDecided: (agentId: string, decided: boolean) => void;
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
   sidebarPinned: boolean;
   setSidebarPinned: (pinned: boolean) => void;
-  sidebarPeek: boolean;
-  setSidebarPeek: (peek: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -114,6 +114,15 @@ export const createSidebarSlice: StateCreator<
         ? {}
         : { sidebarAgentOpen: { ...s.sidebarAgentOpen, [agentId]: open } },
     ),
+  sidebarWakeDecided: new Set(),
+  setSidebarWakeDecided: (agentId, decided) =>
+    set((s) => {
+      if (s.sidebarWakeDecided.has(agentId) === decided) return s;
+      const next = new Set(s.sidebarWakeDecided);
+      if (decided) next.add(agentId);
+      else next.delete(agentId);
+      return { sidebarWakeDecided: next };
+    }),
   mobileNavOpen: false,
   setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
   sidebarPinned: readPersistedFlag(SIDEBAR_V2_PINNED_STORAGE_KEY, true),
@@ -121,6 +130,4 @@ export const createSidebarSlice: StateCreator<
     writePersistedFlag(SIDEBAR_V2_PINNED_STORAGE_KEY, pinned);
     set({ sidebarPinned: pinned });
   },
-  sidebarPeek: false,
-  setSidebarPeek: (peek) => set({ sidebarPeek: peek }),
 });

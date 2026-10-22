@@ -326,6 +326,10 @@ kits:
     await refresh.run();
     expect((await repo.list()).map((k) => k.kit.id).sort()).toEqual(["a", "b"]);
 
+    outcome = { status: "unreachable", unseen: true };
+    await refresh.run();
+    expect((await repo.list()).map((k) => k.kit.id).sort()).toEqual(["a", "b"]);
+
     outcome = { status: "absent" };
     await refresh.run();
     expect((await repo.list()).map((k) => k.kit.id)).toEqual(["a"]);

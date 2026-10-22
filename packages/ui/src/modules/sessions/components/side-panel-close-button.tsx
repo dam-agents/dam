@@ -2,6 +2,7 @@ import { Close } from "@carbon/icons-react";
 import { createContext, type ReactNode, useContext } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 
@@ -31,12 +32,21 @@ function ShownWhereItCloses({
  * actions. It closes the whole panel and hands focus to the rail's open tab,
  * which stays on screen; with no rail, as in the classic chat, to the top
  * bar's open tab, or to the main region; a phone hides it, because the full-screen panel
- * there has its own back button.
+ * there has its own back button, unless JanUI draws no such bar.
  */
 export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
+  // UNIT_BOUNDARY_DESCRIPTION: JanUI draws no bar of its own over a narrow panel, so its views keep the X; the layout is read off the root, which does not change without a reload.
+  const tiles =
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.layout === "new";
   return (
     <ShownWhereItCloses ownClose={onClose !== undefined}>
-      <div className="flex shrink-0 items-center self-stretch border-l border-border pl-2 max-md:hidden">
+      <div
+        className={cn(
+          "flex shrink-0 items-center self-stretch border-l border-border pl-2",
+          !tiles && "max-md:hidden",
+        )}
+      >
         <Button
           variant="ghost"
           size="icon-sm"

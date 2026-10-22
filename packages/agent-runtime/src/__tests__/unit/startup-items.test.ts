@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there; an open Environment Link, seen in the same scan, keeps the agent busy. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
+// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there; an open Environment Link, seen in the same scan, keeps the agent busy. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. openrc's own `user.root` supervisor, which runs openrc-user over those services, is no row at all: its processes go, its services are re-parented to the reaper in its place, and a history record of it is left out. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
 import {
   existsSync,
   mkdirSync,
@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { FinishedRow } from "agent-runtime-api";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { classifyProcesses } from "../../modules/processes/domain/classify.js";
 import { assembleInventory } from "../../modules/processes/domain/inventory.js";
@@ -33,6 +34,8 @@ import {
 import { createProcessesService } from "../../modules/processes/services/processes-service.js";
 
 const RUNTIME = 8;
+const USER_SERVICES_MANAGER =
+  "supervise-daemon user.root --start --retry TERM/60 --respawn-max 3 --respawn-period 5 --notify fd:3 /usr/lib/rc/bin/openrc-user -- root";
 const SUPERVISOR = (name: string) =>
   `supervise-daemon ${name} --start --chdir /home/agent/work /bin/sh -- -c serve`;
 
@@ -167,6 +170,89 @@ describe("Startup Item rows", () => {
         outputPath: "/home/agent/.local/state/rc/off.log",
       },
     ]);
+  });
+});
+
+describe("openrc's user-services manager", () => {
+  // TEST_SCENARIO: openrc's `user.root` service supervises openrc-user, which starts the agent's own services. The manager is no row at all — not in the list, the badge or the history — and the docker service it started is one Startup Item row, as it would be without the manager; a Detached Process beside it still lists.
+  it("drops the manager and lists its services as their own rows", () => {
+    const { trees, running, tracked, finished } = inventory([
+      proc(200, 1, USER_SERVICES_MANAGER),
+      proc(201, 200, "/usr/lib/rc/bin/openrc-user -- root"),
+      proc(300, 201, SUPERVISOR("docker"), "docker"),
+      proc(301, 300, "dockerd", "docker"),
+      proc(400, 1, "sleep 100"),
+    ]);
+
+    expect(running.map((row) => [row.pid, row.kind, row.command])).toEqual([
+      [300, "startup-item", "dockerd"],
+      [400, "detached", "sleep 100"],
+    ]);
+    expect(
+      trees.find((t) => t.key === "300:300")?.members.map((m) => m.pid),
+    ).toEqual([300, 301]);
+    expect(tracked.map((row) => row.command)).toEqual(["sleep 100"]);
+    expect(finished).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a history written before the manager was dropped kept a record of it; the list leaves it out, so the panel never shows work it no longer lists.
+  it("leaves a manager record the history kept out of the list", async () => {
+    const backend = createFileDocumentStoreBackend(
+      mkdtempSync(join(tmpdir(), "state-")),
+    );
+    const document = openProcessesDocument(backend);
+    const finished: FinishedRow = {
+      key: "200:200",
+      kind: "detached",
+      command: USER_SERVICES_MANAGER,
+      startedAt: "2024-01-01T00:00:00.000Z",
+      finishedAt: "2024-01-01T00:00:01.000Z",
+      endedBy: "exit",
+      outputPath: null,
+      keptAwake: false,
+      keepSource: "default",
+      container: null,
+    };
+    document.write({
+      bootId: "boot",
+      lastScanAt: null,
+      lastRunning: [],
+      finished: [
+        finished,
+        { ...finished, key: "400:400", command: "sleep 100" },
+      ],
+      marks: [],
+      overrides: [],
+    });
+    const processes = createProcessesService({
+      table: {
+        scan: async () => ({ scannedAt: Date.now(), processes: [] }),
+        bootId: async () => "boot",
+      },
+      document,
+      outputs: { tail: async () => null },
+      signals: { send: () => true },
+      keep: {
+        setKeptProcesses: () => {},
+        setOpenLinks: () => {},
+        taskKeepChanged: () => {},
+      } as never,
+      runtimePid: RUNTIME,
+      harnessWork: {
+        harnesses: () => [],
+        reportedTasks: () => [],
+        forgetTask: () => {},
+        pendingRestart: () => null,
+        applyPendingRestart: () => false,
+        onChange: () => {},
+      },
+      startupItems: { available: () => false } as never,
+      log: () => {},
+    });
+
+    expect((await processes.list()).finished.map((row) => row.command)).toEqual(
+      ["sleep 100"],
+    );
   });
 });
 

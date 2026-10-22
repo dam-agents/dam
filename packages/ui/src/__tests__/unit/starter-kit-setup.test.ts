@@ -37,10 +37,18 @@ const templates: TemplateIndex = new Map([
 
 const kit: Pick<
   StarterKitView,
-  "id" | "catalog" | "image" | "connections" | "seed" | "install"
+  | "id"
+  | "catalog"
+  | "image"
+  | "connections"
+  | "seed"
+  | "install"
+  | "link"
+  | "version"
 > = {
   id: "code-reviewer",
   catalog: "platform",
+  version: "abc123",
   image: undefined,
   seed: undefined,
   install: undefined,
@@ -150,6 +158,26 @@ describe("buildStarterKitApplyInput", () => {
       templates,
     );
     expect(input).not.toHaveProperty("slackChannelId");
+  });
+
+  // TEST_SCENARIO: a kit from a link is created from the commit its page showed, so the apply names the link and that commit; a catalog kit names no link at all.
+  test("names the link and the reviewed commit for a kit from a link", () => {
+    const commit = "c".repeat(40);
+    const linked = {
+      ...kit,
+      catalog: "link",
+      version: commit,
+      link: { url: "https://github.com/acme/shared-kit" },
+    };
+    expect(
+      buildStarterKitApplyInput(linked, complete, owned, templates),
+    ).toMatchObject({
+      catalog: "link",
+      link: { url: "https://github.com/acme/shared-kit", commit },
+    });
+    expect(
+      buildStarterKitApplyInput(kit, complete, owned, templates),
+    ).not.toHaveProperty("link");
   });
 
   test("refuses an incomplete draft", () => {

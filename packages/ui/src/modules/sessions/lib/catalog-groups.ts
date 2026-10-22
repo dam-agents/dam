@@ -53,7 +53,7 @@ export function modelGroups(
       .map((c) => ({
         connectionId: c.id,
         alias: aliasForProviderType(c.type),
-        displayName: providerName(c.type),
+        displayName: providerName(c.type, c.templateId),
         status: "unavailable" as const,
         listedAt: null,
         native: false,

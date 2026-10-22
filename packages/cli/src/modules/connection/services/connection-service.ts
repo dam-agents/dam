@@ -2,10 +2,13 @@ import type {
   ClusterCaProbe,
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
+  ConnectionRequestSecretInput,
   ConnectionTemplateView,
   ConnectionView,
   GitHubAppInstallationProbe,
   GitHubUserTokenProbe,
+  SecretRequestState,
+  SecretRequestTicket,
 } from "api-server-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
@@ -25,6 +28,12 @@ export interface ConnectionService {
     credential: ConnectionCredentialUpdate,
   ): Promise<ConnResult<void>>;
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
+  requestSecret(
+    input: ConnectionRequestSecretInput,
+  ): Promise<ConnResult<SecretRequestTicket>>;
+  secretRequestStatus(
+    requestId: string,
+  ): Promise<ConnResult<SecretRequestState>>;
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
   probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
@@ -82,6 +91,14 @@ export function createConnectionService(deps: {
     async startOAuth(connectionId) {
       return trpcCall(() =>
         deps.trpc.connections.startOAuth.mutate({ connectionId }),
+      );
+    },
+    async requestSecret(input) {
+      return trpcCall(() => deps.trpc.connections.requestSecret.mutate(input));
+    },
+    async secretRequestStatus(requestId) {
+      return trpcCall(() =>
+        deps.trpc.connections.secretRequestStatus.query({ requestId }),
       );
     },
     async discoverMcp(url) {

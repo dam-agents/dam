@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Connection } from "api-server-api";
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  type Connection,
+} from "api-server-api";
 
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -16,8 +19,9 @@ import { configureLogger } from "../../core/logger.js";
  * work; a provider that cannot be reached does not block the save. The result
  * and its time are kept on the connection and listed with it, and a recheck
  * probes every stored provider key again, records the new result, and logs a
- * refused or unverified one; a template with no model-list check is left
- * unchecked.
+ * refused or unverified one; a provider the deployment manages is never
+ * probed, so it keeps no check. A Bedrock key is checked in the region its
+ * Connection serves.
  */
 
 const logLines: string[] = [];
@@ -39,13 +43,16 @@ function makeService(
   const rows = new Map<string, Connection>();
   const secrets = new Map<string, Record<string, string>>();
   const probed: string[] = [];
+  const regions: (string | undefined)[] = [];
   const svc = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
     platformProviderEnabled: async () => false,
     platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner",
-    templates: createConnectionTemplateRegistry(buildCatalog()),
+    templates: createConnectionTemplateRegistry(
+      buildCatalog({}, { curveBenderDeployment: true }),
+    ),
     repo: unused<ConnectionsRepository>({
       insert: async (c) => void rows.set(c.id, c),
       get: async (id) => rows.get(id) ?? null,
@@ -70,8 +77,9 @@ function makeService(
     s3CredentialProbe: unused(),
     providerBalance: unused(),
     providerKeyProbe: {
-      probe: async (templateId, key) => {
+      probe: async (templateId, key, target) => {
         probed.push(`${templateId}:${key}`);
+        regions.push(target?.region);
         return outcomes[templateId] ?? outcome;
       },
     },
@@ -80,7 +88,7 @@ function makeService(
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: unused(),
   });
-  return { svc, rows, secrets, probed };
+  return { svc, rows, secrets, probed, regions };
 }
 
 const create = (svc: ReturnType<typeof makeService>["svc"]) =>
@@ -163,18 +171,20 @@ describe("provider key recheck", () => {
     expect(Date.parse(view!.keyCheck!.checkedAt)).not.toBeNaN();
   });
 
-  // TEST_SCENARIO: each stored provider key is probed again with the stored value, and the result per connection is ok, refused with the HTTP detail, unverified with its detail, or null for a template with no model-list check; the new result replaces the stored one.
+  // TEST_SCENARIO: each stored provider key is probed again with the stored value, and the result per connection is ok, refused with the HTTP detail or unverified with its detail; the new result replaces the stored one, and a provider the deployment manages is not probed and keeps no check.
   it("probes every stored provider key and records each result", async () => {
     const saved = makeService(
       { ok: true },
-      { bedrock: { ok: true, unchecked: true } },
+      { [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: { ok: true, unchecked: true } },
     );
     const anthropic = await connect(saved.svc, "anthropic-oauth", "sk-ant-oat");
     const openai = await connect(saved.svc, "openai", "sk-openai");
     const litellm = await connect(saved.svc, "ibm-litellm", "sk-litellm");
-    const bedrock = await connect(saved.svc, "bedrock", "bedrock-key", {
-      region: "us-east-1",
-    });
+    const deployment = await connect(
+      saved.svc,
+      CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      "sk-deployment",
+    );
 
     const later = makeService(
       { ok: true },
@@ -189,7 +199,7 @@ describe("provider key recheck", () => {
           reason: "unverified",
           detail: "HTTP 503",
         },
-        bedrock: { ok: true, unchecked: true },
+        [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: { ok: true, unchecked: true },
       },
     );
     for (const [id, row] of saved.rows) later.rows.set(id, row);
@@ -200,7 +210,6 @@ describe("provider key recheck", () => {
 
     expect(later.probed.sort()).toEqual([
       "anthropic-oauth:sk-ant-oat",
-      "bedrock:bedrock-key",
       "ibm-litellm:sk-litellm",
       "openai:sk-openai",
     ]);
@@ -213,7 +222,7 @@ describe("provider key recheck", () => {
       result: "unverified",
       detail: "HTTP 503",
     });
-    expect(byId.get(bedrock)).toBeNull();
+    expect(byId.get(deployment)).toBeUndefined();
 
     const views = new Map(
       (await later.svc.listConnections()).map((v) => [v.id, v.keyCheck]),
@@ -221,7 +230,7 @@ describe("provider key recheck", () => {
     expect(views.get(anthropic)?.result).toBe("refused");
     expect(views.get(litellm)?.result).toBe("unverified");
     expect(views.get(openai)?.result).toBe("ok");
-    expect(views.get(bedrock)).toBeUndefined();
+    expect(views.get(deployment)).toBeUndefined();
   });
 
   // TEST_SCENARIO: a refused or unverified recheck writes the same security log line the save path writes, naming the connection and the reason.
@@ -260,5 +269,23 @@ describe("provider key recheck", () => {
       check: { result: "refused", detail: "no key is stored" },
     });
     expect(saved.probed).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a Bedrock key is probed in the region its Connection serves, at save time and on recheck alike.
+  it("checks a Bedrock key in the connection's region", async () => {
+    const saved = makeService({ ok: true });
+    const id = await saved.svc.createFromTemplate({
+      templateId: "bedrock",
+      name: "bedrock",
+      authKind: "header",
+      value: "ABSK-key",
+      configInputs: { region: "eu-central-1" },
+    });
+    expect(saved.probed).toEqual(["bedrock:ABSK-key"]);
+    expect(saved.regions).toEqual(["eu-central-1"]);
+
+    const [result] = await saved.svc.recheckProviderKeys();
+    expect(result).toMatchObject({ connectionId: id, check: { result: "ok" } });
+    expect(saved.regions).toEqual(["eu-central-1", "eu-central-1"]);
   });
 });

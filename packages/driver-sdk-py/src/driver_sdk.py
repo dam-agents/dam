@@ -252,8 +252,9 @@ def spawn(
     offers (``{"effort": "low"}``). They are written before its first turn. A
     model the sub-agent's harness does not list on this agent is refused
     before anything is created; a setting the harness cannot apply fails the
-    spawn once the sub-agent boots. Omit them to run the template's
-    default."""
+    spawn once the sub-agent boots. Omit ``model`` to run on this agent's
+    default model, on the harness that default runs on; on any other
+    harness, or with no default, the spawn is refused."""
     if harness is None and image is None:
         raise ValueError("pass harness= (or image=)")
     if resources is not None and (memory is not None or cpu is not None):

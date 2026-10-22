@@ -94,14 +94,6 @@ function reachIn(
   return s.unreachableAgents.has(agentId) ? "unreachable" : "operable";
 }
 
-function operableIn(
-  s: PlatformStore,
-  agentId: string | null,
-  runState: AgentState | undefined,
-): boolean {
-  return reachIn(s, agentId, runState) === "operable";
-}
-
 export function useAgentReach(agentId: string | null): AgentReach {
   const runState = useAgentRunState(agentId);
   return useStore((s) => reachIn(s, agentId, runState));
@@ -126,21 +118,28 @@ export function useIsAgentAnswerableSoon(agentId: string | null): boolean {
   );
 }
 
-export function agentReadinessNow(agentId: string): AgentReadiness {
+export function agentReadinessNow(
+  agentId: string,
+  evenUnreachable = false,
+): AgentReadiness {
   const agent = queryClient
     .getQueryData<{ list: readonly AgentView[] }>(agentsKeys.listWithChannels())
     ?.list.find((a) => a.id === agentId);
   const store = useStore.getState();
+  const reach = reachIn(store, agentId, agent?.state);
   return agentReadiness(
     agent,
-    operableIn(store, agentId, agent?.state),
+    reach === "operable" || (evenUnreachable && reach === "unreachable"),
     store.restartingAgents.has(agentId),
   );
 }
 
-export function untilAgentOperable(agentId: string): Promise<void> | null {
+export function untilAgentOperable(
+  agentId: string,
+  { evenUnreachable = false } = {},
+): Promise<void> | null {
   return untilAgentReady(
-    () => agentReadinessNow(agentId),
+    () => agentReadinessNow(agentId, evenUnreachable),
     (onChange) => {
       const offQueries = queryClient.getQueryCache().subscribe(onChange);
       const offStore = useStore.subscribe(onChange);
