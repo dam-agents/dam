@@ -65,6 +65,7 @@ function makeService() {
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
     providerBalance: unused(),
+    credentialProbe: { probe: async () => ({ status: "passed" }) },
     providerKeyProbe: {
       probe: async (templateId, key) => {
         probed.push(`${templateId}:${key}`);

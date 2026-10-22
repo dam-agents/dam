@@ -19,6 +19,9 @@ import {
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
+  type CredentialCheck,
+  type CredentialCheckPolicy,
+  githubHostOf,
   type ProviderBalance,
   type ProviderKeyCheck,
   type ProviderKeyRecheck,
@@ -112,6 +115,13 @@ import {
   KEY_CHECK_INPUT_KEY,
   keyCheckOf,
 } from "../domain/provider-key-check.js";
+import {
+  CREDENTIAL_CHECK_INPUT_KEY,
+  CredentialCheckNotPassed,
+  credentialCheckOf,
+  fromKeyCheck,
+  type CredentialProbe,
+} from "../domain/credential-check.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -177,6 +187,7 @@ export function createConnectionsService(deps: {
   s3CredentialProbe: S3CredentialProbe;
   providerBalance: ProviderBalanceSource;
   providerKeyProbe: ProviderKeyProbe;
+  credentialProbe: CredentialProbe;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
@@ -249,6 +260,7 @@ export function createConnectionsService(deps: {
     const template = deps.templates.get(conn.templateId);
     const accountLabel = accountLabelOf(conn);
     const keyCheck = keyCheckOf(conn);
+    const check = credentialCheckOf(conn);
     const hosts = [
       ...new Set(
         conn.contributions.flatMap((c) =>
@@ -314,6 +326,7 @@ export function createConnectionsService(deps: {
       hosts,
       ...(accountLabel ? { accountLabel } : {}),
       ...(keyCheck ? { keyCheck } : {}),
+      ...(check ? { check } : {}),
       ...oauthExtras,
       ...(provider
         ? { provider: { ...provider, preferred: conn.id === preferredId } }
@@ -805,6 +818,48 @@ export function createConnectionsService(deps: {
     return check;
   }
 
+  async function checkHeaderCredential(
+    templateId: string,
+    value: string,
+    connectionId: string,
+    contributions: readonly Contribution[],
+  ): Promise<CredentialCheck | null> {
+    const template = deps.templates.get(templateId);
+    if (template?.authKind !== "header" || !template.credentialCheck) {
+      return null;
+    }
+    const outcome = await deps.credentialProbe.probe(
+      template.credentialCheck,
+      githubHostOf(contributions) ?? "github.com",
+      value,
+    );
+    const check: CredentialCheck = {
+      ...outcome,
+      at: new Date().toISOString(),
+    };
+    if (check.status !== "passed") {
+      securityLog("warn", "connection.credential_check_not_passed", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: connectionId,
+        result: "failure",
+        reason: check.status,
+        detail: { templateId, check: check.reason },
+      });
+    }
+    return check;
+  }
+
+  function holdUnlessPassed(
+    check: CredentialCheck | null,
+    policy: CredentialCheckPolicy | undefined,
+  ): void {
+    if (policy?.holdUnlessPassed && check && check.status !== "passed") {
+      throw new CredentialCheckNotPassed(check);
+    }
+  }
+
   async function rotateSigv4Keys(
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "sigv4" }>,
@@ -1074,6 +1129,42 @@ export function createConnectionsService(deps: {
       );
     },
 
+    async checkCredential(id: string): Promise<CredentialCheck | null> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+      if (conn.auth.kind !== "header") return null;
+      if (
+        PROVIDER_TEMPLATE_IDS.has(conn.templateId) &&
+        conn.templateId !== PLATFORM_LLM_TEMPLATE_ID
+      ) {
+        const keyCheck = await recheckProviderKey(conn);
+        return keyCheck ? fromKeyCheck(keyCheck) : null;
+      }
+      const template = deps.templates.get(conn.templateId);
+      if (template?.authKind !== "header" || !template.credentialCheck) {
+        return null;
+      }
+      const value = await deps.secretStore
+        .getField(conn.auth.valueRef)
+        .catch(() => null);
+      const check: CredentialCheck | null = value
+        ? await checkHeaderCredential(
+            conn.templateId,
+            value,
+            conn.id,
+            conn.contributions,
+          )
+        : {
+            status: "unchecked",
+            reason: "the stored credential could not be read",
+            at: new Date().toISOString(),
+          };
+      await deps.repo.mergeInputs(conn.id, {
+        [CREDENTIAL_CHECK_INPUT_KEY]: check,
+      });
+      return check;
+    },
+
     async validateGrantSet(connectionIds: string[]): Promise<void> {
       const wanted = new Set(connectionIds);
       const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
@@ -1092,6 +1183,7 @@ export function createConnectionsService(deps: {
     async update(
       id: string,
       credential: ConnectionCredentialUpdate,
+      policy?: CredentialCheckPolicy,
     ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
@@ -1115,9 +1207,17 @@ export function createConnectionsService(deps: {
               conn.id,
               conn.contributions,
             );
+            const credentialCheck = await checkHeaderCredential(
+              conn.templateId,
+              value,
+              conn.id,
+              conn.contributions,
+            );
+            holdUnlessPassed(credentialCheck, policy);
             await rotateHeaderValue(conn, conn.auth, value);
             await deps.repo.mergeInputs(conn.id, {
               [KEY_CHECK_INPUT_KEY]: check,
+              [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck,
             });
           }
           if (contributions) {
@@ -1320,7 +1420,7 @@ export function createConnectionsService(deps: {
       });
     },
 
-    async createFromTemplate(input): Promise<string> {
+    async createFromTemplate(input, policy): Promise<string> {
       const template = deps.templates.get(input.templateId);
       if (!template) {
         throw new TRPCError({
@@ -1493,6 +1593,15 @@ export function createConnectionsService(deps: {
             contributions,
           )
         : null;
+      const credentialCheck = headerValue
+        ? await checkHeaderCredential(
+            template.id,
+            headerValue,
+            id,
+            contributions,
+          )
+        : null;
+      holdUnlessPassed(credentialCheck, policy);
 
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
@@ -1517,6 +1626,9 @@ export function createConnectionsService(deps: {
           ...stripSecretsFromInputs(input),
           ...sharedKbInputs,
           ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
+          ...(credentialCheck
+            ? { [CREDENTIAL_CHECK_INPUT_KEY]: credentialCheck }
+            : {}),
         },
         auth,
         contributions,
@@ -1924,11 +2036,11 @@ export function createConnectionsService(deps: {
       }
       return service.listConnections();
     },
-    async createFromTemplate(input) {
+    async createFromTemplate(input, policy) {
       if (managedProviders.some((p) => p.templateId === input.templateId)) {
         throw refuseUserManaged(input.templateId);
       }
-      return service.createFromTemplate(input);
+      return service.createFromTemplate(input, policy);
     },
     async deleteConnection(id) {
       const conn = await deps.repo.get(id, deps.ownerId);
@@ -1937,12 +2049,12 @@ export function createConnectionsService(deps: {
       }
       return service.deleteConnection(id);
     },
-    async update(id, credential) {
+    async update(id, credential, policy) {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (conn && isManaged(conn)) {
         throw refuseUserManaged(conn.templateId);
       }
-      return service.update(id, credential);
+      return service.update(id, credential, policy);
     },
     reconcileManagedConnections,
   };

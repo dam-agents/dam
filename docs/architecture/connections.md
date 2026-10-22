@@ -94,6 +94,10 @@ The client hands the api-server every input except the secret and gets a single-
 The page and its submit run as the signed-in user and refuse a request another user made, so a link sent to someone else collects nothing.
 Before the user types, the page shows what the save will do — the template, the name, every host the secret is sent to with its header, the env vars agents see, and for a rotation the agents it is granted to — computed by the same builder the create runs, and it warns when a host is not one the template presets.
 The submit then runs the ordinary create or rotation, with its validation; a refused secret leaves the link usable until it expires.
+A header template may also name a **credential check**, which the GitHub personal access token templates do: the token is tried on the user endpoint of its GitHub host before it is stored, on create and on rotation alike.
+The check passes, naming the account, the expiry and, for a classic token, the scopes; fails, with GitHub's reason (bad credentials, or SSO authorization an organization requires); or stays unchecked when GitHub gives no answer about the token.
+The page holds a token that does not pass, so the user can fix it on the same link, and saves it on a confirmed "save anyway": the user is warned, never blocked.
+Saved through any path, the token keeps the result and its time on the Connection, which every listing carries, so a token saved after a failed check does not read like a healthy one; the owner can check one stored credential again, which replaces the result, and a provider key is checked again with its provider check.
 The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
 The page covers the static and minting kinds; OAuth needs no secret here.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
