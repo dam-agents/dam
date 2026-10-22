@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { PendingRestart, PodSession } from "agent-runtime-api";
 import {
   buildPlatformQueueChangedNotification,
+  buildPlatformSessionResetNotification,
   buildPlatformRunEndedNotification,
   buildPlatformRunStartedNotification,
   capInlineImages,
@@ -77,6 +78,7 @@ import {
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
+import type { SessionCutProvider } from "../../infrastructure/session-cut-provider.js";
 import type { PlatformSessionOf } from "../../infrastructure/terminal-session-pins.js";
 import {
   platformSessionMetaSchema,
@@ -189,6 +191,7 @@ export interface AcpRuntimeDeps {
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
+  sessionCut?: SessionCutProvider;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
@@ -711,6 +714,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
   const supersededEchoes = new Map<string, Set<string>>();
   const rewritingSessions = new Set<string>();
+  const cuttingSessions = new Set<string>();
 
   function supersedeEcho(sessionId: string, id: string): void {
     const ids = supersededEchoes.get(sessionId) ?? new Set<string>();
@@ -744,6 +748,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   function startHarnessRehydrate(sessionId: string): void {
+    if (cuttingSessions.has(sessionId)) return;
     rehydratingSessions.add(sessionId);
     rehydrateTimers.set(
       sessionId,
@@ -1380,6 +1385,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         );
         return;
       }
+      if (
+        cut.kind === "after" &&
+        cut.batch !== undefined &&
+        params.mode === "rewind" &&
+        deps.sessionCut !== undefined
+      ) {
+        cutInPlace(
+          channel,
+          id,
+          params,
+          { ...cut, batch: cut.batch },
+          history,
+          deps.sessionCut,
+          fail,
+        );
+        return;
+      }
       if (cut.kind === "after" && !sessionForkSupported) {
         failRewrite(
           "this agent cannot rewrite a conversation",
@@ -1526,6 +1548,138 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         );
       },
     );
+  }
+
+  function cutInPlace(
+    channel: ClientChannel,
+    id: unknown,
+    params: PlatformRewriteFromParams,
+    cut: { kind: "after"; entry: string; batch: string },
+    history: string[] | null,
+    sessionCut: SessionCutProvider,
+    fail: (message: string, code?: string) => void,
+  ): void {
+    const sid = params.sessionId;
+    const failRewrite = (message: string, code?: string): void => {
+      rewritingSessions.delete(sid);
+      fail(message, code);
+    };
+    const viewers = [...engagedViewersOf(sid)];
+    const finish = (error?: string): void => {
+      resetSession(sid, viewers, (loaded) => {
+        endCut(sid);
+        if (error !== undefined || !loaded) {
+          failRewrite(error ?? "the rewound session could not be loaded");
+          return;
+        }
+        rewritingSessions.delete(sid);
+        if (params.title !== undefined) {
+          const meta = deps.sessionMetadata?.get(sid)?.meta ?? {};
+          deps.sessionMetadata?.set(sid, {
+            ...meta,
+            customTitle: params.title,
+          });
+        }
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id, result: { sessionId: sid } }),
+        );
+        if (params.prompt !== undefined && params.promptId !== undefined)
+          submitRewrittenPrompt(channel, sid, params.prompt, params.promptId);
+      });
+    };
+    closeInHarness(sid, (closed) => {
+      if (!closed) {
+        if (sessionForkSupported)
+          forkForRewrite(channel, id, params, cut, history, failRewrite);
+        else
+          failRewrite(
+            "this agent cannot rewrite a conversation",
+            REWRITE_REFUSED_CODE,
+          );
+        return;
+      }
+      cuttingSessions.add(sid);
+      void sessionCut
+        .cut({
+          sessionId: sid,
+          before: cut.batch,
+          ...(params.prompt === undefined && { dropsTurn: cut.batch }),
+        })
+        .then((outcome) => {
+          if (outcome.ok) {
+            finish();
+            return;
+          }
+          if (outcome.refused) {
+            endCut(sid);
+            failRewrite(outcome.message, REWRITE_REFUSED_CODE);
+            return;
+          }
+          finish(outcome.message);
+        });
+    });
+  }
+
+  function endCut(sessionId: string): void {
+    cuttingSessions.delete(sessionId);
+    if (
+      harnessColdSessions.has(sessionId) &&
+      !rehydratingSessions.has(sessionId) &&
+      promptScheduler.hasWork(sessionId)
+    )
+      startHarnessRehydrate(sessionId);
+  }
+
+  function closeInHarness(
+    sessionId: string,
+    done: (closed: boolean) => void,
+  ): void {
+    if (harnessColdSessions.has(sessionId)) {
+      done(true);
+      return;
+    }
+    if (!sessionCloseSupported) {
+      done(false);
+      return;
+    }
+    requestFromHarness("session/close", { sessionId }, (frame) => {
+      const failed = (frame as { error?: unknown }).error !== undefined;
+      if (!failed) harnessColdSessions.add(sessionId);
+      done(!failed);
+    });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A Session Reset: after the harness's stored
+   * conversation was cut in place, drops the Session's log and what the
+   * runtime derived from it, keeping its id, metadata, queue and engaged
+   * channels, and fills the log again from history. The viewers engaged
+   * before the reset then get one ephemeral platform/sessionReset and load the
+   * Session again; their cursors went with the old log, and a viewer's next
+   * frame is the next live one. The harness copy stays closed, so the next
+   * prompt rehydrates it from the cut store.
+   */
+  function resetSession(
+    sessionId: string,
+    viewers: readonly ClientChannel[],
+    done: (loaded: boolean) => void,
+  ): void {
+    harnessColdSessions.add(sessionId);
+    appliedSettings.delete(sessionId);
+    autonomousTurns.end(sessionId);
+    transcript.forget(sessionId);
+    openToolCalls.delete(sessionId);
+    generating.delete(sessionId);
+    supersededEchoes.delete(sessionId);
+    runTextBuffers.delete(sessionId);
+    bootstrap.fill(sessionId, (loaded) => {
+      const line = JSON.stringify(
+        buildPlatformSessionResetNotification({ sessionId }),
+      );
+      for (const viewer of viewers) if (viewer.isOpen()) viewer.send(line);
+      done(loaded);
+    });
   }
 
   function submitRewrittenPrompt(

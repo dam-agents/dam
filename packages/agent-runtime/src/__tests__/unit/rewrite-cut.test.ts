@@ -104,6 +104,7 @@ describe("rewriteCutOf", () => {
     expect(rewriteCutOf(steeredHistory, [], "u2")).toEqual({
       kind: "after",
       entry: "tr1",
+      batch: "u2",
     });
   });
 
@@ -124,6 +125,7 @@ describe("rewriteCutOf", () => {
     expect(rewriteCutOf(steeredHistory, log, "p2")).toEqual({
       kind: "after",
       entry: "tr1",
+      batch: "u2",
     });
   });
 
@@ -152,6 +154,7 @@ describe("rewriteCutOf", () => {
     expect(rewriteCutOf(history, log, "p2")).toEqual({
       kind: "after",
       entry: "msg_a",
+      batch: "u2",
     });
   });
 
@@ -236,10 +239,12 @@ describe("rewriteCutOf: a batch", () => {
     expect(rewriteCutOf(history, log, "p2")).toEqual({
       kind: "after",
       entry: "tr1",
+      batch: "u2",
     });
     expect(rewriteCutOf(history, [], "u2")).toEqual({
       kind: "after",
       entry: "tr1",
+      batch: "u2",
     });
   });
 });
@@ -263,6 +268,7 @@ describe("takeBackCutOf", () => {
     expect(takeBackCutOf(history, log, "p2")).toEqual({
       kind: "after",
       entry: "msg_a",
+      batch: "u2",
     });
   });
 

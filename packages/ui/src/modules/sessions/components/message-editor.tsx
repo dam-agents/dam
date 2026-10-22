@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 
 export function MessageEditor({
@@ -50,6 +51,7 @@ export function MessageEditor({
           disabled={pending || !canSave || !draft.trim()}
           onClick={save}
         >
+          {pending && <Spinner size={12} className="text-inherit" />}
           {saveLabel}
         </Button>
       </div>

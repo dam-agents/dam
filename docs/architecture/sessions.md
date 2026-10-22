@@ -49,19 +49,24 @@ Otherwise, or on provider failure, the runtime's own `session/load` fills the lo
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
 When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
+An image may also declare a **session-cut provider**, a module in a worker thread of its own: it cuts a closed Session's stored conversation in place, keeping everything before a given user message under the same id.
+It drives the harness's own store directly, never the harness's protocol, since the adapter would replay a cut passed to it whenever it rebuilds the session.
 
 **Rewinding and forking from a message.** A user can take an earlier message of an idle chat Session, edit it, and either **rewind** the conversation to it or **fork** a new one from it.
-A harness cannot cut a session short in place, so one that can **fork** copies the Session up to the entry right before that message — the agent's reply, or a tool result where a message sent mid-turn landed.
+A rewind on a harness whose image declares a session-cut provider **cuts in place**: the runtime closes the harness's copy of the Session, has the provider cut right before that message, and **resets** the Session — drops its log and fills it again from the session-history provider, under the same id, with its metadata.
+It then tells the Session's viewers, once and outside the log, that the Session was reset, and they load it again; the edited message is the Session's next prompt.
+A cut that fails refuses the rewind rather than forking.
+Otherwise — a fork, a harness without the provider, or a message that started the Session — a harness that can **fork** copies the Session up to the entry right before that message — the agent's reply, or a tool result where a message sent mid-turn landed.
 User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
 A rewritten follow-up chat keeps its copy, and the cut compares user messages with the `<continued-from>` block removed; a copy cut at the start carries the block again in its first prompt.
-A rewind gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
+A rewind by copy gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
 Files the agent changed stay changed.
-The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading.
+The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading; after a cut in place it answers with the same id, and the client that asked keeps its own view.
 It refuses while a turn, a queued prompt or an agent request is pending, and for Sessions other parts of the platform hold the id of — scheduled, channel-bound, initialization.
 It tells a busy refusal from the others, so a client can ask again once the turn ends.
-A rewind can carry no message: it then **takes back** the newest message, cutting before the last batch of user messages in the history.
+A rewind can carry no message: it then **takes back** the newest message, cutting before the last batch of user messages in the history; a cut in place then drops that one turn only, and refuses, changing nothing, when anything else would go.
 It takes that batch by its place, since a stopped turn adds the harness's own note of the stop to it, and checks only that the batch holds the message.
 The harness may write the message a moment after the turn ends, so the runtime reads the history again for a short while.
 When the history still does not hold the message, the harness dropped it — a stop that came before the turn began — and the runtime answers with the same Session, since nothing needs cutting.
@@ -90,7 +95,7 @@ So a prompt has three fates its sender cares about — **accepted** (the runtime
 
 The runtime therefore reports them, over the same channel extension as the end-of-turn signal — which is logged and replayed, and names the ending turn's prompt id and stop reason: one notification on acceptance (and whether the prompt queued), one when it starts.
 Both ride a sender-minted prompt id as platform metadata, stripped before the agent sees it; channel workers and older clients mint none and get none.
-Both are **sender-only and ephemeral**; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it.
+Both are **sender-only and ephemeral**; a Session's reset is ephemeral too, sent to every viewer engaged when it happened; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it.
 A prompt's echo enters the log only when it starts.
 The queue marks a prompt that waits only for its session — nothing running ahead, the harness still loading the session after a wake, a restart or a rewind — as **starting**, and the chat shows it as sent rather than queued.
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
