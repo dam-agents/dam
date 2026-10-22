@@ -27,7 +27,21 @@ export interface FileOpsContext {
   onUnparseable?: "rewrite-aside" | "throw";
 }
 
-export async function applyFiles(
+/** UNIT_BOUNDARY_DESCRIPTION: one apply at a time, so two drivers that merge
+ * into the same file cannot each read it before the other writes and lose a
+ * key. */
+let queue: Promise<void> = Promise.resolve();
+
+export function applyFiles(
+  desired: Map<string, FileDesired[] | null>,
+  ctx: FileOpsContext,
+): Promise<void> {
+  const run = queue.then(() => applyFilesNow(desired, ctx));
+  queue = run.catch(() => {});
+  return run;
+}
+
+async function applyFilesNow(
   desired: Map<string, FileDesired[] | null>,
   ctx: FileOpsContext,
 ): Promise<void> {

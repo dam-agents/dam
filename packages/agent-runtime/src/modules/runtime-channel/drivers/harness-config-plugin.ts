@@ -39,6 +39,9 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly sessionSettings: string[] | undefined;
   readonly derivedStartMode: string[] | undefined;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
+  writeModelWindows(
+    models: readonly { name: string; contextWindow: number | null }[],
+  ): Promise<void>;
   models(
     provider: string | null,
   ): Promise<HarnessConfigChoice[] | null | undefined>;
@@ -168,6 +171,36 @@ export function createHarnessConfigPlugin(deps: {
     if (JSON.stringify(before) !== JSON.stringify(after)) deps.onApplied?.();
   };
 
+  const writeModelWindows: HarnessConfigPlugin["writeModelWindows"] = async (
+    models,
+  ) => {
+    const windows = binding?.modelAutoCompactWindow;
+    if (!windows || models.length === 0) return;
+    const content = Object.fromEntries(
+      models.map((m) => [
+        m.name,
+        { [windows.field]: m.contextWindow ?? windows.unknownWindow },
+      ]),
+    );
+    const targetPath = expandHome(binding.file, agentHome);
+    await applyFiles(
+      new Map([
+        [
+          targetPath,
+          [
+            {
+              format: binding.format,
+              mergeMode: "key-targeted" as const,
+              keyPath: windows.keyPath,
+              content,
+            },
+          ],
+        ],
+      ]),
+      { agentHome, log, onUnparseable: "throw" },
+    );
+  };
+
   const harnessDefault = (): string | null => {
     if (binding?.sessionModel !== true) return null;
     const env = defaultEnv();
@@ -254,6 +287,7 @@ export function createHarnessConfigPlugin(deps: {
       : undefined,
     derivedStartMode: derivedStartModeOf(binding),
     readCurrent,
+    writeModelWindows,
     models: (provider) => listModels(envOf(provider)),
     apply,
     bindEvent(_kind: string, _binding: DriverBinding): EventHandler {

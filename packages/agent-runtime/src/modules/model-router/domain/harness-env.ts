@@ -19,9 +19,12 @@ const ROUTER_PLACEHOLDER = "platform:conn:router";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the env a harness process gets so it runs on the
- * Model Router. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the smallest window among
- * the models Claude Code may run on, since it reads the window per process,
- * not per model. A credential variable the manifest names gets the router's
+ * Model Router. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the widest window among the
+ * models the harness may run on: Claude Code reads it once per process and it
+ * is not a cap but the window an id it does not recognise runs with, so a
+ * narrow one compacts a wide model far below its ceiling, while a per-model
+ * window in the harness's settings file keeps each model right (see
+ * `servedModels`). A credential variable the manifest names gets the router's
  * placeholder because the client will not start without one, and a model
  * variable it names gets the default provider's first model for the same
  * reason. Provider env
@@ -101,11 +104,46 @@ export function routerEnvFor(input: {
       env[binding.classifierModelEnv] = renderName(classifierEntry, binding);
   }
   if (!binding.claudeTiers) return env;
-  const windows = serving
-    .flatMap((p): CatalogEntry[] => p.entries)
-    .map((e) => e.metadata.contextWindow)
-    .filter((w): w is number => w !== null && w > 0);
+  const windows = servedModels({
+    harness: input.harness,
+    binding,
+    providers,
+  }).flatMap((m) => (m.contextWindow !== null ? [m.contextWindow] : []));
   if (windows.length)
-    env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(Math.min(...windows));
+    env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(Math.max(...windows));
   return env;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: every model a harness may run on with the window
+ * its Connection declares, in the order a default provider is resolved: the
+ * entries the harness serves, from the providers that serve it, named the way
+ * the router resolves a call. Claude Code needs one window per model in its
+ * settings file because it reads neither the listing's nor the router's,
+ * and the env variable only covers the id it does not recognise.
+ */
+export function servedModels(input: {
+  harness: string;
+  binding: ModelRouterBinding;
+  providers: readonly CatalogProvider[];
+}): { name: string; contextWindow: number | null }[] {
+  const { binding } = input;
+  return input.providers
+    .map((p) => ({
+      ...p,
+      entries: forHarness(p.entries, input.harness, binding),
+    }))
+    .filter(
+      (p) => p.entries.length > 0 && servesHarness(p, input.harness, binding),
+    )
+    .sort(
+      (a, b) =>
+        aliasOrder(a.alias, input.harness) - aliasOrder(b.alias, input.harness),
+    )
+    .flatMap((p) =>
+      p.entries.map((e) => ({
+        name: renderName(e, binding),
+        contextWindow: e.metadata.contextWindow,
+      })),
+    );
 }

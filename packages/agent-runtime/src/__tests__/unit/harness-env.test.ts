@@ -11,7 +11,11 @@ import type {
   CatalogEntry,
   CatalogProvider,
 } from "../../modules/model-catalog/index.js";
-import { routerEnvFor, tierModels } from "../../modules/model-router/index.js";
+import {
+  routerEnvFor,
+  servedModels,
+  tierModels,
+} from "../../modules/model-router/index.js";
 import type { ModelRouterBinding } from "../../modules/runtime-channel/manifest.js";
 
 const entry = (
@@ -206,9 +210,10 @@ describe("routerEnvFor", () => {
 
   /** TEST_SCENARIO: IBM is the default provider in alias order among the
    * providers that serve Claude Code, so the tier slots are IBM's models as
-   * Claude Code names them, and the context cap is the smallest window across
-   * IBM's and Curve Bender's models; the OpenAI key serves no Messages API and
-   * takes no part. A harness without claudeTiers gets the address only, plus
+   * Claude Code names them, and the env window is the widest one across IBM's
+   * and Curve Bender's models, since Claude Code applies it to an id it does
+   * not recognise and would otherwise compact a wide model far below its
+   * ceiling; the OpenAI key serves no Messages API and takes no part. A harness without claudeTiers gets the address only, plus
    * the router's placeholder in the key variable its client insists on
    * (Codex refuses to list models without OPENAI_API_KEY).
    * Every harness a granted provider serves is marked as served, even before
@@ -217,7 +222,7 @@ describe("routerEnvFor", () => {
    * there is no mark. A model the harness is never offered (an embedding
    * model, a window under the coding floor) neither caps the window nor
    * fills a tier slot. */
-  it("fills Claude Code's tiers from the default provider and caps the window", () => {
+  it("fills Claude Code's tiers from the default provider and takes the widest window", () => {
     const providers = [
       provider(openai, [entry(openai, "gpt-5.5", 1_000_000)]),
       provider(cb, [
@@ -252,7 +257,7 @@ describe("routerEnvFor", () => {
       ANTHROPIC_DEFAULT_OPUS_MODEL: "claude/ibm/aws/claude-opus-4-8",
       ANTHROPIC_DEFAULT_SONNET_MODEL: "claude/ibm/aws/claude-sonnet-4-6",
       ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude/ibm/aws/claude-sonnet-4-6",
-      CLAUDE_CODE_MAX_CONTEXT_TOKENS: "128000",
+      CLAUDE_CODE_MAX_CONTEXT_TOKENS: "200000",
     });
     expect(
       routerEnvFor({
@@ -385,5 +390,32 @@ describe("the auto-mode classifier env", () => {
         port: 1,
       }),
     ).not.toHaveProperty("CLAUDE_CODE_AUTO_MODE_MODEL");
+  });
+});
+
+describe("servedModels", () => {
+  /** TEST_SCENARIO: Every model the harness may run on appears once, named as the router resolves it, with the window its Connection declares or null, so the harness's settings file can carry one window per model; a model the harness is never offered and a provider that does not serve it take no part. */
+  it("lists each served model with its window, by its router name", () => {
+    const providers = [
+      provider(cb, [
+        entry(cb, "rits/deepseek-ai/deepseek-v4.1-flash-1017", 1_048_576),
+      ]),
+      provider(ibm, [
+        entry(ibm, "aws/claude-opus-5-5", 200_000),
+        entry(ibm, "gpt-5.5", null),
+        entry(ibm, "text-embedding-3-large", 8_191),
+      ]),
+      provider(openai, [entry(openai, "gpt-5.5", 1_000_000)]),
+    ];
+    expect(
+      servedModels({ harness: "claude-code", binding: claude, providers }),
+    ).toEqual([
+      { name: "claude/ibm/aws/claude-opus-5-5", contextWindow: 200_000 },
+      { name: "claude/ibm/gpt-5.5", contextWindow: null },
+      {
+        name: "claude/cb/rits/deepseek-ai/deepseek-v4.1-flash-1017",
+        contextWindow: 1_048_576,
+      },
+    ]);
   });
 });

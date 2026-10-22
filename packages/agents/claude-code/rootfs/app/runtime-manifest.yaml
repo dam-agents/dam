@@ -6,11 +6,19 @@ manifestVersion: 1
 
 # Claude Code's gateway model discovery keeps ids containing "claude",
 # lowercased, so every catalog name reaches it as claude/<alias>/<id>.
-# claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables
-# and caps CLAUDE_CODE_MAX_CONTEXT_TOKENS, since Claude Code reads no
-# per-model window from /v1/models. The slots are the default provider's, so
-# the router moves a side call on one (a title, a WebFetch summary, the
-# classifier, an alias-named subagent) to the session's provider by tier.
+# claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables.
+# The slots are the default provider's, so the router moves a side call on one
+# (a title, a WebFetch summary, the classifier, an alias-named subagent) to the
+# session's provider by tier.
+# The context window takes two mechanisms, because Claude Code keeps no window
+# from /v1/models: discovery parses each model as {id, display_name,
+# description} and throws the rest away, and the per-model modelConfig route is
+# off. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the widest window, which is not a cap
+# but the window an id it does not recognise runs with; every model it may run
+# on gets its own window under modelSettings below, re-read per model, so a
+# mid-session switch follows. A repo's own .claude/settings.json with a
+# top-level autoCompactWindow replaces that map, and CLAUDE_CODE_AUTO_COMPACT_WINDOW
+# would override every entry, so neither is set.
 modelRouter:
   dialects: [anthropic-messages]
   sessionModel: { configOption: model }
@@ -102,6 +110,14 @@ drivers:
     # Default gives (Claude Code's built-in default), which a schedule with no
     # model runs on.
     defaultModel: default
+    # Claude Code takes no window from /v1/models, and
+    # CLAUDE_CODE_MAX_CONTEXT_TOKENS is not a cap but the window an id it does
+    # not recognise runs with, so every model gets its own here, applied as
+    # min(its window, this). Re-read per model, so a mid-session switch follows.
+    modelAutoCompactWindow:
+      keyPath: modelSettings
+      field: autoCompactWindow
+      unknownWindow: 200000
     catalog:
       options:
         - id: model

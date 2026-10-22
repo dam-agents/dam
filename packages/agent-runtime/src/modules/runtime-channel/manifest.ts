@@ -99,6 +99,13 @@ export const harnessConfigBinding = z.object({
   catalog: harnessConfigCatalog.optional(),
   modelDiscovery: modelDiscoverySources.optional(),
   defaultModel: z.string().min(1).optional(),
+  modelAutoCompactWindow: z
+    .object({
+      keyPath: z.string().min(1),
+      field: z.string().min(1),
+      unknownWindow: z.number().int().positive(),
+    })
+    .optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
