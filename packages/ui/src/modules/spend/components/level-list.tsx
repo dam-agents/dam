@@ -7,6 +7,7 @@ import {
   LEVEL_GROUP_NAMES,
   partLeft,
   partOtherAgents,
+  partSpent,
   partThisAgent,
   setIn,
   spentOfLimit,
@@ -99,7 +100,13 @@ function LevelRow({
           muted
           state={level.state}
           limitMicros={level.effectiveMicros}
-          mine={{ micros: mine, label: partThisAgent(money(mine)) }}
+          mine={{
+            micros: mine,
+            label:
+              level.mineMicros === null
+                ? partSpent(money(mine))
+                : partThisAgent(money(mine)),
+          }}
           {...(others && { others })}
           left={{
             micros: level.leftMicros,

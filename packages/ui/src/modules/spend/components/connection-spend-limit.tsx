@@ -3,12 +3,10 @@ import { connectionLimitRule } from "api-server-api";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import { useLevelAgent } from "../hooks/use-level-agent.js";
-import {
-  AGENT_PROVIDER_LIMIT_BUTTON_TIP,
-  allAgentsConnectionLimitName,
-} from "../lib/copy.js";
+import { AGENT_PROVIDER_LIMIT_BUTTON_TIP } from "../lib/copy.js";
 import { NO_LIMIT_REASONS } from "../lib/format.js";
-import { agentConnectionLevels } from "../lib/limit-levels.js";
+import { levelName } from "../lib/level-labels.js";
+import { agentConnectionLevels, type LevelsView } from "../lib/limit-levels.js";
 import { LimitLine } from "./limit-line.js";
 
 interface Props {
@@ -45,9 +43,6 @@ export function ConnectionSpendLimit({
         total.connectionId === connectionId && total.unit === rule.unit,
     )
     .reduce((sum, total) => sum + total.costMicros, 0);
-  const allAgents = view.others.find(
-    ({ level }) => level.kind === "all-connection",
-  )?.level;
 
   return (
     <div className="border-t border-border pt-3">
@@ -62,14 +57,25 @@ export function ConnectionSpendLimit({
         agent={agent}
         compare={{
           spentMicros,
-          other: allAgents
-            ? {
-                name: allAgentsConnectionLimitName(connectionName),
-                leftMicros: allAgents.leftMicros,
-              }
-            : null,
+          extensions: view.current?.extensions ?? 0,
+          other: firstOther(view),
         }}
       />
     </div>
   );
+}
+
+function firstOther(
+  view: LevelsView,
+): { name: string; leftMicros: number } | null {
+  const nearest = view.others.reduce<LevelsView["others"][number] | null>(
+    (best, entry) =>
+      best === null || entry.level.leftMicros < best.level.leftMicros
+        ? entry
+        : best,
+    null,
+  );
+  return nearest
+    ? { name: levelName(nearest.level), leftMicros: nearest.level.leftMicros }
+    : null;
 }

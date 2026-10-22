@@ -325,33 +325,43 @@ export function createSpendService(deps: {
       const day = utcDay(now);
       const agentId = input?.agentId;
       if (agentId) await requireOwned(agentId);
-      const [limits, ceiling, rows, byConnection, ownerByConnection, granted] =
-        await Promise.all([
-          deps.limits.applying(
-            { agentId: agentId ?? null, ownerSub: deps.ownerSub },
-            day,
-          ),
-          deps.ceilings.forOwner(deps.ownerSub),
-          deps.ledger.daily({
-            ownerSub: deps.ownerSub,
-            agentIds: scopedAgents(agentId),
-            from: day,
-            to: day,
-          }),
-          agentId
-            ? deps.ledger.byConnection({
-                ownerSub: deps.ownerSub,
-                agentId,
-                day,
-              })
-            : [],
-          deps.ledger.byConnection({
-            ownerSub: deps.ownerSub,
-            agentId: null,
-            day,
-          }),
-          agentId ? deps.connections.grantedTo(agentId) : [],
-        ]);
+      const [
+        limits,
+        ceiling,
+        rows,
+        byConnection,
+        ownerByConnection,
+        granted,
+        names,
+      ] = await Promise.all([
+        deps.limits.applying(
+          { agentId: agentId ?? null, ownerSub: deps.ownerSub },
+          day,
+        ),
+        deps.ceilings.forOwner(deps.ownerSub),
+        deps.ledger.daily({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(agentId),
+          from: day,
+          to: day,
+        }),
+        agentId
+          ? deps.ledger.byConnection({
+              ownerSub: deps.ownerSub,
+              agentId,
+              day,
+            })
+          : [],
+        deps.agentBinding === "*"
+          ? deps.ledger.byConnection({
+              ownerSub: deps.ownerSub,
+              agentId: null,
+              day,
+            })
+          : [],
+        agentId ? deps.connections.grantedTo(agentId) : [],
+        agentId ? deps.connectionNames() : new Map<string, string>(),
+      ]);
       const spent = new Map<string, SpendTotal>();
       for (const row of rows) {
         const total = spent.get(row.unit) ?? {
@@ -367,9 +377,6 @@ export function createSpendService(deps: {
         limits.map((limit) => limitView(limit, day)),
       );
       const ceilingReading = ceiling ? await ceilingView(ceiling, day) : null;
-      const names = agentId
-        ? await deps.connectionNames()
-        : new Map<string, string>();
       return {
         day,
         resetsAt: nextUtcMidnight(now).toISOString(),

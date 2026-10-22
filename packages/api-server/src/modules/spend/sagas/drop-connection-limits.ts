@@ -30,16 +30,16 @@ export function startDropConnectionLimitsSaga(deps: {
             event.connectionKey,
           );
           if (limitIds.length === 0) return;
+          emit({
+            type: EventType.SpendLimitsChanged,
+            ownerSub: event.actorSub,
+          });
           for (const limitId of limitIds) {
             await deps.questions.closePending({
               ownerSub: event.actorSub,
               limitId,
             });
           }
-          emit({
-            type: EventType.SpendLimitsChanged,
-            ownerSub: event.actorSub,
-          });
         } catch (err) {
           getLogger().error(
             { connectionId: event.connectionKey, reason: formatError(err) },

@@ -6,6 +6,8 @@ import type {
   SpendUnit,
 } from "api-server-api";
 
+import { percentOfLimit } from "./copy.js";
+
 export type LevelKind =
   "agent-connection" | "all-connection" | "agent" | "total" | "ceiling";
 
@@ -21,6 +23,7 @@ export interface Level {
   connection: LevelConnection | null;
   unit: SpendUnit;
   amountMicros: number;
+  extensions: number;
   effectiveMicros: number;
   spentMicros: number;
   leftMicros: number;
@@ -48,6 +51,7 @@ function fromLimit(
     connection,
     unit: limit.unit,
     amountMicros: limit.amountMicros,
+    extensions: limit.extensions,
     effectiveMicros: limit.effectiveMicros,
     spentMicros: limit.spentMicros,
     leftMicros: limit.leftMicros,
@@ -67,6 +71,7 @@ function fromCeiling(
     connection: null,
     unit: "usd",
     amountMicros: ceiling.amountMicros,
+    extensions: 0,
     effectiveMicros: ceiling.amountMicros,
     spentMicros: ceiling.spentMicros,
     leftMicros: Math.max(0, ceiling.amountMicros - ceiling.spentMicros),
@@ -99,15 +104,28 @@ function findLimit(
   return status.limits.find(match);
 }
 
+const NARROWNESS: readonly LevelKind[] = [
+  "agent-connection",
+  "agent",
+  "all-connection",
+  "total",
+  "ceiling",
+];
+
 /**
  * Marks the level with the least left among `current` and `others` when it is
  * not `current`: the one that stops these calls before the limit this page owns.
+ * A tie names the limit set closest to the agent, as the server's binding does.
  */
 function markStopsFirst(current: Level | null, others: Level[]): Level[] {
   const all = current ? [current, ...others] : others;
   if (all.length < 2) return others;
   const first = all.reduce((best, next) =>
-    next.leftMicros < best.leftMicros ? next : best,
+    next.leftMicros < best.leftMicros ||
+    (next.leftMicros === best.leftMicros &&
+      NARROWNESS.indexOf(next.kind) < NARROWNESS.indexOf(best.kind))
+      ? next
+      : best,
   );
   return others.map((level) =>
     level === first ? { ...level, stopsFirst: true } : level,
@@ -276,7 +294,7 @@ export function agentLevels(
       level: fromCeiling(status.ceiling, mineAll),
       group: "every",
     });
-  const dollars = others.filter(({ level }) => level.unit === "usd");
+  const dollars = others.filter(({ group }) => group === "every");
   const marked = markStopsFirst(
     current,
     dollars.map(({ level }) => level),
@@ -299,9 +317,5 @@ function regroup(current: Level | null, above: GroupedLevel[]): GroupedLevel[] {
 }
 
 export function levelPercent(level: Level): number {
-  if (level.effectiveMicros <= 0) return 100;
-  return Math.min(
-    100,
-    Math.round((level.spentMicros / level.effectiveMicros) * 100),
-  );
+  return percentOfLimit(level.spentMicros, level.effectiveMicros);
 }

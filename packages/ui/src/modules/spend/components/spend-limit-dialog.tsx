@@ -28,6 +28,7 @@ import { utcDayOf } from "../lib/utc-day.js";
 
 export interface LimitComparison {
   spentMicros: number;
+  extensions: number;
   other: { name: string; leftMicros: number } | null;
 }
 
@@ -144,7 +145,10 @@ function ComparisonLines({
   const left =
     amountMicros === null
       ? null
-      : Math.max(0, amountMicros - compare.spentMicros);
+      : Math.max(
+          0,
+          amountMicros * (compare.extensions + 1) - compare.spentMicros,
+        );
   const line =
     left === null
       ? null

@@ -183,8 +183,12 @@ export function createGrantedConnectionTemplates(db: Db): {
       return granted.find((c) => c.id === connectionId)?.templateId ?? null;
     },
     async ownedTemplateOf(ownerSub, connectionId) {
-      const owned = await repo.listByOwner(ownerSub);
-      return owned.find((c) => c.id === connectionId)?.templateId ?? null;
+      const owned = await repo.get(connectionId, ownerSub);
+      const pending =
+        owned?.auth.kind === "oauth" &&
+        !owned.auth.connectedAt &&
+        !owned.auth.expiresAt;
+      return owned && !pending ? owned.templateId : null;
     },
     async grantedTo(agentId) {
       const granted = await repo.listConnectionsForAgent(agentId);

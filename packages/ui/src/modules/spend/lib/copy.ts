@@ -23,16 +23,6 @@ export const DAILY_LIMIT_TITLE = "Daily spend limit";
 export const OWN_LIMIT_HELP =
   "Counts the paid API calls of all your agents. Subscriptions and Bob do not count: set their limits in Settings › Providers, or for one agent in its Providers section.";
 
-export const ALL_AGENTS_PROVIDER_LIMIT_TITLE = "Daily limit for all agents";
-
-export function allAgentsProviderLimitHelp(
-  unitExplanation: string | null,
-): string {
-  const counts =
-    "Counts the calls of all your agents on this provider, sub-agents included. An agent's own limit on this provider still applies.";
-  return unitExplanation ? `${unitExplanation} ${counts}` : counts;
-}
-
 export const PROVIDER_LIMITS_TITLE = "Provider limits for all agents";
 
 export const PROVIDER_LIMITS_HELP =
@@ -136,16 +126,6 @@ export function continuedToday(extensions: number): string {
 
 export function resetsAtLine(resetTime: string): string {
   return `Resets at ${resetTime} your time.`;
-}
-
-export function nearerLimitLine(
-  kind: "owner" | "ceiling",
-  leftMicros: number,
-): string {
-  const left = bareSpend(leftMicros, "usd");
-  return kind === "owner"
-    ? `Your limit for all agents has ${left} left today, so it stops this agent first.`
-    : `Your spend ceiling has ${left} left today, so it stops this agent first.`;
 }
 
 const ALSO_SPENT: Readonly<Record<SpendUnit, (micros: number) => string>> = {
@@ -429,38 +409,12 @@ export function turnLineHelp(showsCost: boolean): string {
     : telemetry;
 }
 
-export const PROVIDER_ROW_HELP_PREFIX =
-  "What this agent can spend on this provider today, and the limits that count it.";
-
-export function providerRowHelp(resetTime: string): string {
-  return `${PROVIDER_ROW_HELP_PREFIX} Resets at ${resetTime} your time.`;
-}
-
-export const NO_AGENT_LIMIT = "No limit for this agent";
-
-export const CLOSE_TO_LIMIT = "Close to the limit";
-
-export function stoppedUntil(resetTime: string): string {
-  return `Stopped until ${resetTime}`;
-}
-
-export const SET_FOR_ALL_AGENTS = "Set for all agents";
-
-export const ROW_THIS_AGENT = "This agent";
-
-export const ROW_ALL_AGENTS = "All agents";
-
-export const ROW_TOTAL = "Total";
-
-export const ROW_ALL_AGENTS_TIP = "Set in Settings › Providers";
-
-export const ROW_TOTAL_TIP =
-  "Total daily limit: all your agents, every paid provider. Set in Settings › Usage.";
-
-export const ON_ALL_PAID_PROVIDERS = "on all paid providers";
-
 export function partThisAgent(amount: string): string {
   return `This agent: ${amount}`;
+}
+
+export function partSpent(amount: string): string {
+  return `Spent: ${amount}`;
 }
 
 export function partOtherAgents(amount: string): string {

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   amountToday,
   partLeft,
+  partSpent,
   partThisAgent,
   spentOfLimit,
   stopsFirstShort,
@@ -83,7 +84,9 @@ export function LimitLine({
               limitMicros={current.effectiveMicros}
               mine={{
                 micros: current.spentMicros,
-                label: partThisAgent(money(current.spentMicros)),
+                label: agentId
+                  ? partThisAgent(money(current.spentMicros))
+                  : partSpent(money(current.spentMicros)),
               }}
               left={{
                 micros: current.leftMicros,

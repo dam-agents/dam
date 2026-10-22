@@ -118,11 +118,11 @@ function DriverSpendLimitBody({
         agent={agent}
         grouped
       />
-      {coverageKnown && !coverage.paid && limit === undefined && (
+      {coverageKnown && (
         <AgentLimitCoverageNote
           agentId={agentId}
           coverage={coverage}
-          hasLimit={false}
+          hasLimit={limit !== undefined}
         />
       )}
     </DailyLimitCard>

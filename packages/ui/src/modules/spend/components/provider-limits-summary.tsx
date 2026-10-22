@@ -95,6 +95,7 @@ function ProviderLimitRow({
           connection,
           unit: limit.unit,
           amountMicros: limit.amountMicros,
+          extensions: limit.extensions,
           effectiveMicros: limit.effectiveMicros,
           spentMicros: limit.spentMicros,
           leftMicros: limit.leftMicros,
