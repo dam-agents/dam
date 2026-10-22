@@ -43,15 +43,14 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
   - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
     An agent reaches it through a **GitHub** connection, made either way a user makes one:
-    - **Connect with GitHub** (OAuth) — the install's GitHub OAuth App is the sandbox's, so the form needs no client ID.
-      The browser leaves DAM for GitHub's sign-in; right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`.
-      It signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.
-      Never drive GitHub's pages yourself, never type a GitHub value in a test, and never open another GitHub page: only the sign-in's own pages are reachable.
-      The connection then shows the test user's login (`sandbox.githubLogin()`) as its account; `sandbox.githubUser()` says whether this instance has the test user.
-    - A personal access token (Settings → Connections → GitHub → _Connect with a personal access token_), whose value is `E2E_SANDBOX_GITHUB_TOKEN`; it may only read the repository and write its issues.
-      Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
+    **Connect with GitHub** (OAuth), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may only read the repository and write its issues.
+    With OAuth the install's GitHub OAuth App is the sandbox's, so the form needs no client ID; the browser leaves DAM for GitHub's sign-in.
+    Right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`: it signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.
+    Never drive GitHub's pages yourself, never type a GitHub value in a test, and never open another GitHub page: only the sign-in's own pages are reachable.
+    The connection then shows the test user's login (`sandbox.githubLogin()`) as its account; `sandbox.githubUser()` says whether this instance has the test user.
+    Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
   - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
-    An agent joins it under the agent's **Channels** → _Connect a Slack channel_ with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
+    An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
     The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text)`, `botReplies(ts)`.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
   - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
