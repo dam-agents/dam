@@ -73,6 +73,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     slackBindFlows,
     seedSources,
     spendForOwner,
+    spendCeilingsForOperator,
     providerStatus,
     outageAlerts,
     wrapperFrameSender,
@@ -463,6 +464,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         isAgentOwnedBy: (agentId, ownerSub) =>
           agentsRepo.isOwnedBy(agentId, ownerSub),
       }),
+      spendCeilings: spendCeilingsForOperator(user.sub),
       providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,

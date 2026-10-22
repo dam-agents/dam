@@ -36,7 +36,10 @@ import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SidebarOrderService } from "./modules/sidebar-order/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
-import type { SpendService } from "./modules/spend/types.js";
+import type {
+  SpendCeilingsService,
+  SpendService,
+} from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
@@ -95,6 +98,7 @@ export interface ApiContext {
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
   spend: SpendService;
+  spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;
   user: UserIdentity;
   e2eEnabled: boolean;

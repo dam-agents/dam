@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -231,24 +231,16 @@ It counts the same spend as the own limit: the user's metered dollar spend on pa
 At the ceiling, the gate refuses the call and asks nothing, because "continue" cannot lift it.
 When the ceiling and a soft limit are both reached, the ceiling's refusal applies.
 
-A user's ceiling comes from their UserSpendLimit object, else from the chart's default ceiling, which is off at first.
-A UserSpendLimit works like a UserBudget ([budgets](budgets.md)):
-
-```yaml
-apiVersion: agent-platform.ai/v1
-kind: UserSpendLimit
-metadata:
-  name: spend-limit-<keycloak-sub>   # pinned to spec.owner at admission (CEL)
-  namespace: <agents-namespace>      # the chart's agent namespace (default platform-agents)
-spec:
-  owner: "<keycloak-sub>"            # exact plaintext sub, as on the agent owner label
-  dailyUsd: "50"                     # dollars per UTC day, at most two decimals
-```
-
-Operators manage these objects; a user cannot change one.
-A user can still set an own limit below the ceiling, and the lower of the two stops the work first.
-The gate reads the user's object by its name and keeps the value for one minute, so a change applies within a minute.
-When a read fails, the gate keeps the last value it read; with no value read yet, the check fails and the gate refuses the call.
+A platform operator ([security-and-credentials](security-and-credentials.md#identity)) sets a user's own ceiling, and names the user by email.
+A ceiling that exists can also be changed or removed by the user's id, so a user without an email stays manageable; a new ceiling always needs the email.
+The api-server looks the email up in Keycloak, and keeps one row per user in Postgres: the amount, the operator who set it last, and when.
+It logs every set, change and removal with the operator and the amounts before and after, so a removed ceiling also leaves a trace.
+An amount is whole cents, up to $9,999,999.99, the same rule as the chart's default.
+A user without a row gets the chart's default ceiling, which is off at first.
+A user cannot change their ceiling.
+They can still set an own limit below it, and the lower of the two stops the work first.
+The gate reads the user's row on each check, so a change applies at the next call.
+When the read fails, the check fails and the gate refuses the call.
 
 ## Refusal
 

@@ -19,7 +19,7 @@ The CRD that is already on the shared cluster stays until a cluster admin delete
 4. **RBAC** — [`helm/templates/apiserver/rbac.yaml`](../../../helm/templates/apiserver/rbac.yaml): remove the `userspendlimits` rule and its comment.
 5. **Values text** — [`helm/values.yaml`](../../../helm/values.yaml), `apiServer.spend.defaultUserCeilingUsd`: replace "A UserSpendLimit object overrides it for one user."
    with a sentence that says a platform operator overrides it for one user, with `dam spend ceiling` or in Settings › Operator.
-6. **Glossary** — [`docs/ubiquitous-language.md`](../../ubiquitous-language.md): delete the `UserSpendLimit` row, and in the `Spend Ceiling` row replace "Resolved as the user's UserSpendLimit" with the ceiling that a platform operator set for the user.
+6. **Glossary** — done in 02, because the glossary row was wrong once the api-server stopped reading the CRD.
 7. **Last mentions** — `git grep -n -i "userspendlimit\|spend-limit-<"` must find nothing outside `docs/adrs/` and this plan folder.
    Leave the ADRs as they are: they are history.
 8. **CRD compatibility** — no release tag shipped this CRD (the latest `v*` tag at planning time, `v0.2.23-rc4`, does not have it), so `check:crd-backwards-compatibility` needs no `removed_ok` entry.
