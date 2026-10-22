@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useFocusTrap } from "@/components/modal";
 import { ResizeHandle } from "@/components/resize-handle";
+import { prefersReducedMotion } from "@/components/ui/collapse";
 import {
   MIN_CONTENT_WIDTH,
   navigationMode,
@@ -22,6 +23,7 @@ import {
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 import { SidebarRail } from "./sidebar-rail.js";
+import { useCollapseContent } from "./use-collapse-content.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane, in two states: expanded, it holds its place beside the page at the width the user resizes, or collapsed, it stays at one icon's width as a rail of Agent avatars, each opening that Agent's Sessions beside it, with the Pinned section under its pin icon. The rail is what a narrow viewport gets whatever the user last chose, and expanding it there opens the pane over the page, from the left edge up to the right rail, until a Session is picked, Escape is pressed or the browser goes back; the user's own choice of expanded or collapsed is left as it was.
@@ -68,6 +70,11 @@ export function SidebarV2() {
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
   useFocusTrap(navRef, over, railExpandTile);
+  const { contentExpanded, lagging, collapse } = useCollapseContent({
+    expanded,
+    animated: !resizing && !prefersReducedMotion(),
+    target: navRef,
+  });
   // UNIT_BOUNDARY_DESCRIPTION: the overlay belongs to the rail, so a window that widens enough for a pane drops it rather than opening the pane over the page again the next time the window narrows.
   useEffect(() => {
     if (mode !== "rail") setOverlaid(false);
@@ -105,6 +112,7 @@ export function SidebarV2() {
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           resizing && "transition-none",
           !expanded && !over && "w-14 overflow-visible",
+          lagging && "overflow-hidden",
         )}
         style={
           // UNIT_BOUNDARY_DESCRIPTION: the pane reaches one pixel into the right rail so its own right border lands on the bar's left border, rather than beside it, and the two read as one line.
@@ -114,10 +122,17 @@ export function SidebarV2() {
         data-pinned={expanded || undefined}
         data-collapsed={!expanded || undefined}
       >
-        {expanded || over ? (
+        {contentExpanded || over ? (
           <>
             <SidebarHeader
-              onCollapse={() => (over ? setOverlaid(false) : setPinned(false))}
+              onCollapse={() => {
+                if (over) {
+                  setOverlaid(false);
+                  return;
+                }
+                setPinned(false);
+                collapse();
+              }}
               onHome={() => {
                 setView("home");
                 if (over) setOverlaid(false);
