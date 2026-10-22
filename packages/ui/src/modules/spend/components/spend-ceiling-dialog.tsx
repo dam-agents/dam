@@ -16,7 +16,12 @@ import {
 import { Input } from "@/components/ui/input";
 
 import { useSetSpendCeiling } from "../api/mutations.js";
-import { CEILING_APPLIES_NEXT_CALL, SET_CEILING } from "../lib/copy.js";
+import {
+  CEILING_APPLIES_NEXT_CALL,
+  CEILING_REMOVED_MEANWHILE,
+  CEILING_SAVE_FAILED,
+  SET_CEILING,
+} from "../lib/copy.js";
 import { amountText } from "../lib/format.js";
 
 interface Props {
@@ -37,11 +42,19 @@ export function SpendCeilingDialog({ entry, onClose }: Props) {
   const failure = setCeiling.error;
   const unknownUser =
     failure instanceof TRPCClientError && failure.data?.code === "NOT_FOUND";
-  const emailError = unknownUser
-    ? failure.message
-    : email.trim() !== "" && !user.success
-      ? "Enter an email address."
-      : undefined;
+  const emailError =
+    unknownUser && !entry
+      ? failure.message
+      : email.trim() !== "" && !user.success
+        ? "Enter an email address."
+        : undefined;
+  const formError = !failure
+    ? undefined
+    : !unknownUser
+      ? CEILING_SAVE_FAILED
+      : entry
+        ? CEILING_REMOVED_MEANWHILE
+        : undefined;
   const amountError =
     draft.trim() === "" || amount.success
       ? undefined
@@ -106,9 +119,9 @@ export function SpendCeilingDialog({ entry, onClose }: Props) {
               onChange={(event) => setDraft(event.target.value)}
             />
           </FormField>
-          {failure && !unknownUser && (
+          {formError && (
             <p role="alert" className="text-sm text-danger">
-              Couldn't save the spend ceiling. Try again.
+              {formError}
             </p>
           )}
         </DialogBody>

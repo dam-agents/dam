@@ -143,6 +143,12 @@ export function ceilingPerDay(amountMicros: number): string {
 export const CEILING_APPLIES_NEXT_CALL =
   "It applies to the user's next model call.";
 
+export const CEILING_SAVE_FAILED =
+  "Couldn't save the spend ceiling. Try again.";
+
+export const CEILING_REMOVED_MEANWHILE =
+  "Someone removed this spend ceiling, so there is nothing to change. The list now shows the current ceilings.";
+
 export function nearerLimitLine(
   kind: "owner" | "ceiling",
   leftMicros: number,
