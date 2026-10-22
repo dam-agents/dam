@@ -11,6 +11,9 @@ import {
 } from "@/components/ui/rail-tile";
 import { cn } from "@/lib/utils";
 
+// UNIT_BOUNDARY_DESCRIPTION: a name ends in an ellipsis at the edge of the pane rather than being cut by it, since the pane narrows over a tree that keeps its width while it moves; 58 is the icon column and the space after it, and a tree with no pane around it, as in a test, clamps to its own width and is unchanged.
+export const TREE_LABEL_MAX = "max-w-[calc(var(--sidebar-w,100%)-58px)]";
+
 // UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 40px column, wide enough for an avatar that spans a two-line row, and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
 export const TREE_LEADING = "flex w-10 shrink-0 justify-center";
 // UNIT_BOUNDARY_DESCRIPTION: the expanded row's avatar and the rail's are one size, so collapsing the sidebar does not resize it.
@@ -67,7 +70,7 @@ export function AddRow({
           />
         )}
       </span>
-      <span className="truncate">{label}</span>
+      <span className={cn("truncate", TREE_LABEL_MAX)}>{label}</span>
     </button>
   );
 }
@@ -111,7 +114,7 @@ export function NavRow({
       <span className={TREE_LEADING}>
         <Icon size={RAIL_GLYPH} />
       </span>
-      {label}
+      <span className={cn("truncate", TREE_LABEL_MAX)}>{label}</span>
     </button>
   );
 }

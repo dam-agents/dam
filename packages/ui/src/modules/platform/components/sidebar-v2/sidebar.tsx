@@ -135,8 +135,8 @@ export function SidebarV2() {
               }}
             />
             <SidebarContent
-              // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the tree keeps the width the pane has when it is open, so the narrowing pane uncovers the tree rather than reflowing it, and the Home row, the Agent rows and their buttons keep their places throughout.
-              style={moving ? { width } : undefined}
+              // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the tree keeps the width the pane has when it is open, so the narrowing pane uncovers the tree rather than reflowing it, and the Home row, the Agent rows and their buttons keep their places throughout; the width is the pane's less the pixel its right border takes.
+              style={moving ? { width: width - 1 } : undefined}
               collapsing={moving && !expanded}
               onNavigate={over ? () => setOverlaid(false) : undefined}
             />
