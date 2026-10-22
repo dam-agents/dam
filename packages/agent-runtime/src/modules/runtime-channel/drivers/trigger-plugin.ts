@@ -18,6 +18,7 @@ import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
 import type { InvocationWatch } from "../services/invocation-watch.js";
+import { safeReport } from "../infrastructure/report.js";
 
 const IMPL_NAME = "trigger";
 
@@ -182,13 +183,12 @@ export function createTriggerPlugin(deps: {
     return res.sessionId;
   };
 
-  const report = async (input: EventReportInput): Promise<void> => {
-    try {
-      await deps.reporter.report(input);
-    } catch (err) {
-      deps.log(`[trigger] event report failed: ${(err as Error).message}`);
-    }
-  };
+  const report = (input: EventReportInput): Promise<boolean> =>
+    safeReport(
+      () => deps.reporter.report(input),
+      deps.log,
+      "[trigger] event report",
+    );
 
   const refusedReport = (
     eventId: string,

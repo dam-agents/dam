@@ -8,6 +8,7 @@ import { sessionMessageEventPayload } from "agent-runtime-api";
 import type { TriggerSessionDriver } from "../../acp/index.js";
 import type { EventReporter } from "./trigger-plugin.js";
 import { eventPlugin } from "../infrastructure/plugin-registry.js";
+import { safeReport } from "../infrastructure/report.js";
 
 const KIND = "session-message";
 const DETAIL_MAX = 2_000;
@@ -41,15 +42,12 @@ export function createSessionMessagePlugin(deps: {
   reporter: EventReporter;
   log: (msg: string) => void;
 }): Plugin {
-  const report = async (input: EventReportInput): Promise<void> => {
-    try {
-      await deps.reporter.report(input);
-    } catch (err) {
-      deps.log(
-        `[session-message] event report failed: ${(err as Error).message}`,
-      );
-    }
-  };
+  const report = (input: EventReportInput): Promise<boolean> =>
+    safeReport(
+      () => deps.reporter.report(input),
+      deps.log,
+      "[session-message] event report",
+    );
 
   return eventPlugin(KIND, KIND, async (payload, { eventId }) => {
     const { sessionId, text, from, notice } =
