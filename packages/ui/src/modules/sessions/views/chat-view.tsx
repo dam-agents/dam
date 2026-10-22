@@ -1340,12 +1340,12 @@ export function ChatView() {
               .join(" · ")}
           </h1>
           {!newLayout && (
-            // UNIT_BOUNDARY_DESCRIPTION: the tabbed panel leaves the chat without a bar of its own on a wide window, as JanUI's chat has none; a phone keeps one, because the rail waits for a panel there and the navigation button has nowhere else to go.
+            // UNIT_BOUNDARY_DESCRIPTION: the tabbed panel leaves the chat without a bar of its own on a wide window, as JanUI's chat has none, so that bar appears there only while the status has a badge to show; a phone keeps it, because the rail waits for a panel there and the navigation button has nowhere else to go.
             <header
               data-testid="chat-top-bar"
-              className="@container flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-4 md:hidden"
+              className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex"
             >
-              <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
                 <MobileMenuButton />
                 <span
                   aria-hidden
@@ -1392,7 +1392,7 @@ export function ChatView() {
                   processesEnabled={processesEnabled}
                 />
               </div>
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1 md:hidden">
                 {processesEnabled && (
                   <ProcessesIndicator agentId={selectedAgent} />
                 )}

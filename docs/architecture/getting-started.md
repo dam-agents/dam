@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
