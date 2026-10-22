@@ -2,7 +2,8 @@ import type { ProviderOutageReason } from "api-server-api";
 
 export type OutageAlertState = "told" | "recovered";
 
-export type OutageAlertAffectedBy = "failed-calls";
+export type OutageAlertAffectedBy =
+  "failed-calls" | "schedule" | "slack" | "telegram";
 
 export interface AffectedAgent {
   readonly agentId: string;

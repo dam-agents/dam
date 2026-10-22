@@ -148,6 +148,7 @@ import {
   composeHarnessConfigReset,
   composeInitializationPairResolver,
   composeSessionChoicesValidator,
+  composeUnattendedAgentsReader,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -1455,21 +1456,6 @@ export async function bootstrap() {
     resourceAlerts.evaluateStorage(),
   );
 
-  const outageAlerts = composeOutageAlerts({
-    db,
-    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
-    describeAgent: async (agentId) => {
-      const agent = await agentsRepo.get(agentId);
-      return agent?.owner
-        ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
-        : null;
-    },
-    uiBaseUrl: config.uiBaseUrl,
-    brandName: config.brand.name,
-    delayMs: config.outageAlertDelayMinutes * 60_000,
-  });
-  const outageAlertsSaga = outageAlerts.startSaga();
-
   const leaderLease = createLeaderLease({
     leases: leaseApi,
     namespace: config.namespace,
@@ -1550,6 +1536,12 @@ export async function bootstrap() {
 
   const registrySecretPort = createAgentRegistrySecretPort(k8sClient);
 
+  const scheduleModelFor = composeScheduleModelForFire({
+    db,
+    getCapabilities: async (agentId) =>
+      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+        ?.runtimeCapabilities ?? null,
+  });
   const schedulesBoot = composeSchedulesAtBoot({
     db,
     firePair,
@@ -1569,12 +1561,7 @@ export async function bootstrap() {
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
     ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
-    scheduleModelFor: composeScheduleModelForFire({
-      db,
-      getCapabilities: async (agentId) =>
-        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
-          ?.runtimeCapabilities ?? null,
-    }),
+    scheduleModelFor,
     defaultPendingAfterMove: async (agentId) => {
       if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
       void defaultConverter
@@ -1601,6 +1588,47 @@ export async function bootstrap() {
     agentDisabled: async (agentId) =>
       (await agentsRepo.get(agentId))?.disabled === true,
   });
+
+  const grantedTemplates = createGrantedConnectionTemplates(db);
+  const outageAlerts = composeOutageAlerts({
+    db,
+    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    describeAgent: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent?.owner
+        ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
+        : null;
+    },
+    unattendedCandidates: composeUnattendedAgentsReader(db),
+    enabledSchedules: async (agentIds) =>
+      (await schedulesBoot.repo.listEnabledByAgents(agentIds)).map((s) => ({
+        agentId: s.agentId,
+        continuesSession:
+          s.spec.type === "once" && s.spec.origin?.mode === "continue",
+        harness: s.spec.harness,
+        model: s.spec.model,
+      })),
+    fireTemplate: async (agentId, kind, choices) => {
+      const model =
+        kind === "scheduled" && choices.model
+          ? await scheduleModelFor(agentId, choices.model)
+          : undefined;
+      const pair = await firePair(agentId, kind, {
+        ...(choices.harness && { harness: choices.harness }),
+        ...(model && { model }),
+      }).catch((err: unknown) => {
+        if (isNoDefaultModelError(err)) return null;
+        throw err;
+      });
+      if (pair === null) return null;
+      if (pair === undefined || pair.provider === null) return undefined;
+      return grantedTemplates.templateOf(agentId, pair.provider);
+    },
+    uiBaseUrl: config.uiBaseUrl,
+    brandName: config.brand.name,
+    delayMs: config.outageAlertDelayMinutes * 60_000,
+  });
+  const outageAlertsSaga = outageAlerts.startSaga();
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {

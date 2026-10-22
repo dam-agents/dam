@@ -51,6 +51,9 @@ function slackEscape(text: string): string {
 function affectedByLabel(reason: OutageAlertAffectedBy): string {
   return match(reason)
     .with("failed-calls", () => "calls failed")
+    .with("schedule", () => "schedule")
+    .with("slack", () => "Slack channel")
+    .with("telegram", () => "Telegram chat")
     .exhaustive();
 }
 

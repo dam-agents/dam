@@ -10,6 +10,7 @@ import {
   tellable,
   type AffectedAgent,
   type OutageAlert,
+  type OutageAlertAffectedBy,
 } from "../domain/alert-rules.js";
 import {
   outageMessage,
@@ -20,6 +21,7 @@ import type {
   OutageAlertsRepository,
   StoredAlert,
 } from "../infrastructure/outage-alerts-repository.js";
+import type { UnattendedAgentOn } from "./unattended-agents.js";
 
 export interface AgentFacts {
   ownerSub: string;
@@ -37,6 +39,7 @@ export function createOutageAlertsService(deps: {
   repo: OutageAlertsRepository;
   notify: (ownerSub: string, text: string) => Promise<{ sent: number }>;
   describeAgent: (agentId: string) => Promise<AgentFacts | null>;
+  unattendedAgentsOn: (templateId: string) => Promise<UnattendedAgentOn[]>;
   homeUrl: string;
   brandName: string;
   delayMs: number;
@@ -113,14 +116,32 @@ export function createOutageAlertsService(deps: {
     }
   };
 
+  const unattendedOn = async (templateId: string) => {
+    try {
+      return await deps.unattendedAgentsOn(templateId);
+    } catch (err) {
+      log().warn(
+        { templateId, reason: formatError(err) },
+        "outage_alerts.unattended_unread",
+      );
+      return [];
+    }
+  };
+
   const affectedOwners = async (outage: EvaluatedOutage) => {
+    const reasons = new Map<string, OutageAlertAffectedBy[]>();
+    const add = (agentId: string, affectedBy: OutageAlertAffectedBy[]) =>
+      reasons.set(agentId, [...(reasons.get(agentId) ?? []), ...affectedBy]);
+    for (const agentId of outage.failedPayers) add(agentId, ["failed-calls"]);
+    for (const agent of await unattendedOn(outage.templateId))
+      add(agent.agentId, agent.affectedBy);
     const owners = new Map<string, AffectedAgent[]>();
-    for (const agentId of outage.failedPayers) {
+    for (const [agentId, affectedBy] of reasons) {
       const facts = await describe(agentId);
       if (!facts) continue;
       owners.set(facts.ownerSub, [
         ...(owners.get(facts.ownerSub) ?? []),
-        { agentId, name: facts.name, affectedBy: ["failed-calls"] },
+        { agentId, name: facts.name, affectedBy },
       ]);
     }
     for (const agents of owners.values())

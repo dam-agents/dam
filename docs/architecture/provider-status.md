@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -128,7 +128,15 @@ On a narrow screen it shows only its lead and the close button.
 A schedule or a channel runs an agent while nobody watches, so its owner does not meet the outage on a screen.
 An outage alert tells the owner of the affected agents in a Slack direct message ([channels](channels.md)) when an outage lasts longer than a delay, and again when the provider works again.
 The delay is one platform setting, 15 minutes by default; an outage that ends earlier sends nothing.
-The owners told are the owners of the agents with a failed call to the template since the outage started; a disabled or deleted agent is left out.
+The owners told are the owners of two kinds of agents, and the message says for each agent why it is affected.
+An agent with a failed call to the template since the outage started is affected because its calls failed.
+An agent that runs unattended is affected by each kind of its work that fires on the template, also without a failed call: a daily schedule that fires after the outage started, or a channel agent that nobody wrote to yet, will fail too.
+An agent runs unattended by the rule of the [default-model notices](home-feed.md#default-model-notices): an enabled schedule, a bound Slack Channel or a bound Telegram chat; sub-agents are left out.
+A schedule fires on its own harness and model or else on the agent's scheduled default, and a channel turn on the agent's channel default; both fall back to the chat default ([harness configuration](harness-config.md)).
+So one agent's schedule and its channel can run on different providers.
+Work that would not fire at all, because no default model is set or no granted provider fits, does not count, and a one-time schedule that continues its session keeps that session's choices, so it is never named.
+These are resolved only once the outage has lasted the delay.
+A disabled or deleted agent is left out.
 
 The alerts react to the state of each run on the replica that ran the job, so each run is the delay's clock, and a lost run changes nothing, because the next one repeats the whole state.
 Each owner has one alert per template, told or recovered, written with a compare-and-set before the message goes out: two runs never send the same message twice, and a send that fails is lost, not repeated.

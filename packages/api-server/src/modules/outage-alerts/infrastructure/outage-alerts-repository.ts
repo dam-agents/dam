@@ -18,7 +18,9 @@ const agentsSchema = z.array(
   z.object({
     agentId: z.string(),
     name: z.string(),
-    affectedBy: z.array(z.enum(["failed-calls"])),
+    affectedBy: z.array(
+      z.enum(["failed-calls", "schedule", "slack", "telegram"]),
+    ),
   }),
 );
 
