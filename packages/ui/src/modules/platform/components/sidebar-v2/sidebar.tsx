@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
+import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { holdBackEntry } from "../../lib/back-entry.js";
 import {
@@ -74,6 +75,9 @@ export function SidebarV2() {
     animated: !resizing && !prefersReducedMotion(),
     target: navRef,
   });
+  const collapsing = moving && !expanded;
+  const agents = useSidebarAgents().agents;
+  const setToggled = useStore((s) => s.setSidebarTreeToggled);
   // UNIT_BOUNDARY_DESCRIPTION: the overlay belongs to the rail, so a window that widens enough for a pane drops it rather than opening the pane over the page again the next time the window narrows.
   useEffect(() => {
     if (mode !== "rail") setOverlaid(false);
@@ -122,8 +126,16 @@ export function SidebarV2() {
         data-pinned={expanded || undefined}
         data-collapsed={!expanded || undefined}
       >
-        {contentExpanded || over ? (
-          <>
+        {(contentExpanded || over) && (
+          <div
+            className={cn(
+              "flex min-h-0 min-w-0 flex-1 flex-col transition-opacity duration-200 motion-reduce:transition-none",
+              collapsing && "pointer-events-none opacity-0",
+            )}
+            // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the tree keeps the width the pane has when it is open, so the narrowing pane uncovers the tree rather than reflowing it, and the Home row, the Agent rows and their buttons keep their places throughout; the width is the pane's less the pixel its right border takes.
+            style={moving ? { width: width - 1 } : undefined}
+            data-testid="sidebar-tree-wrap"
+          >
             <SidebarHeader
               expanded={expanded}
               onCollapse={() => {
@@ -133,21 +145,31 @@ export function SidebarV2() {
                 }
                 setPinned(false);
                 collapse();
+                setToggled(new Map(agents.map((agent) => [agent.id, false])));
               }}
             />
             <SidebarContent
-              // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the tree keeps the width the pane has when it is open, so the narrowing pane uncovers the tree rather than reflowing it, and the Home row, the Agent rows and their buttons keep their places throughout; the width is the pane's less the pixel its right border takes.
-              style={moving ? { width: width - 1 } : undefined}
-              collapsing={moving && !expanded}
               onNavigate={over ? () => setOverlaid(false) : undefined}
             />
-          </>
-        ) : (
-          <SidebarRail
-            onExpand={() =>
-              mode === "rail" ? setOverlaid(true) : setPinned(true)
-            }
-          />
+          </div>
+        )}
+        {/* UNIT_BOUNDARY_DESCRIPTION: the rail cross-fades with the tree, drawn over the place the tree's own icons occupy, so the pane swaps one for the other without a frame where neither is there; it is only the rail's own content once the width has stopped. */}
+        {(!contentExpanded || moving) && !over && (
+          <div
+            className={cn(
+              "absolute inset-y-0 left-0 flex w-14 flex-col duration-200 motion-reduce:animate-none",
+              "animate-in fade-in-0 transition-opacity motion-reduce:transition-none",
+              expanded && "pointer-events-none opacity-0",
+            )}
+            aria-hidden={expanded || undefined}
+            data-testid="sidebar-rail-wrap"
+          >
+            <SidebarRail
+              onExpand={() =>
+                mode === "rail" ? setOverlaid(true) : setPinned(true)
+              }
+            />
+          </div>
         )}
       </nav>
       {/* UNIT_BOUNDARY_DESCRIPTION: one handle serves the rail and the pane, so a drag that crosses between them keeps its grip instead of being cut short when the other handle would have taken over. */}

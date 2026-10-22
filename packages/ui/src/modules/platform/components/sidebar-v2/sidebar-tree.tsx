@@ -85,13 +85,7 @@ const FLAT_PAGE = 20;
  * keeps it. An Agent's attention hint refreshes that Agent's own list,
  * so an open list stays live without its chat.
  */
-export function SidebarTree({
-  onNavigate,
-  collapsing = false,
-}: {
-  onNavigate?: () => void;
-  collapsing?: boolean;
-}) {
+export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const { agents, openAgentId, sessionOpen, unreadAgentIds } =
     useSidebarAgents();
   const activity = useActivitySessions();
@@ -170,7 +164,6 @@ export function SidebarTree({
         </section>
         <section aria-label={groupBy === "all" ? "Sessions" : "Agents"}>
           <ListLabel
-            fading={collapsing}
             actions={
               <>
                 <ActivityFilterMenu
@@ -336,23 +329,15 @@ function GroupByMenu({
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the rail has no room for a label, and draws a hairline where the tree draws its Agents label, so the label fades out as the pane narrows rather than being cut in half.
 function ListLabel({
   actions,
-  fading = false,
   children,
 }: {
   actions?: ReactNode;
-  fading?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        "flex h-8 items-center justify-between gap-2 pr-1 pl-2 transition-opacity duration-200 motion-reduce:transition-none",
-        fading && "opacity-0",
-      )}
-    >
+    <div className="flex h-8 items-center justify-between gap-2 pr-1 pl-2">
       <SectionLabel>{children}</SectionLabel>
       {actions && <div className="flex items-center gap-0.5">{actions}</div>}
     </div>
