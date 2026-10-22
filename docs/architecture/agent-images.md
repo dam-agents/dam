@@ -128,7 +128,7 @@ An agent's instructions live in two files, and every harness reads both, so swit
   The template rides an `agent-instructions` runtime event that writes the file only when the home has none.
 
 The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it.
-A harness that walks up from the work directory finds it on its own; one that reads only its own global file gets a link to `~/AGENTS.md` placed there at every start, and a regular file an owner put at that path stays theirs.
+A harness that walks up from the work directory finds it on its own; where a harness's walk stops short of the home, at the work directory or at a git root, it gets a link to `~/AGENTS.md` in its own global instructions at start, and a regular file an owner put at that path stays theirs.
 Each harness's README names the files it reads ([Claude Code](../../packages/agents/claude-code/README.md#agent-instructions), [Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration), [Copilot](../../packages/agents/copilot/README.md#platform-instructions)).
 `work/AGENTS.md` still loads beside them on every harness, for a kit whose work directory is its toolkit.
 A harness reads these files when a session starts, so an edit applies from the next session; Codex reads its global file again each turn, so there an edit applies from the next turn.

@@ -27,7 +27,7 @@ The rule covers every session's attachments: the sessions of one agent share its
 The platform instructions reach Claude Code as its managed memory file: the image links `/etc/claude-code/CLAUDE.md` to `/etc/AGENTS.md`, so an owner's file cannot replace them.
 Claude Code walks up from the work directory, so it finds the agent's own `~/AGENTS.md` and `work/AGENTS.md` with no link ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
 On its own, Claude Code drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere on that walk, `~/CLAUDE.md` or a repository's included.
-So `managed-settings.json` sets its built-in AGENTS.md plugin (`cc-plugin-agents-md`) to `instructionFiles: claude-md-and-agents-md`, which loads every `AGENTS.md` beside the `CLAUDE.md` files.
+So `managed-settings.json` sets its built-in AGENTS.md plugin (`agents-md@builtin`) to `instructionFiles: claude-md-and-agents-md`, which loads every `AGENTS.md` beside the `CLAUDE.md` files.
 A file that a `CLAUDE.md` already imports or links to, or that holds the same text, is not loaded twice.
 Managed settings win over the owner's settings, so an owner cannot turn `~/AGENTS.md` off.
 
