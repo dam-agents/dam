@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
   formatLocalResetTime,
   formatSpendAmount,
+  type SpendBindingKind,
   type SpendCeilingSource,
   type SpendCeilingView,
   type SpendLimitState,
@@ -74,6 +75,22 @@ function ceilingLine(ceiling: SpendCeilingView | null): string {
   );
 }
 
+const BINDING_NAMES: Readonly<Record<SpendBindingKind, string>> = {
+  agent: "the Agent spend limit",
+  owner: "your spend limit (all Agents)",
+  connection: "the Agent's limit on it",
+  "owner-connection": "your limit for all Agents on it",
+  ceiling: "the spend ceiling",
+};
+
+function stopsFirstLines(status: SpendStatus): string[] {
+  return status.binding.map(
+    (binding) =>
+      `Stops first on ${binding.connectionName ?? "all paid providers"}: ` +
+      `${BINDING_NAMES[binding.stopsFirst.kind]}, ${formatSpendAmount(binding.leftMicros, binding.unit)} left.`,
+  );
+}
+
 function renderStatus(
   status: SpendStatus,
   subject: string,
@@ -117,6 +134,9 @@ function renderStatus(
       ],
       ...status.limits.map((limit) => limitRow(limit, connectionNames)),
     ]) +
+    (status.binding.length > 0
+      ? `\n${stopsFirstLines(status).join("\n")}\n`
+      : "") +
     `\n${UNITS_NOTE}\n`
   );
 }

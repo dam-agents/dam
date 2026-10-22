@@ -23,6 +23,7 @@ import {
   type AgentLabels,
   type BreakdownRow,
 } from "../domain/breakdown.js";
+import { bindingOf } from "../domain/binding.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -324,7 +325,7 @@ export function createSpendService(deps: {
       const day = utcDay(now);
       const agentId = input?.agentId;
       if (agentId) await requireOwned(agentId);
-      const [limits, ceiling, rows, byConnection, ownerByConnection] =
+      const [limits, ceiling, rows, byConnection, ownerByConnection, granted] =
         await Promise.all([
           deps.limits.applying(
             { agentId: agentId ?? null, ownerSub: deps.ownerSub },
@@ -349,6 +350,7 @@ export function createSpendService(deps: {
             agentId: null,
             day,
           }),
+          agentId ? deps.connections.grantedTo(agentId) : [],
         ]);
       const spent = new Map<string, SpendTotal>();
       for (const row of rows) {
@@ -361,14 +363,40 @@ export function createSpendService(deps: {
         total.estimatedCalls += row.estimatedCalls;
         spent.set(row.unit, total);
       }
+      const limitViews = await Promise.all(
+        limits.map((limit) => limitView(limit, day)),
+      );
+      const ceilingReading = ceiling ? await ceilingView(ceiling, day) : null;
+      const names = agentId
+        ? await deps.connectionNames()
+        : new Map<string, string>();
       return {
         day,
         resetsAt: nextUtcMidnight(now).toISOString(),
-        limits: await Promise.all(limits.map((limit) => limitView(limit, day))),
-        ceiling: ceiling ? await ceilingView(ceiling, day) : null,
+        limits: limitViews,
+        ceiling: ceilingReading,
         spent: [...spent.values()],
         spentByConnection: byConnection,
         ownerSpentByConnection: ownerByConnection,
+        binding: agentId
+          ? bindingOf({
+              agentId,
+              limits: limitViews,
+              ceiling: ceilingReading,
+              connections: granted.flatMap(({ connectionId, templateId }) => {
+                const rule = connectionLimitRule(templateId);
+                return rule.limitable
+                  ? [
+                      {
+                        connectionId,
+                        name: names.get(connectionId) ?? connectionId,
+                        unit: rule.unit,
+                      },
+                    ]
+                  : [];
+              }),
+            })
+          : [],
       };
     },
 

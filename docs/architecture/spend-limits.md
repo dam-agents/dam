@@ -311,6 +311,12 @@ The ceiling asks nothing.
 **The agent's view.** Through a platform tool, an agent reads the limits that count its calls, today's spend, what is left, the state of each limit, and when the day resets.
 It has no tool to set, clear or continue a limit.
 
+**Which limit stops first.** Several limits can count one call, and the first one reached stops it.
+For an agent, the api-server works out which one that is, so every surface says the same: the agent's screens, `dam spend status <agent>` and the agent's own tool.
+It answers per Connection that the agent holds, and once more for the agent's dollar spend across Connections.
+A dollar Connection is counted by its own limits, the agent limit, the own limit and the ceiling; a subscription or Bob Connection only by its own limits, because the others count dollars alone.
+The limit with the least left today stops first; on a tie, the one set closest to the agent: the agent's Connection limit, then the agent limit, then the Connection limit for all agents, then the own limit, then the ceiling.
+
 ## Screens
 
 The owner sets each limit where the work happens.

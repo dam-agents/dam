@@ -172,6 +172,9 @@ export function createGrantedConnectionTemplates(db: Db): {
     ownerSub: string,
     connectionId: string,
   ): Promise<string | null>;
+  grantedTo(
+    agentId: string,
+  ): Promise<readonly { connectionId: string; templateId: string }[]>;
 } {
   const repo = createConnectionsRepository(db);
   return {
@@ -182,6 +185,13 @@ export function createGrantedConnectionTemplates(db: Db): {
     async ownedTemplateOf(ownerSub, connectionId) {
       const owned = await repo.listByOwner(ownerSub);
       return owned.find((c) => c.id === connectionId)?.templateId ?? null;
+    },
+    async grantedTo(agentId) {
+      const granted = await repo.listConnectionsForAgent(agentId);
+      return granted.map((c) => ({
+        connectionId: c.id,
+        templateId: c.templateId,
+      }));
     },
   };
 }

@@ -170,6 +170,11 @@ Decisions taken there:
   `dam spend limit --me --connection`, and `dam spend status` listing it in each Connection's unit.
   Not yet verified live: a model call counted against the limit and refused at it — the operator
   checks that in the whole-feature smoke test (the cluster's VM runner could not be rebuilt here).
+- **02** is committed.
+  `SpendBinding` also carries `connectionName`, so the agent tool and the CLI
+  name the provider without a second lookup.
+  Verified with `dam spend status <agent>` on the
+  cluster: a subscription row names only its own limits; a dollar row compares all of them.
 
 ## Whole-feature smoke test
 

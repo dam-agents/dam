@@ -101,6 +101,9 @@ export interface GrantedConnections {
     ownerSub: string,
     connectionId: string,
   ): Promise<string | null>;
+  grantedTo(
+    agentId: string,
+  ): Promise<readonly { connectionId: string; templateId: string }[]>;
 }
 
 export function createDayTotals(deps: {
