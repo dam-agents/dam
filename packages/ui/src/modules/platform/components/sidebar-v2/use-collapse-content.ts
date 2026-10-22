@@ -41,22 +41,6 @@ export function useCollapseContent({
     };
   }, [moving, target]);
 
-  // UNIT_BOUNDARY_DESCRIPTION: the pane's width is animated by CSS, where a stylesheet cannot read it, so a label that must end in an ellipsis at the pane's edge reads the width this writes on every frame of the animation and drops it after.
-  useEffect(() => {
-    const el = target.current;
-    if (!moving || !el) return;
-    let frame = 0;
-    const tick = () => {
-      el.style.setProperty("--sidebar-w", `${el.clientWidth}px`);
-      frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => {
-      cancelAnimationFrame(frame);
-      el.style.removeProperty("--sidebar-w");
-    };
-  }, [moving, target]);
-
   return {
     contentExpanded: expanded || moving === "collapse",
     // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the content keeps the width it had, so the pane uncovers it rather than squeezing it; only a drag resizes what is inside.

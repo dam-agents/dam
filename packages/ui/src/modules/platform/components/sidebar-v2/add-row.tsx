@@ -11,8 +11,10 @@ import {
 } from "@/components/ui/rail-tile";
 import { cn } from "@/lib/utils";
 
-// UNIT_BOUNDARY_DESCRIPTION: a name ends in an ellipsis at the edge of the pane rather than being cut by it, since the pane narrows over a tree that keeps its width while it moves; 58 is the icon column and the space after it, and a tree with no pane around it, as in a test, clamps to its own width and is unchanged.
-export const TREE_LABEL_MAX = "max-w-[calc(var(--sidebar-w,100%)-58px)]";
+// UNIT_BOUNDARY_DESCRIPTION: a name ends in an ellipsis at the pane rather than being cut by it, since the pane narrows over a tree that keeps its width while it moves; it clamps to what the row holds with the pane that narrow, so its ellipsis does not move out and then back. The pane is the query container, so 100cqw is the width the browser is animating this very frame.
+export const TREE_LABEL_MAX = "max-w-[calc(100cqw-66px)]";
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's row keeps a corner clear for its own buttons, so its name gives up that much more of the pane than Home's label does.
+export const TREE_AGENT_NAME_MAX = "max-w-[calc(100cqw-130px)]";
 
 // UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 40px column, wide enough for an avatar that spans a two-line row, and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
 export const TREE_LEADING = "flex w-10 shrink-0 justify-center";

@@ -64,8 +64,8 @@ import { AgentCue } from "./activity-dot.js";
 import {
   AddRow,
   NavRow,
+  TREE_AGENT_NAME_MAX,
   TREE_AVATAR,
-  TREE_LABEL_MAX,
   TREE_LEADING,
 } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
@@ -454,7 +454,7 @@ function AgentNode({
             <span
               className={cn(
                 "flex min-w-0 flex-1 flex-col gap-0.5",
-                TREE_LABEL_MAX,
+                TREE_AGENT_NAME_MAX,
               )}
             >
               <span title={agent.name} className="truncate text-sm font-medium">

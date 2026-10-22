@@ -103,7 +103,8 @@ export function SidebarV2() {
       <nav
         ref={navRef}
         className={cn(
-          "flex flex-col border-r border-border bg-chrome",
+          // UNIT_BOUNDARY_DESCRIPTION: the pane is the container its rows ask for their width, so a label that must end in an ellipsis at the pane's edge follows the width as the browser animates it, with no script in the loop.
+          "@container flex flex-col border-r border-border bg-chrome",
           over
             ? "fixed inset-y-0 left-0 z-overlay"
             : "relative h-full shrink-0",
