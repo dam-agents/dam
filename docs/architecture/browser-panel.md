@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-16
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -74,6 +74,7 @@ A runtime too old to report tabs shows the panel without its tab bar.
 
 `platform-display` is the display stack: Xvfb (the virtual display), i3 keeping every window full-screen, PipeWire with its PulseAudio server for sound, and **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays.
 agent-runtime does not start it before it answers its health check, where it would take the CPU a small machine needs to come up: it starts it on first use — a prompt to any harness, or a terminal or SSH session starting, which is how the agent's own `agent-browser` finds a display, or the panel asking for its browser or its stream — or ten seconds after it starts answering its health check, whichever comes first, and keeps it running from then on.
+It checks that every part of the stack is in the image each time it would start it, not once at its own start, so a part restored while the runtime runs, such as a Chromium link an agent fixed, starts the display at its next use; until then it logs which parts are missing, once for each change in them.
 It does not start with a harness: the default harness starts as soon as the health check answers ([sessions](sessions.md#session-inside-the-pod)), and Selkies' few seconds of start-up CPU made the first session open about 0.15 s later.
 A prompt is early enough for a tool call: the virtual display is up about 0.1 s after the start, before the model's first answer.
 That delay is the limit: a command run by anything else in those ten seconds finds no display yet.
