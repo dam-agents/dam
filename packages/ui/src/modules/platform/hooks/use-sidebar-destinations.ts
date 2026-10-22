@@ -57,10 +57,10 @@ export function useSidebarDestinations() {
 
   return {
     home,
-    // UNIT_BOUNDARY_DESCRIPTION: the right toolbar offers Artifacts on every page, so the navigation leaves its own entry out while that flag is on rather than naming the same place twice.
+    // UNIT_BOUNDARY_DESCRIPTION: the right toolbar offers Artifacts and Documentation on every page, so the navigation leaves its own entries out while that flag is on rather than naming the same places twice.
     primary: rightToolbar
       ? [home, starterKits]
       : [home, artifacts, starterKits],
-    secondary: [docs, settings],
+    secondary: rightToolbar ? [settings] : [docs, settings],
   };
 }

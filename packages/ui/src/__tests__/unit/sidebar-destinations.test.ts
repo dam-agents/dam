@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The sidebar's Home, Artifacts and Starter kits entries behave alike: each opens its own page and shows as current while that page is shown, rather than one opening a page, one a side panel and one a dialog. The Unified right toolbar puts Artifacts on every page's rail, so with it on the navigation drops its own entry for the library.
+// TEST_OVERVIEW: The sidebar's Home, Artifacts and Starter kits entries behave alike: each opens its own page and shows as current while that page is shown, rather than one opening a page, one a side panel and one a dialog. The Unified right toolbar puts Artifacts and Documentation on every page's rail, so with it on the navigation drops its own entries for both.
 import { beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -39,13 +39,12 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// TEST_SCENARIO: with the Unified right toolbar on, the navigation leaves Artifacts out, because every page's rail already offers it.
-it("leaves Artifacts out while the right toolbar offers it", () => {
+// TEST_SCENARIO: with the Unified right toolbar on, the navigation leaves Artifacts and Documentation out, because every page's rail already offers both.
+it("leaves Artifacts and Documentation out while the right toolbar offers them", () => {
   state.rightToolbar = true;
-  expect(useSidebarDestinations().primary.map((d) => d.label)).toEqual([
-    "Home",
-    "Starter kits",
-  ]);
+  const { primary, secondary } = useSidebarDestinations();
+  expect(primary.map((d) => d.label)).toEqual(["Home", "Starter kits"]);
+  expect(secondary.map((d) => d.label)).toEqual(["Settings"]);
 });
 
 it.each([
