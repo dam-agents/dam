@@ -82,13 +82,19 @@ vi.mock("../../modules/platform/components/sidebar-v2/pinned-rows.js", () => ({
   FeedSessionRow: () => null,
   PinnedList: () => null,
 }));
-vi.mock("../../modules/platform/components/sidebar-v2/agent-row-actions.js", () => ({
-  AgentContextMenu: ({ children }: { children: ReactNode }) => children,
-  AgentRowActions: () => null,
-}));
-vi.mock("../../modules/platform/components/sidebar-v2/new-agent-menu.js", () => ({
-  NewAgentMenu: ({ children }: { children: ReactNode }) => children,
-}));
+vi.mock(
+  "../../modules/platform/components/sidebar-v2/agent-row-actions.js",
+  () => ({
+    AgentContextMenu: ({ children }: { children: ReactNode }) => children,
+    AgentRowActions: () => null,
+  }),
+);
+vi.mock(
+  "../../modules/platform/components/sidebar-v2/new-agent-menu.js",
+  () => ({
+    NewAgentMenu: ({ children }: { children: ReactNode }) => children,
+  }),
+);
 vi.mock(
   "../../modules/platform/components/sidebar-v2/agent-session-list.js",
   async () => {
