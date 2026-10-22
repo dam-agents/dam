@@ -20,10 +20,10 @@ import {
 } from "../api/mutations.js";
 import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 
-type ApprovalActionId =
+export type ApprovalActionId =
   "allow-once" | "allow-permanent" | "allow-host" | "dismiss" | "deny-forever";
 
-interface ApprovalAction {
+export interface ApprovalAction {
   id: ApprovalActionId;
   label: string;
   icon: CarbonIconType;
@@ -36,7 +36,6 @@ interface ApprovalAction {
 
 interface ApprovalActions {
   actions: readonly ApprovalAction[];
-  primaryLabel: string;
   inflight: boolean;
   hostLabel: string | null;
   expiredNote: string | null;
@@ -199,7 +198,6 @@ export function useApprovalActions(
 
   return {
     actions: spendLimit ? spendLimitActions : egressActions,
-    primaryLabel: spendLimit ? continueText : "Allow once",
     inflight,
     hostLabel,
     expiredNote:
