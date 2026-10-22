@@ -2,13 +2,10 @@ import { WarningAltFilled } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
-import { useAgentsList } from "../../agents/api/queries.js";
-import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
+import { useAgentUpdateAction } from "../../agents/hooks/use-update-sandbox.js";
 
 export function SessionPairOutdatedNotice({ agentId }: { agentId: string }) {
-  const agents = useAgentsList();
-  const { updateOne, updatingId } = useUpdateSandbox();
-  const agent = agents.find((a) => a.id === agentId);
+  const { agent, updateOne, pending } = useAgentUpdateAction(agentId);
   if (!agent) return null;
 
   return (
@@ -29,7 +26,7 @@ export function SessionPairOutdatedNotice({ agentId }: { agentId: string }) {
             <Button
               variant="link"
               size="inline"
-              disabled={updatingId === agent.id}
+              disabled={pending}
               onClick={() => void updateOne(agent)}
             >
               Update
