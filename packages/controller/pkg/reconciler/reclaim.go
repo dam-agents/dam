@@ -158,10 +158,18 @@ func reclaimEligible(annotations map[string]string, idleTimeout time.Duration, n
 	return last, true
 }
 
-func (r *AgentReconciler) stampReclaimed(ctx context.Context, name, stamp string) error {
-	raw, err := json.Marshal(map[string]any{
-		"metadata": map[string]any{"annotations": map[string]string{annReclaimedAt: stamp}},
-	})
+// UNIT_BOUNDARY_DESCRIPTION: writes the reclaim stamp, and only onto the
+// UNIT_BOUNDARY_DESCRIPTION: version of the Agent the reclaim re-read it at:
+// UNIT_BOUNDARY_DESCRIPTION: an api-server write landing between that read and
+// UNIT_BOUNDARY_DESCRIPTION: this patch bumps the version and the patch fails
+// UNIT_BOUNDARY_DESCRIPTION: with a conflict instead of spending the activity
+// UNIT_BOUNDARY_DESCRIPTION: of an agent somebody just touched.
+func (r *AgentReconciler) stampReclaimed(ctx context.Context, name, stamp, resourceVersion string) error {
+	meta := map[string]any{"annotations": map[string]string{annReclaimedAt: stamp}}
+	if resourceVersion != "" {
+		meta["resourceVersion"] = resourceVersion
+	}
+	raw, err := json.Marshal(map[string]any{"metadata": meta})
 	if err != nil {
 		return fmt.Errorf("encoding reclaim stamp: %w", err)
 	}

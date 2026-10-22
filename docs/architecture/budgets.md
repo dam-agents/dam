@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -160,6 +160,10 @@ Four rules bound it:
 - **A reclaimed agent stays down.** Its activity stamp is still inside its own timeout — that is the premise of reclaiming it early — so it is marked as having *spent* that stamp and only a **newer** activity bump revives it, back through the gate like any other start.
   Without that, the victim's own next reconcile would take the room straight back.
   The mark is self-clearing: a deliberate touch outdates it.
+
+Each victim is read again immediately before it is put to sleep, because the idle probe takes time and the api-server writes pins and activity without taking the controller's owner lock.
+A victim that gained a pin, fresh activity, a stop request or a migration since it was chosen is left running, and the reclaim stamp is written only onto the version of the Agent that read saw, so a write landing between that read and the stamp fails it and spares the victim too.
+The other victims are still reclaimed, since the room the start needs is freed by whichever of them holds it.
 
 Reclaiming is **announced, not asked**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
