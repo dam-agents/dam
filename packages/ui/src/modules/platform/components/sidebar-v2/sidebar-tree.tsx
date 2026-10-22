@@ -19,7 +19,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { RAIL_GLYPH, SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
+import {
+  RAIL_GAP,
+  RAIL_GLYPH,
+  RAIL_ROW,
+  SIDEBAR_GLYPH,
+} from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -127,7 +132,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-2 pb-3"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-1.5 pb-3"
         data-testid="sidebar-tree"
       >
         <div className="mb-2">
@@ -226,7 +231,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </>
           )}
           {groupBy === "agents" && (
-            <ul className="flex flex-col gap-px">
+            <ul className={cn("flex flex-col", RAIL_GAP)}>
               {agents.map((agent) => (
                 <AgentNode
                   key={agent.id}
@@ -252,7 +257,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </ul>
           )}
           {groupBy === "agents" && (
-            <div className="mt-px">
+            <div className="mt-1.5">
               <AddRow
                 icon={FaceAdd}
                 hoverIcon={FaceActivatedAdd}
@@ -397,7 +402,8 @@ function AgentNode({
             aria-describedby={sublineId}
             data-testid="sidebar-agent-row"
             className={cn(
-              "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
+              "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
+              RAIL_ROW,
               agentFilter ? "pr-14" : "pr-16",
               "group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
               FOCUS_RING,
@@ -514,7 +520,8 @@ function NavRow({
       data-testid={testId}
       onClick={onClick}
       className={cn(
-        "flex h-[34px] w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
+        "flex w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
+        RAIL_ROW,
         FOCUS_RING,
         current
           ? "bg-muted text-foreground"

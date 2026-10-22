@@ -8,8 +8,11 @@ export const SIDEBAR_GLYPH = 14;
 // UNIT_BOUNDARY_DESCRIPTION: both rails lay their tiles out through these, so an item, the space between items and the padding above them are the same on either side of the page.
 export const RAIL_GAP = "gap-1.5";
 export const RAIL_COLUMN = `flex flex-col items-center ${RAIL_GAP} py-2`;
-export const RAIL_SEPARATOR =
-  "pointer-events-none absolute inset-x-0 flex justify-center";
+
+// UNIT_BOUNDARY_DESCRIPTION: an expanded row is one tile high and its list leaves one rail gap after it, so a row and a tile are the same distance apart (54) and every icon keeps its place when the pane swaps between its tree and its rail.
+export const RAIL_ROW = "h-12";
+// UNIT_BOUNDARY_DESCRIPTION: the tree spends 8 plus 32 on the label above its Agents, and the rail spends the same 40 on the hairline above them, which sits between two of its 6-pixel gaps.
+export const RAIL_SEPARATOR_SPACE = "h-7";
 
 export function railTile(active: boolean): string {
   return cn(

@@ -26,7 +26,7 @@ import {
   RAIL_COLUMN,
   RAIL_GAP,
   RAIL_GLYPH,
-  RAIL_SEPARATOR,
+  RAIL_SEPARATOR_SPACE,
   railTile,
 } from "@/components/ui/rail-tile";
 import { cn } from "@/lib/utils";
@@ -89,6 +89,8 @@ export function SidebarRail({
       className={cn(
         "min-h-0 flex-1 overflow-x-visible overflow-y-auto",
         RAIL_COLUMN,
+        // UNIT_BOUNDARY_DESCRIPTION: the pane's header draws the chevron flush with the top, and the pane's right border takes one of the four pixels either side of a tile, so the tiles centre where the tree's rows do.
+        "pt-0 pl-px",
       )}
       data-testid="sidebar-rail"
     >
@@ -130,7 +132,13 @@ export function SidebarRail({
         className={cn("relative flex min-h-0 flex-col items-center", RAIL_GAP)}
         data-testid="sidebar-rail-agents"
       >
-        <div aria-hidden className={cn(RAIL_SEPARATOR, "-top-[3px]")}>
+        <div
+          aria-hidden
+          className={cn(
+            "flex items-center justify-center",
+            RAIL_SEPARATOR_SPACE,
+          )}
+        >
           <span className="h-px w-6 bg-border" />
         </div>
         {agents.map((agent) => (

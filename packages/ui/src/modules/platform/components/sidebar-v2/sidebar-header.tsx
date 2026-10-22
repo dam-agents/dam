@@ -15,7 +15,8 @@ interface Props {
 
 export function SidebarHeader({ onCollapse, onHome }: Props) {
   return (
-    <div className="flex h-12 shrink-0 items-center border-b border-border px-1">
+    // UNIT_BOUNDARY_DESCRIPTION: the header's bottom border takes a pixel of its height, so the chevron tile starts at the top rather than centring in what the border leaves, and lands where the rail's first tile does.
+    <div className="flex h-12 shrink-0 items-start border-b border-border px-1">
       <Tooltip content="Collapse navigation" side="bottom">
         <button
           type="button"
@@ -30,7 +31,7 @@ export function SidebarHeader({ onCollapse, onHome }: Props) {
         type="button"
         onClick={onHome}
         aria-label={getBrand().name}
-        className={`-ml-1 min-w-0 rounded-lg py-1 pr-1.5 pl-0 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+        className={`-ml-1 min-w-0 self-center rounded-lg py-1 pr-1.5 pl-0 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
       >
         <BrandLogo />
       </button>

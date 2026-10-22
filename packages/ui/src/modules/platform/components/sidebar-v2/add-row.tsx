@@ -4,8 +4,10 @@ import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   RAIL_AVATAR,
   RAIL_GLYPH,
+  RAIL_ROW,
   SIDEBAR_GLYPH,
 } from "@/components/ui/rail-tile";
+import { cn } from "@/lib/utils";
 
 // UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 40px column, wide enough for an avatar that spans a two-line row, and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
 export const TREE_LEADING = "flex w-10 shrink-0 justify-center";
@@ -41,7 +43,12 @@ export function AddRow({
       aria-current={current ? "page" : undefined}
       disabled={disabled}
       onClick={onClick}
-      className={`group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left ${avatar ? "pr-2" : "px-2"} text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50 ${avatar ? "h-12" : "h-[34px]"} ${FOCUS_RING}`}
+      className={cn(
+        "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50",
+        avatar ? "pr-2" : "px-2",
+        avatar ? RAIL_ROW : "h-[34px]",
+        FOCUS_RING,
+      )}
     >
       <span className={TREE_LEADING}>
         <Icon
