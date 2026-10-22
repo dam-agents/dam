@@ -6,7 +6,11 @@ import {
   tierWordOf,
   type ClaudeTier,
 } from "agent-runtime-api";
-import { CLAUDE_MODEL_NAME_PREFIX, parseQualifiedModel } from "api-server-api";
+import {
+  CLAUDE_MODEL_NAME_PREFIX,
+  parseQualifiedModel,
+  preferredModelOf,
+} from "api-server-api";
 import type { CatalogProvider } from "../../model-catalog/index.js";
 import { forHarness, renderName } from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
@@ -17,7 +21,10 @@ export type TierModels = Record<ClaudeTier, string>;
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code's tier slots, which its picker and
  * `/model` offer, each filled with the newest model carrying the tier word,
  * so a provider that serves no Claude model still answers every slot with
- * one of its own.
+ * one of its own. A provider whose ids carry no tier word at all has nothing
+ * to answer with, and then the platform's preferred model stands in, so that
+ * provider's slots name the model the platform means rather than whichever id
+ * it happens to list last.
  */
 export function tierModels(candidates: readonly string[]): TierModels | null {
   const ids = chatModels(candidates);
@@ -25,8 +32,17 @@ export function tierModels(candidates: readonly string[]): TierModels | null {
   const [fable, opus, sonnet, haiku] = CLAUDE_TIERS.map((t) =>
     newestOfTier(ids, t),
   );
+  const tierless = !fable && !opus && !sonnet && !haiku;
+  const preferred = tierless
+    ? (preferredModelOf("work", [{ alias: "", listed: ids }])?.upstreamId ??
+      null)
+    : null;
   const fallback =
-    opus ?? sonnet ?? haiku ?? [...ids].sort(compareModelVersions).at(-1)!;
+    preferred ??
+    opus ??
+    sonnet ??
+    haiku ??
+    [...ids].sort(compareModelVersions).at(-1)!;
   return {
     fable: fable ?? fallback,
     opus: fallback,
@@ -66,12 +82,15 @@ function tierOf(
  * process from the agent's default provider, and Claude Code resolves its
  * built-in aliases through them, so a session moved to another provider
  * would otherwise send its titles, summaries, classifier calls and
- * alias-named subagents to the provider it left. The auto-mode classifier
- * asks for Claude Code's own Sonnet by a bare id, which goes the same way
- * when the session's provider lists neither that id nor a deployment of it.
+ * alias-named subagents to the provider it left.
  * A provider whose models carry no tier word has no tiers to answer with,
  * so there every slot call runs on the session's own model, whichever
- * provider filled the slot. A call on the session's own provider for a
+ * provider filled the slot.
+ * The auto-mode classifier's own model comes from its knob rather than a
+ * slot (classifierModelEnv), but a name carrying a tier word is a side call
+ * like any other and moves by that tier; one without a tier word moves
+ * nowhere and stays on the default provider's model.
+ * A call on the session's own provider for a
  * model it no longer lists, a slot the process holds from before a listing
  * change, is read by its tier the same way. Null when the call names a
  * model the session's own provider lists among its tiers, or no tier at

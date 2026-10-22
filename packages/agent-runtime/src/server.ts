@@ -572,13 +572,15 @@ const {
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
-  beforeSpawn: () =>
-    Promise.race([
+  beforeSpawn: async () => {
+    await Promise.race([
       modelCatalog.listed(),
       new Promise<void>((resolve) => {
         setTimeout(resolve, FIRST_LISTING_WAIT_MS).unref();
       }),
-    ]),
+    ]);
+    await runtimeChannel.writeModelWindows();
+  },
   providerAliases: grantedAliases,
   aliasOfConnection,
   unroutedProviderEnv,

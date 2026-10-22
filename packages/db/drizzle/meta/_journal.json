@@ -729,6 +729,13 @@
       "when": 1792666774737,
       "tag": "0103_spend_ceilings",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1792676989193,
+      "tag": "0104_curve_bender_deepseek_defaults",
+      "breakpoints": true
     }
   ]
 }

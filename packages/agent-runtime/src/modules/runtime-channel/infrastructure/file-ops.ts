@@ -17,6 +17,9 @@ export interface FileDesired {
   mergeMode: MergeMode;
   content: unknown;
   keyPath?: string;
+  /** UNIT_BOUNDARY_DESCRIPTION: a path whose segments are taken literally,
+   * for a key a dotted `keyPath` cannot carry. */
+  keyPathArray?: string[];
   keys?: string[];
   delete?: boolean;
 }
@@ -27,7 +30,21 @@ export interface FileOpsContext {
   onUnparseable?: "rewrite-aside" | "throw";
 }
 
-export async function applyFiles(
+/** UNIT_BOUNDARY_DESCRIPTION: one apply at a time, so two drivers that merge
+ * into the same file cannot each read it before the other writes and lose a
+ * key. */
+let queue: Promise<void> = Promise.resolve();
+
+export function applyFiles(
+  desired: Map<string, FileDesired[] | null>,
+  ctx: FileOpsContext,
+): Promise<void> {
+  const run = queue.then(() => applyFilesNow(desired, ctx));
+  queue = run.catch(() => {});
+  return run;
+}
+
+async function applyFilesNow(
   desired: Map<string, FileDesired[] | null>,
   ctx: FileOpsContext,
 ): Promise<void> {
@@ -149,11 +166,12 @@ function mergeKeyTargeted(
   const next: Record<string, unknown> = { ...base };
 
   for (const f of fragments) {
+    const path = f.keyPathArray ?? (f.keyPath ? f.keyPath.split(".") : null);
     if (f.delete) {
-      if (f.keyPath) deleteNested(next, f.keyPath.split("."));
+      if (path) deleteNested(next, path);
       for (const key of f.keys ?? []) delete next[key];
-    } else if (f.keyPath) {
-      setNested(next, f.keyPath.split("."), f.content);
+    } else if (path) {
+      setNested(next, path, f.content);
     } else if (f.content && typeof f.content === "object") {
       Object.assign(next, f.content as Record<string, unknown>);
     }

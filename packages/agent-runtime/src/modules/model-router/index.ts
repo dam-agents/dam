@@ -26,8 +26,8 @@ export {
   type RouterExtension,
 } from "./services/model-router.js";
 export { resolveTarget } from "./domain/resolve-target.js";
-export { routerEnvFor } from "./domain/harness-env.js";
-export { tierModels } from "./domain/tier-slots.js";
+export { routerEnvFor, servedModels } from "./domain/harness-env.js";
+export { tierModelOnSessionProvider, tierModels } from "./domain/tier-slots.js";
 export { classify, normalizePath } from "./domain/classify.js";
 export { upstreamWireOf, upstreamUrl } from "./domain/upstream.js";
 export {

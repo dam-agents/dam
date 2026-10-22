@@ -55,7 +55,8 @@ import {
 } from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import { catalogChoices } from "./domain/catalog-choices.js";
-import type { ModelCatalog } from "../model-catalog/index.js";
+import type { CatalogProvider, ModelCatalog } from "../model-catalog/index.js";
+import { servedModels } from "../model-router/index.js";
 import {
   createSessionDirectoryReporter,
   type SessionDirectoryReporter,
@@ -74,6 +75,7 @@ export function pluginStateRoot(agentHome: string): string {
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   harnessConfig: HarnessConfigService;
+  writeModelWindows(): Promise<void>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
@@ -318,8 +320,33 @@ export async function composeRuntimeChannel(
     log,
   });
 
+  const writtenWindows = new Map<string, string>();
+  const writeModelWindows = async (): Promise<void> => {
+    if (!opts.catalog) return;
+    for (const [harness, plugin] of harnessConfigs) {
+      const binding = opts.manifests[harness]?.modelRouter;
+      if (!binding) continue;
+      const models = servedModels({
+        harness,
+        binding,
+        providers: opts.catalog.providers(),
+      });
+      const fingerprint = JSON.stringify(models);
+      if (writtenWindows.get(harness) === fingerprint) continue;
+      try {
+        await plugin.writeModelWindows(models);
+        writtenWindows.set(harness, fingerprint);
+      } catch (err) {
+        log(
+          `[harness-config] model windows not written: ${(err as Error).message}`,
+        );
+      }
+    }
+  };
+
   return {
     service,
+    writeModelWindows,
     harnessConfig: {
       readCurrent: async (input) => {
         const target = harnessConfigFor(input?.harness);
