@@ -1,9 +1,4 @@
-import { parseQualifiedModel } from "api-server-api";
-
-const isNonClaude = (model: string | null | undefined): boolean => {
-  const parsed = parseQualifiedModel(model, { claudePrefix: true });
-  return parsed !== null && !/claude/i.test(parsed.upstreamId);
-};
+import { isClaudeModel } from "api-server-api";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the env a harness declares for a process whose
@@ -19,5 +14,5 @@ export function nonClaudeModelEnv(
   models: readonly (string | null | undefined)[],
 ): Record<string, string> | undefined {
   if (!env || Object.keys(env).length === 0) return undefined;
-  return models.some(isNonClaude) ? { ...env } : undefined;
+  return models.some((model) => !isClaudeModel(model)) ? { ...env } : undefined;
 }

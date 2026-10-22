@@ -64,6 +64,7 @@ export {
 export {
   CLAUDE_MODEL_NAME_PREFIX,
   formatQualifiedModel,
+  isClaudeModel,
   isQualifiedModel,
   parseQualifiedModel,
   type QualifiedModel,
@@ -489,6 +490,7 @@ export {
   PROVIDER_ALIAS_RE,
   aliasForProviderType,
   aliasForTemplateId,
+  hasServerAutoMode,
   aliasOrder,
   HARNESS_HOME_PROVIDERS,
   templateIdsForAlias,

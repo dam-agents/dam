@@ -5,6 +5,8 @@
  * with the old gateway's fallbacks) as catalog names, the auto-mode
  * classifier on the platform's preferred classifier for that provider, and
  * the smallest context window the harness may run on as the process-wide cap.
+ * The classifier variable's value is the one name the router recognizes as the
+ * classifier's call (processClassifierName).
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -12,6 +14,7 @@ import type {
   CatalogProvider,
 } from "../../modules/model-catalog/index.js";
 import {
+  processClassifierName,
   routerEnvFor,
   servedModels,
   tierModels,
@@ -360,6 +363,37 @@ describe("the auto-mode classifier env", () => {
     expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(
       "claude/anthropic/claude-sonnet-5-5",
     );
+  });
+
+  /** TEST_SCENARIO: The value the env writes and the name the router recognizes as the classifier's call come from one function, so they cannot disagree: whichever provider serves the harness, both name the same model. */
+  it("writes the name processClassifierName returns", () => {
+    for (const providers of [
+      [cbListing([CB_WORK, CB_CLASSIFIER])],
+      [provider(anthropic, [entry(anthropic, "claude-sonnet-5-5", 1_000_000)])],
+      [provider(ibm, [entry(ibm, "aws/claude-sonnet-5-5", 200_000)])],
+    ]) {
+      expect(
+        routerEnvFor({
+          harness: "claude-code",
+          binding: claude,
+          providers,
+          port: 1,
+        }).CLAUDE_CODE_AUTO_MODE_MODEL,
+      ).toBe(
+        processClassifierName({
+          harness: "claude-code",
+          binding: claude,
+          providers,
+        }),
+      );
+    }
+    expect(
+      processClassifierName({
+        harness: "claude-code",
+        binding: { ...claude, classifierModelEnv: undefined },
+        providers: [cbListing([CB_CLASSIFIER])],
+      }),
+    ).toBeNull();
   });
 
   /** TEST_SCENARIO: A provider that lists none of the list's classifier models, and a harness whose manifest names no classifier variable, get no key at all, so Claude Code falls back to its own order instead of being pointed at a model nobody chose. */
