@@ -82,7 +82,7 @@ It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) tha
 ## The JanUI experiment
 
 The **JanUI experiment** is an [experimental feature](features.md): it replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
-The sidebar becomes one tree: every Agent is a row that opens to that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
+The sidebar becomes one tree: every Agent is a row that opens to that Agent's own list of Sessions, every page of it, the next page loaded when the list scrolls near its end; the tree lists no [Environments](environments.md), which are a tab of the chat's side panel instead.
 JanUI keeps its own navigation at every width.
 What decides whether the navigation takes room beside the page is the room the page has left, not the viewport alone: below 768 px, or whenever the page would be left under 720 px once the navigation and the right rail are counted, the navigation stands aside as its rail whatever the user last chose, and their choice is kept for when the room comes back.
 A rail already up waits for 40 px more than that minimum before it takes the room back, so a window dragged across the threshold does not flicker.
@@ -123,7 +123,7 @@ The Pinned section reads a pinned Session from the record, and one the record do
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 Opening an Agent's list wakes a hibernated Agent the same way, and a list left waiting on an Agent that stays asleep offers the same retry; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
-An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, and Changes is one only while the Agent has a git repository.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and a vm Agent's chat also has an Environments tab while the `environments` feature is on.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 An Agent's runtime migration badge reads on its row in the Agents list and in the overlay of an Agent that is not running; the chat header carries it only below the width where the row shows.
 

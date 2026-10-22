@@ -9,11 +9,12 @@ import { useStore } from "../../../store.js";
 import { useEnvironments, useEnvironmentsEnabled } from "../api/queries.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: An agent's Environments in the sidebar, under
- * the agent that owns them and never as agents: a row each, with whether it
+ * UNIT_BOUNDARY_DESCRIPTION: An agent's Environments in the current layout's
+ * sidebar, under the agent that owns them and never as agents: a row each, with whether it
  * runs, that opens the agent's Environments section, and a link per endpoint
  * that opens the app in a new tab. Nothing shows for an agent without
- * Environments, or while the feature is off.
+ * Environments, or while the feature is off. JanUI's tree lists none; its
+ * chat side panel has an Environments tab instead.
  */
 export function SidebarEnvironments({
   agentId,
