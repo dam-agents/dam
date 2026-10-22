@@ -74,6 +74,11 @@ describe("git protocol client", () => {
    * that is where its credential settings live — not only the pod's own. Git
    * here resolves the seed's https URL only through config carried in the env
    * the client is given, so a client that drops it fails the fetch.
+   *
+   * The env also pins GIT_CONFIG_GLOBAL: fetching adds the seed to
+   * safe.directory with `git config --global`, and HOME alone does not redirect
+   * that write — git falls back to the developer's own
+   * $XDG_CONFIG_HOME/git/config when $HOME/.gitconfig is absent.
    */
   it("should run git with the env it is given", async () => {
     const url = "https://ghe.example.com/org/kit";
@@ -81,6 +86,7 @@ describe("git protocol client", () => {
       env: () => ({
         ...process.env,
         HOME: tmp,
+        GIT_CONFIG_GLOBAL: path.join(tmp, ".gitconfig"),
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: `url.file://${origin}.insteadOf`,
         GIT_CONFIG_VALUE_0: url,
