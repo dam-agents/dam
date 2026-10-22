@@ -116,6 +116,24 @@ export async function submitKeycloakLoginForm(page: Page): Promise<void> {
   });
 }
 
+export async function answerDeviceGrant(
+  page: Page,
+  verificationUri: string,
+  answer: "Yes" | "No",
+): Promise<void> {
+  await oneKeycloakLoginAtATime(async () => {
+    await page.goto(verificationUri);
+    await page.locator("#username").fill(testUser.username);
+    await page.locator("#password").fill(testUser.password);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    const consent = page.waitForResponse((res) =>
+      new URL(res.url()).pathname.endsWith("/login-actions/consent"),
+    );
+    await page.getByRole("button", { name: answer, exact: true }).click();
+    await consent;
+  });
+}
+
 export async function acceptTerms(api: ApiClient): Promise<void> {
   const current = await api.terms.current.query();
   await api.terms.accept.mutate({ version: current.version });
