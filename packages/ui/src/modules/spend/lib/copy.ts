@@ -16,8 +16,6 @@ export const AGENT_LIMIT_NAME = "Agent spend limit";
 
 export const OWN_LIMIT_NAME = "Your spend limit (all agents)";
 
-export const CEILING_NAME = "Your spend ceiling (set by your operator)";
-
 export const DAILY_LIMIT_TITLE = "Daily spend limit";
 
 export const OWN_LIMIT_HELP =
@@ -29,14 +27,6 @@ export const PROVIDER_LIMITS_HELP =
   "Each one counts the calls of all your agents on one provider. Set them in Settings › Providers.";
 
 export const EDIT_IN_PROVIDERS = "Edit in Providers";
-
-export const CONNECTION_LIMIT_TITLE = "Daily limit";
-
-export function connectionLimitHelp(unitExplanation: string | null): string {
-  return unitExplanation
-    ? `${unitExplanation} Your limit for all agents on this provider counts these calls too; the agent's limit and your total daily limit do not.`
-    : "Counts this agent's paid API calls on this provider.";
-}
 
 export const AGENT_LIMIT_HELP =
   "Counts the paid API calls of this agent and its sub-agents.";
