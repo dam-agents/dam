@@ -48,7 +48,9 @@ export function awaitsCapture(
 ): boolean {
   return nodes.some(
     (node) =>
-      (justEnded(node, now) && !node.transcriptAvailable) ||
+      (justEnded(node, now) &&
+        node.script === null &&
+        !node.transcriptAvailable) ||
       awaitsCapture(node.children, now),
   );
 }

@@ -70,7 +70,7 @@ The options below mean the same in both: the tools take them as camelCase JSON (
 The same SDK ships in two languages, both dependency-free and self-configuring from the pod (no URL or token to pass):
 
 - **Python** — `import driver_sdk as d` works in any `python3` on this image.
-- **JS** — `import { spawn, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";`
+- **JS** — `import { spawn, spawnScript, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";`
 
 Examples below are Python; the JS names are the camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
 
@@ -140,6 +140,34 @@ Time spent queued for compute counts too.
 
 **Give a heavy sub-agent more memory.** The harness default (often 1Gi) OOM-kills a clone plus install or build.
 An OOM-killed sub-agent fails fast with its reason.
+
+## Run a script instead of a prompt
+
+When the work is a command, such as a benchmark, a test suite, an eval harness or a data transform on a seeded checkout, use `spawn_script` (JS: `spawnScript`).
+No model turn runs: the sub-agent is set up with the same options as above, then runs the script once with `bash -lc` in its workspace.
+You get back what the script wrote, byte for byte, instead of a model's retelling of it.
+Only the SDK takes a script; the tools take prompts.
+
+```python
+out = d.spawn_script(
+    "./bin/eval --suite smoke --json",
+    harness="claude-code",                       # the image the script runs in
+    seed={"url": "https://github.example/acme/tool", "commit": my_commit},
+    install="uv sync",
+    resources={"cpu": "4", "memory": "8Gi"},
+    ttl_ms=30 * 60_000,
+    label="eval:smoke",
+)
+report = json.loads(out.text("stdout"))          # or out.bytes("stdout"), out.download("stdout", path)
+```
+
+- **Exit 0 returns a `ScriptOutput`**; anything else raises `ScriptFailed` (an `InvocationFailed`) whose `reason` carries the exit code and the tail of stderr, and whose `output` still reads the streams.
+- **Each stream reads once.** A read checks the bytes against the hash the sub-agent reported, then the platform deletes the stream; one you never read is deleted after seven days.
+  `bytes` and `text` read at most 512 MiB into memory; use `download(stream, path)` for larger output, which streams to disk.
+- **Hand files back through stdout**: `cat results.parquet`, or `tar c reports/` for a directory, and keep logs on stderr.
+  Each stream carries at most 5 GiB.
+- **`ttl_ms` bounds the script.** The script is stopped a quarter of `ttl_ms` early (at most five minutes), with anything it started, so its output can still be uploaded; the spawn then fails.
+  Size `ttl_ms` for the script's run plus that margin.
 
 ## Choose the model per spawn
 

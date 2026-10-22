@@ -30,14 +30,31 @@ export type { Repo, ReposService } from "./modules/repos/types.js";
 
 export {
   spawnInvocationRequestSchema,
+  spawnScriptInvocationRequestSchema,
+  invocationOutputStreamSchema,
+  INVOCATION_OUTPUT_STREAMS,
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
 } from "./modules/invocations/schemas.js";
 export { delegationTitle } from "./modules/invocations/delegation-title.js";
+export {
+  MAX_SCRIPT_OUTPUT_BYTES,
+  SCRIPT_FAILURE_MAX_CHARS,
+  scriptReportInputSchema,
+  type InvocationScriptReports,
+  type ScriptReportInput,
+  type ScriptReportResult,
+  type ScriptUploadsResult,
+} from "./modules/invocations/harness.js";
 export type {
   SpawnInvocationRequest,
+  SpawnScriptInvocationRequest,
   SpawnInvocationResponse,
+  InvocationOutput,
+  InvocationOutputBlob,
+  InvocationOutputLink,
+  InvocationOutputStream,
   InvocationView,
   InvocationStatus,
   InvocationsControlService,

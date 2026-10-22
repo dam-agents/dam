@@ -1,6 +1,10 @@
 import type { z } from "zod";
 import type {
   invocationHarnessConfigSchema,
+  invocationOutputBlobSchema,
+  invocationOutputLinkSchema,
+  invocationOutputSchema,
+  invocationOutputStreamSchema,
   invocationStopInputSchema,
   invocationTranscriptInputSchema,
   invocationsRunningInputSchema,
@@ -8,11 +12,21 @@ import type {
   invocationViewSchema,
   spawnInvocationRequestSchema,
   spawnInvocationResponseSchema,
+  spawnScriptInvocationRequestSchema,
 } from "./schemas.js";
 
 export type SpawnInvocationRequest = z.input<
   typeof spawnInvocationRequestSchema
 >;
+export type SpawnScriptInvocationRequest = z.input<
+  typeof spawnScriptInvocationRequestSchema
+>;
+export type InvocationOutputStream = z.infer<
+  typeof invocationOutputStreamSchema
+>;
+export type InvocationOutputBlob = z.infer<typeof invocationOutputBlobSchema>;
+export type InvocationOutput = z.infer<typeof invocationOutputSchema>;
+export type InvocationOutputLink = z.infer<typeof invocationOutputLinkSchema>;
 export type SpawnInvocationResponse = z.infer<
   typeof spawnInvocationResponseSchema
 >;
@@ -49,6 +63,8 @@ export interface DelegationNode {
   errorReason: string | null;
   result?: unknown;
   prompt: string;
+  script: string | null;
+  exitCode: number | null;
   templateId: string | null;
   image: string | null;
   connections: string[];

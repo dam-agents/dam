@@ -1,16 +1,17 @@
 # Invocations
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
-An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied.
+An **Invocation** is a run-once request from one Agent to another: a **Driver** asks a **target** to do one piece of work and return one result that matches a JSON Schema the Driver supplied, or, for a script, the script's exit code and output.
 The common case pairs it with a freshly spawned, Sweepable target — a *temporary agent* in the interface — that exists for that one task and is reaped as soon as the Invocation goes terminal.
 
 A Driver reaches Invocations two ways.
 A script — a loop an agent wrote that fans work out and gathers the results — speaks over the per-agent HTTP surface on the harness port through the [Driver SDK](#driver-sdk).
 An agent handing off one piece of work mid-task uses the [sub-agent tools](#sub-agent-tools) on its platform MCP server instead, without writing code.
 Either way the caller is the waypoint-authenticated agent in the path; no request body ever names the Driver, and both surfaces resolve a spawn through the same code, so it means the same on either.
+Through the SDK, a spawn can also hand the target a shell command instead of a prompt, so deterministic work runs with no model turn ([script runs](#script-runs)).
 
 ```mermaid
 sequenceDiagram
@@ -111,9 +112,31 @@ The reasons:
 **One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
 A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
 
+## Script runs
+
+**A script replaces the prompt, nothing else.** The spawn carries a shell command where a prompt would go, and the same Agent Setup, harness or image, connections and deadline.
+The target is seeded and installed exactly as before; then, in place of opening a Session, its runtime runs the command once in the workspace and nothing else.
+No model call runs, so Provider Inheritance, the model choices and the spend-limit refusal do not apply: the target gets no model provider, and a script spawn names no result schema and no harness config.
+Admission still applies, since the target still takes room.
+Only the Driver SDK spawns scripts; the sub-agent tools take prompts, because an agent with a shell runs a command itself.
+
+**The result is the bytes the script produced.** The target keeps stdout and stderr whole, never decoded or trimmed, with each one's size and SHA-256, and uploads both to the object store under keys only the api-server builds, through short-lived links it mints for that target alone.
+It then reports the exit code and what it uploaded; the api-server checks each blob's size against the store before it believes the report, records the run, and reaps the target at once, since there is no closing reply or conversation to wait for.
+Exit zero is done.
+Anything else fails the Invocation with the exit code and the tail of stderr: a non-zero exit, a signal, the deadline, a stream past the 5 GiB one upload carries, or an upload that failed.
+The streams of a failed run stay readable too.
+The script is stopped a quarter of its deadline early, at most five minutes, so a run that hits it still has time to upload and report before the sweep reaps the target.
+The command runs in its own process group, so stopping it kills what it left running as well; a background process still holding its output a moment after the script exits is killed too, so it cannot keep a finished run open.
+The target's runtime reports itself busy while the script runs, so the idle checker never hibernates a target mid-script.
+A runtime that predates script runs advertises no handler for them, so the liveness sweep fails such a target as a setup failure instead of letting it sit until its deadline.
+
+**The Driver reads each stream once.** The Driver's view of the Invocation names the exit code and each stream's size and hash; reading a stream fetches it through a short-lived link, checks the hash, and then tells the platform to delete it.
+A stream nobody reads is deleted after seven days, and every stream goes when the root Driver goes ([persistence](persistence.md#lifetime)); since an Invocation's keys are fixed, these deletions also catch an upload no report ever recorded.
+No object store configured means nowhere to put the output, so a script spawn is refused up front.
+
 ## The delegation record
 
-**The Invocation outlives its target.** The record keeps what the target was given — prompt, label, harness or image, connections, size — and what it returned, for as long as its **root Driver** exists: the first non-target Agent up the chain, since a grandchild's immediate Driver is itself a throwaway.
+**The Invocation outlives its target.** The record keeps what the target was given — prompt or script, label, harness or image, connections, size — and what it returned (for a script, its exit code), for as long as its **root Driver** exists: the first non-target Agent up the chain, since a grandchild's immediate Driver is itself a throwaway.
 It goes with the root Driver's other agent-scoped rows ([persistence](persistence.md#lifetime)).
 No age limit and no knob.
 Spend is not on the record; it stays in telemetry, keyed by the invocation id the target's gateway stamps ([observability](observability.md)).
@@ -184,8 +207,8 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 ## Driver SDK
 
-The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the pod's platform URL: spawn and wait, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand.
-A failure raises with the platform's reason.
+The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the pod's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand.
+A failure raises with the platform's reason; a failed script's error still reads its streams.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
 The HTTP routes are the contract; the clients stay thin.
 Sources: [`packages/driver-sdk/`](../../packages/driver-sdk/), [`packages/driver-sdk-py/`](../../packages/driver-sdk-py/).

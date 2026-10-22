@@ -30,8 +30,8 @@ export function createInvocationTasks(db: Db): InvocationTasks {
         .select({
           id: invocationsTable.id,
           label: invocationsTable.label,
-          prompt: sql<string>`left(${invocationsTable.prompt}, ${TASK_PREVIEW_CHARS})`,
-          cut: sql<boolean>`length(${invocationsTable.prompt}) > ${TASK_PREVIEW_CHARS}`,
+          prompt: sql<string>`left(coalesce(nullif(${invocationsTable.prompt}, ''), ${invocationsTable.script}, ''), ${TASK_PREVIEW_CHARS})`,
+          cut: sql<boolean>`length(coalesce(nullif(${invocationsTable.prompt}, ''), ${invocationsTable.script}, '')) > ${TASK_PREVIEW_CHARS}`,
         })
         .from(invocationsTable)
         .where(

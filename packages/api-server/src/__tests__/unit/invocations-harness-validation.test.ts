@@ -16,6 +16,7 @@ function makeApp(
   const app = new Hono();
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
+    scriptOutputs: {} as never,
     k8s: {
       getCustomObject: async (plural: string, id: string) =>
         plural === AGENTS_PLURAL && id === "driver-1"

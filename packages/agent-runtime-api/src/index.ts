@@ -242,6 +242,7 @@ export {
   sessionDefaultsEventPayload,
   satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
+  invocationScriptEventPayload,
   sessionMessageEventPayload,
   startupItemsEventPayload,
   workspaceCommandEventPayload,
@@ -250,6 +251,7 @@ export {
   helloInput,
 } from "./modules/runtime/types.js";
 export type {
+  InvocationScriptEventPayload,
   HarnessConfigCurrent,
   HarnessCapability,
   Contribution,

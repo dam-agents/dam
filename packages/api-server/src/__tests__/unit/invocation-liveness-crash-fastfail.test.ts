@@ -40,6 +40,10 @@ function runningRow(id: string): InvocationRow {
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
+    script: null,
+    exitCode: null,
+    output: null,
+    outputExpiresAt: null,
     harnessConfig: null,
     driverSessionId: null,
   };
@@ -80,6 +84,8 @@ function makeSweep(
     readTargetRestart,
     hasAgent: opts.hasAgent ?? (async () => true),
     readHarnessConfigSupport: async () => null,
+    runsScripts: async () => true,
+    outputs: { purgeExpired: async () => 0, purgeRoot: async () => {} },
     batchSize: 10,
   });
   return { sweep, failed, deleted, droppedRoots };

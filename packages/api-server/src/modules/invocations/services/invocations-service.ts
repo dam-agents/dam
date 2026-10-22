@@ -31,6 +31,7 @@ import {
   missingProviderMessage,
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
+import { scriptDeadline } from "../domain/script-output.js";
 import {
   invocationScheduleId,
   invocationTargetName,
@@ -119,6 +120,15 @@ export class SpendLimitReachedError extends Error {
   }
 }
 
+export class NoOutputStoreError extends Error {
+  constructor() {
+    super(
+      "no object store is configured on this deployment, so a script sub-agent has nowhere to put its output",
+    );
+    this.name = "NoOutputStoreError";
+  }
+}
+
 export interface SpawnTarget {
   templateId?: string;
   image?: string;
@@ -126,21 +136,43 @@ export interface SpawnTarget {
   runsOn?: ProviderPresetType[];
 }
 
-export interface SpawnInput {
+interface SpawnBase {
   driverAgentId: string;
   driverGrantIds: string[];
-  driverProviders: DriverProvider[];
-  attachableProviders?: ProviderPresetType[];
   target: SpawnTarget;
   setup: AgentSetup;
   connections: string[];
-  prompt: string;
-  schema: unknown;
   label?: string;
   ttlMs?: number;
-  harnessConfig?: InvocationHarnessConfig;
   origin?: InvocationOrigin;
   driverSessionId?: string | null;
+}
+
+export interface SpawnInput extends SpawnBase {
+  driverProviders: DriverProvider[];
+  attachableProviders?: ProviderPresetType[];
+  prompt: string;
+  schema: unknown;
+  harnessConfig?: InvocationHarnessConfig;
+}
+
+export interface ScriptSpawnInput extends SpawnBase {
+  script: string;
+}
+
+type TargetEvent = Parameters<RuntimeMutator["bump"]>[1][number];
+
+interface LaunchWork {
+  record: {
+    prompt: string;
+    script: string | null;
+    resultSchema: unknown;
+    harnessConfig: InvocationHarnessConfig | null;
+  };
+  providerConnectionId?: string;
+  beforeInsert: (rootId: string) => Promise<void>;
+  ahead: (agentId: string, at: Date, expiresAt: Date) => TargetEvent[];
+  task: (agentId: string, at: Date, expiresAt: Date) => TargetEvent;
 }
 
 export interface RecordResult {
@@ -155,6 +187,7 @@ export type Reachability =
 
 export interface InvocationsService {
   spawn(input: SpawnInput): Promise<{ id: string }>;
+  spawnScript(input: ScriptSpawnInput): Promise<{ id: string }>;
   reachability(
     input: Pick<
       SpawnInput,
@@ -183,6 +216,7 @@ export function createInvocationsService(deps: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  scriptOutputsAvailable: boolean;
   targetAdmission?: TargetAdmission;
   spendHold?: SpendHoldGate;
   reaper: TargetReaper;
@@ -218,6 +252,142 @@ export function createInvocationsService(deps: {
     return result;
   }
 
+  function assertAttenuated(input: SpawnBase): void {
+    const grantSet = new Set(input.driverGrantIds);
+    const offending = input.connections.filter((c) => !grantSet.has(c));
+    if (offending.length > 0) throw new AttenuationError(offending);
+  }
+
+  async function launch(
+    input: SpawnBase,
+    work: LaunchWork,
+  ): Promise<{ id: string }> {
+    const created = createInputFromSetup(input.setup);
+    if (deps.targetAdmission) {
+      await deps.targetAdmission.assertCanEverFit({
+        ...(input.target.templateId
+          ? { templateId: input.target.templateId }
+          : {}),
+        ...(created.size ? { size: created.size } : {}),
+        ...(created.vm ? { vm: true } : {}),
+      });
+    }
+
+    const rootId = await deps.driverResolution.resolveRoot(input.driverAgentId);
+    if (rootId === null) {
+      throw new UnresolvableDriverError(input.driverAgentId);
+    }
+    await work.beforeInsert(rootId);
+
+    const targetId = generateK8sName("agent");
+    const ttlMs =
+      input.ttlMs === undefined
+        ? DEFAULT_INVOCATION_TTL_MS
+        : Math.min(
+            MAX_INVOCATION_TTL_MS,
+            Math.max(MIN_INVOCATION_TTL_MS, input.ttlMs),
+          );
+    const expiresAt = new Date(now().getTime() + ttlMs);
+    await deps.repo.insert({
+      id: targetId,
+      driverAgentId: input.driverAgentId,
+      rootDriverId: rootId,
+      owner: deps.owner,
+      label: input.label ?? null,
+      templateId: input.target.templateId ?? null,
+      image: input.target.image ?? null,
+      connections: input.connections,
+      cpu: created.size?.cpu ?? null,
+      memory: created.size?.memory ?? null,
+      ttlMs,
+      expiresAt,
+      ...work.record,
+      origin: input.origin ?? "script",
+      driverSessionId: input.driverSessionId ?? null,
+    });
+    let agent;
+    try {
+      await deps.pinDriver?.(input.driverAgentId);
+      agent = await deps.agents.create({
+        id: targetId,
+        name: invocationTargetName(randomBytes(6).toString("hex"), input.label),
+        sweepable: true,
+        egressPreset: "none",
+        telemetryAttributionId: rootId,
+        noDefaultProvider: true,
+        ...(input.target.templateId
+          ? { templateId: input.target.templateId }
+          : {}),
+        ...(input.target.image ? { image: input.target.image } : {}),
+        ...(input.target.harness ? { harness: input.target.harness } : {}),
+        ...created,
+        ...(input.connections.length
+          ? { connectionIds: input.connections }
+          : {}),
+        ...(work.providerConnectionId
+          ? { providerConnectionId: work.providerConnectionId }
+          : {}),
+      });
+    } catch (err) {
+      await deps.repo.delete(targetId).catch(() => {});
+      throw err;
+    }
+    emit({
+      type: EventType.InvocationSpawned,
+      targetAgentId: targetId,
+      driverAgentId: input.driverAgentId,
+      ownerSub: deps.owner,
+    });
+
+    const at = now();
+    try {
+      for (const event of work.ahead(agent.id, at, expiresAt)) {
+        await deps.runtimeMutator.bump(agent.id, [event]);
+      }
+      await deps.runtimeMutator.bump(agent.id, [
+        ...(input.setup.install
+          ? [
+              workspaceCommandEvent(
+                "invocation-install",
+                agent.id,
+                input.setup.install.command,
+                at,
+              ),
+            ]
+          : []),
+        work.task(agent.id, at, expiresAt),
+      ]);
+    } catch (err) {
+      await deps.agents.delete(agent.id).catch(() => {});
+      await deps.repo.delete(targetId).catch(() => {});
+      throw err;
+    }
+    await deps.runtimeMutator.enqueueAfterCommit(agent.id);
+    await deps.wakeAgent(agent.id);
+
+    if (input.setup.skills.length > 0 && deps.skills) {
+      let reason: string | null = null;
+      try {
+        const applied = await deps.skills.applyEntries({
+          agentId: agent.id,
+          skills: input.setup.skills,
+        });
+        reason = skillsSkippedReason(applied.skipped);
+      } catch (err) {
+        reason = err instanceof Error ? err.message : String(err);
+      }
+      if (reason !== null) {
+        getLogger().warn(
+          { agentId: agent.id, reason },
+          "invocations: the target's skills could not be applied",
+        );
+        await failSetup(agent.id, "skills", reason);
+      }
+    }
+
+    return { id: agent.id };
+  }
+
   return {
     reachability({ driverProviders, attachableProviders, target }) {
       const provider = inheritProvider(driverProviders, {
@@ -245,10 +415,7 @@ export function createInvocationsService(deps: {
     },
 
     async spawn(input) {
-      const grantSet = new Set(input.driverGrantIds);
-      const offending = input.connections.filter((c) => !grantSet.has(c));
-      if (offending.length > 0) throw new AttenuationError(offending);
-
+      assertAttenuated(input);
       compileSchema(input.schema);
 
       const requestedModel = input.harnessConfig?.model;
@@ -288,169 +455,84 @@ export function createInvocationsService(deps: {
       if (!parsedModel && !input.target.image && routedProvider)
         throw new NoSpawnModelError();
 
-      const created = createInputFromSetup(input.setup);
-      if (deps.targetAdmission) {
-        await deps.targetAdmission.assertCanEverFit({
-          ...(input.target.templateId
-            ? { templateId: input.target.templateId }
-            : {}),
-          ...(created.size ? { size: created.size } : {}),
-          ...(created.vm ? { vm: true } : {}),
-        });
-      }
-
-      const rootId = await deps.driverResolution.resolveRoot(
-        input.driverAgentId,
-      );
-      if (rootId === null) {
-        throw new UnresolvableDriverError(input.driverAgentId);
-      }
-      const held = await deps.spendHold?.({
-        agentId: rootId,
-        ...(provider.kind === "inherited" && { connectionId: provider.id }),
-      });
-      if (held) throw new SpendLimitReachedError(held);
-
-      const targetId = generateK8sName("agent");
-      const ttlMs =
-        input.ttlMs === undefined
-          ? DEFAULT_INVOCATION_TTL_MS
-          : Math.min(
-              MAX_INVOCATION_TTL_MS,
-              Math.max(MIN_INVOCATION_TTL_MS, input.ttlMs),
-            );
-      const expiresAt = new Date(now().getTime() + ttlMs);
-      await deps.repo.insert({
-        id: targetId,
-        driverAgentId: input.driverAgentId,
-        rootDriverId: rootId,
-        owner: deps.owner,
-        label: input.label ?? null,
-        prompt: input.prompt,
-        templateId: input.target.templateId ?? null,
-        image: input.target.image ?? null,
-        connections: input.connections,
-        cpu: created.size?.cpu ?? null,
-        memory: created.size?.memory ?? null,
-        ttlMs,
-        resultSchema: input.schema,
-        expiresAt,
-        harnessConfig: input.harnessConfig ?? null,
-        origin: input.origin ?? "script",
-        driverSessionId: input.driverSessionId ?? null,
-      });
-      let agent;
-      try {
-        await deps.pinDriver?.(input.driverAgentId);
-        agent = await deps.agents.create({
-          id: targetId,
-          name: invocationTargetName(
-            randomBytes(6).toString("hex"),
-            input.label,
-          ),
-          sweepable: true,
-          egressPreset: "none",
-          telemetryAttributionId: rootId,
-          noDefaultProvider: true,
-          ...(input.target.templateId
-            ? { templateId: input.target.templateId }
-            : {}),
-          ...(input.target.image ? { image: input.target.image } : {}),
-          ...(input.target.harness ? { harness: input.target.harness } : {}),
-          ...created,
-          ...(input.connections.length
-            ? { connectionIds: input.connections }
-            : {}),
-          ...(provider.kind === "inherited"
-            ? { providerConnectionId: provider.id }
-            : {}),
-        });
-      } catch (err) {
-        await deps.repo.delete(targetId).catch(() => {});
-        throw err;
-      }
-      emit({
-        type: EventType.InvocationSpawned,
-        targetAgentId: targetId,
-        driverAgentId: input.driverAgentId,
-        ownerSub: deps.owner,
-      });
-
-      const task = buildInvocationPrompt({
-        prompt: input.prompt,
-        resultSchema: input.schema,
-      });
-      const at = now();
-      try {
-        if (input.harnessConfig) {
-          await deps.runtimeMutator.bump(agent.id, [
-            harnessConfigEvent(
-              agent.id,
-              input.harnessConfig,
-              at.getTime(),
-              expiresAt,
-            ),
-          ]);
-        }
-        await deps.runtimeMutator.bump(agent.id, [
-          ...(input.setup.install
+      const harnessConfig = input.harnessConfig;
+      return launch(input, {
+        record: {
+          prompt: input.prompt,
+          script: null,
+          resultSchema: input.schema,
+          harnessConfig: harnessConfig ?? null,
+        },
+        ...(provider.kind === "inherited" && {
+          providerConnectionId: provider.id,
+        }),
+        beforeInsert: async (rootId) => {
+          const held = await deps.spendHold?.({
+            agentId: rootId,
+            ...(provider.kind === "inherited" && { connectionId: provider.id }),
+          });
+          if (held) throw new SpendLimitReachedError(held);
+        },
+        ahead: (agentId, at, expiresAt) =>
+          harnessConfig
             ? [
-                workspaceCommandEvent(
-                  "invocation-install",
-                  agent.id,
-                  input.setup.install.command,
-                  at,
+                harnessConfigEvent(
+                  agentId,
+                  harnessConfig,
+                  at.getTime(),
+                  expiresAt,
                 ),
               ]
-            : []),
-          {
-            id: `${invocationScheduleId(agent.id)}:${at.getTime()}`,
-            kind: "trigger",
-            payload: {
-              scheduleId: invocationScheduleId(agent.id),
-              task,
-              sessionMode: "fresh",
-              invocation: true,
-              ...(input.target.harness && {
-                harness: input.target.harness,
-                ...(provider.kind === "inherited" && { provider: provider.id }),
-                ...(input.harnessConfig?.model && {
-                  model: input.harnessConfig.model,
-                }),
+            : [],
+        task: (agentId, at, expiresAt) => ({
+          id: `${invocationScheduleId(agentId)}:${at.getTime()}`,
+          kind: "trigger",
+          payload: {
+            scheduleId: invocationScheduleId(agentId),
+            task: buildInvocationPrompt({
+              prompt: input.prompt,
+              resultSchema: input.schema,
+            }),
+            sessionMode: "fresh",
+            invocation: true,
+            ...(input.target.harness && {
+              harness: input.target.harness,
+              ...(provider.kind === "inherited" && {
+                provider: provider.id,
               }),
-            },
-            expiresAt,
+              ...(harnessConfig?.model && {
+                model: harnessConfig.model,
+              }),
+            }),
           },
-        ]);
-      } catch (err) {
-        await deps.agents.delete(agent.id).catch(() => {});
-        await deps.repo.delete(targetId).catch(() => {});
-        throw err;
-      }
-      await deps.runtimeMutator.enqueueAfterCommit(agent.id);
-      await deps.wakeAgent(agent.id);
+          expiresAt,
+        }),
+      });
+    },
 
-      if (input.setup.skills.length > 0 && deps.skills) {
-        let reason: string | null = null;
-        try {
-          const applied = await deps.skills.applyEntries({
-            agentId: agent.id,
-            skills: input.setup.skills,
-          });
-          reason = skillsSkippedReason(applied.skipped);
-        } catch (err) {
-          reason = err instanceof Error ? err.message : String(err);
-        }
-        if (reason !== null) {
-          getLogger().warn(
-            { agentId: agent.id, reason },
-            "invocations: the target's skills could not be applied",
-          );
-          await failSetup(agent.id, "skills", reason);
-        }
-      }
-
-      return { id: agent.id };
+    async spawnScript(input) {
+      assertAttenuated(input);
+      if (!deps.scriptOutputsAvailable) throw new NoOutputStoreError();
+      return launch(input, {
+        record: {
+          prompt: "",
+          script: input.script,
+          resultSchema: null,
+          harnessConfig: null,
+        },
+        beforeInsert: () => Promise.resolve(),
+        ahead: () => [],
+        task: (agentId, at, expiresAt) => ({
+          id: `${invocationScheduleId(agentId)}:${at.getTime()}`,
+          kind: "invocation-script",
+          payload: {
+            command: input.script,
+            deadline: scriptDeadline(at, expiresAt).toISOString(),
+            reportBy: expiresAt.toISOString(),
+          },
+          expiresAt,
+        }),
+      });
     },
 
     async get(invocationId, driverAgentId) {
@@ -460,6 +542,8 @@ export function createInvocationsService(deps: {
         status: row.status,
         result: row.result,
         errorReason: row.errorReason ?? undefined,
+        ...(row.exitCode !== null && { exitCode: row.exitCode }),
+        ...(row.script !== null && { output: row.output ?? {} }),
       };
     },
 
@@ -470,6 +554,12 @@ export function createInvocationsService(deps: {
       }
       if (row.status !== "running") {
         return { ok: false, errors: `invocation already ${row.status}` };
+      }
+      if (row.script !== null) {
+        return {
+          ok: false,
+          errors: "this invocation runs a script, which reports its own output",
+        };
       }
       const refusal = await harnessConfigRefusalFor(
         row,
