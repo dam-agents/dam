@@ -1,7 +1,7 @@
 import type { ChatFormPreferences } from "api-server-api/chat-forms";
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Switch } from "@/components/ui/switch";
+import { ToggleRow } from "@/components/ui/toggle-row";
 
 import { OptionField } from "../../sessions/components/option-field.js";
 import {
@@ -107,22 +107,13 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
             value={preferences.recommend}
             onChange={(recommend) => update({ recommend })}
           />
-          <label className="mt-6 flex cursor-pointer items-start justify-between gap-4">
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                Lock the chat input
-              </span>
-              <span className="mt-0.5 block text-sm text-muted-foreground">
-                Let the agent lock the message box until you answer a short
-                form.
-              </span>
-            </span>
-            <Switch
-              label="Lock the chat input"
-              checked={preferences.lockComposer}
-              onCheckedChange={(lockComposer) => update({ lockComposer })}
-            />
-          </label>
+          <ToggleRow
+            className="mt-6"
+            title="Lock the chat input"
+            description="Let the agent lock the message box until you answer a short form."
+            checked={preferences.lockComposer}
+            onCheckedChange={(lockComposer) => update({ lockComposer })}
+          />
         </>
       )}
       <p role="status" className="mt-4 min-h-5 text-sm text-muted-foreground">
