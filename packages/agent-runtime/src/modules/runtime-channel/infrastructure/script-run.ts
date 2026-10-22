@@ -23,6 +23,8 @@ const PIPE_GRACE_MS = 2_000;
 
 class OutputCapExceeded extends Error {}
 
+class PipesReleased extends Error {}
+
 interface Capture {
   stream: Transform;
   tail: () => string;
@@ -82,7 +84,8 @@ function exitOf(
  * ends at the invocation deadline, or when either stream passes maxBytes,
  * since one presigned upload carries at most that many bytes. A process the
  * script left running in the background may hold its stdout open after the
- * script exits, so the group is killed a short grace after that exit and the
+ * script exits, even one that left the group with setsid, so a short grace
+ * after that exit the group is killed and any pipe still open is closed; the
  * run ends with the script's own exit code.
  */
 export async function runScript(opts: {
@@ -129,11 +132,17 @@ export async function runScript(opts: {
       child.kill("SIGKILL");
     }
   };
+  const release = () => {
+    killGroup();
+    for (const pipe of [child.stdout, child.stderr]) {
+      if (pipe && !pipe.destroyed) pipe.destroy(new PipesReleased());
+    }
+  };
   let timedOut = false;
   const timer = setTimeout(
     () => {
       timedOut = true;
-      killGroup();
+      release();
     },
     Math.max(0, opts.deadline.getTime() - Date.now()),
   );
@@ -141,7 +150,7 @@ export async function runScript(opts: {
   let lingering: NodeJS.Timeout | undefined;
   void exit.then(() => {
     clearTimeout(timer);
-    lingering = setTimeout(killGroup, PIPE_GRACE_MS);
+    lingering = setTimeout(release, PIPE_GRACE_MS);
   });
   const copies = await Promise.allSettled([
     pipeline(child.stdout!, stdout.stream, createWriteStream(opts.stdoutPath)),
@@ -150,7 +159,7 @@ export async function runScript(opts: {
   const capped = copies.some(
     (c) => c.status === "rejected" && c.reason instanceof OutputCapExceeded,
   );
-  if (capped) killGroup();
+  if (capped) release();
   const ended = await exit;
   clearTimeout(timer);
   clearTimeout(lingering);
@@ -163,7 +172,9 @@ export async function runScript(opts: {
     );
   if (timedOut)
     return result(withTail("script ran past the invocation deadline"));
-  const broken = copies.find((c) => c.status === "rejected");
+  const broken = copies.find(
+    (c) => c.status === "rejected" && !(c.reason instanceof PipesReleased),
+  );
   if (broken?.status === "rejected")
     return result(
       `the script's output could not be kept: ${(broken.reason as Error).message}`,

@@ -126,7 +126,7 @@ Exit zero is done.
 Anything else fails the Invocation with the exit code and the tail of stderr: a non-zero exit, a signal, the deadline, a stream past the 5 GiB one upload carries, or an upload that failed.
 The streams of a failed run stay readable too.
 The script is stopped a quarter of its deadline early, at most five minutes, so a run that hits it still has time to upload and report before the sweep reaps the target.
-The command runs in its own process group, so stopping it kills what it left running as well; a background process still holding its output a moment after the script exits is killed too, so it cannot keep a finished run open.
+The command runs in its own process group, so stopping it kills what it left running as well; a moment after the script exits, the group is killed and its output pipes are closed, so a background process, even one in a session of its own, cannot keep a finished run open.
 The target's runtime reports itself busy while the script runs, so the idle checker never hibernates a target mid-script.
 A runtime that predates script runs advertises no handler for them, so the liveness sweep fails such a target as a setup failure instead of letting it sit until its deadline.
 
