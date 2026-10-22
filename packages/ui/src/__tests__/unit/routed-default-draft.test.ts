@@ -1,22 +1,9 @@
-import type { ReactElement } from "react";
 import { expect, it, vi } from "vitest";
-
-type Pair = {
-  harness: string;
-  provider: string | null;
-  model: string | null;
-  settings?: Record<string, string>;
-};
 
 vi.hoisted(() => vi.stubGlobal("window", new EventTarget()));
 const state = vi.hoisted(() => ({
   draft: null as unknown,
   saved: [] as unknown[],
-  remembered: {
-    harness: "codex",
-    provider: "oai",
-    model: "openai/gpt-5.5",
-  } as unknown,
 }));
 vi.mock("react", async () => ({
   ...(await vi.importActual("react")),
@@ -30,16 +17,6 @@ vi.mock("react", async () => ({
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({ navigateToSettings: () => {}, showConfirm: () => {} }),
-}));
-vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
-  useNewLayout: () => true,
-}));
-vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
-  ...(await importOriginal()),
-  useIsAgentOperable: () => true,
-}));
-vi.mock("../../modules/agents/hooks/use-root-driver.js", () => ({
-  useRootDriver: () => null,
 }));
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
   useHarnessConfigStatus: () => ({
@@ -65,62 +42,89 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       ],
     },
   }),
-  useRememberedPair: () => ({ data: state.remembered }),
   useProviderConnections: () => ({
     granted: [{ id: "oai", name: "OpenAI", type: "openai" }],
     owned: [],
     loaded: true,
   }),
-  useGrantProvider: () => ({}),
-  useProviderModels: () => ({}),
-  useHarnessCatalogModels: () => ({}),
-  rememberSessionPair: (_id: string, pair: unknown) => {
+  useProviderModels: () => ({ data: { availableModels: [] } }),
+  useHarnessCatalogModels: () => ({
+    data: {
+      harness: "pi",
+      routed: true,
+      providers: [
+        {
+          connectionId: "oai",
+          alias: "openai",
+          template: "openai",
+          displayName: "OpenAI",
+          status: "listed",
+          listedAt: null,
+          models: [
+            {
+              name: "openai/gpt-5.5",
+              upstreamId: "gpt-5.5",
+              contextWindow: null,
+              maxOutputTokens: null,
+              reasoning: null,
+              vision: null,
+              prices: null,
+              source: { limits: "none", prices: "none" },
+            },
+          ],
+        },
+      ],
+    },
+  }),
+  useHarnessConfigured: () => undefined,
+  rememberSessionPair: (_agent: string, pair: unknown) => {
     state.saved.push(pair);
-    state.remembered = pair;
   },
 }));
 
-const { SandboxProvidersSection } =
-  await import("../../modules/sandboxes/components/sandbox-providers-section.js");
+const { DefaultPairEditor } =
+  await import("../../modules/sandboxes/components/default-pair-editor.js");
 
-type Element = ReactElement<{
-  children: unknown[];
-  defaultPair: { value: Pair; onChoose: (pair: Pair) => void };
-}>;
+interface Node {
+  props: {
+    title?: string;
+    onSelect?: (id: string | null) => void;
+    children?: unknown;
+  };
+}
 
-const renderDefault = () => {
-  const page = SandboxProvidersSection({
-    agentId: "a",
-    header: () => null,
-  }) as Element;
-  const editor = page.props.children[
-    page.props.children.length - 1
-  ] as ReactElement;
-  const tree = (editor.type as (props: unknown) => Element)(editor.props);
-  const body = tree.props.children[1] as Element;
-  return (body.props.children[0] as Element).props.defaultPair;
+const onSelect = (node: unknown): ((id: string | null) => void) | undefined => {
+  if (typeof node !== "object" || node === null) return undefined;
+  const { props } = node as Node;
+  if (props.onSelect) return props.onSelect;
+  return ([] as unknown[])
+    .concat(props.children ?? [])
+    .map(onSelect)
+    .find((found) => found !== undefined);
 };
 
-// TEST_SCENARIO: on a routed runtime a harness picked in JanUI's default editor waits for its model; settings picked meanwhile stay with the draft and are saved with the model.
-it("keeps settings picked while a routed harness waits for its model", () => {
-  renderDefault().onChoose({ harness: "pi", provider: null, model: null });
-  renderDefault().onChoose({
-    ...renderDefault().value,
-    settings: { effort: "high" },
-  });
-  expect(state.saved).toEqual([]);
-  expect(renderDefault().value.settings).toEqual({ effort: "high" });
-  renderDefault().onChoose({
-    ...renderDefault().value,
-    provider: "oai",
-    model: "openai/gpt-5.5",
-  });
-  expect(state.saved).toEqual([
-    {
-      harness: "pi",
+const pick = (title: string) => {
+  const editor = DefaultPairEditor({
+    agentId: "a",
+    kind: "chat",
+    current: {
+      harness: "codex",
       provider: "oai",
       model: "openai/gpt-5.5",
-      settings: { effort: "high" },
     },
+  }) as unknown as Node;
+  const field = ([] as Node[])
+    .concat(editor.props.children as Node[])
+    .find((child) => child?.props?.title === title)!;
+  return onSelect(field)!;
+};
+
+// TEST_SCENARIO: on a routed runtime a default is saved only with a model, so a harness picked in the editor waits for its model, and that model saves the pair.
+it("waits for a model before saving a routed harness pick", () => {
+  pick("Harness")("pi");
+  expect(state.saved).toEqual([]);
+  pick("Model")("openai/gpt-5.5");
+  expect(state.saved).toEqual([
+    { harness: "pi", provider: "oai", model: "openai/gpt-5.5" },
   ]);
 });

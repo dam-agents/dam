@@ -75,19 +75,12 @@ interface Props {
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
   newLayout?: boolean;
-  defaultPair?: {
-    value: SessionPair | null;
-    onChoose: (pair: SessionPair) => void;
-  };
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the harness, model and session settings a new
- * session starts on. With `defaultPair` it edits the agent's saved default
- * instead, handing each pick to its `onChoose`. In JanUI, and always as the
- * default's editor, providers are not attached or disconnected here: a
- * Manage providers row, absent from the default's editor, leads to the
- * agent's Providers page.
+ * session starts on. In JanUI providers are not attached or disconnected
+ * here: a Manage providers row leads to the agent's Providers page instead.
  */
 export function SessionPairPicker({
   agentId,
@@ -98,14 +91,13 @@ export function SessionPairPicker({
   onOpenChange,
   onConnectProviders,
   newLayout = false,
-  defaultPair,
 }: Props) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
-  const chosen = defaultPair ? null : picked;
-  const manageProviders = newLayout || !!defaultPair;
+  const chosen = picked;
+  const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);
   const clearPair = useStore((s) => s.clearNextSessionPair);
   const { data: remembered } = useRememberedPair(agentId);
@@ -132,7 +124,7 @@ export function SessionPairPicker({
   const names = carried.map((h) => h.name);
   const harnesses = harnessOptions(names, views);
   const next = useNextSessionPair(agentId, names, defaultHarness);
-  const pair = defaultPair ? defaultPair.value : next;
+  const pair = next;
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
     pair?.harness ??
@@ -164,7 +156,6 @@ export function SessionPairPicker({
     pair?.harness === harness ? (pair.model ?? null) : null,
   );
   const choose = (chosenPair: SessionPair) => {
-    if (defaultPair) return defaultPair.onChoose(chosenPair);
     setPair(agentId, chosenPair);
     if (routed) void rememberFirstModel(agentId, chosenPair);
   };
@@ -220,13 +211,9 @@ export function SessionPairPicker({
           />
         </PopoverTrigger>
         <PopoverContent
-          side={defaultPair ? "bottom" : "top"}
+          side="top"
           align="start"
-          aria-label={
-            defaultPair
-              ? "Default harness and model"
-              : "New session harness and model"
-          }
+          aria-label="New session harness and model"
           className="flex w-[340px] flex-col gap-2 p-1 text-sm"
         >
           <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
@@ -398,7 +385,7 @@ export function SessionPairPicker({
           )}
           {!manageProviders ? (
             <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
-              {pair && routed && status?.followsDefaults && !defaultPair && (
+              {pair && routed && status?.followsDefaults && (
                 <NewSessionFollowState
                   onDefault={
                     chosen === null ||
@@ -418,22 +405,20 @@ export function SessionPairPicker({
               </PopoverClose>
             </div>
           ) : (
-            !defaultPair && (
-              <div className="border-t border-border pt-1">
-                <PopoverClose asChild>
-                  <button
-                    type="button"
-                    data-testid="session-pair-manage-providers"
-                    onClick={() => navigateToSandboxHome(agentId, "providers")}
-                    className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    Manage providers ({providers.granted.length}/
-                    {providers.owned.length} connected)
-                    <ChevronRight size={14} aria-hidden />
-                  </button>
-                </PopoverClose>
-              </div>
-            )
+            <div className="border-t border-border pt-1">
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  data-testid="session-pair-manage-providers"
+                  onClick={() => navigateToSandboxHome(agentId, "providers")}
+                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  Manage providers ({providers.granted.length}/
+                  {providers.owned.length} connected)
+                  <ChevronRight size={14} aria-hidden />
+                </button>
+              </PopoverClose>
+            </div>
           )}
         </PopoverContent>
       </Popover>
