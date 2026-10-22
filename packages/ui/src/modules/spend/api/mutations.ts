@@ -15,10 +15,14 @@ export function useSetSpendCeiling({ inlineErrors = false } = {}) {
     trpc.spend.status.queryKey(),
   ];
   return useMutation({
-    ...trpc.spend.ceilings.set.mutationOptions({ onError: refetchCeilings }),
+    ...trpc.spend.ceilings.set.mutationOptions({
+      onSettled: (_data, error) => {
+        if (error) refetchCeilings();
+      },
+    }),
     meta: inlineErrors
       ? { invalidates, suppressErrorToast: true }
-      : { invalidates, errorToast: "Couldn't save the spend ceiling" },
+      : { invalidates, errorToast: "Couldn't remove the spend ceiling" },
   });
 }
 
