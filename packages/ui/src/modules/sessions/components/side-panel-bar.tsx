@@ -3,6 +3,7 @@ import {
   Branch,
   type CarbonIconType,
   Cloud,
+  DocumentAttachment,
   Folder,
   Gears,
   Notification,
@@ -24,15 +25,15 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { DOCS_URL } from "../../../constants.js";
-import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
+// UNIT_BOUNDARY_DESCRIPTION: these are the buttons that open the side panel, so they draw the document icon JanUI gave artifacts whatever shell the page has; artifact links and lists elsewhere keep that layout's own icon.
 export const SIDE_PANEL_TABS: readonly {
   tab: SidePanelTab;
   label: string;
   icon: CarbonIconType;
 }[] = [
-  { tab: "artifacts", label: "Artifacts", icon: ArtifactIcon },
+  { tab: "artifacts", label: "Artifacts", icon: DocumentAttachment },
   { tab: "files", label: "Files", icon: Folder },
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },

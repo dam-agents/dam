@@ -1,10 +1,12 @@
-// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
+// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals. Its Artifacts button draws the document icon whatever shell the page has.
+import { DocumentAttachment } from "@carbon/icons-react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import {
+  SIDE_PANEL_TABS,
   type SidePanelBadge,
   SidePanelBar,
 } from "../../modules/sessions/components/side-panel-bar.js";
@@ -248,4 +250,11 @@ it("drops the rail's tooltips but keeps the classic bar's", () => {
       /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
     )?.[0] ?? "";
   expect(classic).toContain('data-state="closed"');
+});
+
+// TEST_SCENARIO: the buttons that open the side panel draw the document icon JanUI gave artifacts, whatever shell the page has, while artifact links and lists elsewhere keep the layout's own icon.
+it("draws artifacts as the document icon, whatever the layout", () => {
+  expect(SIDE_PANEL_TABS.find((t) => t.tab === "artifacts")?.icon).toBe(
+    DocumentAttachment,
+  );
 });
