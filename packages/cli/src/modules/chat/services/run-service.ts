@@ -45,7 +45,12 @@ export type RunError =
   | { kind: "agent-unreachable"; why: string | null; sessionId?: string };
 
 export type RunOutcome =
-  | { kind: "completed"; sessionId: string; stopReason: string | null }
+  | {
+      kind: "completed";
+      sessionId: string;
+      stopReason: string | null;
+      text: string;
+    }
   | { kind: "async-started"; sessionId: string }
   | { kind: "timed-out"; sessionId: string };
 
@@ -73,6 +78,8 @@ export interface RunService {
     sessionId?: string;
     choices?: SessionChoices;
     async?: boolean;
+    /** Hold the answer back for the outcome's `text` instead of streaming it. */
+    quiet?: boolean;
     timeoutSeconds: number;
   }): Promise<Result<RunOutcome, RunError>>;
   get(input: {
@@ -371,7 +378,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
     sessionId: string;
     promptId: string;
     deadlineAt: number;
-    printedChars: number;
+    received: string;
+    out: (text: string) => void;
   }): Promise<Result<RunOutcome, RunError>> {
     const { ctx, sessionId, promptId, deadlineAt } = opts;
     let backoffStep = 0;
@@ -379,14 +387,15 @@ export function createRunService(deps: RunServiceDeps): RunService {
     const finish = (
       result: PlatformRunResult,
     ): Result<RunOutcome, RunError> => {
-      const remainder = result.finalText.slice(opts.printedChars);
-      if (remainder.length > 0) deps.out(remainder);
+      const remainder = result.finalText.slice(opts.received.length);
+      if (remainder.length > 0) opts.out(remainder);
       if (result.truncated)
         deps.errOut("note: the recorded run output was truncated");
       return ok({
         kind: "completed" as const,
         sessionId,
         stopReason: result.stopReason,
+        text: result.finalText,
       });
     };
 
@@ -444,6 +453,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
               kind: "completed" as const,
               sessionId,
               stopReason: event.stopReason,
+              text: opts.received,
             });
           }
         }
@@ -462,7 +472,10 @@ export function createRunService(deps: RunServiceDeps): RunService {
       let sessionId: string | null = input.sessionId ?? null;
       const streaming = input.async !== true;
       let started = input.sessionId === undefined;
-      let printedChars = 0;
+      let received = "";
+      const out = (text: string): void => {
+        if (input.quiet !== true) deps.out(text);
+      };
 
       const waiter = createWaiter();
       const link = await connect(
@@ -471,8 +484,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
         () => sessionId,
         (text) => {
           if (!started || !streaming) return;
-          deps.out(text);
-          printedChars += text.length;
+          out(text);
+          received += text;
         },
         () => {
           started = true;
@@ -544,7 +557,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
               sessionId: sid,
               promptId,
               deadlineAt,
-              printedChars,
+              received,
+              out,
             });
           }
 
@@ -556,6 +570,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
               kind: "completed" as const,
               sessionId: sid,
               stopReason: event.stopReason,
+              text: received,
             });
 
           if (event.kind === "prompt-response") {
@@ -567,6 +582,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
                 kind: "completed" as const,
                 sessionId: sid,
                 stopReason: stopReasonOf(outcome.result),
+                text: received,
               });
             }
             if (outcome.error.message === "connection closed") {
@@ -578,7 +594,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
                 sessionId: sid,
                 promptId,
                 deadlineAt,
-                printedChars,
+                received,
+                out,
               });
             }
             const queueFull =

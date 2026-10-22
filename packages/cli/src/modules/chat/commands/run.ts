@@ -13,6 +13,7 @@ import { parseTimeout } from "../../shared/parse-timeout.js";
 import {
   DEFAULT_RUN_TIMEOUT_SECONDS,
   type RunError,
+  type RunOutcome,
   type RunService,
   type SessionChoices,
 } from "../services/run-service.js";
@@ -89,6 +90,22 @@ function fail(e: RunError): void {
   process.exitCode = exitCodeFor(e);
 }
 
+/**
+ * `dam run --json`: a finished run is `done` with its answer; one that is
+ * still running on the agent (`--async`, or past `--timeout`) is `pending`,
+ * the statuses `dam run get --json` reads it back with.
+ */
+export function runJson(outcome: RunOutcome): Record<string, unknown> {
+  if (outcome.kind === "completed")
+    return {
+      status: "done",
+      sessionId: outcome.sessionId,
+      stopReason: outcome.stopReason,
+      text: outcome.text,
+    };
+  return { status: "pending", sessionId: outcome.sessionId };
+}
+
 function stopExitCode(stopReason: string | null): number {
   return stopReason === END_TURN ? 0 : EXIT_RUN_STOPPED;
 }
@@ -131,6 +148,10 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
       "--timeout <seconds>",
       `give up waiting after this many seconds (default ${String(DEFAULT_RUN_TIMEOUT_SECONDS)})`,
     )
+    .option(
+      "--json",
+      "print one JSON object at the end instead of streaming the answer",
+    )
     .action(
       async (
         agentRef: string,
@@ -144,6 +165,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           setting: string[];
           async?: boolean;
           timeout?: string;
+          json?: boolean;
         },
       ) => {
         const choices = choicesOrInvalid(opts);
@@ -170,6 +192,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           sessionId: opts.session,
           ...(choices.value && { choices: choices.value }),
           async: opts.async,
+          quiet: opts.json,
           timeoutSeconds: timeoutOrInvalid(opts.timeout),
         });
         if (!result.ok) {
@@ -178,24 +201,29 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
         }
 
         const outcome = result.value;
+        if (opts.json)
+          process.stdout.write(`${JSON.stringify(runJson(outcome))}\n`);
         if (outcome.kind === "async-started") {
-          process.stdout.write(`${outcome.sessionId}\n`);
+          if (!opts.json) process.stdout.write(`${outcome.sessionId}\n`);
           process.stderr.write(
-            `run started; poll it with: dam run get ${agentRef} ${outcome.sessionId}\n`,
+            `run started; poll it with: dam run get ${agentRef} ${outcome.sessionId}\n` +
+              `session: ${outcome.sessionId}\n`,
           );
           return;
         }
         if (outcome.kind === "timed-out") {
           process.stderr.write(
             `timed out waiting; the run continues on the agent\n` +
-              `check it with: dam run get ${agentRef} ${outcome.sessionId}\n`,
+              `check it with: dam run get ${agentRef} ${outcome.sessionId}\n` +
+              `session: ${outcome.sessionId}\n`,
           );
           process.exitCode = EXIT_RUN_TIMEOUT;
           return;
         }
-        if (!stdoutEndedWithNewline) process.stdout.write("\n");
+        if (!opts.json && !stdoutEndedWithNewline) process.stdout.write("\n");
         process.stderr.write(
-          `stopReason: ${outcome.stopReason ?? "unknown"}\n`,
+          `stopReason: ${outcome.stopReason ?? "unknown"}\n` +
+            `session: ${outcome.sessionId}\n`,
         );
         process.exitCode = stopExitCode(outcome.stopReason);
       },

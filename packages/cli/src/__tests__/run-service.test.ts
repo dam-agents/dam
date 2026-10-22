@@ -151,7 +151,12 @@ describe("run service", () => {
     });
 
     expect(result).toEqual(
-      ok({ kind: "completed", sessionId: "sess-1", stopReason: "end_turn" }),
+      ok({
+        kind: "completed",
+        sessionId: "sess-1",
+        stopReason: "end_turn",
+        text: "hello world",
+      }),
     );
     expect(printed()).toBe("hello world");
   });
@@ -197,9 +202,51 @@ describe("run service", () => {
     });
 
     expect(result).toEqual(
-      ok({ kind: "completed", sessionId: "sess-1", stopReason: "cancelled" }),
+      ok({
+        kind: "completed",
+        sessionId: "sess-1",
+        stopReason: "cancelled",
+        text: "A=1 C=3",
+      }),
     );
     expect(printed()).toBe("A=1 C=3");
+  });
+
+  /**
+   * TEST_SCENARIO: #5716. `dam run --json` prints one object at the end, so
+   * a quiet run must stream nothing and still hand the whole answer back on
+   * the outcome, with the session id the caller continues with.
+   */
+  it("holds the answer back for the outcome in quiet mode", async () => {
+    relay = startRelay((ws, frame) => {
+      if (frame.method === "session/new") {
+        reply(ws, frame.id, { sessionId: "sess-1" });
+        return;
+      }
+      if (frame.method === "session/prompt") {
+        chunk(ws, "sess-1", "hello ");
+        chunk(ws, "sess-1", "world");
+        reply(ws, frame.id, { stopReason: "end_turn" });
+      }
+    });
+    const { service, printed } = serviceFor(relay);
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "greet",
+      quiet: true,
+      timeoutSeconds: 10,
+    });
+
+    expect(result).toEqual(
+      ok({
+        kind: "completed",
+        sessionId: "sess-1",
+        stopReason: "end_turn",
+        text: "hello world",
+      }),
+    );
+    expect(printed()).toBe("");
   });
 
   /**
@@ -338,6 +385,7 @@ describe("run service", () => {
       expect(result.value).toMatchObject({
         kind: "completed",
         stopReason: "end_turn",
+        text: "part one, part two",
       });
     }
     expect(printed()).toBe("part one, part two");
@@ -405,7 +453,12 @@ describe("run service", () => {
     });
 
     expect(result).toEqual(
-      ok({ kind: "completed", sessionId: "sess-1", stopReason: "end_turn" }),
+      ok({
+        kind: "completed",
+        sessionId: "sess-1",
+        stopReason: "end_turn",
+        text: "continued answer",
+      }),
     );
     expect(printed()).toBe("continued answer");
   });
