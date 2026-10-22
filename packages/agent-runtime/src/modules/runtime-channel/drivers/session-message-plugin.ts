@@ -1,5 +1,4 @@
 import type {
-  EventHandler,
   EventReportInput,
   Plugin,
   SessionMessageEventPayload,
@@ -8,6 +7,7 @@ import { sessionMessageEventPayload } from "agent-runtime-api";
 
 import type { TriggerSessionDriver } from "../../acp/index.js";
 import type { EventReporter } from "./trigger-plugin.js";
+import { eventPlugin } from "../infrastructure/plugin-registry.js";
 
 const KIND = "session-message";
 const DETAIL_MAX = 2_000;
@@ -51,38 +51,28 @@ export function createSessionMessagePlugin(deps: {
     }
   };
 
-  return {
-    name: KIND,
-    bindEvent(kind: string): EventHandler {
-      if (kind !== KIND) {
-        throw new Error(
-          `plugin "${KIND}" does not handle event kind "${kind}"`,
-        );
-      }
-      return async (payload, { eventId }) => {
-        const { sessionId, text, from, notice } =
-          sessionMessageEventPayload.parse(payload);
-        try {
-          await deps.driver.start({
-            task: sessionMessagePrompt(from, text, notice),
-            resumeSessionId: sessionId,
-            unattended: true,
-            steer: true,
-            keepSessionModel: true,
-          });
-        } catch (err) {
-          const detail = `the message could not be delivered: ${(err as Error).message}`;
-          deps.log(`[session-message] ${sessionId}: ${detail}`);
-          await report({
-            eventId,
-            outcome: "failed",
-            stage: "run",
-            detail: detail.slice(0, DETAIL_MAX),
-          });
-          return;
-        }
-        await report({ eventId, outcome: "ok", stage: "run" });
-      };
-    },
-  };
+  return eventPlugin(KIND, KIND, async (payload, { eventId }) => {
+    const { sessionId, text, from, notice } =
+      sessionMessageEventPayload.parse(payload);
+    try {
+      await deps.driver.start({
+        task: sessionMessagePrompt(from, text, notice),
+        resumeSessionId: sessionId,
+        unattended: true,
+        steer: true,
+        keepSessionModel: true,
+      });
+    } catch (err) {
+      const detail = `the message could not be delivered: ${(err as Error).message}`;
+      deps.log(`[session-message] ${sessionId}: ${detail}`);
+      await report({
+        eventId,
+        outcome: "failed",
+        stage: "run",
+        detail: detail.slice(0, DETAIL_MAX),
+      });
+      return;
+    }
+    await report({ eventId, outcome: "ok", stage: "run" });
+  });
 }

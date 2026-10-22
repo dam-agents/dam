@@ -1,5 +1,9 @@
 import { join } from "node:path";
-import { eventKind } from "agent-runtime-api";
+import {
+  eventKind,
+  sessionDefaultsEventPayload,
+  startupItemsEventPayload,
+} from "agent-runtime-api";
 import type {
   EventReportInput,
   ContributionKind,
@@ -31,8 +35,6 @@ import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createAgentInstructionsPlugin } from "./drivers/agent-instructions-plugin.js";
-import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
-import { createStartupItemsPlugin } from "./drivers/startup-items-plugin.js";
 import {
   createInitializationPlugin,
   createSubAgentOutcomePlugin,
@@ -44,7 +46,10 @@ import {
   type ContextEnv,
   type ScopedBinding,
 } from "./dispatcher.js";
-import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
+import {
+  createPluginRegistry,
+  eventPlugin,
+} from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
 import type { InvocationWatch } from "./services/invocation-watch.js";
@@ -192,10 +197,14 @@ export async function composeRuntimeChannel(
   registry.register(createAgentInstructionsPlugin({ log }));
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
-    createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
+    eventPlugin("session-defaults", "session-defaults", async (payload) =>
+      opts.onSessionDefaults(sessionDefaultsEventPayload.parse(payload)),
+    ),
   );
   registry.register(
-    createStartupItemsPlugin({ onStartupItems: opts.onStartupItems }),
+    eventPlugin("startup-items", "startup-items", async (payload) =>
+      opts.onStartupItems(startupItemsEventPayload.parse(payload)),
+    ),
   );
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
