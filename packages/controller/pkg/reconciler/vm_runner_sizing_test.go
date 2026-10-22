@@ -599,6 +599,8 @@ func TestAnIdleRunnerRequestsOnlyTheInstallsFloor(t *testing.T) {
 	floor, limit, current := resource.MustParse("32Mi"), resource.MustParse("8Gi"), resource.MustParse("1Gi")
 	idle := runnerMemoryRequest(0, 512, current, floor, limit)
 	assert.Equal(t, "32Mi", idle.String(), "nothing runs, so the reserve is not counted and the request falls to the floor")
+	lowest := runnerMemoryRequest(0, 512, resource.MustParse("512Mi"), floor, limit)
+	assert.Equal(t, "32Mi", lowest.String(), "the lowest step is where every idle runner sat before; the fall rule must not hold it there")
 	first := runnerMemoryRequest(1, 512, idle, floor, limit)
 	assert.Equal(t, "1Gi", first.String(), "the first machine brings the reserve back, rounded up to a step")
 }

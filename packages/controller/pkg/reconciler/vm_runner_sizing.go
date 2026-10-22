@@ -216,14 +216,14 @@ func refusedAnswer(st vmrunner.MachineStatus) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills machines of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses. With no machine to run the reserve is not counted either: the reserve is what admission keeps free beside running machines, and a runner with none holds a few MiB, so the install's request is the whole of what an idle owner reserves rather than a step of the reserve.
+// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills machines of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses. With no machine to run the reserve is not counted either: the reserve is what admission keeps free beside running machines, and a runner with none holds a few MiB, so the install's request is the whole of what an idle owner reserves rather than a step of the reserve; the fall rule is skipped too, since from the lowest step a need of nothing would read as within a quarter step of it and hold the request there.
 func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resource.Quantity) resource.Quantity {
 	needMiB := 0
 	if demandMiB > 0 {
 		needMiB = demandMiB + reserveMiB
 	}
 	wantMiB := roundedMiB(needMiB)
-	if currentMiB := int(current.Value() >> 20); wantMiB < currentMiB && needMiB > currentMiB-memoryRequestStepMiB-memoryRequestStepMiB/4 {
+	if currentMiB := int(current.Value() >> 20); needMiB > 0 && wantMiB < currentMiB && needMiB > currentMiB-memoryRequestStepMiB-memoryRequestStepMiB/4 {
 		wantMiB = currentMiB
 	}
 	want := *resource.NewQuantity(int64(wantMiB)<<20, resource.BinarySI)
