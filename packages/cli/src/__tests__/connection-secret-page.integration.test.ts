@@ -98,7 +98,9 @@ async function startFixture(
   let polls = 0;
   const connections = {
     listTemplates: async () => [GITHUB_PAT],
-    listAndReconcileConnections: async () => [EXISTING],
+    listAndReconcileConnections: async () => [
+      { ...EXISTING, ...(opts.check ? { check: opts.check } : {}) },
+    ],
     createFromTemplate: async (input: ConnectionCreateInput) => {
       creates.push(input);
       return "conn-000000000099";
@@ -442,5 +444,18 @@ describe("connection secrets entered on the web page (integration)", () => {
     const r = await dam(["connection", "test", "my-github"]);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain("has no credential check");
+  });
+
+  // TEST_SCENARIO: a token saved after a failed check is still active, since it is stored and granted, but the table says the check failed, so it does not read like a healthy connection.
+  it("list marks a connection whose check failed", async () => {
+    fixture = await startFixture([], { check: FAILED });
+    const r = await dam(["connection", "list"]);
+    expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+    expect(r.stdout).toContain("active (check failed)");
+    const json = await dam(["connection", "list", "--json"]);
+    expect(JSON.parse(json.stdout)[0]).toMatchObject({
+      status: "active",
+      check: FAILED,
+    });
   });
 });
