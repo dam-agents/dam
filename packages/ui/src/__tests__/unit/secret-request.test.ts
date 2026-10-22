@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   credentialCheckDetails,
   destinationDetail,
-  heldCheckCopy,
   destinationLabel,
+  heldCheckCopy,
   readSecretRequestId,
   secretRequestErrorCopy,
 } from "../../modules/connections/lib/secret-request.js";
