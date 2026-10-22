@@ -59,6 +59,9 @@ install:
     exec codex "$@"
     SHIM
     chmod +x "$shim/claude" "$shim/codex"
+    # Until the router answers, the pins are the ibm-litellm ids this kit was
+    # written against. refresh-rates.sh, which onboarding runs before doctor,
+    # replaces them with the ids this agent's grant serves.
     cat > "$HOME/.config/spotlights/models.yaml" <<'MODELS'
     claude: claude/ibm/aws/claude-opus-5
     codex: ibm/azure/gpt-5.5
@@ -77,13 +80,10 @@ install:
     # the home, so neither can be spelled here.
     ENGINE_PYTHON="$(sed -n '1s/^#!//p' "$HOME/.local/bin/spotlights-engine")"
     BUNDLED="$("$ENGINE_PYTHON" -c 'import importlib.resources as r; print(r.files("spotlights_engine") / "costing" / "rates.json")')"
-    # A Codex stream reports no model id. The engine then bills the model it
-    # was handed, and every call here gets the pinned one, so this row is
-    # reached only by an unpinned call; it follows the kit's GPT model.
-    GPT="$(sed -n 's/^codex:[[:space:]]*//p' "$HOME/.config/spotlights/models.yaml")"
-
-    rows() { # $1 harness, $2 provider prefix
-      curl -sf -m 30 -H "X-Platform-Harness: $1" "$ROUTER/v1/model/info" | jq --arg p "$2" --arg d "$today" '
+    MODELS="$HOME/.config/spotlights/models.yaml"
+    listing() { curl -sf -m 30 -H "X-Platform-Harness: $1" "$ROUTER/v1/model/info"; }
+    rows() { # $1 listing, $2 provider prefix
+      printf '%s' "$1" | jq --arg p "$2" --arg d "$today" '
         [.data[] | select(.model_info.input_cost_per_token != null) |
           {key: ($p + ":" + .model_name), value: {
             input: .model_info.input_cost_per_token,
@@ -94,9 +94,27 @@ install:
             note: ("From platform router /v1/model/info on " + $d)}}] | from_entries'
     }
 
-    claude=$(rows claude-code anthropic)
-    codex=$(rows codex openai)
-    jq -n --slurpfile b "$BUNDLED" --argjson c "$claude" --argjson x "$codex" --arg d "$today" --arg gpt "$GPT" '
+    claude_listing=$(listing claude-code)
+    codex_listing=$(listing codex)
+    # A pin is passed to the CLI as --model and is the id doctor prices, so it
+    # must be a name this agent's grant serves. The kit's pin is kept when the
+    # router names none, and doctor then reports it as unpriced rather than
+    # billing a call to a model no provider holds.
+    pin() { # $1 listing, $2 model id, $3 the kit's pin
+      local served
+      served=$(printf '%s' "$1" | jq -r --arg re "(^|/)$2\$" '[.data[].model_name | select(test($re))] | first // ""')
+      printf '%s' "${served:-$3}"
+    }
+    claude_pin=$(pin "$claude_listing" claude-opus-5 "$(sed -n 's/^claude:[[:space:]]*//p' "$MODELS")")
+    codex_pin=$(pin "$codex_listing" 'gpt-5[.]5' "$(sed -n 's/^codex:[[:space:]]*//p' "$MODELS")")
+    printf 'claude: %s\ncodex: %s\n' "$claude_pin" "$codex_pin" > "$MODELS"
+
+    claude=$(rows "$claude_listing" anthropic)
+    codex=$(rows "$codex_listing" openai)
+    # A Codex stream reports no model id. The engine then bills the model it
+    # was handed, and every call here gets the pinned one, so this row is
+    # reached only by an unpinned call; it follows the pin above.
+    jq -n --slurpfile b "$BUNDLED" --argjson c "$claude" --argjson x "$codex" --arg d "$today" --arg gpt "$codex_pin" '
       $b[0] + $c + $x
       + (if $gpt != "" and $x["openai:" + $gpt] then {"openai:codex": ($x["openai:" + $gpt] + {note: ("CLI-family fallback = " + $gpt + " gateway rate")})} else {} end)
       | ._note = ("Bundled rates plus platform-router LiteLLM prices fetched " + $d + " by ~/.config/spotlights/refresh-rates.sh")' > "$OUT.tmp"
