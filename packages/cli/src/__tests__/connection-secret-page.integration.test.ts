@@ -10,6 +10,7 @@ import {
   type ConnectionRequestSecretInput,
   type ConnectionTemplateView,
   type ConnectionView,
+  type CredentialCheck,
   type SecretRequestState,
   type UserIdentity,
 } from "api-server-api";
@@ -23,7 +24,9 @@ import { runDam } from "./run-dam.js";
  * The CLI asks the server for a secret-entry link, prints or opens it, waits
  * while the user enters the secret on the web page, and reports the result
  * with the exit code and `--json`, as it does for OAuth. The secret never
- * passes through the CLI.
+ * passes through the CLI. The result of the token check comes back with it,
+ * so an agent never calls a connection ready when its token failed the check,
+ * and `dam connection test` checks a stored token again.
  */
 
 const FIXTURE_USER: UserIdentity = {
@@ -70,9 +73,25 @@ interface Fixture {
   close: () => Promise<void>;
 }
 
+const FAILED: CredentialCheck = {
+  status: "failed",
+  reason: "GitHub refused the token (Bad credentials)",
+  at: "2026-10-22T08:00:00.000Z",
+};
+
+const PASSED: CredentialCheck = {
+  status: "passed",
+  account: "octocat",
+  expiresAt: "2026-11-21T10:00:00.000Z",
+  at: "2026-10-22T08:00:00.000Z",
+};
+
 async function startFixture(
   states: SecretRequestState[],
-  opts: { noSecretPage?: boolean } = {},
+  opts: {
+    noSecretPage?: boolean;
+    check?: CredentialCheck | null;
+  } = {},
 ): Promise<Fixture> {
   const requests: ConnectionRequestSecretInput[] = [];
   const creates: ConnectionCreateInput[] = [];
@@ -84,6 +103,12 @@ async function startFixture(
       creates.push(input);
       return "conn-000000000099";
     },
+    getConnection: async (id: string) => ({
+      ...EXISTING,
+      id,
+      ...(opts.check ? { check: opts.check } : {}),
+    }),
+    checkCredential: async () => opts.check ?? null,
   };
   const secretRequests = {
     request: async (input: ConnectionRequestSecretInput) => {
@@ -236,6 +261,58 @@ describe("connection secrets entered on the web page (integration)", () => {
     expect(fixture.creates).toEqual([]);
   });
 
+  // TEST_SCENARIO: the user saved a token that failed the check anyway; connect still exits 0, since the connection exists, but --json carries the failed check and the human output warns, so the agent does not tell the user it is ready.
+  it("connect reports a token saved after a failed check", async () => {
+    fixture = await startFixture([
+      { status: "saved", connectionId: "conn-000000000007", check: FAILED },
+    ]);
+    const json = await dam([
+      "connection",
+      "connect",
+      "github-pat",
+      "--no-browser",
+      "--json",
+    ]);
+    expect(json.exitCode, `stderr: ${json.stderr}`).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      ok: true,
+      id: "conn-000000000007",
+      check: FAILED,
+    });
+
+    fixture.requests.length = 0;
+    const human = await dam([
+      "connection",
+      "connect",
+      "github-pat",
+      "--name",
+      "work-github",
+      "--no-browser",
+    ]);
+    expect(human.stderr).toContain(
+      "warning: work-github failed its check: GitHub refused the token (Bad credentials)",
+    );
+    expect(human.stderr).toContain("dam connection update work-github");
+  });
+
+  // TEST_SCENARIO: a token passed as a flag is checked by the server the same way, and connect reports the account the check found.
+  it("connect names the account of a checked token", async () => {
+    fixture = await startFixture([], { check: PASSED });
+    const r = await dam([
+      "connection",
+      "connect",
+      "github-pat",
+      "--name",
+      "work-github",
+      "--value",
+      "ghp_flag",
+    ]);
+    expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+    expect(r.stdout).toBe(
+      "✓ Created work-github (conn-000000000099) as octocat\n",
+    );
+  });
+
   // TEST_SCENARIO: a rotation without the new value asks the server for a link for that connection and reports the update once the user saved it.
   it("update waits for the secret entered on the page", async () => {
     fixture = await startFixture([
@@ -257,6 +334,27 @@ describe("connection secrets entered on the web page (integration)", () => {
     expect(fixture.requests).toEqual([
       { action: "update", connectionId: EXISTING.id },
     ]);
+  });
+
+  // TEST_SCENARIO: a rotation the user saved after a failed check reports the check under --json, as connect does.
+  it("update reports the check of the new token", async () => {
+    fixture = await startFixture([
+      { status: "saved", connectionId: EXISTING.id, check: FAILED },
+    ]);
+    const r = await dam([
+      "connection",
+      "update",
+      "my-github",
+      "--no-browser",
+      "--json",
+    ]);
+    expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({
+      ok: true,
+      id: EXISTING.id,
+      name: "my-github",
+      check: FAILED,
+    });
   });
 
   // TEST_SCENARIO: the user cancels on the page, or lets the link expire, and the agent learns it from a failing exit code instead of waiting forever.
@@ -316,5 +414,33 @@ describe("connection secrets entered on the web page (integration)", () => {
     expect(fixture.creates).toEqual([
       expect.objectContaining({ templateId: "github-pat", value: "ghp_flag" }),
     ]);
+  });
+
+  // TEST_SCENARIO: an agent whose GitHub calls fail checks the stored token again; a failed check exits 1 with the reason in --json, so the agent can tell the token is the cause.
+  it("test checks a stored token again", async () => {
+    fixture = await startFixture([], { check: FAILED });
+    const failed = await dam(["connection", "test", "my-github", "--json"]);
+    expect(failed.exitCode).toBe(1);
+    expect(JSON.parse(failed.stdout)).toEqual({
+      id: EXISTING.id,
+      name: "my-github",
+      check: FAILED,
+    });
+    await fixture.close();
+
+    fixture = await startFixture([], { check: PASSED });
+    const passed = await dam(["connection", "test", "my-github"]);
+    expect(passed.exitCode, `stderr: ${passed.stderr}`).toBe(0);
+    expect(passed.stdout).toBe(
+      `my-github (${EXISTING.id}): passed (as octocat; expires 2026-11-21)\n`,
+    );
+  });
+
+  // TEST_SCENARIO: a connection whose template names no check says so and exits 2, rather than reporting a pass.
+  it("test refuses a connection with no check", async () => {
+    fixture = await startFixture([], { check: null });
+    const r = await dam(["connection", "test", "my-github"]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("has no credential check");
   });
 });
