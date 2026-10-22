@@ -413,6 +413,37 @@ describe("the one-time default conversion", () => {
     expect(writes).toEqual([]);
   });
 
+  // TEST_SCENARIO: one fitting provider has not listed while another has, so nothing is saved yet: converting without the late one would make the listed provider's model permanent and the platform's preferred model could never win.
+  it("waits while any fitting provider has not listed", async () => {
+    const listed = view("listed", ["claude-opus-5-5"]);
+    const partially: HarnessCatalogView = {
+      ...listed,
+      providers: [
+        { ...listed.providers[0]!, connectionId: "lite", alias: "ibm" },
+        {
+          ...listed.providers[0]!,
+          connectionId: "anth",
+          alias: "anthropic",
+          status: "unavailable",
+          models: [],
+        },
+      ],
+    };
+    const { c, writes } = converter({
+      granted: [IBM, ANTHROPIC],
+      catalog: partially,
+    });
+    expect(await c.convert("a")).toBe("waiting");
+    expect(writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a fitting provider the listing does not mention at all counts as late too, so a fresh listing that has dropped it does not convert the rest.
+  it("waits while a fitting provider is missing from the listing", async () => {
+    const { c, writes } = converter({ granted: [IBM, ANTHROPIC] });
+    expect(await c.convert("a")).toBe("waiting");
+    expect(writes).toEqual([]);
+  });
+
   // TEST_SCENARIO: an Agent still on a runtime without the Model Router keeps today's path and is not converted.
   it("leaves an Agent on an older runtime alone", async () => {
     const { c, writes } = converter({ capabilities: {} });

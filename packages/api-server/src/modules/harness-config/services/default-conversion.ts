@@ -123,7 +123,10 @@ export function createDefaultConverter(deps: {
         ? [group]
         : [];
     });
-    if (groups.length === 0) return "waiting";
+    /** UNIT_BOUNDARY_DESCRIPTION: a fitting provider that is late or failing
+     * keeps the conversion pending, since deciding without it would save
+     * another provider's model for good. */
+    if (groups.length < fitting.length) return "waiting";
     const providers = groups.map((g) => ({
       connectionId: g.connectionId,
       alias: g.alias,
