@@ -274,11 +274,16 @@ export function useFocusTrap(
   containerRef: RefObject<HTMLElement | null>,
   active = true,
 ) {
+  // UNIT_BOUNDARY_DESCRIPTION: the element to hand the keyboard back to is the one focused as the trap closes over the page, read on the render that closes it because the trap's own first effect moves focus inside itself.
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+  const wasActive = useRef(false);
+  if (active && !wasActive.current)
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+  wasActive.current = active;
+
   useEffect(() => {
     const container = containerRef.current;
     if (!active || !container) return;
-    // UNIT_BOUNDARY_DESCRIPTION: the element to hand the keyboard back to is the one focused when the trap closes over the page, not the one focused when the trap was built, which may be several opens ago.
-    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
@@ -323,7 +328,7 @@ export function useFocusTrap(
     return () => {
       cancelAnimationFrame(grabRaf);
       container.removeEventListener("keydown", onKey);
-      previouslyFocused?.focus?.();
+      previouslyFocused.current?.focus?.();
     };
   }, [containerRef, active]);
 }
