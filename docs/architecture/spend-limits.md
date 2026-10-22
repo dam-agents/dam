@@ -240,24 +240,16 @@ It counts the same spend as the own limit: the user's metered dollar spend on pa
 At the ceiling, the gate refuses the call and asks nothing, because "continue" cannot lift it.
 When the ceiling and a soft limit are both reached, the ceiling's refusal applies.
 
-A user's ceiling comes from their UserSpendLimit object, else from the chart's default ceiling, which is off at first.
-A UserSpendLimit works like a UserBudget ([budgets](budgets.md)):
-
-```yaml
-apiVersion: agent-platform.ai/v1
-kind: UserSpendLimit
-metadata:
-  name: spend-limit-<keycloak-sub>   # pinned to spec.owner at admission (CEL)
-  namespace: <agents-namespace>      # the chart's agent namespace (default platform-agents)
-spec:
-  owner: "<keycloak-sub>"            # exact plaintext sub, as on the agent owner label
-  dailyUsd: "50"                     # dollars per UTC day, at most two decimals
-```
-
-Operators manage these objects; a user cannot change one.
-A user can still set an own limit below the ceiling, and the lower of the two stops the work first.
-The gate reads the user's object by its name and keeps the value for one minute, so a change applies within a minute.
-When a read fails, the gate keeps the last value it read; with no value read yet, the check fails and the gate refuses the call.
+A platform operator ([security-and-credentials](security-and-credentials.md#identity)) sets a user's own ceiling with `dam spend ceiling` or in the Operator tab of Settings, and names the user by email.
+A ceiling that exists can also be changed or removed by the user's id, so a user without an email stays manageable; a new ceiling always needs the email.
+The api-server looks the email up in Keycloak, and keeps one row per user in Postgres: the amount, the operator who set it last, and when.
+It logs every set, change and removal with the operator and the amounts before and after, so a removed ceiling also leaves a trace.
+An amount is whole cents, up to $9,999,999.99, the same rule as the chart's default.
+A user without a row gets the chart's default ceiling, which is off at first.
+A user cannot change their ceiling.
+They can still set an own limit below it, and the lower of the two stops the work first.
+The gate reads the user's row on each check, so a change applies at the next call.
+When the read fails, the check fails and the gate refuses the call.
 
 ## Refusal
 
@@ -360,6 +352,11 @@ The screens:
   Bobcoins get their own line, which says that they are not in the total.
   A provider without a price shows "Not priced", and a free provider shows "No cost".
   For 30 days after T, and only when the telemetry store is on, a link opens the earlier estimates: the old view of the spend that each agent reported about itself.
+- **Settings, Operator tab:** only platform operators see this tab.
+  Its Spend ceilings section gives the default ceiling, then each user with a ceiling of their own: the amount, the operator who set it last, and when.
+  An operator sets a ceiling by the user's email, changes one, or removes one after a confirmation.
+  An email that no user has shows its error in the dialog.
+  The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-ceiling)).
 - **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
   Its help text gives the local time at which a day starts.
   The date range under the total starts at T when the period starts before T.

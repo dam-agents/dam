@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
 import {
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { startupItemIdSchema } from "agent-runtime-api";
@@ -18,6 +20,7 @@ const RC_TIMEOUT_MS = 30_000;
 export interface StartupItemStore {
   available(): boolean;
   list(): StartupItemConfig[];
+  create(id: string, text: string): "written" | "same" | "taken";
   setDisabled(id: string, disabled: boolean): Promise<boolean>;
   remove(id: string): Promise<boolean>;
   logPath(id: string): string;
@@ -28,9 +31,10 @@ export interface StartupItemStore {
  * UNIT_BOUNDARY_DESCRIPTION: The agent's Startup Items as the image keeps
  * them: openrc's user services for root, a script each in
  * `~/.config/rc/init.d`, started at boot when `~/.config/rc/runlevels/default`
- * links it. The agent writes them; the user's Disable removes the link and
- * Remove deletes both, and Start, Stop and Restart go through
- * `rc-service --user`. Only a vm machine, which openrc booted, has them: a
+ * links it. The agent writes them, or the platform for a starter kit that
+ * declares them, which never replaces a script already there; the user's
+ * Disable removes the link and Remove deletes both, and Start, Stop and
+ * Restart go through `rc-service --user`. Only a vm machine, which openrc booted, has them: a
  * container agent runs the same image without openrc. A name is read under
  * the same rule as the scan's, so a file of another shape is not an item and
  * never names a path outside the log directory.
@@ -102,6 +106,22 @@ export function createStartupItemStore(agentHome: string): StartupItemStore {
           command: commandOf(join(initDir, id)),
           disabled: !present(join(bootDir, id)),
         }));
+    },
+
+    create(id, text) {
+      const target = script(id);
+      const draft = join(initDir, `.${name(id)}.${process.pid}.new`);
+      mkdirSync(initDir, { recursive: true });
+      writeFileSync(draft, text, { mode: 0o755 });
+      try {
+        linkSync(draft, target);
+        return "written";
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        return readFileSync(target, "utf8") === text ? "same" : "taken";
+      } finally {
+        rmSync(draft, { force: true });
+      }
     },
 
     async setDisabled(id, disabled) {

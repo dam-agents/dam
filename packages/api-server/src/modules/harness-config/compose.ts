@@ -160,6 +160,7 @@ export function composeDefaultConverter(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   modelsRanBy: (agentId: string, hours: number) => Promise<string[]>;
+  kitDefaultModel: (agentId: string) => Promise<string | null>;
   movedToNewImage: (agentId: string) => Promise<boolean>;
   isRunning: (agentId: string) => Promise<boolean>;
   wake: (agentId: string) => Promise<WakeStamp | null>;

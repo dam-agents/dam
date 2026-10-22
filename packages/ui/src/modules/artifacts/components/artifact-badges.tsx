@@ -90,8 +90,12 @@ export function ArtifactInteractiveBadge() {
   return (
     <Tooltip content="This page can ask its agent to do something, so it can never be public. People you share it with can use its buttons too.">
       <span className="inline-flex">
-        <Badge variant="accent" className="gap-1">
-          <Flash size={12} />
+        <Badge
+          variant="accent"
+          size="sm"
+          className="h-4 gap-1 py-0 leading-none"
+        >
+          <Flash size={10} />
           Interactive
         </Badge>
       </span>

@@ -1,8 +1,10 @@
 export { composeModelRouter } from "./compose.js";
 export {
+  isSideCall,
   SESSION_HEADER,
   sessionOf,
   sessionOfRunningTurn,
+  subagentSessionOf,
   type SessionHandle,
 } from "./domain/session-of.js";
 export {
@@ -24,7 +26,8 @@ export {
   type RouterExtension,
 } from "./services/model-router.js";
 export { resolveTarget } from "./domain/resolve-target.js";
-export { routerEnvFor, tierModels } from "./domain/harness-env.js";
+export { routerEnvFor, servedModels } from "./domain/harness-env.js";
+export { tierModelOnSessionProvider, tierModels } from "./domain/tier-slots.js";
 export { classify, normalizePath } from "./domain/classify.js";
 export { upstreamWireOf, upstreamUrl } from "./domain/upstream.js";
 export {

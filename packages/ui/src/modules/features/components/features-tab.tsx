@@ -73,6 +73,12 @@ const FEATURE_ROWS: FeatureRow[] = [
       "A sidebar of agent avatars beside your conversations, with pinned sessions, a dashboard Home, and one side panel on the right with an icon bar for files, changes, artifacts and the browser. Turn it off to return to the current layout.",
   },
   {
+    id: "unified-right-toolbar",
+    label: "Unified right toolbar",
+    description:
+      "Draw the right-hand icon bar and the panel's top bar on the same tile rhythm as the sidebar rail, instead of the classic icon column. Independent of JanUI.",
+  },
+  {
     id: "environments",
     label: "Environments",
     description:

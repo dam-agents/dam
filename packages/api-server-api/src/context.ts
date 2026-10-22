@@ -1,7 +1,10 @@
 import type { AgentsService } from "./modules/agents/types.js";
 import type { ApiKeysService, Scope } from "./modules/api-keys/types.js";
 import type { ArtifactLibraryService } from "./modules/artifact-library/types.js";
-import type { BudgetsService } from "./modules/budgets/types.js";
+import type {
+  BudgetsService,
+  UserBudgetsService,
+} from "./modules/budgets/types.js";
 import type { AttentionService } from "./modules/attention/types.js";
 import type { ApprovalsService } from "./modules/approvals/types.js";
 import type {
@@ -36,7 +39,10 @@ import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SidebarOrderService } from "./modules/sidebar-order/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
-import type { SpendService } from "./modules/spend/types.js";
+import type {
+  SpendCeilingsService,
+  SpendService,
+} from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
@@ -54,6 +60,7 @@ export interface UserIdentity {
   scopes: readonly Scope[];
   agentIds: readonly string[] | "*";
   keyId?: string;
+  isOperator?: boolean;
 }
 
 export interface ApiContext {
@@ -93,7 +100,9 @@ export interface ApiContext {
   satellites: SatellitesService;
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
+  userBudgets: UserBudgetsService;
   spend: SpendService;
+  spendCeilings: SpendCeilingsService;
   providerStatus: ProviderStatusService;
   user: UserIdentity;
   e2eEnabled: boolean;

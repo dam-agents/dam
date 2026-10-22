@@ -22,11 +22,23 @@ Files a user attaches to a message, and files a channel brings in, land under `~
 `managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
 The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
 
+## Agent instructions
+
+The platform instructions reach Claude Code as its managed memory file: the image links `/etc/claude-code/CLAUDE.md` to `/etc/AGENTS.md`, so an owner's file cannot replace them.
+Claude Code walks up from the work directory, so it finds the agent's own `~/AGENTS.md` and `work/AGENTS.md` with no link ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+On its own, Claude Code drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere on that walk, `~/CLAUDE.md` or a repository's included.
+So `managed-settings.json` sets its built-in AGENTS.md plugin (`agents-md@builtin`) to `instructionFiles: claude-md-and-agents-md`, which loads every `AGENTS.md` beside the `CLAUDE.md` files.
+A file that a `CLAUDE.md` already imports or links to, or that holds the same text, is not loaded twice.
+Managed settings win over the owner's settings, so an owner cannot turn `~/AGENTS.md` off.
+
 ## Model Router
 
 Every provider but Bedrock (the LiteLLM proxies, the Anthropic key and subscription) reaches Claude Code through the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): [`model-gateway.sh`](rootfs/usr/local/lib/model-gateway.sh), sourced by `harness-chat`, `harness-terminal` and the login profile, repoints `ANTHROPIC_BASE_URL` at the router, names the harness with `ANTHROPIC_CUSTOM_HEADERS`, turns on gateway model discovery and drops a provider's `ANTHROPIC_MODEL` pin, since the session's model is a per-turn choice the runtime sends over ACP.
 The router serves `/v1/models` as `claude/<alias>/<id>` names (Claude Code's discovery keeps only ids containing `claude`, lowercased), routes each call by that name and rewrites the response's model to it so the transcript records the provider.
-The runtime fills the tier slots (`ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`) with the agent's default provider's newest model of each tier and caps `CLAUDE_CODE_MAX_CONTEXT_TOKENS` at the smallest window the agent may run on.
+The runtime fills the tier slots (`ANTHROPIC_DEFAULT_{FABLE,OPUS,SONNET,HAIKU}_MODEL`) with the agent's default provider's newest model of each tier, and the auto-mode classifier through `CLAUDE_CODE_AUTO_MODE_MODEL` from the platform's preferred classifier, so the Sonnet slot stays the person's.
+It sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the widest window the agent may run on — not a cap, but what an id Claude Code does not recognise runs with — and writes each model's own window into `modelSettings.<name>.autoCompactWindow` in `~/.claude/settings.json`, which is what makes a 1M model compact at its ceiling and follows a mid-session model switch.
+Claude Code reads neither the window from `/v1/models` (discovery keeps only id, display name and description) nor a per-model settings file of its own from a repository: a top-level `autoCompactWindow` there replaces the map, so no repository setting is set for it.
+The shim also turns on `CLAUDE_CODE_GATEWAY_HINT_HEADERS`, so Claude Code classes each call, and the router moves a side call (a title, a WebFetch summary, an alias-named subagent) on a tier slot to the session provider's model of that tier when the session runs on another provider; a main-conversation turn is never moved, and the classifier names its own model (above), so it is moved only when that model carries a tier word of its own.
 The subagent model is a session setting (`subagentModel`) delivered as `CLAUDE_CODE_SUBAGENT_MODEL` with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, so a session that picks one runs in a Claude process of its own and neither an Agent tool call's model argument nor an agent definition's model outranks it.
 The subagent effort (`subagentEffort`) is the router's: it replaces the `output_config.effort` a subagent's call carries.
 Neither reaches a platform sub-agent, which follows the session's platform sub-agent settings.

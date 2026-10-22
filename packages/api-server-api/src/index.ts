@@ -127,7 +127,17 @@ export {
   TerminationCode,
 } from "./modules/agents/types.js";
 export { listedAgents, toAgentView } from "./modules/agents/view.js";
-export { storageFullSchema } from "./modules/budgets/schemas.js";
+export {
+  budgetCpuSchema,
+  budgetSizeSchema,
+  storageFullSchema,
+  USER_BUDGETS_PAGE_MAX,
+  userBudgetRemoveInputSchema,
+  userBudgetSetInputSchema,
+  userBudgetsListInputSchema,
+  userBudgetsSortSchema,
+  userBudgetUserSchema,
+} from "./modules/budgets/schemas.js";
 export type {
   ProviderOutage,
   ProviderOutageReason,
@@ -141,6 +151,15 @@ export type {
   PoolLevel,
   CpuCongestion,
   BudgetsService,
+  UserBudgetDefaults,
+  UserBudgetEntry,
+  UserBudgetPage,
+  UserBudgetRemoveInput,
+  UserBudgetSetInput,
+  UserBudgetsListInput,
+  UserBudgetsService,
+  UserBudgetsSort,
+  UserBudgetUser,
 } from "./modules/budgets/types.js";
 export {
   MICROS_PER_UNIT,
@@ -154,8 +173,10 @@ export {
   SPEND_TURNS_MAX_SPAN_DAYS,
   SPEND_TURNS_MAX_WINDOWS,
   spendBreakdownInputSchema,
+  spendCeilingSetInputSchema,
   spendCeilingSourceSchema,
   spendCeilingUsdTextSchema,
+  spendCeilingUserSchema,
   spendDailyInputSchema,
   spendLimitAmountSchema,
   spendLimitAmountTextSchema,
@@ -207,6 +228,11 @@ export type {
   SpendSessions,
   SpendSessionsInput,
   SpendSetLimitInput,
+  SpendCeilingEntry,
+  SpendCeilingList,
+  SpendCeilingSetInput,
+  SpendCeilingsService,
+  SpendCeilingUser,
   SpendSubAgents,
   SpendSubAgentsInput,
   SubAgentSpendRow,
@@ -363,6 +389,8 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type { OperatorStatus } from "./modules/operator/types.js";
+export { operatorStatusSchema } from "./modules/operator/schemas.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,
@@ -410,6 +438,17 @@ export type {
   BedrockPins,
   KeyCheckTemplateId,
 } from "./modules/connections/providers.js";
+export {
+  PREFERRED_MODELS,
+  modelMatches,
+  modelTokens,
+  preferredModelOf,
+} from "./modules/connections/preferred-models.js";
+export type {
+  ModelRole,
+  PreferredModel,
+  ProviderListing,
+} from "./modules/connections/preferred-models.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
   KB_AGGREGATE_MCP_SERVER,
@@ -474,6 +513,7 @@ export {
   composeGitHubAccounts,
   githubAccountGroups,
   githubHostOf,
+  isGitHubEnterpriseServer,
 } from "./modules/connections/github-accounts.js";
 export type {
   GitHubAccountGroup,
@@ -569,6 +609,8 @@ export type {
   ProviderBalance,
   ProviderKeyCheck,
   ProviderKeyRecheck,
+  CredentialCheck,
+  CredentialCheckPolicy,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,
@@ -580,11 +622,13 @@ export type {
   SecretRequestStatus,
   SecretRequestTicket,
   SecretRequestView,
+  SecretRequestSubmitResult,
   SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
   authConfig as connectionAuthConfigSchema,
   providerKeyCheck as providerKeyCheckSchema,
+  credentialCheck as credentialCheckSchema,
 } from "./modules/connections/types.js";
 export {
   CONNECTION_ENV_NAME_HINT,
@@ -874,6 +918,7 @@ export type {
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
+  StartupItemsEventPayload,
 } from "agent-runtime-api";
 
 export {

@@ -182,11 +182,29 @@ describe("the model catalog", () => {
     expect(glm.metadata.reasoning).toBe(true);
     const nemotron = catalog.resolve("cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra")!;
     expect(nemotron.metadata.source).toEqual({
-      limits: "preset",
+      limits: "known",
       prices: "none",
     });
-    expect(nemotron.metadata.contextWindow).toBe(256_000);
+    expect(nemotron.metadata.contextWindow).toBe(262_144);
     expect(nemotron.metadata.prices).toBeNull();
+  });
+
+  /** TEST_SCENARIO: One endpoint serves models of very different lengths, so
+   * the preset's endpoint-wide constant is right for only the one it was
+   * measured on: Nemotron keeps the 262144 its deployment serves while every
+   * other model of the same Connection still reads the preset. */
+  it("keeps a measured window ahead of the endpoint's constant", async () => {
+    const { catalog } = catalogWith(BOTH, [cbLayer]);
+    await catalog.refresh();
+    expect(
+      catalog.resolve("cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra")!.metadata,
+    ).toMatchObject({
+      contextWindow: 262_144,
+      source: { limits: "known" },
+    });
+    expect(
+      catalog.resolve("cb/rits/zai-org/glm-5-3")!.metadata.source.limits,
+    ).toBe("table");
   });
 
   /** TEST_SCENARIO: Bob's gateway model-info carries the model's own limits and

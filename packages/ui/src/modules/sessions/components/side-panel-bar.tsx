@@ -2,13 +2,14 @@ import {
   Book,
   Branch,
   type CarbonIconType,
+  Cloud,
   Folder,
   Gears,
   Notification,
   Task,
   Wikis,
 } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,6 @@ import {
   RAIL_COLUMN,
   RAIL_GAP,
   RAIL_GLYPH,
-  railIndicator,
   railTile,
 } from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -37,6 +37,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
+  { tab: "environments", label: "Environments", icon: Cloud },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
@@ -76,82 +77,79 @@ export function SidePanelTabButtons({
   return tabs.map(({ tab, label, icon: Icon }) => {
     const badge = badges[tab];
     const shown = badge && badge.count > 0 ? badge : null;
-    return (
-      <Tooltip
-        key={tab}
-        content={shown?.label ?? label}
-        side={rail ? "left" : "bottom"}
-      >
-        {rail && tiles ? (
-          <button
-            type="button"
-            aria-label={shown?.label ?? label}
-            aria-pressed={active === tab}
-            data-testid={`side-panel-tab-${tab}`}
-            className={railTile(active === tab)}
-            onClick={() => onSelect(tab)}
-          >
+    const content = shown?.label ?? label;
+    const control =
+      rail && tiles ? (
+        <button
+          type="button"
+          aria-label={shown?.label ?? label}
+          aria-pressed={active === tab}
+          data-testid={`side-panel-tab-${tab}`}
+          className={railTile(active === tab)}
+          onClick={() => onSelect(tab)}
+        >
+          {icons[tab] ?? <Icon size={RAIL_GLYPH} />}
+          {shown && (
             <span
-              aria-hidden
-              className={railIndicator("right", active === tab)}
-            />
-            {icons[tab] ?? <Icon size={RAIL_GLYPH} />}
-            {shown && (
-              <span
-                data-testid={`side-panel-badge-${tab}`}
-                className={cn(
-                  RAIL_BADGE,
-                  shown.tone === "warning"
-                    ? "bg-warning"
-                    : shown.tone === "neutral"
-                      ? "bg-muted-foreground"
-                      : "bg-accent",
-                )}
-              >
-                {shown.count > 9 ? "9+" : shown.count}
-              </span>
-            )}
-          </button>
-        ) : (
-          <Button
-            variant="ghost"
-            size={rail ? "icon" : "icon-sm"}
-            aria-label={shown?.label ?? label}
-            aria-pressed={active === tab}
-            data-testid={`side-panel-tab-${tab}`}
-            className={cn(
-              "relative text-muted-foreground",
-              rail
-                ? "h-12 w-12 rounded-none hover:bg-transparent focus-visible:ring-inset focus-visible:ring-offset-0"
-                : cn("[&_svg]:size-4", active === tab && "bg-muted"),
-              active === tab && "text-foreground",
-              rail &&
-                active === tab &&
-                "before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-foreground",
-            )}
-            onClick={() => onSelect(tab)}
-          >
-            {icons[tab] ?? <Icon size={rail ? 24 : 16} />}
-            {shown && (
-              <Badge
-                data-testid={`side-panel-badge-${tab}`}
-                className={cn(
-                  "absolute flex items-center justify-center rounded-full border-0 font-bold text-white",
-                  rail
-                    ? "top-2 right-[3px] h-[18px] min-w-[18px] px-1 text-[11px]"
-                    : "-top-1 -right-1 h-4 min-w-4 px-1 text-[10px]",
-                  shown.tone === "warning"
-                    ? "bg-warning hover:bg-warning"
-                    : shown.tone === "neutral"
-                      ? "bg-muted-foreground hover:bg-muted-foreground"
-                      : "bg-accent hover:bg-accent",
-                )}
-              >
-                {shown.count > 9 ? "9+" : shown.count}
-              </Badge>
-            )}
-          </Button>
-        )}
+              data-testid={`side-panel-badge-${tab}`}
+              className={cn(
+                RAIL_BADGE,
+                shown.tone === "warning"
+                  ? "bg-warning"
+                  : shown.tone === "neutral"
+                    ? "bg-muted-foreground"
+                    : "bg-accent",
+              )}
+            >
+              {shown.count > 9 ? "9+" : shown.count}
+            </span>
+          )}
+        </button>
+      ) : (
+        <Button
+          variant="ghost"
+          size={rail ? "icon" : "icon-sm"}
+          aria-label={shown?.label ?? label}
+          aria-pressed={active === tab}
+          data-testid={`side-panel-tab-${tab}`}
+          className={cn(
+            "relative text-muted-foreground",
+            rail
+              ? "h-12 w-12 rounded-none hover:bg-transparent focus-visible:ring-inset focus-visible:ring-offset-0"
+              : cn("[&_svg]:size-4", active === tab && "bg-muted"),
+            active === tab && "text-foreground",
+            rail &&
+              active === tab &&
+              "before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-foreground",
+          )}
+          onClick={() => onSelect(tab)}
+        >
+          {icons[tab] ?? <Icon size={rail ? 24 : 16} />}
+          {shown && (
+            <Badge
+              data-testid={`side-panel-badge-${tab}`}
+              className={cn(
+                "absolute flex items-center justify-center rounded-full border-0 font-bold text-white",
+                rail
+                  ? "top-2 right-[3px] h-[18px] min-w-[18px] px-1 text-[11px]"
+                  : "-top-1 -right-1 h-4 min-w-4 px-1 text-[10px]",
+                shown.tone === "warning"
+                  ? "bg-warning hover:bg-warning"
+                  : shown.tone === "neutral"
+                    ? "bg-muted-foreground hover:bg-muted-foreground"
+                    : "bg-accent hover:bg-accent",
+              )}
+            >
+              {shown.count > 9 ? "9+" : shown.count}
+            </Badge>
+          )}
+        </Button>
+      );
+    return rail && tiles ? (
+      <Fragment key={tab}>{control}</Fragment>
+    ) : (
+      <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
+        {control}
       </Tooltip>
     );
   });
@@ -185,7 +183,10 @@ export function SidePanelBar({
       data-testid="side-panel-bar"
       className={cn(
         tiles
-          ? cn("w-14 shrink-0 border-l border-border bg-chrome", RAIL_COLUMN)
+          ? cn(
+              "w-14 min-h-0 shrink-0 overflow-y-auto border-l border-border bg-chrome",
+              RAIL_COLUMN,
+            )
           : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
@@ -227,18 +228,15 @@ export function SidePanelBar({
 
 function DocsLink() {
   return (
-    <Tooltip content="Documentation" side="left">
-      <a
-        href={DOCS_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Documentation"
-        data-testid="side-panel-docs"
-        className={railTile(false)}
-      >
-        <span aria-hidden className={railIndicator("right", false)} />
-        <Book size={RAIL_GLYPH} />
-      </a>
-    </Tooltip>
+    <a
+      href={DOCS_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Documentation"
+      data-testid="side-panel-docs"
+      className={railTile(false)}
+    >
+      <Book size={RAIL_GLYPH} />
+    </a>
   );
 }

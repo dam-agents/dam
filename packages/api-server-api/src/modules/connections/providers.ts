@@ -74,7 +74,18 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   );
 }
 
-const CURVE_BENDER_WORK_MODEL = "rits/zai-org/glm-5-3";
+const CURVE_BENDER_WORK_MODEL = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the window the RITS deployment of the work model
+ * serves, measured against its own vLLM router (max_model_len 1048576, a live
+ * 270k-token prompt accepted, max_tokens refused above the same figure, so
+ * input and output share it). It feeds the catalog's window for the models the
+ * endpoint does not describe, which Claude Code's per-model map and Pi read, so
+ * a smaller number compacts long sessions below the real ceiling. The endpoint
+ * serves other models on shorter windows, so a measured window for one of them
+ * outranks this constant (model-catalog metadata).
+ */
+const CURVE_BENDER_CONTEXT_WINDOW = "1048576";
 
 export function curveBenderEnvMappings(): EnvMapping[] {
   return [
@@ -84,7 +95,7 @@ export function curveBenderEnvMappings(): EnvMapping[] {
       CURVE_BENDER_WORK_MODEL,
       {
         MODEL: CURVE_BENDER_WORK_MODEL,
-        CONTEXT_WINDOW: "256000",
+        CONTEXT_WINDOW: CURVE_BENDER_CONTEXT_WINDOW,
         MAX_TOKENS: "32768",
         REASONING: "1",
       },
@@ -94,16 +105,16 @@ export function curveBenderEnvMappings(): EnvMapping[] {
       "ANTHROPIC_DEFAULT_MODEL",
       "ANTHROPIC_DEFAULT_FABLE_MODEL",
       "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL",
       "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     ].map((envName) => ({ envName, placeholder: CURVE_BENDER_WORK_MODEL })),
-    {
-      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
-    },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "CLAUDE_CODE_AUTO_MODE_SERVER", placeholder: "0" },
     { envName: "ENABLE_TOOL_SEARCH", placeholder: "false" },
-    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "256000" },
+    {
+      envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+      placeholder: CURVE_BENDER_CONTEXT_WINDOW,
+    },
   ];
 }
 
@@ -307,6 +318,7 @@ export const KEY_CHECK_TEMPLATE_IDS = [
   "openai",
   "ibm-litellm",
   "curve-bender",
+  "bob",
   "bedrock",
 ] as const;
 export type KeyCheckTemplateId = (typeof KEY_CHECK_TEMPLATE_IDS)[number];

@@ -15,24 +15,12 @@ const state = vi.hoisted(() => ({
   operable: true,
   comingUp: false,
   hasRun: true,
-  saved: [] as unknown[],
   newLayout: false,
-  picker: null as Record<string, unknown> | null,
 }));
 
 vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
   useNewLayout: () => state.newLayout,
 }));
-vi.mock("../../modules/agents/components/default-model-notice.js", () => ({
-  DefaultModelNotice: () => null,
-}));
-vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
-  SessionPairPicker: (props: Record<string, unknown>) => {
-    state.picker = props;
-    return null;
-  },
-}));
-
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({ navigateToSettings: vi.fn(), showConfirm: vi.fn() }),
@@ -159,8 +147,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
         }
       : undefined,
   }),
-  rememberSessionPair: (_agent: string, pair: unknown) =>
-    state.saved.push(pair),
+  rememberSessionPair: vi.fn(),
   clearSessionDefault: vi.fn(),
   useSessionDefaults: () => ({
     data: { chat: state.remembered, channel: null, scheduled: null },
@@ -245,71 +232,21 @@ describe("agent default on a runtime that routes by model name", () => {
   });
 });
 
-describe("JanUI's default editor", () => {
-  // TEST_SCENARIO: with JanUI on, the Providers page edits the saved default with the new session's picker, in its default mode: it shows the saved pair, and a pick saves the whole pair, session settings included.
-  it("hands the saved pair to the session picker, which saves each pick", () => {
-    state.newLayout = true;
+describe("JanUI's Providers page", () => {
+  // TEST_SCENARIO: the new layout renders the same three session defaults as the standard one, so a channel or a schedule can be given its own harness, provider and model there too.
+  it("shows the chat, channel and scheduled defaults", () => {
     state.routed = true;
     state.remembered = {
       harness: "codex",
       provider: "oai",
       model: "openai/gpt-5.5",
     };
-    state.saved = [];
-    const html = renderToStaticMarkup(
-      createElement(
-        TooltipProvider,
-        null,
-        createElement(SandboxProvidersSection, {
-          agentId: "agent",
-          header: () => null,
-        }),
-      ),
-    );
-    expect(html).toContain("Default for new sessions");
-    expect(html).not.toContain('aria-label="Harness"');
-    const defaultPair = state.picker!.defaultPair as {
-      value: unknown;
-      onChoose: (pair: unknown) => void;
-    };
-    expect(defaultPair.value).toEqual(state.remembered);
-    const pick = {
-      harness: "codex",
-      provider: "oai",
-      model: "openai/gpt-5.5",
-      settings: { effort: "high" },
-    };
-    defaultPair.onChoose(pick);
-    expect(state.saved).toEqual([pick]);
-    state.newLayout = false;
-    state.routed = false;
-  });
-
-  // TEST_SCENARIO: on a routed runtime the server refuses a default with no model, so a harness picked in JanUI's default editor waits for its model instead of being saved.
-  it("does not save a routed harness pick until its model is picked", () => {
     state.newLayout = true;
-    state.routed = true;
-    state.remembered = {
-      harness: "codex",
-      provider: "oai",
-      model: "openai/gpt-5.5",
-    };
-    state.saved = [];
-    renderToStaticMarkup(
-      createElement(
-        TooltipProvider,
-        null,
-        createElement(SandboxProvidersSection, {
-          agentId: "agent",
-          header: () => null,
-        }),
-      ),
-    );
-    const defaultPair = state.picker!.defaultPair as {
-      onChoose: (pair: unknown) => void;
-    };
-    defaultPair.onChoose({ harness: "pi", provider: "oai", model: null });
-    expect(state.saved).toEqual([]);
+    const html = renderSection();
+    expect(html).toContain("Chat sessions");
+    expect(html).toContain("Channel sessions");
+    expect(html).toContain("Scheduled sessions");
+    expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Codex</);
     state.newLayout = false;
     state.routed = false;
   });

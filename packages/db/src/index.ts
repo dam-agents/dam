@@ -57,6 +57,7 @@ export {
   spendMetering,
   spendLimits,
   spendLimitExtensions,
+  spendCeilings,
 } from "./schema.js";
 export {
   eq,

@@ -20,8 +20,13 @@ import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-s
 import { ANTHROPIC_OAUTH_TEMPLATE } from "../../model-catalog/index.js";
 import { anthropicBetaFor } from "../domain/anthropic-beta.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
-import { SESSION_HEADER, type SessionHandle } from "../domain/session-of.js";
+import {
+  isSideCall,
+  SESSION_HEADER,
+  type SessionHandle,
+} from "../domain/session-of.js";
 import { resolveTarget } from "../domain/resolve-target.js";
+import { tierModelOnSessionProvider } from "../domain/tier-slots.js";
 import { withSubagentEffort } from "../domain/subagent-effort.js";
 import { upstreamUrl, upstreamWireOf } from "../domain/upstream.js";
 import { explainUpstreamError } from "../domain/upstream-error.js";
@@ -213,12 +218,19 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
    * session's model or a built-in name. A harness that cannot switch its own
    * model per session (modelFromSession), a tier alias, or a bare name on a
    * bareNamesFromSession harness gets the session's model, which would
-   * otherwise resolve on whatever provider lists that name.
+   * otherwise resolve on whatever provider lists that name. On a claudeTiers
+   * harness a side call, one Claude Code classes as auxiliary or a
+   * subagent's, for a tier slot of another provider, or one its own provider
+   * no longer lists, runs on the session provider's model of that tier; a
+   * main-conversation turn is never moved, since it names the model the
+   * session was given.
    */
   const modelFor = (
     requested: string,
     binding: ModelRouterBinding | undefined,
     handle: SessionHandle | null,
+    side: boolean,
+    harness: string,
   ): string => {
     if (!handle) return requested;
     const choice = choiceOf(handle.parentSessionId ?? handle.sessionId);
@@ -228,9 +240,18 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       binding?.tierAliases?.includes(requested) === true ||
       (binding?.bareNamesFromSession === true &&
         parseQualifiedModel(requested) === null);
-    if (!choice?.model || (!binding?.modelFromSession && !tier))
-      return requested;
-    return choice.model;
+    if (!choice?.model) return requested;
+    if (binding?.modelFromSession || tier) return choice.model;
+    if (!binding?.claudeTiers || !side) return requested;
+    return (
+      tierModelOnSessionProvider({
+        requested,
+        sessionModel: choice.model,
+        harness,
+        binding,
+        providers: deps.catalog.providers(),
+      }) ?? requested
+    );
   };
 
   const handleModel = async (
@@ -262,7 +283,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       : null;
     const binding = deps.harnesses[harness];
     const target = resolveTarget({
-      model: modelFor(body.model, binding, handle),
+      model: modelFor(body.model, binding, handle, isSideCall(req), harness),
       dialect,
       harness: binding,
       harnessName: harness,

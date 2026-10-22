@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+//MISE description="Test that Copilot's launch helper links the home's AGENTS.md as a user instructions file only where Copilot's own walk stops short of it"
+//MISE sources=["copilot/rootfs/usr/local/lib/copilot-agents-md.sh", ".mise/tasks/test/copilot-agents-md"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const helper = fileURLToPath(new URL("../../../copilot/rootfs/usr/local/lib/copilot-agents-md.sh", import.meta.url));
+const root = mkdtempSync(join(tmpdir(), "copilot-agents-md-"));
+const home = join(realpathSync(root), "home");
+const rule = join(home, ".copilot/instructions/agent.instructions.md");
+mkdirSync(join(home, "work"), { recursive: true });
+mkdirSync(join(home, "repo"));
+execFileSync("git", ["init", "-q"], { cwd: join(home, "repo") });
+
+const start = (dir) => execFileSync("/bin/sh", ["-c", `. '${helper}'`], { cwd: join(home, dir), env: { PATH: process.env.PATH, HOME: home } });
+const linked = () => {
+  try {
+    return readlinkSync(rule);
+  } catch {
+    return null;
+  }
+};
+
+try {
+  // TEST_SCENARIO: a work dir that is its own repository stops Copilot's walk at its root, so the helper links the home's file, even before the file is written.
+  start("repo");
+  assert.equal(linked(), join(home, "AGENTS.md"));
+
+  // TEST_SCENARIO: from a plain work dir Copilot walks up to the home's file itself, so the helper removes its link and the file never loads twice.
+  start("work");
+  assert.equal(linked(), null);
+
+  // TEST_SCENARIO: a regular file the owner put at the link's path is theirs and stays.
+  mkdirSync(join(home, ".copilot/instructions"), { recursive: true });
+  writeFileSync(rule, "own\n");
+  start("repo");
+  start("work");
+  assert.equal(readFileSync(rule, "utf8"), "own\n");
+
+  console.log("copilot-agents-md: the home's AGENTS.md is linked only where Copilot's walk misses it, and an owner's file is kept");
+} finally {
+  rmSync(root, { recursive: true, force: true });
+}

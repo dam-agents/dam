@@ -71,6 +71,7 @@ import { GatewayFailureBadge } from "../../agents/components/gateway-failure-bad
 import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
+import { AgentUpdateDot } from "../../agents/components/update-available-action.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
@@ -87,6 +88,9 @@ import { DockedChangesPanel } from "../../changes/components/docked-changes-pane
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
+import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
+import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
+import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
@@ -283,6 +287,7 @@ export function ChatView() {
   );
   const processesEnabled = useProcessesEnabled();
   const newLayout = useNewLayout();
+  const environmentsEnabled = useEnvironmentsEnabled();
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
@@ -750,6 +755,11 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
+    environments: environmentsTabShown({
+      newLayout,
+      enabled: environmentsEnabled,
+      vm: agentView?.vm === true,
+    }),
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
@@ -936,14 +946,21 @@ export function ChatView() {
                             )}
                           />
                         )}
-                        <span
-                          className={cn(
-                            "mt-3 text-xl font-bold text-foreground",
-                            !newLayout &&
-                              "underline-offset-4 group-hover:underline",
+                        <span className="mt-3 flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "text-xl font-bold text-foreground",
+                              !newLayout &&
+                                "underline-offset-4 group-hover:underline",
+                            )}
+                          >
+                            {selectedAgentName}
+                          </span>
+                          {newLayout && agentView && (
+                            <AgentUpdateDot
+                              available={!!agentView.templateUpdate}
+                            />
                           )}
-                        >
-                          {selectedAgentName}
                         </span>
                       </button>
                     </h2>
@@ -1307,6 +1324,9 @@ export function ChatView() {
                   open
                   className="flex-1"
                 />
+              )}
+              {activeTab === "environments" && selectedAgent && (
+                <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
               )}
             </>
           }

@@ -1,5 +1,9 @@
 import { routesByModelName, type HarnessCatalogView } from "agent-runtime-api";
-import type { HarnessCatalog, SessionPair } from "api-server-api";
+import {
+  parseQualifiedModel,
+  type HarnessCatalog,
+  type SessionPair,
+} from "api-server-api";
 import { harnessFits } from "../../templates/index.js";
 import { convertedDefault } from "../domain/converted-default.js";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
@@ -31,15 +35,18 @@ const LISTING_WAIT_MS = 120_000;
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An Agent from before per-session defaults has
  * no saved default, and neither has a new Agent until its runtime first says
- * hello. Once it runs the Model Router its default is converted once from
- * what is certain about it (its one provider and its harness's model
- * setting) against that provider's listing on the Agent's own runtime, so a
- * new Agent's default is the model its image presets (Claude Code's `opus`),
- * saved as a normal default the owner sees and can change. The
- * result is saved even when it names no model, as "not set", so the owner is
- * told and nothing converts it again. An Agent still on an older runtime, or
- * whose provider has not listed, or is unsupported only because an older
- * runtime's env names no template for it, is left for a later try. A fire
+ * hello. Once it runs the Model Router its default is converted once, and
+ * only while nothing is saved, so a model the person picked is never rewritten:
+ * from what is certain about it (the model its calls ran, and its harness's
+ * model setting) against its providers' listings on the Agent's own runtime,
+ * and then from the platform's model preference list, which also decides an
+ * Agent whose providers number more than one — the case that used to be left
+ * "not set" because no provider's own order could be trusted over another's.
+ * The result is a normal default the owner sees and can change, or "not set",
+ * which is saved too, so the owner is told and nothing converts it again. An
+ * Agent still on an older runtime, or whose providers have not listed, or are
+ * unsupported only because an older runtime's env names no template for them,
+ * is left for a later try. A fire
  * wakes an Agent first only while it is moved to a new image and asleep, so
  * the fire is checked and resolved against the new runtime, not the one its
  * last hello came from; that start ends the move. When the new runtime does
@@ -57,6 +64,7 @@ export function createDefaultConverter(deps: {
     harness: string,
   ) => Promise<HarnessCatalogView | null>;
   modelsRanBy: (agentId: string, hours: number) => Promise<string[]>;
+  kitDefaultModel: (agentId: string) => Promise<string | null>;
   movedToNewImage: (agentId: string) => Promise<boolean>;
   isRunning: (agentId: string) => Promise<boolean>;
   wake: (agentId: string) => Promise<WakeStamp | null>;
@@ -104,17 +112,26 @@ export function createDefaultConverter(deps: {
     const fitting = (await deps.pairRepo.grantedProviders(agentId)).filter(
       (p) => harnessFits(deps.catalog, harness, p.type, p.templateId),
     );
-    const [provider] = fitting;
-    if (fitting.length !== 1 || !provider)
+    if (fitting.length === 0)
       return save(agentId, { harness, provider: null, model: null });
     const view = await deps.catalogView(agentId, harness).catch(() => null);
-    const group = view?.providers.find((p) => p.connectionId === provider.id);
-    if (
-      !group ||
-      group.status === "unavailable" ||
-      (group.status === "unsupported" && group.template === "")
-    )
-      return "waiting";
+    const groups = fitting.flatMap((p) => {
+      const group = view?.providers.find((g) => g.connectionId === p.id);
+      return group &&
+        group.status !== "unavailable" &&
+        !(group.status === "unsupported" && group.template === "")
+        ? [group]
+        : [];
+    });
+    /** UNIT_BOUNDARY_DESCRIPTION: a fitting provider that is late or failing
+     * keeps the conversion pending, since deciding without it would save
+     * another provider's model for good. */
+    if (groups.length < fitting.length) return "waiting";
+    const providers = groups.map((g) => ({
+      connectionId: g.connectionId,
+      alias: g.alias,
+      listed: g.status === "listed" ? g.models.map((m) => m.upstreamId) : [],
+    }));
     const setting =
       (await deps.snapshotRepo.read(agentId, harness))?.model ??
       (await deps.snapshotRepo.read(agentId))?.model ??
@@ -123,14 +140,21 @@ export function createDefaultConverter(deps: {
       !setting?.trim() || setting.trim().toLowerCase() === "default";
     const converted = convertedDefault({
       setting,
-      alias: group.alias,
-      listed:
-        group.status === "listed" ? group.models.map((m) => m.upstreamId) : [],
+      providers,
       ran: needsRan ? await modelsRan(agentId) : [],
+      declared: await deps.kitDefaultModel(agentId),
     });
+    const model = converted?.model ?? null;
+    const alias = model ? parseQualifiedModel(model)?.alias : null;
     return save(
       agentId,
-      { harness, provider: provider.id, model: converted?.model ?? null },
+      {
+        harness,
+        provider:
+          providers.find((p) => p.alias === alias)?.connectionId ??
+          (providers.length === 1 ? providers[0]!.connectionId : null),
+        model,
+      },
       converted?.changedFrom
         ? { changedFrom: converted.changedFrom }
         : undefined,

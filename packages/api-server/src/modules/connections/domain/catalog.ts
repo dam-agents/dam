@@ -833,6 +833,7 @@ const GITHUB_PAT: HeaderConnectionTemplate = {
   host: "api.github.com",
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
+  credentialCheck: "github-user",
   contributions: [
     { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
     {
@@ -909,6 +910,7 @@ function githubEnterprisePat(
     ...(creds?.host ? { host: creds.host } : {}),
     headerName: "Authorization",
     valueFormat: "Bearer {value}",
+    credentialCheck: "github-user",
     contributions: [
       { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
     ],

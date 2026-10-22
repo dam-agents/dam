@@ -6,9 +6,21 @@ manifestVersion: 1
 
 # Claude Code's gateway model discovery keeps ids containing "claude",
 # lowercased, so every catalog name reaches it as claude/<alias>/<id>.
-# claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables
-# and caps CLAUDE_CODE_MAX_CONTEXT_TOKENS, since Claude Code reads no
-# per-model window from /v1/models.
+# claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables.
+# The slots are the default provider's, so the router moves a side call on one
+# (a title, a WebFetch summary, an alias-named subagent) to the session's
+# provider by tier. The classifier names its own model through
+# classifierModelEnv below, so it moves only when that name carries a tier
+# word of its own.
+# The context window takes two mechanisms, because Claude Code keeps no window
+# from /v1/models: discovery parses each model as {id, display_name,
+# description} and throws the rest away, and the per-model modelConfig route is
+# off. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the widest window, which is not a cap
+# but the window an id it does not recognise runs with; every model it may run
+# on gets its own window under modelSettings below, re-read per model, so a
+# mid-session switch follows. A repo's own .claude/settings.json with a
+# top-level autoCompactWindow replaces that map, and CLAUDE_CODE_AUTO_COMPACT_WINDOW
+# would override every entry, so neither is set.
 modelRouter:
   dialects: [anthropic-messages]
   sessionModel: { configOption: model }
@@ -27,6 +39,15 @@ modelRouter:
   # subagent model is not Claude runs in a Claude process that does not ask.
   nonClaudeModelEnv:
     CLAUDE_CODE_AUTO_MODE_SERVER: "0"
+  # Auto mode's classifier model, which Claude Code takes from its own knob
+  # (inert below 2.1.302): a routed process is told the platform's preferred
+  # classifier on the agent's default provider. The knob is one value per
+  # process, so a session moved elsewhere keeps that provider's classifier
+  # unless the name carries a tier word, which the side-call rule moves by
+  # tier like any other.
+  # The Sonnet slot stays what it says, so a sonnet-aliased subagent still
+  # runs where the person put it.
+  classifierModelEnv: CLAUDE_CODE_AUTO_MODE_MODEL
 
 # Claude Code sets the session's id on every shell command it runs, the same
 # id the platform knows the session by; git records it in its trace, so a
@@ -36,7 +57,7 @@ sessionEnvVar: CLAUDE_CODE_SESSION_ID
 # Declared so the runtime answers initialize before any harness process runs.
 # Re-captured from the image pin by test:harness-initialize-capabilities.
 initializeCapabilities:
-  agentCapabilities: {"_meta": {"claudeCode": {"promptQueueing": true}, "authStatus": {}}, "promptCapabilities": {"image": true, "embeddedContext": true}, "mcpCapabilities": {"http": true, "sse": true}, "auth": {"logout": {}}, "providers": {}, "loadSession": true, "sessionCapabilities": {"additionalDirectories": {}, "close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "subagents": {}}}
+  agentCapabilities: {"_meta": {"claudeCode": {"promptQueueing": true}, "authStatus": {}}, "promptCapabilities": {"image": true, "embeddedContext": true}, "mcpCapabilities": {"http": true, "sse": true}, "auth": {"logout": {}}, "providers": {}, "loadSession": true, "sessionCapabilities": {"additionalDirectories": {}, "close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "systemPrompt": {"mode": {"override": {}}}}}
   authMethods: []
   agentInfo: {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent"}
 
@@ -95,6 +116,14 @@ drivers:
     # Default gives (Claude Code's built-in default), which a schedule with no
     # model runs on.
     defaultModel: default
+    # Claude Code takes no window from /v1/models, and
+    # CLAUDE_CODE_MAX_CONTEXT_TOKENS is not a cap but the window an id it does
+    # not recognise runs with, so every model gets its own here, applied as
+    # min(its window, this). Re-read per model, so a mid-session switch follows.
+    modelAutoCompactWindow:
+      keyPath: modelSettings
+      field: autoCompactWindow
+      unknownWindow: 200000
     catalog:
       options:
         - id: model

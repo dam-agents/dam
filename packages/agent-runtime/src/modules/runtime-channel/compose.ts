@@ -9,6 +9,7 @@ import type {
   RuntimeChannelService,
   SessionDefaultsEventPayload,
   SessionDirectoryEntry,
+  StartupItemsEventPayload,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { noticeStream } from "../../core/notice-stream.js";
@@ -29,7 +30,9 @@ import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js"
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
+import { createAgentInstructionsPlugin } from "./drivers/agent-instructions-plugin.js";
 import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
+import { createStartupItemsPlugin } from "./drivers/startup-items-plugin.js";
 import {
   createInitializationPlugin,
   createSubAgentOutcomePlugin,
@@ -52,7 +55,8 @@ import {
 } from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import { catalogChoices } from "./domain/catalog-choices.js";
-import type { ModelCatalog } from "../model-catalog/index.js";
+import type { CatalogProvider, ModelCatalog } from "../model-catalog/index.js";
+import { servedModels } from "../model-router/index.js";
 import {
   createSessionDirectoryReporter,
   type SessionDirectoryReporter,
@@ -71,6 +75,7 @@ export function pluginStateRoot(agentHome: string): string {
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   harnessConfig: HarnessConfigService;
+  writeModelWindows(): Promise<void>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
@@ -87,6 +92,7 @@ export interface ComposeRuntimeChannelOpts {
   invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
   onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
+  onStartupItems: (payload: StartupItemsEventPayload) => Promise<void>;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
@@ -183,9 +189,13 @@ export async function composeRuntimeChannel(
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
+  registry.register(createAgentInstructionsPlugin({ log }));
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
     createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
+  );
+  registry.register(
+    createStartupItemsPlugin({ onStartupItems: opts.onStartupItems }),
   );
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
@@ -310,8 +320,33 @@ export async function composeRuntimeChannel(
     log,
   });
 
+  const writtenWindows = new Map<string, string>();
+  const writeModelWindows = async (): Promise<void> => {
+    if (!opts.catalog) return;
+    for (const [harness, plugin] of harnessConfigs) {
+      const binding = opts.manifests[harness]?.modelRouter;
+      if (!binding) continue;
+      const models = servedModels({
+        harness,
+        binding,
+        providers: opts.catalog.providers(),
+      });
+      const fingerprint = JSON.stringify(models);
+      if (writtenWindows.get(harness) === fingerprint) continue;
+      try {
+        await plugin.writeModelWindows(models);
+        writtenWindows.set(harness, fingerprint);
+      } catch (err) {
+        log(
+          `[harness-config] model windows not written: ${(err as Error).message}`,
+        );
+      }
+    }
+  };
+
   return {
     service,
+    writeModelWindows,
     harnessConfig: {
       readCurrent: async (input) => {
         const target = harnessConfigFor(input?.harness);

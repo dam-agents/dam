@@ -9,6 +9,10 @@ import {
 import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastructure/telegram-oauth.js";
 import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
+import {
+  createAgentDiscoveryRoutes,
+  readAgentSkill,
+} from "./agent-discovery.js";
 import { createBrandRoutes } from "./brand.js";
 import { mountBrowserStreamPage } from "./browser-stream.js";
 import {
@@ -51,6 +55,15 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   );
   app.get("/api/terms", (c) => c.json(terms.document()));
   app.route("/api/brand", createBrandRoutes(config.brand));
+  app.route(
+    "/",
+    createAgentDiscoveryRoutes({
+      skill: readAgentSkill(config.agentSkillPath),
+      brandName: config.brand.name,
+      serverUrl: config.uiBaseUrl,
+      recommendedCliVersion: config.recommendedClientCliVersion,
+    }),
+  );
   const avatarImages = createAvatarImageRoutes(
     createAvatarImagesRepository(boot.db),
   );

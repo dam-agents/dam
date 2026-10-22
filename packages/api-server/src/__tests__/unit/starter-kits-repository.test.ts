@@ -1034,4 +1034,95 @@ describe("the shipped proof-of-concept catalog", () => {
     expect(run("codex")).toMatch(/^codex platform:conn:router /);
     expect(() => run("codex", { PLATFORM_MODEL_ROUTER_SERVES: "" })).toThrow();
   });
+
+  // TEST_SCENARIO: the pins the kit ships name the ibm-litellm ids. A create grants the owner's first provider that runs the harness, which may serve the same two models under its own names, and a pin no provider serves fails the CLI call and leaves doctor no rate row. The refresh script must pin the ids the grant serves, keep Opus 5.0 rather than the newer Opus 5.5, and keep the kit's pin when the router names neither.
+  it("pins the Spotlights models the agent's grant serves", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const dir = path.resolve(here, "../../../../../helm/starter-kits");
+    const kit = loadYamlDocument(
+      fs.readFileSync(path.join(dir, "kits/spotlights/kit.yaml"), "utf8"),
+    ) as { install: { command: string } };
+    const script =
+      kit.install.command.split("<<'RATES'\n")[1]!.split("\nRATES\n")[0]! +
+      "\n";
+
+    const pinned = (listings: Record<string, object>) => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "spotlights-pin-"));
+      const at = (...parts: string[]) => path.join(home, ...parts);
+      const fake = (name: string, body: string) => {
+        const file = at("fake-bin", name);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, body, { mode: 0o755 });
+        return file;
+      };
+      fs.mkdirSync(at(".config", "spotlights"), { recursive: true });
+      fs.writeFileSync(
+        at(".config", "spotlights", "models.yaml"),
+        "claude: claude/ibm/aws/claude-opus-5\ncodex: ibm/azure/gpt-5.5\n",
+      );
+      const bundled = at("bundled-rates.json");
+      fs.writeFileSync(bundled, JSON.stringify({}));
+      const engine = at(".local", "bin", "spotlights-engine");
+      fs.mkdirSync(path.dirname(engine), { recursive: true });
+      fs.writeFileSync(
+        engine,
+        `#!${fake("engine-python", `#!/bin/sh\necho ${bundled}\n`)}`,
+        { mode: 0o755 },
+      );
+      for (const [harness, listing] of Object.entries(listings)) {
+        const file = at(`router-${harness}.json`);
+        fs.writeFileSync(file, JSON.stringify(listing));
+      }
+      fake(
+        "curl",
+        `#!/bin/sh\ncase "$*" in\n*claude-code*) cat ${at("router-claude-code.json")} ;;\n*codex*) cat ${at("router-codex.json")} ;;\nesac\n`,
+      );
+      execFileSync("bash", ["-c", script], {
+        env: {
+          HOME: home,
+          PATH: `${at("fake-bin")}:${process.env.PATH}`,
+          PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:24180",
+        },
+        stdio: "pipe",
+      });
+      return {
+        models: fs.readFileSync(
+          at(".config", "spotlights", "models.yaml"),
+          "utf8",
+        ),
+        rates: JSON.parse(
+          fs.readFileSync(at(".config", "spotlights", "rates.json"), "utf8"),
+        ) as Record<string, unknown>,
+      };
+    };
+    const row = { input_cost_per_token: 2e-6, output_cost_per_token: 1e-5 };
+
+    const other = pinned({
+      "claude-code": {
+        data: [
+          {
+            model_name: "claude/anthropic/aws/claude-opus-5-5",
+            model_info: row,
+          },
+          { model_name: "claude/anthropic/aws/claude-opus-5", model_info: row },
+        ],
+      },
+      codex: {
+        data: [{ model_name: "openai/azure/gpt-5.5", model_info: row }],
+      },
+    });
+    expect(other.models).toBe(
+      "claude: claude/anthropic/aws/claude-opus-5\ncodex: openai/azure/gpt-5.5\n",
+    );
+    expect(other.rates["openai:codex"]).toMatchObject({ input: 2e-6 });
+
+    const none = pinned({
+      "claude-code": { data: [] },
+      codex: { data: [] },
+    });
+    expect(none.models).toBe(
+      "claude: claude/ibm/aws/claude-opus-5\ncodex: ibm/azure/gpt-5.5\n",
+    );
+    expect(none.rates["openai:codex"]).toBeUndefined();
+  });
 });

@@ -12,6 +12,7 @@ import type {
   processNoticeSchema,
   processOutputSchema,
   processRowSchema,
+  startupItemDeclarationSchema,
   startupItemSchema,
 } from "./schemas.js";
 
@@ -27,6 +28,9 @@ export type ProcessOutput = z.infer<typeof processOutputSchema>;
 export type ProcessNotice = z.infer<typeof processNoticeSchema>;
 export type KeepMarkRequest = z.infer<typeof keepMarkRequestSchema>;
 export type StartupItem = z.infer<typeof startupItemSchema>;
+export type StartupItemDeclaration = z.infer<
+  typeof startupItemDeclarationSchema
+>;
 
 export type ProcessesDomainError =
   { kind: "NotFound"; key: string } | { kind: "NotAllowed"; message: string };

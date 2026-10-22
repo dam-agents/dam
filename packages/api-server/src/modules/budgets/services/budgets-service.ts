@@ -216,7 +216,7 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
   };
 }
 
-function reservedBy(agents: readonly BudgetedAgent[]): {
+export function reservedBy(agents: readonly BudgetedAgent[]): {
   cpuMilli: number;
   memoryBytes: number;
 } {

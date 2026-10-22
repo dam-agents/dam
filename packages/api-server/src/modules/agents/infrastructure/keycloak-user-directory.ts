@@ -5,6 +5,7 @@ export interface KeycloakUserDirectory {
   resolveBySub(sub: string): Promise<string | null>;
   resolveDisplayNameBySub(sub: string): Promise<string | null>;
   resolveManyBySub(subs: string[]): Promise<Map<string, string>>;
+  searchSubs(text: string, max: number): Promise<Set<string>>;
   isActive(sub: string): Promise<boolean>;
 }
 
@@ -194,6 +195,21 @@ export function createKeycloakUserDirectory(
       }
       const user = (await res.json()) as { enabled?: boolean };
       return user.enabled !== false;
+    },
+
+    async searchSubs(text, max) {
+      const query = new URLSearchParams({
+        search: `*${text}*`,
+        briefRepresentation: "true",
+        max: String(max),
+      });
+      const res = await adminFetch(`/users?${query}`);
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Keycloak user search failed: ${res.status} ${body}`);
+      }
+      const users = (await res.json()) as Array<{ id: string }>;
+      return new Set(users.map((u) => u.id));
     },
 
     async resolveManyBySub(subs) {

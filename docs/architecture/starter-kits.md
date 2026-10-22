@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -97,6 +97,9 @@ flowchart LR
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
+- **Kit Default Model** — optional `defaultModel`: the model the kit's job needs the Agent itself to run on, named the way the model is known whatever provider serves it (`claude-opus-5` for IBM's `aws/claude-opus-5`).
+  The create stamps it on the Agent, and the [conversion](harness-config.md#conversion-of-an-old-default) saves it as the Agent's chat default when the granted provider lists it, so the kit's onboarding turn runs on it; a model that provider does not list leaves the conversion to the image's preset, and the owner changes the default afterwards like any other.
+  A kit that names no model gets the conversion alone.
 - **Avatar** — optional: the avatar an Agent created from the kit starts with ([agent avatars](agent-avatars.md)).
   `avatar` names a built-in character (`avatar: shield`), an emoji (`avatar: "emoji:🛡️"`), or an image file in the kit repository (`avatar: {path: avatar.png}`, relative to `kit.yaml`).
   The refresh reads the file at the kit's resolved commit, takes it only as a JPG or PNG of at most 2 MB, as the upload does, and stores it as an uploaded avatar; the resolved kit then carries `image:<id>`, and the hourly sweep keeps every image a resolved kit names.
@@ -126,6 +129,12 @@ flowchart LR
   The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
   This is how the two wiki kits run their toolkit's bootstrap: from the checkout their `seed` brought in, pinned to the commit the catalog resolved, instead of fetching a script from the network at install.
+- **Kit Startup Item** — optional `startupItems`: the programs the agent runs at every boot, each a [Startup Item](agent-processes.md#startup-items) — a `name`, a `command` (a program on `PATH`, an absolute path, or a path in the agent's home as `~/…`; never a shell line), its `args`, a one-line `description`, and `enabled`, on at boot unless it says `false`.
+  Only a machine runs openrc, so a kit that declares one declares `backend: vm`, and a name, the script's file name, is used once.
+  Apply queues them as one `startup-items` event after the install command, which may be what puts the program there, and before the initialization session; the agent-runtime writes each as the agent would, a script in `~/.config/rc/init.d` with its boot link when on, and starts it.
+  A script the agent already has under that name is the agent's and is left as it is.
+  From then on an item is the agent's like any other: listed as a Login item, which the user stops, turns off or removes in the Processes panel, and which a Kit Update does not rewrite.
+  The kit modal lists them under **Login items** with their command, and the catalog card counts them, so the owner sees what will run in the background before create.
 - **Knowledge Base Kit** — optional `knowledgeBase.shareRoots`: a kit may declare that what it creates publishes a [knowledge base](knowledge-bases.md), naming the workspace paths its shares expose.
   The apply stamps those roots on the Agent and nothing else changes: the toolkit is the kit's `seed`, the bootstrap its `install` run from that checkout, the first session its `onboarding`, so a knowledge base is a regular kit that declares one capability.
   No Kind marker is stamped — an agent created this way is badged by its kit like any other, and the sharing surfaces read the roots off the agent instead of asking which template built it; an agent stamped before kits keeps the old kind and template annotations and the roots that template always had.
@@ -195,7 +204,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 2. Check every required Connection Requirement against the templates of the connections the user granted; refuse before anything is created.
 3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, size, backend, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
    The seed is a fixed part of the kit: the kit modal shows it but offers no way to drop it, and apply takes no input that would, because the definition's instructions, scripts and `ONBOARDING.md` are what the kit exists to provide — an Agent created without them cannot run the kit's setup.
-   The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below.
+   The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below, and a kit with Startup Items queues them as a `startup-items` event behind it.
 4. Create the declared schedules, toggling suggested ones off; bind the Slack conversation if one was given.
    A failure here deletes the fresh Agent and surfaces the error.
 5. Wake the Agent.

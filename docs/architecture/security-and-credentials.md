@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -91,8 +91,8 @@ The user agent flow:
 3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every resource the user creates (Agent CR, K8s credential Secret, etc.).
 
 The realm holds a **dedicated public client** for the artifact share host ([artifact-library](artifact-library.md#the-share-host--trust-boundary)): PKCE-only, redirect pinned to that host's sign-in callback, and no `platform-api` audience, so its tokens are rejected by the api-server.
-A second one serves Environment sign-in ([environments](environments.md#addresses)) the same way, its redirect pinned to the sign-in host under the environments domain.
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
+The share host is also the front door of [Environments](environments.md#addresses): it signs their visitors in with the same client and session, and hands each address a one-time code, bound to the visitor's browser, for a session of its own that lasts while the share session does.
 
 Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.
 Both park that destination and resume it once cleared, so a deep link survives them — an in-chat bind link ([channels](channels.md)) is single-use, so losing its target would cost the user a fresh bind command rather than a retry.
@@ -111,6 +111,13 @@ Keys cannot mint or revoke other keys: the management surface rejects any reques
 
 A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
 The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
+
+**Platform operators** run the install for all its users.
+The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an operator, and the chart creates an `operators` group that grants it.
+The api-server reads the role from the token's realm roles, so only an interactive sign-in acts as an operator; an API key never does.
+Every operator action checks the role on each call, and a client asks the api-server whether the caller is an operator before it shows such an action.
+An install with no operator role has no operators, and every operator action is refused.
+Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)) and compute Budget ([budgets](budgets.md#the-ceiling)).
 
 ## Keycloak event logging
 

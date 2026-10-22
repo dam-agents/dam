@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export type ViewerBridgeDenial =
   | "not-a-viewer"
+  | "no-relay-token"
   | "not-html"
   | "not-interactive"
   | "not-restricted"

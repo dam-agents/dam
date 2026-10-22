@@ -99,6 +99,13 @@ export const harnessConfigBinding = z.object({
   catalog: harnessConfigCatalog.optional(),
   modelDiscovery: modelDiscoverySources.optional(),
   defaultModel: z.string().min(1).optional(),
+  modelAutoCompactWindow: z
+    .object({
+      keyPath: z.string().min(1),
+      field: z.string().min(1),
+      unknownWindow: z.number().int().positive(),
+    })
+    .optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
@@ -149,6 +156,7 @@ export const modelRouterBinding = z.object({
   defaultModelEnv: z.array(z.string().min(1)).optional(),
   sessionFromRunningTurn: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
+  classifierModelEnv: z.string().min(1).optional(),
   nonClaudeModelEnv: z
     .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
     .optional(),
@@ -248,6 +256,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "workspace-command" },
     defaultOn: true,
   },
+  "agent-instructions": {
+    binding: { impl: "agent-instructions" },
+    defaultOn: true,
+  },
   "harness-config": { binding: { impl: "harness-config" }, defaultOn: false },
   "satellite-outcome": {
     binding: { impl: "satellite-outcome" },
@@ -263,6 +275,10 @@ const BUILTIN_DRIVERS: Record<
   },
   "session-defaults": {
     binding: { impl: "session-defaults" },
+    defaultOn: true,
+  },
+  "startup-items": {
+    binding: { impl: "startup-items" },
     defaultOn: true,
   },
 };

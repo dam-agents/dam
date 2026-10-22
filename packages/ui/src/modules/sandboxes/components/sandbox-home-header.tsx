@@ -48,12 +48,14 @@ export function SandboxHomeHeader({
   description,
   pictogram,
   actions,
+  showUpdate = true,
 }: {
   agent: AgentView;
   title: string;
   description?: string;
   pictogram?: ReactNode;
   actions?: ReactNode;
+  showUpdate?: boolean;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
   return (
@@ -63,12 +65,14 @@ export function SandboxHomeHeader({
       pictogram={pictogram}
       actions={
         <>
-          <UpdateAvailableAction
-            agent={agent}
-            pending={updatingId === agent.id}
-            busy={updatingId !== null}
-            onUpdate={() => void updateOne(agent)}
-          />
+          {showUpdate && (
+            <UpdateAvailableAction
+              agent={agent}
+              pending={updatingId === agent.id}
+              busy={updatingId !== null}
+              onUpdate={() => void updateOne(agent)}
+            />
+          )}
           {actions}
         </>
       }

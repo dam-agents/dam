@@ -48,7 +48,9 @@ type RowState = Omit<
   | "repositoryBadges"
 > & { conversation?: string };
 
-export const TREE_ROW_CLASS = "min-w-0 gap-2.5 rounded-lg border-b-0 px-2 py-2";
+// UNIT_BOUNDARY_DESCRIPTION: a Session row the page is on carries the mark every other current item of the tree carries, so the open Session, its Agent and Home read as one state.
+export const TREE_ROW_CLASS =
+  "min-w-0 gap-2.5 rounded-lg border-b-0 px-2 py-2 data-[active=true]:ring-1 data-[active=true]:ring-border-ui";
 
 export function useDeleteTreeSession(agentId: string) {
   const deleteSession = useStore((st) => st.deleteSession);

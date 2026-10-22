@@ -454,6 +454,13 @@ API Server ServiceAccount name
 {{- include "platform.apiserver.fullname" . }}
 {{- end }}
 
+{{- /* The browser tab title, written into the UI shell by nginx so a client
+       that runs no JavaScript still reads it. HTML-escaped, and with nginx's
+       `$` and `\` spelled as entities, for the single-quoted sub_filter. */ -}}
+{{- define "platform.ui.shellTitle" -}}
+{{- .Values.brand.title | default .Values.brand.name | html | replace "$" "&#36;" | replace "\\" "&#92;" }}
+{{- end }}
+
 {{/*
 UI app name (Deployment + Service)
 */}}

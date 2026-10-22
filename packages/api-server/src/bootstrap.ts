@@ -13,6 +13,7 @@ import {
 } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeStorageGate,
+  composeUserBudgetsAdmin,
   listRunnerUsageOwners,
   readRunnerUsage,
 } from "./modules/budgets/index.js";
@@ -212,6 +213,7 @@ import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
   composeShareAuth,
+  composeShareRelayTokens,
   composeShareRenderTokens,
   composeShareBridge,
   composeShareViewer,
@@ -219,6 +221,8 @@ import {
   createByLinkHostGate,
   createContentApp,
   createShareAuthRoutes,
+  loginPath,
+  readShareSignIn,
   createShareViewerApp,
   shareSessionCookie,
   type ArtifactLibraryFor,
@@ -525,6 +529,7 @@ export async function bootstrap() {
       jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       audience: config.keycloakApiAudience,
       requiredRole: config.keycloakRequiredRole,
+      operatorRole: config.keycloakOperatorRole,
     },
     {
       verifyApiKey: apiKeysModule.validator,
@@ -539,6 +544,7 @@ export async function bootstrap() {
   };
   const shareViewer = composeShareViewer({ db, artifacts });
   const shareRenderTokens = composeShareRenderTokens({ redis: sharedRedis });
+  const shareRelayTokens = composeShareRelayTokens({ redis: sharedRedis });
   const shareAuth = composeShareAuth({
     redis: sharedRedis,
     keycloak: {
@@ -549,26 +555,42 @@ export async function bootstrap() {
     },
     shareBaseUrl: config.shareBaseUrl,
   });
-  const environmentGate = composeEnvironmentGate({
-    db,
-    redis: sharedRedis,
-    urlTemplate: config.environmentsUrl,
-    keycloak: {
-      externalUrl: config.keycloakExternalUrl,
-      internalUrl: config.keycloakUrl,
-      realm: config.keycloakRealm,
-      clientId: config.keycloakEnvironmentsClientId,
-    },
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    stampActivity: (agentId) =>
-      agentsRepo.patchAnnotation(
-        agentId,
-        LAST_ACTIVITY_KEY,
-        new Date().toISOString(),
-      ),
-    namespace: config.namespace,
-    brandName: config.brand.name,
-  });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
+  const { gate: environmentGate, frontDoor: environmentFrontDoor } =
+    composeEnvironmentGate({
+      db,
+      redis: sharedRedis,
+      urlTemplate: config.environmentsUrl,
+      shareBaseUrl: config.shareBaseUrl,
+      share: {
+        visitor: async (c) => {
+          const signIn = await readShareSignIn(c, shareAuth, shareCookie);
+          return signIn
+            ? {
+                sub: signIn.session.sub,
+                email: signIn.session.emailVerified
+                  ? signIn.session.email
+                  : null,
+                shareSession: signIn.id,
+              }
+            : null;
+        },
+        alive: async (id) => (await shareAuth.getSession(id)) !== null,
+        end: (id) => shareAuth.endSession(id),
+        loginPath: (next) => loginPath(next),
+        logoutPath: "/auth/logout",
+        logoutUrl: (next) => shareAuth.logoutUrl(next),
+      },
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      stampActivity: (agentId) =>
+        agentsRepo.patchAnnotation(
+          agentId,
+          LAST_ACTIVITY_KEY,
+          new Date().toISOString(),
+        ),
+      namespace: config.namespace,
+      brandName: config.brand.name,
+    });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
     const kits = await resolvedCatalog.list();
@@ -1032,6 +1054,8 @@ export async function bootstrap() {
           ?.runtimeCapabilities ?? null,
       specHarness: async (agentId) =>
         (await agentsRepo.get(agentId))?.spec.harness,
+      kitDefaultModel: async (agentId) =>
+        (await agentsRepo.get(agentId))?.starterKitDefaultModel ?? null,
       modelsRanBy: async (agentId, hours) =>
         metricsReader
           ? (await metricsReader.tokenSpendByModel([agentId], { hours }))
@@ -1196,7 +1220,10 @@ export async function bootstrap() {
     payers: { payerOf },
     questions: createSpendQuestionStore(db),
     connections: createGrantedConnectionTemplates(db),
-    k8s: k8sClient,
+    users: {
+      subByEmail: (email) => userDirectory.resolveByEmail(email),
+      emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
+    },
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
     connectionNames: createConnectionNames(db),
@@ -1331,7 +1358,6 @@ export async function bootstrap() {
     spendHold: channelSpendHold,
     attendance: turnAttendance,
   });
-  const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
@@ -1346,12 +1372,14 @@ export async function bootstrap() {
           auth: shareAuth,
           sessionCookie: shareCookie,
           renderTokens: shareRenderTokens,
+          relayTokens: shareRelayTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
           contentBaseUrl: config.contentBaseUrl,
           shareBaseUrl: config.shareBaseUrl,
           bridge: shareBridge,
         }),
+        environments: environmentFrontDoor,
         kbMcp: composeKbShareServing({
           db,
           store: artifacts,
@@ -2143,6 +2171,21 @@ export async function bootstrap() {
     seedSources,
     redisBus,
     spendForOwner: spend.forOwner,
+    spendCeilingsForOperator: spend.ceilingsForOperator,
+    userBudgetsForOperator: composeUserBudgetsAdmin({
+      k8s: k8sClient,
+      users: {
+        subByEmail: (email) => userDirectory.resolveByEmail(email),
+        emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
+        subsMatching: (text, max) => userDirectory.searchSubs(text, max),
+      },
+      listAgents: () => agentsRepo.list(),
+      defaults: {
+        cpu: config.defaultUserCpuBudget,
+        memory: config.defaultUserMemoryBudget,
+        storage: config.virtualizationEnabled ? config.vmPoolStorage : null,
+      },
+    }),
     providerStatus: providerStatus.service,
     outageAlerts: outageAlerts.notices,
     approvalsRelay,

@@ -4,6 +4,7 @@ import {
   type ConnectionCreateInput,
   type ConnectionTemplateInput,
   type ConnectionTemplateView,
+  type CredentialCheck,
   type SecretlessConnectionCreateInput,
   connectionNameSchema,
 } from "api-server-api";
@@ -21,6 +22,7 @@ import {
   type ConfigFlagError,
   resolveConfigInputFlags,
 } from "../domain/config-inputs.js";
+import { credentialCheckWarning } from "../domain/credential-check.js";
 import {
   type ConnectionScope,
   formatScope,
@@ -176,7 +178,8 @@ export function buildConnectCommand(deps: {
     )
     .option(
       "--json",
-      "emit { ok, id, status, authKind, presetsApplied?, scope? } as JSON",
+      "emit { ok, id, status, authKind, presetsApplied?, scope?, check? } as JSON; " +
+        "check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at } is the token check",
     )
     .option(
       "--no-browser",
@@ -307,6 +310,7 @@ export function buildConnectCommand(deps: {
             id: entered.connectionId,
             authKind: template.authKind,
             presetsApplied: presetNames,
+            ...(entered.check ? { check: entered.check } : {}),
           });
           process.exit(EXIT_SUCCESS);
         }
@@ -333,6 +337,8 @@ export function buildConnectCommand(deps: {
       }
 
       if (template.authKind !== "oauth") {
+        const created = await svc.getConnection(id);
+        const check = created.ok ? created.value?.check : undefined;
         emitSuccess({
           json,
           verb: "Created",
@@ -340,6 +346,7 @@ export function buildConnectCommand(deps: {
           id,
           authKind: template.authKind,
           presetsApplied: presetNames,
+          ...(check ? { check } : {}),
         });
         process.exit(EXIT_SUCCESS);
       }
@@ -843,6 +850,7 @@ function emitSuccess(args: {
   authUrl?: string;
   presetsApplied?: string[];
   scope?: ConnectionScope;
+  check?: CredentialCheck;
 }): void {
   if (args.json) {
     process.stdout.write(
@@ -856,11 +864,18 @@ function emitSuccess(args: {
           ? { presetsApplied: args.presetsApplied }
           : {}),
         ...(args.scope ? { scope: args.scope } : {}),
+        ...(args.check ? { check: args.check } : {}),
       })}\n`,
     );
   } else {
-    process.stdout.write(`✓ ${args.verb} ${args.name} (${args.id})\n`);
+    process.stdout.write(
+      `✓ ${args.verb} ${args.name} (${args.id})` +
+        (args.check?.account ? ` as ${args.check.account}` : "") +
+        "\n",
+    );
   }
+  const warning = credentialCheckWarning(args.name, args.check);
+  if (warning && !args.json) process.stderr.write(warning);
 }
 
 function parseTimeout(raw: string | undefined): number | null {

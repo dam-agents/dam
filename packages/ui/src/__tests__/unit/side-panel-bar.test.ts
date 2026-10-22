@@ -127,6 +127,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           canOpenBrowser: true,
           changes: false,
           processesEnabled: true,
+          environments: true,
           gettingStarted: true,
         }),
         onSelect: () => {},
@@ -155,8 +156,27 @@ it("marks only the open tab with the inner-edge bar", () => {
   expect(html).toContain('width="24"');
 });
 
-// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 48 px rounded tiles with 22 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
-it("draws JanUI's tiles, with the bar on the right edge", () => {
+// TEST_SCENARIO: The rail holds the Agent's tabs at the top and the app's tabs at the bottom, which needs about 380 px; a landscape phone can be shorter, so the rail scrolls like the sidebar rail instead of putting the bottom tabs below the screen.
+it("scrolls the rail when the window cannot hold both clusters", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  const nav = html.match(/<nav[^>]*data-testid="side-panel-bar"[^>]*>/)?.[0];
+  expect(nav).toContain("min-h-0");
+  expect(nav).toContain("overflow-y-auto");
+});
+
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Documentation as a tile between Get started and Approvals.
+it("draws JanUI's tiles at the sidebar strip's size", () => {
   const html = renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -171,18 +191,15 @@ it("draws JanUI's tiles, with the bar on the right edge", () => {
   );
   const buttons = [
     ...html.matchAll(
-      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>(<span[^>]*><\/span>)/g,
+      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>/g,
     ),
   ];
   expect(buttons.length).toBeGreaterThan(1);
-  for (const [, tab, bar] of buttons) {
-    expect(bar).toContain("-right-2.5");
-    expect(bar.includes(" h-6")).toBe(tab === "files");
-  }
+  expect(html).not.toContain("-right-2.5");
   const open = buttons.find(([, tab]) => tab === "files")![0];
-  expect(open).toContain("size-12");
+  // UNIT_BOUNDARY_DESCRIPTION: the tile is one row high and as wide, so the mark it carries is a square of the same size a row of the tree carries.
+  expect(open).toContain("size-10");
   expect(open).toContain("bg-muted");
-  expect(html).toContain('width="22"');
   expect(html).toContain('width="22"');
   const order = ["getting-started", "docs", "approvals"].map((id) =>
     html.indexOf(
@@ -193,4 +210,42 @@ it("draws JanUI's tiles, with the bar on the right edge", () => {
   );
   expect(order[1]).toBeGreaterThan(order[0]!);
   expect(order[2]).toBeGreaterThan(order[1]!);
+});
+
+// TEST_SCENARIO: The JanUI rail names a tab through its aria-label and the panel header, not a hover tooltip that would cover the panel, as the left rail does; the classic layout's icon bar keeps its tooltip.
+it("drops the rail's tooltips but keeps the classic bar's", () => {
+  const railHtml = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  const tile =
+    railHtml.match(
+      /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
+    )?.[0] ?? "";
+  expect(tile).toContain('aria-label="Artifacts"');
+  expect(tile).not.toContain("data-state=");
+  const classicHtml = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  const classic =
+    classicHtml.match(
+      /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
+    )?.[0] ?? "";
+  expect(classic).toContain('data-state="closed"');
 });

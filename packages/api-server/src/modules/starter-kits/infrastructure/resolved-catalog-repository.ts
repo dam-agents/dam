@@ -54,6 +54,10 @@ async function upsertRows(tx: Tx, rows: ResolvedKitRow[]): Promise<void> {
   }
 }
 
+function withListDefaults(kit: ResolvedStarterKit): ResolvedStarterKit {
+  return { ...kit, startupItems: kit.startupItems ?? [] };
+}
+
 function toRow(r: {
   catalog: string;
   kitId: string;
@@ -67,7 +71,7 @@ function toRow(r: {
     kitId: r.kitId,
     version: r.version,
     source: r.source,
-    kit: r.kit as ResolvedStarterKit,
+    kit: withListDefaults(r.kit as ResolvedStarterKit),
     skillsInKit: (r.bundledSkills as ResolvedSkill[] | null) ?? [],
   };
 }

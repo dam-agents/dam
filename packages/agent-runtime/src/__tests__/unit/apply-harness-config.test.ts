@@ -229,3 +229,112 @@ describe("harness-config event handler (TOML)", () => {
     expect(parsed).toEqual({});
   });
 });
+
+describe("the per-model auto-compact windows", () => {
+  let home: string;
+  let settingsPath: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "harness-config-windows-"));
+    settingsPath = join(home, ".claude", "settings.json");
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const pluginWith = (binding: HarnessConfigBinding | undefined) =>
+    createHarnessConfigPlugin({
+      harness: "test",
+      binding,
+      agentHome: home,
+      envReader: asLease(noEnv),
+      discoverModels: noDiscovery,
+      log: () => {},
+    });
+  const WINDOWS: HarnessConfigBinding = {
+    ...BINDING,
+    modelAutoCompactWindow: {
+      keyPath: "modelSettings",
+      field: "autoCompactWindow",
+      unknownWindow: 200_000,
+    },
+  };
+
+  /** TEST_SCENARIO: Each model the harness may run on gets its window under the name the router resolves it by, and one whose Connection declares no window gets the explicit 200k rather than inheriting the widest one, which would compact it too late. */
+  it("writes one window per model, keyed by the router's name", async () => {
+    await pluginWith(WINDOWS).writeModelWindows([
+      {
+        name: "claude/cb/rits/deepseek-ai/deepseek-v4.1-flash-1017",
+        contextWindow: 1_048_576,
+      },
+      { name: "claude/ibm/aws/claude-opus-5-5", contextWindow: 200_000 },
+      { name: "claude/ibm/gpt-5.5", contextWindow: null },
+    ]);
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual({
+      modelSettings: {
+        "claude/cb/rits/deepseek-ai/deepseek-v4.1-flash-1017": {
+          autoCompactWindow: 1_048_576,
+        },
+        "claude/ibm/aws/claude-opus-5-5": { autoCompactWindow: 200_000 },
+        "claude/ibm/gpt-5.5": { autoCompactWindow: 200_000 },
+      },
+    });
+  });
+
+  /** TEST_SCENARIO: The map leaves the rest of the file alone, so the person's model, mode and effort survive a re-listing, and the process-wide CLAUDE_CODE_AUTO_COMPACT_WINDOW is never written, since it would override every per-model value. */
+  it("keeps the file's other values and never sets the process-wide window", async () => {
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ model: "opus", effortLevel: "high" }),
+    );
+    await pluginWith(WINDOWS).writeModelWindows([
+      { name: "claude/cb/x", contextWindow: 1_000_000 },
+    ]);
+    const parsed = JSON.parse(readFileSync(settingsPath, "utf8"));
+    expect(parsed.model).toBe("opus");
+    expect(parsed.effortLevel).toBe("high");
+    expect(parsed.modelSettings).toEqual({
+      "claude/cb/x": { autoCompactWindow: 1_000_000 },
+    });
+    expect(JSON.stringify(parsed)).not.toContain("AUTO_COMPACT_WINDOW");
+  });
+
+  /** TEST_SCENARIO: Claude Code writes its own per-model settings into the same object (/effort saves under modelSettings), from another process, so the map merges entry by entry: an entry's other fields and an entry for a model the platform does not serve both survive. */
+  it("merges into each model's entry instead of replacing the object", async () => {
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        modelSettings: {
+          "claude/cb/x": { effortLevel: "low", maxEffortLevel: "high" },
+          "claude-opus-4-8": { effortLevel: "xhigh" },
+        },
+      }),
+    );
+    await pluginWith(WINDOWS).writeModelWindows([
+      { name: "claude/cb/x", contextWindow: 1_048_576 },
+    ]);
+    expect(
+      JSON.parse(readFileSync(settingsPath, "utf8")).modelSettings,
+    ).toEqual({
+      "claude/cb/x": {
+        effortLevel: "low",
+        maxEffortLevel: "high",
+        autoCompactWindow: 1_048_576,
+      },
+      "claude-opus-4-8": { effortLevel: "xhigh" },
+    });
+  });
+
+  /** TEST_SCENARIO: A harness whose manifest does not ask for the map gets no file written at all, and a binding that does ask for it writes nothing when the agent has no listed model to map. */
+  it("writes nothing unless asked, and nothing for an empty listing", async () => {
+    await pluginWith(BINDING).writeModelWindows([
+      { name: "claude/cb/x", contextWindow: 1_000_000 },
+    ]);
+    expect(existsSync(settingsPath)).toBe(false);
+    await pluginWith(WINDOWS).writeModelWindows([]);
+    expect(existsSync(settingsPath)).toBe(false);
+  });
+});

@@ -7,6 +7,7 @@ import type { AcpClientFactory } from "../../core/acp-client.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
+import { RELAY_TOKEN_TTL_MS, type RelayGrant } from "./domain/relay-grant.js";
 import {
   RENDER_TOKEN_TTL_MS,
   type RenderGrant,
@@ -34,6 +35,10 @@ import {
   createArtifactExpirySweeper,
   type ArtifactExpirySweeper,
 } from "./services/expiry-sweeper.js";
+import {
+  createRelayTokenService,
+  type RelayTokenService,
+} from "./services/relay-token-service.js";
 import {
   createRenderTokenService,
   type RenderTokenService,
@@ -102,6 +107,18 @@ export function composeShareRenderTokens(opts: {
       opts.redis,
       "share:render",
       RENDER_TOKEN_TTL_MS,
+    ),
+  });
+}
+
+export function composeShareRelayTokens(opts: {
+  redis: Redis;
+}): RelayTokenService {
+  return createRelayTokenService({
+    grants: createRedisTtlStore<RelayGrant>(
+      opts.redis,
+      "share:relay",
+      RELAY_TOKEN_TTL_MS,
     ),
   });
 }

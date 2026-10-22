@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import net from "node:net";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
@@ -11,12 +12,19 @@ import {
   cookieValue,
   decideAccess,
   effectiveAccess,
+  environmentOrigins,
+  isSignInToken,
   parseAddress,
   relayHeaders,
+  requestAllowed,
   RESERVED_PREFIX,
   SESSION_COOKIE_PLAIN,
   SESSION_COOKIE_SECURE,
   SESSION_TTL_MS,
+  signInBinding,
+  SIGNIN_COOKIE_PLAIN,
+  SIGNIN_COOKIE_SECURE,
+  SIGNIN_TTL_MS,
   type EnvironmentSession,
 } from "../domain/gate.js";
 import type { EnvironmentRecord } from "../domain/environment.js";
@@ -24,7 +32,6 @@ import type { EnvironmentsRepository } from "../infrastructure/environments-repo
 import type { EnvironmentSignIn } from "../services/environment-signin.js";
 import { renderGatePage } from "./pages.js";
 
-export const SIGNIN_LABEL = "signin";
 const FORWARD_PREFIX = "/api/environment/forward/";
 const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
 const ACTIVITY_INTERVAL_MS = 60_000;
@@ -49,10 +56,12 @@ const GATE_HEADERS: Record<string, string> = {
 export interface EnvironmentGateDeps {
   domain: string;
   scheme: "http" | "https";
-  addressUrl: (address: string) => string;
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address and the binding of the browser's sign-in secret; and the share host's sign-out, which ends the identity provider's session too and offers to sign in again.
+  frontDoorUrl: (address: string, next: string, binding: string) => string;
+  signOutUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
   ownerList: (owningAgentId: string) => Promise<string[]>;
-  signIn: EnvironmentSignIn;
+  signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   upstream: (agentId: string) => { host: string; port: number };
@@ -79,22 +88,24 @@ export const noEnvironmentGate: EnvironmentGate = {
  * UNIT_BOUNDARY_DESCRIPTION: The api-server's front for every Environment
  * address, `<endpoint>-<host>.<environments domain>`, which one wildcard
  * Ingress sends here. It finds the Environment and endpoint from the host
- * name, admits the visitor (in this slice: the owner, by their platform
- * sign-in on the fixed sign-in host), wakes a sleeping Environment and waits
- * for it, and relays HTTP and WebSocket to the Environment runtime's forward,
- * which reaches only the declared port on the Environment's loopback. Any
- * other host passes on untouched. The relay never passes the platform's own
- * session cookie or `Authorization` header to the app, never lets the app set
- * the session cookie, marks every response uncacheable, and refreshes the
- * Environment's activity at most once a minute; no connection pins it awake.
+ * name, admits the visitor by the session the share host's front door handed
+ * it (the owner, or a verified email on the effective list, checked again on
+ * every request, while the share host's session it came from lasts), wakes a
+ * sleeping Environment and waits for it, and relays HTTP and WebSocket to the
+ * Environment runtime's forward, which reaches only the declared port on the
+ * Environment's loopback. Any other host passes on untouched. A request
+ * that another origin's page makes in the visitor's name is refused before
+ * any of that, whatever cookie it carries. The relay never passes the platform's own
+ * cookies or `Authorization` header to the app, never lets the app set them,
+ * marks every response uncacheable, and refreshes the Environment's activity
+ * at most once a minute; no connection pins it awake.
  */
 export function createEnvironmentGate(
   deps: EnvironmentGateDeps,
 ): EnvironmentGate {
   const secure = deps.scheme === "https";
   const cookieName = secure ? SESSION_COOKIE_SECURE : SESSION_COOKIE_PLAIN;
-  const signInHost = `${SIGNIN_LABEL}.${deps.domain}`.toLowerCase();
-  const signInUrl = deps.addressUrl(SIGNIN_LABEL);
+  const signInCookieName = secure ? SIGNIN_COOKIE_SECURE : SIGNIN_COOKIE_PLAIN;
   const lastStamp = new Map<string, number>();
 
   function stamp(agentId: string) {
@@ -142,54 +153,35 @@ export function createEnvironmentGate(
     );
   }
 
-  function signInRedirect(address: string, next: string) {
-    const url = new URL("/.platform/login", signInUrl);
-    url.searchParams.set("address", address);
-    url.searchParams.set("next", next);
-    return url.href;
+  // UNIT_BOUNDARY_DESCRIPTION: the browser's sign-in secret for this address: the one it holds, or a new one; either way set again for the next ten minutes, so a sign-in in another tab of the same browser keeps working.
+  function signInSecret(c: Context): string {
+    const held = getCookie(c, signInCookieName);
+    const secret = isSignInToken(held)
+      ? held
+      : crypto.randomBytes(32).toString("base64url");
+    setCookie(c, signInCookieName, secret, {
+      httpOnly: true,
+      secure,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: Math.floor(SIGNIN_TTL_MS / 1000),
+    });
+    return secret;
   }
 
-  async function signInHostApp(c: Context): Promise<Response> {
-    const path = c.req.path;
-    if (path === "/.platform/login") {
-      const address = c.req.query("address") ?? "";
-      const parsed = parseAddress(`${address}.${deps.domain}`, deps.domain);
-      if (!parsed || !(await deps.repo.getByHost(parsed.host)))
-        return page(
-          c,
-          404,
-          "No such Environment",
-          "This link names no Environment.",
-        );
-      gateHeaders(c);
-      return c.redirect(
-        await deps.signIn.begin(parsed.address, c.req.query("next")),
-        302,
-      );
-    }
-    if (path === "/.platform/callback") {
-      const state = c.req.query("state");
-      const code = c.req.query("code");
-      const done =
-        state && code ? await deps.signIn.complete(state, code) : null;
-      if (!done?.ok)
-        return page(
-          c,
-          400,
-          "Sign-in failed",
-          "Sign-in did not complete. Open the Environment's link again.",
-        );
-      gateHeaders(c);
-      return c.redirect(done.value.handoffUrl, 302);
-    }
-    if (path === "/.platform/signed-out")
-      return page(
-        c,
-        401,
-        "Signed out",
-        "You are signed out. Open an Environment's link to sign in again.",
-      );
-    return page(c, 404, "Not found", "Nothing is served here.");
+  function allowed(
+    record: EnvironmentRecord,
+    host: string | undefined,
+    source: { origin: string | undefined; site: string | undefined },
+  ) {
+    return requestAllowed(
+      source,
+      environmentOrigins(record, {
+        scheme: deps.scheme,
+        domain: deps.domain,
+        hostHeader: host,
+      }),
+    );
   }
 
   async function reserved(
@@ -202,13 +194,14 @@ export function createEnvironmentGate(
       const redeemed = await deps.signIn.redeemHandoff(
         c.req.query("code") ?? "",
         address,
+        getCookie(c, signInCookieName) ?? "",
       );
       if (!redeemed)
         return page(
           c,
           400,
           "Sign-in expired",
-          "This sign-in link was used or has expired. Open the Environment's link again.",
+          "This sign-in link was used, has expired, or was opened in another browser. Open the Environment's link again.",
         );
       setCookie(c, cookieName, redeemed.sessionId, {
         httpOnly: true,
@@ -230,10 +223,10 @@ export function createEnvironmentGate(
     }
     if (path === "/.platform/sign-out") {
       const id = getCookie(c, cookieName);
-      if (id) await deps.signIn.end(id);
+      if (id) await deps.signIn.signOut(id);
       deleteCookie(c, cookieName, { path: "/", secure });
       gateHeaders(c);
-      return c.redirect(deps.signIn.signOutUrl(), 302);
+      return c.redirect(deps.signOutUrl(address), 302);
     }
     return page(c, 404, "Not found", "Nothing is served here.");
   }
@@ -312,8 +305,6 @@ export function createEnvironmentGate(
   }
 
   const middleware: MiddlewareHandler = async (c, next) => {
-    const host = c.req.header("host")?.split(":")[0]?.toLowerCase();
-    if (host === signInHost) return signInHostApp(c);
     const resolved = await resolve(c.req.header("host"));
     if (resolved === null) return next();
     if (resolved === "none")
@@ -324,6 +315,20 @@ export function createEnvironmentGate(
         "This address names no Environment, or one that was deleted.",
       );
     const { record, address } = resolved;
+    if (
+      !allowed(record, c.req.header("host"), {
+        origin: c.req.header("origin"),
+        site: c.req.header("sec-fetch-site"),
+      })
+    ) {
+      deny(record, null, address, "cross-origin");
+      return page(
+        c,
+        403,
+        "Refused",
+        "A page of another site asked for this in your name, so the Environment did not answer it.",
+      );
+    }
     if (c.req.path.startsWith(RESERVED_PREFIX))
       return reserved(c, address, record);
 
@@ -344,7 +349,11 @@ export function createEnvironmentGate(
           gateHeaders(c);
           const url = new URL(c.req.url);
           return c.redirect(
-            signInRedirect(address, `${url.pathname}${url.search}`),
+            deps.frontDoorUrl(
+              address,
+              `${url.pathname}${url.search}`,
+              signInBinding(signInSecret(c)),
+            ),
             302,
           );
         }
@@ -355,7 +364,7 @@ export function createEnvironmentGate(
         403,
         "You don't have access",
         visitor?.email
-          ? `You are signed in as ${visitor.email}, which is not on this Environment's list. Ask the person who sent you the link to add you, then sign out and open it again.`
+          ? `You are signed in as ${visitor.email}, which is no longer on this Environment's list. Ask the person who sent you the link to add you again.`
           : "Your account has no verified email address, so it cannot be on this Environment's list. Ask the person who sent you the link.",
       );
     }
@@ -427,6 +436,16 @@ export function createEnvironmentGate(
       const url = new URL(req.url ?? "/", "http://x");
       if (url.pathname.startsWith(RESERVED_PREFIX))
         return refuseUpgrade(socket, "404 Not Found");
+      const site = req.headers["sec-fetch-site"];
+      if (
+        !allowed(resolved.record, req.headers.host, {
+          origin: req.headers.origin,
+          site: Array.isArray(site) ? site[0] : site,
+        })
+      ) {
+        deny(resolved.record, null, resolved.address, "cross-origin");
+        return refuseUpgrade(socket, "403 Forbidden");
+      }
       const cookie = cookieValue(req.headers.cookie, cookieName);
       const visitor = await session(cookie);
       const access = decideAccess(

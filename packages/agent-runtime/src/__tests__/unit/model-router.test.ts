@@ -242,7 +242,10 @@ beforeAll(async () => {
       displayName: "Platform",
       status: "listed",
       listedAt: null,
-      entries: [entry(platform, "deepseek-v4.1-flash")],
+      entries: [
+        entry(platform, "deepseek-v4.1-flash"),
+        entry(platform, "qwen-9"),
+      ],
     },
   ];
   router = createModelRouter({
@@ -292,6 +295,7 @@ beforeAll(async () => {
         dialects: ["anthropic-messages"],
         namePrefix: "claude/",
         lowercaseNames: true,
+        claudeTiers: true,
       },
       codex: { dialects: ["openai-responses"] },
       pi: { dialects: [...all] },
@@ -311,11 +315,14 @@ beforeAll(async () => {
         : null;
     },
     sessionModelOf: (id) =>
-      id === "s-cb"
-        ? { model: "cb/rits/zai-org/glm-5-3" }
-        : id === "s-effort"
-          ? { model: null, subagentEffort: "low" }
-          : null,
+      ({
+        "s-cb": { model: "cb/rits/zai-org/glm-5-3" },
+        "s-effort": { model: null, subagentEffort: "low" },
+        "s-ibm": { model: "ibm/aws/claude-opus-5-5" },
+        "s-ant": { model: "anthropic/claude-opus-4-8" },
+        "s-platform": { model: "platform/deepseek-v4.1-flash" },
+        "s-gone": { model: "openai/gpt-5.5" },
+      })[id] ?? null,
     onCall: (r) => calls.push(r),
     port: 0,
     log: () => {},
@@ -539,6 +546,186 @@ describe("subagent effort", () => {
       subagent,
     );
     expect(seen.at(-1)?.body).not.toHaveProperty("output_config");
+  });
+});
+
+describe("Claude Code's tier slots", () => {
+  const sideCall = { "x-claude-code-request-class": "auxiliary" };
+  /** TEST_SCENARIO: The process holds Anthropic's Haiku in its haiku slot, a
+   * model Anthropic has since replaced, while the session runs on IBM. A
+   * session title call, which Claude Code classes as auxiliary, runs on
+   * IBM's newest Haiku; the record keeps the name asked for, and the
+   * response names the model that answered. */
+  it("moves a side call on another provider's slot to the session provider's tier", async () => {
+    seen.length = 0;
+    const r = await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-haiku-5-5", messages: [] },
+      { "x-test-session": "s-ibm", ...sideCall },
+    );
+    expect(r.status).toBe(200);
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-haiku-4-5");
+    expect(r.json?.model).toBe("claude/ibm/aws/claude-haiku-4-5");
+    expect(calls.at(-1)).toMatchObject({
+      alias: "ibm",
+      upstreamId: "aws/claude-haiku-4-5",
+      requestedModel: "claude/anthropic/claude-haiku-5-5",
+      session: "s-ibm",
+    });
+  });
+
+  /** TEST_SCENARIO: A main-conversation turn names the model the session was
+   * given; after a switch it still names the old one until the next turn,
+   * and a terminal's /model pick is unknown to the platform. Neither is
+   * moved, with the class saying main or with no class at all. */
+  it("leaves a main-conversation turn where it asked", async () => {
+    seen.length = 0;
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-opus-4-8", messages: [] },
+      { "x-test-session": "s-ibm", "x-claude-code-request-class": "main" },
+    );
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-opus-4-8", messages: [] },
+      { "x-test-session": "s-ibm" },
+    );
+    expect(seen.map((s) => s.path)).toEqual([
+      "/ant/v1/messages",
+      "/ant/v1/messages",
+    ]);
+  });
+
+  /** TEST_SCENARIO: A subagent asked for the opus alias, which the process
+   * resolved to Anthropic's Opus, while its session runs on IBM and set no
+   * subagent model. Its agent id alone makes it a side call, so it runs on
+   * IBM's newest Opus; a session on the same provider as the slot keeps the
+   * name. */
+  it("moves a subagent's alias-named call by its agent id, never a same-provider one", async () => {
+    seen.length = 0;
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-opus-4-8", messages: [] },
+      { "x-test-session": "s-ibm", "x-claude-code-agent-id": "a1" },
+    );
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-opus-5-5");
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-opus-4-8", messages: [] },
+      { "x-test-session": "s-ant", ...sideCall },
+    );
+    expect(seen[1]!.path).toBe("/ant/v1/messages");
+    expect(seen[1]!.body.model).toBe("claude-opus-4-8");
+  });
+
+  /** TEST_SCENARIO: The slot's provider fills every tier with one model
+   * (the platform's preferred DeepSeek, or Anthropic's one Opus here), so
+   * the slot, not the word, says which tier was asked: the smallest. The
+   * platform's models carry no tier word, so a session on its DeepSeek runs
+   * every slot call on that DeepSeek, whether the slot is Anthropic's Haiku
+   * or the platform's own model, never on the ladder's guess; an id that
+   * fills no slot at all stays where it asked, as one the provider lists;
+   * and a session on a provider the agent no longer holds fails the side
+   * call as the main turn would, never on the provider the session left. */
+  it("reads a shared slot as the smallest tier, keeps a tierless provider on the session's model, and fails with the session", async () => {
+    seen.length = 0;
+    await call(
+      "/v1/messages",
+      { model: "claude/platform/deepseek-v4.1-flash", messages: [] },
+      { "x-test-session": "s-ibm", ...sideCall },
+    );
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-haiku-4-5");
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/beta/claude-opus-4-9", messages: [] },
+      { "x-test-session": "s-ibm", ...sideCall },
+    );
+    expect(seen[1]!.path).toBe("/ibm/v1/messages");
+    expect(seen[1]!.body.model).toBe("aws/claude-haiku-4-5");
+    for (const [model, runs] of [
+      ["claude/anthropic/claude-haiku-5-5", "deepseek-v4.1-flash"],
+      ["claude/platform/qwen-9", "qwen-9"],
+    ] as const) {
+      await call(
+        "/v1/messages",
+        { model, messages: [] },
+        { "x-test-session": "s-platform", ...sideCall },
+      );
+      expect(seen.at(-1)!.path).toBe("/platform/v1/messages");
+      expect(seen.at(-1)!.body.model).toBe(runs);
+    }
+    const gone = await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-haiku-5-5", messages: [] },
+      { "x-test-session": "s-gone", ...sideCall },
+    );
+    expect(gone.status).toBe(404);
+    expect(gone.text).toContain("claude/openai/gpt-5.5");
+    expect(seen).toHaveLength(4);
+  });
+
+  /** TEST_SCENARIO: The auto-mode classifier asks for Claude Code's own
+   * Sonnet by a bare id. A session on IBM, which lists a deployment of it,
+   * resolves it there as any bare name; a session on the platform's
+   * tierless models runs it on the session's own model; and a bare id with
+   * no tier word is left to the bare-name rules, which refuse one that two
+   * providers list. */
+  it("sends the classifier's bare Sonnet to the session's provider", async () => {
+    seen.length = 0;
+    await call(
+      "/v1/messages",
+      { model: "claude-sonnet-5", messages: [] },
+      { "x-test-session": "s-ibm", ...sideCall },
+    );
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-sonnet-5");
+    await call(
+      "/v1/messages",
+      { model: "claude-sonnet-5", messages: [] },
+      { "x-test-session": "s-platform", ...sideCall },
+    );
+    expect(seen[1]!.path).toBe("/platform/v1/messages");
+    expect(seen[1]!.body.model).toBe("deepseek-v4.1-flash");
+    const plain = await call(
+      "/v1/messages",
+      { model: "gpt-5.5", messages: [] },
+      { "x-test-session": "s-platform", ...sideCall },
+    );
+    expect(plain.status).toBe(400);
+    expect(plain.text).toContain("several providers");
+    expect(seen).toHaveLength(2);
+  });
+
+  /** TEST_SCENARIO: The session stays on the slot's provider, which has
+   * since dropped the slot's model from its listing while the process still
+   * asks for it. A side call runs on that provider's current model of the
+   * tier; a model the provider still lists is left alone; a
+   * main-conversation turn on the dropped model fails as it always did. */
+  it("moves a side call on a slot the session's own provider no longer lists", async () => {
+    seen.length = 0;
+    await call(
+      "/v1/messages",
+      { model: "claude/ibm/aws/claude-haiku-3", messages: [] },
+      { "x-test-session": "s-ibm", ...sideCall },
+    );
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-haiku-4-5");
+    await call(
+      "/v1/messages",
+      { model: "claude/ibm/aws/claude-opus-4-7", messages: [] },
+      { "x-test-session": "s-ibm", ...sideCall },
+    );
+    expect(seen[1]!.body.model).toBe("aws/claude-opus-4-7");
+    const main = await call(
+      "/v1/messages",
+      { model: "claude/ibm/aws/claude-haiku-3", messages: [] },
+      { "x-test-session": "s-ibm", "x-claude-code-request-class": "main" },
+    );
+    expect(main.status).toBe(404);
+    expect(seen).toHaveLength(2);
   });
 });
 

@@ -1,4 +1,5 @@
 import {
+  BOB_HOST,
   CURVE_BENDER_HOST,
   hasKeyCheck,
   IBM_LITELLM_HOST,
@@ -16,6 +17,8 @@ const INVALID_KEY_MARKER =
 
 const BEDROCK_INVALID_KEY_MARKER =
   /Authentication failed: Please make sure your API Key is valid|Invalid API Key format|Bearer Token has expired/;
+
+const BOB_USER_AGENT = "platform-bob-key-check/1";
 
 const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
 
@@ -60,9 +63,17 @@ const MODELS_ENDPOINTS: Record<
     refusedStatus: 403,
     invalidKey: BEDROCK_INVALID_KEY_MARKER,
   },
+  bob: {
+    url: fixed(`https://${BOB_HOST}/inference/v1/models`),
+    headers: (key) => ({
+      authorization: `Apikey ${key}`,
+      "user-agent": BOB_USER_AGENT,
+    }),
+    invalidKey: /API Key verification failed: Invalid or expired API Key/,
+  },
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bedrock lists the inference profiles of the Connection's region and answers a wrong, malformed or expired key with a 403 that says so; its 403 for a key without permission to list profiles is not a refusal. Templates with no model-list check here (Bob) are accepted, marked unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bedrock lists the inference profiles of the Connection's region and answers a wrong, malformed or expired key with a 403 that says so; its 403 for a key without permission to list profiles is not a refusal. Bob's gateway answers a wrong key with its own 401 message and refuses with a Cloudflare 403 a request whose User-Agent does not name Bob, so its check names itself. A template with no check here (the CurveBender deployment's, the built-in platform provider's) is accepted, marked unchecked.
 export function createProviderKeyProbe(
   opts: { timeoutMs?: number } = {},
 ): ProviderKeyProbe {

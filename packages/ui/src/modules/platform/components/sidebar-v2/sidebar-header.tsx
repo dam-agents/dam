@@ -1,39 +1,25 @@
 import { ChevronLeft } from "@carbon/icons-react";
 
-import { BrandLogo } from "@/components/brand-logo";
-import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
-import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-
 import { getBrand } from "../../../../brand.js";
+import { NavRow } from "./add-row.js";
 
 interface Props {
+  expanded: boolean;
   onCollapse: () => void;
-  onHome: () => void;
 }
 
-export function SidebarHeader({ onCollapse, onHome }: Props) {
+// UNIT_BOUNDARY_DESCRIPTION: the row above the tree is a row like Home and Settings, its icon the chevron that collapses the pane and its label the brand, and the whole row is the one target that collapses it; the brand leads nowhere on its own, since Home is a row of its own.
+export function SidebarHeader({ expanded, onCollapse }: Props) {
   return (
-    <div className="flex h-12 shrink-0 items-center border-b border-border px-1">
-      <Tooltip content="Collapse navigation" side="bottom">
-        <button
-          type="button"
-          onClick={onCollapse}
-          aria-label="Collapse navigation"
-          className={cn(railTile(false), FOCUS_RING)}
-        >
-          <ChevronLeft size={RAIL_GLYPH} />
-        </button>
-      </Tooltip>
-      <button
-        type="button"
-        onClick={onHome}
-        aria-label={getBrand().name}
-        className={`-ml-1 min-w-0 rounded-lg py-1 pr-1.5 pl-0 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
-      >
-        <BrandLogo />
-      </button>
+    <div className="flex shrink-0 items-start px-2 pt-2">
+      <NavRow
+        icon={ChevronLeft}
+        label={getBrand().name}
+        testId="sidebar-collapse-row"
+        ariaLabel="Collapse navigation"
+        ariaExpanded={expanded}
+        onClick={onCollapse}
+      />
     </div>
   );
 }

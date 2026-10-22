@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useFocusTrap } from "@/components/modal";
 import { ResizeHandle } from "@/components/resize-handle";
+import { prefersReducedMotion } from "@/components/ui/collapse";
 import {
   MIN_CONTENT_WIDTH,
   navigationMode,
@@ -10,9 +11,12 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
+import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
+import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { holdBackEntry } from "../../lib/back-entry.js";
 import {
+  CLASSIC_RIGHT_RAIL_W,
   RIGHT_RAIL_W,
   SIDEBAR_COLLAPSED_W,
   SIDEBAR_MIN_W,
@@ -22,6 +26,7 @@ import {
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 import { SidebarRail } from "./sidebar-rail.js";
+import { useCollapseContent } from "./use-collapse-content.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane, in two states: expanded, it holds its place beside the page at the width the user resizes, or collapsed, it stays at one icon's width as a rail of Agent avatars, each opening that Agent's Sessions beside it, with the Pinned section under its pin icon. The rail is what a narrow viewport gets whatever the user last chose, and expanding it there opens the pane over the page, from the left edge up to the right rail, until a Session is picked, Escape is pressed or the browser goes back; the user's own choice of expanded or collapsed is left as it was.
@@ -33,22 +38,24 @@ const railExpandTile = () =>
 export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
-  const setView = useStore((s) => s.setView);
   const { width, resizing, setWidthTo, endResize } = useSidebarWidth({
     key: "platform-sidebar-v2-w",
     fallback: 325,
   });
   const { viewport } = useNarrowShell();
   const [overlaid, setOverlaid] = useState(false);
+  const rightToolbar = useUnifiedRightToolbar();
+  const rightRailWidth = rightToolbar ? RIGHT_RAIL_W : CLASSIC_RIGHT_RAIL_W;
 
   const railed = useRef(false);
   const maxWidth = sidebarMaxWidth({
     viewport,
-    rightRailWidth: RIGHT_RAIL_W,
+    rightRailWidth,
     contentMinWidth: MIN_CONTENT_WIDTH,
   });
   // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so a drag never collapses the pane; a window with no room for a pane keeps the rail whatever the drag does.
-  const paneFits = viewport - RIGHT_RAIL_W - MIN_CONTENT_WIDTH >= SIDEBAR_MIN_W;
+  const paneFits =
+    viewport - rightRailWidth - MIN_CONTENT_WIDTH >= SIDEBAR_MIN_W;
   const mode = resizing
     ? pinned && paneFits
       ? "layout"
@@ -56,7 +63,7 @@ export function SidebarV2() {
     : navigationMode({
         viewport,
         sidebarWidth: width,
-        rightRailWidth: RIGHT_RAIL_W,
+        rightRailWidth,
         railed: railed.current,
       });
   railed.current = mode === "rail";
@@ -68,6 +75,14 @@ export function SidebarV2() {
   // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
   const navRef = useRef<HTMLElement>(null);
   useFocusTrap(navRef, over, railExpandTile);
+  const { contentExpanded, moving, collapse } = useCollapseContent({
+    expanded,
+    animated: !resizing && !prefersReducedMotion(),
+    target: navRef,
+  });
+  const collapsing = moving && !expanded;
+  const agents = useSidebarAgents().agents;
+  const setToggled = useStore((s) => s.setSidebarTreeToggled);
   // UNIT_BOUNDARY_DESCRIPTION: the overlay belongs to the rail, so a window that widens enough for a pane drops it rather than opening the pane over the page again the next time the window narrows.
   useEffect(() => {
     if (mode !== "rail") setOverlaid(false);
@@ -97,7 +112,8 @@ export function SidebarV2() {
       <nav
         ref={navRef}
         className={cn(
-          "flex flex-col border-r border-border bg-chrome",
+          // UNIT_BOUNDARY_DESCRIPTION: the pane is the container its rows ask for their width, so a label that must end in an ellipsis at the pane's edge follows the width as the browser animates it, with no script in the loop.
+          "@container flex flex-col border-r border-border bg-chrome",
           over
             ? "fixed inset-y-0 left-0 z-overlay"
             : "relative h-full shrink-0",
@@ -105,34 +121,66 @@ export function SidebarV2() {
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           resizing && "transition-none",
           !expanded && !over && "w-14 overflow-visible",
+          moving && "overflow-hidden",
         )}
         style={
           // UNIT_BOUNDARY_DESCRIPTION: the pane reaches one pixel into the right rail so its own right border lands on the bar's left border, rather than beside it, and the two read as one line.
-          over ? { right: RIGHT_RAIL_W - 1 } : expanded ? { width } : undefined
+          over
+            ? { right: rightRailWidth - 1 }
+            : expanded
+              ? { width }
+              : undefined
         }
         data-testid="app-sidebar"
         data-pinned={expanded || undefined}
         data-collapsed={!expanded || undefined}
       >
-        {expanded || over ? (
-          <>
+        {(contentExpanded || over) && (
+          <div
+            className={cn(
+              "flex min-h-0 min-w-0 flex-1 flex-col transition-opacity duration-200 motion-reduce:transition-none",
+              collapsing && "pointer-events-none opacity-0",
+            )}
+            // UNIT_BOUNDARY_DESCRIPTION: while the width moves, the tree keeps the width the pane has when it is open, so the narrowing pane uncovers the tree rather than reflowing it, and the Home row, the Agent rows and their buttons keep their places throughout; the width is the pane's less the pixel its right border takes.
+            style={moving ? { width: width - 1 } : undefined}
+            data-testid="sidebar-tree-wrap"
+          >
             <SidebarHeader
-              onCollapse={() => (over ? setOverlaid(false) : setPinned(false))}
-              onHome={() => {
-                setView("home");
-                if (over) setOverlaid(false);
+              expanded={expanded}
+              onCollapse={() => {
+                if (over) {
+                  setOverlaid(false);
+                  return;
+                }
+                setPinned(false);
+                collapse();
+                setToggled(new Map(agents.map((agent) => [agent.id, false])));
               }}
             />
             <SidebarContent
               onNavigate={over ? () => setOverlaid(false) : undefined}
             />
-          </>
-        ) : (
-          <SidebarRail
-            onExpand={() =>
-              mode === "rail" ? setOverlaid(true) : setPinned(true)
-            }
-          />
+          </div>
+        )}
+        {/* UNIT_BOUNDARY_DESCRIPTION: the rail cross-fades with the tree, drawn over the place the tree's own icons occupy, so the pane swaps one for the other without a frame where neither is there; it is only the rail's own content once the width has stopped. */}
+        {(!contentExpanded || moving) && !over && (
+          <div
+            className={cn(
+              "absolute inset-y-0 left-0 flex w-14 flex-col duration-200 motion-reduce:animate-none",
+              "transition-opacity motion-reduce:transition-none",
+              // UNIT_BOUNDARY_DESCRIPTION: the rail fades in as it arrives on a collapse, and only then: a rail already standing when the app draws the sidebar is there from the first frame, so a view that remounts the shell does not replay the fade.
+              collapsing && "animate-in fade-in-0",
+              expanded && "pointer-events-none opacity-0",
+            )}
+            aria-hidden={expanded || undefined}
+            data-testid="sidebar-rail-wrap"
+          >
+            <SidebarRail
+              onExpand={() =>
+                mode === "rail" ? setOverlaid(true) : setPinned(true)
+              }
+            />
+          </div>
         )}
       </nav>
       {/* UNIT_BOUNDARY_DESCRIPTION: one handle serves the rail and the pane, so a drag that crosses between them keeps its grip instead of being cut short when the other handle would have taken over. */}

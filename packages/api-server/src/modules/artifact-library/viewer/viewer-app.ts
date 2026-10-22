@@ -8,12 +8,14 @@ import type {
   ShareSession,
   ShareSessionCookie,
 } from "../domain/share-session.js";
+import type { RelayCaller } from "../domain/relay-grant.js";
 import { viewerPromptInputSchema } from "../domain/viewer-bridge.js";
 import type {
   ShareBridgeService,
   ViewerCallKind,
 } from "../services/share-bridge-service.js";
 import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
+import type { RelayTokenService } from "../services/relay-token-service.js";
 import type { RenderTokenService } from "../services/render-token-service.js";
 import type { ShareAuthService } from "../services/share-auth-service.js";
 import type {
@@ -35,13 +37,18 @@ import {
   renderNotFound,
   renderWrapper,
 } from "./renderer.js";
-import { loginPath, readShareSession } from "./share-auth-routes.js";
+import {
+  loginPath,
+  readShareSignIn,
+  type ShareSignIn,
+} from "./share-auth-routes.js";
 
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;
   auth: Pick<ShareAuthService, "getSession">;
   sessionCookie: ShareSessionCookie;
   renderTokens: Pick<RenderTokenService, "mint">;
+  relayTokens: RelayTokenService;
   brandName: string;
   uiBaseUrl: string;
   contentBaseUrl: string;
@@ -54,8 +61,22 @@ type Surface = "page" | "raw";
 const BRIDGE_BODY_MAX_BYTES = 2 * 1024 * 1024;
 const NOT_ALLOWED = { ok: false, reason: "not-allowed" } as const;
 
+function bearerToken(header: string | undefined): string | undefined {
+  const match = header?.match(/^Bearer ([^\s]+)$/);
+  return match?.[1];
+}
+
+function relayCaller(artifact: ArtifactRow, signIn: ShareSignIn): RelayCaller {
+  return {
+    artifactId: artifact.id,
+    version: artifact.version,
+    viewerSub: signIn.session.sub,
+    shareSessionId: signIn.id,
+  };
+}
+
 export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
-  const { viewer, auth, renderTokens } = deps;
+  const { viewer, auth, renderTokens, relayTokens } = deps;
   const contentBase = deps.contentBaseUrl.replace(/\/+$/, "");
   const shareOrigin = new URL(deps.shareBaseUrl).origin;
   const app = new Hono();
@@ -100,20 +121,20 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         .with({ state: "ok" }, (r) => allowed(r.artifact))
         .with({ state: "restricted" }, async (r) => {
           c.header("Cache-Control", PRIVATE_NO_STORE);
-          const session = await readShareSession(c, auth, deps.sessionCookie);
-          if (!session) {
+          const signIn = await readShareSignIn(c, auth, deps.sessionCookie);
+          if (!signIn) {
             return denied(
               surface === "page"
                 ? c.redirect(loginPath(currentPath(c)), 302)
                 : c.text("unauthorized", 401),
             );
           }
-          if ((await viewer.canView(r.artifact, session)) === "deny") {
+          if ((await viewer.canView(r.artifact, signIn.session)) === "deny") {
             return denied(
               surface === "page"
                 ? c.html(
                     renderNoAccess({
-                      email: session.email,
+                      email: signIn.session.email,
                       brandName: deps.brandName,
                       next: currentPath(c),
                     }),
@@ -122,7 +143,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
                 : c.text("forbidden", 403),
             );
           }
-          return allowed(r.artifact);
+          return allowed(r.artifact, signIn);
         })
         .exhaustive();
   }
@@ -142,13 +163,23 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     const resolution = await viewer.resolveArtifact(c.req.param("slug") ?? "");
     if (resolution.state !== "restricted")
       return { ok: false, response: c.json(NOT_ALLOWED, 404) };
-    const session = await readShareSession(c, auth, deps.sessionCookie);
-    if (!session) return { ok: false, response: c.json(NOT_ALLOWED, 401) };
-    if ((await viewer.canView(resolution.artifact, session)) === "deny") {
-      deps.bridge.refuse(resolution.artifact, session, kind, "not-a-viewer");
+    const signIn = await readShareSignIn(c, auth, deps.sessionCookie);
+    if (!signIn) return { ok: false, response: c.json(NOT_ALLOWED, 401) };
+    const { artifact } = resolution;
+    const { session } = signIn;
+    const relayed = await relayTokens.verify(
+      bearerToken(c.req.header("authorization")),
+      relayCaller(artifact, signIn),
+    );
+    if (!relayed) {
+      deps.bridge.refuse(artifact, session, kind, "no-relay-token");
       return { ok: false, response: c.json(NOT_ALLOWED, 403) };
     }
-    return { ok: true, artifact: resolution.artifact, session };
+    if ((await viewer.canView(artifact, session)) === "deny") {
+      deps.bridge.refuse(artifact, session, kind, "not-a-viewer");
+      return { ok: false, response: c.json(NOT_ALLOWED, 403) };
+    }
+    return { ok: true, artifact, session };
   }
 
   async function bridgeBody(c: Context): Promise<unknown> {
@@ -206,6 +237,11 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       );
     }
 
+    const relayToken =
+      artifact.interactive && isRestricted(artifact) && authorized.signIn
+        ? await relayTokens.mint(relayCaller(artifact, authorized.signIn))
+        : undefined;
+
     viewer.recordView(artifact);
     return c.html(
       renderWrapper({
@@ -215,7 +251,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         slug,
         version,
         downloadName: artifact.fileName,
-        relay: artifact.interactive && isRestricted(artifact),
+        ...(relayToken ? { relayToken } : {}),
       }),
     );
   });

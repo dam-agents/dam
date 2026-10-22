@@ -1,9 +1,13 @@
-import type { BudgetsService } from "api-server-api";
+import type { BudgetsService, UserBudgetDefaults } from "api-server-api";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import { readRunnerUsage } from "./infrastructure/runner-usage.js";
 import {
+  deleteUserBudget,
+  listUserBudgets,
+  readUserBudget,
   readUserBudgetCeiling,
   readUserBudgetSizes,
+  writeUserBudget,
 } from "./infrastructure/user-budgets.js";
 import {
   configuredPool,
@@ -17,6 +21,11 @@ import {
   type SpawnSizeGate,
   type StorageGate,
 } from "./services/budgets-service.js";
+import {
+  createUserBudgetsAdmin,
+  type BudgetUsers,
+  type UserBudgetsForOperator,
+} from "./services/user-budgets-admin.js";
 
 export function composeStorageGate(deps: {
   k8s: K8sClient;
@@ -75,5 +84,24 @@ export function composeSpawnSizeGate(deps: {
   return createSpawnSizeGate({
     readCeilingOverride: () => readUserBudgetCeiling(deps.k8s, deps.owner),
     defaultCeiling: deps.defaultCeiling,
+  });
+}
+
+export function composeUserBudgetsAdmin(deps: {
+  k8s: K8sClient;
+  users: BudgetUsers;
+  listAgents(): Promise<(BudgetedAgent & { owner?: string })[]>;
+  defaults: UserBudgetDefaults;
+}): UserBudgetsForOperator {
+  return createUserBudgetsAdmin({
+    store: {
+      list: () => listUserBudgets(deps.k8s),
+      get: (ownerSub) => readUserBudget(deps.k8s, ownerSub),
+      write: (input) => writeUserBudget(deps.k8s, input),
+      remove: (ownerSub) => deleteUserBudget(deps.k8s, ownerSub),
+    },
+    users: deps.users,
+    listAgents: deps.listAgents,
+    defaults: deps.defaults,
   });
 }

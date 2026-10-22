@@ -3,6 +3,7 @@ import { createStore } from "zustand/vanilla";
 
 import { createBrowserSlice } from "../../modules/browser/store.js";
 import { createChangesSlice } from "../../modules/changes/store.js";
+import { environmentsTabShown } from "../../modules/environments/lib/environments-tab.js";
 import { createFilesSlice } from "../../modules/files/store.js";
 import {
   type DockedItems,
@@ -44,6 +45,7 @@ const ALL_AVAILABLE = hiddenSidePanelTabs({
   canOpenBrowser: true,
   changes: true,
   processesEnabled: true,
+  environments: true,
   gettingStarted: true,
 });
 
@@ -85,6 +87,7 @@ describe("which tab the side panel shows", () => {
       canOpenBrowser: false,
       changes: true,
       processesEnabled: false,
+      environments: false,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
@@ -98,6 +101,7 @@ describe("which tab the side panel shows", () => {
       canOpenBrowser: true,
       changes: false,
       processesEnabled: true,
+      environments: true,
       gettingStarted: true,
     });
     expect(ALL_AVAILABLE.has("changes")).toBe(false);
@@ -115,6 +119,36 @@ describe("which tab the side panel shows", () => {
   });
 });
 
+describe("the Environments tab", () => {
+  it("TEST_SCENARIO: JanUI's chat of a vm agent with the feature on has an Environments tab; the current layout, the feature off or a container agent has none, so a tab left open there closes", () => {
+    const shown = (o: { newLayout: boolean; enabled: boolean; vm: boolean }) =>
+      hiddenSidePanelTabs({
+        agent: true,
+        artifacts: true,
+        canOpenBrowser: true,
+        changes: true,
+        processesEnabled: true,
+        environments: environmentsTabShown(o),
+        gettingStarted: true,
+      });
+    expect(
+      visibleSidePanelTab(
+        "environments",
+        NOTHING_DOCKED,
+        shown({ newLayout: true, enabled: true, vm: true }),
+      ),
+    ).toBe("environments");
+    for (const off of [
+      { newLayout: false, enabled: true, vm: true },
+      { newLayout: true, enabled: false, vm: true },
+      { newLayout: true, enabled: true, vm: false },
+    ])
+      expect(
+        visibleSidePanelTab("environments", NOTHING_DOCKED, shown(off)),
+      ).toBe(null);
+  });
+});
+
 describe("the panels outside an Agent's chat", () => {
   it("TEST_SCENARIO: a page that is not an Agent's chat offers only Get started and Approvals, so an Agent's tab left open there shows nothing, and Artifacts stays on the Artifacts page instead of opening a second time", () => {
     const hidden = hiddenSidePanelTabs({
@@ -123,6 +157,7 @@ describe("the panels outside an Agent's chat", () => {
       canOpenBrowser: true,
       changes: false,
       processesEnabled: true,
+      environments: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
@@ -143,6 +178,7 @@ describe("the panels outside an Agent's chat", () => {
       canOpenBrowser: true,
       changes: true,
       processesEnabled: true,
+      environments: true,
       gettingStarted: false,
     });
     expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(

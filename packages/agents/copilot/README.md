@@ -45,7 +45,11 @@ While exactly one Copilot session runs a turn, the router books the call, and it
 The pod is the boundary, and nobody answers a permission prompt on a schedule or a channel turn.
 
 A session can pick Copilot's mode: Agent, Plan or Autopilot.
+A session that picks none starts in Autopilot: an ACP session ignores `--autopilot` and starts in Agent, so the runtime sends the catalog's start mode (`deriveStartMode` in the [manifest](rootfs/app/runtime-manifest.yaml)), and `harness-terminal` passes `--autopilot`.
 The Config panel stores the agent's default under `platform.mode` in `~/.copilot/settings.json`, a key Copilot itself ignores.
+
+A session can also pick the reasoning effort.
+Copilot takes it as the `reasoning_effort` config option, which it does not list in `session/new`, and sends the value to the provider as it is; with none picked, it sends `medium`.
 
 ## Files the platform writes
 
@@ -58,6 +62,14 @@ The Config panel stores the agent's default under `platform.mode` in `~/.copilot
 `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=/etc/copilot` makes Copilot load every `instructions/*.instructions.md` there.
 [`platform.instructions.md`](rootfs/etc/copilot/instructions/platform.instructions.md) is a link to `/etc/AGENTS.md`, so each Copilot process gets the instructions of the image it runs in.
 A user's `~/.copilot/copilot-instructions.md` and `work/AGENTS.md` still load beside them.
+
+The agent's own instructions are `~/AGENTS.md` ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+Copilot walks up from the work directory for `AGENTS.md`, but it stops at a git root, so it misses `~/AGENTS.md` when the work directory is a repository of its own.
+`COPILOT_CUSTOM_INSTRUCTIONS_DIRS` does not help there: Copilot reads only `instructions/*.instructions.md` in those directories, not an `AGENTS.md`.
+So both launch scripts source [`copilot-agents-md.sh`](rootfs/usr/local/lib/copilot-agents-md.sh), which links `~/.copilot/instructions/agent.instructions.md` to `~/AGENTS.md` only while the walk misses it, also before the file exists.
+Copilot does not drop a file it reaches both ways, so in any other layout the script removes its link.
+The runtime starts the chat process when the agent starts, so a work directory that becomes a repository later gets the link at the agent's next start.
+A regular file the owner put at that path is kept.
 
 ## Startup network calls
 

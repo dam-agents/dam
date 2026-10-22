@@ -20,13 +20,19 @@ export function loginPath(next: string | undefined): string {
   return `/auth/login?next=${encodeURIComponent(safeNextOrRoot(next))}`;
 }
 
-export async function readShareSession(
+export interface ShareSignIn {
+  id: string;
+  session: ShareSession;
+}
+
+export async function readShareSignIn(
   c: Context,
   auth: Pick<ShareAuthService, "getSession">,
   cookie: ShareSessionCookie,
-): Promise<ShareSession | null> {
+): Promise<ShareSignIn | null> {
   const id = getCookie(c, cookie.name);
-  return id ? auth.getSession(id) : null;
+  const session = id ? await auth.getSession(id) : null;
+  return id && session ? { id, session } : null;
 }
 
 export function createShareAuthRoutes(deps: ShareAuthRoutesDeps): Hono {

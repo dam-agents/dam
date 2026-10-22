@@ -757,28 +757,4 @@ describe("JanUI's picker and the default's editor", () => {
     expect(current).toContain("Disconnect IBM");
     expect(current).not.toContain("session-pair-manage-providers");
   });
-
-  /** TEST_SCENARIO: As the editor of the agent's saved default, the picker
-   * shows the saved pair, not the pair picked for the next session, offers
-   * the same harnesses, models and session settings, and has neither
-   * provider controls nor the Manage providers row, since it sits on the
-   * Providers page already. */
-  it("edits the saved default with the same options and no provider row", () => {
-    state.chosen = {
-      harness: "pi",
-      provider: "curve",
-      model: "curve-bender/rits/zai-org/glm-5-3",
-    };
-    const html = render({
-      defaultPair: {
-        value: { harness: "pi", provider: "ibm", model: "ibm-litellm/gpt-5.5" },
-        onChoose: vi.fn(),
-      },
-    });
-    expect(html).toContain("gpt-5.5");
-    expect(html).toContain('aria-label="Session settings"');
-    expect(html).not.toContain("session-pair-manage-providers");
-    expect(html).not.toContain("Configure providers and defaults");
-    expect(html).not.toContain("Disconnect IBM");
-  });
 });
