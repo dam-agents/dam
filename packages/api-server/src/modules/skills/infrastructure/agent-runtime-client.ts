@@ -1,4 +1,4 @@
-import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import type {
   AppRouter,
   SourceFetchMode,
@@ -6,7 +6,7 @@ import type {
 } from "agent-runtime-api";
 import { SOURCE_PATH_REASONS } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { agentPodClient } from "../../../core/agent-pod-client.js";
 import type { PrDisposition } from "../domain/pr-state.js";
 
 export interface PublishSkillCall {
@@ -111,13 +111,12 @@ export class AgentRuntimeClientError extends Error {
   }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: publish, scan and readPullRequest run a GitHub call inside the Agent's pod — a clone, a branch push, a pull request — so the whole skills client keeps the transport's own five-minute ceiling rather than a round-trip budget. The local reads and writes ride along on it: they had no budget before, and a tight one would fail a pod busy writing a skill set.
+const UPSTREAM_TIMEOUT_MS = 300_000;
+
 function makeClient(agentId: string, namespace: string) {
-  return createTRPCClient<AppRouter>({
-    links: [
-      httpBatchLink({
-        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
-      }),
-    ],
+  return agentPodClient(agentId, namespace, {
+    timeoutMs: UPSTREAM_TIMEOUT_MS,
   });
 }
 

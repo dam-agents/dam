@@ -1,12 +1,11 @@
-import { createTRPCClient, httpLink, TRPCClientError } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import {
   ARTIFACT_API_TIMEOUT_MS,
-  type AppRouter,
   type ArtifactApiRequestInput,
 } from "agent-runtime-api";
 import type { ArtifactCallAgentApiResult } from "api-server-api";
 
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { agentPodClient } from "../../../core/agent-pod-client.js";
 
 const RUNTIME_TIMEOUT_HEADROOM_MS = 5_000;
 const REQUEST_TIMEOUT_MS =
@@ -28,17 +27,9 @@ function isMissingProcedure(err: unknown): boolean {
 export function createAgentApiPodClient(namespace: string): AgentApiPodClient {
   return {
     async request(agentId, input) {
-      const client = createTRPCClient<AppRouter>({
-        links: [
-          httpLink({
-            url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
-            fetch: (request, init) =>
-              fetch(request, {
-                ...init,
-                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-              }),
-          }),
-        ],
+      const client = agentPodClient(agentId, namespace, {
+        timeoutMs: REQUEST_TIMEOUT_MS,
+        batch: false,
       });
       try {
         return await client.artifactApi.request.mutate(input);

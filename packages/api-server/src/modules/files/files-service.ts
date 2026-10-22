@@ -1,10 +1,12 @@
-import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import { TRPCError } from "@trpc/server";
-import type { AppRouter as AgentRuntimeRouter } from "agent-runtime-api";
 import type { FilesService } from "api-server-api";
+import { agentPodClient } from "../../core/agent-pod-client.js";
 import { emit, EventType, type TurnOutcome } from "../../events.js";
 import type { AgentsRepository } from "../agents/index.js";
-import { podBaseUrl } from "../agents/infrastructure/k8s.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: an upload carries up to the user request-body bound — 32 MB, base64-encoded on the wire — to the Agent's own disk, so its budget is a write budget, not a round-trip one.
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 export function composeFilesModule(
   agentsRepo: Pick<AgentsRepository, "isOwnedBy">,
@@ -27,12 +29,8 @@ export function composeFilesModule(
           outcome,
           bytes,
         });
-      const runtime = createTRPCClient<AgentRuntimeRouter>({
-        links: [
-          httpBatchLink({
-            url: `http://${podBaseUrl(input.agentId, namespace)}/api/trpc`,
-          }),
-        ],
+      const runtime = agentPodClient(input.agentId, namespace, {
+        timeoutMs: UPLOAD_TIMEOUT_MS,
       });
       try {
         const result = await runtime.files.upload.mutate({

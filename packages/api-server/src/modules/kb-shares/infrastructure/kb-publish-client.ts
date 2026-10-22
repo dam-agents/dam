@@ -1,7 +1,6 @@
-import { createTRPCClient, httpLink } from "@trpc/client";
-import type { AppRouter, KbPublishSyncInput } from "agent-runtime-api";
+import type { KbPublishSyncInput } from "agent-runtime-api";
 
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { agentPodClient } from "../../../core/agent-pod-client.js";
 
 const SYNC_TIMEOUT_MS = 10_000;
 
@@ -21,20 +20,11 @@ export function createKbPublishPodClient(
 ): KbPublishPodClient {
   return {
     async sync(agentId, input) {
-      const client = createTRPCClient<AppRouter>({
-        links: [
-          httpLink({
-            url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
-            fetch: (request, init) =>
-              fetch(request, {
-                ...init,
-                signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
-              }),
-          }),
-        ],
-      });
       try {
-        await client.kbPublish.sync.mutate(input);
+        await agentPodClient(agentId, namespace, {
+          timeoutMs: SYNC_TIMEOUT_MS,
+          batch: false,
+        }).kbPublish.sync.mutate(input);
       } catch (err) {
         throw new KbPublishUnreachableError(
           agentId,
