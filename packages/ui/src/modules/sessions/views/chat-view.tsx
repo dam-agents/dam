@@ -88,6 +88,9 @@ import { DockedChangesPanel } from "../../changes/components/docked-changes-pane
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
+import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
+import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
+import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
@@ -284,6 +287,7 @@ export function ChatView() {
   );
   const processesEnabled = useProcessesEnabled();
   const newLayout = useNewLayout();
+  const environmentsEnabled = useEnvironmentsEnabled();
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
@@ -751,6 +755,11 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
+    environments: environmentsTabShown({
+      newLayout,
+      enabled: environmentsEnabled,
+      vm: agentView?.vm === true,
+    }),
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
@@ -1315,6 +1324,9 @@ export function ChatView() {
                   open
                   className="flex-1"
                 />
+              )}
+              {activeTab === "environments" && selectedAgent && (
+                <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
               )}
             </>
           }

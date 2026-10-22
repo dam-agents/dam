@@ -2,6 +2,7 @@ import {
   Book,
   Branch,
   type CarbonIconType,
+  Cloud,
   Folder,
   Gears,
   Notification,
@@ -37,6 +38,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
+  { tab: "environments", label: "Environments", icon: Cloud },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
