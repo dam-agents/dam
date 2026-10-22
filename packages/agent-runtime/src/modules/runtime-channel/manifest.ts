@@ -149,6 +149,9 @@ export const modelRouterBinding = z.object({
   defaultModelEnv: z.array(z.string().min(1)).optional(),
   sessionFromRunningTurn: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
+  nonClaudeModelEnv: z
+    .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string())
+    .optional(),
 });
 export type ModelRouterBinding = z.infer<typeof modelRouterBinding>;
 
