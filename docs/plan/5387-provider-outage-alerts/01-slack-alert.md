@@ -84,7 +84,8 @@ On the dev cluster, with the api-server image rebuilt and the chart redeployed w
 5. Wait 2 more minutes: no second DM.
 6. Remove the rules and send again.
    Within about 6 minutes, one recovery DM arrives and the row reads `recovered`.
-7. Cut off again for less than 2 minutes, then remove the rules: no DM.
+7. Redeploy with `apiServer.outageAlertDelay: "8m"`, cut off again for less than 2 minutes, then remove the rules and send again: no DM.
+   With a 2-minute delay, a short cut still counts as an outage longer than the delay, because its failures stay in the 5-minute call window.
 8. Cut off only the agents' calls: add the REJECT rule with `! -s <api-server pod IP>`, so the readiness check still passes.
    Send messages until the DM arrives, then stop sending for 7 minutes and keep the rule: no recovery DM, and the row still reads `told`.
    Remove the rule and send again: within about 6 minutes, the recovery DM arrives.

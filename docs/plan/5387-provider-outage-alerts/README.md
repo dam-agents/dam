@@ -220,12 +220,12 @@ The chart passes it as `OUTAGE_ALERT_DELAY`.
 
 ## Sub-issues
 
-| #   | Title                                                           | Scope                                                                                                                                              | Depends on |
-| --- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Slack alert for agents with failed calls](./01-slack-alert.md) | Failed payers and evidence in the event, the `outage-alerts` module, table, rules, Slack outage and recovery messages, Helm delay, docs            | —          |
-| 02  | [Unattended agents on the failing provider](./02-unattended.md) | Owners of agents whose schedules or channel bindings fire on the failing template, by kind of default; the message says why each agent is affected | 01         |
-| 03  | [Outage alert in the Approvals panel](./03-attention-card.md)   | The alerts in `attention.listForOwner`, the dismissal kind `outage-alert`, the card in the Approvals panel, the panel badge                        | 01         |
-| 04  | [Telegram alert in the owner's private chat](./04-telegram.md)  | The owner's private chats bound to their agents, the channel manager's notice with a Telegram text, UTC times                                      | 01         |
+| #     | Title                                                           | Scope                                                                                                                                              | Depends on |
+| ----- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| ✅ 01 | [Slack alert for agents with failed calls](./01-slack-alert.md) | Failed payers and evidence in the event, the `outage-alerts` module, table, rules, Slack outage and recovery messages, Helm delay, docs            | —          |
+| 02    | [Unattended agents on the failing provider](./02-unattended.md) | Owners of agents whose schedules or channel bindings fire on the failing template, by kind of default; the message says why each agent is affected | 01         |
+| 03    | [Outage alert in the Approvals panel](./03-attention-card.md)   | The alerts in `attention.listForOwner`, the dismissal kind `outage-alert`, the card in the Approvals panel, the panel badge                        | 01         |
+| 04    | [Telegram alert in the owner's private chat](./04-telegram.md)  | The owner's private chats bound to their agents, the channel manager's notice with a Telegram text, UTC times                                      | 01         |
 
 Slices 02, 03 and 04 do not depend on each other.
 
@@ -294,7 +294,8 @@ On the dev cluster, after all slices, with the api-server and UI images rebuilt 
 6. Dismiss the card; reload: it stays dismissed.
 7. Remove the iptables rules and send again.
    Within about 6 minutes, one recovery message arrives in Slack and in the Telegram chat, and the Approvals panel shows the recovered card.
-8. Repeat step 3 for less than 2 minutes, then remove the rules: no message arrives.
+8. Redeploy with `apiServer.outageAlertDelay: "8m"`, repeat step 3 for less than 2 minutes, then remove the rules and send again: no message arrives.
+   With a 2-minute delay, a short cut still counts as an outage longer than the delay, because its failures stay in the 5-minute call window.
 9. Cut off only the agents' calls: add the REJECT rule with `! -s <api-server pod IP>`, so the readiness check still passes.
    Send messages until the alert arrives, then stop sending for 7 minutes and keep the rule: no recovery message arrives.
    Remove the rule and send again: within about 6 minutes, the recovery message arrives.

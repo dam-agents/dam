@@ -715,6 +715,13 @@
       "when": 1792579027647,
       "tag": "0101_environment_access_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1792608278119,
+      "tag": "0102_outage_alerts",
+      "breakpoints": true
     }
   ]
 }

@@ -278,6 +278,7 @@ import {
   listSpendLimitAgentIds,
 } from "./modules/spend/index.js";
 import { composeProviderStatus } from "./modules/provider-status/index.js";
+import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -1454,6 +1455,21 @@ export async function bootstrap() {
     resourceAlerts.evaluateStorage(),
   );
 
+  const outageAlerts = composeOutageAlerts({
+    db,
+    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    describeAgent: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent?.owner
+        ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
+        : null;
+    },
+    uiBaseUrl: config.uiBaseUrl,
+    brandName: config.brand.name,
+    delayMs: config.outageAlertDelayMinutes * 60_000,
+  });
+  const outageAlertsSaga = outageAlerts.startSaga();
+
   const leaderLease = createLeaderLease({
     leases: leaseApi,
     namespace: config.namespace,
@@ -2203,6 +2219,7 @@ export async function bootstrap() {
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
     providerStatusSaga.unsubscribe();
+    outageAlertsSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();
