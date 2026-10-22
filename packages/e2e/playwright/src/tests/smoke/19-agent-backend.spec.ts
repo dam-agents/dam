@@ -25,9 +25,9 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
-import { prScope } from "../../lib/scope.js";
 
 const markerPath = "e2e-backend-marker.txt";
+const prScope = process.env.E2E_SCOPE === "pr";
 
 test.describe.configure({ mode: "serial" });
 
@@ -253,7 +253,7 @@ test("keeps a file written to HOME", async () => {
   });
 });
 
-// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part. The vm lane runs this spec alone at the end of the suite, and a pull request runs a reduced set, so on both it fires the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron. The merge queue and the nightly run wait for the cron itself on the container lane, so the scheduler's own fire stays covered. The schedule's next occurrence is read either way: run-now delivers the trigger without moving the cron, and a cron that parses to nothing would show here as no next run.
+// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part. The vm lane runs this spec alone at the end of the suite, and a pull request runs a reduced set, so on both it fires the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron; a full run on the container lane, the merge queue's and the nightly run's, waits for the cron itself, so the scheduler's own fire stays covered there. The schedule's next occurrence is read either way: on the cron path it shows the fire scheduled the next occurrence, and run-now leaves the cron where it was.
 test("takes a scheduled fire", async () => {
   test.setTimeout(300_000);
   const task = `e2e-backend-schedule-${randomUUID()}`;
@@ -284,7 +284,10 @@ test("takes a scheduled fire", async () => {
       .toBe(true);
     const { status } = await api.schedules.get.query({ id: schedule.id });
     expect(status?.lastResult).toBe("success");
-    expect(status?.nextRun, "the cron scheduled no next run").toBeTruthy();
+    expect(
+      status?.nextRun,
+      "the schedule carries no next occurrence",
+    ).toBeTruthy();
   } finally {
     await api.schedules.delete.mutate({ id: schedule.id });
   }

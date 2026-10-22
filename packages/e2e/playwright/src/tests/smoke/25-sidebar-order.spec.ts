@@ -311,6 +311,10 @@ test("Sessions are listed newest first, and a turn moves its Session to the top"
     const menu = await working.getByTestId("session-menu-button").boundingBox();
     await page.mouse.click(menu!.x + 3, menu!.y + menu!.height - 3);
     await expect(page.getByTestId("session-rename-button")).toBeVisible();
+    await expect(
+      working.getByTestId("working-dots"),
+      "the hold ended before the click, so the row was idle when it was clicked",
+    ).toBeAttached();
     await page.keyboard.press("Escape");
     await expect(page.getByText("order-long-tail")).toBeVisible({
       timeout: 60_000,

@@ -36,6 +36,14 @@ test("user env rides the contribution rail", async () => {
     );
   });
 
+  await test.step("editor view is fed from the store, not the CR", async () => {
+    const agent = await api.agents.get.query({ id: agentId });
+    expect(agent.env).toContainEqual({
+      name: userEnvName,
+      value: userEnvValue,
+    });
+  });
+
   await test.step("editing the value applies at the next turn", async () => {
     await api.agents.update.mutate({
       id: agentId,
