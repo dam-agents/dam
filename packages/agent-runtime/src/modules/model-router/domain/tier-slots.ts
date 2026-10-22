@@ -6,7 +6,11 @@ import {
   tierWordOf,
   type ClaudeTier,
 } from "agent-runtime-api";
-import { CLAUDE_MODEL_NAME_PREFIX, parseQualifiedModel } from "api-server-api";
+import {
+  CLAUDE_MODEL_NAME_PREFIX,
+  parseQualifiedModel,
+  preferredModelOf,
+} from "api-server-api";
 import type { CatalogProvider } from "../../model-catalog/index.js";
 import { forHarness, renderName } from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
@@ -17,7 +21,10 @@ export type TierModels = Record<ClaudeTier, string>;
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code's tier slots, which its picker and
  * `/model` offer, each filled with the newest model carrying the tier word,
  * so a provider that serves no Claude model still answers every slot with
- * one of its own.
+ * one of its own. A provider whose ids carry no tier word at all has nothing
+ * to answer with, and then the platform's preferred model stands in, so that
+ * provider's slots name the model the platform means rather than whichever id
+ * it happens to list last.
  */
 export function tierModels(candidates: readonly string[]): TierModels | null {
   const ids = chatModels(candidates);
@@ -25,8 +32,17 @@ export function tierModels(candidates: readonly string[]): TierModels | null {
   const [fable, opus, sonnet, haiku] = CLAUDE_TIERS.map((t) =>
     newestOfTier(ids, t),
   );
+  const tierless = !fable && !opus && !sonnet && !haiku;
+  const preferred = tierless
+    ? (preferredModelOf("work", [{ alias: "", listed: ids }])?.upstreamId ??
+      null)
+    : null;
   const fallback =
-    opus ?? sonnet ?? haiku ?? [...ids].sort(compareModelVersions).at(-1)!;
+    preferred ??
+    opus ??
+    sonnet ??
+    haiku ??
+    [...ids].sort(compareModelVersions).at(-1)!;
   return {
     fable: fable ?? fallback,
     opus: fallback,
@@ -71,7 +87,10 @@ function tierOf(
  * when the session's provider lists neither that id nor a deployment of it.
  * A provider whose models carry no tier word has no tiers to answer with,
  * so there every slot call runs on the session's own model, whichever
- * provider filled the slot. A call on the session's own provider for a
+ * provider filled the slot — except that bare Sonnet call, which runs on the
+ * platform's preferred classifier, the one role whose model nothing else in
+ * the agent names: CurveBender answers its work slots with DeepSeek and would
+ * otherwise send the classifier to that same reasoning model. A call on the session's own provider for a
  * model it no longer lists, a slot the process holds from before a listing
  * change, is read by its tier the same way. Null when the call names a
  * model the session's own provider lists among its tiers, or no tier at
@@ -95,8 +114,19 @@ export function tierModelOnSessionProvider(input: {
   };
   const ownView = viewOf(own.alias);
   const ownHasTiers = ownView.some((e) => tierWordOf(e.upstreamId) !== null);
-  const toOwnTier = (tier: ClaudeTier): string => {
-    if (!ownHasTiers) return renderName(own, binding);
+  const toOwnTier = (tier: ClaudeTier, bare = false): string => {
+    if (!ownHasTiers) {
+      const classifier =
+        bare && tier === "sonnet"
+          ? preferredModelOf("classifier", [
+              { alias: own.alias, listed: ownView.map((e) => e.upstreamId) },
+            ])
+          : null;
+      const target = classifier
+        ? ownView.find((e) => e.upstreamId === classifier.upstreamId)
+        : undefined;
+      return renderName(target ?? own, binding);
+    }
     const ownSlots = tierModels(ownView.map((e) => e.upstreamId));
     const target = ownSlots
       ? ownView.find((e) => e.upstreamId === ownSlots[tier])
@@ -114,7 +144,7 @@ export function tierModelOnSessionProvider(input: {
       const id = e.upstreamId.toLowerCase();
       return id === bare || id.endsWith(`/${bare}`);
     });
-    return tier && !ownListsBare ? toOwnTier(tier) : null;
+    return tier && !ownListsBare ? toOwnTier(tier, true) : null;
   }
   const sameProvider = asked.alias === own.alias;
   const askedView = sameProvider ? ownView : viewOf(asked.alias);

@@ -416,6 +416,17 @@ export type {
   BedrockPins,
   KeyCheckTemplateId,
 } from "./modules/connections/providers.js";
+export {
+  PREFERRED_MODELS,
+  modelMatches,
+  modelTokens,
+  preferredModelOf,
+} from "./modules/connections/preferred-models.js";
+export type {
+  ModelRole,
+  PreferredModel,
+  ProviderListing,
+} from "./modules/connections/preferred-models.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
   KB_AGGREGATE_MCP_SERVER,

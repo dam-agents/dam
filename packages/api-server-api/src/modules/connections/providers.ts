@@ -102,12 +102,9 @@ export function curveBenderEnvMappings(): EnvMapping[] {
       "ANTHROPIC_DEFAULT_MODEL",
       "ANTHROPIC_DEFAULT_FABLE_MODEL",
       "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL",
       "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     ].map((envName) => ({ envName, placeholder: CURVE_BENDER_WORK_MODEL })),
-    {
-      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
-    },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "CLAUDE_CODE_AUTO_MODE_SERVER", placeholder: "0" },
     { envName: "ENABLE_TOOL_SEARCH", placeholder: "false" },

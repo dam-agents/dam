@@ -101,7 +101,11 @@ describe("convertedDefaultModel", () => {
     "claude-sonnet-5-5",
   ];
   const convert = (setting: string | null, ran: string[] = []) =>
-    convertedDefaultModel({ setting, alias: "anthropic", listed: LISTED, ran });
+    convertedDefaultModel({
+      setting,
+      providers: [{ alias: "anthropic", listed: LISTED }],
+      ran,
+    });
 
   // TEST_SCENARIO: a tier word, as Claude Code's settings hold it, is the provider's newest model of exactly that tier.
   it("takes the newest model of the tier", () => {
@@ -148,8 +152,7 @@ describe("convertedDefaultModel", () => {
     expect(
       convertedDefaultModel({
         setting: "opus",
-        alias: "ibm",
-        listed: ["aws/claude-sonnet-5-5"],
+        providers: [{ alias: "ibm", listed: ["aws/claude-sonnet-5-5"] }],
         ran: [],
       }),
     ).toBeNull();
@@ -158,7 +161,11 @@ describe("convertedDefaultModel", () => {
   // TEST_SCENARIO: Haiku on a provider that lists none runs on its newest Sonnet, as the gateway served it before the Model Router, and is noted; Haiku where it is listed, or any other tier missing, is not substituted.
   it("runs Haiku on the newest Sonnet only where the provider has no Haiku", () => {
     const ibm = (setting: string, listed: string[]) =>
-      convertedDefault({ setting, alias: "ibm", listed, ran: [] });
+      convertedDefault({
+        setting,
+        providers: [{ alias: "ibm", listed }],
+        ran: [],
+      });
     expect(
       ibm("haiku", ["aws/claude-sonnet-4-6", "aws/claude-sonnet-5-5"]),
     ).toEqual({ model: "ibm/aws/claude-sonnet-5-5", changedFrom: "haiku" });
@@ -180,16 +187,18 @@ describe("convertedDefaultModel", () => {
     expect(convert("claude-opus-3")).toBeNull();
   });
 
-  // TEST_SCENARIO: the harness's own default is the model the Agent's calls mostly ran when the provider lists it, and a model they ran less never stands in for an unlisted one.
+  // TEST_SCENARIO: the harness's own default is the model the Agent's calls mostly ran when the provider lists it; a model they ran less never stands in for an unlisted one, so that case falls to the platform's preferred model.
   it("takes the model the agent mostly ran for the harness default", () => {
     expect(convert("default", ["claude-opus-4-8", "claude-opus-3"])).toBe(
       "anthropic/claude-opus-4-8",
     );
-    expect(convert("default", ["claude-opus-3", "claude-opus-4-8"])).toBeNull();
+    expect(convert("default", ["claude-opus-3", "claude-opus-4-8"])).toBe(
+      "anthropic/claude-opus-5-5",
+    );
     expect(convert(null, ["claude/claude-sonnet-5-5"])).toBe(
       "anthropic/claude-sonnet-5-5",
     );
-    expect(convert("default", [])).toBeNull();
+    expect(convert("default", [])).toBe("anthropic/claude-opus-5-5");
   });
 });
 
@@ -199,8 +208,7 @@ describe("convertedDefaultModel on a provider that prefixes its ids", () => {
     const convert = (listed: string[]) =>
       convertedDefaultModel({
         setting: null,
-        alias: "ibm",
-        listed,
+        providers: [{ alias: "ibm", listed }],
         ran: ["claude-sonnet-5-5"],
       });
     expect(convert(["aws/claude-sonnet-5-5", "aws/claude-opus-5-5"])).toBe(
@@ -364,12 +372,37 @@ describe("the one-time default conversion", () => {
     expect(notes).toEqual([{ changedFrom: "haiku" }]);
   });
 
-  // TEST_SCENARIO: several providers fit, and nothing says which one the person meant, so the default is saved as not set for the owner to pick.
-  it("saves not set when several providers fit", async () => {
-    const { c, writes } = converter({ granted: [ANTHROPIC, IBM] });
-    expect(await c.convert("a")).toBe("not-set");
+  // TEST_SCENARIO: several providers fit, so no provider's own order can say which one the person meant; the platform's preferred model list decides, and the provider that supplies it is saved with it.
+  it("lets the preferred model list decide across several providers", async () => {
+    const ibm = view("listed", ["aws/claude-sonnet-5-5"]);
+    const two: HarnessCatalogView = {
+      ...ibm,
+      providers: [
+        { ...ibm.providers[0]!, connectionId: "lite", alias: "ibm" },
+        {
+          ...ibm.providers[0]!,
+          connectionId: "anth",
+          alias: "anthropic",
+          models: [
+            {
+              name: "claude/anthropic/claude-opus-5-5",
+              upstreamId: "claude-opus-5-5",
+            },
+          ] as never,
+        },
+      ],
+    };
+    const { c, writes } = converter({
+      granted: [IBM, ANTHROPIC],
+      catalog: two,
+    });
+    expect(await c.convert("a")).toBe("converted");
     expect(writes).toEqual([
-      { harness: "claude-code", provider: null, model: null },
+      {
+        harness: "claude-code",
+        provider: "anth",
+        model: "anthropic/claude-opus-5-5",
+      },
     ]);
   });
 

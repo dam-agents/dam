@@ -621,18 +621,19 @@ describe("Claude Code's tier slots", () => {
   });
 
   /** TEST_SCENARIO: The slot's provider fills every tier with one model
-   * (the platform's newest, or Anthropic's one Opus here), so the slot, not
-   * the word, says which tier was asked: the smallest. The platform's
-   * models carry no tier word, so a session on its DeepSeek runs every
-   * slot call on that DeepSeek, whether the slot is Anthropic's Haiku or
-   * the platform's own newest model, never on the ladder's guess; and a
-   * session on a provider the agent no longer holds fails the side call as
-   * the main turn would, never on the provider the session left. */
+   * (the platform's preferred DeepSeek, or Anthropic's one Opus here), so
+   * the slot, not the word, says which tier was asked: the smallest. The
+   * platform's models carry no tier word, so a session on its DeepSeek runs
+   * every slot call on that DeepSeek, whether the slot is Anthropic's Haiku
+   * or the platform's own model, never on the ladder's guess; an id that
+   * fills no slot at all stays where it asked, as one the provider lists;
+   * and a session on a provider the agent no longer holds fails the side
+   * call as the main turn would, never on the provider the session left. */
   it("reads a shared slot as the smallest tier, keeps a tierless provider on the session's model, and fails with the session", async () => {
     seen.length = 0;
     await call(
       "/v1/messages",
-      { model: "claude/platform/qwen-9", messages: [] },
+      { model: "claude/platform/deepseek-v4.1-flash", messages: [] },
       { "x-test-session": "s-ibm", ...sideCall },
     );
     expect(seen[0]!.path).toBe("/ibm/v1/messages");
@@ -644,17 +645,17 @@ describe("Claude Code's tier slots", () => {
     );
     expect(seen[1]!.path).toBe("/ibm/v1/messages");
     expect(seen[1]!.body.model).toBe("aws/claude-haiku-4-5");
-    for (const model of [
-      "claude/anthropic/claude-haiku-5-5",
-      "claude/platform/qwen-9",
-    ]) {
+    for (const [model, runs] of [
+      ["claude/anthropic/claude-haiku-5-5", "deepseek-v4.1-flash"],
+      ["claude/platform/qwen-9", "qwen-9"],
+    ] as const) {
       await call(
         "/v1/messages",
         { model, messages: [] },
         { "x-test-session": "s-platform", ...sideCall },
       );
       expect(seen.at(-1)!.path).toBe("/platform/v1/messages");
-      expect(seen.at(-1)!.body.model).toBe("deepseek-v4.1-flash");
+      expect(seen.at(-1)!.body.model).toBe(runs);
     }
     const gone = await call(
       "/v1/messages",

@@ -140,24 +140,20 @@ describe("curve-bender connection template", () => {
     });
   });
 
-  it("reserves Sonnet for the classifier and pins work slots to DeepSeek", async () => {
+  it("pins every work slot to DeepSeek and leaves the classifier to the router", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
     for (const name of [
       "ANTHROPIC_MODEL",
       "ANTHROPIC_DEFAULT_MODEL",
       "ANTHROPIC_DEFAULT_FABLE_MODEL",
       "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL",
       "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     ]) {
       expect(envOf(contributions, name)).toMatchObject({
         placeholder: "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
       });
     }
-    expect(
-      envOf(contributions, "ANTHROPIC_DEFAULT_SONNET_MODEL"),
-    ).toMatchObject({
-      placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
-    });
     expect(envOf(contributions, "CLAUDE_CODE_AUTO_MODE_SERVER")).toMatchObject({
       placeholder: "0",
     });
