@@ -11,6 +11,7 @@ const settingsTabSchema = z.enum([
   "schedules",
   "slack-workspaces",
   "analytics",
+  "operator",
   "features",
   "about",
 ]);

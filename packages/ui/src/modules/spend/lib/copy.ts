@@ -116,6 +116,33 @@ export function ceilingLine(spentMicros: number, amountMicros: number): string {
 export const CEILING_HELP =
   "Your operator sets this ceiling for you. You cannot change it.";
 
+export const CEILINGS_TITLE = "Spend ceilings";
+
+export const CEILINGS_HELP =
+  "The most a user's agents may spend on paid providers in one UTC day. At the ceiling, their model calls stop until the day resets, and nobody can continue them.";
+
+export const CEILINGS_EMPTY = "No user has a spend ceiling of their own.";
+
+export const CEILINGS_LOAD_ERROR = "Couldn't load the spend ceilings.";
+
+export const SET_CEILING = "Set a spend ceiling";
+
+export const SET_CEILING_HINT =
+  "Give one user a daily maximum of their own, by their email.";
+
+export function ceilingDefaultLine(defaultMicros: number | null): string {
+  return defaultMicros === null
+    ? "No default spend ceiling: users without their own have none."
+    : `Users without their own spend ceiling: ${bareSpend(defaultMicros, "usd")} a day.`;
+}
+
+export function ceilingPerDay(amountMicros: number): string {
+  return `${bareSpend(amountMicros, "usd")} a day`;
+}
+
+export const CEILING_APPLIES_NEXT_CALL =
+  "It applies to the user's next model call.";
+
 export function nearerLimitLine(
   kind: "owner" | "ceiling",
   leftMicros: number,

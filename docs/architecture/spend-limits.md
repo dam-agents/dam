@@ -231,7 +231,7 @@ It counts the same spend as the own limit: the user's metered dollar spend on pa
 At the ceiling, the gate refuses the call and asks nothing, because "continue" cannot lift it.
 When the ceiling and a soft limit are both reached, the ceiling's refusal applies.
 
-A platform operator ([security-and-credentials](security-and-credentials.md#identity)) sets a user's own ceiling with `dam spend ceiling`, and names the user by email.
+A platform operator ([security-and-credentials](security-and-credentials.md#identity)) sets a user's own ceiling with `dam spend ceiling` or in the Operator tab of Settings, and names the user by email.
 A ceiling that exists can also be changed or removed by the user's id, so a user without an email stays manageable; a new ceiling always needs the email.
 The api-server looks the email up in Keycloak, and keeps one row per user in Postgres: the amount, the operator who set it last, and when.
 It logs every set, change and removal with the operator and the amounts before and after, so a removed ceiling also leaves a trace.
@@ -326,6 +326,10 @@ The screens:
   Bobcoins get their own line, which says that they are not in the total.
   A provider without a price shows "Not priced", and a free provider shows "No cost".
   For 30 days after T, and only when the telemetry store is on, a link opens the earlier estimates: the old view of the spend that each agent reported about itself.
+- **Settings, Operator tab:** only platform operators see this tab.
+  Its Spend ceilings section gives the default ceiling, then each user with a ceiling of their own: the amount, the operator who set it last, and when.
+  An operator sets a ceiling by the user's email, changes one, or removes one after a confirmation.
+  An email that no user has shows its error in the dialog.
 - **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
   Its help text gives the local time at which a day starts.
   The date range under the total starts at T when the period starts before T.
