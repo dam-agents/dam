@@ -269,7 +269,7 @@ test("pins a Session above every Agent", async ({ page }) => {
   await expect(agentRow).toBeFocused();
 });
 
-// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list and marks the control filtered; putting Chat back returns it to the Pinned section. Pins live in this browser's storage, so the delete runs in the same page: deleting the Session from its Pinned row removes it from the tree and drops its pin.
+// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list, which keeps only its New session row, and marks the control filtered; putting Chat back returns it to the Pinned section. Pins live in this browser's storage, so the delete runs in the same page: deleting the Session from its Pinned row removes it from the tree and drops its pin.
 test("filters, then deletes, a pinned Session", async ({ page }) => {
   test.setTimeout(120_000);
   await setNewLayout(true);
@@ -297,7 +297,7 @@ test("filters, then deletes, a pinned Session", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(pinnedSection).toHaveCount(0);
   await expect(node.getByTestId("session-row")).toHaveCount(0);
-  await expect(node.getByText("No sessions match the filter.")).toBeVisible();
+  await expect(node.getByTestId("sidebar-new-session-row")).toBeVisible();
   await expect(filter).toHaveAccessibleName("Filter sessions (filtered)");
 
   await filter.click();
