@@ -166,7 +166,13 @@ export function SidePanelShell({
   useEffect(() => {
     if (!mobileOverlay) return;
     const before = document.activeElement as HTMLElement | null;
-    mobileBackRef.current?.focus();
+    // UNIT_BOUNDARY_DESCRIPTION: a tabbed panel has no back button over a narrow page, so the keyboard starts on the X that closes it instead.
+    (tabbed
+      ? filePanelRef.current?.querySelector<HTMLElement>(
+          '[data-testid="side-panel-close"]',
+        )
+      : mobileBackRef.current
+    )?.focus();
     // UNIT_BOUNDARY_DESCRIPTION: over the page the panel is the only thing to reach, so Tab stays inside it; the element that opened it gets the keyboard back when it closes.
     const onTab = (e: KeyboardEvent) => {
       if (e.key !== "Tab" || e.defaultPrevented || layerAbove()) return;
@@ -212,7 +218,7 @@ export function SidePanelShell({
       releaseBackEntry();
       before?.focus();
     };
-  }, [mobileOverlay, closeMobilePanel]);
+  }, [mobileOverlay, tabbed, closeMobilePanel]);
 
   return (
     <div ref={setColumnsEl} className="flex flex-1 min-h-0 min-w-0">
@@ -255,9 +261,11 @@ export function SidePanelShell({
           tabbed
             ? cn(
                 mobilePanelOpen &&
-                  "max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-overlay",
-                // UNIT_BOUNDARY_DESCRIPTION: a page with the left rail under it leaves that rail standing beside the panel there, while a page with no rail keeps the whole width for the panel and shows the rail only inside the panel it lays over.
-                janui ? "max-md:left-14" : "max-md:left-0",
+                  cn(
+                    "max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-overlay",
+                    // UNIT_BOUNDARY_DESCRIPTION: a page with the left rail under it leaves that rail standing beside the panel it lays over, while a page with no rail keeps the whole width; the inset belongs to the open overlay, since a closed panel's rail sits in the page's own row.
+                    janui ? "max-md:left-14" : "max-md:left-0",
+                  ),
                 !janui && !mobilePanelOpen && "max-md:hidden",
               )
             : cn(

@@ -25,15 +25,22 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { DOCS_URL } from "../../../constants.js";
+import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: these are the buttons that open the side panel, so they draw the document icon JanUI gave artifacts whatever shell the page has; artifact links and lists elsewhere keep that layout's own icon.
+// UNIT_BOUNDARY_DESCRIPTION: the tiled rail is the Unified right toolbar's own surface, so its Artifacts tile draws the document icon whatever shell the page has; every other button that opens the panel, and every artifact link and list, keeps the layout's own icon.
 export const SIDE_PANEL_TABS: readonly {
   tab: SidePanelTab;
   label: string;
   icon: CarbonIconType;
+  tileIcon?: CarbonIconType;
 }[] = [
-  { tab: "artifacts", label: "Artifacts", icon: DocumentAttachment },
+  {
+    tab: "artifacts",
+    label: "Artifacts",
+    icon: ArtifactIcon,
+    tileIcon: DocumentAttachment,
+  },
   { tab: "files", label: "Files", icon: Folder },
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
@@ -75,7 +82,8 @@ export function SidePanelTabButtons({
   tiles?: boolean;
 }) {
   const rail = placement === "rail";
-  return tabs.map(({ tab, label, icon: Icon }) => {
+  return tabs.map(({ tab, label, icon: Icon, tileIcon }) => {
+    const TileIcon = tileIcon ?? Icon;
     const badge = badges[tab];
     const shown = badge && badge.count > 0 ? badge : null;
     const content = shown?.label ?? label;
@@ -89,7 +97,7 @@ export function SidePanelTabButtons({
           className={railTile(active === tab)}
           onClick={() => onSelect(tab)}
         >
-          {icons[tab] ?? <Icon size={RAIL_GLYPH} />}
+          {icons[tab] ?? <TileIcon size={RAIL_GLYPH} />}
           {shown && (
             <span
               data-testid={`side-panel-badge-${tab}`}

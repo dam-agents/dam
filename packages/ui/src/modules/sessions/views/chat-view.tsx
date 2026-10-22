@@ -1340,7 +1340,10 @@ export function ChatView() {
               .join(" · ")}
           </h1>
           {!newLayout && (
-            <header className="@container flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-4">
+            <header
+              data-testid="chat-top-bar"
+              className="@container flex h-12 shrink-0 items-center gap-2 border-b border-border px-4"
+            >
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <MobileMenuButton />
                 <span
@@ -1390,9 +1393,6 @@ export function ChatView() {
                 data-chat-status
                 className="flex shrink-0 items-center gap-2"
               >
-                {processesEnabled && (
-                  <ProcessesIndicator agentId={selectedAgent} />
-                )}
                 <ChatHeaderStatus
                   selectedAgent={selectedAgent}
                   agents={agents}
@@ -1403,6 +1403,9 @@ export function ChatView() {
                 />
               </div>
               <div className="flex shrink-0 items-center gap-1 md:hidden">
+                {processesEnabled && (
+                  <ProcessesIndicator agentId={selectedAgent} />
+                )}
                 <SidePanelTabButtons
                   tabs={SIDE_PANEL_TABS.filter(
                     ({ tab }) => tab === "artifacts" || tab === "files",
