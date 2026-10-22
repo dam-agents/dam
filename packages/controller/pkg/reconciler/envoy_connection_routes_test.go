@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -44,6 +45,26 @@ func addressHeaderOf(route ev) string {
 		return ""
 	}
 	return headers[0].(ev)["string_match"].(ev)["exact"].(string)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: pathSpecifiers collects every route match specifier in a rendered bootstrap, by kind, so a test can check the shape Envoy accepts rather than only the value it routes on.
+func pathSpecifiers(node any, out map[string][]string) map[string][]string {
+	switch v := node.(type) {
+	case map[string]any:
+		for key, child := range v {
+			if (key == "prefix" || key == "path_separated_prefix") && len(v) <= 2 {
+				if value, ok := child.(string); ok {
+					out[key] = append(out[key], value)
+				}
+			}
+			pathSpecifiers(child, out)
+		}
+	case []any:
+		for _, child := range v {
+			pathSpecifiers(child, out)
+		}
+	}
+	return out
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: matchPrefix reads a route's path specifier, whether it is a plain prefix or a segment-safe one.
@@ -774,6 +795,38 @@ func matchesSegments(path, prefix string) bool {
 	}
 	rest := path[len(prefix):]
 	return rest == "" || rest[0] == '/'
+}
+
+// TEST_SCENARIO: Envoy validates a route's path_separated_prefix against `^[^?#]+[^?#/]$` and refuses the whole bootstrap when a value fails it, so every one it emits is checked on a render that carries each route shape: an exact scoped path, a scope that ends in a separator, the host-wide scope, and a rewrite.
+func TestRenderEnvoyBootstrap_MatchSpecifiersPassEnvoyValidation(t *testing.T) {
+	exact := connectionChain(curveBenderHost,
+		scopedCredential("conn-cbd", "platform-conn-cbd", "Authorization", curveBenderHost, "/v1/messages"))
+	trailing := connectionChain("api.openai.com",
+		scopedCredential("conn-oai", "platform-conn-oai", "Authorization", "api.openai.com", "/v1/*"))
+	bob := connectionChain("bob.example.com",
+		connectionCredential("conn-bob", "platform-conn-bob", "Authorization", "bob.example.com"))
+	bob.PathRewrites = []envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}}
+
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{exact, trailing, bob}, false)
+	require.NoError(t, err)
+	specs := pathSpecifiers(mustParseBootstrap(t, got), map[string][]string{})
+
+	segmentPrefix := regexp.MustCompile(`^[^?#]+[^?#/]$`)
+	require.NotEmpty(t, specs["path_separated_prefix"], "an exact scoped path needs a segment-safe match")
+	for _, value := range specs["path_separated_prefix"] {
+		assert.Regexp(t, segmentPrefix, value, "Envoy refuses the bootstrap for this value")
+	}
+
+	// TEST_SCENARIO: a scope that already ends at a boundary stays a plain prefix, as does the host-wide scope and every rewrite.
+	assert.Contains(t, specs["prefix"], "/v1/", "the OpenAI scope ends in a separator")
+	assert.Contains(t, specs["prefix"], "/", "the catch-all of a host-wide chain")
+	assert.Contains(t, specs["prefix"], "/inference/v1/", "Bob's rewrite happens before the catch-all")
+	assert.NotContains(t, specs["path_separated_prefix"], "/v1/")
+	assert.NotContains(t, specs["path_separated_prefix"], "/inference/v1/")
+
+	// TEST_SCENARIO: the exact scoped path is segment-matched both unaddressed and under the egress prefix, so a longer path cannot borrow the key.
+	assert.Contains(t, specs["path_separated_prefix"], "/v1/messages")
+	assert.Contains(t, specs["path_separated_prefix"], "/__platform_conn/conn-cbd/v1/messages")
 }
 
 func TestBuildChainForwardRoutes_DeploymentKeyCoversItsOwnPathsOnly(t *testing.T) {

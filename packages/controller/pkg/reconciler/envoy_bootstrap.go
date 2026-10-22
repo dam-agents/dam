@@ -657,9 +657,9 @@ func buildChainForwardRoutes(c envoyHostChain) []any {
 	return append(routes, buildUnaddressedRoutes(c)...)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a credential's path scope is whole path segments, so the route that grants it matches on a segment boundary: /v1/messages keys /v1/messages/count_tokens but not /v1/messagesX. The host-wide scope keeps its plain prefix.
+// UNIT_BOUNDARY_DESCRIPTION: a credential's path scope is whole path segments, so the route that grants it matches on a segment boundary: /v1/messages keys /v1/messages/count_tokens but not /v1/messagesX. A scope that ends in a separator, and the host-wide scope, keep their plain prefix: it already ends at a boundary, and Envoy refuses a path_separated_prefix whose last character is a separator.
 func scopeMatch(scope, match string) ev {
-	if scope == "/" {
+	if scope == "/" || strings.HasSuffix(match, "/") {
 		return ev{"prefix": match}
 	}
 	return ev{"path_separated_prefix": match}

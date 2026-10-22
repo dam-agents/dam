@@ -73,8 +73,15 @@ func skippedForRivals(filter ev, innerName string, rivals []string) ev {
 }
 
 func addressedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
-	entry := scopedRoute(c, connectionID, scope, match, rewrite)
-	entry["match"] = scopeMatch(scope, match)
+	return addAddress(routeEntry(c, connectionID, scope, scopeMatch(scope, match), rewrite), connectionID)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a rewrite route adds only the rewrite, so its match stays the plain prefix it was before path scopes were segment-safe.
+func addressedRewriteRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
+	return addAddress(routeEntry(c, connectionID, scope, ev{"prefix": match}, rewrite), connectionID)
+}
+
+func addAddress(entry ev, connectionID string) ev {
 	entry["match"].(ev)["headers"] = []any{
 		ev{"name": connectionAddressHeader, "string_match": ev{"exact": connectionID}},
 	}
@@ -84,21 +91,21 @@ func addressedRoute(c envoyHostChain, connectionID, scope, match, rewrite string
 func buildConnectionAddressRoutes(c envoyHostChain, connectionID string) []any {
 	emitted := map[string]bool{}
 	var routes []any
-	add := func(scope, match, rewrite string) {
+	add := func(route ev, match string) {
 		if emitted[match] {
 			return
 		}
 		emitted[match] = true
-		routes = append(routes, addressedRoute(c, connectionID, scope, match, rewrite))
+		routes = append(routes, route)
 	}
 	for _, scope := range c.ScopesOf(connectionID) {
 		for _, r := range c.PathRewrites {
 			if !scopeCovers(scope, r.Prefix) {
 				continue
 			}
-			add(r.Prefix, r.Prefix, r.Replacement)
+			add(addressedRewriteRoute(c, connectionID, r.Prefix, r.Prefix, r.Replacement), r.Prefix)
 		}
-		add(scope, scope, "")
+		add(addressedRoute(c, connectionID, scope, scope, ""), scope)
 	}
 	return routes
 }
