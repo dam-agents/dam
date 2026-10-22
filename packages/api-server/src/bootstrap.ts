@@ -1053,6 +1053,8 @@ export async function bootstrap() {
           ?.runtimeCapabilities ?? null,
       specHarness: async (agentId) =>
         (await agentsRepo.get(agentId))?.spec.harness,
+      kitDefaultModel: async (agentId) =>
+        (await agentsRepo.get(agentId))?.starterKitDefaultModel ?? null,
       modelsRanBy: async (agentId, hours) =>
         metricsReader
           ? (await metricsReader.tokenSpendByModel([agentId], { hours }))

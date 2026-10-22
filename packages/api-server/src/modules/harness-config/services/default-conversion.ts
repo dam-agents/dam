@@ -57,6 +57,7 @@ export function createDefaultConverter(deps: {
     harness: string,
   ) => Promise<HarnessCatalogView | null>;
   modelsRanBy: (agentId: string, hours: number) => Promise<string[]>;
+  kitDefaultModel: (agentId: string) => Promise<string | null>;
   movedToNewImage: (agentId: string) => Promise<boolean>;
   isRunning: (agentId: string) => Promise<boolean>;
   wake: (agentId: string) => Promise<WakeStamp | null>;
@@ -127,6 +128,7 @@ export function createDefaultConverter(deps: {
       listed:
         group.status === "listed" ? group.models.map((m) => m.upstreamId) : [],
       ran: needsRan ? await modelsRan(agentId) : [],
+      declared: await deps.kitDefaultModel(agentId),
     });
     return save(
       agentId,
