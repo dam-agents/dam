@@ -560,6 +560,7 @@ describe("the user's control of Startup Items", () => {
     const startupItems: StartupItemStore = {
       available: () => true,
       list: () => list.map((i) => ({ ...i, disabled: disabled.get(i.id)! })),
+      create: () => "written",
       setDisabled: async (id, value) => {
         if (id === "readonly") throw new Error("EROFS: read-only file system");
         disabled.set(id, value);

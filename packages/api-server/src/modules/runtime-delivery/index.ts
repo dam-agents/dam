@@ -14,6 +14,7 @@ export {
   initializationEvent,
   kitUpdateEvent,
   sessionPairFields,
+  startupItemsEvent,
   workspaceCommandEvent,
   agentInstructionsEvent,
   workspaceSeedEvent,

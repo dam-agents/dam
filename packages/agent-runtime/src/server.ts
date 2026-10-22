@@ -619,6 +619,7 @@ const {
   service: processesService,
   keepMarks,
   startupItemEnv,
+  declareStartupItems,
 } = processes.start({
   agentHome: homeDir,
   runtimePid: process.pid,
@@ -661,6 +662,7 @@ const reconcileOnState = imageSkillReconciler
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
   onSessionDefaults: (defaults) => acpRuntime.receiveDefaults(defaults),
+  onStartupItems: declareStartupItems,
   onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
   manifests: harnessManifests,
   defaultHarness,

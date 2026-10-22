@@ -9,6 +9,7 @@ import type {
   RuntimeChannelService,
   SessionDefaultsEventPayload,
   SessionDirectoryEntry,
+  StartupItemsEventPayload,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { noticeStream } from "../../core/notice-stream.js";
@@ -31,6 +32,7 @@ import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createAgentInstructionsPlugin } from "./drivers/agent-instructions-plugin.js";
 import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
+import { createStartupItemsPlugin } from "./drivers/startup-items-plugin.js";
 import {
   createInitializationPlugin,
   createSubAgentOutcomePlugin,
@@ -88,6 +90,7 @@ export interface ComposeRuntimeChannelOpts {
   invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
   onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
+  onStartupItems: (payload: StartupItemsEventPayload) => Promise<void>;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
@@ -188,6 +191,9 @@ export async function composeRuntimeChannel(
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
     createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
+  );
+  registry.register(
+    createStartupItemsPlugin({ onStartupItems: opts.onStartupItems }),
   );
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),

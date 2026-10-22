@@ -876,6 +876,7 @@ export type {
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
+  StartupItemsEventPayload,
 } from "agent-runtime-api";
 
 export {

@@ -1,4 +1,8 @@
-import type { AgentCreateInput, SessionPair } from "api-server-api";
+import type {
+  AgentCreateInput,
+  SessionPair,
+  StartupItemsEventPayload,
+} from "api-server-api";
 
 import type { RuntimeMutator } from "../services/runtime-mutator.js";
 
@@ -35,6 +39,13 @@ export const workspaceCommandEvent = (
   at: Date,
 ): OutboxEvent =>
   workspaceEvent("workspace-command", idPrefix, agentId, { command }, at);
+
+export const startupItemsEvent = (
+  agentId: string,
+  payload: StartupItemsEventPayload,
+  at: Date,
+): OutboxEvent =>
+  workspaceEvent("startup-items", "kit-startup-items", agentId, payload, at);
 
 export const agentInstructionsEvent = (
   agentId: string,

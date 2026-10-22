@@ -269,6 +269,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "session-defaults" },
     defaultOn: true,
   },
+  "startup-items": {
+    binding: { impl: "startup-items" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([
