@@ -10,18 +10,23 @@ const CSS = `
   h1 { font-size: 20px; margin-bottom: 8px; }
   p { font-size: 14px; color: light-dark(#57534e, #a8a29e); }
   .brand { font-size: 12px; margin-top: 16px; color: light-dark(#78716c, #78716c); }
+  form { margin-top: 16px; }
+  button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 6px; border: 1px solid light-dark(#dde1e6, #393939); background: light-dark(#fff, #262626); color: inherit; cursor: pointer; }
 `;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The page an Environment address answers with
- * when it does not relay: a missing Environment, a visitor who may not open
- * it, or one that is not answering. It never names the Environment's owner or
- * anything the visitor could not already see in the address.
+ * UNIT_BOUNDARY_DESCRIPTION: The page an Environment address, or the share
+ * host's front door for one, answers with when it does not let the visitor
+ * through: a missing Environment, a visitor who may not open it, or one that
+ * is not answering. It never names the Environment's owner or anything the
+ * visitor could not already see in the address. A refusal on the share host
+ * offers to switch account, by the share host's own sign-out.
  */
 export function renderGatePage(input: {
   brandName: string;
   title: string;
   body: string;
+  switchAccount?: { action: string; next: string };
 }): string {
   return `<!doctype html>
 <html lang="en">
@@ -35,6 +40,11 @@ export function renderGatePage(input: {
 <body><div class="center"><div class="card">
 <h1>${escapeHtml(input.title)}</h1>
 <p>${escapeHtml(input.body)}</p>
+${
+  input.switchAccount
+    ? `<form method="post" action="${escapeHtml(input.switchAccount.action)}"><input type="hidden" name="next" value="${escapeHtml(input.switchAccount.next)}"><button type="submit">Switch account</button></form>`
+    : ""
+}
 <p class="brand">An Environment on ${escapeHtml(input.brandName)}</p>
 </div></div></body>
 </html>`;

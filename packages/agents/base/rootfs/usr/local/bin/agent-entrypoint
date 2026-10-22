@@ -61,6 +61,9 @@ if [ ! -f "$home/.initialized" ]; then
 	echo "agent-entrypoint: seeded home from image workspace"
 fi
 mkdir -p "$home/work" "$home/.local/state/rc"
+# Homes seeded before the home's AGENTS.md became the owner's carry the image's
+# link to the platform instructions there; every harness now gets those apart.
+[ "$(readlink "$home/AGENTS.md" 2>/dev/null)" != ../../etc/AGENTS.md ] || rm -f "$home/AGENTS.md"
 
 # docker runs only on a machine. Its client passes the agent's gateway, which
 # differs per agent, to every container and build; the rest of the file, logins

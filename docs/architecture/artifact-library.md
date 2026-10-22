@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -72,7 +72,13 @@ The dialog warns the owner there that viewers can read and change the Agent's da
 A viewer uses a shared interactive page as its owner does: they act under the owner's grant, as a person in a shared Slack channel does.
 On the share host the content host injects the owner's bridge, and the share page relays the frame's messages to two share-host routes, one for requests and one for prompts.
 The relayed frame is sandboxed without same-origin, so its document has an opaque origin of its own: no other artifact's code on the content origin can script it, even when it opens the share page in a popup.
-The share page accepts a message only from that frame's window, and the routes accept a call only from the share origin, so artifact code cannot use the viewer's share session behind the share page's back.
+The share page accepts a message only from that frame's window.
+The routes accept a call only with the share page's **relay token**, so artifact code cannot use the viewer's share session behind the share page's back.
+The content host is on the same site as the share host, so the browser sends the share session cookie with a call any artifact forges; the cookie alone never authorizes a relayed call.
+Rendering the share page mints the token, bound to the viewer, their share sign-in, the artifact and its current version, and writes it into the page's own relay script, which sends it as a bearer credential; the frame never sees it.
+A call without the token, or with one minted for another viewer, sign-in, artifact or version, is refused and logged, whatever its cookie and origin.
+The token lives as long as a share sign-in, so a page left open keeps working; a reload mints a fresh one, and signing out or a new version makes the old one useless.
+The routes also accept a call only from the share origin, as a second layer.
 A page that relies on its own browser storage loses it there, as in the in-app preview.
 Each call is checked again from the start: the viewer's share session and the viewer list, then that the artifact is still restricted, interactive and published by an Agent, and that its owner has the interactive-artifacts feature on.
 A page the owner makes private or plain, a viewer the owner removes, and turning the feature off all stop the next call.
@@ -121,12 +127,12 @@ A sharing change — visibility, retention date, and the viewer allowlist — is
 User-generated content is never served from the app origin.
 Two dedicated by-link hosts (separate subdomains, both mandatory, wired through the cluster ingress and configured via Helm) carry it:
 
-- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), and the read-only knowledge-base MCP endpoint — never an app route.
+- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), the read-only knowledge-base MCP endpoint and the front door of [Environments](environments.md#addresses) (`/e/<address>`) — never an app route.
 - The **content host** serves *only* the framed artifact document and its raw bytes.
   It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
   The one frame whose bridge reaches an Agent — a restricted interactive page on its share page — does not run on that origin at all: its sandbox gives it an opaque origin, so artifact code on the content origin cannot script it.
 
-The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, plus the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` — requests for the content host go to the content app, and everything else falls through to the platform surface.
+The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` and the [Environments](environments.md#addresses) front door under `/e` — requests for the content host go to the content app, and everything else falls through to the platform surface.
 The app origin shares nothing with either by-link origin — no cookie, no token — so a malicious artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies, because none of them exist on its origin.
 
 **Share session.** A restricted artifact needs a viewer identity on the share host, and that identity is deliberately not the app's.
@@ -252,7 +258,7 @@ The surface says who filed it: agent publishes arrive over the per-agent MCP ser
 ## Where the code lives
 
 - Contract (types, schemas, tRPC router): [`packages/api-server-api/src/modules/artifact-library/`](../../packages/api-server-api/src/modules/artifact-library/)
-- Implementation (service, repository, share and content apps, share sign-in, render tokens, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
+- Implementation (service, repository, share and content apps, share sign-in, render and relay tokens, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
 - Blob storage port it consumes: [`packages/api-server/src/modules/artifacts/`](../../packages/api-server/src/modules/artifacts/)
 - UI (side panel tab and docked preview): [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
 - Share and content host wiring (ingress rules, env, share Keycloak client): [`helm/`](../../helm/)

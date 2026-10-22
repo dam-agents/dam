@@ -1,12 +1,13 @@
 import type { ProviderStatusService } from "api-server-api";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
+import { emit, EventType } from "../../../events.js";
 import {
   SOURCE_TEMPLATES,
   sourcesInUse,
   type SourceReading,
 } from "../domain/public-signals.js";
-import { nextSnapshot, statusView } from "../domain/status.js";
+import { evaluationOf, nextSnapshot, statusView } from "../domain/status.js";
 import type { PublicSources } from "../infrastructure/public-sources.js";
 import type { CallWindow } from "../infrastructure/redis-call-window.js";
 import type { StatusSnapshots } from "../infrastructure/redis-status-snapshot.js";
@@ -59,6 +60,11 @@ export function createProviderStatusService(deps: {
           );
       }
       await deps.snapshots.write(snapshot);
+      emit({
+        type: EventType.ProviderStatusEvaluated,
+        checkedAt: now,
+        ...evaluationOf(snapshot, { calls, readings }),
+      });
     },
 
     async view() {

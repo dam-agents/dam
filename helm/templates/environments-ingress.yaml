@@ -1,7 +1,7 @@
 {{- /* The one wildcard Ingress for Environment addresses,
-       `<endpoint>-<environment>.<environments.domain>`, and the sign-in host
-       `signin.<environments.domain>`: every name under the domain goes to the
-       api-server, which finds the Environment from the host name. Rendered
+       `<endpoint>-<environment>.<environments.domain>`: every name under the
+       domain goes to the api-server, which finds the Environment from the
+       host name; visitors sign in on the share host. Rendered
        only with a domain. On OpenShift it becomes a wildcard Route, which the
        cluster must allow once (WildcardsAllowed). */ -}}
 {{- with .Values.environments.domain }}

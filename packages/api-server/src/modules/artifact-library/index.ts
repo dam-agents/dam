@@ -13,9 +13,14 @@ export { createArtifactLibraryRoutes } from "./library-routes.js";
 export {
   composeShareAuth,
   composeShareBridge,
+  composeShareRelayTokens,
   composeShareRenderTokens,
 } from "./compose.js";
-export { createShareAuthRoutes } from "./viewer/share-auth-routes.js";
+export {
+  createShareAuthRoutes,
+  loginPath,
+  readShareSignIn,
+} from "./viewer/share-auth-routes.js";
 export {
   createKeycloakShareIdentity,
   keycloakShareJwksUrl,

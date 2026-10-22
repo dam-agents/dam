@@ -208,8 +208,8 @@ environments:
   # -- Furthest ahead an Environment's expiry may be set, in days.
   expiryMaxDays: 30
   # -- The one wildcard Ingress for `*.<domain>`, which sends every
-  # Environment address and the sign-in host `signin.<domain>` to the
-  # api-server. Rendered only with a domain. On OpenShift it becomes a
+  # Environment address to the api-server; visitors sign in on the share
+  # host (`urls.share`), which hands each address a session of its own. Rendered only with a domain. On OpenShift it becomes a
   # wildcard Route, which the cluster must allow once:
   # `oc patch ingresscontroller/default -n openshift-ingress-operator --type=merge -p '{"spec":{"routeAdmission":{"wildcardPolicy":"WildcardsAllowed"}}}'`.
   ingress:
@@ -1012,10 +1012,6 @@ keycloak:
   # `{urls.share}/auth/login`. No api audience mapper: its tokens are
   # rejected by the api-server on purpose.
   shareClientId: platform-share
-  # -- Public client for Environment sign-in (authorization code + PKCE) on
-  # the fixed sign-in host `signin.<environments.domain>`. No api audience
-  # mapper: its tokens are rejected by the api-server on purpose.
-  environmentsClientId: platform-environments
 
   # -- Additional redirect URIs and web origins to register on the public
   # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite
@@ -1387,6 +1383,11 @@ apiServer:
   # next retry. Default 30 minutes. Per-CLI read
   # timeouts are an external ceiling.
   approvalHoldSeconds: 1800
+
+  # -- How long a provider outage lasts before the owners of the affected
+  # agents get a message (a Go duration). Detection already takes up to about
+  # two minutes, and most overload bursts end within ten.
+  outageAlertDelay: "15m"
 
   # -- Frame silence (seconds) on a channel turn before the relay asks the
   # agent runtime whether the turn is still running; a turn the runtime

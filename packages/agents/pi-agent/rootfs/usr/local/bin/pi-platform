@@ -6,6 +6,11 @@ shared="$HOME/.pi/agent"
 # LiteLLM connections set this placeholder for Claude Code. Pi would count it as
 # an Anthropic key and fall back to api.anthropic.com when no model resolves.
 unset ANTHROPIC_AUTH_TOKEN
+# The platform instructions ride Pi's global context file, so the home's
+# AGENTS.md stays the owner's; an owner's own file there is kept.
+mkdir -p "$shared"
+[ -f "$shared/AGENTS.md" ] && [ ! -L "$shared/AGENTS.md" ] ||
+  ln -sfn /etc/AGENTS.md "$shared/AGENTS.md"
 # With the Model Router one Pi process serves every provider, so the shared
 # directory is the only one; the per-provider lease directories are for the
 # pre-router runtime.

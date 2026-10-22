@@ -145,6 +145,7 @@ export {
   claudeTierOf,
   compareModelVersions,
   newestOfTier,
+  tierWordOf,
   type ClaudeTier,
 } from "./modules/harness-config/model-tiers.js";
 export type {
@@ -241,6 +242,7 @@ export {
   subAgentOutcomeEventPayload,
   sessionMessageEventPayload,
   workspaceCommandEventPayload,
+  agentInstructionsEventPayload,
   workspaceSeedEventPayload,
   helloInput,
 } from "./modules/runtime/types.js";

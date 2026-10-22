@@ -151,6 +151,7 @@ export function serviceHarness(opts: {
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
     providerBalance: unused(),
+    credentialProbe: { probe: async () => ({ status: "passed" }) },
     providerKeyProbe: { probe: async () => ({ ok: true }) },
     oauthCallbackUrl: "https://example.com/callback",
     brandName: opts.brandName,

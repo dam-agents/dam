@@ -1,9 +1,11 @@
-// TEST_OVERVIEW: the page a user types a connection secret on reads its request from the link, says where the secret goes in plain terms, and tells a user who opened another user's link not to enter a secret there.
+// TEST_OVERVIEW: the page a user types a connection secret on reads its request from the link, says where the secret goes in plain terms, and tells a user who opened another user's link not to enter a secret there. After the save it shows what the token check found, and a held secret says whether it failed the check or could not be checked.
 import { describe, expect, it } from "vitest";
 
 import {
+  credentialCheckDetails,
   destinationDetail,
   destinationLabel,
+  heldCheckCopy,
   readSecretRequestId,
   secretRequestErrorCopy,
 } from "../../modules/connections/lib/secret-request.js";
@@ -38,5 +40,35 @@ describe("secret request page", () => {
       /Never enter a secret on a link someone else sent you/,
     );
     expect(secretRequestErrorCopy("NOT_FOUND").title).toMatch(/expired/);
+  });
+
+  // TEST_SCENARIO: a passed check names the account, the expiry and the scopes, so the user sees they pasted the right token; an empty scope list reads as none, not as a missing line.
+  it("lists what a passed check found", () => {
+    expect(
+      credentialCheckDetails({
+        status: "passed",
+        account: "octocat",
+        scopes: [],
+        at: "2026-10-22T08:00:00.000Z",
+      }),
+    ).toEqual(["Account: octocat", "Scopes: none"]);
+    expect(
+      credentialCheckDetails({
+        status: "passed",
+        expiresAt: "2026-11-21T10:00:00.000Z",
+        at: "2026-10-22T08:00:00.000Z",
+      }),
+    ).toEqual([expect.stringMatching(/^Expires: .*2026/)]);
+  });
+
+  // TEST_SCENARIO: a failed check and a check that could not run are told apart, since only the first says the secret is wrong.
+  it("tells a failed check from one that could not run", () => {
+    const at = "2026-10-22T08:00:00.000Z";
+    expect(heldCheckCopy({ status: "failed", at }).title).toMatch(
+      /did not pass/,
+    );
+    expect(heldCheckCopy({ status: "unchecked", at }).title).toMatch(
+      /could not be checked/,
+    );
   });
 });

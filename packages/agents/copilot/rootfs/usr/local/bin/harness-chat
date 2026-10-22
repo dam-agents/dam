@@ -1,5 +1,6 @@
 #!/bin/sh
 . /usr/local/lib/copilot-router.sh
+. /usr/local/lib/copilot-agents-md.sh
 # The session's model is sent over ACP (session/set_config_option) before each
 # prompt, so one process serves every model the router routes.
 exec copilot --acp --stdio "$@"

@@ -350,8 +350,6 @@ spec:
               value: {{ .Values.keycloak.cliClientId | quote }}
             - name: KEYCLOAK_SHARE_CLIENT_ID
               value: {{ .Values.keycloak.shareClientId | quote }}
-            - name: KEYCLOAK_ENVIRONMENTS_CLIENT_ID
-              value: {{ .Values.keycloak.environmentsClientId | quote }}
             - name: KEYCLOAK_API_AUDIENCE
               value: {{ .Values.keycloak.apiAudience | quote }}
             - name: KEYCLOAK_API_CLIENT_ID
@@ -500,6 +498,8 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: OUTAGE_ALERT_DELAY
+              value: {{ .Values.apiServer.outageAlertDelay | quote }}
             - name: ACP_TURN_STALL_PROBE_SECONDS
               value: {{ .Values.apiServer.acpTurnStallProbeSeconds | quote }}
             - name: ONCE_SCHEDULE_AGENT_MAX_OPEN

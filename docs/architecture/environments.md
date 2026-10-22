@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -69,7 +69,7 @@ The **host label** is the Environment's name with a random suffix, so two Agents
 Endpoint names carry no hyphen, so the first hyphen of an address splits the endpoint from the host.
 Without `environments.domain` Environments have no addresses.
 
-**One wildcard Ingress** for `*.<environments.domain>`, which the chart renders with the domain, sends every address and the sign-in host `signin.<environments.domain>` to the api-server.
+**One wildcard Ingress** for `*.<environments.domain>`, which the chart renders with the domain, sends every address to the api-server.
 It carries one wildcard certificate, from `environments.ingress.tls.secretName`, which cert-manager can issue through an issuer with a DNS-01 solver named in `environments.ingress.annotations`; on OpenShift the Ingress becomes a wildcard Route, which the cluster allows once with `WildcardsAllowed`.
 The local cluster serves `*.env.localhost` over plain HTTP.
 
@@ -79,11 +79,17 @@ The api-server names the declared ports on every request, so a port the Environm
 - **Who may open it.** The owner keeps a list of people per agent, by email, which every Environment of that agent inherits; the owner is always in, and an empty list means only the owner.
   The Owning Agent can narrow the list for one Environment (`access`), never widen it: an email off the owner's list is refused, and the agent cannot read the owner's list.
   A visitor matches by the email their identity provider verified, compared trimmed and lowercased; an account without one matches nobody's list.
-  A visitor who may not open it gets a page naming the account they are signed in with and telling them whom to ask.
-- **Sign-in** happens once, on the sign-in host, with an identity provider client of its own whose tokens the platform's API refuses.
-  The sign-in host hands the address the visitor came from a code that works once, for that address only, within a minute, and the address trades it for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
+- **The share host is the front door.** An address without a session gives the browser a sign-in secret in a cookie of its own and sends a page load to `/e/<address>` on the [share host](artifact-library.md#the-share-host--trust-boundary), with the secret's hash.
+  The share host signs the visitor in with its own session and identity provider client, the ones a restricted artifact uses, so a visitor signs in once for both; one already signed in passes straight through, with no page and no click.
+  It checks the owner and the effective list, and either shows a refusal naming the account the visitor is signed in with, whom to ask and a switch of account, or hands the address a code that works once, for that address and the browser holding the secret only, within a minute, so a code that leaks through a log, the history or a referrer opens nothing elsewhere.
+  The address trades the code for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
+- **The address checks again on every request**, by its session and the list as it stands, so a person taken off the list is refused at their next request.
+  The session lasts only while the share host's session it came from does; signing out of an address ends both and the identity provider's session, and comes back to the share host's sign-in.
   Every address reserves `/.platform/` for the hand-off and sign-out, which never reach the app.
-- **Cookies and headers.** The relay never passes on the platform's session cookie or an `Authorization` header, passes on every cookie the app set itself, and never lets the app set the session cookie.
+- **Only the visitor's own pages act in their name.** Every page under the platform's parent domain is the same site as an address, so the browser sends the session cookie with a request any of them makes, an artifact or another Environment's app included.
+  The address refuses every request whose `Origin` is not one of its own Environment's endpoints — a script's call, a form post, a WebSocket — before it reaches the app; a link, a typed address, a frame and an image carry no origin and pass.
+  A page whose `Referrer-Policy` is `no-referrer` sends its own form posts with the opaque origin `null`, which passes only when the browser also marks the request `Sec-Fetch-Site: same-origin`, a header no page can set.
+- **Cookies and headers.** The relay never passes on the platform's own cookies (the session and the sign-in secret) or an `Authorization` header, passes on every cookie the app set itself, and never lets the app set the platform's.
   An app's cookie loses its `Domain` attribute, so it stays on the address that set it, and a WebSocket handshake passes no `Set-Cookie` at all.
   The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
 - **Wake.** A request to a sleeping Environment wakes it and waits until its runtime answers, not until the app does: a request that comes before the app listens gets the gate's "not answering" page, and the visitor tries again.

@@ -2,9 +2,11 @@ import type { Context } from "hono";
 
 import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
 import type { SharedResolution } from "../services/share-viewer-service.js";
+import type { ShareSignIn } from "./share-auth-routes.js";
 
 export type Authorized =
-  { ok: true; artifact: ArtifactRow } | { ok: false; response: Response };
+  | { ok: true; artifact: ArtifactRow; signIn?: ShareSignIn }
+  | { ok: false; response: Response };
 
 export type Authorize = (
   c: Context,
@@ -13,8 +15,11 @@ export type Authorize = (
 
 export const PRIVATE_NO_STORE = "private, no-store";
 
-export function allowed(artifact: ArtifactRow): Authorized {
-  return { ok: true, artifact };
+export function allowed(
+  artifact: ArtifactRow,
+  signIn?: ShareSignIn,
+): Authorized {
+  return signIn ? { ok: true, artifact, signIn } : { ok: true, artifact };
 }
 
 export function denied(response: Response): Authorized {

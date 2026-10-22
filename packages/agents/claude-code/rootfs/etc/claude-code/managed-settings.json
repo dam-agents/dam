@@ -11,6 +11,13 @@
     ]
   },
   "crossSessionInbound": "refuse",
+  "pluginConfigs": {
+    "agents-md@builtin": {
+      "options": {
+        "instructionFiles": "claude-md-and-agents-md"
+      }
+    }
+  },
   "hooks": {
     "SessionStart": [
       {

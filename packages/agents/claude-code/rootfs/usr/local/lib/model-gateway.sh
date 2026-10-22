@@ -24,6 +24,10 @@ else
 		export NO_PROXY="127.0.0.1,localhost,::1${NO_PROXY:+,$NO_PROXY}"
 		export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"
 		export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
+		# Claude Code then classes each call in a header; the router moves a
+		# side call's tier slot to the session's provider by it, never a
+		# main-conversation turn.
+		export CLAUDE_CODE_GATEWAY_HINT_HEADERS=1
 		# The router renders the catalog and resolves bare names per harness.
 		export ANTHROPIC_CUSTOM_HEADERS="X-Platform-Harness: claude-code${ANTHROPIC_CUSTOM_HEADERS:+
 $ANTHROPIC_CUSTOM_HEADERS}"

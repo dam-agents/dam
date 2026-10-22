@@ -29,6 +29,7 @@ import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js"
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
+import { createAgentInstructionsPlugin } from "./drivers/agent-instructions-plugin.js";
 import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
 import {
   createInitializationPlugin,
@@ -183,6 +184,7 @@ export async function composeRuntimeChannel(
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
+  registry.register(createAgentInstructionsPlugin({ log }));
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
     createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
