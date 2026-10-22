@@ -1,0 +1,55 @@
+#!/usr/bin/env node
+//MISE description="Test (with the real codex-acp, when CODEX_ACP names its dist/index.js) that harness-chat's in-memory patch applies to the pinned bundle and turns its title generator off"
+//MISE sources=["codex/rootfs/usr/local/bin/harness-chat", "codex/rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs", "codex/image.toml", ".mise/tasks/test/codex-acp-patch"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+// TEST_OVERVIEW: harness-chat loads codex-acp through codex-acp-patch.mjs. Loaded that way, the pinned bundle must carry the edit that keeps every title generator from starting an ephemeral thread, and the hook must never report the patch as not applied. Skipped when CODEX_ACP names no bundle, since the repository does not vendor codex-acp.
+
+const bundle = process.env.CODEX_ACP;
+if (!bundle) {
+  console.log("codex-acp-patch: skipped, set CODEX_ACP=<path to codex-acp dist/index.js> to run against the real adapter");
+  process.exit(0);
+}
+const patch = fileURLToPath(new URL("../../../codex/rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs", import.meta.url));
+const launcher = readFileSync(fileURLToPath(new URL("../../../codex/rootfs/usr/local/bin/harness-chat", import.meta.url)), "utf8");
+assert.match(launcher, /NODE_OPTIONS="--import=\/usr\/local\/share\/codex-platform\/codex-acp-patch\.mjs/, "harness-chat does not load the patch");
+
+const dir = mkdtempSync(join(tmpdir(), "codex-acp-patch-"));
+try {
+  // TEST_SCENARIO: A hook registered after the patch sees the source the patch returns for the bundle. It must carry the edited field and no trace of the original, and the bundle's own start must not matter: the probe exits as soon as the source was seen.
+  const probe = join(dir, "probe.mjs");
+  writeFileSync(
+    probe,
+    [
+      'import { registerHooks } from "node:module";',
+      "registerHooks({",
+      "  load(url, context, nextLoad) {",
+      "    const loaded = nextLoad(url, context);",
+      '    if (!url.endsWith("/codex-acp/dist/index.js")) return loaded;',
+      '    const source = Buffer.from(loaded.source).toString("utf8");',
+      '    const born = (source.match(/^  generated = true;$/gm) ?? []).length;',
+      '    const original = (source.match(/^  generated = false;$/gm) ?? []).length;',
+      '    process.stdout.write(`seen generated=true:${born} generated=false:${original}\\n`);',
+      "    process.exit(0);",
+      "  },",
+      "});",
+      `await import(${JSON.stringify(bundle)});`,
+    ].join("\n"),
+  );
+  const run = spawnSync(process.execPath, [probe], {
+    env: { ...process.env, NODE_OPTIONS: `--import=${patch}${process.env.NODE_OPTIONS ? ` ${process.env.NODE_OPTIONS}` : ""}` },
+    encoding: "utf8",
+    input: "",
+    timeout: 30_000,
+  });
+  assert.doesNotMatch(run.stderr, /codex-acp-patch: not applied/, `the hook refused the bundle:\n${run.stderr}`);
+  assert.match(run.stdout, /seen generated=true:1 generated=false:0/, `the bundle loaded without the edit:\nstdout: ${run.stdout}\nstderr: ${run.stderr}`);
+  console.log("codex-acp-patch: the pinned codex-acp loads with its title generator turned off");
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
