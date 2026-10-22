@@ -76,6 +76,7 @@ export function AvatarPicker({
   };
   const set = (next: boolean) => {
     clearTimeout(timer.current);
+    if (!next) holding.current = false;
     setOpen(next);
   };
   const hover = {
