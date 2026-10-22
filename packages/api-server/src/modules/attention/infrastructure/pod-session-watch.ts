@@ -29,10 +29,12 @@ export interface PodSessionClient {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A one-off read waits for its socket to open, and
- * the socket retries for as long as the pod cannot be reached. An Agent deleted
+ * UNIT_BOUNDARY_DESCRIPTION: A read waits for its socket to open, and the
+ * socket retries for as long as the pod cannot be reached. An Agent deleted
  * before its pod ever answered is never reached, so without a bound the read
- * and its retries outlive the Agent until the process restarts.
+ * and its retries outlive the Agent until the process restarts. A live watch's
+ * read is bounded too: a pod that stops answering must not leave a capture
+ * waiting until the watch is released.
  */
 const READ_TIMEOUT_MS = 10_000;
 
@@ -70,7 +72,9 @@ export function createPodSessionClient(
 
       return {
         listSessions: async () => {
-          const page = await client.sessions.list.query();
+          const page = await client.sessions.list.query(undefined, {
+            signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+          });
           return { sessions: page.sessions, incomplete: !!page.incomplete };
         },
         close() {
