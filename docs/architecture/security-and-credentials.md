@@ -75,6 +75,8 @@ It runs in-cluster as a Helm subchart and is the OIDC provider for every authent
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
 The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
+Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
+An install with no meanings shows only the heading.
 Upstream identity providers themselves (e.g. w3id) are realm configuration managed outside the chart.
 
 Anyone the realm lets sign in can start: there is no approval step, and a first sign-in goes through the Terms-of-Use gate straight to the agent list.
