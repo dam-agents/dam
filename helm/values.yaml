@@ -1978,8 +1978,9 @@ controller:
   # gateway overhead is deliberately not counted — price it into these
   # defaults). Enforced by the controller at the 0→1 scale-up; a user at the
   # ceiling must pause, stop, or shrink a running sandbox before starting
-  # another. Raise (or lower) per user with a UserBudget CR named
-  # `budget-<keycloak-sub>` in the agent namespace.
+  # another. A platform operator raises (or lowers) them per user in the
+  # Operator tab of Settings or with `dam budget`, which write a UserBudget CR
+  # named `budget-<keycloak-sub>` in the agent namespace.
   userBudgets:
     defaultCpu: "8"
     defaultMemory: "16Gi"

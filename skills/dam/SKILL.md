@@ -183,9 +183,10 @@ dam agent create my-agent --wait --json
 dam run my-agent -p "Summarise the open pull requests"
 ```
 
-The answer streams to stdout, and stderr ends with the reason the turn stopped.
+The answer streams to stdout, and stderr ends with the reason the turn stopped and the session id, as `session: <id>`.
 For a long prompt, use `--prompt-file <path>` (`-` reads stdin).
-To continue the same conversation, pass `--session <id>`; `dam session list my-agent --json` gives the ids.
+To continue the same conversation, pass that id as `--session <id>`.
+`--json` prints one object on stdout at the end instead of streaming: `{ status, sessionId, stopReason, text }`.
 
 For long work, start it and come back later:
 
@@ -195,7 +196,7 @@ dam run get my-agent <session-id> --wait
 dam run cancel my-agent <session-id>
 ```
 
-`--async` prints only the session id on stdout.
+`--async` prints only the session id on stdout (with `--json`, `{ status: "pending", sessionId }`).
 A run that outlasts `--timeout` keeps going on the agent, and the CLI prints its session id so you can check it with `dam run get`.
 
 A new run starts on the agent's default harness and model.

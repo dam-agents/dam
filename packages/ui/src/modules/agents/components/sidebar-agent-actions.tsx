@@ -1,4 +1,4 @@
-import { AddComment, Settings } from "@carbon/icons-react";
+import { AddComment, Tools } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -37,7 +37,7 @@ export function SidebarAgentActions({
         <AddComment size={14} />
       </RowIconButton>
       <RowIconButton label="Configure agent" onClick={onConfigure}>
-        <Settings size={14} />
+        <Tools size={14} />
       </RowIconButton>
       {hasChannelActions(channels) && (
         <RowActionsMenu
