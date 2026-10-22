@@ -186,7 +186,7 @@ dam run get my-agent <session-id> --wait
 dam run cancel my-agent <session-id>
 ```
 
-`--async` prints only the session id on stdout.
+`--async` prints only the session id on stdout (with `--json`, `{ status: "pending", sessionId }`).
 A run that outlasts `--timeout` keeps going on the agent, and the CLI prints its session id so you can check it with `dam run get`.
 
 A new run starts on the agent's default harness and model.
