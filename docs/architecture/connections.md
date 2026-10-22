@@ -318,7 +318,7 @@ The install sets that key in its chart values (exact keys in [`helm/values.yaml`
 It is not behind a feature flag: where the key is set, every user has it.
 The Connection is the deployment's, managed exactly like the built-in preset's below — provisioned by the user's own Connection listing, following the deployment's key, removed when the deployment drops the key, and refused to the user's own create, update and delete.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
-Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance.
+Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
 The Connection allows CurveBender's host on every path and scopes only the key, because an egress rule matches by host and path glob, not by a credential's scope.
 Each prefix is matched at a segment boundary, so `/v1/messagesX` is a path outside the scope, not a longer match ([credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).

@@ -25,6 +25,7 @@ import {
   type ProviderRowDef,
   providerRowName,
 } from "../lib/provider-rows.js";
+import { CurveBenderInfoDialog } from "./curve-bender-info-dialog.js";
 import { ProviderBalance } from "./provider-balance.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import type { ProviderItem } from "./provider-item.js";
@@ -74,6 +75,7 @@ export function ProviderSection({
     provider: ProviderPresetType;
     item?: ProviderItem;
   } | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const disconnectProvider = async (item: ProviderItem) => {
     const ok = await showConfirm(
@@ -114,6 +116,8 @@ export function ProviderSection({
               const item = itemOf(row);
               const managed =
                 row.type === "platform" ||
+                row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
+              const managedInfo =
                 row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
               return (
                 <ProviderRow
@@ -158,10 +162,18 @@ export function ProviderSection({
                       />
                     )
                   }
-                  connectedAction={onConnected && "Use"}
+                  connectedAction={
+                    item && managedInfo && !onConnected
+                      ? "About"
+                      : onConnected && "Use"
+                  }
                   onOpen={
                     managed
-                      ? item && onConnected && (() => onConnected(item.id))
+                      ? item && onConnected
+                        ? () => onConnected(item.id)
+                        : item && managedInfo
+                          ? () => setInfoOpen(true)
+                          : undefined
                       : () =>
                           item && onConnected
                             ? onConnected(item.id)
@@ -171,6 +183,8 @@ export function ProviderSection({
               );
             })}
       </div>
+
+      {infoOpen && <CurveBenderInfoDialog onClose={() => setInfoOpen(false)} />}
 
       {dialog && (
         <ProviderConnectDialog
