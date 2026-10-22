@@ -187,7 +187,7 @@ try:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if args.layout:
         shutil.rmtree(dest, ignore_errors=True)
-        out.rename(dest)
+        shutil.move(out, dest)
     else:
         tree_tar(out, dest, (0, 0))
 finally:

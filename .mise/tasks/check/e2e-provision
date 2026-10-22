@@ -25,15 +25,16 @@ mkdir -p "$tmp/repo/.mise/tasks/cluster" "$tmp/repo/etc/lima"
 : > "$tmp/repo/etc/lima/k3s-test.yaml"
 stub() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$tmp/repo/.mise/tasks/cluster/provision-host"; chmod +x "$tmp/repo/.mise/tasks/cluster/provision-host"; }
 # Two seconds instead of three minutes, no root, and a status, log and env of
-# this scenario's own rather than /tmp and this checkout: a wrapper still alive
+# this scenario's own (RUNNER_TEMP is the scenario's directory) rather than
+# the runner's temp directory and this checkout: a wrapper still alive
 # from another scenario then writes into its own tree, never into this one.
 scenario() {
   dir="$tmp/$1"
   mkdir -p "$dir"
   : > "$dir/env"
-  launch="$(sed -e '/^sudo sysctl/d' -e "s|/tmp/k3s-provision|$dir/k3s-provision|g" <<< "$launch_raw")"
-  wait="$(sed -e "s|/tmp/k3s-provision|$dir/k3s-provision|g" -e 's|timeout 180|timeout 2|' <<< "$wait_raw")"
-  export GITHUB_ENV="$dir/env"
+  launch="$(sed -e '/^sudo sysctl/d' <<< "$launch_raw")"
+  wait="$(sed -e 's|timeout 180|timeout 2|' <<< "$wait_raw")"
+  export GITHUB_ENV="$dir/env" RUNNER_TEMP="$dir"
 }
 provision() { ( cd "$tmp/repo" && bash -e -c "$launch" ); }
 settle() { for _ in $(seq 100); do [ -s "$dir/k3s-provision.status" ] && return 0; sleep 0.1; done; return 1; }
