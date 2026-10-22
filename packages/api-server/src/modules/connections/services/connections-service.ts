@@ -1272,34 +1272,8 @@ export function createConnectionsService(deps: {
 
       const affectedAgents = await deps.repo.listAgentsForConnection(id);
 
-      const paths = new Set<string>();
-      switch (conn.auth.kind) {
-        case "oauth":
-          paths.add(conn.auth.accessTokenRef.path);
-          if (conn.auth.refreshTokenRef) {
-            paths.add(conn.auth.refreshTokenRef.path);
-          }
-          break;
-        case "client-credentials":
-          paths.add(conn.auth.accessTokenRef.path);
-          paths.add(conn.auth.clientSecretRef.path);
-          break;
-        case "github-app":
-          paths.add(conn.auth.accessTokenRef.path);
-          paths.add(conn.auth.privateKeyRef.path);
-          break;
-        case "header":
-          paths.add(conn.auth.valueRef.path);
-          break;
-        case "sigv4":
-          paths.add(conn.auth.accessKeyIdRef.path);
-          break;
-        case "none":
-          break;
-      }
-      for (const path of paths) {
-        await deps.secretStore.delete({ path });
-      }
+      const secretPath = connectionSecretPath(conn.auth);
+      if (secretPath) await deps.secretStore.delete({ path: secretPath });
 
       await deps.repo.delete(id, deps.ownerId);
 
@@ -1327,7 +1301,7 @@ export function createConnectionsService(deps: {
         detail: {
           templateId: conn.templateId,
           authKind: conn.auth.kind,
-          secretsDeleted: paths.size,
+          secretsDeleted: secretPath ? 1 : 0,
           affectedAgents: affectedAgents.length,
         },
       });
