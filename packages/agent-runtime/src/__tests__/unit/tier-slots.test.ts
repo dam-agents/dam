@@ -2,9 +2,9 @@
  * TEST_OVERVIEW: Where a Claude Code side call on a tier runs when its session
  * is on another provider: the tier word or slot the call names on the
  * session's provider, else the session's own model. CurveBender's ids carry no
- * tier word, so its slots are filled from the platform's preferred work model,
- * and a bare Sonnet name is not reinterpreted here: the classifier reaches
- * Claude Code through its own knob (classifier-env.test.ts).
+ * tier word, so its slots are filled from the platform's preferred work model.
+ * The classifier's own model comes from its knob, not a slot
+ * (harness-env.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import type { ProviderAlias } from "api-server-api";

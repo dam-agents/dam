@@ -53,18 +53,7 @@ export function routerEnvFor(input: {
     env.PLATFORM_MODEL_ROUTER_SERVES = "1";
   for (const name of binding.credentialEnv ?? [])
     env[name] = ROUTER_PLACEHOLDER;
-  const serving = providers
-    .map((p) => ({
-      ...p,
-      entries: forHarness(p.entries, input.harness, binding),
-    }))
-    .filter(
-      (p) => p.entries.length > 0 && servesHarness(p, input.harness, binding),
-    )
-    .sort(
-      (a, b) =>
-        aliasOrder(a.alias, input.harness) - aliasOrder(b.alias, input.harness),
-    );
+  const serving = servingProviders({ ...input, binding });
   const defaultProvider = serving[0];
   const defaultEntry = defaultProvider?.entries[0];
   if (defaultEntry)
@@ -128,22 +117,35 @@ export function servedModels(input: {
   providers: readonly CatalogProvider[];
 }): { name: string; contextWindow: number | null }[] {
   const { binding } = input;
+  return servingProviders(input).flatMap((p) =>
+    p.entries.map((e) => ({
+      name: renderName(e, binding),
+      contextWindow: e.metadata.contextWindow,
+    })),
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the providers that serve a harness, each reduced
+ * to the entries it serves there, in the order a default provider is resolved:
+ * an alias order when the harness has one, else the providers' own.
+ */
+function servingProviders(input: {
+  harness: string;
+  binding: ModelRouterBinding;
+  providers: readonly CatalogProvider[];
+}): CatalogProvider[] {
   return input.providers
     .map((p) => ({
       ...p,
-      entries: forHarness(p.entries, input.harness, binding),
+      entries: forHarness(p.entries, input.harness, input.binding),
     }))
     .filter(
-      (p) => p.entries.length > 0 && servesHarness(p, input.harness, binding),
+      (p) =>
+        p.entries.length > 0 && servesHarness(p, input.harness, input.binding),
     )
     .sort(
       (a, b) =>
         aliasOrder(a.alias, input.harness) - aliasOrder(b.alias, input.harness),
-    )
-    .flatMap((p) =>
-      p.entries.map((e) => ({
-        name: renderName(e, binding),
-        contextWindow: e.metadata.contextWindow,
-      })),
     );
 }
