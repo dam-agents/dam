@@ -127,12 +127,8 @@ onboarding:
     Then ask the user for the target repository and the optimization
     objective. If they are unsure about the objective, run
     `/spotlights-objective-setting` with them. Clone the repository under the
-    work directory and confirm with the user which modules to include.
-    `--include` takes the extractor's qualified names: paths relative to the
-    source root it picks (the repository root, or a directory like `src/`),
-    with every level kept (`pkg/sub`, not `sub`); a run whose names match nothing
-    logs the available ones and stops after extraction. The models are pinned
-    in `~/.config/spotlights/models.yaml` for every step, so pass no
+    work directory. The models are pinned in
+    `~/.config/spotlights/models.yaml` for every step, so pass no
     `--claude-model` and no `--codex-model`: either flag overrides the file. A
     run resumes from its `--artifacts-dir`, and refuses to resume once any
     option has changed, so pass a fresh `--artifacts-dir` whenever you change
