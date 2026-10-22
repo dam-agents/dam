@@ -8,8 +8,9 @@
  * happens to list, and a classifier call on the session's own work model.
  * `work` decides a new agent's default model, `classifier` what Claude Code's
  * non-reasoning permission classifier runs on. The order is the preference:
- * the first entry a listing answers wins. `family` is the model's words and
- * `version` the digits right behind them, both as tokens of `modelTokens`.
+ * the first entry a listing answers wins. `family` is the model's words,
+ * `version` the digits right behind them and `variant` the word right behind
+ * those, all as tokens of `modelTokens`.
  */
 export type ModelRole = "work" | "classifier";
 
@@ -17,13 +18,19 @@ export interface PreferredModel {
   role: ModelRole;
   family: readonly string[];
   version: readonly string[];
+  variant?: string;
 }
 
 export const PREFERRED_MODELS: readonly PreferredModel[] = [
-  { role: "work", family: ["deepseek"], version: ["4", "1"] },
+  { role: "work", family: ["deepseek"], version: ["4", "1"], variant: "flash" },
   { role: "work", family: ["claude", "opus"], version: ["5", "5"] },
-  { role: "work", family: ["gpt"], version: ["6", "1"] },
-  { role: "classifier", family: ["nemotron"], version: ["3"] },
+  { role: "work", family: ["gpt"], version: ["6", "1"], variant: "sol" },
+  {
+    role: "classifier",
+    family: ["nemotron"],
+    version: ["3"],
+    variant: "ultra",
+  },
   { role: "classifier", family: ["claude", "sonnet"], version: ["5", "5"] },
 ];
 
@@ -55,15 +62,19 @@ export function modelTokens(upstreamId: string): string[] {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: whether a listed model is the one a list entry
  * names: the same family with the same version right behind it, an optional
- * `v` between them, and never a substitute. A different version is a different
- * model (DeepSeek 3.2 is not DeepSeek 4.1, and gpt-5.6 is not gpt-6), so a
- * listing that holds only another version falls through to the next entry
- * rather than running on it unseen.
+ * `v` between them, then the entry's variant if it has one, and never a
+ * substitute. A different version is a different model (DeepSeek 3.2 is not
+ * DeepSeek 4.1, and gpt-5.6 is not gpt-6), and so is a different variant
+ * (Nemotron 3 Nano is not the Ultra the platform prefers), so a listing that
+ * holds only one of those falls through to the next entry rather than running
+ * on it unseen. What may still follow is the build stamp providers append
+ * (`-1017`, `-20260101`) — digits only, so a word there is a variant.
  */
 export function modelMatches(
   tokens: readonly string[],
   pref: PreferredModel,
 ): boolean {
+  const stamp = /^\d+$/;
   return tokens.some((_, at) => {
     if (!pref.family.every((token, offset) => tokens[at + offset] === token))
       return false;
@@ -71,9 +82,16 @@ export function modelMatches(
       at +
       pref.family.length +
       (tokens[at + pref.family.length] === "v" ? 1 : 0);
-    return pref.version.every(
-      (token, offset) => tokens[versionAt + offset] === token,
-    );
+    const rest = tokens.slice(versionAt + pref.version.length);
+    if (
+      !pref.version.every(
+        (token, offset) => tokens[versionAt + offset] === token,
+      )
+    )
+      return false;
+    if (pref.variant === undefined)
+      return rest.every((token) => stamp.test(token));
+    return rest[0] === pref.variant;
   });
 }
 
