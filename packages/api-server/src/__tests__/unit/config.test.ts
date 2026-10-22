@@ -54,6 +54,44 @@ describe("loadConfig — turn watch invariants", () => {
   });
 });
 
+describe("loadConfig — version", () => {
+  const managed = [...Object.keys(REQUIRED_ENV), "PLATFORM_APP_VERSION"];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("recommends the CLI of a tagged release", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.24";
+    expect(loadConfig()).toMatchObject({
+      appVersion: "0.2.24",
+      recommendedClientCliVersion: "0.2.24",
+    });
+    process.env.PLATFORM_APP_VERSION = "0.2.24-rc3";
+    expect(loadConfig().recommendedClientCliVersion).toBe("0.2.24-rc3");
+  });
+
+  // TEST_SCENARIO: CD stamps a build from main `<version>-dev-<sha>`, a version npm never publishes. Recommending it would warn every CLI that is behind a release nobody can install.
+  it("recommends no CLI for a build from main", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.24-dev-db35e8abf4bd";
+    const config = loadConfig();
+    expect(config.appVersion).toBe("0.2.24-dev-db35e8abf4bd");
+    expect(config.recommendedClientCliVersion).toBeUndefined();
+  });
+});
+
 describe("loadConfig — object storage", () => {
   const OBJECT_KEYS = [
     "OBJECT_STORAGE_ENDPOINT",

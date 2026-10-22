@@ -48,9 +48,10 @@ function carriesMark(
  * UNIT_BOUNDARY_DESCRIPTION: Decides whether one row keeps the agent awake,
  * and who decided. The user's override wins over the agent's Keep Mark, and
  * the mark wins over the default. By default a Harness Task keeps the agent
- * awake and a Detached Process does not. A Turn Process never does, and takes
- * no decision. A Detached Process carries the agent's mark when any process in
- * its tree carries one: the PLATFORM_KEEP value a `platform-keep` launch passed
+ * awake and a Detached Process does not. A Turn Process and a Startup Item
+ * never do, and take no decision: an item starts again at every wake. A
+ * Detached Process carries the agent's mark when any process in its tree
+ * carries one: the PLATFORM_KEEP value a `platform-keep` launch passed
  * down, which every descendant inherits even through nohup or setsid, or the
  * pid and start time a `platform-keep --pid` named.
  */
@@ -62,7 +63,7 @@ export function createKeepResolver(
   const overrides = new Map(decisions.overrides.map((o) => [o.key, o]));
 
   return (tree: ProcessTree): KeepResolution => {
-    if (tree.kind === "turn")
+    if (tree.kind === "turn" || tree.kind === "startup-item")
       return { keepsAwake: false, keepSource: "default" };
     const override = overrides.get(tree.identity);
     if (override)

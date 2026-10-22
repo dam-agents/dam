@@ -32,8 +32,6 @@ const FILL_CHUNK_MIB = 256;
 const REAL_MIB = 256;
 // UNIT_BOUNDARY_DESCRIPTION: the room the node keeps for itself while the claim is at its ceiling: the runner pod, its kubelet and the next case all write there, so a fill that leaves less has taken the host rather than the claim.
 const HOST_HEADROOM_MIB = 1024;
-// UNIT_BOUNDARY_DESCRIPTION: the request the refused guest makes, of the few MiB an agent's next write needs.
-const NEXT_WRITE_MIB = 64;
 // UNIT_BOUNDARY_DESCRIPTION: a runner look renews every grant every 30 s (STORAGE_CHECK) and the guard moves at most once per 30 s (POOL_GUARD_BACKOFF), so a refusal that recovers does so inside this window; a guest refused after it is the wedge.
 const RENEWAL_MS = 75_000;
 // UNIT_BOUNDARY_DESCRIPTION: the guest's own free space in KiB, and what it can still write after it has. The awk program is in shell single quotes: inside double quotes the shell would expand `$4` itself and awk would print the whole row.
@@ -49,6 +47,9 @@ const token = refreshingToken();
 let probeId = "";
 let siblingId = "";
 let probeDisk = "";
+
+// UNIT_BOUNDARY_DESCRIPTION: how many siblings the share-move case can start: two rounds of up to three attempts, each starting at most two. Each has a name of its own, so a retried attempt never waits on the delete of the sibling it replaces to free a name, and setup clears every one of them from an earlier run.
+const MOVE_PEERS = 12;
 
 // UNIT_BOUNDARY_DESCRIPTION: what each machine's disk file takes on the owner's claim, in MiB, by the directory it sits in. A disk is sparse, so this is the room the machine has written and not the size it is sized at, and it is what the claim pays for that machine.
 function machineDisks(): Map<string, number> {
@@ -140,6 +141,41 @@ function guestAvailMiB(): number {
   return Math.round(Number(line.split(/\s+/)[3]) / 1024);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the guest marks its whole remaining room in one file, so a case reaches its share in one call whatever the pool is, and falls back to chunks when the filesystem refuses an allocation it cannot reserve whole: btrfs answers that to a request for the full free space, and a case that read the room figure alone would report the guard as broken when the fill never ran. The chunks go a size at a time and only get smaller, so the room left is under the smallest of them: an allocation is all or nothing, so a refused 256 MiB says nothing about a 64 MiB one, and stopping at the first refusal would leave the guest room the request after it is then allowed to take. The output is returned whole, so a caller reads the room the guest has left from the same command that filled it.
+function markRoom(id: string, dir: string): string {
+  return inGuest(
+    id,
+    [
+      `dir=${dir}`,
+      ROOM_KB,
+      'if fallocate -l "$(( room / 1024 ))M" "$dir/full" 2>"$dir/full.err"; then echo "fill=whole"; else',
+      'echo "fill=chunked"',
+      "for size in 256 128 64 32 16 8; do",
+      "n=0",
+      'while [ "$n" -lt 4096 ] && fallocate -l "${size}M" "$dir/part-${size}-$n" 2>/dev/null; do n=$((n+1)); done',
+      "done",
+      "fi",
+      "sync",
+      AVAIL_KB,
+    ].join("\n"),
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the test user's running vm machines other than the case's own, as one comparable key. A share is the claim's room divided among every running machine, so one of these starting or stopping moves the probe's share as much as the case's own sibling does. Specs of other projects run beside this one and own them — the idle sweep hibernates one after 5 minutes, and a spec can wake or start one at any time — so the case reads them and does not touch them (#5624).
+async function otherMachines(): Promise<string> {
+  return (await api.agents.list.query())
+    .filter(
+      (agent) =>
+        agent.vm &&
+        agent.id !== probeId &&
+        agent.id !== siblingId &&
+        agent.state === "running",
+    )
+    .map((agent) => agent.id)
+    .sort()
+    .join(" ");
+}
+
 async function waitFor(
   read: () => number,
   fits: (value: number) => boolean,
@@ -164,6 +200,10 @@ test.beforeAll(async () => {
     "e2e-storage-trim-peer",
     "e2e-storage-trim-peer-1",
     "e2e-storage-trim-peer-2",
+    ...Array.from(
+      { length: MOVE_PEERS },
+      (_, n) => `e2e-storage-trim-move-${n + 1}`,
+    ),
   ])
     await deleteAgentIfPresent(api, name);
   probeId = await createAgentOn(api, "vm", "e2e-storage-trim", harnessName);
@@ -248,37 +288,55 @@ test("room a home of small files frees goes back too", async () => {
   );
 });
 
-// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
+// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The user's other running machines belong to specs that run beside this one, and one of them that stops or starts during a round cancels the move the round waits for, so a round that fails while they changed is run again, up to three times; a round that fails while they held still fails the case. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_800_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
   await keepAwake(probeId);
   await keepAwake(siblingId);
   const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
+  let movePeers = 0;
   for (const round of [1, 2]) {
-    await keepAwake(probeId);
-    const base = guestAvailMiB();
-    await api.agents.delete.mutate({ id: siblingId });
-    siblingId = "";
-    await keepAwake(probeId);
-    const stopped = await waitFor(
-      guestAvailMiB,
-      (mib) => mib >= base + MOVE_MIB,
-      `round ${round}: the guest's free space did not grow when a machine stopped`,
-    );
-    siblingId = await createAgentOn(
-      api,
-      "vm",
-      `e2e-storage-trim-peer-${round}`,
-      harnessName,
-    );
-    await waitAgentState(api, siblingId, "running");
-    await keepAwake(probeId);
-    await waitFor(
-      guestAvailMiB,
-      (mib) => mib <= stopped - MOVE_MIB,
-      `round ${round}: the guest's free space did not fall when another machine started`,
-    );
+    for (let attempt = 1; ; attempt++) {
+      const others = await otherMachines();
+      try {
+        if (!siblingId) {
+          siblingId = await createAgentOn(
+            api,
+            "vm",
+            `e2e-storage-trim-move-${++movePeers}`,
+            harnessName,
+          );
+          await waitAgentState(api, siblingId, "running");
+        }
+        await keepAwake(probeId);
+        const base = guestAvailMiB();
+        await api.agents.delete.mutate({ id: siblingId });
+        siblingId = "";
+        await keepAwake(probeId);
+        const stopped = await waitFor(
+          guestAvailMiB,
+          (mib) => mib >= base + MOVE_MIB,
+          `round ${round}: the guest's free space did not grow when a machine stopped`,
+        );
+        siblingId = await createAgentOn(
+          api,
+          "vm",
+          `e2e-storage-trim-move-${++movePeers}`,
+          harnessName,
+        );
+        await waitAgentState(api, siblingId, "running");
+        await keepAwake(probeId);
+        await waitFor(
+          guestAvailMiB,
+          (mib) => mib <= stopped - MOVE_MIB,
+          `round ${round}: the guest's free space did not fall when another machine started`,
+        );
+        break;
+      } catch (error) {
+        if (attempt >= 3 || (await otherMachines()) === others) throw error;
+      }
+    }
   }
   expect(
     Math.abs((machineDisks().get(probeDisk) ?? 0) - probeDiskBefore),
@@ -286,7 +344,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
-// TEST_SCENARIO: a guest that writes past its share is refused by the guest, at its share and not at the claim's last block, and it is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is filled without writing bytes, so the guest's own filesystem counts it as used and the claim does not pay for it, and the case costs a disk of the size the install already gives it and works on any pool. Each comparison waits for one sample that meets both of its bounds, and the renewed one needs a grant the runner published after the case's own write, so a room the guard has not finished moving is neither accepted as healthy nor rejected as wedged. The refusal is read from the guest's own status and its own error file, never from a redirect into the data, which loses the error exactly when the disk is full.
+// TEST_SCENARIO: a guest the guard holds at its share is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is filled without writing bytes, so the guest's own filesystem counts it as used and the claim does not pay for it, and the case costs a disk of the size the install already gives it and works on any pool. Each comparison waits for one sample that meets both of its bounds, and the renewed one needs a grant the runner published after the case's own write, so a room the guard has not finished moving is neither accepted as healthy nor rejected as wedged. The refusal itself is the case after this one, which asks for more than any grant could give the guest so that no renewal can make its write fit.
 test("a writing agent stops at its share, and writes again when its share grows", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
@@ -334,22 +392,8 @@ test("a writing agent stops at its share, and writes again when its share grows"
       (mib) => mib <= diskBefore + SLACK_MIB,
       "the real bytes the guest deleted across a renewal never left the claim",
     );
-    // UNIT_BOUNDARY_DESCRIPTION: the guest marks its whole remaining room in one file, so the case reaches its share in one call whatever the pool is, and falls back to chunks when the filesystem refuses an allocation it cannot reserve whole: btrfs answers that to a request for the full free space, and a case that read the room figure alone would report the guard as broken when the fill never ran. The chunks go a size at a time and only get smaller, so the room left is under the smallest of them: an allocation is all or nothing, so a refused 256 MiB says nothing about a 64 MiB one, and stopping at the first refusal would leave the guest room the request below is then allowed to take.
-    const marking = inGuest(
-      probeId,
-      [
-        ROOM_KB,
-        'if fallocate -l "$(( room / 1024 ))M" /tmp/e2e-fill/full 2>/tmp/e2e-fill/full.err; then echo "fill=whole"; else',
-        'echo "fill=chunked"',
-        "for size in 256 128 64 32 16 8; do",
-        "n=0",
-        'while [ "$n" -lt 4096 ] && fallocate -l "${size}M" "/tmp/e2e-fill/part-${size}-$n" 2>/dev/null; do n=$((n+1)); done',
-        "done",
-        "fi",
-        "sync",
-        AVAIL_KB,
-      ].join("\n"),
-    );
+    // UNIT_BOUNDARY_DESCRIPTION: the guest's room after the fill, which is a share-size comparison and not the refusal: a guest the guard holds at its share has no room of a floor plus slack left, and every check below this line depends on the fill standing.
+    const marking = markRoom(probeId, "/tmp/e2e-fill");
     const availMiB = Math.round(
       Number(/avail=(\d+)/.exec(marking)?.[1]) / 1024,
     );
@@ -361,19 +405,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       availMiB,
       `the guest still had ${availMiB} MiB after marking its own room, and the fill reported ${marking}`,
     ).toBeLessThanOrEqual(GUARD_FLOOR_MIB + SLACK_MIB);
-    // UNIT_BOUNDARY_DESCRIPTION: the agent's next write, made of a guest whose room is already marked: a fixed few MiB, which the fill above leaves no room for at all — it stops only once the smallest chunk it tries is refused. So this is refused for the guard's reason and not the disk's arithmetic: it is the write a steadily writing agent makes next, and the wedge the user reports is one that is refused it while its share has room.
-    const refused = inGuest(
-      probeId,
-      `if fallocate -l ${NEXT_WRITE_MIB}M /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
-    );
-    expect(
-      refused,
-      `the guest was not refused with ${availMiB} MiB it could still write: ${refused}`,
-    ).toMatch(/probe=refused/);
-    expect(
-      refused,
-      "the guest must be refused for want of space, not for another reason",
-    ).toMatch(/No space left on device/);
+    // UNIT_BOUNDARY_DESCRIPTION: the refusal itself is the case after this one, which marks this fill again and asks for a write past any grant the guest could be given, rather than for the few MiB an agent's next write needs: a renewed allowance can return room between a fill and the write, and nothing here tells that renewal from a write wrongly allowed.
     // UNIT_BOUNDARY_DESCRIPTION: the fill only marks blocks, so the claim must not have paid for it: a disk that grew by the fill is the guard handing the guest room the guest never wrote.
     const afterFill = machineDisks().get(probeDisk) ?? 0;
     expect(
@@ -458,6 +490,41 @@ test("a writing agent stops at its share, and writes again when its share grows"
     await keepAwake(probeId).catch(() => undefined);
     await Promise.resolve()
       .then(() => inGuest(probeId, "rm -rf /tmp/e2e-fill"))
+      .catch(() => undefined);
+  }
+});
+
+// TEST_SCENARIO: a guest the guard holds at its share is refused its next write, and refused for want of space rather than another reason: that write is what a steadily writing agent makes next, and the wedge a user reports is an agent refused it while its share has room. The check is coarser than that wedge: it does not judge the write at the size of the guest's own grant, because a renewal can return room between the fill and the write and no guest-side figure says which allowance the guard has applied. So the fill marks the guest's whole remaining room, and the write then asks for more than any grant the guest could be given in the meantime — everything the claim has left below its 95% ceiling, which no grant exceeds even with one machine up, plus the floor every guest may write past its grant, the guard's step and this case's slack — so no room a renewal lands before the write can make it fit, and the guest being far over rather than at its share is what makes the refusal a refusal. A guest let past that bound is the defect, so the write is made once and never retried until it is refused.
+test("a guest held at its share is refused its next write", async () => {
+  test.setTimeout(900_000);
+  test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
+  await keepAwake(probeId);
+  // UNIT_BOUNDARY_DESCRIPTION: the claim's own figures, read before the fill so the bound is the largest one any grant could be: the runner grants a running machine an even part of what is left below 95% of the claim's capacity, and the claim's use only grows, so no grant published from here on exceeds this room however often it is renewed. The write adds the floor a guest may write past its grant, the guard's step beyond it and the slack the case's measurements carry, so the bound holds even if the guard is a whole move and a whole floor from where the case thinks it is.
+  const claim = claimKb();
+  const probeMiB =
+    Math.max(0, Math.round((0.95 * claim.capacity - claim.used) / 1024)) +
+    GUARD_FLOOR_MIB +
+    GUARD_STEP_MIB +
+    SLACK_MIB;
+  inGuest(probeId, "mkdir -p /tmp/e2e-refusal");
+  try {
+    markRoom(probeId, "/tmp/e2e-refusal");
+    const refused = inGuest(
+      probeId,
+      `if fallocate -l ${probeMiB}M /tmp/e2e-refusal/probe-$(date +%s%N) 2>/tmp/e2e-refusal/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-refusal/probe.err 2>/dev/null; fi`,
+    );
+    expect(
+      refused,
+      `the guest was not refused a write of ${probeMiB} MiB, which is past the whole room the claim has left below its ceiling and the floor a guest may write past its grant: ${refused}`,
+    ).toMatch(/probe=refused/);
+    expect(
+      refused,
+      "the guest must be refused for want of space, not for another reason",
+    ).toMatch(/No space left on device/);
+  } finally {
+    await keepAwake(probeId).catch(() => undefined);
+    await Promise.resolve()
+      .then(() => inGuest(probeId, "rm -rf /tmp/e2e-refusal"))
       .catch(() => undefined);
   }
 });

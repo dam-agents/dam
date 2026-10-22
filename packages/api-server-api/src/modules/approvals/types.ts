@@ -20,6 +20,7 @@ interface ExtAuthzPayload {
   method: string;
   path: string;
   viaAgentId?: string;
+  viaEnvironment?: string;
 }
 
 export type AcpPermissionOptionKind =

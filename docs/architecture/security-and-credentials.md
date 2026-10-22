@@ -91,6 +91,7 @@ The user agent flow:
 3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every resource the user creates (Agent CR, K8s credential Secret, etc.).
 
 The realm holds a **dedicated public client** for the artifact share host ([artifact-library](artifact-library.md#the-share-host--trust-boundary)): PKCE-only, redirect pinned to that host's sign-in callback, and no `platform-api` audience, so its tokens are rejected by the api-server.
+A second one serves Environment sign-in ([environments](environments.md#addresses)) the same way, its redirect pinned to the sign-in host under the environments domain.
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 
 Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.
@@ -234,6 +235,7 @@ The mechanics — L7 promotion, per-host chains, injection steps, request signin
 Each credentialed request goes through an ext_authz Check call against the api-server.
 Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service ALLOWs only the matching SA principal, so by the time a Check arrives the calling Agent is already proven cryptographically.
 The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
+An invocation sub-agent's request is decided by its driver's rules, and an [Environment](environments.md#network-access)'s by its Owning Agent's; its approval is filed as the Owning Agent's and names the Environment.
 
 A held request is one pending approval, and identical requests — same host, port, method and path, as a retrying client sends — join it rather than filing their own.
 Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be long gone, and a request waiting on a prompt nobody can see would stall the agent silently for the whole hold window.

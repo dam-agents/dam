@@ -53,7 +53,7 @@ window.platform = (() => {
 export const ARTIFACT_BRIDGE_SHIM = `<script>${ARTIFACT_BRIDGE_SHIM_BODY}</script>`;
 
 export const SHARED_BRIDGE_REFUSAL =
-  "This is a shared copy: only its owner can use buttons that ask the agent.";
+  "This is a public copy: only its owner can use buttons that ask the agent.";
 
 export const ARTIFACT_SHARED_BRIDGE_SHIM_BODY = `
 window.platform = (() => {

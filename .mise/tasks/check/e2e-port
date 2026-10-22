@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#MISE description="The e2e cluster serves on one port, and never the Artifact API Port"
+# The e2e cluster runs in the sandboxes of agents that also serve interactive
+# artifacts on 127.0.0.1 at the Artifact API Port. The cluster's ingress on
+# that port takes their requests, so the page gets the UI instead of its data,
+# and nothing reports it. The port is set in several files that must agree.
+set -euo pipefail
+artifact="$(sed -n 's/^export const ARTIFACT_API_PORT = \([0-9]*\);$/\1/p' packages/agent-runtime-api/src/modules/artifact-api/schemas.ts)"
+[ -n "$artifact" ] || { echo "ARTIFACT_API_PORT is no longer a literal in schemas.ts; teach this check where it is" >&2; exit 1; }
+port="$(sed -n 's/^  --set=port=\([0-9]*\)$/\1/p' .mise/tasks/e2e/install)"
+[ -n "$port" ] || { echo "e2e:install no longer passes --set=port=<n>; teach this check where the port is" >&2; exit 1; }
+[ "$port" != "$artifact" ] || { echo "the e2e port $port is the Artifact API Port: an agent's artifact server cannot share its sandbox with the e2e cluster" >&2; exit 1; }
+lima=etc/lima/k3s-test.yaml
+for got in \
+  "$(yq '.portForwards[0].guestPort' "$lima")" \
+  "$(yq '.portForwards[0].hostPort' "$lima")" \
+  "$(grep -oE '^ +(port|exposedPort): [0-9]+$' "$lima" | grep -oE '[0-9]+' | sort -u | paste -sd' ')"; do
+  [ "$got" = "$port" ] || { echo "$lima has port $got where e2e:install has $port" >&2; exit 1; }
+done
+for task in gate loop run; do
+  others="$(grep -oE 'localhost:[0-9]+' ".mise/tasks/e2e/$task" | grep -v ":$port\$" || true)"
+  [ -z "$others" ] || { echo ".mise/tasks/e2e/$task names $others, not e2e:install's port $port" >&2; exit 1; }
+done

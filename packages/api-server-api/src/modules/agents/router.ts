@@ -25,7 +25,7 @@ import {
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
-import { toAgentView } from "./view.js";
+import { listedAgents, toAgentView } from "./view.js";
 
 export const agentsRouter = t.router({
   list: readAgentProcedure.query(async ({ ctx }) => {
@@ -36,11 +36,7 @@ export const agentsRouter = t.router({
     const driverByTarget = new Map(
       targets.map((t) => [t.targetAgentId, t.driverAgentId]),
     );
-    const allowed =
-      ctx.user.agentIds === "*"
-        ? agents
-        : agents.filter((a) => ctx.user.agentIds.includes(a.id));
-    return allowed.map((agent) =>
+    return listedAgents(agents, ctx.user.agentIds).map((agent) =>
       toAgentView(agent, driverByTarget.get(agent.id) ?? null),
     );
   }),

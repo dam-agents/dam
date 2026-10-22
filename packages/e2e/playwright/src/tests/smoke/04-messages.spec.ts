@@ -36,9 +36,6 @@ test("exchange messages with the agent", async ({ page }) => {
     const bell = page.getByTestId("side-panel-tab-approvals");
     await expect(bell).toBeVisible();
     await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Show changes" }),
-    ).toBeVisible();
   });
 
   await test.step("the new session page names the agent", async () => {

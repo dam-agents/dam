@@ -3,6 +3,8 @@ import type { Db } from "db";
 import type { Redis } from "ioredis";
 import { createRemoteJWKSet } from "jose";
 
+import type { AcpClientFactory } from "../../core/acp-client.js";
+import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
 import {
@@ -23,6 +25,11 @@ import {
   createArtifactLibraryService,
   type ArtifactLibraryServiceImpl,
 } from "./services/artifact-library-service.js";
+import {
+  createShareBridgeService,
+  type ShareBridgeService,
+} from "./services/share-bridge-service.js";
+import { createViewerPromptDelivery } from "./infrastructure/viewer-prompt-delivery.js";
 import {
   createArtifactExpirySweeper,
   type ArtifactExpirySweeper,
@@ -149,5 +156,26 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
     ),
     shareBaseUrl: shareBase,
     now: () => Date.now(),
+  });
+}
+
+export function composeShareBridge(opts: {
+  featureOn: (owner: string) => Promise<boolean>;
+  ensureReady: (agentId: string) => Promise<void>;
+  agentApi: AgentApiPodClient;
+  makeAcpClient: AcpClientFactory;
+  spendHold: (agentId: string) => Promise<"limit" | "ceiling" | null>;
+  attendance: ChannelTurnAttendance;
+}): ShareBridgeService {
+  return createShareBridgeService({
+    featureOn: opts.featureOn,
+    ensureReady: opts.ensureReady,
+    agentApi: opts.agentApi,
+    prompts: createViewerPromptDelivery({
+      makeAcpClient: opts.makeAcpClient,
+      ensureReady: opts.ensureReady,
+      spendHold: opts.spendHold,
+      attendance: opts.attendance,
+    }),
   });
 }

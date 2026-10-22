@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
@@ -29,11 +29,20 @@ The filler stays alive as the leader of its group until the teardown ends it, be
 The record outlives the fill's removal and goes only after that removal is read back, so a claim briefly read-only leaves the next call able to name the writer and finish the job; a call that finds no record passes only when the fill and the script are gone, so repeating a finished teardown is safe.
 The boot matrix runs with the other specs that boot an Agent of their own, one at a time, for the compute they would otherwise share.
 Its cases that need room a CI node cannot spare, a disk with no block left and a claim with none, are opt-in through `E2E_DISK_FILL_GIB` and `E2E_CLAIM_FILL_GIB`: a machine's disk is a sparse file on its owner's claim, that claim is a directory of the node's disk, and a fill takes that room whenever its filesystem allocates the blocks instead of marking them.
-The storage trim spec's refusal cases need no host budget and run on every in-cluster vm lane run: the always-on one first writes and deletes 256 MiB of real bytes through a renewal and compares the guest's free space with the grant the runner published, then fills the guest's remaining room without writing bytes, so the guest is held at its share without the claim paying for it, and waits a renewal window: the runner grants a new look's room at every look, so a fill the claim never paid for is room the guest is given again, and the case measures the guest against that renewed grant.
+The storage trim spec's always-on share-recovery case needs no configurable host-fill budget and runs on every in-cluster vm lane run: it first writes and deletes 256 MiB of real bytes through a renewal and compares the guest's free space with the grant the runner published, then fills the guest's remaining room without writing bytes, so the guest is held at its share without the claim paying for it, and waits a renewal window: the runner grants a new look's room at every look, so a fill the claim never paid for is room the guest is given again, and the case measures the guest against that renewed grant.
 Each comparison reads the grant and the guest's free space in one guest command, with the grant line on both sides of the room so a sample that straddles a renewal is retried.
 The renewed comparison needs a grant the runner published after the case's own write, and both of its bounds are waited for on one sample, so a room the guard has not yet moved is neither accepted nor rejected.
 The case also checks the machines' grants against the claim, for every run and with no host byte: no guest may be granted more than the room left below 95% of the claim's capacity, and each running guest is granted a part of it.
 That is a policy check and not the ceiling regression: a sum of observed grants cannot prove the whole claim's ceiling, so the near-ceiling refusal still needs the claim filled.
+The next case is the direct refusal the share-recovery case cannot make: a guest held at its share is refused its next write, and refused for want of space.
+That probe is deliberately coarser than the wedge it guards.
+It does not judge the write at the size of the guest's own grant: a renewal can return room between the fill and the write, and no guest-side figure says which allowance the guard has applied, so a write allowed at the guest's share cannot be told from one a renewal preceded.
+Instead the case marks the guest's whole remaining room and asks for more than any grant the guest could be given in the meantime — everything the claim has left below its 95% ceiling, which no grant exceeds even with one machine up, plus the floor every guest may write past its grant, the guard's step and the case's slack — so no renewal that lands before the write can make it fit.
+What it loses is the size of the refusal: a guest refused at its share and one refused at ten times its share both pass, and only the claim-ceiling case below reads a refusal close to a real share.
+What it keeps is the direct coverage the always-on lane had none of: the guest's room against its grant says the guard left the guest no room, never that a write was refused.
+The write is made once and never retried until it is refused, so a guest let past the bound fails the case rather than earning a pass on a later attempt.
+Its fill, writes, trim, share recovery, sibling write and grant policy keep running in the case before it.
+The opt-in ceiling case is unchanged.
 It skips on a Mac host runner, where the first case measures no machine's disk.
 The case beside it fills the claim itself with real bytes to read the ceiling, and spends `E2E_DISK_FILL_GIB` of the host to do it, so it skips when the claim would need more than that or the variable is unset.
 The agent backend spec runs on both lanes, in each lane's own-agents project: on the container lane after the agent project, whose provider connection its chat input needs, and one at a time with the other specs that boot an Agent of their own, and on the vm lane after the rest of the suite, since the VM runner it deletes runs every other machine of that user.

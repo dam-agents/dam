@@ -61,6 +61,13 @@ export interface AgentSpecCR {
     value: string;
   }[];
   /**
+   * EnvironmentOf names the Agent that owns this one as an Environment: a
+   * sandbox that runs software for others to open, with no harness, on its
+   * owner's VM runner beside the owning Agent. Set at create, never changed;
+   * the guest reads it as PLATFORM_ENVIRONMENT_OF.
+   */
+  environmentOf?: string;
+  /**
    * GrantedConnectionIDs are the connection IDs granted to this agent.
    */
   grantedConnectionIds?: string[];
@@ -73,7 +80,7 @@ export interface AgentSpecCR {
   grantedSecretIds?: string[];
   /**
    * Harness names the harness the agent image runs (claude-code, codex,
-   * pi, bob, mock). One image serves every harness, and the agent reads
+   * pi, bob, copilot, mock). One image serves every harness, and the agent reads
    * this as PLATFORM_HARNESS; empty leaves the image's own default.
    */
   harness?: string;

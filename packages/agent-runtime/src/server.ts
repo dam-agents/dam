@@ -71,10 +71,17 @@ import {
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
-import { composeChanges } from "./modules/changes/index.js";
+import { createEnvironmentForward } from "./modules/environment-forward.js";
+import {
+  composeChanges,
+  createGitTraceReader,
+  gitTraceEnv,
+  sessionEnvVarsOf,
+} from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
   createTerminalSessionLookup,
+  nonClaudeModelEnv,
   sessionDirectoryEntries,
 } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -102,7 +109,7 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
-import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { leaseSpawnEnv, mergedSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   canonicalModel,
@@ -147,6 +154,13 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 }
 
 const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
+const environmentOf = process.env.PLATFORM_ENVIRONMENT_OF ?? "";
+const environmentForward =
+  environmentOf === ""
+    ? null
+    : createEnvironmentForward({
+        ownPorts: [config.PORT, config.PLATFORM_MODEL_ROUTER_PORT],
+      });
 const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
   ? {
       [defaultHarness]: loadManifest(
@@ -189,12 +203,29 @@ const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
 );
+const changesLog = (msg: string) => process.stderr.write(`[changes] ${msg}\n`);
 const changes = composeChanges({
   roots: [workDir, homeDir],
   stateBackend,
   githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
-  log: (msg) => process.stderr.write(`[changes] ${msg}\n`),
+  sessionOf: (id) => (sessionMetadata.get(id) !== undefined ? id : undefined),
+  runningSessions: () =>
+    Object.keys(sessionMetadata.all()).filter((id) =>
+      acpRuntime.isSessionRunning(id),
+    ),
+  log: changesLog,
 });
+const gitTraceDir = join(homeDir, ".platform", "git-traces");
+const sessionEnvVars = sessionEnvVarsOf(
+  Object.values(harnessManifests).map((m) => m.sessionEnvVar),
+);
+const gitTraces = createGitTraceReader({
+  dir: gitTraceDir,
+  sessionEnvVars,
+  onCommand: (command) => void changes.onGitCommand(command),
+  log: changesLog,
+});
+
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
@@ -430,6 +461,10 @@ const terminalModelEnv = (lease: {
   return {
     ...unroutedProviderEnv(lease.harness),
     ...routerEnvOf(lease.harness),
+    ...nonClaudeModelEnv(
+      harnessManifests[lease.harness]?.modelRouter?.nonClaudeModelEnv,
+      [lease.model],
+    ),
     ...(lease.model !== null && {
       PLATFORM_MODEL: renderSessionModel(
         lease.model,
@@ -510,6 +545,9 @@ const {
           ...(manifest.harnessState && {
             harnessState: manifest.harnessState,
           }),
+          ...(manifest.modelRouter?.nonClaudeModelEnv && {
+            nonClaudeModelEnv: manifest.modelRouter.nonClaudeModelEnv,
+          }),
           sessionSettings: harnessConfig?.sessionSettings,
           catalog: harnessConfig?.catalog,
           configured: () =>
@@ -526,7 +564,9 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
-  onToolActivity: changes.onToolActivity,
+  onToolActivity: ({ sessionId }) =>
+    void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
   onTurnOutcome: (sessionId, end) =>
     invocationWatch.turnOutcome(sessionId, end),
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
@@ -552,6 +592,13 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+void gitTraces
+  .start()
+  .catch((error: unknown) =>
+    changesLog(
+      `reading git traces could not start: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
 runningSessionsOf = (harness) =>
   Object.entries(sessionMetadata.all())
     .filter(
@@ -568,11 +615,24 @@ sessionState = {
   spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
 };
 
-const { service: processesService, keepMarks } = processes.start({
+const {
+  service: processesService,
+  keepMarks,
+  startupItemEnv,
+} = processes.start({
+  agentHome: homeDir,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
+
+function applyStartupItemEnv(): void {
+  startupItemEnv.apply(mergedSpawnEnv(envStore)).catch((err: unknown) => {
+    process.stderr.write(
+      `[processes] Startup Item env not applied: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  });
+}
 
 let recoveryScheduled = false;
 function scheduleRecovery(): void {
@@ -625,6 +685,7 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
+        applyStartupItemEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -946,6 +1007,7 @@ function attachPty(
           ...terminalModelEnv(lease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
+          ...gitTraceEnv(gitTraceDir, sessionEnvVars),
           HARNESS_SESSION_ID: sessionId,
           PLATFORM_TERMINAL_ID: terminalId,
         },
@@ -1066,12 +1128,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (environmentForward?.handleRequest(req, res)) return;
+
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
       idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
+      openLinks: acp.openLinks,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -1239,8 +1304,14 @@ acpWss.on("connection", (ws, req: http.IncomingMessage) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  if (environmentForward?.handleUpgrade(req, socket, head)) return;
   const url = new URL(req.url!, `http://${req.headers.host}`);
-  if (url.pathname === "/api/acp") {
+  if (
+    environmentOf !== "" &&
+    (url.pathname === "/api/acp" || url.pathname === "/api/terminal")
+  ) {
+    socket.destroy();
+  } else if (url.pathname === "/api/acp") {
     acpWss.handleUpgrade(req, socket, head, (ws) =>
       acpWss.emit("connection", ws, req),
     );
@@ -1298,7 +1369,10 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) podService?.refreshEnv();
+  if (envStore.ready()) {
+    podService?.refreshEnv();
+    applyStartupItemEnv();
+  }
 
   modelCatalog.onChange(() =>
     acpRuntime.applyEnvChange({
@@ -1311,7 +1385,7 @@ server.listen(config.PORT, () => {
       })),
     }),
   );
-  acpRuntime.prestart();
+  if (environmentOf === "") acpRuntime.prestart();
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
@@ -1328,7 +1402,7 @@ server.listen(config.PORT, () => {
 
   setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
 
-  warmHistory();
+  if (environmentOf === "") warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),

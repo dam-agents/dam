@@ -6,6 +6,7 @@ import { errorMessage } from "../../shared/error-message.js";
 const versionInfoSchema = z.object({
   serverVersion: z.string(),
   minClientVersion: z.string().optional(),
+  recommendedClientVersion: z.string().optional(),
 });
 
 export type VersionInfo = z.infer<typeof versionInfoSchema>;

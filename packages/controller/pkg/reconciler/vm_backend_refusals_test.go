@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,10 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -239,29 +244,117 @@ func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
 	assert.NotContains(t, cond.Message, "GiB", "the host runner's share is unknown here")
 }
 
-// TEST_SCENARIO: a runner whose claim is full refuses a machine under MachineStorageFull, which is not the memory refusal. The Agent is not parked, since parking halts a machine, and the runner's explanation reaches the AgentPodReady condition the api-server classifies a wake by.
-func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
+// TEST_SCENARIO: a runner whose claim is full refuses a start, and the refused Agent holds no running parts: the gateway comes down with the machine it would proxy, the Agent is retried at the parked tick, and the runner's explanation reaches the AgentPodReady condition the api-server classifies a wake by. Only a start is parked: a machine that may still hold memory is left alone and only the reason is published, and an Agent that should be asleep keeps the hibernation it already reads, since a runner that refuses the machine it was asked to keep down on a critical claim must not flip the status the pass just wrote.
+func TestAStorageRefusalParksOnlyAStartThatHoldsNothing(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name     string
+		state    string
+		asleep   bool
+		parked   bool
+		gateways int32
+		reason   string
+	}{
+		{name: "a stopped machine", state: vmrunner.StateStopped, parked: true, gateways: 0, reason: vmrunner.ReasonStorageFull},
+		{name: "an absent machine", state: vmrunner.StateAbsent, parked: true, gateways: 0, reason: vmrunner.ReasonStorageFull},
+		{name: "a machine that is up", state: vmrunner.StateRunning, gateways: 1, reason: vmrunner.ReasonStorageFull},
+		{name: "a machine of unknown state", state: vmrunner.StateUnknown, gateways: 1, reason: vmrunner.ReasonStorageFull},
+		{name: "an agent that should be asleep", state: vmrunner.StateAbsent, asleep: true, gateways: 0, reason: apiv1.ReasonHibernated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := vmAgentCR()
+			if tc.asleep {
+				hibernateTheAgent(t, agent)
+			}
+			r, node, _ := setupVMReconciler(t, agent)
+			if tc.asleep {
+				scaleGateway(t, r, 0)
+			}
+			node.statuses["my-agent"] = vmrunner.MachineStatus{
+				State:   tc.state,
+				Reason:  vmrunner.ReasonStorageFull,
+				Message: "your agents' shared storage is 93% full",
+			}
+
+			require.NoError(t, r.Reconcile(ctx, agent))
+
+			assert.Equal(t, tc.gateways, agentSSReplicas(t, r, GatewayName("my-agent")),
+				"a refused start holds no gateway, and a machine that is up keeps the one it proxies")
+			assert.Equal(t, tc.parked, slices.Contains(r.ParkedForRetry(), "my-agent"),
+				"only a start is retried at the parked tick")
+			live, err := loadAgent(t, r, "my-agent")
+			require.NoError(t, err)
+			cond := apimeta.FindStatusCondition(live.Status.Conditions, apiv1.ConditionAgentPodReady)
+			require.NotNil(t, cond)
+			assert.Equal(t, metav1.ConditionFalse, cond.Status)
+			assert.Equal(t, tc.reason, cond.Reason)
+			if tc.state == vmrunner.StateUnknown {
+				assert.Empty(t, stoppedMachines(node), "a machine that may still be up is never sent a stop")
+			}
+		})
+	}
+}
+
+// TEST_SCENARIO: the pass after a parked storage refusal asks the runner again, so the gateway must not come up before the runner's answer: a gateway scaled up and straight back down on every pass would start and stop a pod each time. A machine that is up keeps the old order, since the answer about it is published rather than parked.
+func TestAParkedStorageRefusalNeverStartsTheGateway(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{
-		State:   vmrunner.StateAbsent,
-		Reason:  vmrunner.ReasonStorageFull,
-		Message: "your agents' shared storage is 93% full",
-	}
-
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonStorageFull, Message: "your agents' shared storage is 95% full"}
 	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, r.ParkedForRetry(), "my-agent", "precondition: the refused start is parked")
 
-	assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")), "a storage refusal does not park the agent")
-	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	scaled := []int32{}
+	r.client.(*fake.Clientset).PrependReactor("update", "statefulsets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if ss, ok := action.(k8stesting.UpdateAction).GetObject().(*appsv1.StatefulSet); ok && ss.Name == GatewayName("my-agent") && ss.Spec.Replicas != nil {
+			scaled = append(scaled, *ss.Spec.Replicas)
+		}
+		return false, nil, nil
+	})
+	parked, err := loadAgent(t, r, "my-agent")
 	require.NoError(t, err)
-	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, r.Reconcile(ctx, parked))
+
+	assert.NotContains(t, scaled, int32(1), "the gateway is never scaled up between two passes of a parked refusal")
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: marks the Agent as one the idle checker slept, so the reconcile that reads it wants its machine stopped.
+func hibernateTheAgent(t *testing.T, agent *apiv1.Agent) {
+	t.Helper()
+	if agent.Annotations == nil {
+		agent.Annotations = map[string]string{}
+	}
+	agent.Annotations[annLastActivity] = time.Now().UTC().Add(-90 * time.Minute).Format(time.RFC3339)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the gateway StatefulSet at the given replica count, as the idle checker leaves it when it sleeps the pair.
+func scaleGateway(t *testing.T, r *AgentReconciler, replicas int32) {
+	t.Helper()
+	ss, err := r.client.AppsV1().StatefulSets("test-agents").Get(context.Background(), GatewayName("my-agent"), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = r.client.AppsV1().StatefulSets("test-agents").Create(context.Background(), &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent"), Namespace: "test-agents"},
+			Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+		}, metav1.CreateOptions{})
+		require.NoError(t, err)
+		return
+	}
 	require.NoError(t, err)
-	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
-	require.NotNil(t, cond)
-	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Equal(t, vmrunner.ReasonStorageFull, cond.Reason)
-	assert.Contains(t, cond.Message, "93% full")
+	ss.Spec.Replicas = &replicas
+	_, err = r.client.AppsV1().StatefulSets("test-agents").Update(context.Background(), ss, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every spec the runner was sent that asks for its machine to stop.
+func stoppedMachines(node *fakeNode) []vmrunner.MachineSpec {
+	stopped := []vmrunner.MachineSpec{}
+	for _, spec := range node.ensures() {
+		if !spec.Running {
+			stopped = append(stopped, spec)
+		}
+	}
+	return stopped
 }
 
 // TEST_SCENARIO: a runner that cannot reach the node's image cache refuses every image its machines do not already hold, and the runner sees only its own mount of the cache directory — two runners on one node directory and on a stale copy of it name the same socket. So the Agent's own failure names the node directory this runner mounts, which is the fact an operator compares with the one the cache service writes: a start that fails with no pending runner change writes no roll Event to carry it.

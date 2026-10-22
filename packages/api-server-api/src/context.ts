@@ -11,13 +11,17 @@ import type {
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ChatFormPreferencesService } from "./modules/chat-forms/preferences.js";
-import type { ConnectionsService } from "./modules/connections/types.js";
+import type {
+  ConnectionsService,
+  SecretRequestsService,
+} from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type {
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
+import type { EnvironmentsService } from "./modules/environments/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
 import type { ProviderStatusService } from "./modules/provider-status/types.js";
 import type {
@@ -60,12 +64,14 @@ export interface ApiContext {
   schedules: SchedulesService;
   channels: ChannelsService;
   connections: ConnectionsService;
+  secretRequests: SecretRequestsService;
   skills: SkillsService;
   approvals: ApprovalsService;
   attention: AttentionService;
   egressRules: EgressRulesService;
   invocationsQuery: InvocationsQueryService;
   invocationsControl: InvocationsControlService;
+  environments: EnvironmentsService;
   starterKits: StarterKitsService;
   kbShares: KbSharesService;
   artifactLibrary: ArtifactLibraryService;

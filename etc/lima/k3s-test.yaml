@@ -32,6 +32,23 @@ provision:
         - "container-log-max-size=10Mi"
         - "container-log-max-files=3"
       EOF
+      # One process's out-of-memory kill must not take its container with it: on
+      # cgroup v2 the kubelet groups a container's kills unless its configuration
+      # sets singleProcessOOMKill, so one VM agent's overrun would end its runner
+      # and every machine of that owner (issue #5614). No kubelet command-line
+      # flag carries the setting, so it is a kubelet configuration file, which
+      # k3s copies into the kubelet's own drop-in dir wherever kubelet-arg names
+      # it: in place before the kubelet first starts, and re-read at each start.
+      cat > /etc/rancher/k3s/kubelet-single-process-oom-kill.yaml << 'EOF'
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      singleProcessOOMKill: true
+      EOF
+      mkdir -p /etc/rancher/k3s/config.yaml.d
+      cat > /etc/rancher/k3s/config.yaml.d/50-single-process-oom-kill.yaml << 'EOF'
+      kubelet-arg+:
+        - "config=/etc/rancher/k3s/kubelet-single-process-oom-kill.yaml"
+      EOF
       # Nested guests are only usable with transparent huge pages pinned on:
       # under Ubuntu's `madvise` a nested boot took 3 to 25 s and pegged its
       # vCPUs, which the vm lane sees as agents stuck "starting". Red Hat
@@ -106,10 +123,10 @@ provision:
         valuesContent: |
           ports:
             platform:
-              port: 5555
+              port: 6555
               expose:
                 default: true
-              exposedPort: 5555
+              exposedPort: 6555
               protocol: TCP
       EOF
 
@@ -130,11 +147,11 @@ copyToHost:
     deleteOnStop: true
 
 portForwards:
-  - guestPort: 5555
-    hostPort: 5555
+  - guestPort: 6555
+    hostPort: 6555
   - guestPort: 16445
     hostPort: 16445
 
 message: |
-  Test k3s cluster is ready. Access services via port 5555.
+  Test k3s cluster is ready. Access services via port 6555.
   KUBECONFIG: {{.Dir}}/copied-from-guest/kubeconfig.yaml

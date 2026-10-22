@@ -63,6 +63,11 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  // TEST_SCENARIO: a start held back by the machines a runner restart is still bringing back is a start in progress: nothing is refused, and the owner's pool holds it once they have settled.
+  it("leaves a start waiting for its owner's warm-up as starting", () => {
+    expect(computeAgentState(notReady("AwaitingWarmUp"))).toBe("starting");
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");

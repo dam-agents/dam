@@ -4,6 +4,7 @@ import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { useAutoWakeOnSidebarOpen } from "../hooks/use-auto-wake-on-sidebar-open.js";
 import { useOrderDrag } from "../hooks/use-order-drag.js";
 import type { OrderDrop } from "../lib/sidebar-order.js";
 import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
@@ -20,14 +21,21 @@ interface Props {
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   actions: ReactNode;
-  actionCount: 2 | 3;
+  actionCount: 3 | 4;
+  filter: ReactNode;
+  filtered: boolean;
   children?: ReactNode;
 }
 
 const ACTIONS_PADDING = {
-  2: { shown: "pr-[60px]", hover: "group-hover/agent:pr-[60px]" },
   3: { shown: "pr-[86px]", hover: "group-hover/agent:pr-[86px]" },
+  4: { shown: "pr-[112px]", hover: "group-hover/agent:pr-[112px]" },
 } as const;
+
+const HOVER_REVEAL =
+  "transition-opacity group-hover/agent:opacity-100 group-focus-within/agent:opacity-100 group-has-[[data-state=open]]/agent:opacity-100";
+const HIDDEN_UNTIL_HOVER =
+  "pointer-events-none opacity-0 group-hover/agent:pointer-events-auto group-focus-within/agent:pointer-events-auto group-has-[[data-state=open]]/agent:pointer-events-auto";
 
 export function SidebarAgentRow({
   agent,
@@ -41,8 +49,11 @@ export function SidebarAgentRow({
   onSelect,
   actions,
   actionCount,
+  filter,
+  filtered,
   children,
 }: Props) {
+  useAutoWakeOnSidebarOpen(agent, open);
   const mood = avatarMood(agent.state, agent);
   const drag = useOrderDrag({
     scope: "agents",
@@ -70,7 +81,7 @@ export function SidebarAgentRow({
             "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             selected
               ? ACTIONS_PADDING[actionCount].shown
-              : ACTIONS_PADDING[actionCount].hover,
+              : [ACTIONS_PADDING[actionCount].hover, filtered && "pr-[34px]"],
             open
               ? "text-foreground"
               : mood !== "awake"
@@ -106,15 +117,25 @@ export function SidebarAgentRow({
             </>
           )}
         </div>
-        <div
-          className={cn(
-            "absolute right-1 flex items-center gap-0.5 transition-opacity focus-within:opacity-100 group-hover/agent:opacity-100 has-[[data-state=open]]:opacity-100",
-            selected
-              ? "opacity-100"
-              : "pointer-events-none opacity-0 focus-within:pointer-events-auto group-hover/agent:pointer-events-auto has-[[data-state=open]]:pointer-events-auto",
-          )}
-        >
-          {actions}
+        <div className="absolute right-1 flex items-center gap-0.5">
+          <div
+            className={cn(
+              "flex items-center",
+              HOVER_REVEAL,
+              selected || filtered ? "opacity-100" : HIDDEN_UNTIL_HOVER,
+            )}
+          >
+            {filter}
+          </div>
+          <div
+            className={cn(
+              "flex items-center gap-0.5",
+              HOVER_REVEAL,
+              selected ? "opacity-100" : HIDDEN_UNTIL_HOVER,
+            )}
+          >
+            {actions}
+          </div>
         </div>
         <OrderDropIndicator at={drag.indicator} />
       </div>

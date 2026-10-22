@@ -12,9 +12,11 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
   if (payload.kind === "ext_authz") {
     return {
       title: `${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
-      subtitle: payload.viaAgentId
-        ? `${payload.path} · via ${payload.viaAgentId}`
-        : payload.path,
+      subtitle: payload.viaEnvironment
+        ? `${payload.path} · from Environment ${payload.viaEnvironment}`
+        : payload.viaAgentId
+          ? `${payload.path} · via ${payload.viaAgentId}`
+          : payload.path,
     };
   }
   if (payload.kind === "spend_limit") {

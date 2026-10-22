@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -73,7 +73,7 @@ The public port also accepts streamed bundled file imports per agent and proxies
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent.
 Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, agent and invocation reapers) run this way, and each replica re-asserts its scheduler registrations periodically so a Redis dataset loss cannot silently stop the sweeps.
-Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres.
+Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, Environment sign-ins, hand-off codes and sessions, and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres.
 The per-agent MCP endpoint is **stateless** — it mints no streamable-HTTP session id and builds a server and transport per request — so any replica serves any harness call and nothing has to pin a gateway to a replica.
 Affinity was tried first and does not work here: a Service `sessionAffinity` is bypassed on a waypoint-fronted Service, and a consistent-hash `DestinationRule` on source IP leaves the waypoint's route without a hash policy, which degrades ring hash to per-request random.
 Since every harness call still traverses the waypoint, it is itself replicated with its own disruption budget when the api-server runs more than one replica.
@@ -142,6 +142,7 @@ Its responsibilities are:
 - Expose a scoped tRPC router — in-pod file operations, the composed session list, and the watch subscriptions behind the live panels — over HTTP and WebSocket: the UI reaches it through the api-server's WebSocket relay, non-browser callers through the HTTP proxy, and a channel worker dials this pod directly to place an inbound attachment in the workspace ([channel-turns](channel-turns.md)).
 - Relay Artifact API requests from interactive pages (api-server is the only caller) to the server the Agent runs on the loopback Artifact API Port, with a fixed host, a timeout and a response size cap ([artifact-library](artifact-library.md#interactive-pages)).
   The relay rides the existing harness port: no port was added to the pod, the Service, the NetworkPolicy or the VM runner, so nothing outside the agent can reach the Agent's server directly.
+- On an [Environment](environments.md), relay HTTP and WebSocket from `/api/environment/forward/<port>/` to that port on its own loopback, only for an endpoint port the api-server names on the request, and never one of the runtime's own ports.
 - Accept bundled file imports on the harness port — extract the tarball to a staging directory on the per-agent PVC, then merge each entry into `<homeDir>/work` recursively: files are added or replaced, folders are merged so existing files not in the bundle are kept.
   A bundle file colliding with an existing directory rejects the import before workspace changes, naming the paths.
   Merging is not transactional against concurrent workspace writes or I/O failures.
@@ -206,6 +207,7 @@ The session view shows a framed turn as the person would read it, which makes th
 Frame instructions are hidden by name, so a tag the view does not know stays visible rather than taking real text with it.
 Conversation history handed to the agent is shown collapsed, together with the note that explains it.
 Messages steered into a running turn show as one user message each: the view finds them by their speaker lines and treats everything before the first one as instructions for the agent.
+An agent's reply is cleaned the same way when the agent echoes a frame tag, and a `<thinking>` passage the agent wrote as text shows as a thought; chat forms are keyed by the cleaned reply, so a form keeps its state wherever the reply is split.
 Changing the frame's shape therefore changes what the session view renders.
 
 The view places an agent's output by the turn it belongs to, which the runtime stamps on every frame it relays: the running prompt's turn, or — for work the harness does unprompted, such as resuming when a background task finishes — a turn the runtime opens for it and ends at the harness's next usage report or after a quiet minute, and that a prompt starting meanwhile ends first.

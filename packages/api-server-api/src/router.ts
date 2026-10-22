@@ -11,6 +11,7 @@ import { chatFormsRouter } from "./modules/chat-forms/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
+import { environmentsRouter } from "./modules/environments/router.js";
 import { eventsRouter } from "./modules/events/router.js";
 import { invocationsRouter } from "./modules/invocations/router.js";
 import { kbSharesRouter } from "./modules/kb-shares/router.js";
@@ -45,6 +46,7 @@ export const appRouter = t.router({
   attention: attentionRouter,
   egressRules: egressRulesRouter,
   invocations: invocationsRouter,
+  environments: environmentsRouter,
   starterKits: starterKitsRouter,
   kbShares: kbSharesRouter,
   artifactLibrary: artifactLibraryRouter,

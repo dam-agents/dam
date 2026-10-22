@@ -18,6 +18,10 @@ import {
   type LoadedKit,
 } from "../../modules/starter-kits/services/starter-kits-service.js";
 import type { KitUpstream } from "../../modules/starter-kits/infrastructure/kit-upstream.js";
+import type {
+  LinkedKit,
+  LinkedKits,
+} from "../../modules/starter-kits/infrastructure/linked-kits.js";
 
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import {
@@ -37,6 +41,11 @@ const NO_MARKS = {
   begin: async () => {},
   end: async () => {},
   skip: async () => {},
+};
+const NO_LINKS: LinkedKits = {
+  read: async () => {
+    throw new Error("no linked kit in this test");
+  },
 };
 
 function kit(overrides: Partial<ResolvedStarterKit> = {}): ResolvedStarterKit {
@@ -114,6 +123,7 @@ function makeHarness(
     preferred: boolean;
   }[] = [],
   virtualizationEnabled = true,
+  linkedKits: LinkedKits = NO_LINKS,
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -247,6 +257,7 @@ function makeHarness(
     },
     kitUpstream: NO_UPSTREAM,
     kitUpdateMarks: NO_MARKS,
+    linkedKits,
     sessionPair: async () => undefined,
     runtimeMutator: {
       async bump(agentId, events) {
@@ -689,6 +700,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => 1,
@@ -808,6 +820,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => 1,
@@ -910,6 +923,7 @@ describe("starter kits: onboarding turn", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      linkedKits: NO_LINKS,
       sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => {
@@ -1230,5 +1244,95 @@ describe("starter kits: backend", () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply(APPLY);
     expect(calls.created[0]).not.toHaveProperty("vm");
+  });
+});
+
+describe("starter kits: a kit from a link", () => {
+  const URL = "https://github.com/acme/shared-kit";
+  const COMMIT = "c".repeat(40);
+  const LINKED: LinkedKit = {
+    ...LOADED,
+    kit: kit({
+      seed: { url: URL, into: "work", commit: COMMIT },
+    }),
+    catalog: "link",
+    version: COMMIT,
+    source: `${URL}#${COMMIT}`,
+    link: { url: URL },
+  };
+
+  function linkedHarness(found: LinkedKit = LINKED, virtualization = true) {
+    const reads: { url: string; commit?: string }[] = [];
+    const h = makeHarness(null, null, [], virtualization, {
+      read: async (url, commit) => {
+        reads.push({ url, ...(commit ? { commit } : {}) });
+        return found;
+      },
+    });
+    return { ...h, reads };
+  }
+
+  const LINK_APPLY = {
+    ...APPLY,
+    catalog: "link",
+    link: { url: URL, commit: COMMIT },
+  };
+
+  // TEST_SCENARIO: the preview shows everything a kit from a link sets up — connections, schedules, egress, seed — as a catalog kit's page does, plus the link itself, so the user can judge a kit nobody reviewed before creating anything.
+  it("shows what the kit at a link sets up, without creating anything", async () => {
+    const { service, calls, reads } = linkedHarness();
+    const view = await service.inspect(URL);
+    expect(reads).toEqual([{ url: URL }]);
+    expect(view).toMatchObject({
+      catalog: "link",
+      id: "code-reviewer",
+      version: COMMIT,
+      link: { url: URL },
+    });
+    expect(view.schedules.map((s) => s.name)).toEqual(["review", "benchmark"]);
+    expect(calls.created).toEqual([]);
+  });
+
+  // TEST_SCENARIO: creating from a link reads the kit again at the commit the user reviewed, and stamps the agent with it under the `link` catalog, so the agent says where it came from and what it was made from without any catalog row behind it.
+  it("creates the agent from the commit the user reviewed", async () => {
+    const { service, calls, reads } = linkedHarness();
+    await service.apply(LINK_APPLY);
+    expect(reads).toEqual([{ url: URL, commit: COMMIT }]);
+    expect(calls.created[0]).toMatchObject({
+      starterKit: `link/code-reviewer@${COMMIT}`,
+      starterKitSeed: { url: URL, commit: COMMIT },
+    });
+    expect(calls.cron.map((c) => c.name)).toEqual(["review"]);
+  });
+
+  // TEST_SCENARIO: a link that now holds a different kit than the one the form was filled for — the repository was renamed or its kit.yaml replaced — must not create that other kit under the choices made for the first.
+  it("refuses a link whose kit is not the one the user picked", async () => {
+    const { service, calls } = linkedHarness();
+    await expect(
+      service.apply({ ...LINK_APPLY, kitId: "something-else" }),
+    ).rejects.toThrow(/is code-reviewer, not something-else/);
+    expect(calls.created).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a linked kit asking for a microVM on an install without virtualization would only fail at create; refusing it at the preview tells the user before they fill anything in.
+  it("refuses a vm kit from a link where no microVM can run", async () => {
+    const { service } = linkedHarness(
+      { ...LINKED, kit: kit({ backend: "vm" }) },
+      false,
+    );
+    await expect(service.inspect(URL)).rejects.toThrow(/microVM/);
+  });
+
+  // TEST_SCENARIO: the catalog name `link` is the one way to say "from a link", and a link is meaningless on a catalog kit, so the input names both or neither — a catalog kit can never be swapped for a link, nor a link apply fall back to a catalog row.
+  it("takes a link only with the link catalog", () => {
+    expect(starterKitApplyInputSchema.safeParse(LINK_APPLY).success).toBe(true);
+    expect(
+      starterKitApplyInputSchema.safeParse({ ...LINK_APPLY, link: undefined })
+        .success,
+    ).toBe(false);
+    expect(
+      starterKitApplyInputSchema.safeParse({ ...APPLY, link: LINK_APPLY.link })
+        .success,
+    ).toBe(false);
   });
 });

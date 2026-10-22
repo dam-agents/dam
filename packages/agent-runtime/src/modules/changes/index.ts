@@ -4,3 +4,5 @@ export {
   createToolActivityReader,
   type ToolActivity,
 } from "./domain/tool-activity.js";
+export { gitTraceEnv, sessionEnvVarsOf } from "./domain/git-trace.js";
+export { createGitTraceReader } from "./infrastructure/git-traces.js";

@@ -41,7 +41,10 @@ import {
 } from "../../../modules/chat-forms/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
-import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
+import {
+  composeConnectionsForOwner,
+  composeSecretRequestsForOwner,
+} from "../../../modules/connections/compose.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -75,6 +78,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    environmentsFor,
     secretStore,
     runtimeMutator,
     outboxRepo,
@@ -98,6 +102,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
+    linkedKits,
     firePair,
     reposService,
     connectionsBoot,
@@ -132,8 +137,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderCa: config.platformProvider?.ca ?? null,
+      harnesses,
       platformProviderEnabled: async () =>
         (await features.flags())["platform-provider"],
+    });
+    const secretRequests = composeSecretRequestsForOwner({
+      ownerId: user.sub,
+      db,
+      uiBaseUrl: config.uiBaseUrl,
+      stores: connectionsBoot.secretRequestStores,
+      templates: connectionsBoot.templates,
+      connections,
+      agentName: async (agentId) =>
+        (await agentsRepo.get(agentId, user.sub))?.name ?? null,
     });
     const { budgets, resizeGate, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
@@ -283,6 +299,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
+      linkedKits,
       virtualizationEnabled: config.virtualizationEnabled,
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
@@ -408,11 +425,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         telegramBotUsername: () => channelManager.telegramBotUsername(),
       },
       connections,
+      secretRequests,
       skills,
       approvals,
       attention,
       egressRules,
       invocationsQuery,
+      environments: environmentsFor(user.sub),
       invocationsControl,
       starterKits,
       kbShares,

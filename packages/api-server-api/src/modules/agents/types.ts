@@ -134,6 +134,11 @@ export interface AgentReclaim {
   for: "memory" | "compute";
 }
 
+export interface AgentStartFailure {
+  reason: string;
+  message: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -153,6 +158,7 @@ export interface Agent {
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: AgentStartFailure;
   podRestarts: number;
   podRestartReason?: string;
   gatewayFailure?: string;
@@ -180,6 +186,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   id?: string;
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
+  environmentOf?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
@@ -197,6 +204,8 @@ export interface SessionBackgroundWork {
 export interface AgentBackgroundWork {
   sessions: SessionBackgroundWork[];
   keptProcesses: number;
+  // UNIT_BOUNDARY_DESCRIPTION: Environment Links open on this machine, which hold it awake as kept work does.
+  openLinks: number;
 }
 
 export type UpgradeAgentError =

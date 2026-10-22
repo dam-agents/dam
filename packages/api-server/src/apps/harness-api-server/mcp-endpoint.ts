@@ -1,4 +1,8 @@
 import { match } from "ts-pattern";
+import {
+  registerEnvironmentTools,
+  type OwningAgentEnvironments,
+} from "../../modules/environments/index.js";
 import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -172,6 +176,7 @@ export interface McpSessionDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
+  environments: OwningAgentEnvironments | null;
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
@@ -1446,6 +1451,9 @@ export function createMcpSession(
 
   if (deps.chatForms) registerChatFormTools(server, deps.chatForms);
 
+  if (deps.environments)
+    registerEnvironmentTools(server, { environments: deps.environments });
+
   if (deps.satellites)
     registerSatelliteTools(server, {
       ops: deps.satellites.ops,
@@ -1497,6 +1505,10 @@ export interface MountMcpDeps {
     agentId: string,
   ) => Promise<ChatFormPreferences | null>;
   agentImage: (agentId: string) => Promise<string | null>;
+  environments: (
+    owner: string,
+    agentId: string,
+  ) => Promise<OwningAgentEnvironments | null>;
   agentTelemetry: AgentTelemetryService;
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
@@ -1525,27 +1537,35 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const [ownerIsInspector, chatForms, grantedSatellites] = await Promise.all([
-      deps.carriesInspectorRole(verified.owner),
-      deps
-        .chatFormPreferences(verified.owner, agentId)
-        .catch((err: unknown) => {
+    const [ownerIsInspector, chatForms, grantedSatellites, environments] =
+      await Promise.all([
+        deps.carriesInspectorRole(verified.owner),
+        deps
+          .chatFormPreferences(verified.owner, agentId)
+          .catch((err: unknown) => {
+            console.error(
+              `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
+              err,
+            );
+            return null;
+          }),
+        Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
+          (err: unknown) => {
+            console.error(
+              `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
+              err,
+            );
+            return [];
+          },
+        ),
+        deps.environments(verified.owner, agentId).catch((err: unknown) => {
           console.error(
-            `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
+            `[environments] could not tell whether ${agentId} may own Environments; serving the session without them`,
             err,
           );
           return null;
         }),
-      Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
-        (err: unknown) => {
-          console.error(
-            `[satellites] could not read ${agentId}'s grants; serving the session without satellite tools`,
-            err,
-          );
-          return [];
-        },
-      ),
-    ]);
+      ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
     const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
@@ -1587,6 +1607,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudySubmissions: deps.caseStudySubmissions,
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
+      environments,
       agentTelemetry: deps.agentTelemetry,
       ...(spendStatusFor
         ? { spendStatus: () => spendStatusFor(agentId, verified.owner) }

@@ -76,7 +76,6 @@ import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
-import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
 import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
@@ -86,6 +85,7 @@ import { DockedBrowserPanel } from "../../browser/components/docked-browser-pane
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
+import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
@@ -219,7 +219,6 @@ export function ChatView() {
 
   useSessionUrlSync(selectedAgent);
 
-  useSyncRestartingAgents();
   const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
@@ -743,10 +742,12 @@ export function ChatView() {
     delegation: openDelegation !== null,
   };
   const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
+  const changesAvailable = useChangesAvailable(selectedAgent, sessionId);
   const hiddenTabs = hiddenSidePanelTabs({
     agent: true,
     artifacts: true,
     canOpenBrowser,
+    changes: changesAvailable,
     processesEnabled,
     gettingStarted,
   });
@@ -1403,6 +1404,7 @@ export function ChatView() {
               name={selectedAgentName}
               display={agentDisplay}
               canOpenBrowser={canOpenBrowser}
+              canShowChanges={changesAvailable}
               browserOpen={browserToggle.pressed}
               changesOpen={changesToggle.pressed}
               onToggleBrowser={() => {

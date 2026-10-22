@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 
+import { useStore } from "../../../store.js";
 import { useAgentsList } from "../api/queries.js";
 import { nextAutoWake } from "../lib/auto-wake.js";
 import { useWakeAgent } from "./use-wake-agent.js";
@@ -15,6 +16,7 @@ export function useAutoWakeOnOpen(agentId: string | null): void {
       decidedFor.current,
       agentId,
       agents.find((a) => a.id === agentId),
+      !!agentId && useStore.getState().restartingAgents.has(agentId),
     );
     decidedFor.current = next.decidedFor;
     if (next.wake && agentId) wake(agentId);

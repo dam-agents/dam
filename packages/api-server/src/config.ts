@@ -14,7 +14,6 @@ import { X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
-import pkg from "../package.json" with { type: "json" };
 import { getLogger } from "./core/logger.js";
 import { durationToMinutesStrict, goDurationMs } from "./duration.js";
 
@@ -203,7 +202,6 @@ const platformProviderSchema = z
     return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey, ca };
   });
 const configSchema = z.object({
-  serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
@@ -257,6 +255,7 @@ const configSchema = z.object({
   keycloakClientId: z.string().default("platform-ui"),
   keycloakCliClientId: z.string().default("platform-cli"),
   keycloakShareClientId: z.string().default("platform-share"),
+  keycloakEnvironmentsClientId: z.string().default("platform-environments"),
   keycloakApiAudience: z.string().default("platform-api"),
   keycloakApiClientId: z.string().default("platform-api"),
   keycloakApiClientSecret: z.string().default(""),
@@ -293,7 +292,15 @@ const configSchema = z.object({
   acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
   onceScheduleAgentMaxOpen: z.coerce.number().int().positive().default(20),
   onceScheduleAgentMaxPerHour: z.coerce.number().int().positive().default(30),
+  environmentsUrl: z
+    .string()
+    .refine((u) => u.includes("{host}"), "must name {host}")
+    .nullable()
+    .default(null),
+  environmentsMaxPerAgent: z.coerce.number().int().positive().default(5),
+  environmentExpiryMaxDays: z.coerce.number().int().positive().default(30),
   minClientCliVersion: z.string().optional(),
+  recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   harnesses: harnessesSchema,
@@ -402,10 +409,16 @@ export function agentsInstallSettings(config: Config) {
   };
 }
 
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\d+)?$/;
+
+function recommendedClientCliVersion(appVersion: string): string | undefined {
+  return RELEASE_VERSION.test(appVersion) ? appVersion : undefined;
+}
+
 export function loadConfig(): Config {
+  const appVersion = process.env.PLATFORM_APP_VERSION ?? "0.0.0";
   return validatedConfigSchema.parse({
-    serverVersion: pkg.version,
-    appVersion: process.env.PLATFORM_APP_VERSION ?? "0.0.0",
+    appVersion,
     namespace: process.env.NAMESPACE,
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     logLevel: process.env.LOG_LEVEL,
@@ -457,6 +470,7 @@ export function loadConfig(): Config {
     keycloakClientId: process.env.KEYCLOAK_CLIENT_ID,
     keycloakCliClientId: process.env.KEYCLOAK_CLI_CLIENT_ID,
     keycloakShareClientId: process.env.KEYCLOAK_SHARE_CLIENT_ID,
+    keycloakEnvironmentsClientId: process.env.KEYCLOAK_ENVIRONMENTS_CLIENT_ID,
     keycloakApiAudience: process.env.KEYCLOAK_API_AUDIENCE,
     keycloakApiClientId: process.env.KEYCLOAK_API_CLIENT_ID,
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
@@ -498,7 +512,11 @@ export function loadConfig(): Config {
     acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
     onceScheduleAgentMaxOpen: process.env.ONCE_SCHEDULE_AGENT_MAX_OPEN,
     onceScheduleAgentMaxPerHour: process.env.ONCE_SCHEDULE_AGENT_MAX_PER_HOUR,
+    environmentsUrl: process.env.ENVIRONMENTS_URL || null,
+    environmentsMaxPerAgent: process.env.ENVIRONMENTS_MAX_PER_AGENT,
+    environmentExpiryMaxDays: process.env.ENVIRONMENT_EXPIRY_MAX_DAYS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
+    recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     harnesses: process.env.HARNESSES,

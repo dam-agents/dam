@@ -55,6 +55,7 @@ const LEASE_IDLE_MS = 60_000;
 const SESSION_SETTINGS: Record<string, "process" | "session"> = {
   mode: "session",
   cacheTtl: "process",
+  subagentModel: "process",
 };
 
 const ALIAS_OF: Record<string, string> = {
@@ -70,10 +71,11 @@ function createLeaseWorld(opts: {
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
+  let openLinks = 0;
   const metadata = createSessionMetadata();
   const harnesses = new Map<string, Harness[]>();
   const key = (pair: LeasePair): string =>
-    `${pair.harness}${pair.settings?.cacheTtl ? `/cache-${pair.settings.cacheTtl}` : ""}${pair.native ? `/native-${pair.native}` : ""}`;
+    `${pair.harness}${pair.settings?.cacheTtl ? `/cache-${pair.settings.cacheTtl}` : ""}${pair.settings?.subagentModel ? `/subagent-${pair.settings.subagentModel}` : ""}${pair.native ? `/native-${pair.native}` : ""}${pair.env ? `/env-${Object.keys(pair.env).join(",")}` : ""}`;
   const backgroundWork = createBackgroundWorkRegistry({
     keepPolicy: keepsEveryTask,
   });
@@ -88,6 +90,11 @@ function createLeaseWorld(opts: {
       providers.includes("conn-bedrock")
         ? "conn-bedrock"
         : null,
+    modelEnvOf: (harness, model, settings) =>
+      harness === "claude-code" &&
+      [model, settings?.subagentModel].some((m) => m?.includes("/gpt-"))
+        ? { CLAUDE_CODE_AUTO_MODE_SERVER: "0" }
+        : undefined,
     modelRequired: () => opts.modelRequired === true,
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
@@ -106,7 +113,10 @@ function createLeaseWorld(opts: {
     }),
     sessionMetadata: metadata.store,
     backgroundWork,
-    keepPolicy: { keptProcessCount: () => keptProcesses },
+    keepPolicy: {
+      keptProcessCount: () => keptProcesses,
+      openLinkCount: () => openLinks,
+    },
     idleCheckMs: IDLE_CHECK_MS,
     leaseIdleMs: LEASE_IDLE_MS,
     log: () => {},
@@ -178,6 +188,9 @@ function createLeaseWorld(opts: {
     harnessCount: (k: string) => harnesses.get(k)?.length ?? 0,
     keepProcesses(count: number) {
       keptProcesses = count;
+    },
+    openLinks(count: number) {
+      openLinks = count;
     },
     revoke(provider: string) {
       providers = providers.filter((p) => p !== provider);
@@ -779,13 +792,26 @@ describe("acp-runtime: one harness process per harness", () => {
       idle: false,
       backgroundWork: [],
       keptProcesses: 2,
+      openLinks: 0,
     });
     world.keepProcesses(0);
     expect(world.router.status()).toEqual({
       idle: true,
       backgroundWork: [],
       keptProcesses: 0,
+      openLinks: 0,
     });
+  });
+
+  /** TEST_SCENARIO: An open Environment Link keeps the agent and its
+   * Environment awake, on both ends and whatever the keep decisions say, so
+   * neither sleeps during a long image import. */
+  it("stays busy while an Environment Link is open", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    world.openLinks(1);
+    expect(world.router.status()).toMatchObject({ idle: false, openLinks: 1 });
+    world.openLinks(0);
+    expect(world.router.status().idle).toBe(true);
   });
 
   /** TEST_SCENARIO: A restart of the harness leaves a Detached Process
@@ -1146,6 +1172,90 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(routed.killed()).toBe(false);
     client.send(frames.prompt(7, "other", "routed"));
     expect(promptTextsOf(routed)).toEqual(["busy", "routed"]);
+  });
+
+  /** TEST_SCENARIO: Claude Code asks the server to check auto-mode actions,
+   * and only a Claude model answers, so a session on a model that is not
+   * Claude needs a process started with that check off. A session on IBM's
+   * Claude that picks IBM's GPT moves, between turns, to a process of its
+   * own started with that env; the Claude session beside it stays in the
+   * first process, which keeps the check. */
+  it("moves a session that picks a model that is not Claude to a process of its own", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code", "s", 1, {
+      model: "ibm/aws/claude-sonnet-4-6",
+    });
+    startSession(world, client, "claude-code", "other", 2, {});
+    const claude = world.harness("claude-code");
+    claude.replyTo("session/set_config_option", {});
+    client.send(frames.prompt(3, "s", "busy"));
+    const pin = (id: number) =>
+      client.send({
+        jsonrpc: "2.0",
+        id,
+        method: PIN_MODEL_METHOD,
+        params: { sessionId: "s", model: "ibm/azure/gpt-5.5" },
+      });
+    pin(4);
+    expect(client.reply(4)?.error).toMatchObject({ code: -32000 });
+
+    claude.replyToSession("session/prompt", "s", { stopReason: "end_turn" });
+    pin(5);
+    expect(client.reply(5)?.result).toEqual({ model: "ibm/azure/gpt-5.5" });
+    client.send(frames.prompt(6, "s", "gpt"));
+    const own = world.harness("claude-code/env-CLAUDE_CODE_AUTO_MODE_SERVER");
+    const load = own
+      .receivedMethods()
+      .find((m) => ["session/load", "session/resume"].includes(m));
+    own.replyTo(load!, {});
+    expect(modelFrames(own, "s")).toEqual(["ibm/azure/gpt-5.5"]);
+    own.replyTo("session/set_config_option", {});
+    expect(promptTextsOf(own)).toEqual(["gpt"]);
+    expect(world.router.leases()).toContainEqual({
+      harness: "claude-code",
+      env: { CLAUDE_CODE_AUTO_MODE_SERVER: "0" },
+    });
+    expect(claude.killed()).toBe(false);
+    client.send(frames.prompt(7, "other", "claude"));
+    expect(promptTextsOf(claude)).toEqual(["busy", "claude"]);
+  });
+
+  /** TEST_SCENARIO: A Claude session whose subagents run on a model that is
+   * not Claude sends their calls without the server check too, so the
+   * subagent model alone moves the session to the process that does not ask
+   * for it. */
+  it("moves a Claude session whose subagent model is not Claude to that process", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: ".",
+        _meta: {
+          platform: {
+            model: "ibm/aws/claude-opus-5-5",
+            settings: { subagentModel: "ibm/azure/gpt-5.5" },
+          },
+        },
+      },
+    });
+    world
+      .harness(
+        "claude-code/subagent-ibm/azure/gpt-5.5/env-CLAUDE_CODE_AUTO_MODE_SERVER",
+      )
+      .replyTo("session/new", { sessionId: "s" });
+    expect(client.reply(1)?.result).toMatchObject({ sessionId: "s" });
+    expect(world.harnessCount("claude-code")).toBe(0);
+    expect(world.router.leases()).toEqual([
+      {
+        harness: "claude-code",
+        settings: { subagentModel: "ibm/azure/gpt-5.5" },
+        env: { CLAUDE_CODE_AUTO_MODE_SERVER: "0" },
+      },
+    ]);
   });
 
   /** TEST_SCENARIO: A setting the session's harness does not offer is refused

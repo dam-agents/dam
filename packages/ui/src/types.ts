@@ -176,6 +176,7 @@ export interface AgentView {
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: { reason: string; message: string };
   podRestarts: number;
   podRestartReason?: string;
   gatewayFailure?: string;
@@ -195,6 +196,7 @@ export interface AgentView {
   starterKitOnboarded: string | null;
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
+  environmentOf: string | null;
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
   kind?: AgentKind;

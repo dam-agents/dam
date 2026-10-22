@@ -1,3 +1,4 @@
+import { LINKED_KIT_CATALOG } from "api-server-api";
 import { z } from "zod";
 
 const settingsTabSchema = z.enum([
@@ -25,6 +26,7 @@ const sandboxSectionSchema = z.enum([
   "chat-forms",
   "skills",
   "schedules",
+  "environments",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
@@ -38,6 +40,7 @@ export type Route =
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
+  | { view: "connection-secret" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "analytics" }
@@ -114,6 +117,7 @@ export function parseRoute(path: string, search = ""): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
+  if (path === "/connections/secret") return { view: "connection-secret" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
@@ -126,6 +130,15 @@ export function parseRoute(path: string, search = ""): Route {
     };
   }
   if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };
+  const linkedKitMatch = path.match(
+    new RegExp(`^/starter-kits/${LINKED_KIT_CATALOG}/([^/]+)/([^/]+)$`),
+  );
+  if (linkedKitMatch)
+    return {
+      view: "starter-kit",
+      catalog: LINKED_KIT_CATALOG,
+      kit: `${decodeSegment(linkedKitMatch[1]!)}/${decodeSegment(linkedKitMatch[2]!)}`,
+    };
   const starterKitMatch = path.match(
     /^\/starter-kits\/([^/]+)\/([^/]+)(?:\/new)?$/,
   );
@@ -165,6 +178,8 @@ export function routeToPath(route: Route): string {
       return "/telegram/bind";
     case "slack-bind":
       return "/slack/bind";
+    case "connection-secret":
+      return "/connections/secret";
     case "sandbox-home": {
       const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
       return route.sandboxSection === "setup"
@@ -172,7 +187,11 @@ export function routeToPath(route: Route): string {
         : `${base}/${route.sandboxSection}`;
     }
     case "starter-kit":
-      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${
+        route.catalog === LINKED_KIT_CATALOG
+          ? route.kit.split("/").map(encodeURIComponent).join("/")
+          : encodeURIComponent(route.kit)
+      }`;
     case "analytics":
       return "/analytics";
     case "not-found":

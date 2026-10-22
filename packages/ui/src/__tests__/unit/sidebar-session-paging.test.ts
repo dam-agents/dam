@@ -51,7 +51,6 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     loading: false,
     failed: false,
     provisional: false,
-    recordRead: true,
     fetchNextPage: vi.fn(),
   }),
 }));

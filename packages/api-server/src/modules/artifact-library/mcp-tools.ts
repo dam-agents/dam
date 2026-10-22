@@ -75,7 +75,7 @@ export function registerArtifactLibraryTools(
         .boolean()
         .optional()
         .describe(
-          "Opt-in HTML prompt buttons and state shared with the agent through a server it runs. Use only when the user requests them and has enabled Interactive artifacts. It can never be public; the owner can share it with named people in the app, and their copy cannot ask you. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
+          "Opt-in HTML prompt buttons and state shared with the agent through a server it runs. Use only when the user requests them and has enabled Interactive artifacts. It can never be public; the owner can share it with named people in the app, and their copy can ask you too, each viewer in a Session of their own. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
         ),
       expires_in_hours: z
         .number()

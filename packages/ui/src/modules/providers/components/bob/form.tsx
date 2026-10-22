@@ -1,4 +1,3 @@
-import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
@@ -8,10 +7,11 @@ import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
-import { externalLinkProps } from "@/lib/external-link";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+
+const BOB_KEY_PAGE_URL = "https://bob.ibm.com/admin/apikeys";
 
 export const bobCredentialSchema = (variant: "wizard" | "edit") =>
   z
@@ -107,19 +107,14 @@ export function BobForm({
       provider="bob"
       title="Bob Shell"
       description={
-        <>
-          {isEdit
-            ? "Paste a new token to replace the existing one, or leave it empty to keep it. Advanced settings are passed to Bob as CLI flags / env."
-            : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."}{" "}
-          <a
-            href="https://bob.ibm.com/admin/apikeys"
-            {...externalLinkProps}
-            className="text-primary hover:underline inline-flex items-center gap-1"
-          >
-            Manage keys <Launch size={11} />
-          </a>
-        </>
+        isEdit
+          ? "Paste a new token to replace the existing one, or leave it empty to keep it. Advanced settings are passed to Bob as CLI flags / env."
+          : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."
       }
+      keyPage={{
+        href: BOB_KEY_PAGE_URL,
+        hint: "Create a key of type Inference in the Bob admin console",
+      }}
       onSubmit={onSubmit}
       onCancel={onCancel}
     >

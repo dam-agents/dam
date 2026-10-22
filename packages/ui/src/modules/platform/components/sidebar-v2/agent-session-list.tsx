@@ -3,11 +3,11 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 
 import { useStore } from "../../../../store.js";
-import { useAgentRunState } from "../../../agents/api/queries.js";
 import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
 import { SessionListSkeleton } from "../../../sessions/components/session-list-skeleton.js";
 import { useAgentSessionList } from "../../../sessions/hooks/use-agent-session-list.js";
+import { useAgentSessionFilter } from "../../../sessions/lib/agent-session-filters.js";
 import {
   pinKey,
   usePinnedSessions,
@@ -19,7 +19,8 @@ import { TreeSessionRow } from "./tree-session-row.js";
 
 function useAgentTreeRows(agentId: string) {
   const list = useAgentSessionList(agentId);
-  const filters = useStore((s) => s.sidebarActivityFilters);
+  const globalFilters = useStore((s) => s.sidebarActivityFilters);
+  const filters = useAgentSessionFilter(agentId) ?? globalFilters;
   const pins = usePinnedSessions();
   const rows = newestFirst(
     list.sessions
@@ -45,7 +46,7 @@ function useAgentTreeRows(agentId: string) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in JanUI's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the session filter is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. A hibernated Agent whose record holds no Session says its Sessions show when it wakes.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in JanUI's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the filter it applies (its own, else the header's) is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. When the Agent stays asleep and its record holds none of its Sessions, the list offers a wake as its retry.
  */
 export function AgentSessionList({
   agentId,
@@ -65,11 +66,6 @@ export function AgentSessionList({
     !list.hasNextPage &&
     list.sessions.length === 0;
   useEffect(() => onEmptyChange?.(empty), [empty, onEmptyChange]);
-  const runState = useAgentRunState(agentId);
-  const asleep =
-    list.loading &&
-    list.recordRead &&
-    (runState === "hibernated" || runState === "hibernating");
   const {
     hasNextPage,
     isFetchingNextPage,
@@ -93,18 +89,9 @@ export function AgentSessionList({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || (list.loading && !asleep && !list.failed)}
+      aria-busy={list.provisional || (list.loading && !list.failed)}
     >
-      {asleep ? (
-        <p
-          className="py-1.5 pl-[58px] text-xs text-muted-foreground"
-          data-testid="sidebar-agent-asleep"
-        >
-          Its sessions show when it wakes.
-        </p>
-      ) : (
-        list.loading && !list.failed && <SessionListSkeleton />
-      )}
+      {list.loading && !list.failed && <SessionListSkeleton />}
       {list.failed && (
         <RetryRow
           label="Couldn't load sessions."

@@ -24,6 +24,7 @@ export function ClassicChatIdentity({
   name,
   display,
   canOpenBrowser,
+  canShowChanges,
   browserOpen,
   changesOpen,
   onToggleBrowser,
@@ -35,6 +36,7 @@ export function ClassicChatIdentity({
   name: string | null;
   display: AgentDisplay | null;
   canOpenBrowser: boolean;
+  canShowChanges: boolean;
   browserOpen: boolean;
   changesOpen: boolean;
   onToggleBrowser: () => void;
@@ -83,7 +85,7 @@ export function ClassicChatIdentity({
             <Globe size={16} />
           </Button>
         )}
-        {agentId && (
+        {canShowChanges && agentId && (
           <Button
             variant="ghost"
             size="icon-sm"

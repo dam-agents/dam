@@ -38,6 +38,9 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: a release the node's stager has not staged yet is no fault of the release, and a chart upgrade stages it on every node at once, each after its own image pull. While the runner reports it not staged, the hand-off's start moves up to now, at most this often, so the settle timeout counts from about when the release reached the node rather than from when it was named. A stager that never stages it keeps the hand-off waiting, and its place, without a stall.
 	runnerHandoffUnstagedRestart = time.Minute
 
+	// UNIT_BOUNDARY_DESCRIPTION: the message a hand-off logs when the roll has no free place for its owner, so a test reads the give-up from the controller's own log rather than trusting that no owner went missing.
+	handoffWaitsForPlace = "vm runner: a new release is waiting for other runners to finish rolling or handing off"
+
 	// UNIT_BOUNDARY_DESCRIPTION: the ConfigMap a controller before the machine API's release call named each runner's release in, owned by the runner's Deployment. Only a pod that controller rendered mounts it, and that pod rolls once onto the pod this controller renders, so the roll deletes it. Remove this once every install has run a controller with this change.
 	legacyRunnerReleaseSuffix = "-release"
 )
@@ -63,20 +66,25 @@ func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string, 
 		r.settleRunnerHandoff(ctx, owner, dep)
 		return nil
 	}
-	const waiting = "vm runner: a new release is waiting for other runners to finish rolling or handing off"
 	r.runnerRollMu.Lock()
-	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, true)
+	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, handoffWaitsForPlace, true)
 	r.runnerRollMu.Unlock()
 	if err != nil || !free {
 		return err
 	}
 	ready := r.readyMachines(ctx, owner)
 	r.runnerRollMu.Lock()
-	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, true)
+	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, handoffWaitsForPlace, true)
 	if err != nil || !free {
 		r.runnerRollMu.Unlock()
 		return err
 	}
+	live, err := r.runnerDeployment(ctx, dep.Name, false)
+	if err != nil {
+		r.runnerRollMu.Unlock()
+		return err
+	}
+	dep = live
 	now := time.Now().UTC().Format(time.RFC3339)
 	delete(dep.Annotations, annRunnerHandoffStalled)
 	delete(dep.Annotations, annRunnerHandoffAwaiting)

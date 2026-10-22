@@ -5,6 +5,7 @@ import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port
 interface AgentL7State {
   agentId: string;
   current: readonly string[];
+  environmentOf?: string;
 }
 
 export async function reconvergeAgentL7Hosts(
@@ -51,8 +52,11 @@ export async function reconcileL7Promotions(deps: {
 
   let drifted = 0;
   let failed = 0;
-  for (const { agentId, current } of agents) {
-    const desired = promotedHosts(desiredByAgent.get(agentId) ?? []);
+  // UNIT_BOUNDARY_DESCRIPTION: an Environment's egress follows its Owning Agent's rules, so its gateway inspects the hosts the Owning Agent's path-scoped rules promote; it has no rules of its own.
+  for (const { agentId, current, environmentOf } of agents) {
+    const desired = promotedHosts(
+      desiredByAgent.get(environmentOf ?? agentId) ?? [],
+    );
     if (sameSet(current, desired)) continue;
     drifted++;
     try {

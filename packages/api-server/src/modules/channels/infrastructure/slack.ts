@@ -15,6 +15,7 @@ import {
   type SlackTurnRoster,
   type SlackTurnWhisper,
   postDeletedNotice,
+  supersededTurnNote,
 } from "./slack-turn-copy.js";
 import { match, P } from "ts-pattern";
 import type { SlackConversationStanding } from "../services/slack-workspace-probe.js";
@@ -193,6 +194,10 @@ import type {
   SlackIgnoredApps,
 } from "./slack-ignored-apps-repository.js";
 import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
+import {
+  createThreadSupersede,
+  type HeldTurn,
+} from "../domain/thread-supersede.js";
 import {
   parseWhisperSession,
   whisperSessionMetadata,
@@ -1610,6 +1615,66 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
 
+  const threadSupersede = createThreadSupersede();
+
+  type SupersedableTurn = { turn: HeldTurn; signal: AbortSignal };
+
+  function holdSupersedable(
+    instanceName: string,
+    channel: string,
+    sessionKey: string,
+    carries: () => readonly string[],
+  ): SupersedableTurn & { end: () => void } {
+    const cancelled = new AbortController();
+    const turn = threadSupersede.hold(instanceName, {
+      channel,
+      sessionKey,
+      carries,
+      cancel: () => cancelled.abort(),
+    });
+    return { turn, signal: cancelled.signal, end: () => turn.end() };
+  }
+
+  async function waitForSupersededTurns(
+    instanceName: string,
+    channel: string,
+    rootTs: string,
+  ): Promise<string> {
+    const earlier = threadSupersede.supersede(instanceName, {
+      channel,
+      rootTs,
+      sessionKey: slackThreadKey(channel, rootTs),
+    });
+    if (!earlier) return "";
+    const turns = await earlier;
+    getLogger().info(
+      {
+        agentId: instanceName,
+        channelId: channel,
+        threadTs: rootTs,
+        cancelled: turns.filter((turn) => turn.cancelled).length,
+        waited: turns.length,
+      },
+      "slack.turn.superseded_earlier",
+    );
+    return supersededTurnNote(turns);
+  }
+
+  const turnReplies = (refs: TurnRef[]) =>
+    refs.flatMap((ref) => ref.replyTexts ?? []);
+
+  function noteCarriedByThread(
+    instanceName: string,
+    threadKey: string,
+    tss: readonly string[],
+  ): void {
+    if (tss.length === 0) return;
+    replaceSeenAbove(instanceName, threadKey, [
+      ...readSeenAbove(instanceName, threadKey),
+      ...tss,
+    ]);
+  }
+
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
   function beginTurn(instanceName: string, ref: TurnRef) {
@@ -2894,6 +2959,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
     onSession?: (sessionId: string) => void;
+    held?: SupersedableTurn;
   }) {
     if (!gateway) return;
     const gw = gateway;
@@ -3005,13 +3071,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
       ...contractContext,
     });
-    const guidance = addressedGuidance({
-      isDirectMessage,
-      botUserId,
-      forwardedFrom: ctx.forwardedFrom,
-      ambiguousName: ctx.ambiguousName ?? null,
-      ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
-    });
+    const earlierTurn =
+      hasThread && !ctx.whisper
+        ? await waitForSupersededTurns(instanceName, ctx.channel, ctx.threadTs)
+        : "";
+    const guidance = [
+      addressedGuidance({
+        isDirectMessage,
+        botUserId,
+        forwardedFrom: ctx.forwardedFrom,
+        ambiguousName: ctx.ambiguousName ?? null,
+        ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
+      }),
+      ...(earlierTurn ? [earlierTurn] : []),
+    ].join("\n\n");
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -3110,7 +3183,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ),
         onWaking,
         onImagesDropped,
-        onUpdate: presenter.onUpdate,
+        onUpdate: (update) => {
+          presenter.onUpdate(update);
+          if (update.kind === "tool") ctx.held?.turn.noteTool(update.title);
+        },
         onSession: (sessionId) => {
           seenSessionIds.add(sessionId);
           for (const ref of turnRefs) ref.sessionId = sessionId;
@@ -3169,6 +3245,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await presenter.clearStatus();
       },
     });
+    let superseded = false;
+    const onSuperseded = () => {
+      superseded = true;
+      stopper.abort();
+      void presenter.clearStatus();
+    };
+    if (ctx.held?.signal.aborted) onSuperseded();
+    ctx.held?.signal.addEventListener("abort", onSuperseded, { once: true });
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
       await runWhileAgentStarts(runTurn, {
@@ -3182,6 +3266,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       });
       outcome = "success";
     } catch (err) {
+      if (superseded)
+        noteCarriedByThread(
+          instanceName,
+          threadKey,
+          verdictRefs().map((ref) => ref.eventTs),
+        );
       if (stopped()) {
         outcome = "success";
         getLogger().info(
@@ -3199,6 +3289,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     } finally {
       releaseStoppable();
+      ctx.held?.signal.removeEventListener("abort", onSuperseded);
+      ctx.held?.turn.noteReplies(turnReplies(verdictRefs()));
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
@@ -3247,9 +3339,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         outcome,
         ...(failureReason !== undefined
           ? { reason: failureReason }
-          : stopped()
-            ? { reason: "stopped" }
-            : {}),
+          : superseded
+            ? { reason: "superseded" }
+            : stopped()
+              ? { reason: "stopped" }
+              : {}),
       });
     }
   }
@@ -5164,9 +5258,38 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return createConversationQueue<AddressedPending>({
       settleMs,
       canSteer: (msg) => !carriesAttachments(msg),
-      runTurn: async (batch, onSession) => {
+      runTurn: async (queued, onSession) => {
+        const threadKey = slackThreadKey(
+          conversation.channelId,
+          conversation.threadTs,
+        );
+        const isCarriedByThread = (m: AddressedPending) =>
+          !conversation.oneThread &&
+          threadSupersede.isSuperseded(
+            conversation.instanceName,
+            conversation.channelId,
+            m.eventTs,
+          );
+        noteCarriedByThread(
+          conversation.instanceName,
+          threadKey,
+          queued.filter(isCarriedByThread).map((m) => m.eventTs),
+        );
+        const batch = queued.filter((m) => !isCarriedByThread(m));
+        const latest = batch.at(-1);
+        if (!latest) return;
         const { kept, dropped } = batchFiles(batch);
-        const latest = batch.at(-1)!;
+        const held = conversation.oneThread
+          ? null
+          : holdSupersedable(
+              conversation.instanceName,
+              conversation.channelId,
+              threadKey,
+              () => [
+                ...batch.map((m) => m.eventTs),
+                ...steeredRefs.map((ref) => ref.eventTs),
+              ],
+            );
         await relaySharedTurn({
           channel: conversation.channelId,
           teamId: conversation.teamId,
@@ -5195,7 +5318,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ...(conversation.whisper ? { whisper: conversation.whisper } : {}),
           siblingRefs: () => steeredRefs,
           onSession,
-        });
+          ...(held ? { held } : {}),
+        }).finally(() => held?.end());
         if (conversation.whisper)
           await noticeWhispersTurnedOff(conversation.instanceName, {
             channel: conversation.channelId,
@@ -5319,6 +5443,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     whisper?: SlackTurnWhisper;
     siblingRefs?: () => TurnRef[];
     onSession?: (sessionId: string) => void;
+    held?: SupersedableTurn;
   }) {
     if (!gateway) return;
 
@@ -5410,6 +5535,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       ...(args.whisper ? { whisper: args.whisper } : {}),
       ...(args.siblingRefs ? { siblingRefs: args.siblingRefs } : {}),
       ...(args.onSession ? { onSession: args.onSession } : {}),
+      ...(args.held ? { held: args.held } : {}),
     });
   }
 
@@ -5438,6 +5564,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     roster?: RosterEntry[];
     readers?: RosterEntry[];
     answeredAlready?: AmbientPeerReply[];
+    earlierTurn?: string;
+    held?: SupersedableTurn;
   }): Promise<{
     posted: boolean;
     replyText: string | null;
@@ -5504,13 +5632,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       roster: rosterCopy(args.roster, args.instanceName),
       ...contractContext,
     });
-    const guidance = ambientGuidance(
-      brand,
-      agentName,
-      rosterCopy(args.readers ?? args.roster, args.instanceName),
-      args.answeredAlready ?? [],
-      args.hasThread,
-    );
+    const guidance = [
+      ambientGuidance(
+        brand,
+        agentName,
+        rosterCopy(args.readers ?? args.roster, args.instanceName),
+        args.answeredAlready ?? [],
+        args.hasThread,
+      ),
+      ...(args.earlierTurn ? [args.earlierTurn] : []),
+    ].join("\n\n");
 
     let delivery: Promise<TurnDelivery>;
     const deliverFiles = () =>
@@ -5581,7 +5712,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onGhostTurn: () => {
           ghostTurn = true;
         },
+        ...(args.held
+          ? {
+              signal: args.held.signal,
+              onUpdate: (update: PromptUpdate) => {
+                if (update.kind === "tool")
+                  args.held?.turn.noteTool(update.title);
+              },
+            }
+          : {}),
       });
+    const superseded = () => args.held?.signal.aborted === true;
 
     try {
       for (const ref of turnRefs) {
@@ -5590,6 +5731,19 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runWhileAgentStarts(runTurn, wakeWait);
       outcome = "success";
     } catch (err) {
+      if (superseded()) {
+        outcome = "success";
+        noteCarriedByThread(
+          args.instanceName,
+          args.threadKey,
+          args.messages.map((m) => m.eventTs),
+        );
+        getLogger().info(
+          { agentId: args.instanceName, error: formatError(err) },
+          "slack.ambient_turn.superseded",
+        );
+        return { posted: false, replyText: null, replies: [] };
+      }
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
         : isNoDefaultModelError(err)
@@ -5617,6 +5771,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         for (const sid of seenSessionIds)
           turnRecovery.dismiss(args.instanceName, sid);
       }
+      args.held?.turn.noteReplies(
+        turnRefs.flatMap((ref) => ref.replyTexts ?? []),
+      );
       annotateSpan({
         "platform.channel.outcome": outcome,
         ...(failureReason !== undefined && {
@@ -5630,7 +5787,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         actorSub: null,
         externalActorId: args.externalActorId,
         outcome,
-        ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ...(failureReason !== undefined
+          ? { reason: failureReason }
+          : superseded()
+            ? { reason: "superseded" }
+            : {}),
         ambient: true,
       });
     }
@@ -5734,9 +5895,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
             continue;
           }
-          const shown = batch.filter((m) => senderReaches(m.sender, reader));
+          const reached = batch.filter((m) => senderReaches(m.sender, reader));
+          const isCarriedByThread = (m: PendingMessage) =>
+            !inThread &&
+            threadSupersede.isSuperseded(
+              reader.instanceName,
+              channelId,
+              m.eventTs,
+            );
+          noteCarriedByThread(
+            reader.instanceName,
+            ambientThreadKey(channelId),
+            reached.filter(isCarriedByThread).map((m) => m.eventTs),
+          );
+          const shown = reached.filter((m) => !isCarriedByThread(m));
           const last = shown.at(-1);
           if (!last) continue;
+          const earlierTurn = inThread
+            ? await waitForSupersededTurns(
+                reader.instanceName,
+                channelId,
+                threadTs,
+              )
+            : "";
           const { kept, dropped } = batchFiles(shown);
           securityLog("info", "channel.authz", {
             category: "channel",
@@ -5753,7 +5934,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               channelId,
             },
           });
+          const held = inThread
+            ? null
+            : holdSupersedable(
+                reader.instanceName,
+                channelId,
+                ambientThreadKey(channelId),
+                () => shown.map((m) => m.eventTs),
+              );
           const { posted, replyText, replies } = await relayAmbientTurn({
+            ...(earlierTurn ? { earlierTurn } : {}),
+            ...(held ? { held } : {}),
             teamId: reader.teamId,
             roster,
             readers,
@@ -5776,7 +5967,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
-          });
+          }).finally(() => held?.end());
           if (posted)
             answeredAlready.push({ name: reader.name, text: replyText });
           botUserId ??= await gateway

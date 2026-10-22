@@ -43,7 +43,12 @@ const IN_APP_ENTRY = "in-app";
 function initialPath(): string {
   const { pathname } = window.location;
   const { view } = parseRoute(pathname);
-  if (view === "telegram-bind" || view === "slack-bind") return pathname;
+  if (
+    view === "telegram-bind" ||
+    view === "slack-bind" ||
+    view === "connection-secret"
+  )
+    return pathname;
 
   const saved = sessionStorage.getItem("platform-return-view");
   if (!saved) return pathname;

@@ -1,0 +1,197 @@
+#!/usr/bin/python3
+"""usage: platform-env list            the Environments this agent owns
+       platform-env wake <name>     wake a sleeping Environment
+       platform-env proxy <host>    SSH ProxyCommand for env-<name> (ssh calls it)
+       platform-env key             this agent's link key, made on first use
+
+`ssh env-<name>` reaches an Environment you own, with nothing to set up:
+/etc/ssh/ssh_config.d/platform-env.conf points every env-* host here. scp,
+ssh -L and streaming an image in work as with any host:
+  docker save IMAGE | ssh env-<name> k3s ctr images import -
+
+The Environment Link is one-way: your VM runner joins your machine to the
+Environment's sshd, only from you to an Environment you own, and nothing in
+an Environment can open a connection back. A sleeping Environment is woken
+first. While a link is open neither machine hibernates.
+"""
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+
+LINK_PORT = 6100
+HOST_CID = 2
+HOME = os.path.expanduser("~")
+KEY = os.path.join(HOME, ".ssh", "platform_env_ed25519")
+MCP_ENTRY = os.path.join(HOME, ".platform", "platform-mcp-entry.json")
+WAKE_TIMEOUT_S = 180
+RETRY_S = 2
+
+
+def fail(message, code=1):
+    sys.stderr.write(f"platform-env: {message}\n")
+    sys.exit(code)
+
+
+def mcp(tool, arguments):
+    try:
+        with open(MCP_ENTRY) as f:
+            entry = json.load(f)
+        url = entry["url"]
+    except (OSError, ValueError, KeyError, TypeError):
+        fail(
+            "this agent has no platform MCP address yet; run this inside a running agent"
+        )
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": tool, "arguments": arguments},
+        }
+    ).encode()
+    headers = {
+        "content-type": "application/json",
+        "accept": "application/json, text/event-stream",
+        **(entry.get("headers") or {}),
+    }
+    request = urllib.request.Request(url, data=body, method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            text = response.read().decode()
+    except OSError as e:
+        fail(f"could not reach the platform: {e}")
+    payload = next(
+        (line[5:] for line in text.splitlines() if line.startswith("data:")), text
+    )
+    reply = json.loads(payload)
+    if "error" in reply:
+        fail(reply["error"].get("message", "the platform refused"))
+    result = reply["result"]
+    content = result.get("content") or [{}]
+    if result.get("isError"):
+        fail(content[0].get("text", "the platform refused"))
+    return json.loads(content[0].get("text", "null"))
+
+
+def find(host):
+    name = host[4:] if host.startswith("env-") else host
+    for env in mcp("list_environments", {}) or []:
+        if env["name"] == name or env["id"] == name:
+            return env
+    fail(f"you own no Environment named {name}; platform-env list shows yours")
+
+
+def ensure_key():
+    if not os.path.exists(KEY):
+        os.makedirs(os.path.dirname(KEY), mode=0o700, exist_ok=True)
+        subprocess.run(
+            [
+                "ssh-keygen",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-q",
+                "-f",
+                KEY,
+                "-C",
+                "platform-env",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+    with open(KEY + ".pub") as f:
+        return f.read().strip()
+
+
+def answer(env_id):
+    """Asks the runner for the link; returns None when it is open, else the reason."""
+    conn = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
+    try:
+        conn.connect((HOST_CID, LINK_PORT))
+    except OSError as e:
+        fail(f"this machine has no Environment Link ({e}); only a vm agent has one")
+    conn.sendall(env_id.encode() + b"\n")
+    reply = b""
+    while not reply.endswith(b"\n") and len(reply) < 512:
+        chunk = conn.recv(1)
+        if not chunk:
+            break
+        reply += chunk
+    conn.close()
+    reply = reply.decode(errors="replace").strip()
+    return (
+        None
+        if reply == "ok"
+        else (reply or "the runner closed the link").removeprefix("refused ")
+    )
+
+
+def proxy(host):
+    key = ensure_key()
+    env = find(host)
+    # The runner answers ok only when the Environment's sshd socket answers;
+    # wake a sleeping one and wait for that before the real connection.
+    deadline = time.monotonic() + WAKE_TIMEOUT_S
+    woken = False
+    while (why := answer(env["id"])) is not None:
+        if not why.endswith("is not running"):
+            fail(why)
+        if not woken:
+            sys.stderr.write(f"platform-env: waking {host}...\n")
+            mcp("wake_environment", {"name": env["name"]})
+            woken = True
+        if time.monotonic() > deadline:
+            fail(f"{host} did not come up within {WAKE_TIMEOUT_S}s: {why}")
+        time.sleep(RETRY_S)
+    # The link itself is socat: the Environment's name, the runner's answer
+    # line (dropped), the agent's key for the Environment, then SSH both ways.
+    # PLATFORM_LINK marks it, by which the agent-runtime counts the link as busy.
+    first = f"{env['id']}\n"
+    os.execvpe(
+        "sh",
+        [
+            "sh",
+            "-c",
+            '{ printf "%s" "$1"; printf "%s\\n" "$2"; exec cat; } | '
+            'socat - "VSOCK-CONNECT:2:6100" | { IFS= read -r _; exec cat; }',
+            "sh",
+            first,
+            key,
+        ],
+        {**os.environ, "PLATFORM_LINK": host},
+    )
+
+
+def main(argv):
+    command = argv[0] if argv else ""
+    if command in ("-h", "--help"):
+        print(__doc__.strip())
+    elif command == "list" and len(argv) == 1:
+        for env in mcp("list_environments", {}) or []:
+            urls = "  ".join(
+                f"{e['name']}={e.get('url') or ':' + str(e['port'])}"
+                for e in env["endpoints"]
+            )
+            print(
+                f"env-{env['name']}\t{env['state']}\texpires {env['expiresAt']}\t{urls}"
+            )
+    elif command == "wake" and len(argv) == 2:
+        env = find(argv[1])
+        mcp("wake_environment", {"name": env["name"]})
+        print(f"waking env-{env['name']}")
+    elif command == "proxy" and len(argv) == 2:
+        proxy(argv[1])
+    elif command == "key" and len(argv) == 1:
+        print(ensure_key())
+    else:
+        fail(__doc__.strip(), 2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

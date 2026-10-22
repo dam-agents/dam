@@ -3,7 +3,7 @@ name: dam
 description: >
   Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, and manage schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
-  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential into a command you hand them.
+  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -18,13 +18,13 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 1. **You never see a secret.**
    Never ask the user for an API key, token, password, client secret, private key or access key.
    Never read one from a file, an environment variable or the clipboard, and never put one in a command you run.
-   When a step needs a secret, follow [Secrets](#secrets): print the command, let the user run it in their own terminal, then check the result.
+   When a step needs a secret, follow [Secrets](#secrets): run the command without it, and the user types it on a DAM web page the command opens.
 2. **Never touch the user's DAM sign-in.**
    Don't read the CLI's state directory (`~/.local/state/dam/`), and don't print or export `DAM_TOKEN`.
    `dam auth status` is safe: it never prints tokens.
 3. **Ask before anything you can't undo.**
-   `dam agent delete` removes an agent and all its data.
-   Confirm with the user first, then pass `--yes` yourself; without a terminal, destructive commands refuse to run without it.
+   `dam agent delete` removes an agent and all its data, and `dam connection disconnect` deletes a stored credential that every agent it is granted to loses.
+   Confirm with the user first, then pass `--yes` yourself; without a terminal, these commands refuse to run without it ([Without a terminal](#without-a-terminal) lists them).
 4. **Approvals and the Terms of Use are the user's to decide.**
    Don't approve or deny a pending request, and don't accept the Terms of Use, unless the user told you to after seeing what is being asked.
 5. **Parse `--json`, not tables.**
@@ -84,9 +84,9 @@ If `dam auth login` still answers "already logged in" while other commands say t
 
 ### Check the version
 
-`dam version` shows this CLI's version and the server's.
-When the CLI is older than the server it warns and carries on; when it is older than the oldest version the server accepts, commands exit with code 3.
-Either way, update the CLI.
+`dam version --json` shows this CLI's version, the server's, the CLI version the server recommends, and the latest CLI on npm.
+When `upToDate` is `false`, update the CLI.
+When the CLI is older than the server recommends, commands warn and carry on; when it is older than the oldest version the server accepts, commands exit with code 3.
 
 ### Terms of Use
 
@@ -98,20 +98,24 @@ Run `dam terms accept --yes` only after the user says they accept.
 Some commands store a credential on DAM: a model provider key, an API key or header value, an OAuth client secret, a GitHub App private key, object storage keys, a new DAM API key.
 The credential must go from the user to DAM without passing through you.
 
-1. Work out the full command **without** the secret flag.
-   For `dam connection connect` and `dam connection update`, the CLI asks for a missing required secret at a hidden prompt when a person runs it.
-2. Print that command and ask the user to run it **in a terminal of their own** — not through you, and not with an in-chat shell such as a `!` prefix, which shows the output to you and has no hidden prompt.
-3. Wait for the user to say it is done.
-4. Check the result yourself, for example with `dam connection list --json`.
+For `dam connection connect` and `dam connection update`, the user types the secret on a DAM web page:
 
-Some secrets can't be typed at the prompt:
+1. Run the command yourself, with every input except the secret.
+2. The CLI opens a DAM page in the user's browser and waits; with `--no-browser` it prints the link instead, and you show the user that link.
+   Tell the user to sign in as themselves, check what the page shows — the connection, its type and every host the secret is sent to — and enter the secret there.
+3. The command ends when the user saves (exit `0`; `--json` gives the connection's ID), cancels, or lets the link expire after ten minutes (exit `1`).
+   Run it again for a new link.
 
-- **A multi-line key** (a GitHub App private key in PEM) is passed from a file the user names: `--private-key "$(cat path/to/app.pem)"` on connect, `--value "$(cat path/to/app.pem)"` on update.
-  Print the command with the user's path in it; don't open the file yourself.
-- **An optional secret** (the client secret of the user's own OAuth app) is not prompted for: tell the user which flag to add, and let them type it.
+The page takes a multi-line key (a GitHub App private key in PEM) as well, so don't build a `--private-key "$(cat …)"` command.
+If the page warns that the secret will go to a host the template does not use, tell the user to cancel unless they asked for that host.
+
+A command can't open the page for some secrets; then print the command for the user to run **in a terminal of their own** — not through you, and not with an in-chat shell such as a `!` prefix, which shows the output to you and has no hidden prompt — wait for them to say it is done, and check the result yourself, for example with `dam connection list --json`:
+
+- **The user prefers a terminal**, or the server is older than the page (the CLI says `this server has no secret-entry page`): the command with `--prompt` asks at a hidden prompt.
+- **An optional secret** (the client secret of the user's own OAuth app) is not asked for: tell the user which flag to add, and let them type it.
 - **A new DAM API key** (`dam auth token create`) is printed once on stderr to whoever runs the command, so the user runs it.
 
-If a command you ran stops with `error: missing required input(s): --value` or similar, that is the CLI asking for a secret: switch to the steps above.
+If a command stops with `error: missing required input(s): --value` or similar, the CLI could not open the page there: switch to the terminal steps above.
 Don't put secrets in `dam agent create --env` either.
 A custom header connection keeps the credential out of sight and can still hand it to the DAM agent as an environment variable (`--env-name`).
 
@@ -127,7 +131,10 @@ A ref that matches nothing or more than one agent exits with code 5; list the ag
 
 Your shell has no terminal attached, and the CLI behaves accordingly:
 
-- Destructive commands need `--yes` (see the hard rules).
+- These commands need `--yes` (see the hard rules):
+  `dam agent delete`, `dam connection disconnect`, `dam schedule delete`, `dam import`, `dam skill source remove` and `dam satellite rm`;
+  `dam network create`, `dam network update` and `dam network revoke` when the change restarts the agent's network gateway, and `dam network apply-preset --preset all`.
+  `dam terms accept` needs it too, and only after the user accepts (hard rule 4).
 - `dam chat <agent>` attaches to the agent's interactive session and `dam agent create-interactive` walks through a form; both need a terminal, so offer the command to the user instead.
 - A prompt the CLI would show a person becomes an error that names the flag to pass.
 
@@ -152,7 +159,9 @@ dam agent create my-agent --wait --json
 
 - `--template <id>` picks a template from `dam template list`; without it the deployment's default is used.
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
-  If `dam connection list` shows no model provider, the user connects one first ([Secrets](#secrets)).
+  `dam connection list --providers` lists the model providers: the PROVIDER column names each one's alias and the harnesses that run on it, and marks the preferred one (`provider.preferred` in `--json`).
+  If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
+  To change the providers or the default model later, see [Models and harnesses](#models-and-harnesses).
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
 
 ### Give an agent work
@@ -175,6 +184,36 @@ dam run cancel my-agent <session-id>
 
 `--async` prints only the session id on stdout.
 A run that outlasts `--timeout` keeps going on the agent, and the CLI prints its session id so you can check it with `dam run get`.
+
+A new run starts on the agent's default harness and model.
+To choose for one run, pass `--harness`, `--model` or `--setting`; see [Models and harnesses](#models-and-harnesses).
+
+### Models and harnesses
+
+Every session of an agent runs on a **harness** (the coding agent inside it, such as `claude-code` or `codex`) and a **model** from a **model provider** connection granted to the agent.
+The agent keeps a default for each kind of session: chat (also `dam run`), channel (Slack and Telegram) and scheduled.
+A channel or scheduled default that is not set is the same as chat.
+
+```sh
+dam agent get my-agent --json
+dam agent models my-agent
+dam agent update my-agent --model ibm/gpt-5.5
+dam agent update my-agent --harness codex --model openai/gpt-5.5 --setting effort=high
+dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
+```
+
+- `dam agent get` shows the granted providers, the harnesses and the defaults; under `--json` they are in `models`.
+  A default with a `null` model, or "not set" in the table, means runs fail until one is chosen.
+- `dam agent models` lists the models the agent's providers offer for its default harness (`--harness` for another), named the way `--model` takes them: `<provider>/<model id>`.
+  A provider that has not listed its models yet is named in a note; ask again in a minute.
+- `dam agent update` changes only what you pass.
+  `--provider <connection>` grants a model provider and `--remove-provider <connection>` takes one away; `dam connection list` names them.
+  `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
+  Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
+- `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
+
+When a run fails because the session has no model, the agent has no default model: run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
+When it fails because no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
 ### Files
 
@@ -224,6 +263,23 @@ dam connection revoke my-agent --connection github
 
 A connection belongs to the user; granting it lets one agent use it.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
+`dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
+Without `--yes` it names the agents that would lose the connection.
+
+A grant gives the agent everything the connection reaches, so limit a GitHub connection before you grant it.
+This works for a GitHub sign-in (`github`, `github-enterprise`) and for a GitHub App connection:
+
+```sh
+dam connection connect github --account acme --repositories api,web --permissions contents:read,pull_requests:write
+dam connection scope github --json
+dam connection scope github --repositories api
+dam connection scope github --clear
+```
+
+`dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
+A flag you leave out keeps that part of the scope; `--clear` removes the limit.
+A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
+`dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
 
 ### Network rules and approvals
 

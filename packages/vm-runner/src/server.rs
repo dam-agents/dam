@@ -25,6 +25,7 @@ use crate::fetch::{failure_reason, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{Images, Resolved, ROOTFS_DIR};
 use crate::launch::{read_launch, ImageLaunch};
+use crate::link::{Links, Role};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
@@ -184,13 +185,14 @@ fn probe_every(entry: &MachineEntry) -> Option<Duration> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure as its sampler last read it. `signalled` is when its version last moved while pressure lasted.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure as its sampler last read it. `signalled` is when its version last moved while pressure lasted. `oom_group` is the cgroup's own memory.oom.group at that same sample, since a node's kubelet can change it under a running runner.
 #[derive(Default)]
 struct Pressure {
     version: u64,
     pressured: bool,
     working_set_mib: i32,
     signalled: Option<Instant>,
+    oom_group: Option<bool>,
 }
 
 #[derive(Default)]
@@ -373,6 +375,7 @@ pub struct Server {
     config: Config,
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
+    links: Links,
     machines: Mutex<Machines>,
     settled: Condvar,
     changed: Condvar,
@@ -487,6 +490,11 @@ impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not. Each one the runtime finds running is measured before the runner admits anything, and the prober takes it from there: a runner that took the machines over in a hand-off or a restart would otherwise count each at the warm-up floor until the controller first asked about it, and admit a start into memory its running guests already hold.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
+        let dirs = runtime.clone();
+        let links = Links::new(
+            tokio::runtime::Handle::current(),
+            Arc::new(move |id: &str| dirs.vm_dir(id)),
+        );
         let lifetime = CancellationToken::new();
         // UNIT_BOUNDARY_DESCRIPTION: the OOM kill count this runner starts from is read now, before the machine API serves, and against what the runner it replaces last read, so an OOM kill that lands while the machines are handed over is still counted and still names the machine it took.
         let oom = OomKills {
@@ -502,6 +510,7 @@ impl Server {
             config,
             runtime,
             forwarder,
+            links,
             machines: Mutex::new(Machines::default()),
             settled: Condvar::new(),
             changed: Condvar::new(),
@@ -532,6 +541,9 @@ impl Server {
                 if let Err(e) = server.forwarder.publish(&id, port) {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
+            }
+            if let Some(spec) = read_spec(&server.config.state_dir, &id) {
+                server.serve_link(&id, &spec);
             }
             match server.runtime.state(&id) {
                 Ok(State::Running) => {
@@ -599,30 +611,28 @@ impl Server {
         locked(&server.machines).pressure.version =
             server.versions.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cgroup) = server.config.cgroup_dir.clone() {
-            // UNIT_BOUNDARY_DESCRIPTION: a node's kubelet can make the runner's cgroup kill every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The kubelet writes memory.oom.group and leaves it 0 while singleProcessOOMKill is on, its default, so a runner that reads it set says so on its console, and the gauge keeps saying it on every scrape.
-            if crate::pressure::oom_group(&cgroup) == Some(true) {
-                tracing::warn!(
-                    cgroup = %cgroup.display(),
-                    "vm runner: its cgroup kills the whole runner for one machine's memory (memory.oom.group=1); the node's kubelet must not group OOM kills for these runners"
-                );
-            }
             let sampler = Arc::downgrade(&server);
             server.background(move |lifetime| {
-                if let Err(e) = crate::pressure::working_set_mib(&cgroup) {
-                    tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
-                    return;
-                }
+                // UNIT_BOUNDARY_DESCRIPTION: a working set this runner cannot read says nothing about pressure, but it says nothing about the cgroup's grouping either, so the grouping sample waits on no pressure reading: the two are read apart and the failure is said once, not at every tick.
+                let mut pressure_unreadable = false;
                 while !lifetime.is_cancelled() {
                     let Some(server) = sampler.upgrade() else {
                         return;
                     };
+                    server.sample_oom_group(&cgroup);
                     if let Ok(stat) = crate::cpu::stat(&cgroup) {
                         locked(&server.machines).cpu.push(Instant::now(), stat);
                     }
                     match crate::pressure::working_set_mib(&cgroup) {
-                        Ok(mib) => server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX)),
+                        Ok(mib) => {
+                            pressure_unreadable = false;
+                            server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX));
+                        }
                         Err(e) => {
-                            tracing::warn!(error = %format!("{e:#}"), "vm runner: reading the runner's cgroup")
+                            if !pressure_unreadable {
+                                pressure_unreadable = true;
+                                tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
+                            }
                         }
                     }
                     drop(server);
@@ -657,6 +667,25 @@ impl Server {
             pressure.signalled = now.then(Instant::now);
             pressure.version = self.versions.fetch_add(1, Ordering::Relaxed) + 1;
             self.changed.notify_all();
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records one sample of whether the runner's cgroup kills every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The node's kubelet writes memory.oom.group and groups unless its `singleProcessOOMKill` is on, so a node that leaves the setting alone takes an owner's whole pool down, and a kubelet can turn grouping on under a runner that started with it off. The runner reads it at every sample rather than once at start and says each change on its console; its gauge reads the sample, so a scrape never disagrees with the console.
+    fn sample_oom_group(&self, cgroup: &Path) {
+        let now = crate::pressure::oom_group(cgroup);
+        let mut machines = locked(&self.machines);
+        let was = std::mem::replace(&mut machines.pressure.oom_group, now);
+        drop(machines);
+        match (was, now) {
+            (_, Some(true)) if was != Some(true) => tracing::warn!(
+                cgroup = %cgroup.display(),
+                "vm runner: its cgroup now kills the whole runner for one machine's memory (memory.oom.group=1); the node's kubelet must set singleProcessOOMKill: true for these runners"
+            ),
+            (Some(true), Some(false)) => tracing::info!(
+                cgroup = %cgroup.display(),
+                "vm runner: its cgroup no longer groups OOM kills (memory.oom.group=0), so one machine that runs out of memory ends alone"
+            ),
+            _ => {}
         }
     }
 
@@ -995,6 +1024,7 @@ impl Server {
             let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
         }
         self.forwarder.unpublish_all();
+        self.links.stop_all();
         if let Some(images) = self.config.images.clone() {
             let _ = tokio::task::spawn_blocking(move || images.flush()).await;
         }
@@ -1055,6 +1085,7 @@ impl Server {
         locked(&self.machines).closed = true;
         self.changed.notify_all();
         self.forwarder.unpublish_all();
+        self.links.stop_all();
         self.lifetime.cancel();
         self.work.close();
     }
@@ -1297,6 +1328,7 @@ impl Server {
         }
         removed?;
         self.forwarder.unpublish(id);
+        self.links.stop(id);
         Ok(())
     }
 
@@ -1650,6 +1682,7 @@ impl Server {
         )?;
         write_spec(&self.config.state_dir, id, spec)?;
         self.forwarder.publish(id, port)?;
+        self.serve_link(id, spec);
         if !spec.running {
             return Ok(());
         }
@@ -1685,6 +1718,7 @@ impl Server {
         if port != 0 {
             self.forwarder.publish(id, port)?;
         }
+        self.serve_link(id, spec);
         if let Action::Restart { unhealthy } = action {
             if unhealthy {
                 if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
@@ -1836,6 +1870,24 @@ impl Server {
             .ok()
             .flatten()?;
         Some(Resolved { digest, launch })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records a machine's part in the Environment Link where its VMM reads it at the next boot, and listens on an agent machine's end of the link or stops listening on an Environment's. Called at create, at every reshape and for every machine at runner start, so a machine an earlier runner made has its link from its next boot. A runner that cannot record or listen still runs the machine, which then has no link; the reason is logged, since the agent sees only a refused dial.
+    fn serve_link(&self, id: &str, spec: &MachineSpec) {
+        let role = Role::of_env(&spec.env);
+        if let Some(dir) = self.runtime.vm_dir(id) {
+            if let Err(e) = crate::link::write_role(&dir, &role) {
+                tracing::warn!(machine = %id, error = %e, "recording the environment link role");
+            }
+        }
+        match role {
+            Role::Agent => {
+                if let Err(e) = self.links.serve(id) {
+                    tracing::warn!(machine = %id, error = %e, "serving the environment link");
+                }
+            }
+            Role::Environment { .. } => self.links.stop(id),
+        }
     }
 
     fn start_machine(
@@ -2019,6 +2071,7 @@ impl Server {
                 )
             })
         });
+        let oom_group = locked(&self.machines).pressure.oom_group;
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
             limit_mib: self.memory_limit_mib(),
@@ -2029,7 +2082,7 @@ impl Server {
             cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
             working_set_mib: sampled.map(|p| p.0),
             pressured: sampled.map(|p| p.1),
-            oom_group: cgroup.and_then(crate::pressure::oom_group),
+            oom_group,
         })
     }
 

@@ -44,6 +44,7 @@ export interface StarterKitView extends ResolvedStarterKit {
   version: string;
   source: string;
   skillsInKit: ResolvedSkill[];
+  link?: { url: string };
 }
 
 export interface StarterKitApplyResult {
@@ -90,6 +91,7 @@ export interface KitUpdateChanges {
 export interface StarterKitsService {
   list: () => Promise<StarterKitView[]>;
   get: (catalog: string, id: string) => Promise<StarterKitView | null>;
+  inspect: (url: string) => Promise<StarterKitView>;
   apply: (input: StarterKitApplyInput) => Promise<StarterKitApplyResult>;
   markOnboarded: (agentId: string) => Promise<void>;
   updates: () => Promise<KitUpdateStatus[]>;

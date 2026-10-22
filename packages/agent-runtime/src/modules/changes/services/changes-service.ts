@@ -11,21 +11,14 @@ import { noticeStream } from "../../../core/notice-stream.js";
 import { createFilesWatcher, type WatchHandle } from "../../files-watch.js";
 import { repositoryNameOf } from "../domain/git-output.js";
 import { GIT_CONCURRENCY, mapLimit } from "../domain/map-limit.js";
-import type { ToolActivity } from "../domain/tool-activity.js";
-import { createToolCallWindows } from "../domain/tool-call-windows.js";
+import type { GitCommand } from "../domain/git-trace.js";
 import {
   findRepositoryDirs,
   groupWorktrees,
-  locateFile,
   locateRepository,
-  type RepositoryLocation,
 } from "../infrastructure/discovery.js";
 import type { Git } from "../infrastructure/git.js";
 import type { PullRequestFinder } from "../infrastructure/pull-requests.js";
-import {
-  createPushLogWatcher,
-  type Push,
-} from "../infrastructure/push-logs.js";
 import type { TouchedRepositoryStore } from "../infrastructure/touched-repositories.js";
 import {
   defaultBranchRef,
@@ -38,7 +31,6 @@ import {
 const SNAPSHOT_REUSE_MS = 1_000;
 const NOTICE_INTERVAL_MS = 2_000;
 const SESSION_PULL_REQUEST_CHECK_MS = 30_000;
-const REPOSITORY_INDEX_MS = 5 * 60_000;
 
 interface ChangeSetEntry {
   changeSet: Omit<ChangeSet, "sessionEditedAt">;
@@ -57,7 +49,8 @@ function byRepositoryThenPath(a: ChangeSetEntry, b: ChangeSetEntry): number {
 }
 
 export interface ChangesRuntime extends ChangesService {
-  onToolActivity(activity: ToolActivity): Promise<void>;
+  onGitCommand(command: GitCommand): Promise<void>;
+  onToolCallSettled(sessionId: string): void;
   repositoriesOf(sessionId: string): SessionRepository[];
 }
 
@@ -66,11 +59,13 @@ export function createChangesService(deps: {
   git: Git;
   touched: TouchedRepositoryStore;
   pullRequests: PullRequestFinder;
+  sessionOf: (harnessSessionId: string) => string | undefined;
+  runningSessions: () => readonly string[];
   log: (msg: string) => void;
   now?: () => Date;
 }): ChangesRuntime {
   const now = deps.now ?? (() => new Date());
-  const editedThisBoot = new Set<string>();
+  const workedThisBoot = new Set<string>();
   let snapshot: Promise<Snapshot> | undefined;
   let snapshotAt = 0;
 
@@ -184,7 +179,7 @@ export function createChangesService(deps: {
 
   function refresh(sessionPaths: readonly string[]): Promise<Snapshot> {
     snapshotAt = Date.now();
-    const next = discover([...editedThisBoot, ...sessionPaths]);
+    const next = discover([...workedThisBoot, ...sessionPaths]);
     snapshot = next;
     next.catch(() => {
       if (snapshot === next) snapshot = undefined;
@@ -245,152 +240,52 @@ export function createChangesService(deps: {
     noticeTimer = undefined;
   }
 
-  const windows = createToolCallWindows();
-  const toplevelOf = new Map<string, string>();
-  let indexedAt = Number.NEGATIVE_INFINITY;
-  let indexing = false;
-  let indexed = Promise.resolve();
-
-  const pushLogs = createPushLogWatcher({
-    onPush: (push) =>
-      void recordPush(push).catch((error: unknown) =>
-        deps.log(
-          `recording a push to ${push.branch} failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      ),
-    log: deps.log,
-  });
-
-  function indexRepositories(): Promise<void> {
-    if (indexing || Date.now() - indexedAt < REPOSITORY_INDEX_MS)
-      return indexed;
-    indexing = true;
-    indexedAt = Date.now();
-    indexed = (async () => {
-      const dirs = await findRepositoryDirs(deps.roots);
-      const located = await mapLimit(
-        [...new Set([...dirs, ...deps.touched.paths()])],
-        GIT_CONCURRENCY,
-        (dir) => locateRepository(deps.git, dir),
-      );
-      for (const location of located)
-        if (location && !toplevelOf.has(location.commonDir))
-          toplevelOf.set(location.commonDir, location.toplevel);
-      await pushLogs.watch([...toplevelOf.keys()]);
-    })()
-      .catch((error: unknown) =>
-        deps.log(
-          `indexing repositories for pushes failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      )
-      .finally(() => {
-        indexing = false;
-      });
-    return indexed;
+  function sessionOfCommand(command: GitCommand): string | undefined {
+    if (command.sessionId !== null) return deps.sessionOf(command.sessionId);
+    const running = deps.runningSessions();
+    return running.length === 1 ? running[0] : undefined;
   }
 
-  function pushedFrom(
-    sessionId: string,
-    branch: string,
-    worktreePaths: readonly string[],
-    checkedOutAt: string | null,
-  ): string | null {
-    const worked = deps.touched
-      .repositoriesOf(sessionId)
-      .find((repository) =>
-        checkedOutAt
-          ? repository.path === checkedOutAt
-          : worktreePaths.includes(repository.path) &&
-            repository.branch === branch,
-      );
-    return worked?.path ?? null;
-  }
-
-  function pusherOf(
-    at: number,
-    branch: string,
-    worktreePaths: readonly string[],
-    checkedOutAt: string | null,
-  ): { sessionId: string; path: string | null } | null {
-    const running = windows.sessionsAt(at).map((sessionId) => ({
-      sessionId,
-      path: pushedFrom(sessionId, branch, worktreePaths, checkedOutAt),
-    }));
-    if (running.length === 1) return running[0]!;
-    const tied = running.filter(({ path }) => path !== null);
-    return tied.length === 1 ? tied[0]! : null;
-  }
-
-  async function recordPush(push: Push): Promise<void> {
-    const toplevel = toplevelOf.get(push.commonDir);
-    if (!toplevel) return;
-    const [repository] = await groupWorktrees(deps.git, [
-      { toplevel, commonDir: push.commonDir },
-    ]);
-    const worktrees = repository?.worktrees ?? [];
-    const checkedOutAt =
-      worktrees.find((worktree) => worktree.branch === push.branch)?.path ??
-      null;
-    const pusher = pusherOf(
-      push.at,
-      push.branch,
-      worktrees.map((worktree) => worktree.path),
-      checkedOutAt,
-    );
-    if (!pusher) {
+  async function recordCommand(command: GitCommand): Promise<void> {
+    const sessionId = sessionOfCommand(command);
+    if (sessionId === undefined) {
       deps.log(
-        `a push to ${push.branch} in ${toplevel} matches no single session; not linked`,
+        `a git ${command.name} in ${command.worktree} names no Session of this agent; not linked`,
       );
       return;
     }
-    const { sessionId } = pusher;
-    const path = checkedOutAt ?? pusher.path ?? toplevel;
-    const remote = await deps.git(toplevel, [
-      "config",
-      "--get",
-      `remote.${push.remote}.url`,
-    ]);
-    const remoteUrl = remote.ok ? remote.value.trim() || null : null;
-    const { name } = await describe(path);
+    const location = await locateRepository(deps.git, command.worktree);
+    if (location === null) return;
+    const path = location.toplevel;
+    const { name, branch, remote } = await describe(path);
+    const upstream =
+      command.push && branch
+        ? await deps.git(path, ["config", "--get", `branch.${branch}.remote`])
+        : null;
+    const pushRemote =
+      upstream?.ok && upstream.value.trim()
+        ? await deps.git(path, [
+            "config",
+            "--get",
+            `remote.${upstream.value.trim()}.url`,
+          ])
+        : null;
+    const remoteUrl =
+      pushRemote?.ok && pushRemote.value.trim()
+        ? pushRemote.value.trim()
+        : remote;
     deps.touched.record(sessionId, path, {
       name,
-      branch: push.branch,
+      branch,
       editedAt: now().toISOString(),
-      remote: remoteUrl,
+      ...(command.push && { remote: remoteUrl }),
     });
-    editedThisBoot.add(path);
-    const pullRequest = await deps.pullRequests.find(remoteUrl, push.branch);
-    if (pullRequest)
-      deps.touched.linkPullRequest(path, push.branch, pullRequest);
-    changed();
-  }
-
-  async function recordEdits(
-    activity: ToolActivity,
-    pushWatches: Promise<void>[],
-  ): Promise<void> {
-    const editedAt = now().toISOString();
-    const locations = await mapLimit(
-      activity.editedPaths,
-      GIT_CONCURRENCY,
-      (path) => locateFile(deps.git, path),
-    );
-    const toplevels = new Map<string, RepositoryLocation>();
-    for (const location of locations)
-      if (location) toplevels.set(location.toplevel, location);
-    for (const location of toplevels.values()) {
-      if (!toplevelOf.has(location.commonDir)) {
-        toplevelOf.set(location.commonDir, location.toplevel);
-        pushWatches.push(pushLogs.watch([location.commonDir]));
-      }
-      const { name, branch } = await describe(location.toplevel);
-      deps.touched.record(activity.sessionId, location.toplevel, {
-        name,
-        branch,
-        editedAt,
-      });
-      editedThisBoot.add(location.toplevel);
+    workedThisBoot.add(path);
+    if (command.push && branch) {
+      const pullRequest = await deps.pullRequests.find(remoteUrl, branch);
+      if (pullRequest) deps.touched.linkPullRequest(path, branch, pullRequest);
     }
+    changed();
   }
 
   return {
@@ -441,35 +336,21 @@ export function createChangesService(deps: {
       );
     },
 
-    onToolActivity(activity) {
-      const pushWatches = [indexRepositories()];
-      if (activity.toolCallId !== null) {
-        if (activity.started)
-          windows.started(activity.sessionId, activity.toolCallId);
-        if (activity.settled)
-          windows.settled(activity.sessionId, activity.toolCallId);
-      }
-      const recorded =
-        activity.editedPaths.length > 0
-          ? recordEdits(activity, pushWatches).catch((error: unknown) =>
-              deps.log(
-                `recording edited repositories failed: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-            )
-          : Promise.resolve();
-      if (activity.settled || activity.editedPaths.length > 0)
-        void recorded.then(changed);
-      if (activity.settled)
-        void recorded
-          .then(() => linkSessionPullRequests(activity.sessionId))
-          .catch((error: unknown) =>
-            deps.log(
-              `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
-            ),
-          );
-      return recorded
-        .then(() => Promise.all(pushWatches))
-        .then(() => undefined);
+    onGitCommand(command) {
+      return recordCommand(command).catch((error: unknown) =>
+        deps.log(
+          `recording a git ${command.name} failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    },
+
+    onToolCallSettled(sessionId) {
+      changed();
+      void linkSessionPullRequests(sessionId).catch((error: unknown) =>
+        deps.log(
+          `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
     },
 
     repositoriesOf(sessionId) {

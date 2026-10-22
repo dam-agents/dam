@@ -19,6 +19,7 @@ import type {
   AgentReclaim,
   AgentSpec,
   AgentSpecCR,
+  AgentStartFailure,
   AgentState,
   ChannelConfig,
   ContributionKind,
@@ -148,6 +149,7 @@ export interface InfraAgent {
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: AgentStartFailure;
   podRestarts: number;
   podRestartReason?: string;
   agentPodNotReadyReason?: string;
@@ -391,6 +393,14 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       !POD_FAILURE_REASONS.has(agentPod.reason ?? "")
         ? agentPod.message
         : undefined,
+    startFailure:
+      startFailed?.status === "True" &&
+      generation !== undefined &&
+      startFailed.observedGeneration === generation &&
+      startFailed.reason &&
+      startFailed.message
+        ? { reason: startFailed.reason, message: startFailed.message }
+        : undefined,
     podRestarts:
       typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
         ? restarts
@@ -449,6 +459,7 @@ export function assembleAgent(
     podTerminationReason: infra.podTerminationReason,
     podTerminationCode: infra.podTerminationCode,
     notReadyMessage: infra.notReadyMessage,
+    ...(infra.startFailure ? { startFailure: infra.startFailure } : {}),
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,
     gatewayFailure: infra.gatewayFailure,

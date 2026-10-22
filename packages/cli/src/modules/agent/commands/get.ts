@@ -4,6 +4,15 @@ import { ChannelType } from "api-server-api";
 import { type AgentView, displayState } from "../domain/agent-view.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
+import {
+  readAgentModels,
+  type AgentModelsService,
+} from "../services/agent-models-service.js";
+import {
+  modelEntries,
+  renderEntries,
+  type AgentModelsView,
+} from "../domain/agent-models.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { resolveAgentOrExit } from "./errors.js";
@@ -13,6 +22,7 @@ export function buildGetCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
+  createAgentModelsService: (host: string) => AgentModelsService;
 }): Command {
   return new Command("get")
     .description("Show one Agent's details, addressed by name or ID")
@@ -21,7 +31,10 @@ export function buildGetCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("--json", "emit raw JSON instead of the default vertical layout")
+    .option(
+      "--json",
+      "emit the agent as JSON, with a `models` object: its providers, harnesses and defaults",
+    )
     .addHelpText(
       "after",
       "\nExamples:\n  dam agent get my-agent\n  dam agent get agent-3f9c2b7e41d08a65 --json\n",
@@ -31,16 +44,23 @@ export function buildGetCommand(deps: {
 
       const svc = deps.createAgentService(host);
       const agent = await resolveAgentOrExit(svc, ref, host);
+      const models = await readAgentModels(
+        deps.createAgentModelsService(host),
+        agent.id,
+      );
 
       if (opts.json) {
-        return writeStdoutAndExit(`${JSON.stringify(agent)}\n`, EXIT_SUCCESS);
+        return writeStdoutAndExit(
+          `${JSON.stringify({ ...agent, models })}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
-      return writeStdoutAndExit(renderAgent(agent), EXIT_SUCCESS);
+      return writeStdoutAndExit(renderAgent(agent, models), EXIT_SUCCESS);
     });
 }
 
-function renderAgent(agent: AgentView): string {
+function renderAgent(agent: AgentView, models: AgentModelsView): string {
   const entries: [string, string][] = [
     ["NAME", agent.name],
     ["ID", agent.id],
@@ -50,14 +70,10 @@ function renderAgent(agent: AgentView): string {
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
+  entries.push(...modelEntries(models));
   if (agent.state === "error" && agent.error)
     entries.push(["ERROR", agent.error]);
-  const pad = Math.max(...entries.map(([k]) => k.length)) + 2;
-  return (
-    entries
-      .map(([k, v]) => `${k}:${" ".repeat(pad - k.length)}${v}`)
-      .join("\n") + "\n"
-  );
+  return renderEntries(entries);
 }
 
 function renderChannels(channels: readonly ChannelConfig[]): string {

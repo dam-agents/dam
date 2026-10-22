@@ -1,6 +1,10 @@
 import type { ProcessList } from "agent-runtime-api";
 
-import { ENDED_BY_LABEL } from "./process-copy.js";
+import {
+  ENDED_BY_LABEL,
+  loginItemOutputKey,
+  loginItemStatus,
+} from "./process-copy.js";
 
 export interface ListedProcess {
   command: string;
@@ -28,6 +32,16 @@ export function findListedProcess(
       outputPath: finished.outputPath,
       status: ENDED_BY_LABEL[finished.endedBy],
       running: false,
+    };
+  const item = (list?.startupItems ?? []).find(
+    (candidate) => loginItemOutputKey(candidate.id) === key,
+  );
+  if (item)
+    return {
+      command: item.command,
+      outputPath: item.outputPath,
+      status: loginItemStatus(item),
+      running: item.running,
     };
   return null;
 }

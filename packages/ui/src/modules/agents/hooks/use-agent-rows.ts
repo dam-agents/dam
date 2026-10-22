@@ -7,7 +7,6 @@ import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useAgents } from "../api/queries.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 import { agentUsage, sandboxSubtitle } from "../utils/sandbox-subtitle.js";
-import { useSyncRestartingAgents } from "./use-restart-agent.js";
 import { useSlowStartIds } from "./use-slow-start.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 
@@ -15,7 +14,6 @@ export function useAgentRows() {
   const { data: agentsData } = useAgents();
   const { data: budget } = useBudgetReserved();
   const restartingAgents = useStore((s) => s.restartingAgents);
-  useSyncRestartingAgents();
   const slowStartIds = useSlowStartIds();
 
   const update = useUpdateSandbox();

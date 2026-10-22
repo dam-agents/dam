@@ -41,7 +41,7 @@ pub fn limit_mib(cgroup: &Path) -> Option<i64> {
     Some(bytes >> 20)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the runner's cgroup kills every process in it for one process's memory. `memory.oom.group` is a node's kubelet setting, not the install's: at 1, one machine's growth ends the runner and every machine of the owner rather than that machine alone, whatever the VMMs' OOM scores say. A cgroup that cannot be read says nothing.
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's cgroup kills every process in it for one process's memory. `memory.oom.group` is a node's kubelet setting, not the install's: at 1, one machine's growth ends the runner and every machine of the owner rather than that machine alone, whatever the VMMs' OOM scores say. The kubelet sets it unless its singleProcessOOMKill is on, which is off by default. A cgroup that cannot be read says nothing.
 pub fn oom_group(cgroup: &Path) -> Option<bool> {
     Some(read(cgroup, "memory.oom.group").ok()?.trim() == "1")
 }

@@ -248,6 +248,24 @@ if [ -n "${IS_SANDBOX:-}" ]; then
       NODE_IPS=$(hostname -I 2>/dev/null | xargs | tr ' ' ',')
       export NO_PROXY="${NO_PROXY:+$NO_PROXY,}$NODE_IPS" no_proxy="${no_proxy:+$no_proxy,}$NODE_IPS"
     fi
+    # One process's out-of-memory kill must not take its container with it: on
+    # cgroup v2 the kubelet groups a container's kills unless its configuration
+    # sets singleProcessOOMKill, so one VM agent's overrun would end its runner
+    # and every machine of that owner (issue #5614). No kubelet command-line flag
+    # carries the setting, so it is a kubelet configuration file, which k3s copies
+    # into the kubelet's own drop-in dir wherever kubelet-arg names it — already
+    # before this k3s starts. A k3s config drop-in, never config.yaml itself:
+    # inside a VM sandbox that file carries the CIDR remap (see step 1b).
+    as_root mkdir -p /etc/rancher/k3s/config.yaml.d
+    as_root tee /etc/rancher/k3s/kubelet-single-process-oom-kill.yaml >/dev/null <<'EOF'
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+singleProcessOOMKill: true
+EOF
+    as_root tee /etc/rancher/k3s/config.yaml.d/50-single-process-oom-kill.yaml >/dev/null <<'EOF'
+kubelet-arg+:
+  - "config=/etc/rancher/k3s/kubelet-single-process-oom-kill.yaml"
+EOF
     # K3S_LAUNCHER prefixes the command on hosts where k3s needs a wrapper to
     # run at all (see the ccweb skill). Unquoted on purpose: it may carry args.
     setsid ${K3S_LAUNCHER:-} k3s server --write-kubeconfig-mode 644 --https-listen-port 16443 \
@@ -569,7 +587,7 @@ fi
 # so the app port silently doesn't exist. HelmChartConfig via kubectl apply
 # is idempotent and works on both. The port follows `--set=port=…` so the
 # ingress listens where the chart's URLs point (dev defaults to 4444, the
-# e2e install passes 5555); the last install wins.
+# e2e install passes 6555); the last install wins.
 APP_PORT=4444
 if [ -n "$HELM_VALUES" ]; then
   APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"

@@ -5,6 +5,8 @@ import type { ProviderPresetType } from "./providers.js";
 import type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
+  ConnectionRequestSecretInput,
+  SecretRequestSubmitInput,
 } from "./schemas.js";
 
 export const connectionCategory = z.enum(["app", "mcp", "other"]);
@@ -149,6 +151,12 @@ export interface ProviderKeyRecheck {
   check: ProviderKeyCheck | null;
 }
 
+export const connectionProviderView = z.object({
+  alias: z.string(),
+  harnesses: z.array(z.string()),
+});
+export type ConnectionProviderView = z.infer<typeof connectionProviderView>;
+
 export const connectionView = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -174,6 +182,9 @@ export const connectionView = z.object({
     .optional(),
   githubUserToken: z
     .object({ scope: githubUserTokenScope.optional() })
+    .optional(),
+  provider: connectionProviderView
+    .extend({ preferred: z.boolean() })
     .optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
@@ -215,6 +226,7 @@ export const connectionTemplateView = z.object({
   authKind: authKind,
   inputs: z.array(templateInput),
   extras: z.record(z.string(), z.unknown()).optional(),
+  provider: connectionProviderView.optional(),
 });
 export type ConnectionTemplateView = z.infer<typeof connectionTemplateView>;
 
@@ -276,6 +288,7 @@ export interface ConnectionsService {
 
   defaultProviderConnections(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
+    harness?: string,
   ): Promise<string[]>;
   getProviderBalance(id: string): Promise<ProviderBalance | null>;
 
@@ -340,4 +353,63 @@ export interface ConnectionsService {
     change: { grant: string[]; revoke: string[] },
   ): Promise<void>;
   setPreferredConnection(agentId: string, connectionId: string): Promise<void>;
+}
+
+export const secretRequestStatus = z.enum([
+  "pending",
+  "saved",
+  "cancelled",
+  "expired",
+]);
+export type SecretRequestStatus = z.infer<typeof secretRequestStatus>;
+
+export interface SecretRequestField {
+  name: string;
+  label: string;
+  multiline?: boolean;
+}
+
+export interface SecretRequestDestination {
+  host: string;
+  port?: number;
+  headerName?: string;
+  valueFormat?: string;
+  signed?: boolean;
+}
+
+export interface SecretRequestView {
+  action: "create" | "update";
+  connectionName: string;
+  connectionId?: string;
+  templateId: string;
+  templateName: string;
+  iconSlug?: string;
+  authKind: AuthKind;
+  destinations: SecretRequestDestination[];
+  unexpectedHosts: string[];
+  customDestination: boolean;
+  tokenEndpoint?: { url: string } | { discoveredFrom: string };
+  envNames: string[];
+  grantedAgents: { id: string; name: string }[];
+  fields: SecretRequestField[];
+  expiresAt: string;
+}
+
+export interface SecretRequestTicket {
+  requestId: string;
+  url: string;
+  expiresAt: string;
+}
+
+export interface SecretRequestState {
+  status: SecretRequestStatus;
+  connectionId?: string;
+}
+
+export interface SecretRequestsService {
+  request(input: ConnectionRequestSecretInput): Promise<SecretRequestTicket>;
+  status(requestId: string): Promise<SecretRequestState>;
+  get(requestId: string): Promise<SecretRequestView | null>;
+  submit(input: SecretRequestSubmitInput): Promise<{ connectionId: string }>;
+  cancel(requestId: string): Promise<void>;
 }

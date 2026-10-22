@@ -700,7 +700,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "58aebcc11cdfde48", dep.Annotations[annRunnerTemplate])
+	assert.Equal(t, "d8a60be9a6efa104", dep.Annotations[annRunnerTemplate])
 }
 
 // TEST_SCENARIO: the chart gives every runner pod a PriorityClass, and a roll hash that covered it would reboot every machine of every owner on the install that first set one. The class is left out of what the roll compares, so an existing runner keeps its pod and takes the class at its next replacement, while a change to the pod itself still rolls.
@@ -1116,7 +1116,7 @@ func TestOneSweepTakesAReleaseToEveryOwnerWithNothingRunning(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: the sweep follows owners' hand-offs in parallel, as many as the roll is wide, rather than one owner after another. With a width of three and three owners whose runners take the release only after a delay, the sweep names all three before any has taken it, and takes about one delay, not three.
+// TEST_SCENARIO: the sweep follows owners' hand-offs in parallel, as many as the roll is wide, rather than one owner after another. With a width of three and three owners whose runners take the release only after a delay, the sweep names all three before any has taken it, and takes about one delay, not three. An idle runner's hand-off holds its place for its own turn and no longer, so the install's fourth runner, on the release already, fills no place the three are waiting for.
 func TestTheSweepFollowsOwnersHandOffsInParallel(t *testing.T) {
 	ctx := context.Background()
 	r, nodes := setupRolloutReconciler(t)
@@ -1147,6 +1147,7 @@ func TestTheSweepFollowsOwnersHandOffsInParallel(t *testing.T) {
 		n.mu.Unlock()
 	}
 	nodes[testOwner].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	captured := captureLog(t)
 
 	started := time.Now()
 	r.ReconcileRunnerRollout(ctx)
@@ -1156,12 +1157,55 @@ func TestTheSweepFollowsOwnersHandOffsInParallel(t *testing.T) {
 	for owner := range named {
 		got = append(got, owner)
 	}
+	assert.Empty(t, captured.lines(handoffWaitsForPlace), "a turn found no free place in the width, so its owner keeps the release until another sweep")
 	assert.ElementsMatch(t, owners, got)
 	for _, owner := range owners {
 		assert.Equal(t, runnerV2, namedRelease(t, r, owner))
 		assert.NotContains(t, runnerAnnotations(t, r, owner), annRunnerHandoffAt, "the sweep followed the hand-off until it settled")
 	}
 	assert.Less(t, elapsed, 2*takes+takes/2, "the sweep waited for the owners one after another")
+}
+
+// TEST_SCENARIO: a place check reads every runner's Deployment and clears the rolls that settled. The settling of a hand-off lands between that read and the clear. The controller's own fake checks no resource version, so a clear that writes the whole Deployment it read puts the settled hand-off's place back, which is the lost update a real API server refuses as a conflict. That place belongs to no turn, so it holds a slot in the width and the next owner's turn finds no place until the runner's own reconcile settles the hand-off again. The clear removes its own three annotations as a merge patch, which cannot undo the write another turn made.
+func TestClearingASettledRollLeavesASettledHandOffCleared(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t)
+	createRolloutRunner(t, r, "owner-a")
+	settleRunnerPod(t, r, "owner-a")
+	setRolledAt(t, r, "owner-a", time.Now())
+	setRunnerAnnotation(t, r, "owner-a", annRunnerHandoffAt, time.Now().UTC().Format(time.RFC3339))
+
+	cs := r.client.(*fake.Clientset)
+	deployments := appsv1.SchemeGroupVersion.WithResource("deployments")
+	armed := true
+	settlesTheHandOff := func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !armed {
+			return false, nil, nil
+		}
+		armed = false
+		live, err := cs.Tracker().Get(deployments, "test-agents", r.runnerName("owner-a"))
+		require.NoError(t, err)
+		settled := live.(*appsv1.Deployment).DeepCopy()
+		delete(settled.Annotations, annRunnerHandoffAt)
+		require.NoError(t, cs.Tracker().Update(deployments, settled, "test-agents"))
+		return false, nil, nil
+	}
+	cs.PrependReactor("update", "deployments", settlesTheHandOff)
+	cs.PrependReactor("patch", "deployments", settlesTheHandOff)
+
+	r.runnerRollMu.Lock()
+	_, _, err := r.runnersMidRoll(ctx)
+	r.runnerRollMu.Unlock()
+	require.NoError(t, err)
+
+	assert.False(t, armed, "the clear was written")
+	assert.NotContains(t, runnerAnnotations(t, r, "owner-a"), annRunnerRolledAt, "the settled roll is cleared")
+	assert.NotContains(t, runnerAnnotations(t, r, "owner-a"), annRunnerHandoffAt, "the clear did not put the settled hand-off back")
+	r.runnerRollMu.Lock()
+	rolling, _, err := r.runnersMidRoll(ctx)
+	r.runnerRollMu.Unlock()
+	require.NoError(t, err)
+	assert.Empty(t, rolling, "a hand-off no turn is settling holds no place in the width")
 }
 
 // TEST_SCENARIO: a release that changes the pod and the image puts one runner mid-roll and mid-hand-off at once. Its hand-off settles while the rolled pod's machine is not back yet. The runner still holds its place by the roll, so another owner's turn, reading the kept view, does not take a second place.
@@ -1589,7 +1633,7 @@ func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string, mu
 			Type:    appsv1.ReplicaSetReplicaFailure,
 			Status:  corev1.ConditionTrue,
 			Reason:  reason,
-			Message: `.containers[0].capabilities.add: Invalid value: "SYS_RESOURCE": capability may not be added`,
+			Message: `.containers[0].capabilities.add: Invalid value: "DAC_OVERRIDE": capability may not be added`,
 		}}
 	}
 	created, err := r.client.AppsV1().ReplicaSets(dep.Namespace).Create(context.Background(), rs, metav1.CreateOptions{})

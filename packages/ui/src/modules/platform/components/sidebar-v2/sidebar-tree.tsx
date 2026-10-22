@@ -37,18 +37,27 @@ import {
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
+import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on-sidebar-open.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
+import { SidebarEnvironments } from "../../../environments/components/sidebar-environments.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
-import { isFiltered } from "../../../home/lib/activity-filter.js";
+import {
+  defaultActivityFilters,
+  isFiltered,
+} from "../../../home/lib/activity-filter.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
+import {
+  setAgentSessionFilter,
+  useAgentSessionFilter,
+} from "../../../sessions/lib/agent-session-filters.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import {
@@ -70,12 +79,12 @@ import { FeedSessionRow, OffFeedPinnedRow } from "./pinned-rows.js";
 const FLAT_PAGE = 20;
 
 const REVEAL =
-  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
+  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 group-has-[[data-state=open]]/agent:pointer-events-auto group-has-[[data-state=open]]/agent:opacity-100";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one tree: the pinned
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
- * each opening to its own Sessions. The Agent that is open in the page opens
+ * each opening to its own Environments, if it has any, and Sessions. The Agent that is open in the page opens
  * in the tree too until its row closes it, and stays open on a page with no
  * Agent, such as Home; any other Agent opens and closes from its row. The
  * open state lives in the store, so a page change that remounts the tree
@@ -399,6 +408,7 @@ function AgentNode({
   shownIds: readonly string[];
   onNavigate?: () => void;
 }) {
+  useAutoWakeOnSidebarOpen(agent, expanded);
   const newSessionPage = useStore((s) => current && s.view === "chat");
   const [noSessions, setNoSessions] = useState(false);
   const rowShown = expanded && noSessions;
@@ -421,6 +431,7 @@ function AgentNode({
   };
   const listId = useId();
   const sublineId = useId();
+  const agentFilter = useAgentSessionFilter(agent.id);
   return (
     <li
       data-testid="sidebar-agent"
@@ -445,7 +456,10 @@ function AgentNode({
           aria-describedby={sublineId}
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
+            "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2 text-left select-none",
+            agentFilter
+              ? "pr-[88px]"
+              : "pr-16 group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
             FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
@@ -483,57 +497,74 @@ function AgentNode({
           </span>
           {cue && !expanded && <AgentCue tone={cue} />}
         </button>
-        <div
-          className={cn(
-            "absolute right-1 flex items-center gap-0.5",
-            REVEAL,
-            "has-[[aria-current=page]]:pointer-events-auto has-[[aria-current=page]]:opacity-100",
-          )}
-        >
-          <Tooltip content="New session" side="bottom">
-            <button
-              type="button"
-              aria-label={`New session with ${agent.name}`}
-              aria-current={newSessionPage && !rowShown ? "page" : undefined}
-              data-testid="sidebar-agent-new-session"
-              onClick={go(() => startSession(agent.id))}
-              className={cn(
-                "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:text-foreground",
-                FOCUS_RING,
-              )}
-            >
-              <Add size={16} />
-            </button>
-          </Tooltip>
-          <RowActionsMenu
-            label={`${agent.name} actions`}
-            testId="sidebar-agent-menu"
-            dense
+        <div className="absolute right-1 flex items-center gap-0.5">
+          <div className={cn("flex items-center", !agentFilter && REVEAL)}>
+            <ActivityFilterMenu
+              filters={agentFilter ?? defaultActivityFilters()}
+              onChange={(next) => setAgentSessionFilter(agent.id, next)}
+              name={`Filter sessions of ${agent.name}`}
+              testId="sidebar-agent-session-filter"
+              className={cn("hover:bg-background", FOCUS_RING)}
+            />
+          </div>
+          <div
+            className={cn(
+              "flex items-center gap-0.5",
+              REVEAL,
+              "has-[[aria-current=page]]:pointer-events-auto has-[[aria-current=page]]:opacity-100",
+            )}
           >
-            <DropdownMenuItem
-              onSelect={go(() => navigateToSandboxHome(agent.id))}
+            <Tooltip content="New session" side="bottom">
+              <button
+                type="button"
+                aria-label={`New session with ${agent.name}`}
+                aria-current={newSessionPage && !rowShown ? "page" : undefined}
+                data-testid="sidebar-agent-new-session"
+                onClick={go(() => startSession(agent.id))}
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:text-foreground",
+                  FOCUS_RING,
+                )}
+              >
+                <Add size={16} />
+              </button>
+            </Tooltip>
+            <RowActionsMenu
+              label={`${agent.name} actions`}
+              testId="sidebar-agent-menu"
+              dense
             >
-              <Tools size={14} /> Configure
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              onSelect={() =>
-                void confirmDelete(agent).then((ok) => {
-                  if (!ok) return;
-                  deleteAgent.mutate({ id: agent.id });
-                  if (current) setView("home");
-                })
-              }
-            >
-              <TrashCan size={14} /> Remove
-            </DropdownMenuItem>
-          </RowActionsMenu>
+              <DropdownMenuItem
+                onSelect={go(() => navigateToSandboxHome(agent.id))}
+              >
+                <Tools size={14} /> Configure
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                onSelect={() =>
+                  void confirmDelete(agent).then((ok) => {
+                    if (!ok) return;
+                    deleteAgent.mutate({ id: agent.id });
+                    if (current) setView("home");
+                  })
+                }
+              >
+                <TrashCan size={14} /> Remove
+              </DropdownMenuItem>
+            </RowActionsMenu>
+          </div>
         </div>
         <OrderDropIndicator at={drag.indicator} />
       </div>
       <Collapse open={expanded}>
         <div className="pt-px pb-3" id={listId}>
+          <SidebarEnvironments
+            agentId={agent.id}
+            vm={agent.vm}
+            indent="pl-[58px]"
+            onNavigate={onNavigate}
+          />
           <AgentSessionList
             agentId={agent.id}
             onNavigate={onNavigate}

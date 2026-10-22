@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 ## Overview
 
@@ -55,10 +55,11 @@ With the JanUI experiment on, the Providers page edits the default with the new 
 In the JanUI experiment neither picker attaches nor disconnects a provider: the new session's picker ends with a Manage providers row, counting the attached providers among the owner's, that opens the agent's Providers page.
 On a routed runtime (`modelRouter` on hello) the saved model is a qualified name and its provider follows from it; a bare name, a provider the agent does not hold, or a model missing from the harness's last reported list is refused.
 A run nobody picks for stays on the harness asked for, on the saved model and the provider it names; no saved model, or a model on a provider the agent no longer holds, fails the run as having no default model, with the reason, and no fitting provider fails it rather than moving it to another harness.
-**Conversion of an old default.** An agent from before per-session defaults has no saved pair, and once it runs the Model Router the api-server converts its default once, from what is certain about it: its one granted provider that fits its harness, and the model setting that harness was left with, read against that provider's listing on the agent's own runtime.
+**Conversion of an old default.** An agent from before per-session defaults has no saved pair, nor has a new agent before its first `hello`, and once it runs the Model Router the api-server converts its default once, from what is certain about it: its one granted provider that fits its harness, and the model setting that harness was left with, read against that provider's listing on the agent's own runtime.
 A tier word (`opus`, `opus[1m]`) becomes the provider's newest model containing exactly that word, never another tier; a model id is kept when the provider lists it; the harness's own default becomes the model the agent's calls mostly ran, by output tokens in the last day, week or month of telemetry, when the provider lists it, and no model the calls ran less takes its place.
 One substitution is made: Haiku on a provider that lists no Haiku becomes that provider's newest Sonnet, the model its gateway served Haiku requests on before, and the agent keeps a note of it until its owner saves a default.
 Several fitting providers, a provider without that model, or nothing to go on saves the default as not set; a provider not listed yet is left for a later try.
+A new agent holds one provider ([agent-lifecycle](agent-lifecycle.md#create)) and its image presets its harness's model (Claude Code's `opus`), so its default becomes that provider's newest Opus, saved as a normal default the owner sees in the picker and can change; the save redelivers the agent's pending events, so a kit's setup turn waiting for it goes out at once.
 The owner is told on [Home](home-feed.md#default-model-notices) about a default that is not set, one on a provider the agent no longer holds, and one the conversion changed.
 The first two stop no work on an agent that runs nothing unattended: they are shown once the agent has an enabled Schedule or a Slack or Telegram Channel bound, which is the point where they start failing runs.
 Slack Channels and Telegram chats are bound in separate stores, each written by its own binding flow, so the notice reader asks both for the Agents they hold.
@@ -68,6 +69,7 @@ Run Now on such an agent refuses with "setting up" and starts that wake in the b
 **A turn with no model.** On a harness that reaches its models through the Model Router, the runtime refuses a turn whose session has no model, with the `no-model` reason, whether the turn starts a session, prompts one or resends an edited message; the router or the harness never picks a model in its place.
 A harness on a native Connection, or an agent holding no provider whose API the harness speaks, is not refused, and before the pod's env arrives every routed harness needs a model.
 The turns the platform starts on its own carry the agent's chat default: kit setup, and the result of a satellite Job or of a sub-agent when no waiting session takes it.
+Kit setup is queued at create, before the agent's first `hello` and so before it has a default, so a setup turn that names no model takes the chat default each time it is delivered, and is held back while the agent has no default model.
 A `session/new` that reaches the ACP relay naming no model, as `dam run`, a script or an older client sends it, gets the agent's chat default filled in by the api-server, the same pair the web chat sends: the chat default for the harness the frame names, or for the agent's own harness when it names none, and then the session follows the chat default.
 With no chat default model, the frame goes on as sent and the runtime refuses it with the `no-model` reason.
 The relay holds the frames after it until the default is read, so they reach the runtime in the order the client sent them.
@@ -119,6 +121,12 @@ A runtime with a harness that has a harness config but no `sessionSettings` pred
 For such an agent the chat shows an update notice instead of the picker, and new sessions, schedule fires and channel turns name no Session Pair, so they run on the agent's defaults.
 
 The ETE LiteLLM proxy answers Claude Code's auto-mode permission check on the model call itself, through the beta header the proxy accepts.
+Only a Claude model answers that check: for any other model the reply carries no verdict, and Claude Code then warns that the session is not eligible and pays for classifier calls of its own.
+So the Claude Code manifest declares `nonClaudeModelEnv` (`CLAUDE_CODE_AUTO_MODE_SERVER=0`), which joins the Harness Lease key of a routed session whose model or subagent model is not Claude: such a session runs in a Claude Code process that does not ask for the check, and the Claude sessions keep it in theirs.
+A model is Claude when its upstream id says `claude`; no model, or a bare tier word, counts as Claude.
+Switching between the two sides moves the session between processes once the running turn ends, as a process-scoped setting does.
+A web terminal on a model that is not Claude starts with the same env.
+A routed provider's own env never reaches the harness, so a preset that sets `CLAUDE_CODE_AUTO_MODE_SERVER` (CurveBender) has no effect on it.
 
 ## Provider compatibility
 

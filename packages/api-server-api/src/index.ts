@@ -78,6 +78,7 @@ export {
 export type {
   Agent,
   AgentReclaim,
+  AgentStartFailure,
   WorkspaceFailure,
   WorkspaceMutationKind,
   AgentKind,
@@ -125,7 +126,7 @@ export {
   isStartRefusal,
   TerminationCode,
 } from "./modules/agents/types.js";
-export { toAgentView } from "./modules/agents/view.js";
+export { listedAgents, toAgentView } from "./modules/agents/view.js";
 export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
   ProviderOutage,
@@ -270,6 +271,7 @@ export type {
   KitUpdateChanges,
 } from "./modules/starter-kits/types.js";
 export {
+  LINKED_KIT_CATALOG,
   onboardingStepSchema,
   starterKitApplyInputSchema,
   starterKitCatalogSchema,
@@ -557,6 +559,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionProviderView,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -566,6 +569,13 @@ export type {
   AgentConnections,
   AuthConfig as ConnectionAuthConfig,
   AuthKind as ConnectionAuthKind,
+  SecretRequestDestination,
+  SecretRequestField,
+  SecretRequestState,
+  SecretRequestStatus,
+  SecretRequestTicket,
+  SecretRequestView,
+  SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
   authConfig as connectionAuthConfigSchema,
@@ -582,6 +592,9 @@ export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
   ConnectionUpdateInput,
+  ConnectionRequestSecretInput,
+  SecretlessConnectionCreateInput,
+  SecretRequestSubmitInput,
 } from "./modules/connections/schemas.js";
 
 export {
@@ -944,3 +957,18 @@ export {
   type RendererTag,
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
+export type {
+  EnvironmentEndpoint,
+  EnvironmentView,
+  EnvironmentsService,
+} from "./modules/environments/types.js";
+export {
+  ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
+  ENVIRONMENT_EXPIRY_MAX_DAYS,
+  environmentAccessSchema,
+  environmentEndpointNameSchema,
+  environmentEndpointSchema,
+  environmentEndpointsSchema,
+  environmentNameSchema,
+  environmentViewSchema,
+} from "./modules/environments/schemas.js";

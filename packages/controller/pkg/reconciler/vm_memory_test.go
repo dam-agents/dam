@@ -628,6 +628,109 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
 }
 
+// TEST_SCENARIO: a runner restart, a roll or a drain boots an owner's machines again, each counted at its warm-up floor until it has warmed, above what an idle guest settles at: the pool reads full while they come back and holds every one of them afterwards. A start the runner refuses for room inside that window waits instead of hibernating an idle agent the wave is bringing back, and reads as a start in progress rather than as OverBudget, so a wake waits for it instead of failing on a refusal.
+func TestARefusedStartWaitsOutItsRunnersWarmUpWindow(t *testing.T) {
+	r, _ := reconcilerWithAWarmUpWindow(t, time.Minute)
+
+	require.NoError(t, r.Reconcile(context.Background(), cachedAgent(t, r, "my-agent")))
+
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingWarmUp, cond.Reason, "the start was refused for room the wave holds at its warm-up floors")
+	assert.Equal(t, vmAwaitingWarmUpMessage, cond.Message)
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "a start waiting out the wave is parked as one in progress")
+	assert.False(t, reclaimedAgent(t, r, "idle-peer"), "the start hibernated an agent the wave is bringing back")
+	assert.False(t, reclaimedAgent(t, r, "idle-peer-2"), "the start hibernated an agent the wave is bringing back")
+}
+
+// TEST_SCENARIO: the window is a bound on how long the platform waits, not a promise of room: past it the pool is the owner's to free, and a refused start is the refusal it was before the window existed, with the message that says what frees it.
+func TestAStartRefusedAfterItsRunnersWarmUpWindowFreesRoom(t *testing.T) {
+	r, _ := reconcilerWithAWarmUpWindow(t, runnerWarmUpWindow+time.Minute)
+
+	require.NoError(t, r.Reconcile(context.Background(), cachedAgent(t, r, "my-agent")))
+
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason, "the wave was over, so the pool was the owner's to free")
+	assert.Contains(t, cond.Message, "can't start yet")
+	assert.True(t, reclaimedAgent(t, r, "idle-peer"), "the idlest agent frees the room the start lacks")
+}
+
+// TEST_SCENARIO: the window is read from the runner pod, not from anything this controller remembers, so a controller restarted mid-wave keeps the same answer it gave before it restarted, and one that watched the whole wave gains nothing by having watched it. Forgetting every machine and every answer is a restart in all but the process, and it changes neither side of the window.
+func TestTheWarmUpWindowIsThePodsAndNotTheControllers(t *testing.T) {
+	r, now := reconcilerWithAWarmUpWindow(t, time.Minute)
+	forget := func() {
+		for _, name := range []string{"my-agent", "idle-peer", "idle-peer-2"} {
+			r.vmLive.Delete(name)
+			r.vmAnswers.Delete(name)
+			r.vmRunning.Delete(name)
+		}
+		r.vmRunning.Store("my-agent", true)
+	}
+	refuse := func() { require.NoError(t, r.Reconcile(context.Background(), cachedAgent(t, r, "my-agent"))) }
+
+	forget()
+	refuse()
+	assert.Equal(t, apiv1.ReasonAwaitingWarmUp, readyCondition(t, r, "my-agent").Reason, "a controller that never saw the wave did not wait for it")
+
+	*now = now.Add(runnerWarmUpWindow)
+	forget()
+	refuse()
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "the pod's own window was over, whatever this controller remembered")
+	assert.True(t, reclaimedAgent(t, r, "idle-peer"))
+}
+
+// TEST_SCENARIO: the half-minute pass counts a wave at the same warm-up floors the refused start meets, so the share it reclaims from reads passed while the machines a restart brought back are still settling, and every one of them settles below it. It therefore hibernates nobody inside the window either, and leaves the runner's pressure signal, which is the kernel's own view, to say when room is truly running out; past the window it reclaims as it always did.
+func TestTheMemoryPassFreesNothingInsideItsRunnersWarmUpWindow(t *testing.T) {
+	for _, tc := range []struct {
+		runningFor time.Duration
+		reclaims   bool
+	}{
+		{time.Minute, false},
+		{runnerWarmUpWindow + time.Minute, true},
+	} {
+		r, _ := reconcilerWithAWarmUpWindow(t, tc.runningFor)
+		agents := []*apiv1.Agent{cachedAgent(t, r, "my-agent"), cachedAgent(t, r, "idle-peer"), cachedAgent(t, r, "idle-peer-2")}
+
+		r.ownerMemoryPass(context.Background(), testOwner, agents, nil)
+
+		assert.Equal(t, tc.reclaims, reclaimedAgent(t, r, "idle-peer"),
+			"the pass and the refused start disagree on the window a runner started "+tc.runningFor.String()+" ago")
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner with two idle agents, the older first, and a start its runner refused for room, on a runner pod that started `runningFor` before now. The pool holds the machines' warm-up floors but not the start, so the room the start lacks is one an idle agent would give.
+func reconcilerWithAWarmUpWindow(t *testing.T, runningFor time.Duration) (*AgentReconciler, *time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	r, node, _ := setupVMReconciler(t, vmAgentCR())
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")}}
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	// UNIT_BOUNDARY_DESCRIPTION: the pod's start is what the window is read from, and it is the pod's own field: a status write is what the API server does to it.
+	pods, err := r.runnerPods(ctx, testOwner, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, pods)
+	started := metav1.NewTime(now.Add(-runningFor))
+	pods[0].Status.StartTime = &started
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, &pods[0], metav1.UpdateOptions{})
+	require.NoError(t, err)
+	for i, peer := range []string{"idle-peer", "idle-peer-2"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+now.Add(-time.Duration(12-i)*time.Minute).UTC().Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+		r.vmRunning.Store(peer, true)
+		node.set(peer, measured(700))
+	}
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "this machine's 768 MiB does not fit"})
+	r.vmRunning.Store("my-agent", true)
+	return r, &now
+}
+
 // TEST_SCENARIO: the pass reads the runner's usage, and the runner restarts before the pass keeps that reading: a reconcile records the refusal the restart brought and drops the sample the pass had counted from. Kept after that answer, the older reading counted a machine the runner holds nothing of, which is the defect this branch fixes, reached from the other side. So the pass reads usage and keeps it under the owner's lock, the one a reconcile records the runner's answer under, and the two cannot cross.
 func TestAStatusSampleThePassReadBeforeARefusalIsNotKeptAfterIt(t *testing.T) {
 	ctx := context.Background()

@@ -22,6 +22,7 @@ const SHOWN = hiddenSidePanelTabs({
   agent: true,
   artifacts: true,
   canOpenBrowser: true,
+  changes: true,
   processesEnabled: true,
   gettingStarted: true,
 });
@@ -52,6 +53,7 @@ describe("what the right-hand slot shows", () => {
       agent: true,
       artifacts: true,
       canOpenBrowser: true,
+      changes: true,
       processesEnabled: true,
       gettingStarted: false,
     });

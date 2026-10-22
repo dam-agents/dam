@@ -11,6 +11,9 @@ vi.stubGlobal("window", new EventTarget());
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentsList: () => [],
 }));
+vi.mock("../../modules/agents/hooks/use-auto-wake-on-sidebar-open.js", () => ({
+  useAutoWakeOnSidebarOpen: () => {},
+}));
 vi.mock("../../modules/agents/hooks/use-order-drag.js", () => ({
   useOrderDrag: () => ({ dragProps: {}, indicator: null }),
 }));
@@ -40,7 +43,9 @@ const agentRow = (props: { open: boolean; selected: boolean }) =>
       onStep: () => {},
       onSelect: () => {},
       actions: null,
-      actionCount: 2,
+      actionCount: 3,
+      filter: null,
+      filtered: false,
       ...props,
     }),
   );
@@ -93,7 +98,7 @@ describe("unread markers", () => {
     expect(agentRow({ open: false, selected: false })).not.toContain(
       'aria-current="page"',
     );
-    expect(agentRow({ open: true, selected: true })).toContain("pr-[60px]");
+    expect(agentRow({ open: true, selected: true })).toContain("pr-[86px]");
   });
 });
 

@@ -14,6 +14,7 @@ import type {
 } from "../../modules/artifact-library/services/share-viewer-service.js";
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import type { RenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
+import type { ShareBridgeService } from "../../modules/artifact-library/services/share-bridge-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
 import {
   shareSessionCookie,
@@ -94,6 +95,12 @@ const auth = {
   getSession: (id: string) => Promise.resolve(sessions.get(id) ?? null),
 };
 
+const unusedBridge: ShareBridgeService = {
+  request: () => Promise.reject(new Error("no bridge call expected")),
+  prompt: () => Promise.reject(new Error("no bridge call expected")),
+  refuse: () => {},
+};
+
 function appWith(
   viewer: ShareViewerService,
   tokens: Pick<RenderTokenService, "mint"> = renderTokens,
@@ -106,6 +113,8 @@ function appWith(
     brandName: "Platform",
     uiBaseUrl: "http://app.localhost",
     contentBaseUrl: "https://content.example.com",
+    shareBaseUrl: "https://share.example.com",
+    bridge: unusedBridge,
   });
 }
 
@@ -249,12 +258,11 @@ describe("content app", () => {
   });
 
   /**
-   * TEST_SCENARIO: The owner shared an interactive page with named viewers.
-   * The content host renders it with the refusing bridge: buttons on the
-   * page fail at once with a notice, and the page gets no way to post a
-   * prompt or a request toward any agent.
+   * TEST_SCENARIO: An interactive page that is public, which the sharing
+   * rules forbid but an old row could still be, gets the refusing bridge:
+   * its buttons fail at once with a notice and post nothing toward any agent.
    */
-  it("renders an interactive page with the refusing bridge", async () => {
+  it("renders a public interactive page with the refusing bridge", async () => {
     const app = contentAppWith(
       publicViewer({
         resolveArtifact: () =>
@@ -268,6 +276,32 @@ describe("content app", () => {
     expect(html).toContain(SHARED_BRIDGE_REFUSAL);
     expect(html).not.toContain(ARTIFACT_PROMPT_TYPE);
     expect(html).not.toContain(ARTIFACT_REQUEST_TYPE);
+  });
+
+  /**
+   * TEST_SCENARIO: The owner shared an interactive page with named viewers.
+   * The content host gives it the same bridge as the owner's preview, so its
+   * buttons post prompts and requests to the share page, which relays them.
+   */
+  it("renders a restricted interactive page with the relaying bridge", async () => {
+    const artifact = artifactRow({
+      interactive: true,
+      visibility: "restricted",
+    });
+    const app = contentAppWith(
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "restricted",
+            artifact,
+          } satisfies SharedResolution),
+      }),
+    );
+    const token = await renderTokens.mint(artifact.id, 1);
+    const html = await (await app.request(`/a/slug-a?v=1&t=${token}`)).text();
+    expect(html).toContain(ARTIFACT_PROMPT_TYPE);
+    expect(html).toContain(ARTIFACT_REQUEST_TYPE);
+    expect(html).not.toContain(SHARED_BRIDGE_REFUSAL);
   });
 
   it("renders a plain page without any bridge", async () => {

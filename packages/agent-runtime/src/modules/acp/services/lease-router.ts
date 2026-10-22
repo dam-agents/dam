@@ -37,6 +37,7 @@ export interface LeasePair {
   harness: string;
   settings?: SessionSettings;
   native?: string;
+  env?: Record<string, string>;
 }
 
 export interface SessionChoice {
@@ -50,6 +51,7 @@ export const PROVIDER_REMOVED_REASON = "provider-removed";
 
 export interface LeaseRouterStatus extends AcpRuntimeStatus {
   keptProcesses: number;
+  openLinks: number;
 }
 
 export interface LeaseRouterDeps {
@@ -58,6 +60,11 @@ export interface LeaseRouterDeps {
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
+  modelEnvOf?: (
+    harness: string,
+    model: string | null,
+    settings: SessionSettings | undefined,
+  ) => Record<string, string> | undefined;
   modelRequired: (harness: string) => boolean;
   settingScope?: (harness: string, id: string) => "process" | "session" | null;
   settingsError?: (
@@ -70,7 +77,7 @@ export interface LeaseRouterDeps {
   sessionMetadata: SessionMetadataStore;
   sessionDefaults?: SessionDefaultsStore;
   backgroundWork: BackgroundWorkRegistry;
-  keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
+  keepPolicy: Pick<KeepPolicy, "keptProcessCount" | "openLinkCount">;
   agentRequests: AgentRequestObserver;
   createRuntime: (
     pair: LeasePair,
@@ -131,6 +138,7 @@ const keyOf = (pair: LeasePair): string =>
       ? [Object.entries(pair.settings).sort()]
       : []),
     ...(pair.native ? [{ native: pair.native }] : []),
+    ...(pair.env ? [{ env: Object.entries(pair.env).sort() }] : []),
   ]);
 
 /**
@@ -347,17 +355,23 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a Connection the harness runs natively is
    * part of the lease key, since such a process gets the Connection's env
-   * and not the router.
+   * and not the router. So is the env a routed session's models need at
+   * process start, such as Claude Code's server-side auto-mode check turned
+   * off for a model that is not Claude.
    */
   function leasePairOf(choice: SessionChoice): LeasePair {
     const own = Object.entries(choice.settings ?? {}).filter(
       ([id]) => deps.settingScope?.(choice.harness, id) === "process",
     );
     const native = deps.nativeConnectionOf?.(choice.harness, choice.model);
+    const env = native
+      ? undefined
+      : deps.modelEnvOf?.(choice.harness, choice.model, choice.settings);
     return {
       harness: choice.harness,
       ...(own.length > 0 && { settings: Object.fromEntries(own) }),
       ...(native && { native }),
+      ...(env && Object.keys(env).length > 0 && { env }),
     };
   }
 
@@ -917,10 +931,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     status() {
       const all = [...leases.values()].map((l) => l.runtime.status());
       const keptProcesses = deps.keepPolicy.keptProcessCount();
+      const openLinks = deps.keepPolicy.openLinkCount();
       return {
-        idle: keptProcesses === 0 && all.every((s) => s.idle),
+        idle:
+          keptProcesses === 0 && openLinks === 0 && all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),
         keptProcesses,
+        openLinks,
       };
     },
 

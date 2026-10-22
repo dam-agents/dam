@@ -54,7 +54,12 @@ import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
-import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
+import {
+  createDriverOps,
+  driverDefaultModel,
+  type DriverOpsDeps,
+} from "./driver-ops.js";
+import type { FirePair } from "../../modules/harness-config/index.js";
 import { createAgentImageReader } from "./agent-image.js";
 import {
   limitRequestBody,
@@ -73,6 +78,7 @@ import type {
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 import { composeFeaturesForOwner } from "../../modules/features/index.js";
 import { createChatFormPreferencesReader } from "../../modules/chat-forms/index.js";
+import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -91,8 +97,10 @@ export interface HarnessApiServerAppDeps {
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
   harnessCatalog: HarnessCatalog;
+  firePair: FirePair;
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
+  environmentsFor: (owner: string) => EnvironmentsServiceImpl;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
@@ -128,6 +136,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsRepo,
     templatesRepo,
     harnessCatalog,
+    firePair,
     artifactLibraryFor,
     agentsServiceFor,
     connectionsServiceFor,
@@ -241,6 +250,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     connectionsServiceFor,
     templates: templatesRepo,
     harnesses: harnessCatalog,
+    defaultModel: driverDefaultModel(firePair),
     budgetsFor: (owner) =>
       composeBudgetsModule({
         k8s: k8sClient,
@@ -296,6 +306,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           )["chat-forms"],
       ),
     agentImage: createAgentImageReader(k8sClient),
+    environments: async (owner, agentId) => {
+      const flags = await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "mcp",
+        modes: config.featureModes,
+      }).features.flags();
+      if (!flags.environments) return null;
+      const agent = await agentsRepo.get(agentId, owner);
+      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
+        return null;
+      return deps.environmentsFor(owner).forOwningAgent(agentId);
+    },
     agentTelemetry,
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
