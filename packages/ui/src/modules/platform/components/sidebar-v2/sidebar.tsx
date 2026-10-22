@@ -158,7 +158,9 @@ export function SidebarV2() {
           <div
             className={cn(
               "absolute inset-y-0 left-0 flex w-14 flex-col duration-200 motion-reduce:animate-none",
-              "animate-in fade-in-0 transition-opacity motion-reduce:transition-none",
+              "transition-opacity motion-reduce:transition-none",
+              // UNIT_BOUNDARY_DESCRIPTION: the rail fades in as it arrives on a collapse, and only then: a rail already standing when the app draws the sidebar is there from the first frame, so a view that remounts the shell does not replay the fade.
+              collapsing && "animate-in fade-in-0",
               expanded && "pointer-events-none opacity-0",
             )}
             aria-hidden={expanded || undefined}

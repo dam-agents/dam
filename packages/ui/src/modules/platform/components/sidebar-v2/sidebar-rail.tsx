@@ -150,10 +150,10 @@ export function SidebarRail({
           )}
           data-testid="sidebar-rail-list-menus"
         >
-          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline stands where the tree's Agents label stood, so it fades in as the rail arrives rather than appearing under a word that has gone; the label's own buttons take its place while the pointer rests on it, which is where the empty space is. */}
+          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline stands where the tree's Agents label stood, arriving with the rail that carries it rather than under a word that has gone; the label's own buttons take its place while the pointer rests on it, which is where the empty space is. */}
           <span
             aria-hidden
-            className="h-px w-6 animate-in bg-border fade-in-0 duration-200 group-focus-within/sep:opacity-0 group-has-[[aria-expanded=true]]/sep:opacity-0 group-hover/sep:opacity-0 motion-reduce:animate-none"
+            className="h-px w-6 bg-border group-focus-within/sep:opacity-0 group-has-[[aria-expanded=true]]/sep:opacity-0 group-hover/sep:opacity-0"
           />
           {/* UNIT_BOUNDARY_DESCRIPTION: a menu of either button takes the pointer away from the rail, so the pair stays drawn while one is open rather than vanishing under its own menu. */}
           {/* UNIT_BOUNDARY_DESCRIPTION: the hairline's own space is the label's less the two gaps around it, too short for two buttons, so they reach into the empty gaps above and below it rather than growing the column. */}
