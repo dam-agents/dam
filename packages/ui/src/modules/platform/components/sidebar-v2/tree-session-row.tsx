@@ -80,10 +80,11 @@ export function togglePinKeepingFocus(
       acpSessionsKeys.session(agentId, session.sessionId),
       session,
     );
+  // UNIT_BOUNDARY_DESCRIPTION: the pin is one of the row's menu actions, and the menu renders in a portal of its own, so the keyboard is inside the menu rather than the row when it is chosen; either place means the row had the keyboard.
+  const focused = document.activeElement;
   const hadFocus =
-    document.activeElement
-      ?.closest("[data-pin-key]")
-      ?.getAttribute("data-pin-key") === key;
+    focused?.closest("[data-pin-key]")?.getAttribute("data-pin-key") === key ||
+    (focused?.closest('[role="menu"]') ?? null) !== null;
   togglePinnedSession(key);
   if (!hadFocus) return;
   requestAnimationFrame(() => {
