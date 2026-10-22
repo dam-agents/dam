@@ -1,4 +1,8 @@
-import { aliasOrder, HARNESS_HOME_PROVIDERS } from "api-server-api";
+import {
+  aliasOrder,
+  HARNESS_HOME_PROVIDERS,
+  preferredModelOf,
+} from "api-server-api";
 import type {
   CatalogEntry,
   CatalogProvider,
@@ -22,7 +26,13 @@ const ROUTER_PLACEHOLDER = "platform:conn:router";
  * variable it names gets the default provider's first model for the same
  * reason. Provider env
  * never reaches a harness process, so PLATFORM_MODEL_ROUTER_SERVES is what
- * an image script keys on to point its harness at the router.
+ * an image script keys on to point its harness at the router. A harness whose
+ * manifest names a classifier variable gets the platform's preferred
+ * classifier on the default provider, by its qualified name so the router
+ * resolves it without guessing among providers; that is Claude Code's
+ * auto-mode permission check, whose own Sonnet slot stays the person's, and a
+ * provider that lists no classifier model gets no variable and keeps the
+ * harness default.
  */
 export function routerEnvFor(input: {
   harness: string;
@@ -65,9 +75,9 @@ export function routerEnvFor(input: {
     if (first && !home.includes(first.alias))
       env.PLATFORM_BOB_DEFAULT_MODEL = renderName(first, binding);
   }
-  if (!binding.claudeTiers) return env;
   if (defaultProvider) {
-    const tiers = tierModels(defaultProvider.entries.map((e) => e.upstreamId));
+    const ids = defaultProvider.entries.map((e) => e.upstreamId);
+    const tiers = binding.claudeTiers ? tierModels(ids) : null;
     if (tiers)
       for (const [tier, upstreamId] of Object.entries(tiers)) {
         const entry = defaultProvider.entries.find(
@@ -79,7 +89,18 @@ export function routerEnvFor(input: {
             binding,
           );
       }
+    const classifier = binding.classifierModelEnv
+      ? preferredModelOf("classifier", [
+          { alias: defaultProvider.alias, listed: ids },
+        ])
+      : null;
+    const classifierEntry = defaultProvider.entries.find(
+      (e) => e.upstreamId === classifier?.upstreamId,
+    );
+    if (binding.classifierModelEnv && classifierEntry)
+      env[binding.classifierModelEnv] = renderName(classifierEntry, binding);
   }
+  if (!binding.claudeTiers) return env;
   const windows = serving
     .flatMap((p): CatalogEntry[] => p.entries)
     .map((e) => e.metadata.contextWindow)

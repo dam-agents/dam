@@ -29,6 +29,11 @@ modelRouter:
   # subagent model is not Claude runs in a Claude process that does not ask.
   nonClaudeModelEnv:
     CLAUDE_CODE_AUTO_MODE_SERVER: "0"
+  # Auto mode's classifier model, which Claude Code takes from its own knob
+  # (inert below 2.1.302): a routed process is told the platform's preferred
+  # classifier on its session's provider. The Sonnet slot stays what it says,
+  # so a sonnet-aliased subagent still runs where the person put it.
+  classifierModelEnv: CLAUDE_CODE_AUTO_MODE_MODEL
 
 # Claude Code sets the session's id on every shell command it runs, the same
 # id the platform knows the session by; git records it in its trace, so a

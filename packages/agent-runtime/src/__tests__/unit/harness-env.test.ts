@@ -2,8 +2,9 @@
  * TEST_OVERVIEW: The env a harness process gets to run on the Model Router:
  * the router's address for every harness, and for Claude Code the tier
  * slots filled from the agent's default provider (newest model per tier,
- * with the old gateway's fallbacks) as catalog names, plus the smallest
- * context window the harness may run on as the process-wide cap.
+ * with the old gateway's fallbacks) as catalog names, the auto-mode
+ * classifier on the platform's preferred classifier for that provider, and
+ * the smallest context window the harness may run on as the process-wide cap.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -87,7 +88,10 @@ const claude: ModelRouterBinding = {
   namePrefix: "claude/",
   lowercaseNames: true,
   claudeTiers: true,
+  classifierModelEnv: "CLAUDE_CODE_AUTO_MODE_MODEL",
 };
+const CB_WORK = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
+const CB_CLASSIFIER = "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
 
 describe("tierModels", () => {
   /** TEST_SCENARIO: Each tier takes the newest model carrying its word; a
@@ -297,5 +301,89 @@ describe("routerEnvFor", () => {
       BOBSHELL_API_KEY: "platform:conn:router",
       PLATFORM_BOB_DEFAULT_MODEL: "ibm/aws/claude-opus-4-8",
     });
+  });
+});
+
+describe("the auto-mode classifier env", () => {
+  const cbListing = (ids: string[]) =>
+    provider(
+      cb,
+      ids.map((id) => entry(cb, id, 1_048_576)),
+    );
+
+  /** TEST_SCENARIO: CurveBender's ids carry no tier word, so its slots say nothing about which model classifies: the knob names the platform's preferred classifier on the default provider, by its qualified name so the router resolves it without guessing, while every slot stays the work model the person's session runs on. */
+  it("names the preferred classifier, leaving the slots on the work model", () => {
+    const env = routerEnvFor({
+      harness: "claude-code",
+      binding: claude,
+      providers: [cbListing(["rits/zai-org/glm-5-4", CB_CLASSIFIER, CB_WORK])],
+      port: 1,
+    });
+    expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(
+      `claude/cb/${CB_CLASSIFIER.toLowerCase()}`,
+    );
+    for (const tier of ["FABLE", "OPUS", "SONNET", "HAIKU"])
+      expect(env[`ANTHROPIC_DEFAULT_${tier}_MODEL`]).toBe(
+        `claude/cb/${CB_WORK.toLowerCase()}`,
+      );
+  });
+
+  /** TEST_SCENARIO: The knob and the Sonnet slot are independent: a provider whose listing changes which model fills the slots leaves the classifier where the list puts it, and a Sonnet slot the person's own provider fills says nothing about the classifier. */
+  it("does not follow the Sonnet slot", () => {
+    const [older, newer] = [
+      cbListing([CB_WORK, CB_CLASSIFIER]),
+      cbListing([CB_WORK, "rits/zai-org/glm-5-4", CB_CLASSIFIER]),
+    ];
+    const envOf = (p: CatalogProvider) =>
+      routerEnvFor({
+        harness: "claude-code",
+        binding: claude,
+        providers: [p],
+        port: 1,
+      });
+    expect(envOf(older).CLAUDE_CODE_AUTO_MODE_MODEL).toBe(
+      envOf(newer).CLAUDE_CODE_AUTO_MODE_MODEL,
+    );
+    const anthropicListing = provider(anthropic, [
+      entry(anthropic, "claude-opus-5-5", 1_000_000),
+      entry(anthropic, "claude-sonnet-5-5", 1_000_000),
+    ]);
+    const env = envOf(anthropicListing);
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe(
+      "claude/anthropic/claude-sonnet-5-5",
+    );
+    expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(
+      "claude/anthropic/claude-sonnet-5-5",
+    );
+  });
+
+  /** TEST_SCENARIO: A provider that lists none of the list's classifier models, and a harness whose manifest names no classifier variable, get no key at all, so Claude Code falls back to its own order instead of being pointed at a model nobody chose. */
+  it("stays out of the way when nothing names a classifier", () => {
+    expect(
+      routerEnvFor({
+        harness: "claude-code",
+        binding: claude,
+        providers: [
+          cbListing([CB_WORK, "rits/nvidia/NVIDIA-Nemotron-4-Ultra"]),
+        ],
+        port: 1,
+      }),
+    ).not.toHaveProperty("CLAUDE_CODE_AUTO_MODE_MODEL");
+    expect(
+      routerEnvFor({
+        harness: "claude-code",
+        binding: { ...claude, classifierModelEnv: undefined },
+        providers: [cbListing([CB_WORK, CB_CLASSIFIER])],
+        port: 1,
+      }),
+    ).not.toHaveProperty("CLAUDE_CODE_AUTO_MODE_MODEL");
+    expect(
+      routerEnvFor({
+        harness: "claude-code",
+        binding: claude,
+        providers: [],
+        port: 1,
+      }),
+    ).not.toHaveProperty("CLAUDE_CODE_AUTO_MODE_MODEL");
   });
 });

@@ -2,9 +2,9 @@
  * TEST_OVERVIEW: Where a Claude Code side call on a tier runs when its session
  * is on another provider: the tier word or slot the call names on the
  * session's provider, else the session's own model. CurveBender's ids carry no
- * tier word, so its slots are filled from the platform's preferred model list
- * and its auto-mode classifier — a bare Sonnet — is the one call that list
- * answers with another model, the classifier's own preferred one.
+ * tier word, so its slots are filled from the platform's preferred work model,
+ * and a bare Sonnet name is not reinterpreted here: the classifier reaches
+ * Claude Code through its own knob (classifier-env.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import type { ProviderAlias } from "api-server-api";
@@ -23,7 +23,6 @@ const binding: ModelRouterBinding = {
 };
 
 const CB_WORK = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
-const CB_CLASSIFIER = "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4";
 
 const entry = (alias: ProviderAlias, upstreamId: string) =>
   ({
@@ -67,27 +66,12 @@ const where = (input: {
     binding,
   });
 
-const cbTierless = provider("cb", [
-  "rits/zai-org/glm-5-4",
-  CB_CLASSIFIER,
-  CB_WORK,
-]);
+const cbTierless = provider("cb", ["rits/zai-org/glm-5-4", CB_WORK]);
 
 describe("a side call on a tier", () => {
-  /** TEST_SCENARIO: CurveBender lists no tier word, so the classifier's bare
-   * Sonnet is the one call that names another model: it lands on the
-   * platform's preferred classifier, while a Haiku or Opus slot call, and
-   * Claude Code's Sonnet slot when it arrives by a qualified name, run on the
-   * work model the session already holds. */
-  it("answers the classifier on its own model, and every other slot on the work model", () => {
+  /** TEST_SCENARIO: CurveBender lists no tier word, so every slot call of a session there runs on the work model it already holds, and a bare Sonnet name reads as the tier word it is — no other model of the preference list takes its place, since the classifier comes from Claude Code's own knob. */
+  it("keeps a slot call, and a bare Sonnet name, on the session's model", () => {
     const session = `cb/${CB_WORK}`;
-    expect(
-      where({
-        requested: "claude-sonnet-5",
-        sessionModel: session,
-        providers: [cbTierless],
-      }),
-    ).toBe(`claude/cb/${CB_CLASSIFIER.toLowerCase()}`);
     expect(
       where({
         requested: "haiku[1m]",
@@ -97,7 +81,7 @@ describe("a side call on a tier", () => {
     ).toBe(`claude/cb/${CB_WORK.toLowerCase()}`);
     expect(
       where({
-        requested: `claude/cb/${CB_WORK.toLowerCase()}`,
+        requested: "claude-sonnet-5",
         sessionModel: session,
         providers: [cbTierless],
       }),
@@ -135,23 +119,5 @@ describe("a side call on a tier", () => {
         providers: [ibm],
       }),
     ).toBe("claude/ibm/aws/claude-sonnet-5-5");
-  });
-
-  /** TEST_SCENARIO: The classifier's model is matched against the listing it
-   * would run on, so a CurveBender that lists another Nemotron version and not
-   * the one the list names keeps the session's model rather than running on a
-   * version nobody chose. */
-  it("refuses another version of the classifier's model", () => {
-    const older = provider("cb", [
-      CB_WORK,
-      "rits/nvidia/NVIDIA-Nemotron-4-Ultra",
-    ]);
-    expect(
-      where({
-        requested: "claude-sonnet-5",
-        sessionModel: `cb/${CB_WORK}`,
-        providers: [older],
-      }),
-    ).toBe(`claude/cb/${CB_WORK.toLowerCase()}`);
   });
 });

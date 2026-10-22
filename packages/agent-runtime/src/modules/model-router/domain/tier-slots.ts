@@ -87,10 +87,10 @@ function tierOf(
  * when the session's provider lists neither that id nor a deployment of it.
  * A provider whose models carry no tier word has no tiers to answer with,
  * so there every slot call runs on the session's own model, whichever
- * provider filled the slot — except that bare Sonnet call, which runs on the
- * platform's preferred classifier, the one role whose model nothing else in
- * the agent names: CurveBender answers its work slots with DeepSeek and would
- * otherwise send the classifier to that same reasoning model. A call on the session's own provider for a
+ * provider filled the slot. The classifier is not one of these calls: Claude
+ * Code takes its model from its own knob, which the runtime fills per process
+ * (classifierModelEnv), so no Sonnet name is reinterpreted here and a
+ * `sonnet`-aliased subagent keeps the slot the person put it on. A call on the session's own provider for a
  * model it no longer lists, a slot the process holds from before a listing
  * change, is read by its tier the same way. Null when the call names a
  * model the session's own provider lists among its tiers, or no tier at
@@ -114,19 +114,8 @@ export function tierModelOnSessionProvider(input: {
   };
   const ownView = viewOf(own.alias);
   const ownHasTiers = ownView.some((e) => tierWordOf(e.upstreamId) !== null);
-  const toOwnTier = (tier: ClaudeTier, bare = false): string => {
-    if (!ownHasTiers) {
-      const classifier =
-        bare && tier === "sonnet"
-          ? preferredModelOf("classifier", [
-              { alias: own.alias, listed: ownView.map((e) => e.upstreamId) },
-            ])
-          : null;
-      const target = classifier
-        ? ownView.find((e) => e.upstreamId === classifier.upstreamId)
-        : undefined;
-      return renderName(target ?? own, binding);
-    }
+  const toOwnTier = (tier: ClaudeTier): string => {
+    if (!ownHasTiers) return renderName(own, binding);
     const ownSlots = tierModels(ownView.map((e) => e.upstreamId));
     const target = ownSlots
       ? ownView.find((e) => e.upstreamId === ownSlots[tier])
@@ -144,7 +133,7 @@ export function tierModelOnSessionProvider(input: {
       const id = e.upstreamId.toLowerCase();
       return id === bare || id.endsWith(`/${bare}`);
     });
-    return tier && !ownListsBare ? toOwnTier(tier, true) : null;
+    return tier && !ownListsBare ? toOwnTier(tier) : null;
   }
   const sameProvider = asked.alias === own.alias;
   const askedView = sameProvider ? ownView : viewOf(asked.alias);
