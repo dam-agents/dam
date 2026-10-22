@@ -4,6 +4,7 @@ import {
   type SessionDirectoryService,
 } from "api-server-api";
 
+import { boundedSet } from "../../../core/bounded-map.js";
 import type { SessionDirectoryRepository } from "../infrastructure/session-directory-repository.js";
 
 export interface SessionDirectory extends SessionDirectoryService {
@@ -36,11 +37,7 @@ export function createSessionDirectoryService(deps: {
       known.delete(key);
       const rows = await deps.repo.find([agentId], [sessionId]);
       if (rows.length === 0) return false;
-      known.set(key, Date.now());
-      if (known.size > KNOWN_MAX) {
-        const oldest = known.keys().next().value;
-        if (oldest !== undefined) known.delete(oldest);
-      }
+      boundedSet(known, key, Date.now(), KNOWN_MAX);
       return true;
     },
 
