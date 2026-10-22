@@ -13,10 +13,6 @@ export interface GrantedConnection {
   readonly unit: SpendUnit;
 }
 
-/**
- * Ties go to the limit set closest to the agent, so a screen names the one
- * the user is most likely to change.
- */
 const NARROWNESS: readonly SpendBindingKind[] = [
   "connection",
   "agent",

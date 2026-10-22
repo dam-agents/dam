@@ -112,11 +112,6 @@ const NARROWNESS: readonly LevelKind[] = [
   "ceiling",
 ];
 
-/**
- * Marks the level with the least left among `current` and `others` when it is
- * not `current`: the one that stops these calls before the limit this page owns.
- * A tie names the limit set closest to the agent, as the server's binding does.
- */
 function markStopsFirst(current: Level | null, others: Level[]): Level[] {
   const all = current ? [current, ...others] : others;
   if (all.length < 2) return others;
