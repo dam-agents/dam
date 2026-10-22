@@ -32,7 +32,7 @@ export function SidebarSection({
 }) {
   const tiles =
     typeof document !== "undefined" &&
-    document.documentElement.dataset.layout === "new";
+    document.documentElement.dataset.rightToolbar === "new";
   return (
     <div
       id={id}

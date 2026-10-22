@@ -13,6 +13,7 @@ import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agen
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "./modules/features/hooks/use-unified-right-toolbar.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -145,10 +146,15 @@ function MainApp() {
   const desktop = useIsDesktop();
 
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   useEffect(() => {
     if (newLayout) document.documentElement.dataset.layout = "new";
     else delete document.documentElement.dataset.layout;
   }, [newLayout]);
+  useEffect(() => {
+    if (rightToolbar) document.documentElement.dataset.rightToolbar = "new";
+    else delete document.documentElement.dataset.rightToolbar;
+  }, [rightToolbar]);
 
   useLiveEvents();
   useSyncRestartingAgents();

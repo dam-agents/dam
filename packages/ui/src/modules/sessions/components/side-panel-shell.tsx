@@ -19,10 +19,14 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
 import { holdBackEntry } from "../../platform/lib/back-entry.js";
-import { RIGHT_RAIL_W } from "../../platform/lib/sidebar-layout.js";
+import {
+  CLASSIC_RIGHT_RAIL_W,
+  RIGHT_RAIL_W,
+} from "../../platform/lib/sidebar-layout.js";
 import {
   maximizableView,
   shownSidePanelWidth,
@@ -34,7 +38,6 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 360;
-const SIDE_PANEL_BAR_W = 49;
 const LAYER_ABOVE_SELECTOR =
   '[role="dialog"], [role="alertdialog"], [role="menu"]';
 
@@ -83,7 +86,8 @@ export function SidePanelShell({
   children: ReactNode;
 }) {
   const tiles = useNewLayout();
-  const barW = tiles ? RIGHT_RAIL_W : SIDE_PANEL_BAR_W;
+  const rightToolbar = useUnifiedRightToolbar();
+  const barW = rightToolbar ? RIGHT_RAIL_W : CLASSIC_RIGHT_RAIL_W;
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
@@ -325,7 +329,7 @@ export function SidePanelShell({
           />
         )}
         <SidePanelBar
-          tiles={tiles}
+          tiles={rightToolbar}
           active={activeTab}
           hidden={hiddenTabs}
           onSelect={onSelectTab}
