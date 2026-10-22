@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Card, CARD_SURFACE } from "@/components/ui/card";
+import { Card, CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +24,7 @@ interface Props {
   balance?: ReactNode;
   onOpen?: () => void;
   connectedAction?: string;
+  footer?: ReactNode;
 }
 
 export function ProviderRow({
@@ -38,6 +39,7 @@ export function ProviderRow({
   balance,
   onOpen,
   connectedAction = "Edit",
+  footer,
 }: Props) {
   const name = givenName ?? providerName(type);
   const refused = connected && keyCheck?.result === "refused";
@@ -85,23 +87,39 @@ export function ProviderRow({
     </>
   );
   const layout = "flex w-full items-center gap-3 p-4";
+  const label = connected
+    ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
+    : `Connect ${name}`;
 
+  if (footer) {
+    return (
+      <Card className="overflow-hidden">
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={label}
+            className={cn(layout, ROW_HEAD_BUTTON)}
+          >
+            {body}
+          </button>
+        ) : (
+          <div className={layout}>{body}</div>
+        )}
+        <div className="mx-4 border-t border-border py-3">{footer}</div>
+      </Card>
+    );
+  }
   return onOpen ? (
-    <CardButton
-      onClick={onOpen}
-      aria-label={
-        connected
-          ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
-          : `Connect ${name}`
-      }
-      className={layout}
-    >
+    <CardButton onClick={onOpen} aria-label={label} className={layout}>
       {body}
     </CardButton>
   ) : (
     <div className={cn(CARD_SURFACE, layout)}>{body}</div>
   );
 }
+
+const ROW_HEAD_BUTTON = `text-left ${CARD_HOVER} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
 
 function ConnectionBadge({
   connected,

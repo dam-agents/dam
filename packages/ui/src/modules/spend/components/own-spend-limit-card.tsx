@@ -16,6 +16,7 @@ import { LIMIT_STATE_TEXT } from "../lib/state-colors.js";
 import { DailyLimitCard, DailyLimitCardPending } from "./daily-limit-card.js";
 import { DailyLimitMeter } from "./daily-limit-meter.js";
 import { HelpTip } from "./help-tip.js";
+import { ProviderLimitsSummary } from "./provider-limits-summary.js";
 import { SpendLimitButton } from "./spend-limit-button.js";
 
 export function OwnSpendLimitCard() {
@@ -50,6 +51,7 @@ function OwnSpendLimitBody({ status }: { status: SpendStatus }) {
       {status.ceiling && (
         <CeilingLine ceiling={status.ceiling} resetsAt={status.resetsAt} />
       )}
+      <ProviderLimitsSummary limits={status.limits} />
     </DailyLimitCard>
   );
 }

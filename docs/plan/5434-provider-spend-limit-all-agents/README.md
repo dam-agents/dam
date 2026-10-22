@@ -175,6 +175,13 @@ Decisions taken there:
   name the provider without a second lookup.
   Verified with `dam spend status <agent>` on the
   cluster: a subscription row names only its own limits; a dollar row compares all of them.
+- **03** is committed.
+  Settings › Usage (summary) and Settings › Providers (limit block) checked in
+  the browser on the cluster.
+  Home's memory/CPU bars were not seen: they show only while an agent
+  runs, which this cluster could not do.
+  `ProviderRow` takes a `footer`, rendered below a header
+  button, so the limit button is never nested in the row's button.
 
 ## Whole-feature smoke test
 

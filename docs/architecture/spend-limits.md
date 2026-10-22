@@ -324,7 +324,7 @@ The agent limit and the own limit each show in a "Daily spend limit" card.
 A help tip on its title tells which calls the limit counts.
 A button opens a small dialog to set the limit or remove it: "Set a limit" when no limit is set, else "Change".
 Without a limit, the card gives today's paid spend and "No limit".
-With a limit, it gives the spend against the limit, what is left, and a meter.
+With a limit, it gives the spend against the limit, and a meter with the share of the limit used beside it.
 A line under the meter shows only when it matters: when the spend is close to the limit, when the limit is reached and until when paid calls stop, and how often the owner continued today.
 The last line gives the local time at which the day resets.
 A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
@@ -339,9 +339,12 @@ The screens:
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
 - **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
-  It explains the subscription value and Bobcoins, and that only this limit stops calls on such a Connection; a Connection that takes no limit says why.
+  It explains the subscription value and Bobcoins, and that the user's limit for all agents on the Connection counts the same calls; a Connection that takes no limit says why.
+- **Settings, Providers tab:** under each connected Connection that takes a limit, the user sets the Connection limit for all agents, in the Connection's unit, next to all agents' spend on it today; a Connection that takes no limit says why.
+  The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
   When the user has a ceiling, the card also shows it as the spend ceiling, without a button, and says until when paid calls stop when it is reached.
+  When the user has Connection limits for all agents, the card lists them below, read only: each with a thin meter, the share used and the spend against the limit, and one link to Settings › Providers to change them.
   Below the card, a period picker keeps its period in the URL.
   It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
   The calendar gives the local time at which a day starts.
@@ -368,7 +371,7 @@ The screens:
   When the user hides it, it goes from both places, in that browser only.
   The tooltip of its close button says so, and says that the earlier estimates stay on Settings › Usage while they are open.
 
-A meter takes the warning colour at 80% of its limit and the danger colour when the limit is reached.
+A meter is the foreground colour on a light tint of it, takes the warning colour at 80% of its limit and the danger colour when the limit is reached, and shows the share of the limit used beside it; the resource meters on Home use the same fill.
 A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
 A spend-limit question shows on Home with "Continue" and "Stop for today"; Home's "Deny all" leaves it out, because a deny there stops the agent for the day.
 The surfaces name five limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, the user's spend limit for all agents on a Connection ("Your ‹Connection› spend limit (all agents)"), and the spend ceiling that the operator sets.
