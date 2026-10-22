@@ -1,5 +1,7 @@
+import type { HarnessCatalogView } from "agent-runtime-api";
 import {
   aliasForTemplateId,
+  formatQualifiedModel,
   PROVIDER_TEMPLATE_IDS,
   parseQualifiedModel,
   type ConnectionView,
@@ -102,4 +104,31 @@ export function renderEntries(entries: readonly [string, string][]): string {
       .map(([k, v]) => `${k}:${" ".repeat(pad - k.length)}${v}`)
       .join("\n") + "\n"
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Claude Code's catalog spells a model
+ * `claude/<alias>/<id>`, lowercased, because its gateway discovery keeps only
+ * ids containing `claude`. That prefix is routing, so the CLI shows the
+ * Qualified Model Name a saved default and `--model` use; the server folds
+ * the prefixed form too, so either one works as `--model`.
+ */
+export function withQualifiedNames(
+  catalog: HarnessCatalogView,
+): HarnessCatalogView {
+  return {
+    ...catalog,
+    providers: catalog.providers.map((p) => ({
+      ...p,
+      models: p.models.map((m) => {
+        const parsed = parseQualifiedModel(m.name, { claudePrefix: true });
+        return parsed
+          ? {
+              ...m,
+              name: formatQualifiedModel(parsed.alias, parsed.upstreamId),
+            }
+          : m;
+      }),
+    })),
+  };
 }
