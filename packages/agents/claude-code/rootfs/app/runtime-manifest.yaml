@@ -11,9 +11,11 @@ manifestVersion: 1
 # (a title, a WebFetch summary, an alias-named subagent) to the session's
 # provider by tier. The classifier's model comes from
 # classifierModelEnv below, which is the name Claude Code sends; the router
-# sends that call to the session provider's classifier, unless the session
-# runs server-side auto mode (a Claude model on Anthropic or IBM), so a
-# session moved elsewhere follows itself.
+# sends that call, one Claude Code classes as auxiliary, to the session
+# provider's classifier, unless the session runs server-side auto mode (a
+# Claude model on Anthropic or IBM, and no non-Claude subagent model), so a
+# session moved elsewhere follows itself. A subagent or workflow agent naming
+# that model is work and keeps the side-call rule.
 # The context window takes two mechanisms, because Claude Code keeps no window
 # from /v1/models: discovery parses each model as {id, display_name,
 # description} and throws the rest away, and the per-model modelConfig route is
@@ -44,9 +46,11 @@ modelRouter:
   # Auto mode's classifier model, which Claude Code takes from its own knob
   # (inert below 2.1.302): a routed process is told the platform's preferred
   # classifier on the agent's default provider, so Claude Code has a name to
-  # send. That one name is the call the router recognizes and sends to the
-  # session provider's classifier, or to the session's own model where that
-  # provider lists none; a session in server-side auto mode keeps the call.
+  # send. The router recognizes that name on an auxiliary call and sends it to
+  # the session provider's classifier, or to the session's own model where
+  # that provider lists none; a session in server-side auto mode keeps the
+  # call. Both read the catalog when the call arrives, so a replaced listing
+  # reaches a running process only when it recycles.
   # The Sonnet slot stays what it says, so a sonnet-aliased subagent still
   # runs where the person put it.
   classifierModelEnv: CLAUDE_CODE_AUTO_MODE_MODEL
