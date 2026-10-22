@@ -163,14 +163,20 @@ export function createSchedulerRunner(
         ? new Date(sched.status.nextRun)
         : null;
       const next = waiting && waiting > at ? waiting : at;
-      await deps.repo.setNextRun(sched.id, next);
+      await deps.repo.writeStatus(sched.id, { nextRun: next });
       await deps.queue.ensure(sched.id, next, now());
       return;
     }
     log(`restore: one-time schedule ${sched.id} never fired in its window`);
-    await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+    await deps.repo.writeStatus(sched.id, missedStatus());
     await emitChanged(sched.agentId, sched.id);
   }
+
+  const missedStatus = () => ({
+    lastFiredAt: now(),
+    lastFiredResult: OnceResult.Missed,
+    nextRun: null,
+  });
 
   const firedHarness = new WeakMap<Schedule, string>();
   const earlyWake = new WeakMap<Schedule, ActivityStamp>();
@@ -292,7 +298,15 @@ export function createSchedulerRunner(
       return;
     }
     await deps.repo.transaction(async (tx) => {
-      await deps.repo.recordFire(sched.id, OnceResult.Delivering, null, tx);
+      await deps.repo.writeStatus(
+        sched.id,
+        {
+          lastFiredAt: now(),
+          lastFiredResult: OnceResult.Delivering,
+          nextRun: null,
+        },
+        tx,
+      );
       await deps.runtimeMutator.bump(sched.agentId, [event], tx);
     });
   }
@@ -344,14 +358,14 @@ export function createSchedulerRunner(
     if (action.kind === "missed") {
       log(`fire: one-time schedule ${sched.id} is past its window; missed`);
       noteFire("missed");
-      await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+      await deps.repo.writeStatus(sched.id, missedStatus());
       await emitChanged(sched.agentId, sched.id);
       return;
     }
     if (action.kind !== "poke" && (await deps.agentDisabled(sched.agentId))) {
       log(`fire: one-time schedule ${sched.id}'s agent is disabled; missed`);
       noteFire("missed");
-      await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+      await deps.repo.writeStatus(sched.id, missedStatus());
       await emitChanged(sched.agentId, sched.id);
       return;
     }
@@ -375,7 +389,7 @@ export function createSchedulerRunner(
             `fire: one-time schedule ${sched.id} ${held.result}; waiting until ${until.toISOString()}`,
           );
           noteFire("held", { holdReason: held.holdReason });
-          await deps.repo.setNextRun(sched.id, until);
+          await deps.repo.writeStatus(sched.id, { nextRun: until });
           await deps.queue.ensure(sched.id, until, now());
           await emitChanged(sched.agentId, sched.id);
           return;
@@ -387,7 +401,13 @@ export function createSchedulerRunner(
         noteFire("failure", { stage: "commit" });
         const final = lastAttempt || isNoDefaultModelError(err);
         if (final) {
-          await deps.repo.recordFire(sched.id, reason, null).catch(() => {});
+          await deps.repo
+            .writeStatus(sched.id, {
+              lastFiredAt: now(),
+              lastFiredResult: reason,
+              nextRun: null,
+            })
+            .catch(() => {});
           await emitFired(sched, "failure");
         }
         if (final && !lastAttempt) return;
@@ -433,7 +453,9 @@ export function createSchedulerRunner(
     if (spec.type === "once") return fireOnce(sched, spec, fireAt, lastAttempt);
     const hold = async (result: string) => {
       const after = nextFireAt(spec, now());
-      await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
+      await deps.repo
+        .writeStatus(scheduleId, { lastFiredResult: result, nextRun: after })
+        .catch(() => {});
       if (after) await deps.queue.enqueue(scheduleId, after, now());
     };
     if (await deps.onboardingPending?.(sched.agentId)) {
@@ -483,9 +505,17 @@ export function createSchedulerRunner(
       const final = lastAttempt || isNoDefaultModelError(err);
       const after = final ? nextFireAt(spec, now()) : fireAt;
       if (stage === "commit")
-        await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
+        await deps.repo
+          .writeStatus(scheduleId, { lastFiredResult: result, nextRun: after })
+          .catch(() => {});
       else
-        await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+        await deps.repo
+          .writeStatus(scheduleId, {
+            lastFiredAt: now(),
+            lastFiredResult: result,
+            nextRun: after,
+          })
+          .catch(() => {});
       if (final) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
         await emitFired(sched, "failure");
@@ -495,10 +525,18 @@ export function createSchedulerRunner(
     }
 
     const next = nextFireAt(spec, now());
-    if (!spec.precheck) await deps.repo.recordFire(scheduleId, "success", next);
+    if (!spec.precheck)
+      await deps.repo.writeStatus(scheduleId, {
+        lastFiredAt: now(),
+        lastFiredResult: "success",
+        nextRun: next,
+      });
     else if (isFailureResult(sched.status?.lastResult))
-      await deps.repo.stampResult(scheduleId, null, next);
-    else await deps.repo.setNextRun(scheduleId, next);
+      await deps.repo.writeStatus(scheduleId, {
+        lastFiredResult: null,
+        nextRun: next,
+      });
+    else await deps.repo.writeStatus(scheduleId, { nextRun: next });
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     noteFire("success");
     await emitFired(sched, "success");
@@ -511,18 +549,18 @@ export function createSchedulerRunner(
       const sched = await deps.repo.getById(scheduleId);
       if (!sched || !sched.spec.enabled) {
         await deps.queue.cancel(scheduleId);
-        await deps.repo.setNextRun(scheduleId, null);
+        await deps.repo.writeStatus(scheduleId, { nextRun: null });
         return;
       }
       const next = upcoming(sched);
-      await deps.repo.setNextRun(scheduleId, next);
+      await deps.repo.writeStatus(scheduleId, { nextRun: next });
       if (next) await deps.queue.enqueue(scheduleId, next, now());
       else await deps.queue.cancel(scheduleId);
     },
 
     async cancel(scheduleId: string): Promise<void> {
       await deps.queue.cancel(scheduleId);
-      await deps.repo.setNextRun(scheduleId, null);
+      await deps.repo.writeStatus(scheduleId, { nextRun: null });
     },
 
     async runNow(scheduleId: string): Promise<RunNowResult> {
@@ -563,7 +601,12 @@ export function createSchedulerRunner(
         );
         await emitFired(sched, "failure");
         if (isNoDefaultModelError(err)) {
-          await deps.repo.stampFire(scheduleId, err.message).catch(() => {});
+          await deps.repo
+            .writeStatus(scheduleId, {
+              lastFiredAt: now(),
+              lastFiredResult: err.message,
+            })
+            .catch(() => {});
           return "no-default-model";
         }
         throw err;
@@ -576,15 +619,23 @@ export function createSchedulerRunner(
         log(
           `run-now: schedule ${scheduleId} delivery after commit failed: ${result}`,
         );
-        await deps.repo.stampFire(scheduleId, result).catch(() => {});
+        await deps.repo
+          .writeStatus(scheduleId, {
+            lastFiredAt: now(),
+            lastFiredResult: result,
+          })
+          .catch(() => {});
         await emitFired(sched, "failure");
         throw err;
       }
 
       if (!sched.spec.precheck)
-        await deps.repo.stampFire(scheduleId, "success");
+        await deps.repo.writeStatus(scheduleId, {
+          lastFiredAt: now(),
+          lastFiredResult: "success",
+        });
       else if (isFailureResult(sched.status?.lastResult))
-        await deps.repo.stampResult(scheduleId, null);
+        await deps.repo.writeStatus(scheduleId, { lastFiredResult: null });
       await emitFired(sched, "success");
       return "started";
     },
@@ -610,10 +661,9 @@ export function createSchedulerRunner(
       if (!sched) return;
       const verdict = VERDICT[input.outcome];
       if (input.stage === "run" && input.outcome === "failed")
-        await deps.repo.stampResult(
-          input.scheduleId,
-          input.detail ?? "the run could not start",
-        );
+        await deps.repo.writeStatus(input.scheduleId, {
+          lastFiredResult: input.detail ?? "the run could not start",
+        });
       else if (input.ranPrecheck === null) return;
       else if (sched.spec.precheck === input.ranPrecheck)
         await deps.repo.applyStatusPatch(
@@ -674,7 +724,11 @@ export function createSchedulerRunner(
     async recordOnceFailure(scheduleId, reason): Promise<void> {
       const sched = await deps.repo.getById(scheduleId);
       if (sched?.spec.type !== "once") return;
-      await deps.repo.recordFire(scheduleId, reason, null);
+      await deps.repo.writeStatus(scheduleId, {
+        lastFiredAt: now(),
+        lastFiredResult: reason,
+        nextRun: null,
+      });
       await emitChanged(sched.agentId, scheduleId);
     },
 
@@ -687,7 +741,7 @@ export function createSchedulerRunner(
         }
         const stored = s.status?.nextRun ? new Date(s.status.nextRun) : null;
         const next = stored ?? nextFireAt(s.spec, now());
-        if (!stored) await deps.repo.setNextRun(s.id, next);
+        if (!stored) await deps.repo.writeStatus(s.id, { nextRun: next });
         if (next) await deps.queue.ensure(s.id, next, now());
       }
       log(`restored ${enabled.length} schedules`);
