@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import { tailStart } from "../../domain/replay-tail.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
+import { platformOf, withPlatform } from "../../domain/platform-meta.js";
 
 interface LogEntry {
   seq: number;
@@ -126,26 +127,12 @@ function withPlatformMeta(
     return line;
   }
   if (typeof frame !== "object" || frame === null) return line;
-  const f = frame as Record<string, unknown>;
-  const params =
-    typeof f.params === "object" && f.params !== null
-      ? (f.params as Record<string, unknown>)
-      : {};
-  const meta =
-    typeof params._meta === "object" && params._meta !== null
-      ? (params._meta as Record<string, unknown>)
-      : {};
-  const platform =
-    typeof meta.platform === "object" && meta.platform !== null
-      ? (meta.platform as Record<string, unknown>)
-      : {};
-  return JSON.stringify({
-    ...f,
-    params: {
-      ...params,
-      _meta: { ...meta, platform: { ...platform, ...patch } },
-    },
-  });
+  return JSON.stringify(
+    withPlatform(frame as Record<string, unknown>, (platform) => ({
+      ...platform,
+      ...patch,
+    })),
+  );
 }
 
 /**

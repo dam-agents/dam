@@ -113,6 +113,7 @@ import {
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
+import { platformOf, withPlatform } from "../../domain/platform-meta.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
@@ -2378,7 +2379,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           });
         } else {
           bootstrap.requestLoad(channel, frame.id, paramsSid, {
-            tail: platformField(frame, "tail") === true,
+            tail: platformOf(frame)?.tail === true,
             loadToken,
           });
         }
@@ -2705,34 +2706,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 function extractContinuedFrom(
   frame: unknown,
 ): PlatformContinuedFrom | null | undefined {
-  const raw = platformField(frame, "continuedFrom");
+  const raw = platformOf(frame)?.continuedFrom;
   if (raw === undefined) return undefined;
   const parsed = platformContinuedFromSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
 
 function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta) || !("platform" in meta)) return null;
-  const parsed = platformSessionMetaSchema.safeParse(meta.platform);
+  const parsed = platformSessionMetaSchema.safeParse(platformOf(frame));
   return parsed.success ? parsed.data : null;
 }
 
-function platformField(frame: unknown, key: string): unknown {
-  if (!isNonNullObject(frame)) return undefined;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return undefined;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return undefined;
-  const platform = meta.platform;
-  return isNonNullObject(platform) ? platform[key] : undefined;
-}
-
 function platformString(frame: unknown, key: string): string | null {
-  const value = platformField(frame, key);
+  const value = platformOf(frame)?.[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
@@ -2795,13 +2781,8 @@ function stripPlatformMeta(frame: unknown): object {
   if (!isNonNullObject(frame)) return frame as object;
   const params = frame.params;
   if (!isNonNullObject(params)) return frame as object;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return frame as object;
-  const { platform: _platform, ...restMeta } = meta;
-  const nextParams: Record<string, unknown> = { ...params };
-  if (Object.keys(restMeta).length > 0) nextParams._meta = restMeta;
-  else delete nextParams._meta;
-  return { ...frame, params: nextParams };
+  if (!isNonNullObject(params._meta)) return frame as object;
+  return withPlatform(frame, () => null);
 }
 
 function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
