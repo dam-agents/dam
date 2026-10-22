@@ -11,6 +11,9 @@ category: research
 icon: search
 docsUrl: https://github.com/AI-native-Systems-Research/spotlights
 harnesses: [claude-code]
+# The engine bills every call against these two models, so the Agent's own
+# default is Opus 5.0 rather than the newest Opus the provider lists.
+defaultModel: claude-opus-5
 # The engine runs both claude and codex, so the provider must serve Claude
 # and GPT models through one gateway.
 providers: [ibm-litellm]

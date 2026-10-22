@@ -343,6 +343,9 @@ export function createStarterKitsService(
         ...createInputFromSetup(kit),
         ...(kit.egressPreset ? { egressPreset: kit.egressPreset } : {}),
         ...withSeedStamp(kit.seed),
+        ...(kit.defaultModel
+          ? { starterKitDefaultModel: kit.defaultModel }
+          : {}),
         connectionIds: input.connectionIds,
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }

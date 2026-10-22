@@ -109,6 +109,40 @@ describe("convertedDefaultModel", () => {
     expect(convert("claude/sonnet")).toBe("anthropic/claude-sonnet-5-5");
   });
 
+  // TEST_SCENARIO: a kit names the model its Agent must run on whatever provider serves it, so a declared model wins over the image's tier setting when the provider lists it, under its own name or as the one id ending in it; a declared model this provider does not list falls back to the tier, so the kit's pin never becomes a call that fails.
+  it("takes the model the kit declared where the provider lists it", () => {
+    const ibm = (declared: string, listed: string[]) =>
+      convertedDefaultModel({
+        setting: "opus",
+        alias: "ibm",
+        listed,
+        ran: [],
+        declared,
+      });
+    expect(ibm("claude-opus-5", ["aws/claude-sonnet-5-5"])).toBeNull();
+    expect(
+      ibm("claude-opus-5", ["aws/claude-opus-5-5", "aws/claude-opus-5"]),
+    ).toBe("ibm/aws/claude-opus-5");
+    expect(
+      convertedDefaultModel({
+        setting: "opus",
+        alias: "anthropic",
+        listed: LISTED,
+        ran: [],
+        declared: "claude-opus-4-8",
+      }),
+    ).toBe("anthropic/claude-opus-4-8");
+    expect(
+      convertedDefaultModel({
+        setting: "opus",
+        alias: "anthropic",
+        listed: LISTED,
+        ran: [],
+        declared: "claude-opus-9",
+      }),
+    ).toBe("anthropic/claude-opus-5-5");
+  });
+
   // TEST_SCENARIO: a provider with no model of the tier gets no other tier in its place, so the owner picks.
   it("takes no other tier when the provider has none of it", () => {
     expect(
@@ -212,6 +246,7 @@ describe("the one-time default conversion", () => {
     moved?: boolean;
     running?: boolean;
     helloAfterWake?: boolean;
+    kitDefaultModel?: string | null;
   }) => {
     const writes: SessionPair[] = [];
     const notes: unknown[] = [];
@@ -262,6 +297,7 @@ describe("the one-time default conversion", () => {
         ranQueries.push(hours);
         return hours >= 7 * 24 ? (opts.ran ?? []) : [];
       },
+      kitDefaultModel: async () => opts.kitDefaultModel ?? null,
       movedToNewImage: async () => moved,
       isRunning: async () => opts.running ?? true,
       wake: async (id) => {
@@ -298,6 +334,23 @@ describe("the one-time default conversion", () => {
         model: "anthropic/claude-opus-5-5",
       },
     ]);
+  });
+
+  // TEST_SCENARIO: a kit that needs its Agent on one model has it as the saved default when the granted provider lists it, and the tier conversion stands when the provider lists another model instead.
+  it("saves the model the kit declared, on the granted provider", async () => {
+    const declared = converter({
+      kitDefaultModel: "claude-opus-4-8",
+      catalog: view("listed", ["claude-opus-4-8", "claude-opus-5-5"]),
+    });
+    expect(await declared.c.convert("a")).toBe("converted");
+    expect(declared.writes[0]?.model).toBe("anthropic/claude-opus-4-8");
+
+    const unlisted = converter({
+      kitDefaultModel: "claude-opus-9",
+      catalog: view("listed", ["claude-opus-5-5"]),
+    });
+    expect(await unlisted.c.convert("a")).toBe("converted");
+    expect(unlisted.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
   });
 
   // TEST_SCENARIO: a Haiku setting on a provider with no Haiku saves the newest Sonnet together with a note, so the owner is told.

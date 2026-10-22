@@ -45,6 +45,8 @@ export const ANN_STARTER_KIT = "agent-platform.ai/starter-kit";
 export const ANN_STARTER_KIT_ONBOARDED =
   "agent-platform.ai/starter-kit-onboarded";
 export const ANN_STARTER_KIT_SEED = "agent-platform.ai/starter-kit-seed";
+export const ANN_STARTER_KIT_DEFAULT_MODEL =
+  "agent-platform.ai/starter-kit-default-model";
 export const ANN_KIT_UPDATE_PENDING = "agent-platform.ai/kit-update-pending";
 export const ANN_KIT_UPDATE_SKIPPED = "agent-platform.ai/kit-update-skipped";
 

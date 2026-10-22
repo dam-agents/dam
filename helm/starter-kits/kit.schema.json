@@ -229,6 +229,10 @@
       "type": "array",
       "items": {}
     },
+    "defaultModel": {
+      "type": "string",
+      "minLength": 1
+    },
     "seed": {
       "type": "object",
       "properties": {

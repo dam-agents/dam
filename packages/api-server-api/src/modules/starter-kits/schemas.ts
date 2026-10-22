@@ -143,6 +143,7 @@ export const starterKitSchema = z.object({
   install: agentSetupShape.install,
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   providers: providerListSchema.min(1).optional(),
+  defaultModel: z.string().min(1).optional(),
   seed: z
     .object({
       url: z.url().optional(),

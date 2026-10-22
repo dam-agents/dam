@@ -172,6 +172,7 @@ export interface Agent {
   starterKit?: string;
   starterKitOnboarded?: string;
   starterKitSeed?: SeedStamp;
+  starterKitDefaultModel?: string;
   kitUpdatePending?: KitUpdatePending;
   kitUpdateSkipped?: string;
   onboardingSteps?: OnboardingStep[];
@@ -183,6 +184,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   starterKit?: string;
   starterKitSeed?: SeedStamp;
+  starterKitDefaultModel?: string;
   id?: string;
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;

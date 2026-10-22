@@ -388,6 +388,18 @@ describe("starter kits: apply", () => {
     ]);
   });
 
+  // TEST_SCENARIO: a kit that needs its Agent on one model names it in kit.yaml, and the create carries it so the Agent's saved default becomes that model where its provider lists it.
+  it("creates the agent with the model the kit declared", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({ defaultModel: "claude-opus-5" }),
+    });
+    await service.apply(APPLY);
+    expect(calls.created[0]).toMatchObject({
+      starterKitDefaultModel: "claude-opus-5",
+    });
+  });
+
   it("creates a knowledge-base kit as a regular kit: its share roots stamped, its install queued before its first session", async () => {
     const wiki = kit({
       schedules: [],

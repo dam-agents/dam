@@ -59,6 +59,7 @@ import {
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
   ANN_STARTER_KIT_SEED,
+  ANN_STARTER_KIT_DEFAULT_MODEL,
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
   ANN_IMAGE_UPDATE_FROM,
@@ -124,6 +125,7 @@ export interface InfraAgent {
   starterKit?: string;
   starterKitOnboarded?: string;
   starterKitSeed?: SeedStamp;
+  starterKitDefaultModel?: string;
   kitUpdatePending?: KitUpdatePending;
   kitUpdateSkipped?: string;
   imageUpdateFrom?: string;
@@ -330,6 +332,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       seedStampSchema,
       annotations[ANN_STARTER_KIT_SEED],
     ),
+    ...(annotations[ANN_STARTER_KIT_DEFAULT_MODEL]
+      ? {
+          starterKitDefaultModel: annotations[ANN_STARTER_KIT_DEFAULT_MODEL],
+        }
+      : {}),
     ...jsonAnnotation(
       "kitUpdatePending",
       kitUpdatePendingSchema,
@@ -473,6 +480,9 @@ export function assembleAgent(
     starterKit: infra.starterKit,
     starterKitOnboarded: infra.starterKitOnboarded,
     starterKitSeed: infra.starterKitSeed,
+    ...(infra.starterKitDefaultModel
+      ? { starterKitDefaultModel: infra.starterKitDefaultModel }
+      : {}),
     kitUpdatePending: infra.kitUpdatePending,
     kitUpdateSkipped: infra.kitUpdateSkipped,
     ...(onboardingSteps ? { onboardingSteps } : {}),
