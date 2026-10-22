@@ -10,14 +10,16 @@ import { dedupeByName, err, ok } from "agent-runtime-api";
 import { subPathEscapes } from "agent-runtime-api/skill-tree";
 import type { SourcePathReason } from "agent-runtime-api";
 import {
+  anonymousFirst,
   detectGithubOwnerRepo,
+  isGithubNotFound,
   type DetectedOwnerRepo,
   type GitHubRestClient,
   type GithubFetchOpts,
 } from "../infrastructure/github-rest-client.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
 import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
-import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
+import { fetchGithubPath } from "./fetch-github-path.js";
 
 export interface ScanDeps {
   github: GitHubRestClient;
@@ -77,14 +79,7 @@ async function scanGithub(
     dirPath
       ? headOfDefaultBranch(deps.github, host, opts)
       : deps.github.getCommitHead(host, opts);
-  let head = await resolveHead({ withAuth: false });
-  if (
-    !head.ok &&
-    head.error.kind === "UpstreamGitHubError" &&
-    head.error.status === 404
-  ) {
-    head = await resolveHead({ withAuth: true });
-  }
+  const head = await anonymousFirst(resolveHead);
   if (!head.ok) return head;
   const version = head.value.sha;
   const fixedVersion = () => Promise.resolve(ok(version));
@@ -100,9 +95,9 @@ async function scanGithub(
     });
   }
 
-  const tarball = await deps.github.fetchTarball(host, version, {
-    withAuth: false,
-  });
+  const tarball = await anonymousFirst((o) =>
+    deps.github.fetchTarball(host, version, o),
+  );
   if (!tarball.ok) return tarball;
 
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
