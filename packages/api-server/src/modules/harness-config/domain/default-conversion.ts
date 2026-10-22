@@ -83,7 +83,9 @@ export function convertedDefaultModel(input: {
   const declared = declaredModelOf(input);
   if (declared) return declared;
   const preferred = preferredModelOf("work", input.providers);
-  const listed = preferred ? `${preferred.alias}/${preferred.upstreamId}` : null;
+  const listed = preferred
+    ? `${preferred.alias}/${preferred.upstreamId}`
+    : null;
   const setting = input.setting?.trim() ?? "";
   const tier = claudeTierOf(setting);
   if (tier) {

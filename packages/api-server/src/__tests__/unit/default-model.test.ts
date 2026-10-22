@@ -118,8 +118,7 @@ describe("convertedDefaultModel", () => {
     const ibm = (declared: string, listed: string[]) =>
       convertedDefaultModel({
         setting: "opus",
-        alias: "ibm",
-        listed,
+        providers: [{ alias: "ibm", listed }],
         ran: [],
         declared,
       });
@@ -130,8 +129,7 @@ describe("convertedDefaultModel", () => {
     expect(
       convertedDefaultModel({
         setting: "opus",
-        alias: "anthropic",
-        listed: LISTED,
+        providers: [{ alias: "anthropic", listed: LISTED }],
         ran: [],
         declared: "claude-opus-4-8",
       }),
@@ -139,8 +137,7 @@ describe("convertedDefaultModel", () => {
     expect(
       convertedDefaultModel({
         setting: "opus",
-        alias: "anthropic",
-        listed: LISTED,
+        providers: [{ alias: "anthropic", listed: LISTED }],
         ran: [],
         declared: "claude-opus-9",
       }),
@@ -227,6 +224,32 @@ describe("convertedDefaultModel on several fitting providers", () => {
     expect(both("default", [])).toBe(
       "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
     );
+  });
+
+  // TEST_SCENARIO: a kit's declared model is what the agent was created for, so it answers before the several-providers shortcut and before the Haiku substitution, and it is found on whichever fitting provider lists it.
+  it("takes the kit's declared model before anything else", () => {
+    expect(
+      convertedDefault({
+        setting: "haiku",
+        ran: [],
+        declared: "claude-opus-5-5",
+        providers: [
+          { alias: "anthropic", listed: ["claude-opus-5-5"] },
+          {
+            alias: "cb",
+            listed: ["rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"],
+          },
+        ],
+      }),
+    ).toEqual({ model: "anthropic/claude-opus-5-5" });
+    expect(
+      convertedDefault({
+        setting: "haiku",
+        ran: [],
+        declared: "claude-opus-5-5",
+        providers: [{ alias: "ibm", listed: ["aws/claude-opus-5-5"] }],
+      }),
+    ).toEqual({ model: "ibm/aws/claude-opus-5-5" });
   });
 
   // TEST_SCENARIO: an id no provider lists is still the owner's call, not a reason to run the platform's preferred model in its place.

@@ -173,7 +173,7 @@ describe("curve-bender connection template", () => {
   it("backfills existing connections with the preset's whole env", async () => {
     const migration = readFileSync(
       new URL(
-        "../../../../db/drizzle/0103_curve_bender_deepseek_defaults.sql",
+        "../../../../db/drizzle/0104_curve_bender_deepseek_defaults.sql",
         import.meta.url,
       ),
       "utf8",

@@ -1,6 +1,9 @@
 import { claudeTierOf, newestOfTier } from "agent-runtime-api";
 
-import { convertedDefaultModel, declaredModelOf } from "./default-conversion.js";
+import {
+  convertedDefaultModel,
+  declaredModelOf,
+} from "./default-conversion.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the conversion's order, most certain first. A
