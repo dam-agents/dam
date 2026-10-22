@@ -3350,6 +3350,36 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
+  async function readSlackContext(
+    gw: SlackGateway,
+    ctx: {
+      instanceName: string;
+      channel: string;
+      teamId: SlackWorkspace;
+      threadTs: string;
+      hasThread: boolean;
+      batchTs: string[];
+    },
+    catchUp: CatchUpSelection | null,
+  ) {
+    const bot = {
+      userId: await gw.getBotUserId(ctx.teamId).catch(() => null),
+      label: botHistoryLabel(brand),
+    };
+    const read = await getContextMessages({
+      gateway: gw,
+      channel: ctx.channel,
+      teamId: ctx.teamId,
+      threadTs: ctx.hasThread ? ctx.threadTs : undefined,
+      readingAgentId: ctx.instanceName,
+      carried: ctx.batchTs,
+      bot,
+      resolveAgentName,
+      catchUp,
+    });
+    return { ...read, bot };
+  }
+
   async function buildThreadPrompt(
     gw: SlackGateway,
     ctx: {
@@ -3369,11 +3399,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     contract: string,
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<BuiltPrompt> {
-    const bot = {
-      userId: await gw.getBotUserId(ctx.teamId).catch(() => null),
-      label: botHistoryLabel(brand),
-    };
     const {
+      bot,
       lines,
       hasAgentAuthored,
       hasUnattributedBot,
@@ -3383,17 +3410,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       readNewestTs,
       readHasMore,
       threadWindow,
-    } = await getContextMessages({
-      gateway: gw,
-      channel: ctx.channel,
-      teamId: ctx.teamId,
-      threadTs: ctx.hasThread ? ctx.threadTs : undefined,
-      readingAgentId: ctx.instanceName,
-      carried: ctx.batchTs,
-      bot,
-      resolveAgentName,
-      catchUp: null,
-    });
+    } = await readSlackContext(gw, ctx, null);
     noteOfferedThreads(
       ctx.instanceName,
       ctx.channel,
@@ -3515,11 +3532,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         threadKey,
         teamId: ctx.teamId,
       });
-      const bot = {
-        userId: await gw.getBotUserId(ctx.teamId).catch(() => null),
-        label: botHistoryLabel(brand),
-      };
       const {
+        bot,
         lines,
         hasUnattributedBot,
         hasThreadMarker,
@@ -3527,24 +3541,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         offeredThreads: offeredHere,
         readNewestTs,
         readHasMore,
-      } = await getContextMessages({
-        gateway: gw,
-        channel: ctx.channel,
-        teamId: ctx.teamId,
-        threadTs: conversationTs,
+      } = await readSlackContext(gw, ctx, {
         readingAgentId: ctx.instanceName,
-        carried: ctx.batchTs,
-        bot,
-        resolveAgentName,
-        catchUp: {
-          readingAgentId: ctx.instanceName,
-          since,
-          until: ctx.deliveredUpTo,
-          carried: [
-            ...ctx.batchTs,
-            ...readSeenAbove(ctx.instanceName, threadKey),
-          ],
-        },
+        since,
+        until: ctx.deliveredUpTo,
+        carried: [
+          ...ctx.batchTs,
+          ...readSeenAbove(ctx.instanceName, threadKey),
+        ],
       });
       const commit = () =>
         commitSeenBoundary({
