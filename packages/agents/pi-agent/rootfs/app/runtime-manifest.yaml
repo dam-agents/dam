@@ -3,12 +3,6 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
-# Pi's ACP adapter takes no HTTP MCP servers, so the per-session entry a
-# session/new carries never reaches it and its platform tool calls name no
-# session: a session's platform sub-agent settings cannot apply, and a task
-# cannot be tied to the session that scheduled it.
-sessionMcpEntry: false
-
 # Pi picks the API per model, so it reaches every provider the router serves.
 modelRouter:
   dialects: [openai-responses, openai-chat, anthropic-messages]
@@ -35,11 +29,16 @@ drivers:
   # tool. Every entry gets it, user Connections included. The cost is context
   # size, and Pi's first prompt waits up to 10 s for a `direct` server to
   # connect.
+  # Pi's ACP adapter takes no HTTP MCP servers, so the session ref a
+  # session/new or session/load carries reaches Pi as PLATFORM_SESSION_REF,
+  # set per pi process by pi-acp-patch.mjs, and Pi interpolates it into the
+  # platform entry's header.
   mcp-entry:
     path: "$HOME/.pi/agent/mcp.json"
     keyPath: mcpServers
     extraFields:
       exposure: direct
+    sessionRef: "${PLATFORM_SESSION_REF}"
 
   # Model -> defaultModel, thinking level -> the ACP "mode"
   # (defaultThinkingLevel). Pi's models are connection-dependent, so they're

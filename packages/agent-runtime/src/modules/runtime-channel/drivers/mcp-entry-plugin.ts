@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import {
   PLATFORM_MCP_ENTRY_NAME,
+  SESSION_REF_HEADER,
   type DriverBinding,
   type KindHandler,
   type Plugin,
@@ -42,6 +43,7 @@ const bindingSchema = z
     urlKey: z.string().min(1).optional(),
     headersKey: z.string().min(1).optional(),
     extraFields: z.record(z.string(), z.string()).optional(),
+    sessionRef: z.string().min(1).optional(),
   })
   .superRefine((b, ctx) => {
     const reserved = new Set(ownedKeys(b.urlKey, b.headersKey));
@@ -76,8 +78,15 @@ export function createMcpEntryPlugin(deps?: {
           `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
         );
       }
-      const { path, format, keyPath, urlKey, headersKey, extraFields } =
-        parsed.data;
+      const {
+        path,
+        format,
+        keyPath,
+        urlKey,
+        headersKey,
+        extraFields,
+        sessionRef,
+      } = parsed.data;
       const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
       const effectiveHeadersKey = headersKey ?? DEFAULT_HEADERS_KEY;
       let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
@@ -96,14 +105,19 @@ export function createMcpEntryPlugin(deps?: {
         } | null = null;
         for (const c of contributions) {
           if (c.kind !== "mcp-entry") continue;
-          if (c.name === PLATFORM_MCP_ENTRY_NAME)
+          const platform = c.name === PLATFORM_MCP_ENTRY_NAME;
+          if (platform)
             platformEntry = {
               url: c.url,
               ...(c.headers ? { headers: c.headers } : {}),
             };
+          const headers =
+            platform && sessionRef
+              ? { ...c.headers, [SESSION_REF_HEADER]: sessionRef }
+              : c.headers;
           entries[c.name] = {
             ...(urlKey ? { [urlKey]: c.url } : { type: "http", url: c.url }),
-            ...(c.headers ? { [effectiveHeadersKey]: c.headers } : {}),
+            ...(headers ? { [effectiveHeadersKey]: headers } : {}),
             ...extraFields,
           };
         }
