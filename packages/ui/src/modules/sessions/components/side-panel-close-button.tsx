@@ -8,9 +8,11 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { RightToolbarTiles } from "./right-toolbar-tiles.js";
 
 const ClosesSidePanel = createContext(true);
 
@@ -43,14 +45,22 @@ function ShownWhereItCloses({
  * rather than the small ghost button.
  */
 export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
+  const tiles = useContext(RightToolbarTiles);
+  return <PanelCloseButton onClose={onClose} tiles={tiles} />;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the X's chrome and close behavior, told which variant the panel's shell draws so an open panel updates with the Unified right toolbar experiment instead of reading a marker off the root.
+export function PanelCloseButton({
+  onClose,
+  tiles,
+}: {
+  onClose?: () => void;
+  tiles: boolean;
+}) {
   // UNIT_BOUNDARY_DESCRIPTION: JanUI draws no bar of its own over a narrow panel, so its views keep the X; the layout is read off the root, which does not change without a reload.
   const newLayout =
     typeof document !== "undefined" &&
     document.documentElement.dataset.layout === "new";
-  // UNIT_BOUNDARY_DESCRIPTION: the Unified right toolbar experiment sizes the X like a rail tile, independently of the shell that draws the panel.
-  const tiles =
-    typeof document !== "undefined" &&
-    document.documentElement.dataset.rightToolbar === "new";
   const close = (e: MouseEvent<HTMLButtonElement>) => {
     const page = e.currentTarget.ownerDocument;
     const bar = e.currentTarget
@@ -74,15 +84,17 @@ export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
         )}
       >
         {tiles ? (
-          <button
-            type="button"
-            aria-label="Close panel"
-            data-testid="side-panel-close"
-            className={railTile(false)}
-            onClick={close}
-          >
-            <Close size={RAIL_GLYPH} />
-          </button>
+          <Tooltip content="Close panel" side="left">
+            <button
+              type="button"
+              aria-label="Close panel"
+              data-testid="side-panel-close"
+              className={railTile(false)}
+              onClick={close}
+            >
+              <Close size={RAIL_GLYPH} />
+            </button>
+          </Tooltip>
         ) : (
           <Button
             variant="ghost"

@@ -1,8 +1,14 @@
-import type { CSSProperties, ReactNode, Ref } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  useContext,
+} from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
+import { RightToolbarTiles } from "./right-toolbar-tiles.js";
 import { SidePanelCloseButton } from "./side-panel-close-button.js";
 
 export function SidebarSection({
@@ -30,9 +36,7 @@ export function SidebarSection({
   ref?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
-  const tiles =
-    typeof document !== "undefined" &&
-    document.documentElement.dataset.rightToolbar === "new";
+  const tiles = useContext(RightToolbarTiles);
   return (
     <div
       id={id}

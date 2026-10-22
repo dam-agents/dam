@@ -5,7 +5,9 @@ import { expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
+import { RightToolbarTiles } from "../../modules/sessions/components/right-toolbar-tiles.js";
 import {
+  PanelCloseButton,
   SidePanelCloseButton,
   SidePanelCloseScope,
 } from "../../modules/sessions/components/side-panel-close-button.js";
@@ -60,19 +62,20 @@ function closeButton(node: ReactNode): { onClick: Click } {
 
 // TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with no rule under it, and the X is a 40 square that closes and hands the keyboard back like the small button, without JanUI being on.
 it("draws the unified right toolbar's header on the rail's row with a tile X", () => {
-  vi.stubGlobal("document", {
-    documentElement: { dataset: { rightToolbar: "new" } },
-  });
   const html = renderToStaticMarkup(
     createElement(
       TooltipProvider,
       null,
-      createElement(SidebarSection, {
-        title: "Files",
-        open: true,
-        headerClassName: "border-t border-border",
-        children: null,
-      }),
+      createElement(
+        RightToolbarTiles.Provider,
+        { value: true },
+        createElement(SidebarSection, {
+          title: "Files",
+          open: true,
+          headerClassName: "border-t border-border",
+          children: null,
+        }),
+      ),
     ),
   );
   const headerClass =
@@ -84,12 +87,11 @@ it("draws the unified right toolbar's header on the rail's row with a tile X", (
   expect(closeTag).toContain("size-10");
   expect(closeTag).toContain("[corner-shape:squircle]");
   store.current.getState().setSidePanelTab("approvals");
-  closeButton(SidePanelCloseButton({})).onClick(outsidePanel);
+  closeButton(PanelCloseButton({ tiles: true })).onClick(outsidePanel);
   expect(store.current.getState().sidePanelTab).toBeNull();
-  vi.unstubAllGlobals();
 });
 
-// TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them.
+// TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them; a panel outside the shell's provider, such as the classic chat's column, keeps the classic 48 px header and its rule.
 it("ends the panel's top bar with the X, behind a border", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -106,12 +108,14 @@ it("ends the panel's top bar with the X, behind a border", () => {
   expect(html).toMatch(
     /id="own-action"><\/button><div class="[^"]*border-l[^"]*"><button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"/,
   );
+  const headerClass = html.match(/class="([^"]*h-12[^"]*)"/)?.[1] ?? "";
+  expect(headerClass.split(" ")).toContain("border-b");
 });
 
 // TEST_SCENARIO: Clicking the X closes the open panel.
 it("closes the side panel", () => {
   store.current.getState().setSidePanelTab("approvals");
-  closeButton(SidePanelCloseButton({})).onClick(outsidePanel);
+  closeButton(PanelCloseButton({ tiles: false })).onClick(outsidePanel);
   expect(store.current.getState().sidePanelTab).toBeNull();
 });
 
@@ -119,7 +123,8 @@ it("closes the side panel", () => {
 it("runs the panel's own close when it brings one", () => {
   let closed = false;
   closeButton(
-    SidePanelCloseButton({
+    PanelCloseButton({
+      tiles: false,
       onClose: () => {
         closed = true;
       },
@@ -147,7 +152,7 @@ it.each([
     querySelector: (s: string) =>
       s === '[data-testid="side-panel-bar"]' ? bar : null,
   };
-  closeButton(SidePanelCloseButton({ onClose: () => {} })).onClick({
+  closeButton(PanelCloseButton({ tiles: false, onClose: () => {} })).onClick({
     currentTarget: {
       closest: (s) => (s === '[data-testid="side-panel"]' ? panel : null),
     },
@@ -181,7 +186,7 @@ it.each([
 ])("with no rail, hands focus to %s", (_, pressed, expected) => {
   const focused: string[] = [];
   const button = (id: string) => ({ focus: () => focused.push(id) });
-  closeButton(SidePanelCloseButton({ onClose: () => {} })).onClick({
+  closeButton(PanelCloseButton({ tiles: false, onClose: () => {} })).onClick({
     currentTarget: {
       closest: () => null,
       ownerDocument: {

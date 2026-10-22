@@ -33,6 +33,7 @@ import {
   sidePanelMinWidth,
   type SidePanelTab,
 } from "../lib/side-panel.js";
+import { RightToolbarTiles } from "./right-toolbar-tiles.js";
 import { SidePanelBar, type SidePanelTabProps } from "./side-panel-bar.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
@@ -303,21 +304,25 @@ export function SidePanelShell({
                 {mobileTitle}
               </span>
             </div>
-            {panel}
-            {activeTab === "getting-started" && (
-              <GettingStartedPanel className="flex-1" />
-            )}
-            {activeTab === "approvals" && <ApprovalsPanel className="flex-1" />}
-            {dockedKept && (
-              <div
-                className={cn(
-                  "flex flex-1 min-h-0 flex-col",
-                  !dockedShown && "hidden",
-                )}
-              >
-                {dock}
-              </div>
-            )}
+            <RightToolbarTiles.Provider value={rightToolbar}>
+              {panel}
+              {activeTab === "getting-started" && (
+                <GettingStartedPanel className="flex-1" />
+              )}
+              {activeTab === "approvals" && (
+                <ApprovalsPanel className="flex-1" />
+              )}
+              {dockedKept && (
+                <div
+                  className={cn(
+                    "flex flex-1 min-h-0 flex-col",
+                    !dockedShown && "hidden",
+                  )}
+                >
+                  {dock}
+                </div>
+              )}
+            </RightToolbarTiles.Provider>
           </div>
         )}
         {sidePanelOpen && maximizable && (maximized || !columnsDoNotFit) && (
