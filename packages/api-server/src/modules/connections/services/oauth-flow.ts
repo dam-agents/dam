@@ -5,10 +5,7 @@ import type {
   ConnectionAuthConfig,
   SecretRef,
 } from "api-server-api";
-import type {
-  OAuthEngine,
-  OAuthProvider,
-} from "../infrastructure/oauth-engine.js";
+import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import type { ConnectionTemplateRegistry } from "../domain/connection-template.js";
 import { buildConnectionSdsFields } from "../domain/connection-sds.js";
@@ -22,6 +19,7 @@ import type { SecretStore } from "../../secret-store/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
+import { oauthProviderFor } from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
 import { recordAccountLabel } from "./account-label.js";
 import { emit, EventType } from "../../../events.js";
@@ -68,7 +66,11 @@ export function createOAuthFlowService(deps: {
           message: `connection auth kind is ${conn.auth.kind}; not OAuth`,
         });
       }
-      const provider = await buildProvider(conn, conn.auth, deps);
+      const provider = await oauthProviderFor({
+        ...deps,
+        conn,
+        auth: conn.auth,
+      });
       const template = deps.templates.get(conn.templateId);
       const alias =
         template?.authKind === "oauth"
@@ -108,7 +110,11 @@ export function createOAuthFlowService(deps: {
         );
       }
 
-      const provider = await buildProvider(conn, conn.auth, deps);
+      const provider = await oauthProviderFor({
+        ...deps,
+        conn,
+        auth: conn.auth,
+      });
       const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
       const isReauth =
@@ -239,41 +245,4 @@ function githubIdentityErrorDetail(err: unknown): Record<string, unknown> {
   }
   if (err instanceof Error) return { error: err.name, message: err.message };
   return { error: String(err) };
-}
-
-async function buildProvider(
-  conn: Connection,
-  auth: Extract<ConnectionAuthConfig, { kind: "oauth" }>,
-  deps: {
-    templates: ConnectionTemplateRegistry;
-    secretStore: SecretStore;
-  },
-): Promise<OAuthProvider> {
-  const template = deps.templates.get(conn.templateId);
-  let clientSecret =
-    template && template.authKind === "oauth"
-      ? template.clientSecret
-      : undefined;
-
-  if (auth.clientSecretRef) {
-    const dynamicSecret = await deps.secretStore.getField(auth.clientSecretRef);
-    if (dynamicSecret) clientSecret = dynamicSecret;
-  }
-
-  const templateScopes =
-    template?.authKind === "oauth" && template.scopes?.length
-      ? template.scopes
-      : undefined;
-
-  const provider: OAuthProvider = {
-    id: `connection:${conn.id}:${conn.templateId}`,
-    authorizationUrl: auth.authorizationUrl,
-    tokenEndpoint: auth.tokenUrl,
-    clientId: auth.clientId,
-    ...(clientSecret ? { clientSecret } : {}),
-    scopes: templateScopes ?? auth.scopes,
-    ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
-    ...(auth.extraAuthParams ? { extraAuthParams: auth.extraAuthParams } : {}),
-  };
-  return provider;
 }
