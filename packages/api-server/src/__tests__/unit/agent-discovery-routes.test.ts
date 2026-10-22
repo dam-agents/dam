@@ -160,9 +160,15 @@ describe("agent discovery routes", () => {
     expect(skill?.bytes).toEqual(new Uint8Array(readFileSync(SKILL_PATH)));
   });
 
-  it("reads no skill from a file without frontmatter", () => {
-    expect(parseAgentSkill(new TextEncoder().encode("# no frontmatter"))).toBe(
-      null,
-    );
+  /**
+   * TEST_SCENARIO: A broken skill file must not stop the api-server from
+   * booting: it serves llms.txt without the skill instead.
+   */
+  it("reads no skill from a file without valid frontmatter", () => {
+    const parse = (text: string) =>
+      parseAgentSkill(new TextEncoder().encode(text));
+    expect(parse("# no frontmatter")).toBe(null);
+    expect(parse("---\nname: [dam\n---\n")).toBe(null);
+    expect(parse("---\nname: dam\n---\n")).toBe(null);
   });
 });

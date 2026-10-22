@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { type Context, Hono } from "hono";
 import { loadYamlDocument } from "../../../core/yaml-document.js";
 
-const DISCOVERY_SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
+const DISCOVERY_SCHEMA =
+  "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
 const CACHE_CONTROL = "public, max-age=300";
 
 export interface AgentSkill {
@@ -44,10 +45,12 @@ export function parseAgentSkill(
     new TextDecoder().decode(bytes),
   );
   if (!frontmatter) return null;
-  const data = loadYamlDocument(frontmatter[1]!) as {
-    name?: unknown;
-    description?: unknown;
-  } | null;
+  let data: { name?: unknown; description?: unknown } | null;
+  try {
+    data = loadYamlDocument(frontmatter[1]!) as typeof data;
+  } catch {
+    return null;
+  }
   if (typeof data?.name !== "string" || typeof data.description !== "string")
     return null;
   return { name: data.name, description: data.description.trim(), bytes };
