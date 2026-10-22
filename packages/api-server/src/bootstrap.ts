@@ -1108,8 +1108,10 @@ export async function bootstrap() {
     onLost: () => sessionWatcher.stop(),
   };
 
+  const loopGuardDrops = createSlackLoopGuardDropsRepository(db);
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
+    readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
     install: agentsInstallSettings(config),
     api,
     resolveSlackWorkspace: (slackChannelId) =>
@@ -1429,7 +1431,7 @@ export async function bootstrap() {
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
-        loopGuardDrops: createSlackLoopGuardDropsRepository(db),
+        loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
@@ -1955,6 +1957,7 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
+      readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
       storageGate: composeStorageGate({
         k8s: k8sClient,
         owner,

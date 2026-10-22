@@ -1,6 +1,7 @@
 import type { SlackLoopGuardDrop, SlackLoopGuardDrops } from "api-server-api";
 import type { Db } from "db";
 import { and, gte, inArray, slackLoopGuardDrops, sql } from "db";
+import { BOT_POST_TURNS_PER_CONVERSATION } from "../domain/bot-post-loop-bound.js";
 
 export const LOOP_GUARD_DROPS_SHOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -55,6 +56,7 @@ export function createSlackLoopGuardDropsRepository(
         );
       for (const row of rows) {
         drops.set(row.channelId, {
+          limit: BOT_POST_TURNS_PER_CONVERSATION,
           dropped: row.dropped,
           lastDroppedAt: row.lastDroppedAt.toISOString(),
           recent: row.recent,

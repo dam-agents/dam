@@ -92,7 +92,9 @@ export function composeAgentsModule(deps: {
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   resolveSlackConversationLabels?: AgentsServiceDeps["resolveSlackConversationLabels"];
-  readSlackLoopGuardDrops?: AgentsServiceDeps["readSlackLoopGuardDrops"];
+  readSlackLoopGuardDrops: NonNullable<
+    AgentsServiceDeps["readSlackLoopGuardDrops"]
+  >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
 }): {
   agents: AgentsService;

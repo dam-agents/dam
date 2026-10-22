@@ -83,6 +83,7 @@ export interface SlackLoopGuardDrop {
 
 // UNIT_BOUNDARY_DESCRIPTION: the bot and app posts the loop guard dropped in one Slack conversation in the day since its last drop; `recent` holds the newest few, newest first.
 export interface SlackLoopGuardDrops {
+  limit: number;
   dropped: number;
   lastDroppedAt: string;
   recent: SlackLoopGuardDrop[];
