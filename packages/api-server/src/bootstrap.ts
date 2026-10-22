@@ -148,9 +148,9 @@ import {
   composeFirePair,
   composeScheduleModelForFire,
   composeHarnessConfigReset,
-  composeInitializationPairResolver,
   composeSessionChoicesValidator,
-  composeUnattendedAgentsReader,
+  createInitializationPairResolver,
+  createUnattendedAgentsReader,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -660,7 +660,7 @@ export async function bootstrap() {
       (await agentsRepo.get(agentId))?.spec.harness,
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
-  const resolveInitializationPair = composeInitializationPairResolver({
+  const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
       return firePair(agentId, "chat", preferred);
@@ -1675,7 +1675,7 @@ export async function bootstrap() {
         ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
         : null;
     },
-    unattendedCandidates: composeUnattendedAgentsReader(db),
+    unattendedCandidates: createUnattendedAgentsReader(db),
     enabledSchedules: async (agentIds) =>
       (await schedulesBoot.repo.listEnabledByAgents(agentIds)).map((s) => ({
         agentId: s.agentId,
