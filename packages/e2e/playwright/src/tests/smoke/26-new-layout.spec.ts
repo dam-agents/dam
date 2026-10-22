@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and with the Unified right toolbar experiment on, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -34,6 +34,17 @@ async function setNewLayout(enabled: boolean): Promise<void> {
   expect(flags["new-layout"], "the new-layout experiment flag").toBe(enabled);
 }
 
+async function setUnifiedRightToolbar(enabled: boolean): Promise<void> {
+  const flags = await api.features.setFlag.mutate({
+    feature: "unified-right-toolbar",
+    enabled,
+  });
+  expect(
+    flags["unified-right-toolbar"],
+    "the unified-right-toolbar experiment flag",
+  ).toBe(enabled);
+}
+
 function agentNode(page: Page, name: string) {
   return page.locator(
     `[data-testid="sidebar-agent"][data-agent-name="${name}"]`,
@@ -64,6 +75,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await setNewLayout(false);
+  await setUnifiedRightToolbar(false);
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
@@ -72,17 +84,19 @@ test("keeps the current layout while the experiment is off", async ({
   page,
 }) => {
   await setNewLayout(false);
+  await setUnifiedRightToolbar(false);
   await openHome(page);
   await expect(page.getByTestId("agent-row").first()).toBeVisible();
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
   test.setTimeout(300_000);
   await setNewLayout(true);
+  await setUnifiedRightToolbar(true);
   await openHome(page);
   const tree = page.getByTestId("sidebar-tree");
   await expect(tree).toBeVisible();
@@ -154,6 +168,7 @@ test("switches the chat between the sections and the side panel", async ({
 }) => {
   test.setTimeout(300_000);
   await setNewLayout(false);
+  await setUnifiedRightToolbar(false);
   const agentId = agentIds.get(AGENTS[1])!;
   await openHome(page);
   await page.evaluate(() =>
