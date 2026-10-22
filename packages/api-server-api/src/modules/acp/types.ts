@@ -41,6 +41,31 @@ export function isNonNullObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
+export function paramsOf(frame: unknown): Record<string, unknown> | null {
+  if (!isNonNullObject(frame)) return null;
+  return isNonNullObject(frame.params) ? frame.params : null;
+}
+
+export function resultOf(frame: unknown): Record<string, unknown> | null {
+  if (!isNonNullObject(frame)) return null;
+  return isNonNullObject(frame.result) ? frame.result : null;
+}
+
+export function sessionUpdateOf(
+  frame: unknown,
+): Record<string, unknown> | null {
+  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
+  const params = paramsOf(frame);
+  return params !== null && isNonNullObject(params.update)
+    ? params.update
+    : null;
+}
+
+export function stringAt(value: unknown, key: string): string | null {
+  const found = isNonNullObject(value) ? value[key] : undefined;
+  return typeof found === "string" ? found : null;
+}
+
 export function parseFrame(line: string): JsonRpcFrame | null {
   try {
     const f = JSON.parse(line);

@@ -56,7 +56,11 @@ import {
   isNonNullObject,
   isRequest,
   isResponse,
+  paramsOf,
   parseFrame,
+  resultOf,
+  sessionUpdateOf,
+  stringAt,
   type JsonRpcId,
 } from "api-server-api";
 import {
@@ -2718,8 +2722,8 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
 }
 
 function platformString(frame: unknown, key: string): string | null {
-  const value = platformOf(frame)?.[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
+  const value = stringAt(platformOf(frame), key);
+  return value === "" ? null : value;
 }
 
 const TITLE_CHARS = 80;
@@ -2747,11 +2751,8 @@ function rehydrateFailureMessage(error: unknown): string {
 }
 
 function extractUndeliveredId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const id = params.id;
-  return typeof id === "string" && id.length > 0 ? id : null;
+  const id = stringAt(paramsOf(frame), "id");
+  return id === "" ? null : id;
 }
 
 const HANDOVER_PROMPT_CAP = 32;
@@ -2759,13 +2760,10 @@ const HANDOVER_PROMPT_CAP = 32;
 function extractUndeliveredPrompts(
   frame: unknown,
 ): PlatformUndeliveredPrompt[] | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
   const parsed = z
     .array(platformUndeliveredPromptSchema)
     .max(HANDOVER_PROMPT_CAP)
-    .safeParse(params.prompts);
+    .safeParse(paramsOf(frame)?.prompts);
   return parsed.success ? parsed.data : null;
 }
 
@@ -2865,32 +2863,23 @@ function hasSessionCapability(
   frame: unknown,
   name: "close" | "resume" | "fork",
 ): boolean {
-  if (!isNonNullObject(frame)) return false;
-  const result = frame.result;
-  if (!isNonNullObject(result)) return false;
-  const caps = result.agentCapabilities;
+  const caps = resultOf(frame)?.agentCapabilities;
   if (!isNonNullObject(caps)) return false;
   const session = caps.sessionCapabilities;
-  if (!isNonNullObject(session)) return false;
-  return isNonNullObject(session[name]);
+  return isNonNullObject(session) && isNonNullObject(session[name]);
 }
 
 function isAgentOutputChunk(frame: unknown): boolean {
-  if (!isNonNullObject(frame) || frame.method !== "session/update")
-    return false;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return false;
-  const kind = params.update.sessionUpdate;
+  const kind = sessionUpdateOf(frame)?.sessionUpdate;
   return kind === "agent_message_chunk" || kind === "agent_thought_chunk";
 }
 
 function toolCallStateOf(
   frame: unknown,
 ): { toolCallId: string; started: boolean; settled: boolean } | null {
-  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
-  const { sessionUpdate, toolCallId, status } = params.update;
+  const update = sessionUpdateOf(frame);
+  if (update === null) return null;
+  const { sessionUpdate, toolCallId, status } = update;
   if (sessionUpdate !== "tool_call" && sessionUpdate !== "tool_call_update")
     return null;
   if (typeof toolCallId !== "string") return null;
@@ -2919,13 +2908,8 @@ function queueableBlocks(prompt: unknown): PromptBlock[] {
 }
 
 function extractStopReason(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const result = frame.result;
-  if (!isNonNullObject(result)) return null;
-  const stopReason = result.stopReason;
-  return typeof stopReason === "string" && stopReason.length > 0
-    ? stopReason
-    : null;
+  const stopReason = stringAt(resultOf(frame), "stopReason");
+  return stopReason === "" ? null : stopReason;
 }
 
 function extractTurnError(frame: unknown): PlatformTurnEndedParams["error"] {
@@ -2952,13 +2936,9 @@ function capped(text: string): string {
 const REPORTED_MODEL_META_KEY = "_claude/model";
 
 function extractReportedModel(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  if (frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const update = params.update;
-  if (!isNonNullObject(update) || !isNonNullObject(update._meta)) return null;
-  const model = update._meta[REPORTED_MODEL_META_KEY];
+  const update = sessionUpdateOf(frame);
+  const meta = isNonNullObject(update?._meta) ? update._meta : null;
+  const model = meta?.[REPORTED_MODEL_META_KEY];
   return typeof model === "string" && model !== "" && model !== "<synthetic>"
     ? model
     : null;
@@ -2971,11 +2951,8 @@ const NO_RESPONSE_FILLER = "No response requested.";
  * call, when a session it resumes ends on a stopped turn.
  */
 function isNoResponseFiller(frame: unknown): boolean {
-  if (!isNonNullObject(frame) || frame.method !== "session/update")
-    return false;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return false;
-  const update = params.update;
+  const update = sessionUpdateOf(frame);
+  if (update === null) return false;
   const content = update.content;
   return (
     update.sessionUpdate === "agent_message_chunk" &&
@@ -3028,44 +3005,30 @@ function settingKeyOf({ method, params }: SessionSettingFrame): string {
 }
 
 function extractReportedMode(frame: unknown): string | null {
-  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
-  const { sessionUpdate, currentModeId } = params.update;
-  return sessionUpdate === "current_mode_update" &&
-    typeof currentModeId === "string" &&
-    currentModeId !== ""
-    ? currentModeId
+  const update = sessionUpdateOf(frame);
+  const mode = update?.currentModeId;
+  return update?.sessionUpdate === "current_mode_update" &&
+    typeof mode === "string" &&
+    mode !== ""
+    ? mode
     : null;
 }
 
 function sessionUpdateKind(frame: unknown): string | null {
-  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
-  const kind = params.update.sessionUpdate;
+  const kind = sessionUpdateOf(frame)?.sessionUpdate;
   return typeof kind === "string" ? kind : null;
 }
 
 function extractAgentTextChunk(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  if (frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const update = params.update;
-  if (!isNonNullObject(update)) return null;
-  if (update.sessionUpdate !== "agent_message_chunk") return null;
+  const update = sessionUpdateOf(frame);
+  if (update?.sessionUpdate !== "agent_message_chunk") return null;
   const content = update.content;
   if (!isNonNullObject(content) || content.type !== "text") return null;
   return typeof content.text === "string" ? content.text : null;
 }
 
 function extractParamsSessionId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const sid = params.sessionId;
-  return typeof sid === "string" ? sid : null;
+  return stringAt(paramsOf(frame), "sessionId");
 }
 
 function extractAgentRequestSessionId(frame: unknown): string | null {
@@ -3074,9 +3037,5 @@ function extractAgentRequestSessionId(frame: unknown): string | null {
 }
 
 function extractResultSessionId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const result = frame.result;
-  if (!isNonNullObject(result)) return null;
-  const sid = result.sessionId;
-  return typeof sid === "string" ? sid : null;
+  return stringAt(resultOf(frame), "sessionId");
 }

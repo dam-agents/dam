@@ -847,7 +847,11 @@ export {
   isNonNullObject,
   isRequest,
   isResponse,
+  paramsOf,
   parseFrame,
+  resultOf,
+  sessionUpdateOf,
+  stringAt,
 } from "./modules/acp/types.js";
 export type {
   JsonRpcFrame,
