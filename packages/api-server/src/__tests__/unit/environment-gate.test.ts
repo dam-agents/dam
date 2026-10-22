@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another; anyone else is refused, with a page that says whom to ask; the platform's own session cookie and `Authorization` never reach the app, the app cannot set that cookie, and every response is uncacheable. Any other host passes on untouched.
+// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and `Authorization` never reach the app, the app cannot set those cookies, and every response is uncacheable. Any other host passes on untouched.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -11,6 +11,7 @@ import {
   domainOf,
   parseAddress,
   relayHeaders,
+  requestAllowed,
 } from "../../modules/environments/domain/gate.js";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
 import { createEnvironmentGate } from "../../modules/environments/gate/environment-gate.js";
@@ -90,9 +91,15 @@ async function world(
   const records = [record("pr-1-abcdef", 4444), record("pr-2-abcdef", 4444)];
   records[0]!.access = opts.environmentList ?? null;
   const woken: string[] = [];
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, faked: the ones still alive, by id.
+  const shareSessions = new Set(["share-1"]);
   const signIn = createEnvironmentSignIn({
     handoffs: createMemoryTtlStore(60_000),
     sessions: createMemoryTtlStore(3_600_000),
+    share: {
+      alive: async (id) => shareSessions.has(id),
+      end: async (id) => void shareSessions.delete(id),
+    },
     addressUrl: (a) => `http://${a}.${DOMAIN}`,
     now: () => Date.now(),
   });
@@ -102,23 +109,35 @@ async function world(
   };
   const owners = { list: opts.ownerList ?? [] };
   const ownerList = async () => owners.list;
-  // UNIT_BOUNDARY_DESCRIPTION: the share host's sign-in, faked: a `share` cookie names the visitor, and its login path is where the share host would send a visitor without one through the identity provider.
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's sign-in, faked: a `share` cookie names a share session, alive or not, and its login path is where the share host would send a visitor without one through the identity provider.
   const shareLogins: string[] = [];
   const visitor = {
     sub: opts.signedInAs ?? OWNER,
     email: opts.email === undefined ? "owner@example.com" : opts.email,
+  };
+  const shareSignIn = {
+    alive: async (id: string) => shareSessions.has(id),
+    end: async (id: string) => void shareSessions.delete(id),
+    logoutUrl: (next: string) =>
+      `http://idp.test/logout?next=${encodeURIComponent(next)}`,
   };
   const share = new Hono();
   share.route(
     "/e",
     createEnvironmentFrontDoor({
       domain: DOMAIN,
+      addressUrl: (a) => `http://${a}.${DOMAIN}`,
       repo,
       ownerList,
       signIn,
       share: {
-        visitor: async (c) =>
-          getCookie(c, "share") === "signed-in" ? visitor : null,
+        ...shareSignIn,
+        visitor: async (c) => {
+          const id = getCookie(c, "share");
+          return id && shareSessions.has(id)
+            ? { ...visitor, shareSession: id }
+            : null;
+        },
         loginPath: (next) => {
           shareLogins.push(next);
           return `/auth/login?next=${encodeURIComponent(next)}`;
@@ -131,9 +150,9 @@ async function world(
   const gate = createEnvironmentGate({
     domain: DOMAIN,
     scheme: "http",
-    frontDoorUrl: (address, next) =>
-      `http://${SHARE}/e/${address}?next=${encodeURIComponent(next)}`,
-    signedOutUrl: (address) => `http://${SHARE}/e/${address}/signed-out`,
+    frontDoorUrl: (address, next, binding) =>
+      `http://${SHARE}/e/${address}?next=${encodeURIComponent(next)}&b=${binding}`,
+    signOutUrl: (address) => shareSignIn.logoutUrl(`/e/${address}`),
     repo,
     ownerList,
     signIn,
@@ -224,7 +243,7 @@ async function world(
     });
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: the front door as a browser walks it, signed in on the share host: the address sends the visitor there, and the share host either answers itself (a refusal) or hands the address a code.
+  // UNIT_BOUNDARY_DESCRIPTION: the front door as a browser walks it, signed in on the share host: the address gives the browser its sign-in secret and sends the visitor there, and the share host either answers itself (a refusal) or hands the address a code. The answer carries the secret's cookie, as the browser keeps it.
   async function frontDoor(address: string, path = "/page?x=1") {
     const start = await request(`${address}.${DOMAIN}`, path, {
       accept: "text/html",
@@ -232,12 +251,17 @@ async function world(
     expect(start.status).toBe(302);
     const door = new URL(start.location!);
     expect(door.host).toBe(SHARE);
-    return request(SHARE, `${door.pathname}${door.search}`, {
-      cookie: "share=signed-in",
-    });
+    const secret = start.cookies[0]!.split(";")[0]!;
+    expect(secret).toMatch(/^platform-env-signin=/);
+    return {
+      ...(await request(SHARE, `${door.pathname}${door.search}`, {
+        cookie: "share=share-1",
+      })),
+      secret,
+    };
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: the whole sign-in of a visitor the front door lets in: the code it hands the address, traded for the address's own session cookie.
+  // UNIT_BOUNDARY_DESCRIPTION: the whole sign-in of a visitor the front door lets in: the code it hands the address, traded in the same browser for the address's own session cookie.
   async function signInTo(address: string): Promise<string> {
     const handed = await frontDoor(address);
     expect(handed.status).toBe(302);
@@ -246,6 +270,7 @@ async function world(
     const session = await request(
       handoff.host,
       `${handoff.pathname}${handoff.search}`,
+      { cookie: handed.secret },
     );
     expect(session.status).toBe(302);
     expect(session.location).toBe("/page?x=1");
@@ -258,6 +283,8 @@ async function world(
     frontDoor,
     signInTo,
     shareLogins,
+    shareSessions,
+    records,
     owners,
     seen,
     woken,
@@ -356,7 +383,7 @@ describe("the Environment gate", () => {
     expect(w.seen).toHaveLength(0);
   });
 
-  // TEST_SCENARIO: a visitor the share host has not signed in is sent through its sign-in, which returns to the front door for the same address and path; one it has signed in passes straight on to the address with a code, with no page.
+  // TEST_SCENARIO: a visitor the share host has not signed in is sent through its sign-in, which returns to the front door for the same address, path and browser binding; one it has signed in passes straight on to the address with a code, with no page; a front door visit with no binding goes back to the address, which starts over.
   it("signs a visitor in through the share host, and passes a signed-in one straight on", async () => {
     const w = await world();
     const start = await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/page?x=1", {
@@ -366,8 +393,15 @@ describe("the Environment gate", () => {
     const anonymous = await w.request(SHARE, `${door.pathname}${door.search}`);
     expect(anonymous.status).toBe(302);
     expect(anonymous.location).toBe(
-      `/auth/login?next=${encodeURIComponent("/e/app-pr-1-abcdef?next=%2Fpage%3Fx%3D1")}`,
+      `/auth/login?next=${encodeURIComponent(`${door.pathname}${door.search}`)}`,
     );
+    expect(door.searchParams.get("next")).toBe("/page?x=1");
+    expect(door.searchParams.get("b")).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const unbound = await w.request(SHARE, "/e/app-pr-1-abcdef?next=/page", {
+      cookie: "share=share-1",
+    });
+    expect(unbound.location).toBe(`http://app-pr-1-abcdef.${DOMAIN}/page`);
 
     const signedIn = await w.frontDoor("app-pr-1-abcdef");
     expect(signedIn.status).toBe(302);
@@ -434,8 +468,8 @@ describe("the Environment gate", () => {
     expect(res.body).toContain("no verified email");
   });
 
-  // TEST_SCENARIO: signing out of an address ends its session and lands on the address's signed-out page on the share host, which offers to switch account through the share host's own sign-out.
-  it("signs out of an address onto the share host", async () => {
+  // TEST_SCENARIO: signing out of an address ends its session and the share session it came from, and goes on to the identity provider's sign-out, which comes back to the share host's sign-in for this address.
+  it("signs out of an address, the share host and the identity provider", async () => {
     const w = await world();
     const cookie = await w.signInTo("app-pr-1-abcdef");
 
@@ -445,32 +479,102 @@ describe("the Environment gate", () => {
       { cookie },
     );
     expect(out.status).toBe(302);
-    expect(out.location).toBe(`http://${SHARE}/e/app-pr-1-abcdef/signed-out`);
+    expect(out.location).toBe(
+      `http://idp.test/logout?next=${encodeURIComponent("/e/app-pr-1-abcdef")}`,
+    );
+    expect(w.shareSessions.has("share-1")).toBe(false);
     expect(
       (await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie })).status,
     ).toBe(401);
-
-    const page = await w.request(SHARE, "/e/app-pr-1-abcdef/signed-out");
-    expect(page.status).toBe(200);
-    expect(page.body).toContain('action="/auth/logout"');
-    expect(page.body).toContain('value="/e/app-pr-1-abcdef"');
   });
 
-  // TEST_SCENARIO: the code the front door hands an address works once and only on the address it was made for.
-  it("accepts a hand-off code once, on its own address only", async () => {
+  // TEST_SCENARIO: an address's session lasts only while the share host's session it came from does: signing out on the share host, or that session expiring, ends it on the next request.
+  it("ends an address's session with the share session", async () => {
     const w = await world();
-    const handoff = new URL((await w.frontDoor("app-pr-1-abcdef")).location!);
+    const cookie = await w.signInTo("app-pr-1-abcdef");
+    expect(
+      (await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie })).status,
+    ).toBe(200);
 
-    const elsewhere = await w.request(
-      `app-pr-2-abcdef.${DOMAIN}`,
-      `${handoff.pathname}${handoff.search}`,
+    w.shareSessions.delete("share-1");
+    expect(
+      (await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie })).status,
+    ).toBe(401);
+  });
+
+  // TEST_SCENARIO: the code the front door hands an address works once, only on the address it was made for, and only in the browser that asked for it: a code that leaks opens nothing in another browser.
+  it("accepts a hand-off code once, on its own address and in its own browser only", async () => {
+    const w = await world();
+    const redeem = (host: string, handoff: URL, cookie?: string) =>
+      w.request(
+        host,
+        `${handoff.pathname}${handoff.search}`,
+        cookie ? { cookie } : {},
+      );
+
+    const first = await w.frontDoor("app-pr-1-abcdef");
+    const handoff = new URL(first.location!);
+    expect(
+      (await redeem(`app-pr-2-abcdef.${DOMAIN}`, handoff, first.secret)).status,
+    ).toBe(400);
+    expect((await redeem(handoff.host, handoff, first.secret)).status).toBe(
+      400,
     );
+
+    const leaked = await w.frontDoor("app-pr-1-abcdef");
+    const leakedUrl = new URL(leaked.location!);
+    const other = await w.frontDoor("app-pr-1-abcdef");
+    expect((await redeem(leakedUrl.host, leakedUrl)).status).toBe(400);
+    const elsewhere = await redeem(leakedUrl.host, leakedUrl, other.secret);
     expect(elsewhere.status).toBe(400);
-    const again = await w.request(
-      handoff.host,
-      `${handoff.pathname}${handoff.search}`,
+    expect(elsewhere.body).toContain("another browser");
+    expect(elsewhere.cookies).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a request another origin's page makes in the visitor's name — a script's call, a form post, a WebSocket from a page of another Environment — is refused before it reaches the app, though the browser sent the session cookie; a link from anywhere, the address's own calls and calls between endpoints of one Environment pass.
+  it("refuses a request another origin makes in the visitor's name", async () => {
+    const w = await world();
+    w.records[0]!.endpoints.push({ name: "api", port: 5555 });
+    const cookie = await w.signInTo("app-pr-1-abcdef");
+    const host = `app-pr-1-abcdef.${DOMAIN}`;
+    const evil = `http://app-pr-2-abcdef.${DOMAIN}`;
+
+    expect(
+      (await w.request(host, "/data", { cookie, origin: evil })).status,
+    ).toBe(403);
+    const posted = await w.request(
+      host,
+      "/form",
+      { cookie, origin: evil },
+      { method: "POST", data: "a=1" },
     );
-    expect(again.status).toBe(400);
+    expect(posted.status).toBe(403);
+    expect(posted.body).toContain("another site");
+    expect(w.seen).toHaveLength(0);
+
+    expect((await w.request(host, "/", { cookie })).status).toBe(200);
+    const own = await w.request(
+      host,
+      "/form",
+      { cookie, origin: `http://${host}` },
+      { method: "POST", data: "a=1" },
+    );
+    expect(own.status).toBe(200);
+    const sibling = await w.request(host, "/data", {
+      cookie,
+      origin: `http://api-pr-1-abcdef.${DOMAIN}`,
+    });
+    expect(sibling.status).toBe(200);
+
+    const ws = await new Promise<number>((resolve) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${w.port}/live`, {
+        headers: { host, cookie, origin: evil },
+      });
+      socket.on("unexpected-response", (_req, res) => resolve(res.statusCode!));
+      socket.on("open", () => resolve(101));
+      socket.on("error", () => resolve(0));
+    });
+    expect(ws).toBe(403);
   });
 
   // TEST_SCENARIO: an address that names no Environment, or an endpoint it did not declare, answers 404; a request for another host passes to the rest of the api-server.
@@ -546,15 +650,30 @@ describe("Environment addresses", () => {
     expect(domainOf(null)).toBeNull();
   });
 
-  // TEST_SCENARIO: the relay drops both spellings of the session cookie, a padded name too, and keeps an app cookie whose name only starts the same way.
+  // TEST_SCENARIO: the relay drops both spellings of the session cookie, a padded name too, and the sign-in secret's cookie, and keeps an app cookie whose name only starts the same way.
   it("drops only the platform's session cookies", () => {
     const out = relayHeaders(
       new Headers({
         cookie:
-          "__Host-platform-env=s; platform-env =t; platform-envx=keep; a=1",
+          "__Host-platform-env=s; platform-env =t; __Host-platform-env-signin=u; platform-envx=keep; a=1",
       }),
       { address: "x", publicHost: "h", scheme: "https" },
     );
     expect(out.get("cookie")).toBe("platform-envx=keep; a=1");
+  });
+});
+
+describe("where a request to an address came from", () => {
+  // TEST_SCENARIO: a request with no origin (a link, a typed address, a frame, an image) and one from an endpoint of the same Environment pass; one from any other origin, an opaque one included, is refused.
+  it("serves no origin and the Environment's own endpoints only", () => {
+    const own = new Set([
+      "https://app-pr-1-abcdef.env.test",
+      "https://api-pr-1-abcdef.env.test",
+    ]);
+    expect(requestAllowed(undefined, own)).toBe(true);
+    expect(requestAllowed("https://api-pr-1-abcdef.env.test", own)).toBe(true);
+    expect(requestAllowed("https://app-pr-2-abcdef.env.test", own)).toBe(false);
+    expect(requestAllowed("https://share.test", own)).toBe(false);
+    expect(requestAllowed("null", own)).toBe(false);
   });
 });

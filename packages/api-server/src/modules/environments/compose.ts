@@ -217,9 +217,11 @@ export interface EnvironmentGateComposition {
  * UNIT_BOUNDARY_DESCRIPTION: The front for Environment addresses and its door
  * on the share host, or a gate that passes every request on when the install
  * serves no Environments (no environments domain). Visitors sign in with the
- * share host's own session and identity provider client; the hand-off codes
- * and the addresses' sessions live in Redis, so any api-server replica serves
- * any step.
+ * share host's own session and identity provider client, and an address's
+ * session lasts while that share session does; signing out of an address
+ * ends both and the identity provider's session. The hand-off codes and the
+ * addresses' sessions live in Redis, so any api-server replica serves any
+ * step.
  */
 export function composeEnvironmentGate(
   deps: ComposeEnvironmentGateDeps,
@@ -237,19 +239,21 @@ export function composeEnvironmentGate(
   const signIn: EnvironmentSignIn = createEnvironmentSignIn({
     handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
     sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
+    share: deps.share,
     addressUrl,
     now: () => Date.now(),
   });
   const gate = createEnvironmentGate({
     domain,
     scheme: template.startsWith("https:") ? "https" : "http",
-    frontDoorUrl: (address, next) => {
+    frontDoorUrl: (address, next, binding) => {
       const url = new URL(`${shareBase}${FRONT_DOOR_PREFIX}${address}`);
       url.searchParams.set("next", next);
+      url.searchParams.set("b", binding);
       return url.href;
     },
-    signedOutUrl: (address) =>
-      `${shareBase}${FRONT_DOOR_PREFIX}${address}/signed-out`,
+    signOutUrl: (address) =>
+      deps.share.logoutUrl(`${FRONT_DOOR_PREFIX}${address}`),
     repo,
     ownerList,
     signIn,
@@ -263,6 +267,7 @@ export function composeEnvironmentGate(
   });
   const frontDoor = createEnvironmentFrontDoor({
     domain,
+    addressUrl,
     repo,
     ownerList,
     signIn,

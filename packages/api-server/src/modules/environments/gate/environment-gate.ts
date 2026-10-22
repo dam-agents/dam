@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import net from "node:net";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
@@ -11,12 +12,19 @@ import {
   cookieValue,
   decideAccess,
   effectiveAccess,
+  environmentOrigins,
+  isSignInToken,
   parseAddress,
   relayHeaders,
+  requestAllowed,
   RESERVED_PREFIX,
   SESSION_COOKIE_PLAIN,
   SESSION_COOKIE_SECURE,
   SESSION_TTL_MS,
+  signInBinding,
+  SIGNIN_COOKIE_PLAIN,
+  SIGNIN_COOKIE_SECURE,
+  SIGNIN_TTL_MS,
   type EnvironmentSession,
 } from "../domain/gate.js";
 import type { EnvironmentRecord } from "../domain/environment.js";
@@ -48,12 +56,12 @@ const GATE_HEADERS: Record<string, string> = {
 export interface EnvironmentGateDeps {
   domain: string;
   scheme: "http" | "https";
-  // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address; and its signed-out page, which offers to come back or switch account on the share host's own origin.
-  frontDoorUrl: (address: string, next: string) => string;
-  signedOutUrl: (address: string) => string;
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address and the binding of the browser's sign-in secret; and the share host's sign-out, which ends the identity provider's session too and offers to sign in again.
+  frontDoorUrl: (address: string, next: string, binding: string) => string;
+  signOutUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
   ownerList: (owningAgentId: string) => Promise<string[]>;
-  signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "end">;
+  signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "signOut">;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   upstream: (agentId: string) => { host: string; port: number };
@@ -82,19 +90,22 @@ export const noEnvironmentGate: EnvironmentGate = {
  * Ingress sends here. It finds the Environment and endpoint from the host
  * name, admits the visitor by the session the share host's front door handed
  * it (the owner, or a verified email on the effective list, checked again on
- * every request), wakes a sleeping Environment and waits
- * for it, and relays HTTP and WebSocket to the Environment runtime's forward,
- * which reaches only the declared port on the Environment's loopback. Any
- * other host passes on untouched. The relay never passes the platform's own
- * session cookie or `Authorization` header to the app, never lets the app set
- * the session cookie, marks every response uncacheable, and refreshes the
- * Environment's activity at most once a minute; no connection pins it awake.
+ * every request, while the share host's session it came from lasts), wakes a
+ * sleeping Environment and waits for it, and relays HTTP and WebSocket to the
+ * Environment runtime's forward, which reaches only the declared port on the
+ * Environment's loopback. Any other host passes on untouched. A request
+ * that another origin's page makes in the visitor's name is refused before
+ * any of that, whatever cookie it carries. The relay never passes the platform's own
+ * cookies or `Authorization` header to the app, never lets the app set them,
+ * marks every response uncacheable, and refreshes the Environment's activity
+ * at most once a minute; no connection pins it awake.
  */
 export function createEnvironmentGate(
   deps: EnvironmentGateDeps,
 ): EnvironmentGate {
   const secure = deps.scheme === "https";
   const cookieName = secure ? SESSION_COOKIE_SECURE : SESSION_COOKIE_PLAIN;
+  const signInCookieName = secure ? SIGNIN_COOKIE_SECURE : SIGNIN_COOKIE_PLAIN;
   const lastStamp = new Map<string, number>();
 
   function stamp(agentId: string) {
@@ -142,6 +153,37 @@ export function createEnvironmentGate(
     );
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: the browser's sign-in secret for this address: the one it holds, or a new one; either way set again for the next ten minutes, so a sign-in in another tab of the same browser keeps working.
+  function signInSecret(c: Context): string {
+    const held = getCookie(c, signInCookieName);
+    const secret = isSignInToken(held)
+      ? held
+      : crypto.randomBytes(32).toString("base64url");
+    setCookie(c, signInCookieName, secret, {
+      httpOnly: true,
+      secure,
+      sameSite: "Lax",
+      path: "/",
+      maxAge: Math.floor(SIGNIN_TTL_MS / 1000),
+    });
+    return secret;
+  }
+
+  function allowed(
+    record: EnvironmentRecord,
+    host: string | undefined,
+    origin: string | undefined,
+  ) {
+    return requestAllowed(
+      origin,
+      environmentOrigins(record, {
+        scheme: deps.scheme,
+        domain: deps.domain,
+        hostHeader: host,
+      }),
+    );
+  }
+
   async function reserved(
     c: Context,
     address: string,
@@ -152,13 +194,14 @@ export function createEnvironmentGate(
       const redeemed = await deps.signIn.redeemHandoff(
         c.req.query("code") ?? "",
         address,
+        getCookie(c, signInCookieName) ?? "",
       );
       if (!redeemed)
         return page(
           c,
           400,
           "Sign-in expired",
-          "This sign-in link was used or has expired. Open the Environment's link again.",
+          "This sign-in link was used, has expired, or was opened in another browser. Open the Environment's link again.",
         );
       setCookie(c, cookieName, redeemed.sessionId, {
         httpOnly: true,
@@ -180,10 +223,10 @@ export function createEnvironmentGate(
     }
     if (path === "/.platform/sign-out") {
       const id = getCookie(c, cookieName);
-      if (id) await deps.signIn.end(id);
+      if (id) await deps.signIn.signOut(id);
       deleteCookie(c, cookieName, { path: "/", secure });
       gateHeaders(c);
-      return c.redirect(deps.signedOutUrl(address), 302);
+      return c.redirect(deps.signOutUrl(address), 302);
     }
     return page(c, 404, "Not found", "Nothing is served here.");
   }
@@ -272,6 +315,15 @@ export function createEnvironmentGate(
         "This address names no Environment, or one that was deleted.",
       );
     const { record, address } = resolved;
+    if (!allowed(record, c.req.header("host"), c.req.header("origin"))) {
+      deny(record, null, address, "cross-origin");
+      return page(
+        c,
+        403,
+        "Refused",
+        "A page of another site asked for this in your name, so the Environment did not answer it.",
+      );
+    }
     if (c.req.path.startsWith(RESERVED_PREFIX))
       return reserved(c, address, record);
 
@@ -292,7 +344,11 @@ export function createEnvironmentGate(
           gateHeaders(c);
           const url = new URL(c.req.url);
           return c.redirect(
-            deps.frontDoorUrl(address, `${url.pathname}${url.search}`),
+            deps.frontDoorUrl(
+              address,
+              `${url.pathname}${url.search}`,
+              signInBinding(signInSecret(c)),
+            ),
             302,
           );
         }
@@ -375,6 +431,10 @@ export function createEnvironmentGate(
       const url = new URL(req.url ?? "/", "http://x");
       if (url.pathname.startsWith(RESERVED_PREFIX))
         return refuseUpgrade(socket, "404 Not Found");
+      if (!allowed(resolved.record, req.headers.host, req.headers.origin)) {
+        deny(resolved.record, null, resolved.address, "cross-origin");
+        return refuseUpgrade(socket, "403 Forbidden");
+      }
       const cookie = cookieValue(req.headers.cookie, cookieName);
       const visitor = await session(cookie);
       const access = decideAccess(
