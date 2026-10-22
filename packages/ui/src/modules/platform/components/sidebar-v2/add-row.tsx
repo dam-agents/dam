@@ -4,6 +4,7 @@ import { type ComponentPropsWithoutRef, forwardRef } from "react";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   ACTIVE_ITEM,
+  HOVER_ITEM,
   RAIL_AVATAR,
   RAIL_GLYPH,
   RAIL_ROW,
@@ -60,7 +61,9 @@ export const AddRow = forwardRef<
       {...rest}
       className={cn(
         SQUIRCLE,
-        "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground aria-[current=page]:ring-1 aria-[current=page]:ring-border-ui disabled:pointer-events-none disabled:opacity-50",
+        "group flex w-full min-w-0 items-center gap-2.5 rounded-lg text-left text-sm text-muted-foreground transition-colors disabled:pointer-events-none disabled:opacity-50",
+        current ? ACTIVE_ITEM : HOVER_ITEM,
+        "aria-[current=page]:bg-muted aria-[current=page]:text-foreground aria-[current=page]:ring-1 aria-[current=page]:ring-border-ui",
         avatar ? "pr-2" : "px-2",
         avatar ? RAIL_ROW : "h-[34px]",
         FOCUS_RING,
@@ -116,9 +119,7 @@ export function NavRow({
         "flex w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
         RAIL_ROW,
         FOCUS_RING,
-        current
-          ? ACTIVE_ITEM
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        current ? ACTIVE_ITEM : cn("text-muted-foreground", HOVER_ITEM),
       )}
     >
       <span className={TREE_LEADING}>

@@ -156,7 +156,8 @@ export function SidebarRail({
             className="h-px w-6 animate-in bg-border fade-in-0 duration-200 group-focus-within/sep:opacity-0 group-has-[[aria-expanded=true]]/sep:opacity-0 group-hover/sep:opacity-0 motion-reduce:animate-none"
           />
           {/* UNIT_BOUNDARY_DESCRIPTION: a menu of either button takes the pointer away from the rail, so the pair stays drawn while one is open rather than vanishing under its own menu. */}
-          <div className="absolute inset-0 flex items-center gap-px opacity-0 transition-opacity duration-150 group-focus-within/sep:opacity-100 group-hover/sep:opacity-100 has-[[aria-expanded=true]]:opacity-100 motion-reduce:transition-none">
+          {/* UNIT_BOUNDARY_DESCRIPTION: the hairline's own space is the label's less the two gaps around it, too short for two buttons, so they reach into the empty gaps above and below it rather than growing the column. */}
+          <div className="absolute inset-x-0 -inset-y-1.5 flex items-center gap-px opacity-0 transition-opacity duration-150 group-focus-within/sep:opacity-100 group-hover/sep:opacity-100 has-[[aria-expanded=true]]:opacity-100 motion-reduce:transition-none">
             <ActivityFilterMenu
               filters={filters}
               onChange={setFilters}

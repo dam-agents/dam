@@ -12,6 +12,7 @@ import { Collapse } from "@/components/ui/collapse";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   ACTIVE_ITEM,
+  HOVER_ITEM,
   RAIL_GAP,
   RAIL_ROW,
   SIDEBAR_GLYPH,
@@ -128,7 +129,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-1.5 pb-3"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-3.5 pb-3"
         data-testid="sidebar-tree"
       >
         <div className="mb-2">
@@ -209,7 +210,8 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   data-testid="sidebar-flat-more"
                   onClick={() => setFlatShown(flatShown + FLAT_PAGE)}
                   className={cn(
-                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors",
+                    HOVER_ITEM,
                     FOCUS_RING,
                   )}
                 >
@@ -338,7 +340,7 @@ function AgentNode({
           {...drag.dragProps}
           className={cn(
             "group/agent relative flex items-center rounded-lg transition-colors",
-            current && !newSessionPage ? ACTIVE_ITEM : "hover:bg-muted",
+            current && !newSessionPage ? ACTIVE_ITEM : HOVER_ITEM,
           )}
         >
           <button
