@@ -220,6 +220,8 @@ import {
   createByLinkHostGate,
   createContentApp,
   createShareAuthRoutes,
+  loginPath,
+  readShareSignIn,
   createShareViewerApp,
   shareSessionCookie,
   type ArtifactLibraryFor,
@@ -551,26 +553,42 @@ export async function bootstrap() {
     },
     shareBaseUrl: config.shareBaseUrl,
   });
-  const environmentGate = composeEnvironmentGate({
-    db,
-    redis: sharedRedis,
-    urlTemplate: config.environmentsUrl,
-    keycloak: {
-      externalUrl: config.keycloakExternalUrl,
-      internalUrl: config.keycloakUrl,
-      realm: config.keycloakRealm,
-      clientId: config.keycloakEnvironmentsClientId,
-    },
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    stampActivity: (agentId) =>
-      agentsRepo.patchAnnotation(
-        agentId,
-        LAST_ACTIVITY_KEY,
-        new Date().toISOString(),
-      ),
-    namespace: config.namespace,
-    brandName: config.brand.name,
-  });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
+  const { gate: environmentGate, frontDoor: environmentFrontDoor } =
+    composeEnvironmentGate({
+      db,
+      redis: sharedRedis,
+      urlTemplate: config.environmentsUrl,
+      shareBaseUrl: config.shareBaseUrl,
+      share: {
+        visitor: async (c) => {
+          const signIn = await readShareSignIn(c, shareAuth, shareCookie);
+          return signIn
+            ? {
+                sub: signIn.session.sub,
+                email: signIn.session.emailVerified
+                  ? signIn.session.email
+                  : null,
+                shareSession: signIn.id,
+              }
+            : null;
+        },
+        alive: async (id) => (await shareAuth.getSession(id)) !== null,
+        end: (id) => shareAuth.endSession(id),
+        loginPath: (next) => loginPath(next),
+        logoutPath: "/auth/logout",
+        logoutUrl: (next) => shareAuth.logoutUrl(next),
+      },
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      stampActivity: (agentId) =>
+        agentsRepo.patchAnnotation(
+          agentId,
+          LAST_ACTIVITY_KEY,
+          new Date().toISOString(),
+        ),
+      namespace: config.namespace,
+      brandName: config.brand.name,
+    });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
     const kits = await resolvedCatalog.list();
@@ -1333,7 +1351,6 @@ export async function bootstrap() {
     spendHold: channelSpendHold,
     attendance: turnAttendance,
   });
-  const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
@@ -1355,6 +1372,7 @@ export async function bootstrap() {
           shareBaseUrl: config.shareBaseUrl,
           bridge: shareBridge,
         }),
+        environments: environmentFrontDoor,
         kbMcp: composeKbShareServing({
           db,
           store: artifacts,

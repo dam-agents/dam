@@ -85,6 +85,7 @@ function setup(identity: IdentityFn = alice, shareBaseUrl = SHARE) {
       brandName: "Acme",
       sessionCookie: shareSessionCookie(shareBaseUrl),
     }),
+    environments: null,
   });
   const get = (path: string, cookie?: string) =>
     host.fetch(
@@ -114,9 +115,10 @@ async function signIn(s: ReturnType<typeof setup>, next: string) {
 describe("isSafeNext", () => {
   /**
    * TEST_SCENARIO: The return path after sign-in comes from the query string.
-   * Only a share page or its raw download on this host may be returned to.
+   * Only a share page or its raw download on this host may be returned to,
+   * or an Environment's front door, whose address is one DNS label.
    */
-  it("accepts only relative /a/<slug> paths", () => {
+  it("accepts only relative /a/<slug> and /e/<address> paths", () => {
     expect(isSafeNext("/a/xyz")).toBe(true);
     expect(isSafeNext("/a/xyz/raw?v=2&download=1")).toBe(true);
     expect(isSafeNext("/a/xyz?v=3")).toBe(true);
@@ -126,6 +128,9 @@ describe("isSafeNext", () => {
     expect(isSafeNext("https://evil.example")).toBe(false);
     expect(isSafeNext("/a/xyz/../../auth/login")).toBe(false);
     expect(isSafeNext("/a/xyz#frag")).toBe(false);
+    expect(isSafeNext("/e/app-pr-42-ab12cd?next=%2Fpage")).toBe(true);
+    expect(isSafeNext("/e/App.evil.example")).toBe(false);
+    expect(isSafeNext("/e/")).toBe(false);
   });
 });
 

@@ -29,7 +29,9 @@ export interface PendingLogin {
   createdAt: number;
 }
 
-const SAFE_NEXT = /^\/a\/[A-Za-z0-9_-]+(\/raw)?(\?[^#\s]*)?$/;
+// UNIT_BOUNDARY_DESCRIPTION: the pages a sign-in may return to on the share host: a shared artifact or its raw download, and an Environment's front door (`/e/<address>`, whose own `next` names a path on that address).
+const SAFE_NEXT =
+  /^\/(a\/[A-Za-z0-9_-]+(\/raw)?|e\/[a-z0-9-]{1,63})(\?[^#\s]*)?$/;
 
 export function isSafeNext(path: string): boolean {
   return SAFE_NEXT.test(path);
