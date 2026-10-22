@@ -1,5 +1,6 @@
 import { Launch, TrashCan } from "@carbon/icons-react";
 import type { EnvironmentView } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -23,6 +24,13 @@ const EXTEND_CHOICES = [
 // UNIT_BOUNDARY_DESCRIPTION: what the card says of an Environment's machine: running, or not, which covers asleep, starting and every other state; the owner opens its link to wake it.
 export function environmentStateLabel(state: string): string {
   return state === "running" ? "Running" : "Not running";
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: who the card says may open an Environment: the owner's whole list, the owner alone, or a part of the list the agent narrowed it to.
+export function environmentAccessLabel(access: string[] | null): string {
+  if (access === null) return "Your whole list may open it";
+  if (access.length === 0) return "Only you may open it";
+  return `${access.length} of your list may open it`;
 }
 
 /**
@@ -69,37 +77,39 @@ export function EnvironmentCard({
 
   return (
     <div
-      className="flex flex-col gap-3"
+      className="@container flex flex-col gap-3"
       data-testid="environment-card"
       data-environment={environment.name}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-2 @lg:flex-row @lg:items-start @lg:justify-between @lg:gap-3">
         <div className="min-w-0">
-          <p className="truncate text-md font-medium text-foreground">
+          <p
+            className="truncate text-md font-medium text-foreground"
+            title={environment.name}
+          >
             {environment.name}
           </p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <span
-              aria-hidden
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                running ? "bg-success" : "bg-muted-foreground/40",
-              )}
-            />
-            <span>{environmentStateLabel(environment.state)}</span>
-            <span aria-hidden>·</span>
-            <span>Expires {timeUntil(environment.expiresAt)}</span>
-            <span aria-hidden>·</span>
-            <span>
-              {environment.access === null
-                ? "Your whole list may open it"
-                : environment.access.length === 0
-                  ? "Only you may open it"
-                  : `${environment.access.length} of your list may open it`}
+          <p
+            className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted-foreground"
+            data-testid="environment-status"
+          >
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span
+                aria-hidden
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  running ? "bg-success" : "bg-muted-foreground/40",
+                )}
+              />
+              {environmentStateLabel(environment.state)}
             </span>
+            <StatusItem>Expires {timeUntil(environment.expiresAt)}</StatusItem>
+            <StatusItem>
+              {environmentAccessLabel(environment.access)}
+            </StatusItem>
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 self-start">
           <Select
             size="sm"
             aria-label={`Extend ${environment.name}`}
@@ -132,10 +142,16 @@ export function EnvironmentCard({
         </div>
       </div>
 
-      <ul className="flex flex-col gap-1" data-testid="environment-endpoints">
+      <ul
+        className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1"
+        data-testid="environment-endpoints"
+      >
         {environment.endpoints.map((endpoint) => (
-          <li key={endpoint.name} className="flex items-center gap-2 text-sm">
-            <span className="w-24 shrink-0 font-mono text-xs text-muted-foreground">
+          <li
+            key={endpoint.name}
+            className="col-span-2 grid grid-cols-subgrid items-center text-sm"
+          >
+            <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
               {endpoint.name} · {endpoint.port}
             </span>
             {endpoint.url ? (
@@ -143,7 +159,8 @@ export function EnvironmentCard({
                 href={endpoint.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-w-0 items-center gap-1 truncate text-accent hover:underline"
+                title={endpoint.url}
+                className="inline-flex min-w-0 max-w-full items-center gap-1 justify-self-start text-accent hover:underline"
               >
                 <span className="truncate">{endpoint.url}</span>
                 <Launch size={12} className="shrink-0" />
@@ -157,5 +174,18 @@ export function EnvironmentCard({
         ))}
       </ul>
     </div>
+  );
+}
+
+// One item of the status line after the first: its separator travels with it,
+// so the line wraps between items and never inside one.
+function StatusItem({ children }: { children: ReactNode }) {
+  return (
+    <span className="whitespace-nowrap">
+      <span aria-hidden className="mr-1.5">
+        ·
+      </span>
+      {children}
+    </span>
   );
 }
