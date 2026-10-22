@@ -3,7 +3,7 @@ import { isNonNullObject, parseFrame } from "./frames.js";
 
 export type RewriteCut =
   | { kind: "start" }
-  | { kind: "after"; entry: string }
+  | { kind: "after"; entry: string; batch?: string }
   | { kind: "missing" }
   | { kind: "absent" };
 
@@ -166,9 +166,13 @@ function cutAbove(frames: readonly UpdateFrame[], index: number): RewriteCut {
     .slice(0, index)
     .reverse()
     .find((f) => typeof f.platform.entry === "string");
-  return above
-    ? { kind: "after", entry: above.platform.entry as string }
-    : { kind: "start" };
+  if (!above) return { kind: "start" };
+  const batch = frames[index]?.platform.entry;
+  return {
+    kind: "after",
+    entry: above.platform.entry as string,
+    ...(typeof batch === "string" && { batch }),
+  };
 }
 
 function sameFrame(a: UpdateFrame, b: UpdateFrame): boolean {

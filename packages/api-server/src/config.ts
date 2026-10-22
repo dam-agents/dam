@@ -273,6 +273,7 @@ const configSchema = z.object({
     container: z.number().int().min(0),
     vm: z.number().int().min(0),
   }),
+  outageAlertDelayMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
   agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
@@ -493,6 +494,9 @@ export function loadConfig(): Config {
       ),
       vm: durationToMinutesStrict(process.env.AGENT_VM_IDLE_TIMEOUT ?? "5m"),
     },
+    outageAlertDelayMinutes: durationToMinutesStrict(
+      process.env.OUTAGE_ALERT_DELAY ?? "15m",
+    ),
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
     agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,

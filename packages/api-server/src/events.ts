@@ -3,6 +3,7 @@ import type {
   ChannelType,
   EntryPointChoice,
   GettingStartedTask,
+  ProviderOutageReason,
 } from "api-server-api";
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { Subject, type Observable } from "rxjs";
@@ -42,6 +43,7 @@ export enum EventType {
   ApprovalResolved = "ApprovalResolved",
   SpendLimitsChanged = "SpendLimitsChanged",
   GatewayCallEnded = "GatewayCallEnded",
+  ProviderStatusEvaluated = "ProviderStatusEvaluated",
   ScheduleCreated = "ScheduleCreated",
   ScheduleUpdated = "ScheduleUpdated",
   ScheduleDeleted = "ScheduleDeleted",
@@ -260,6 +262,21 @@ export type GatewayCallEnded = {
   status: number | null;
   refusedByGate: boolean;
   endedAt: Date;
+};
+
+export type ProviderStatusEvaluated = {
+  type: EventType.ProviderStatusEvaluated;
+  checkedAt: Date;
+  outages: readonly {
+    templateId: string;
+    reason: ProviderOutageReason;
+    since: Date;
+    statusPageUrl: string | null;
+    failedPayers: readonly string[];
+  }[];
+  damSide: { since: Date } | null;
+  answering: readonly string[];
+  cleared: readonly string[];
 };
 
 export type ScheduleCreated = {
@@ -539,6 +556,7 @@ export type DomainEvent =
   | ApprovalResolved
   | SpendLimitsChanged
   | GatewayCallEnded
+  | ProviderStatusEvaluated
   | ScheduleCreated
   | ScheduleUpdated
   | ScheduleDeleted

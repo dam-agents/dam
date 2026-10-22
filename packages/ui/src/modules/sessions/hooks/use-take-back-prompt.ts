@@ -5,6 +5,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { extractErrorMessage } from "../../acp/errors.js";
+import { finalizeRunningReply } from "../../acp/session-projection.js";
 import { removeQueuedPrompt } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -21,11 +22,13 @@ export function useTakeBackPrompt({
   stopAgent,
   ensureLive,
   bindEngagement,
+  reloadSession,
 }: {
   selectedAgent: string | null;
   stopAgent: () => Promise<void>;
   ensureLive: () => Promise<LiveSession | null>;
   bindEngagement: (sessionId: string) => void;
+  reloadSession: (sessionId: string) => Promise<void>;
 }): (take: TakeBack) => Promise<void> {
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
@@ -41,17 +44,27 @@ export function useTakeBackPrompt({
       const reply = state.messages[at + 1];
       const promptId = reply?.promptId;
       const inView = () => useStore.getState().sessionId === sid;
-      const dropMessage = () =>
+      const typedBefore =
+        useStore.getState().drafts[draftKey(selectedAgent, sid)]?.text ?? "";
+      const restored =
+        typedBefore.length > 0 ? `${text}\n\n${typedBefore}` : text;
+      const restoreText = (sessionId: string) =>
+        useStore
+          .getState()
+          .setDraft(draftKey(selectedAgent, sessionId), { text: restored });
+      const takeBackLocally = () => {
         setMessages((prev) =>
           prev.filter((m) => m.id !== take.messageId && m.id !== reply?.id),
         );
-      const restoreText = (sessionId: string) => {
-        const key = draftKey(selectedAgent, sessionId);
-        const typed = useStore.getState().drafts[key]?.text ?? "";
-        useStore.getState().setDraft(key, {
-          text: typed.length > 0 ? `${text}\n\n${typed}` : text,
-        });
+        restoreText(sid);
       };
+      const undoLocally = () => {
+        const key = draftKey(selectedAgent, sid);
+        if (useStore.getState().drafts[key]?.text === restored)
+          useStore.getState().setDraft(key, { text: typedBefore });
+        if (inView()) void reloadSession(sid);
+      };
+
       const unqueued =
         promptId !== undefined &&
         state.queuedPrompts.some((q) => q.promptId === promptId) &&
@@ -59,46 +72,53 @@ export function useTakeBackPrompt({
           () => true,
           () => false,
         ));
-      if (!unqueued) await stopAgent();
+      if (unqueued) {
+        if (inView()) takeBackLocally();
+        else restoreText(sid);
+        return;
+      }
       if (take.upToMessageId === null) {
+        await stopAgent();
         await state.discardSessionToDraft(sid, text);
         return;
       }
-      if (unqueued) {
-        if (inView()) dropMessage();
-        restoreText(sid);
-        return;
+
+      useStore.getState().setTakingBack(sid);
+      takeBackLocally();
+      let result: { sessionId: string };
+      try {
+        await stopAgent();
+        const live = await ensureLive();
+        if (!live) throw new Error("the agent is not connected");
+        result = await retryWhileRewriteBusy(
+          () =>
+            live.connection.agent.notify("session/cancel", { sessionId: sid }),
+          () =>
+            live.connection.agent.request("platform/rewriteFrom", {
+              sessionId: sid,
+              mode: "rewind",
+              messageId: take.messageId,
+              ...(take.upToMessageId !== undefined && {
+                upToMessageId: take.upToMessageId,
+              }),
+              ...(take.title ? { title: take.title } : {}),
+            }) as Promise<{ sessionId: string }>,
+        );
+      } catch (err) {
+        useStore.getState().setTakingBack(null);
+        undoLocally();
+        throw err;
       }
-      const live = await ensureLive();
-      if (!live) throw new Error("the agent is not connected");
-      const result = await retryWhileRewriteBusy(
-        () =>
-          live.connection.agent.notify("session/cancel", { sessionId: sid }),
-        () =>
-          live.connection.agent.request("platform/rewriteFrom", {
-            sessionId: sid,
-            mode: "rewind",
-            messageId: take.messageId,
-            ...(take.upToMessageId !== undefined && {
-              upToMessageId: take.upToMessageId,
-            }),
-            ...(take.title ? { title: take.title } : {}),
-          }) as Promise<{ sessionId: string }>,
-      );
-      if (result.sessionId === sid) {
-        if (inView()) dropMessage();
-        restoreText(sid);
-        return;
-      }
+      useStore.getState().setTakingBack(null);
+      if (inView()) setMessages((prev) => finalizeRunningReply(prev));
+      if (result.sessionId === sid) return;
       useStore
         .getState()
         .migrateDraft(
           draftKey(selectedAgent, sid),
           draftKey(selectedAgent, result.sessionId),
         );
-      restoreText(result.sessionId);
       if (inView()) {
-        dropMessage();
         bindEngagement(result.sessionId);
         setSessionId(result.sessionId);
       }
@@ -111,6 +131,7 @@ export function useTakeBackPrompt({
       stopAgent,
       ensureLive,
       bindEngagement,
+      reloadSession,
       setSessionId,
       setMessages,
     ],

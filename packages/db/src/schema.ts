@@ -1118,6 +1118,26 @@ export const resourceAlerts = pgTable(
   (table) => [primaryKey({ columns: [table.ownerSub, table.kind] })],
 );
 
+export const outageAlerts = pgTable(
+  "outage_alerts",
+  {
+    ownerSub: text("owner_sub").notNull(),
+    templateId: text("template_id").notNull(),
+    state: text("state").notNull(),
+    reason: text("reason").notNull(),
+    since: timestamp("since", { withTimezone: true }).notNull(),
+    toldAt: timestamp("told_at", { withTimezone: true }).notNull(),
+    recoveredAt: timestamp("recovered_at", { withTimezone: true }),
+    agents: jsonb("agents").notNull(),
+    statusPageUrl: text("status_page_url"),
+    version: integer("version").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.ownerSub, table.templateId] })],
+);
+
 export const avatarImages = pgTable("avatar_images", {
   id: text("id").primaryKey(),
   png: bytea("png").notNull(),

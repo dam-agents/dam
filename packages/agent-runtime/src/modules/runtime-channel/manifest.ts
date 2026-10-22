@@ -177,6 +177,13 @@ export const runtimeManifestSchema = z.object({
     })
     .optional(),
 
+  sessionCut: z
+    .object({
+      module: z.string().min(1),
+      exportName: z.string().min(1).optional(),
+    })
+    .optional(),
+
   terminalSessionPins: z.string().min(1).optional(),
 
   sessionMcpEntry: z.boolean().default(true),

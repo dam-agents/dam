@@ -11,3 +11,6 @@ depends = ["//:pnpm"]
 sources = ["vite.config.ts", "package.json"]
 outputs = ["src/kc.gen.tsx"]
 run = "pnpm exec keycloakify update-kc-gen"
+
+[tasks.test]
+extends = "ts:test"

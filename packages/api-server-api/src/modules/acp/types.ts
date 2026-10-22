@@ -345,6 +345,32 @@ export function buildPlatformQueueChangedNotification(
   });
 }
 
+export const platformSessionResetParamsSchema = z.object({
+  sessionId: z.string().min(1),
+});
+export type PlatformSessionResetParams = z.infer<
+  typeof platformSessionResetParamsSchema
+>;
+
+const platformSessionResetNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/sessionReset"),
+  params: platformSessionResetParamsSchema,
+});
+type PlatformSessionResetNotification = z.infer<
+  typeof platformSessionResetNotificationSchema
+>;
+
+export function buildPlatformSessionResetNotification(
+  params: PlatformSessionResetParams,
+): PlatformSessionResetNotification {
+  return platformSessionResetNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/sessionReset",
+    params,
+  });
+}
+
 export const platformUpdateQueuedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),

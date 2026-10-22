@@ -3,13 +3,22 @@ import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
-import { getAccessToken, submitKeycloakLoginForm } from "../../lib/auth.js";
-import { baseUrl } from "../../config.js";
+import {
+  answerDeviceGrant,
+  getAccessToken,
+  submitKeycloakLoginForm,
+} from "../../lib/auth.js";
+import {
+  baseUrl,
+  keycloakCliClientId,
+  keycloakRealm,
+  keycloakUrl,
+} from "../../config.js";
 import { laneBackend, requireBackend } from "../../lib/backend.js";
 
 const storageStatePath = "./.auth/user.json";
 
-// TEST_OVERVIEW: The auth project in declaration order: the tests that must run before any terms acceptance come first, then the deep-link roundtrip, then the login that persists storage state for every later project, then the setup that puts the e2e user on the lane's Backend.
+// TEST_OVERVIEW: The auth project in declaration order: the tests that must run before any terms acceptance come first, then the deep-link roundtrip, then the login that persists storage state for every later project, then the setup that puts the e2e user on the lane's Backend, then the CLI's device grant.
 
 function trpcError(err: unknown): TRPCClientError<AppRouter> {
   expect(err).toBeInstanceOf(TRPCClientError);
@@ -148,4 +157,62 @@ test("login via Keycloak and accept terms", async ({ page }) => {
 test("the e2e lane's install has the Backend it runs on", async () => {
   const api = createApiClient(await getAccessToken());
   await requireBackend(api, laneBackend);
+});
+
+async function deviceGrantPoll(deviceCode: string) {
+  const res = await fetch(
+    `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`,
+    {
+      method: "POST",
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        client_id: keycloakCliClientId,
+        device_code: deviceCode,
+      }),
+    },
+  );
+  return (await res.json()) as { error?: string; access_token?: string };
+}
+
+async function startDeviceGrant() {
+  const res = await fetch(
+    `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/auth/device`,
+    {
+      method: "POST",
+      body: new URLSearchParams({
+        client_id: keycloakCliClientId,
+        scope: "openid profile email offline_access",
+      }),
+    },
+  );
+  expect(res.status).toBe(200);
+  return (await res.json()) as {
+    device_code: string;
+    verification_uri_complete: string;
+  };
+}
+
+// TEST_SCENARIO: `dam auth login` runs the device grant, and the user's answer on the theme's grant screen is the only safeguard against a device link sent by someone else. Keycloak denies only when the POST names the `cancel` button, so this drives the real theme in a real browser: "No" must end in `access_denied` with no token (#5701), and "Yes" must still issue one.
+test("the CLI's device grant: No refuses the sign-in, Yes grants it", async ({
+  page,
+}) => {
+  wireBrowserDiagnostics(page);
+
+  await test.step("No: Keycloak shows the refusal and issues no token", async () => {
+    const grant = await startDeviceGrant();
+    await answerDeviceGrant(page, grant.verification_uri_complete, "No");
+    await expect(page.getByText(/consent denied/i)).toBeVisible();
+    const poll = await deviceGrantPoll(grant.device_code);
+    expect(poll.access_token).toBeUndefined();
+    expect(poll.error).toBe("access_denied");
+  });
+
+  await test.step("Yes: Keycloak issues a token", async () => {
+    await page.context().clearCookies();
+    const grant = await startDeviceGrant();
+    await answerDeviceGrant(page, grant.verification_uri_complete, "Yes");
+    const poll = await deviceGrantPoll(grant.device_code);
+    expect(poll.error).toBeUndefined();
+    expect(poll.access_token).toBeTruthy();
+  });
 });

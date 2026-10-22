@@ -66,6 +66,19 @@ export function listConversationsByAgent(db: Db) {
   };
 }
 
+export function listConversationsAuthorizedBy(db: Db) {
+  return async (
+    keycloakSub: string,
+  ): Promise<{ conversationId: string; agentId: string }[]> =>
+    db
+      .select({
+        conversationId: telegramConversations.conversationId,
+        agentId: telegramConversations.agentId,
+      })
+      .from(telegramConversations)
+      .where(eq(telegramConversations.authorizedBy, keycloakSub));
+}
+
 export function allConversationAgentIds(db: Db) {
   return async (): Promise<string[]> => {
     const rows = await db

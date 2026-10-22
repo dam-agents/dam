@@ -500,6 +500,8 @@ spec:
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
               value: {{ .Values.apiServer.approvalHoldSeconds | quote }}
+            - name: OUTAGE_ALERT_DELAY
+              value: {{ .Values.apiServer.outageAlertDelay | quote }}
             - name: ACP_TURN_STALL_PROBE_SECONDS
               value: {{ .Values.apiServer.acpTurnStallProbeSeconds | quote }}
             - name: ONCE_SCHEDULE_AGENT_MAX_OPEN

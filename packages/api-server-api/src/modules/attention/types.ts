@@ -3,7 +3,8 @@ import type { SessionMode, SessionType } from "../sessions/types.js";
 
 export const ATTENTION_FEED_LIMIT = 200;
 
-export type AttentionItemKind = "session" | "approval" | "default-model";
+export type AttentionItemKind =
+  "session" | "approval" | "default-model" | "outage-alert";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: why an Agent's saved default needs its owner:
@@ -22,6 +23,30 @@ export interface DefaultModelNotice {
   harness: string;
   model: string | null;
   changedFrom: string | null;
+}
+
+export type OutageAlertAffectedBy =
+  "failed-calls" | "schedule" | "slack" | "telegram";
+
+export interface OutageAlertAgent {
+  agentId: string;
+  name: string;
+  affectedBy: OutageAlertAffectedBy[];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an outage alert of the caller: a provider outage
+ * that hits their agents, told until the provider works again, then shown as
+ * recovered for a while. The id holds the template, the start time and the
+ * state, so a dismissal hides only this outage in this state.
+ */
+export interface OutageAlertNotice {
+  id: string;
+  templateId: string;
+  since: string;
+  recoveredAt: string | null;
+  statusPageUrl: string | null;
+  agents: OutageAlertAgent[];
 }
 
 export interface AttentionItem {
@@ -49,6 +74,7 @@ export interface AttentionList {
   items: AttentionItem[];
   dismissed: DismissedEntry[];
   defaultModels: DefaultModelNotice[];
+  outageAlerts: OutageAlertNotice[];
 }
 
 export interface AttentionDismissal {
