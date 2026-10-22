@@ -60,7 +60,7 @@ import { NewAgentMenu } from "./new-agent-menu.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, Settings, and between them what the tree lists under its Agents label — one avatar per Agent in the same manual order, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, what the tree lists under its Agents label, and Settings — one avatar per Agent in the same manual order, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
  */
 export function SidebarRail({
   onExpand,
@@ -170,6 +170,26 @@ export function SidebarRail({
             />
           </div>
         </div>
+        <NewAgentMenu side="right" onNavigate={navigate}>
+          <button
+            type="button"
+            aria-label="New agent"
+            aria-haspopup="menu"
+            data-testid="sidebar-rail-new-agent"
+            className={cn(railTile(false), FOCUS_RING)}
+          >
+            <FaceAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="group-hover:hidden"
+            />
+            <FaceActivatedAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="hidden group-hover:block"
+            />
+          </button>
+        </NewAgentMenu>
         {groupBy === "all"
           ? sessions.map((item) => (
               <SessionTile
@@ -201,26 +221,6 @@ export function SidebarRail({
                 onNavigate={navigate}
               />
             ))}
-        <NewAgentMenu side="right" onNavigate={navigate}>
-          <button
-            type="button"
-            aria-label="New agent"
-            aria-haspopup="menu"
-            data-testid="sidebar-rail-new-agent"
-            className={cn(railTile(false), FOCUS_RING)}
-          >
-            <FaceAdd
-              size={RAIL_GLYPH}
-              aria-hidden
-              className="group-hover:hidden"
-            />
-            <FaceActivatedAdd
-              size={RAIL_GLYPH}
-              aria-hidden
-              className="hidden group-hover:block"
-            />
-          </button>
-        </NewAgentMenu>
       </div>
       <button
         type="button"

@@ -327,7 +327,7 @@ it("leaves the popover open when the tile is clicked", () => {
   expect(popover()).not.toBeNull();
 });
 
-// TEST_SCENARIO: the rail ends its Agents with a New agent tile, which asks which kind of Agent to make rather than making one at once, and stands where the New agent row closing the expanded list stands.
+// TEST_SCENARIO: the rail leads its Agents with a New agent tile, which asks which kind of Agent to make rather than making one at once, and stands where the New agent row leading the expanded list stands.
 it("asks which kind of Agent the New agent tile makes", () => {
   const newAgent = container.querySelector<HTMLButtonElement>(
     '[data-testid="sidebar-rail-new-agent"]',
@@ -339,7 +339,7 @@ it("asks which kind of Agent the New agent tile makes", () => {
       '[data-testid="sidebar-rail-agent"], [data-testid="sidebar-rail-new-agent"]',
     ),
   ];
-  expect(tiles[tiles.length - 1]).toBe(newAgent);
+  expect(tiles[0]).toBe(newAgent);
   act(() => {
     newAgent.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   });

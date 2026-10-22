@@ -229,33 +229,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </>
           )}
           {groupBy === "agents" && (
-            <ul className={cn("flex flex-col", RAIL_GAP)}>
-              {agents.map((agent) => (
-                <AgentNode
-                  key={agent.id}
-                  agent={agent}
-                  expanded={isExpanded(toggled, agent.id, expandAgentId)}
-                  current={agent.id === openAgentId && !sessionOpen}
-                  cue={
-                    awaitsApproval(approvals ?? [], agent.id)
-                      ? "approval"
-                      : unreadAgentIds.has(agent.id)
-                        ? "unread"
-                        : null
-                  }
-                  onToggle={() =>
-                    setToggled(toggleExpanded(toggled, agent.id, expandAgentId))
-                  }
-                  order={orderActions}
-                  shownIds={shownIds}
-                  lastActivityAt={lastActivityAt.get(agent.id)}
-                  onNavigate={onNavigate}
-                />
-              ))}
-            </ul>
-          )}
-          {groupBy === "agents" && (
-            <div className="mt-1.5">
+            <div className={cn("flex flex-col", RAIL_GAP)}>
               <NewAgentMenu onNavigate={onNavigate}>
                 <AddRow
                   icon={FaceAdd}
@@ -265,6 +239,32 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   testId="sidebar-new-agent-row"
                 />
               </NewAgentMenu>
+              <ul className={cn("flex flex-col", RAIL_GAP)}>
+                {agents.map((agent) => (
+                  <AgentNode
+                    key={agent.id}
+                    agent={agent}
+                    expanded={isExpanded(toggled, agent.id, expandAgentId)}
+                    current={agent.id === openAgentId && !sessionOpen}
+                    cue={
+                      awaitsApproval(approvals ?? [], agent.id)
+                        ? "approval"
+                        : unreadAgentIds.has(agent.id)
+                          ? "unread"
+                          : null
+                    }
+                    onToggle={() =>
+                      setToggled(
+                        toggleExpanded(toggled, agent.id, expandAgentId),
+                      )
+                    }
+                    order={orderActions}
+                    shownIds={shownIds}
+                    lastActivityAt={lastActivityAt.get(agent.id)}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </ul>
             </div>
           )}
         </section>
