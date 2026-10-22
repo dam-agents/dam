@@ -135,13 +135,14 @@
   .rows3 .ok .part.fill.others { background: var(--accent-mid); }
   .rows3 .warn .part.fill.others { background: var(--warning-mid); }
   .rows3 .reached .part.fill.others { background: var(--danger-mid); }
+  .mini .sub2 { font-size: 11px; color: var(--muted-fg); opacity: .8; font-variant-numeric: tabular-nums; margin: -6px 0 2px; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Provider limits for all agents (v9)</h1>
-  <p class="lede">Round 9. Limit bars are 12 px on every page, except the 4 px provider summary in Settings › Usage. Bars are black when fine, orange when close, red when reached, on a light tint of the same colour. Every bar shows its percentage on the right. The amounts show on hover; on Settings pages "$xx of $yy today" stays above the bar. Section 3 has a "Values" switch to also show the amounts small under each bar. Purple boxes are design notes. Black and dark mode switches are at the bottom right.</p>
+  <h1>Provider limits for all agents (v11)</h1>
+  <p class="lede">Round 11. Limit bars are 12 px on every page, except the 4 px provider summary in Settings › Usage. Bars are black when fine, orange when close, red when reached, on a light tint of the same colour. Every bar shows its percentage on the right. The amounts show on hover; on Settings pages "$xx of $yy today" stays above the bar. Section 3 has a "Values" switch to also show the amounts small under each bar. Purple boxes are design notes. Black and dark mode switches are at the bottom right.</p>
 
   <!-- 1. SETTINGS › USAGE -->
   <section class="screen">
@@ -170,12 +171,15 @@
               <span class="small">Anthropic</span>
               <div class="meter warn" title="$17.40 of $20.00 today"><div class="bar xs"><i style="width:87%"></i></div></div>
               <span class="small num t-warn">87%</span>
+              <span></span><span class="sub2">$17.40 of $20.00</span><span></span>
               <span class="small">Claude subscription</span>
               <div class="meter ok" title="$31.00 of $100.00 covered today"><div class="bar xs"><i style="width:31%"></i></div></div>
               <span class="small num muted">31%</span>
+              <span></span><span class="sub2">$31.00 of $100.00 covered</span><span></span>
               <span class="small">Bob</span>
               <div class="meter reached" title="50 of 50 Bobcoins today"><div class="bar xs"><i style="width:100%"></i></div></div>
               <span class="small num t-reached">100%</span>
+              <span></span><span class="sub2">50 of 50 Bobcoins</span><span></span>
             </div>
           </div>
           <p class="small muted">Resets at 02:00 your time.</p>
@@ -186,7 +190,7 @@
         <ul>
           <li>"$xx of $yy today" stays above the bar. The percentage sits right of the bar, in the state's colour; "left" is gone.</li>
           <li>The track is a light tint of the state's colour, so one bar is one colour family.</li>
-          <li>The provider summary bars stay 4 px and show only a percentage; the amounts are on hover.</li>
+          <li>The provider summary bars stay 4 px, with the percentage on the right and "$xx of $yy" small under each bar, as on the agent's Providers page.</li>
           <li><b>Shared component:</b> <code>DailyLimitMeter</code> renders every limit meter, so the agent's Usage card changes too. Home's memory and CPU bars take the same black fill.</li>
         </ul>
       </div>

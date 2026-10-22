@@ -47,8 +47,8 @@ Apply **/react-ui-engineering**.
    owner has at least one `owner-connection` limit, a divided block "Provider limits for all agents"
    with a help tip and a right-aligned link "Edit in Providers" (`navigateToSettings("providers")`),
    then a 3-column grid per limit: Connection name, a 4 px (`h-1`) bar in its state colour, and
-   its percentage (state colour). "‹spent› of ‹limit› today" is the bar's tooltip. No buttons.
-   Hidden when there are none.
+   its percentage (state colour); under the bar, "‹spent› of ‹limit›" in `text-[11px]
+   text-muted-foreground/80 tabular-nums`, as in 04's rows. No buttons. Hidden when there are none.
 6. **Copy** — `spend/lib/copy.ts`: `OWN_LIMIT_HELP` drops "Subscriptions and Bob do not count: set
    those limits in each agent's Providers section" → points to Settings › Providers;
    `connectionLimitHelp` drops "Only this limit stops calls on this provider"; add

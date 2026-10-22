@@ -123,7 +123,7 @@ purple boxes are design notes. Decisions taken there:
   black fill. The provider summary in Settings › Usage stays 4 px (`h-1`).
 - **Percentages next to bars**: every limit bar has its percentage of the limit to its right, in the
   state's colour. On the settings pages "‹spent› of ‹limit› today" stays above the bar and the
-  "‹x› left" figure is gone. The Usage summary shows only the percentage; amounts on hover.
+  "‹x› left" figure is gone. The Usage summary shows the percentage and "‹spent› of ‹limit›" small under each bar.
 - **A shared bar** (all agents on a provider, total daily limit): this agent's part is solid, a
   2 px gap, then the other agents' part in a lighter shade of the same colour. Every part, and the
   empty track, has a tooltip with its amount.
