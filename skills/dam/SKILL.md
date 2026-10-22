@@ -50,6 +50,16 @@ To update, install `@dam-agents/cli@latest` the same way, then match this skill 
 
 ### Match this skill to the CLI
 
+The user's DAM deployment serves the skill that matches its server.
+When you know the server's address, install the skill from it, and read it again:
+
+```sh
+npx skills add https://dam.example.com -g
+```
+
+Then install the CLI version that `dam version --json` gives as `recommendedClientVersion`.
+If it finds no skill there, the server is older than that; compare versions instead.
+
 Compare the version at the top of this page with what `dam --version` prints:
 
 - **The same**: this page describes your CLI.

@@ -26,10 +26,16 @@ The CLI comes with a skill that teaches an agent on your machine — Claude Code
 The agent never sees a secret: whenever DAM needs one, it gives you a command to run in your own terminal.
 
 ```sh
+npx skills add https://dam.example.com -g
+```
+
+Replace the address with your DAM deployment's: it serves the skill that matches its server.
+Or install it from this repository, at the version `dam --version` prints, so the skill matches your CLI:
+
+```sh
 npx skills add 'dam-agents/dam/skills/dam#v0.2.24' -g
 ```
 
-Replace `0.2.24` with the version `dam --version` prints, so the skill matches your CLI.
 The skill ships from CLI 0.2.24 on: with an older CLI, update the CLI first.
 
 ## Links

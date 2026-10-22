@@ -309,6 +309,7 @@ const configSchema = z.object({
   recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
+  agentSkillPath: z.string().default("./skills/dam/SKILL.md"),
   harnesses: harnessesSchema,
   spendPriceOverrides: spendPriceOverridesSchema,
   spendDefaultUserCeilingMicros: spendCeilingUsdTextSchema
@@ -531,6 +532,7 @@ export function loadConfig(): Config {
     recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
+    agentSkillPath: process.env.AGENT_SKILL_PATH,
     harnesses: process.env.HARNESSES,
     spendPriceOverrides: process.env.SPEND_PRICE_OVERRIDES,
     spendDefaultUserCeilingMicros: process.env.SPEND_DEFAULT_USER_CEILING_USD,

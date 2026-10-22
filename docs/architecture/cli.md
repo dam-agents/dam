@@ -166,6 +166,11 @@ A repository check fails when a contributor skill is missing from that list.
 The `dam` skill teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
 The user installs it from the repository with an open skills installer, pinned to the release tag of the CLI they run.
 The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
+
+A deployment also serves the skill itself, so an agent given only its URL finds the CLI and the skill that matches that server.
+The api-server image carries the `dam` skill of the commit it was built from, and the api-server lists it in an Agent Skills discovery index under `/.well-known/agent-skills/` (and the legacy `/.well-known/skills/`), with the digest of the file it serves, which an open skills installer pointed at the deployment's URL installs.
+It answers `/llms.txt` too: what the deployment is, the CLI version it recommends, how to install the skill and sign in, and the rules on secrets and the API.
+The web app's shell, which an agent's fetch reads without running its JavaScript, names the deployment in its title and points to `/llms.txt`, and the UI's web server answers 404 for any other `/.well-known/` path or root text file instead of the shell, so a file the deployment lacks does not look present.
 The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
 
 The CLI's test suite checks the `dam` skill against the CLI.
