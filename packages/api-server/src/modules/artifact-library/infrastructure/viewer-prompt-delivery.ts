@@ -5,6 +5,7 @@ import {
 } from "../../../core/acp-client.js";
 import { getLogger } from "../../../core/logger.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
+import type { SpendHoldReason } from "../../spend/index.js";
 import type {
   ViewerPromptDelivery,
   ViewerPromptOutcome,
@@ -59,7 +60,7 @@ async function runTurn(
 export function createViewerPromptDelivery(deps: {
   makeAcpClient: AcpClientFactory;
   ensureReady: (agentId: string) => Promise<void>;
-  spendHold: (agentId: string) => Promise<"limit" | "ceiling" | null>;
+  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
   attendance: ChannelTurnAttendance;
 }): ViewerPromptDelivery {
   const sessionKnown = new Map<string, Promise<void>>();

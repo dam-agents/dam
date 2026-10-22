@@ -22,6 +22,7 @@ import type {
   RuntimeMutator,
 } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
+import type { SpendHoldGate, SpendHoldReason } from "../../spend/index.js";
 import {
   isNoDefaultModelError,
   type FirePair,
@@ -32,13 +33,6 @@ import { annotateSpan } from "../../../core/background-span.js";
 const TRIGGER_TTL_SECONDS = 3600;
 
 export type ActivityStamp = AgentActivityStamp;
-
-export type SpendHoldReason = "limit" | "ceiling";
-
-export type SpendHoldGate = (input: {
-  agentId: string;
-  connectionId?: string;
-}) => Promise<SpendHoldReason | null>;
 
 export type RunNowResult =
   | "started"

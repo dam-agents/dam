@@ -13,6 +13,7 @@ export type {
   SpendVerdict,
 } from "./services/spend-check.js";
 export type { CallRecord } from "./domain/call.js";
+export type { SpendHoldGate, SpendHoldReason } from "./domain/limits.js";
 export {
   parseSpendMetadata,
   SPEND_METADATA_NAMESPACE,

@@ -33,8 +33,8 @@ import {
   createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
-  type SpendHoldGate,
 } from "../../modules/invocations/index.js";
+import type { SpendHoldGate } from "../../modules/spend/index.js";
 import {
   composeBudgetsModule,
   composeSpawnSizeGate,

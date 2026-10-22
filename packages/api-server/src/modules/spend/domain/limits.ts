@@ -51,6 +51,14 @@ export interface LimitedCall {
 
 export type SpendBlock = "ceiling" | "limit";
 
+export type SpendHoldReason = SpendBlock;
+
+// UNIT_BOUNDARY_DESCRIPTION: the question every gate asks before it starts work for an Agent — may this spend today? — answered with the limit that holds it, or null to go ahead.
+export type SpendHoldGate = (input: {
+  agentId: string;
+  connectionId?: string;
+}) => Promise<SpendHoldReason | null>;
+
 const WARN_SHARE = 0.8;
 
 export function effectiveMicros(limit: SpendLimit): number {
