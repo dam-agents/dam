@@ -8,9 +8,9 @@ How an owner's mode and config-defaults choices for each harness an agent carrie
 
 The choices travel as a `harness-config` Event over the [runtime channel](runtime-delivery.md) — that page owns delivery and capability gating; this one owns what the event means and everything built on it.
 
-These are each harness's defaults: writing them recycles only the [Harness Leases](sessions.md#session-inside-the-pod) of that harness.
+These are each harness's defaults: writing them recycles only the [Harness Leases](sessions.md#session-inside-the-machine) of that harness.
 The model is not among them: each session picks its harness and, per turn, its model, so the Config panel shows the settings of every carried harness and no model setting.
-The runtime applies a session's model inside the live harness through its own per-session call before each prompt and after every cold load ([agent-lifecycle](sessions.md#session-inside-the-pod)), and the [Model Router](#the-model-router) routes every call by that name.
+The runtime applies a session's model inside the live harness through its own per-session call before each prompt and after every cold load ([agent-lifecycle](sessions.md#session-inside-the-machine)), and the [Model Router](#the-model-router) routes every call by that name.
 The runtime advertises its default harness and, per carried harness, the catalog.
 The model list a session or a [schedule](schedules.md#session-choices) picks from is asked per harness and provider over the runtime's tRPC, without spawning anything: the discovered one where the provider lists its own.
 The session picker offers named models, not a generic default-model choice.

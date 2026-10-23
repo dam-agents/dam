@@ -35,7 +35,7 @@ Determines: worklist entry shape, the tracking state file (one row per item: id,
 ## 3. Inputs (read integrations)
 
 - Which systems does it read, through what surface (`gh` CLI, MCP tool, plain HTTPS)?
-  Is it reachable from the pod (`references/platform-dam.md`; GitHub is the well-trodden default with known workarounds)?
+  Is it reachable from the machine (`references/platform-dam.md`; GitHub is the well-trodden default with known workarounds)?
 - Items per day/week?
   Cost of one listing call; is there one batched call that sees everything (one REST list call is ideal)?
 
@@ -93,7 +93,7 @@ Determines: communication config keys, roster file + its onboarding step, trust-
 - Beyond block 2's tracking file, what must persist (memory, per-item history, ledgers, caches)?
 - What is reconstructable from external markers (block 4) and what isn't (learned memory never is)?
   The unreconstructable part decides how much backup matters.
-- Backup: a dedicated git repo for `work/` (recommended: an env var like `GITHUB_REPO_WORK`, persisted via `work-backup.sh persist` as the last action of every run) or local-only (volume persistence, reconstruct-on-loss)?
+- Backup: a dedicated git repo for `work/` (recommended: an env var like `GITHUB_REPO_WORK`, persisted via `work-backup.sh persist` as the last action of every run) or local-only (the machine's disk, reconstruct-on-loss)?
 
 Determines: `work/` inventory, seed templates embedded in ONBOARDING, the state reconstruction step, persistence doc content, end-of-run persist step.
 

@@ -54,7 +54,7 @@ The runtime sorts what runs in the machine into four kinds, one row per process 
 - **Detached Process** — a process re-parented to the reaper of orphans: PID 1, or the init that wraps agent-runtime and adopts orphans as a subreaper.
   Work under an attached terminal or SSH shell is not listed until it detaches.
 
-A machine runs one chat harness per [Harness Lease](sessions.md#session-inside-the-pod), and the runtime reads every one of them the same way.
+A machine runs one chat harness per [Harness Lease](sessions.md#session-inside-the-machine), and the runtime reads every one of them the same way.
 
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct children — the chat harnesses, the pod service, terminals, SSH servers.
 Nor is openrc's user-services manager, which starts and stops the agent's [Startup Items](#startup-items).

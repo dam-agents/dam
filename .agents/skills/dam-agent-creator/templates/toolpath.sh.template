@@ -5,7 +5,7 @@
 # Source this BEFORE the first `jq`/`gh` call and before any `command -v <tool>`
 # guard. Rationale and measurements: docs/logging.md → Tool path resolution.
 #
-# On the DAM pod `jq` and `gh` on PATH are symlinks to `mise`, which re-resolves
+# In a DAM machine `jq` and `gh` on PATH are symlinks to `mise`, which re-resolves
 # its toolchain on every invocation (~250ms vs ~17ms for the real binary). A
 # pre-flight execs `jq` dozens of times per run and harness hooks fire on every
 # tool call, so the tax dominates both. This defines shell functions that call
@@ -14,11 +14,11 @@
 # PATH is deliberately NOT modified: the offline test suite stubs CLIs by
 # prepending scripts/tests/bin to PATH, and shadowing that would send the tests
 # to the network. A tool already resolving outside */shims/* (test stub,
-# operator override, a fixed pod image) is left untouched.
+# operator override, a fixed agent image) is left untouched.
 #
 # Degrades silently: unresolvable tools keep working through the shim. Never
 # fails a run — this is a speed optimization, not a dependency. The shim itself
-# is an environment defect owned by the pod image (docs/self-modification.md
+# is an environment defect owned by the agent image (docs/self-modification.md
 # §5a); the audit's `tool_shims` check keeps reporting it until that lands.
 #
 # TODO(creator): extend the default tool list below to every CLI the design

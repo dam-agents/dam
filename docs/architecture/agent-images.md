@@ -29,7 +29,7 @@ An unknown or absent Template falls back to the image reference.
 The default image is every harness over the base at once, with their tools.
 Each harness's entry points and runtime manifest sit under its name.
 The agent-runtime loads every manifest there and runs each harness's drivers, so one contribution kind can have several bindings, each keeping its state per harness.
-The harness is chosen per session ([sessions](sessions.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the machine in its environment, is the default for a session that names none.
+The harness is chosen per session ([sessions](sessions.md#session-inside-the-machine)); the Agent's own harness, seeded at create and handed to the machine in its environment, is the default for a session that names none.
 The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
 The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
 CI exports `MISE_GITHUB_TOKEN` for those installs, which mise reads; the task hands it to the chroot's mise in a root-only file that the install removes, so no layer holds it.

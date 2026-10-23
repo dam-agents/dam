@@ -2,7 +2,7 @@
 
 Last verified: 2026-10-23
 
-## Session inside the pod
+## Session inside the machine
 
 agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process, except where the harness must know at start which side of a split they fall on (a native Connection, or a Claude Code model that is not Claude, see [harness configuration](harness-config.md#session-settings)).
 Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason rather than run on a substitute.

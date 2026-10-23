@@ -163,7 +163,7 @@ The session model differs by schedule mode (a one-time schedule is fresh, or lan
   The schedule accumulates a list of sessions over time, browseable under the schedules tab.
 - **Continuous schedule** — the first fire creates a session via `session/new`; every subsequent fire calls `session/resume` against the same session id.
   One schedule, one session, history retained across fires.
-  A schedule that names no choices of its own runs that session on the scheduled default, and the session follows it from its next fire ([sessions](sessions.md#session-inside-the-pod)).
+  A schedule that names no choices of its own runs that session on the scheduled default, and the session follows it from its next fire ([sessions](sessions.md#session-inside-the-machine)).
 
 The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the agent's home disk.
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
@@ -192,7 +192,7 @@ A fire whose choices no longer hold, because a provider was revoked or a model l
 A one-time task that continues its scheduling session keeps that session's choices.
 An agent creating a schedule names the same choices through its tools.
 
-Each fire opens its session on the schedule's choices, or pins a resumed session to the model before the resume, so a continuous schedule picks up an edited choice at its next fire; the model and settings reach the harness per turn ([agent-lifecycle](sessions.md#session-inside-the-pod)).
+Each fire opens its session on the schedule's choices, or pins a resumed session to the model before the resume, so a continuous schedule picks up an edited choice at its next fire; the model and settings reach the harness per turn ([agent-lifecycle](sessions.md#session-inside-the-machine)).
 The provider follows the model's name: a schedule on `openai/gpt-5.5` fires on the agent's OpenAI Connection whatever its default for the harness.
 
 On a runtime with one harness process ([harness configuration](harness-config.md)) the pre-router rule stands: a schedule names no harness or settings, and its model must be one of the runtime's listed choices.

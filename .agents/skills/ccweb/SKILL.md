@@ -74,7 +74,7 @@ $AB open http://localhost:6555/ && $AB snapshot -i
 ## Acting as an agent
 
 The mock harness replays scripts and calls no tools.
-To call the platform MCP server as an agent, use [`agent-mcp`](scripts/agent-mcp); it runs `curl` inside the agent's pod, so the call carries that agent's mesh identity:
+To call the platform MCP server as an agent, use [`agent-mcp`](scripts/agent-mcp); it runs `curl` inside the agent's machine, through its owner's VM runner, so the call leaves by that agent's gateway and carries its name:
 
 ```sh
 .agents/skills/ccweb/scripts/agent-mcp agent-1a2b tools/list

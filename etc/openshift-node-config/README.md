@@ -89,7 +89,8 @@ Pools update in parallel, so with two pools two nodes are down at once.
   oc get pods -n <platform-namespace> -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName
   ```
 
-- Every VM runner's restart reboots all of its owner's machines.
+- A drain restarts every VM runner on the node, and a runner's restart reboots every machine of its owner, so the owners whose runners sit on that node lose every agent mid-turn.
+  The machines' disks keep their homes across the reboot; a machine that fails to come back explains itself on its guest's console, the only log it has.
   An agent and its gateway on different pools restart at different times.
 
 Expect 6 to 10 minutes per node (drain plus an RHCOS reboot), times the node count of the largest pool, divided by its `maxUnavailable`.

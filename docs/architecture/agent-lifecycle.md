@@ -72,7 +72,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's mounts, storage size and the trusted egress preset — or, for a kit that declares any of them, the kit's — and shares its owner's [memory pool](vm-memory.md) instead of holding a size of its own.
-A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants one provider Connection of the caller's that the harness runs on: the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
+A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-machine)): it boots the default Template on the install's default harness and grants one provider Connection of the caller's that the harness runs on: the first in the harness's provider order (its home provider first, then the shared alias order), the oldest of that alias.
 One, not every fitting one, so the [default](harness-config.md#session-settings) its runtime saves at its first `hello` sits on that provider and is the model its image presets, and no call goes to a provider the owner never chose for this agent; the owner attaches more on its Providers page.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 A create that names a provider gets that one alone.
@@ -173,7 +173,7 @@ An Agent boots in seconds, so its chat stays usable during the start: the compos
 A Schedule fire is the one wake nobody is waiting on: the api-server commits the fire durably, pokes the Agent awake without waiting for readiness, and the Agent decides on arrival what the fire becomes — including declining it outright when the Schedule carries a Precheck.
 Arming, firing, the Precheck and the Session each fire opens are owned by [schedules](schedules.md).
 
-### Session inside the pod
+### Session inside the machine
 
 A running machine serves Sessions: the harness processes it leases to them, prompts, their delivery and queue, steering, rewriting a conversation, and the machine's own supervision of the harness.
 That lives on [sessions](sessions.md).
@@ -209,7 +209,7 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while the harness works on in an [Autonomous Turn](sessions.md#session-inside-the-pod) after it answered one, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), while a script sub-agent's script runs ([invocations](invocations.md#script-runs)), while an [Environment Link](environments.md#the-environment-link) is open, on either machine, or while a terminal (PTY) is live.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while the harness works on in an [Autonomous Turn](sessions.md#session-inside-the-machine) after it answered one, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), while a script sub-agent's script runs ([invocations](invocations.md#script-runs)), while an [Environment Link](environments.md#the-environment-link) is open, on either machine, or while a terminal (PTY) is live.
   A terminal is live while a viewer is attached, inside its detach grace, or while it printed within the idle window its reap uses ([sessions](sessions.md)).
   A detached, quiet terminal held open only for its background work counts only while that work is kept, as a chat session does: unkept work holds the terminal open and dies at hibernation.
   A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe.

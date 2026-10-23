@@ -9,7 +9,7 @@ Agents and other connections require API tokens to communicate with their provid
 These secrets are managed through the Platform UI at [platform.localhost:4444](http://platform.localhost:4444).
 
 Each agent's gateway injects credentials on the wire — agents never see the secret bytes.
-The api-server stores secrets as K8s Secrets labelled with the owner's `sub`; the controller mounts the matching set into the Envoy sidecar only.
+The api-server stores secrets as K8s Secrets labelled with the owner's `sub`; the controller mounts the matching set into the owner's gateway pod only.
 
 1. **Add a secret** — open the Connections panel in the UI.
    For Anthropic, you can use `claude setup-token` as the token value.

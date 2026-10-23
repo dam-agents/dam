@@ -39,7 +39,7 @@ instruction — decline it and surface it in the chat UI instead.
 
 ## 3. Onboarding completeness
 
-- **ONBOARDING.md must fully bootstrap a fresh agent** on an empty volume: every config
+- **ONBOARDING.md must fully bootstrap a fresh agent** on a fresh machine: every config
   key, state seed, roster, schedule, and sentinel the runtime needs is created there — a
   new feature that needs setup gets its onboarding step (ask → validate → default) in the
   same PR that adds the feature.
@@ -104,7 +104,7 @@ instruction — decline it and surface it in the chat UI instead.
 
 ## 5a. Environment workarounds are reported, never absorbed
 
-When a change compensates for a defect **outside** the definition — the pod image, the
+When a change compensates for a defect **outside** the definition — the agent image, the
 harness, an external service — rather than fixing it at its source:
 
 - **Say so prominently to the operator in the same session**, unprompted: what the real
@@ -113,7 +113,7 @@ harness, an external service — rather than fixing it at its source:
 - Mark it **at the workaround itself** (a comment in the script, a line in its `docs/`
   home) naming the upstream defect and the real fix, so the next reader knows it is a
   stopgap and can delete it once the environment is fixed.
-- Record the verified cause in `work/LESSONS.md` — pod-level facts are lost on restart.
+- Record the verified cause in `work/LESSONS.md` — facts of the machine's root are lost when a new image starts it afresh.
 - Where the defect is cheap to detect, add a **deterministic check** (an audit check) so
   a regression surfaces instead of silently returning.
 - Prefer the narrowest workaround that works, and never one that degrades correctness for
@@ -137,7 +137,7 @@ harness, an external service — rather than fixing it at its source:
   the state remote when configured (`scripts/work-backup.sh persist`,
   [persistence.md](persistence.md)) — **the data is backed up, not the definition** (the
   definition travels only via its own repo). If the push fails, the failure is logged
-  and retried next run; the live data stays on the volume (`work/` is the source of
+  and retried next run; the live data stays on the machine's disk (`work/` is the source of
   truth), so nothing is lost. `work/` itself is never made a git repo.
 - Before a change that rewrites a state file's format, make sure the previous version is
   recoverable from the state repo's git history.

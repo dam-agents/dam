@@ -135,7 +135,7 @@ Better defenses are an open problem, and one we're actively working on.
 
 How Platform realizes the model:
 
-- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, Envoy sidecar credential gateway, cert-manager-issued leaf CA, network boundary, full threat model.
+- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, the Envoy credential gateway in a pod of its own, cert-manager-issued leaf CA, network boundary, full threat model.
 - [platform-topology](../architecture/platform-topology.md) — the four components and why the agent's virtual machine, and its owner's runner, are the trust boundaries.
 - [persistence](../architecture/persistence.md) § Security boundary — workspace residue is adversarial input on the next turn.
 - [Multiplayer](multi-player.md) — the companion doc covering identity, ownership, and what a colleague's turn looks like.

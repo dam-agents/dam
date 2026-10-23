@@ -36,7 +36,7 @@ seed:
 - **`seed.self: true`**: never repeat the repo's own URL.
   A seed names exactly one of `self` or `url`; `self` pins the definition to the commit the kit was resolved at, so a kit never describes a definition it wasn't read with.
 - **`seed.into: home`**: the repo lives at `$HOME` with `work/` git-ignored beside it.
-  The home seed is init + fetch + hard-reset of tracked paths, never a clone, so nothing the platform or harness put in `$HOME` is removed; it also registers `$HOME` as a git `safe.directory`, which every later `git` in the pod needs.
+  The home seed is init + fetch + hard-reset of tracked paths, never a clone, so nothing the platform or harness put in `$HOME` is removed; it also registers `$HOME` as a git `safe.directory`, which every later `git` in the machine needs.
 - **`id`** is the agent name and must match `{{AGENT_NAME}}`: sentinel, schedule prefix and kit id name the same agent.
 
 ## Never declare `onboarding`
@@ -61,7 +61,7 @@ Three MCP tools exist only while onboarding is pending; the generated `ONBOARDIN
 - `complete_onboarding_step`: ticked as each answer arrives.
 - `mark_onboarding_complete`: once the configuration is genuinely in place; releases the schedules; idempotent.
 
-The sentinel stays: it guards the runbook against re-running on the same volume, while the stamp is what the *platform* gates schedules on.
+The sentinel stays: it guards the runbook against re-running on the same machine, while the stamp is what the *platform* gates schedules on.
 Different questions, so ONBOARDING writes both.
 
 ## Connections

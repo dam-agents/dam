@@ -85,7 +85,7 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   A second value redirects the same way: a standard `OTEL_EXPORTER_OTLP_*` setting the harness cannot parse fails its whole env parse and sends the export to the vendor endpoint too.
 
 - **Config travels the harness env rail.** Each rail's export environment — the standard OTLP set on the Claude Code rail, the `BOB_TELEMETRY_*` set on Bob's, the endpoint and log switch on Pi's — reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
-  The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-pod) reads its own harness's rail.
+  The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-machine) reads its own harness's rail.
   A harness's layer owns its variables over an agent-wide copy, so the rail an older agent was seeded from its Template never leaks into another harness: Bob never sees the Claude Code rail's OTLP protocol.
 
 - **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage); no cost, as spend reads the [meter](spend-limits.md).
