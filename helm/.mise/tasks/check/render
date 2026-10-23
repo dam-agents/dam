@@ -22,7 +22,7 @@ helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBEC
 # On OpenShift the runner's, the cache's and the stager's ServiceAccounts take
 # the built-in SCC the install names.
 helm template platform . "${COMMON[@]}" \
-  --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  --set openshift.enabled=true --set agentNamespace=platform-agents \
   --set virtualization.runner.scc=hostmount-anyuid \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"

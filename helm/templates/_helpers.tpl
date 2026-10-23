@@ -568,7 +568,7 @@ capabilities:
   add: ["CHOWN", "FOWNER", "FSETID", "DAC_OVERRIDE"]
 appArmorProfile:
   type: Unconfined
-{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+{{- if .Values.openshift.enabled }}
 seLinuxOptions:
   type: spc_t
   level: s0

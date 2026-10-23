@@ -111,7 +111,7 @@ spec:
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
             - --images={{ join "," (uniq $images) }}
-            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            {{- if .Values.openshift.enabled }}
             {{- /*
             The directory the kubelet creates for the hostPath carries the
             host's own SELinux label, which a container confined to
@@ -163,7 +163,7 @@ spec:
             - --socket=/var/lib/platform/images-legacy/.cache.sock
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
-            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            {{- if .Values.openshift.enabled }}
             - --selinux-label=system_u:object_r:container_file_t:s0
             {{- end }}
           securityContext:

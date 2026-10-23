@@ -22,7 +22,7 @@ and the image build leaves root, the owner of every file it copies, able to
 read them.
 */}}
 {{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
-{{- $openshift := .Values.openshift.scc.anyuidCapNet.enabled }}
+{{- $openshift := .Values.openshift.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:

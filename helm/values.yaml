@@ -304,7 +304,7 @@ virtualization:
     # ServiceAccount — the SCC that admits a runner, since no SCC the chart
     # renders admits the hostPath of the node image cache and of the release
     # directory, which every runner mounts. Required whenever
-    # `openshift.scc.anyuidCapNet` is on.
+    # `openshift.enabled` is on.
     # It must allow DAC_OVERRIDE, the one capability a runner adds (so its
     # VMMs read image files the image keeps from root), and it also admits
     # the node image cache, which sets its own SELinux type (see `imageCache`),
@@ -574,7 +574,7 @@ virtualization:
   # SCC refuses hostPath — and that SCC must have `seLinuxContext.type:
   # RunAsAny`: SELinux confines every container to `container_t`, which may
   # neither write nor read the directory the kubelet creates for a hostPath
-  # (it carries the host's `var_lib_t`), so when `openshift.scc.anyuidCapNet`
+  # (it carries the host's `var_lib_t`), so when `openshift.enabled`
   # is on the cache pod runs as `spc_t` at level `s0` and labels the directory
   # `container_file_t` as it starts. Every tree it unpacks inherits that label,
   # which is what lets the runners, still confined, boot from it. Under a
@@ -695,14 +695,12 @@ createAgentNamespace: true
 
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
-  scc:
-    # true = this cluster is OpenShift. The chart renders no SCC of its own —
-    # the agent pod's, the only one, went with the agent pod — so this only
-    # tells the chart to require the built-in SCC `virtualization.runner.scc`
-    # names (a runner mounts hostPaths no restrictive SCC admits) and to run
-    # the node image cache as spc_t so it can label the directory it serves.
-    anyuidCapNet:
-      enabled: false
+  # true = this cluster is OpenShift. The chart renders no SCC of its own, so
+  # this tells the chart to require the built-in SCCs `virtualization.runner.scc`
+  # and `virtualization.imageCache.scc` name (both mount hostPaths no
+  # restrictive SCC admits) and to run the node image cache as spc_t, so it can
+  # label the directory it serves.
+  enabled: false
 
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
@@ -1781,13 +1779,6 @@ controller:
       # (agentHome is retired: the agent home is fixed at /home/agent; a value
       # still set here is ignored with a startup warning.)
 
-      # Left unset so Kubernetes applies its native, tag-based pull policy:
-      # `Always` for a mutable `:latest` (so a repushed tag is actually
-      # re-pulled, not served stale from the node cache) and `IfNotPresent`
-      # for the immutable sha/digest tags the harness images use. Hardcoding a
-      # value here forces it for ALL tags and silently strands `:latest` agents
-      # on a cached image. A template or agent can still set its own override.
-      imagePullPolicy: ""
       storageSize: "10Gi"
       # Default agent Size when neither the user's slider nor the template
       # chooses one. Limits are the user-facing concept (#1900): the Budget

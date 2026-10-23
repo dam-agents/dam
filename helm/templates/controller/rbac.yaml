@@ -123,9 +123,6 @@ rules:
   - apiGroups: ["apps"]
     resources: ["replicasets"]
     verbs: ["list"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -142,14 +139,11 @@ rules:
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    # Run executor pods are bare Pods, not StatefulSets, so the controller
-    # needs full CRUD on pods in the agent namespace to bring them up and
-    # tear them down. Owner-refed to the Run CR.
+    # A gateway pod on a superseded revision is deleted, and a rotated
+    # credential is announced by patching the pod's annotations so the kubelet
+    # syncs its Secret volumes at once.
     resources: ["pods"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["get", "list", "watch", "delete", "patch"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -188,42 +182,6 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "platform.controller.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
-{{- if not $clusterScoped }}
----
-# StorageClasses are cluster-scoped, so a namespace-scoped install needs this
-# read-only grant for the controller's storage checks; a runner's claim is
-# created at its owner's storage pool and reads no class.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: controller
-rules:
-  - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["persistentvolumes"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: controller
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
-subjects:
-  - kind: ServiceAccount
-    name: {{ include "platform.controller.serviceAccountName" . }}
-    namespace: {{ .Release.Namespace }}
-{{- end }}
 ---
 # Nodes are cluster-scoped, so the vm preflight needs a ClusterRole even under
 # otherwise namespace-scoped RBAC. Read-only, and only to check that some node

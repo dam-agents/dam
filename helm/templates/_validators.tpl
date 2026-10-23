@@ -10,6 +10,7 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
+{{- include "platform.validate.openShiftSignalMoved" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
 {{- include "platform.validate.vmImageCachePathIsItsOwn" . -}}
@@ -247,14 +248,25 @@ first evicted — taking every machine with it.
 {{- end -}}
 
 {{/*
+The OpenShift signal moved from `openshift.scc.anyuidCapNet.enabled` to
+`openshift.enabled` when the chart stopped rendering an SCC. A values file that
+still carries the old key would render a vanilla-Kubernetes install on an
+OpenShift cluster, and admission would then refuse the runner for its hostPath,
+so it fails here instead of at the first runner.
+*/}}
+{{- define "platform.validate.openShiftSignalMoved" -}}
+{{- if hasKey (.Values.openshift | default dict) "scc" -}}
+{{- fail "openshift.scc.anyuidCapNet is gone: the chart renders no SCC any more. Set openshift.enabled=true instead — the same signal, under the name it now means." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 On OpenShift no SCC the chart renders admits a hostPath volume, so without a
 built-in SCC bound as well, admission refuses the runner. The chart renders no
-SCC: the agent pod's was the only one, and it went with the agent pod.
-`openshift.scc.anyuidCapNet.enabled` is the chart's existing signal that this
-is an OpenShift cluster.
+SCC.
 */}}
 {{- define "platform.validate.openShiftSccForPrivilegedVMPieces" -}}
-{{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
+{{- if .Values.openshift.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.runner.releaseHostPath (not $v.runner.hostAddress) (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — no SCC the chart renders admits a hostPath, so the volume the runners and the release stager mount is refused, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny)." -}}
