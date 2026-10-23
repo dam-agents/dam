@@ -145,11 +145,10 @@ export interface ComposeShareAuthOpts {
     clientId: string;
   };
   shareBaseUrl: string;
-  storePrefix?: string;
+  storePrefix: string;
 }
 
 export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
-  const prefix = opts.storePrefix ?? "share";
   const shareBase = opts.shareBaseUrl.replace(/\/+$/, "");
   const keycloak = {
     keycloakExternalUrl: opts.keycloak.externalUrl,
@@ -170,12 +169,12 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
     ),
     pending: createRedisTtlStore(
       opts.redis,
-      `${prefix}:login`,
+      `${opts.storePrefix}:login`,
       SHARE_LOGIN_TTL_MS,
     ),
     sessions: createRedisTtlStore(
       opts.redis,
-      `${prefix}:session`,
+      `${opts.storePrefix}:session`,
       SHARE_SESSION_TTL_MS,
     ),
     shareBaseUrl: shareBase,

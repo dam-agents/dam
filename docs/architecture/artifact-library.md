@@ -138,7 +138,7 @@ An install inside an Environment can have a second share and content host, each 
 
 **Share session.** A restricted artifact needs a viewer identity on the share host, and that identity is deliberately not the app's.
 The share host signs the visitor in through a dedicated public Keycloak client (authorization code with PKCE, asking for OpenID identity and email, see [identity](security-and-credentials.md#identity)).
-Its redirect is pinned to the share host's callback and its tokens carry no api audience, so a token minted for it is useless against the api-server.
+Its redirect is pinned to the share host's callback (on an install with a backchannel, each share host's own) and its tokens carry no api audience, so a token minted for it is useless against the api-server.
 The code is redeemed server-side and no token ever reaches the browser: the browser holds an opaque session id in an `HttpOnly` cookie scoped to the share origin, pointing at a Redis-held session that carries the subject, the email and whether the provider verified it, and a fixed lifetime.
 On an https share host the cookie is named with the `__Host-` prefix, so the browser accepts it only from the share host itself: another host under the same parent domain, the content host included, cannot plant a session the share host would read or that sign-out would leave behind.
 On plain http, as on the local cluster, browsers refuse that prefix, so the cookie keeps its bare name there.
