@@ -1,6 +1,6 @@
 ---
 name: cluster-ops
-description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283", "no-mesh", "istio-cni", "conntrack". Also when pods sit in ContainerCreating with `FailedCreatePodSandBox ... nftables run failed ... Operation not supported`, or istio-cni crash-loops on `error initializing host addressSet manager`.
+description: Operate the local k3s dev cluster (lima) and the Playwright e2e suite, and recover from mesh/cert failures. Use when working with the local cluster, running or debugging e2e tests, or when any of these symptoms appear - the UI suddenly can't log in, `cluster:install` hangs on the keycloak realm step or fails at a webhook admission with an expired certificate, an agent pod repeats `[runtime] hello failed`, `e2e:loop` fails against a warm cluster, or an image build dies with `no space left on device` while the host disk still has room. Also when installing DAM into an Environment (`cluster:install -- --environment`, `cluster:open`). Triggers on "cluster:install", "cluster:status", "e2e:loop", "fix-certs", "cluster:prune", "lima", "k3s", "ztunnel", "waypoint", "Istio SVID", "no space left on device", "issue #283", "no-mesh", "istio-cni", "conntrack". Also when pods sit in ContainerCreating with `FailedCreatePodSandBox ... nftables run failed ... Operation not supported`, or istio-cni crash-loops on `error initializing host addressSet manager`.
 ---
 
 # Cluster operations
@@ -23,6 +23,37 @@ The common ones:
 Every `cluster:*` task honors `LIMA_INSTANCE` (default `platform-k3s`) to target another VM, e.g. the e2e cluster `platform-k3s-test`; the `e2e:*` tasks and the Playwright run task pin that one themselves.
 
 Services are at `*.localhost:4444` (Traefik, auto-forwarded by lima); `*.localtest.me:4444` is an alias.
+
+## In an Environment
+
+An agent on the vm backend installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.
+
+1. **Create the Environment** with the `create_environment` tool (a shell cannot), with four endpoints on one port that is not 4444, which the install's own ingress uses: `app`, `keycloak`, `share` and `content`, each → `4400`.
+   The install stops and names what is missing when they are not there.
+   An Environment has no `/dev/kvm` and no mesh, so the install runs without both, and the default `expires` of a week is usually right.
+2. **Install, or upgrade:** `mise run cluster:install -- --environment <name>`.
+   It starts the Environment's k3s (in its default runlevel, so it comes back after the Environment sleeps), and reaches it over the Environment Link: `ssh env-<name>` for the node, a tunnel on a free local port for the API.
+   Each platform and agent image whose source the registry has (`image:resolve` says REUSE) is pulled by the node itself, so a run on main builds nothing; a changed one is built here and streamed in with `k3s ctr images import -`.
+   The chart's URLs are the endpoints' addresses, with the outer gateway's CA and address from the Environment itself.
+   A second run upgrades in place, as on lima.
+3. **Open it** at the `app` address the install prints, signed in as the owner or someone on the agent's list.
+
+Every `cluster:*` task takes `--environment <name>` first to act on the Environment instead of this host's cluster: `cluster:kubectl -- --environment <name> get pods`, `cluster:helm -- --environment <name>`, `cluster:status -- --environment <name>`, `cluster:shell -- --environment <name> <cmd>`, `cluster:build --environment <name> api-server`.
+The link stays open for ten idle minutes after the last task, and while it is open neither machine sleeps.
+
+What it installs beside the chart:
+
+- **A host-name bridge**, an Envoy on the node's network on the endpoints' port.
+  The gate hands each request to `127.0.0.1:<port>` with `Host: 127.0.0.1:<port>`, and the ingress routes by host name, so the bridge puts `X-Forwarded-Host` back as the host, and states the public scheme and port.
+- **Traefik's app entrypoint trusts forwarded headers**, so `X-Forwarded-Proto: https` reaches Keycloak and its cookies are `Secure`.
+  Only the node's loopback reaches that entrypoint.
+
+**Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444`, and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.
+`--backchannel-port <port>` moves them; `cluster:open` then needs the same `--port <port>`, as the command the install prints at its end has.
+The agent then opens `http://localhost:4444` in its browser and signs in as `dev`/`dev`.
+
+An Environment created before its image passed the image's `PATH` on to an SSH shell finds no `k3s` or `kubectl` in `ssh env-<name>`, and `rc-service k3s start` there reports success and runs nothing.
+The cluster tasks load the tools' PATH from the image's mise themselves; in a shell of your own, run `eval "$(MISE_SYSTEM_DATA_DIR=/usr/share/mise mise env -s bash)"` first.
 
 ## E2E tests (Playwright)
 

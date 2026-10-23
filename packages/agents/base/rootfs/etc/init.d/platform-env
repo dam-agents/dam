@@ -19,15 +19,20 @@ start_pre() {
 	[ -f "$key" ] || ssh-keygen -t ed25519 -N "" -q -f "$key" -C platform-env-host || return 1
 	touch "$dir/authorized_keys" && chmod 600 "$dir/authorized_keys"
 	# A shell over the link gets what this service gets of the environment:
-	# the gateway and CA, so docker and k3s pull as they do at boot.
+	# PATH, which names the image's tools, the gateway and CA, so docker and k3s
+	# pull as they do at boot, and the runtime directory where `rc-service
+	# --user` finds the agent's own services. One SetEnv line: sshd keeps only
+	# the first of several.
 	{
 		printf '%s\n' "HostKey $key" "AuthorizedKeysFile $dir/authorized_keys" \
 			"PubkeyAuthentication yes" "PasswordAuthentication no" \
 			"KbdInteractiveAuthentication no" "PermitRootLogin prohibit-password" \
 			"StrictModes no" "PrintMotd no" "X11Forwarding no" "AllowTcpForwarding yes" \
 			"Subsystem sftp internal-sftp"
-		env | grep -E '^(PATH|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|SSL_CERT_(FILE|DIR))=' |
-			sed 's/^\([^=]*\)=\(.*\)$/SetEnv \1="\2"/'
+		printf 'SetEnv'
+		env | grep -E '^(PATH|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|SSL_CERT_(FILE|DIR)|XDG_RUNTIME_DIR|MISE_SYSTEM_DATA_DIR)=' |
+			sed 's/^\([^=]*\)=\(.*\)$/ \1="\2"/' | tr -d '\n'
+		printf '\n'
 	} > "$dir/sshd_config"
 }
 

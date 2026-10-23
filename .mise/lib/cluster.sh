@@ -1,14 +1,47 @@
 # Sourced by the cluster:* and e2e:* tasks: the one place that names the
-# cluster they act on. LIMA_INSTANCE picks the lima VM (the e2e tasks pin
-# platform-k3s-test); IS_SANDBOX means k3s runs on this host.
+# cluster they act on. CLUSTER_ENVIRONMENT picks one of this agent's
+# Environments, whose k3s is reached over the Environment Link
+# (cluster-environment.sh); a task takes it as a leading
+# `--environment <name>` too. Otherwise LIMA_INSTANCE picks the lima VM (the
+# e2e tasks pin platform-k3s-test), and IS_SANDBOX means k3s runs on this host.
+# CLUSTER_TARGET says which of the three it is: environment, host or lima.
 . "$(dirname "${BASH_SOURCE[0]}")/root.sh"
 
+# A task that declares the flag in #USAGE gets it from mise. One that parses
+# no arguments of its own takes it first, before what it passes on: sourced
+# with no arguments, this file shifts the task's own.
+if [ -n "${usage_environment:-}" ]; then
+  export CLUSTER_ENVIRONMENT="$usage_environment"
+fi
+case "${1:-}" in
+  --environment) export CLUSTER_ENVIRONMENT="${2:?--environment needs a name}"; shift 2 ;;
+  --environment=*) export CLUSTER_ENVIRONMENT="${1#--environment=}"; shift ;;
+esac
+
 export LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ -n "${CLUSTER_ENVIRONMENT:-}" ]; then
+  export CLUSTER_TARGET=environment
+  . "$(dirname "${BASH_SOURCE[0]}")/cluster-environment.sh"
+  # Every task but the install, which starts k3s first, finds the API here.
+  env_tunnel || true
+elif [ -n "${IS_SANDBOX:-}" ]; then
+  export CLUSTER_TARGET=host
   export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 else
+  export CLUSTER_TARGET=lima
   export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
+
+# node_sh <command>...: runs one command as root on the k3s node, with this
+# shell's stdin: on this host, in the lima VM, or on the Environment.
+node_sh() {
+  case "$CLUSTER_TARGET" in
+    environment) node_env_sh "$@" ;;
+    host) as_root "$@" ;;
+    lima) limactl shell "$LIMA_INSTANCE" sudo "$@" ;;
+  esac
+}
+export -f node_sh as_root
 
 # The supervisor k3s runs under: OpenRC where the host installed its service
 # (k3s's own installer prefers it when openrc-run exists), systemd where it is
@@ -59,9 +92,5 @@ MESH_CERT_EXPIRED='certificate expired|AlertReceived\(CertificateExpired\)'
 # just loaded are unpinned, and it would wipe them too.
 prune_dangling_images() {
   local prune='k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r k3s crictl rmi >/dev/null 2>&1 || true'
-  if [ -n "${IS_SANDBOX:-}" ]; then
-    as_root bash -c "$prune"
-  else
-    limactl shell "$LIMA_INSTANCE" sudo bash -c "$prune"
-  fi
+  node_sh bash -c "$prune"
 }

@@ -1,0 +1,72 @@
+#!/usr/bin/env node
+//MISE description="Test that a shell over the Environment Link gets the image's tool PATH, the gateway, the CA and the runtime directory openrc's user services need"
+//MISE sources=["base/rootfs/etc/init.d/platform-env", ".mise/tasks/test/environment-link-shell-env"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const service = fileURLToPath(new URL("../../../base/rootfs/etc/init.d/platform-env", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "environment-link-shell-env-"));
+const runDir = join(dir, "run");
+const key = join(dir, "host_key");
+const config = join(runDir, "sshd_config");
+
+const script = join(dir, "start_pre.sh");
+writeFileSync(
+  script,
+  [
+    "checkpath() { for p; do :; done; mkdir -p \"$p\"; }",
+    readFileSync(service, "utf8")
+      .split("\n")
+      .filter((line) => !line.startsWith("#!"))
+      .join("\n")
+      .replaceAll("dir=/run/platform-env", `dir=${runDir}`)
+      .replaceAll("key=/etc/ssh/platform_env_host_ed25519_key", `key=${key}`)
+      .replaceAll("/run/sshd", join(dir, "sshd")),
+    "start_pre",
+  ].join("\n"),
+);
+
+const env = {
+  PLATFORM_ENVIRONMENT_OF: "agent-owner",
+  PATH: "/usr/share/mise/installs/k3s/1.37.1/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  HTTPS_PROXY: "http://gateway.test:10000",
+  NO_PROXY: "localhost,127.0.0.1",
+  SSL_CERT_FILE: "/run/platform/ca-certificates.crt",
+  XDG_RUNTIME_DIR: "/tmp/platform-display",
+  MISE_SYSTEM_DATA_DIR: "/usr/share/mise",
+  PLATFORM_SECRET: "never-passed-on",
+};
+
+const sshd = ["/usr/sbin/sshd", "/usr/bin/sshd"].find(existsSync);
+
+try {
+  execFileSync("/bin/sh", [script], { env, stdio: ["ignore", "ignore", "pipe"] });
+  const written = readFileSync(config, "utf8");
+
+  // TEST_SCENARIO: sshd keeps only the first SetEnv line of its config, so an Environment's shell once got the gateway alone, no PATH, and `rc-service k3s start` ran nothing; every variable is on one SetEnv line.
+  assert.equal(written.split("\n").filter((line) => line.startsWith("SetEnv")).length, 1);
+
+  // TEST_SCENARIO: the shell finds the image's tools, pulls through the gateway trusting its CA, and finds openrc's user services; nothing else of the service's environment, a credential least of all, reaches it.
+  const setEnv = sshd
+    ? execFileSync(sshd, ["-T", "-f", config, "-C", "user=agent,host=link,addr=127.0.0.1"], { encoding: "utf8" })
+        .split("\n")
+        .filter((line) => line.startsWith("setenv "))
+        .map((line) => line.slice("setenv ".length))
+    : written.match(/ [A-Z_a-z]+="[^"]*"/g).map((pair) => pair.trim().replace(/="(.*)"$/, "=$1"));
+  const passed = Object.fromEntries(setEnv.map((pair) => [pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1)]));
+  assert.deepEqual(passed, {
+    PATH: env.PATH,
+    HTTPS_PROXY: env.HTTPS_PROXY,
+    NO_PROXY: env.NO_PROXY,
+    SSL_CERT_FILE: env.SSL_CERT_FILE,
+    XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR,
+    MISE_SYSTEM_DATA_DIR: env.MISE_SYSTEM_DATA_DIR,
+  });
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}

@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 #MISE description="Import image tars, or OCI layouts, into the cluster's k3s"
 #MISE hide=true
+#USAGE flag "--environment <name>" help="Import into this agent's Environment of that name"
 #USAGE arg "<image>..." var=#true help="An image tar, or the OCI layout image:resolve import-path names for an image built here"
 set -euo pipefail
 eval "images=($usage_image)"
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 import_one() {
   local t=$1 g d w rc=0
+  # An Environment's k3s reads the image over the link as it is sent: a tar
+  # as it is, a layout tarred on the way.
+  if [ "$CLUSTER_TARGET" = environment ]; then
+    if [ -d "$t" ]; then
+      tar -C "$t" -c $(ls -A "$t") | node_sh k3s ctr images import -
+    else
+      node_sh k3s ctr images import - < "$t"
+    fi
+    return
+  fi
   if [ -d "$t" ]; then
     [ -n "${IS_SANDBOX:-}" ] || { echo "cluster:import: an OCI layout imports only where k3s runs on this host" >&2; return 2; }
     # The e2e lane keeps a built agent image as its layout: one tar, made here and
