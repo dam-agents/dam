@@ -131,7 +131,7 @@ Beside the chart it installs two pieces the gate needs:
 - **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
 - **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
 
-`--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name>` forwards its port over the link to the agent's machine.
+`--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
 
 ## Surfaces
 

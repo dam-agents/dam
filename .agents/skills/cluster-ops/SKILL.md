@@ -48,7 +48,8 @@ What it installs beside the chart:
 - **Traefik's app entrypoint trusts forwarded headers**, so `X-Forwarded-Proto: https` reaches Keycloak and its cookies are `Secure`.
   Only the node's loopback reaches that entrypoint.
 
-**Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444` (`--backchannel-port` moves them), and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.
+**Signing in from the agent's own browser** needs the backchannel addresses (`backchannel.*` in the values): `cluster:install -- --environment <name> --backchannel` turns them on at `http://localhost:4444`, and `mise run cluster:open -- --environment <name>`, started in the background, forwards that port to this agent.
+`--backchannel-port <port>` moves them; `cluster:open` then needs the same `--port <port>`, as the command the install prints at its end has.
 The agent then opens `http://localhost:4444` in its browser and signs in as `dev`/`dev`.
 
 An Environment created before its image passed the image's `PATH` on to an SSH shell finds no `k3s` or `kubectl` in `ssh env-<name>`, and `rc-service k3s start` there reports success and runs nothing.

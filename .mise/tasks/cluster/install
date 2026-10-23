@@ -1202,7 +1202,7 @@ echo "KUBECONFIG=$KUBECONFIG"
 if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Open it at $(printf '%s\n' "$ENV_VALUES" | sed -n 's/^urls.ui=//p'), behind the Environment's sign-in."
   if [ "$BACKCHANNEL" = true ]; then
-    echo "From this agent's browser: mise run cluster:open -- --environment $CLUSTER_ENVIRONMENT, then http://localhost:$APP_PORT"
+    echo "From this agent's browser: mise run cluster:open -- --environment $CLUSTER_ENVIRONMENT --port $APP_PORT, then http://localhost:$APP_PORT"
   fi
 fi
 echo ""
