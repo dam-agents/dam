@@ -1,28 +1,15 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 import { useForm } from "react-hook-form";
 
-import { FormField } from "@/components/form-field";
-import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-
 import { emitToast } from "../../../lib/toast.js";
-import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
-import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
-import {
-  useCreateSchedule,
-  useDeleteSchedule,
-  useUpdateSchedule,
-} from "../api/mutations.js";
+import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
+import { ScheduleDialog } from "./schedule-dialog.js";
 import {
-  ScheduleChoicesField,
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
-  ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
 import {
@@ -54,46 +41,19 @@ export function RecurringScheduleForm({
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
-  const deleteSchedule = useDeleteSchedule();
-  const showConfirm = useStore((state) => state.showConfirm);
   const mutation = existing ? updateSchedule : createSchedule;
 
-  const handleDelete = async () => {
-    if (!existing) return;
-    const confirmed = await showConfirm(
-      "It stops running and cannot be recovered.",
-      `Delete “${existing.name}”?`,
-      { kind: "destructive", confirmLabel: "Delete schedule" },
-    );
-    if (!confirmed) return;
-    deleteSchedule.mutate({ id: existing.id });
-    onClose();
-  };
-
-  const { control, register, handleSubmit, watch, formState } =
-    useForm<ScheduleFormValues>({
-      resolver: zodResolver(scheduleFormSchema),
-      defaultValues: { ...scheduleFormDefaults(existing), ...draft },
-    });
-  const { errors, isDirty } = formState;
-  const unsaved = isDirty || !!draft?.name || !!draft?.task;
-  const close = useGuardedClose(unsaved, onClose);
-  useEffect(() => onDirtyChange?.(unsaved), [unsaved, onDirtyChange]);
-
-  useEffect(() => {
-    if (!onDraftChange) return;
-    const sub = watch(({ name, task }) =>
-      onDraftChange({ name: name ?? "", task: task ?? "" }),
-    );
-    return () => sub.unsubscribe();
-  }, [watch, onDraftChange]);
-
-  const values = watch();
+  const form = useForm<ScheduleFormValues>({
+    resolver: zodResolver(scheduleFormSchema),
+    defaultValues: { ...scheduleFormDefaults(existing), ...draft },
+  });
+  const { errors } = form.formState;
+  const values = form.watch();
 
   const quietHoursError =
     errors.quietHours?.message ?? errors.quietHours?.root?.message;
 
-  const onSubmit = handleSubmit((v) => {
+  const onValid = (v: ScheduleFormValues) => {
     const precheck = v.precheck.trim();
     const harness = v.harness.trim();
     const model = v.model.trim();
@@ -146,89 +106,55 @@ export function RecurringScheduleForm({
         { onSuccess },
       );
     }
-  });
+  };
 
   return (
-    <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-      <DialogHeader
-        title={existing ? "Edit schedule" : "New schedule"}
-        onClose={() => void close()}
-      />
-
-      <DialogBody className="flex flex-col gap-4">
-        {leadingFields}
-        <FormField label="Name" error={errors.name?.message}>
-          <Input
-            variant={errors.name ? "invalid" : undefined}
-            placeholder="e.g. Daily brief"
-            {...register("name")}
+    <ScheduleDialog
+      title={existing ? "Edit schedule" : "New schedule"}
+      agentId={agentId}
+      form={form}
+      existing={existing}
+      draft={draft}
+      onDraftChange={onDraftChange}
+      onDirtyChange={onDirtyChange}
+      onClose={onClose}
+      onValid={onValid}
+      pending={mutation.isPending}
+      submitLabel={existing ? "Save" : "Create"}
+      pendingLabel={existing ? "Saving…" : "Creating…"}
+      namePlaceholder="e.g. Daily brief"
+      deleteCopy={{
+        body: "It stops running and cannot be recovered.",
+        confirmLabel: "Delete schedule",
+        buttonLabel: "Delete",
+      }}
+      leadingFields={leadingFields}
+      extraFields={
+        <>
+          <ScheduleRecurrenceFields
+            layout="stacked"
+            control={form.control}
+            register={form.register}
+            errors={errors}
+            values={values}
           />
-        </FormField>
-
-        <ScheduleRecurrenceFields
-          layout="stacked"
-          control={control}
-          register={register}
-          errors={errors}
-          values={values}
-        />
-
-        <QuietHoursEditor
-          control={control}
-          register={register}
-          error={quietHoursError}
-        />
-
-        <FormField label="Prompt" error={errors.task?.message}>
-          <Textarea
-            className="min-h-[80px] resize-y"
-            variant={errors.task ? "invalid" : undefined}
-            placeholder="Enter a task prompt"
-            rows={3}
-            {...register("task")}
+          <QuietHoursEditor
+            control={form.control}
+            register={form.register}
+            error={quietHoursError}
           />
-        </FormField>
-
-        <ScheduleChoicesField
-          agentId={agentId}
-          control={control}
-          migrationNote={existing?.migrationNote ?? null}
-        />
-
-        <SchedulePrecheckField
-          layout="stacked"
-          registration={register("precheck")}
-          error={errors.precheck?.message}
-        />
-
-        <ScheduleSessionTypeField layout="stacked" control={control} />
-
-        <ScheduleSessionTitleField
-          registration={register("sessionTitle")}
-          error={errors.sessionTitle?.message}
-        />
-      </DialogBody>
-
-      <DialogActions
-        leading={
-          existing ? (
-            <Button
-              type="button"
-              variant="outline"
-              tone="danger"
-              className="text-danger"
-              disabled={deleteSchedule.isPending}
-              onClick={() => void handleDelete()}
-            >
-              Delete
-            </Button>
-          ) : undefined
-        }
-        onCancel={() => void close()}
-        label={existing ? "Save" : "Create"}
-        pendingLabel={existing ? "Saving…" : "Creating…"}
-        pending={mutation.isPending}
-      />
-    </form>
+        </>
+      }
+      afterChoices={
+        <>
+          <SchedulePrecheckField
+            layout="stacked"
+            registration={form.register("precheck")}
+            error={errors.precheck?.message}
+          />
+          <ScheduleSessionTypeField layout="stacked" control={form.control} />
+        </>
+      }
+    />
   );
 }

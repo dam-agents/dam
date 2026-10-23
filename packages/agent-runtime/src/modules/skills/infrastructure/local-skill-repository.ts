@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -8,11 +7,17 @@ import type {
   Result,
   SkillOrigin,
   SkillsDomainError,
-  SourcePathReason,
 } from "agent-runtime-api";
 import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
+import {
+  findSkillDirs,
+  hashSkillDir,
+  parseFrontmatter,
+  subPathEscapes,
+  walkSkillFiles,
+} from "agent-runtime-api/skill-tree";
+import type { SkillDirOutcome } from "agent-runtime-api/skill-tree";
 import { describeFailure, runOnce } from "../../../core/run-once.js";
-import { parseFrontmatter } from "../domain/frontmatter.js";
 import type { SkillName } from "../domain/skill-name.js";
 import { judgeOrigin } from "../domain/skill-origin.js";
 import type { SkillPath } from "../domain/skill-path.js";
@@ -22,9 +27,7 @@ export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_SKILL_BYTES = 5 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 60_000;
 
-export type CloneScanOutcome =
-  | { kind: "found"; dirs: string[] }
-  | { kind: SourcePathReason; subPath: string };
+export type CloneScanOutcome = SkillDirOutcome;
 
 export interface LocalSkillRepository {
   listLocal: (
@@ -114,7 +117,7 @@ export function createLocalSkillRepository(): LocalSkillRepository {
     withTempDir,
     extractTarball,
     writeFiles,
-    findSkillDirsInClone,
+    findSkillDirsInClone: findSkillDirs,
     resolveSkillDirInClone,
     readSkillManifest,
     hashSkillDir,
@@ -270,7 +273,7 @@ interface CachedContentHash {
 
 async function statFingerprint(absDir: string): Promise<string | null> {
   try {
-    const files = (await walkFiles(absDir)).sort();
+    const files = (await walkSkillFiles(absDir)).sort();
     const parts: string[] = [];
     for (const abs of files) {
       const st = await fs.stat(abs);
@@ -318,7 +321,7 @@ async function read(
   if (!resolved) return err({ kind: "SkillNotFound", name, skillPaths });
   const root = resolved.absDir;
 
-  const absFiles = (await walkFiles(root)).sort();
+  const absFiles = (await walkSkillFiles(root)).sort();
   const out: LocalSkillFile[] = [];
   let total = 0;
 
@@ -478,86 +481,6 @@ function assertSafeTarEntry(entry: string): void {
   }
 }
 
-export function subPathEscapes(subPath: string): boolean {
-  return subPath.startsWith("/") || subPath.split("/").includes("..");
-}
-
-function isMissingDir(err: unknown): boolean {
-  const code = (err as { code?: string }).code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-
-async function findSkillDirsInClone(
-  repoDir: string,
-  subPath?: string,
-): Promise<CloneScanOutcome> {
-  if (subPath && subPathEscapes(subPath)) {
-    throw new Error(`skill source path rejected: ${subPath}`);
-  }
-  if (subPath) {
-    const root = path.join(repoDir, subPath);
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await fs.readdir(root, { withFileTypes: true });
-    } catch (err) {
-      if (isMissingDir(err)) return { kind: "path-missing", subPath };
-      throw err;
-    }
-    const dirs = [
-      ...((await isSkillDir(root)) ? [path.relative(repoDir, root)] : []),
-      ...(await skillDirsIn(repoDir, root, entries)),
-    ];
-    return dirs.length > 0
-      ? { kind: "found", dirs }
-      : { kind: "path-empty", subPath };
-  }
-  const found: string[] = [];
-  for (const root of SKILL_SOURCE_ROOTS) {
-    found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
-  }
-  if (found.length > 0) return { kind: "found", dirs: found };
-  return { kind: "found", dirs: await skillDirsUnder(repoDir, repoDir) };
-}
-
-async function skillDirsUnder(
-  repoDir: string,
-  root: string,
-): Promise<string[]> {
-  let entries: import("node:fs").Dirent[];
-  try {
-    entries = await fs.readdir(root, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return skillDirsIn(repoDir, root, entries);
-}
-
-async function isSkillDir(dir: string): Promise<boolean> {
-  try {
-    await fs.access(path.join(dir, "SKILL.md"));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function skillDirsIn(
-  repoDir: string,
-  root: string,
-  entries: import("node:fs").Dirent[],
-): Promise<string[]> {
-  const out: string[] = [];
-  for (const ent of entries) {
-    if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
-    const dir = path.join(root, ent.name);
-    try {
-      await fs.access(path.join(dir, "SKILL.md"));
-      out.push(path.relative(repoDir, dir));
-    } catch {}
-  }
-  return out;
-}
-
 async function resolveSkillDirInClone(
   repoDir: string,
   name: SkillName,
@@ -599,19 +522,6 @@ async function readSkillManifest(
   return parseFrontmatter(content);
 }
 
-export async function hashSkillDir(absDir: string): Promise<string> {
-  const files = (await walkFiles(absDir)).sort();
-  const h = createHash("sha256");
-  for (const abs of files) {
-    const rel = path.relative(absDir, abs);
-    h.update(rel);
-    h.update(Buffer.from([0]));
-    h.update(await fs.readFile(abs));
-    h.update(Buffer.from([0]));
-  }
-  return h.digest("hex");
-}
-
 function ignoreMissing(err: unknown): void {
   if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
@@ -644,24 +554,6 @@ async function assertNoSymlinks(root: string): Promise<void> {
       }
     }
   }
-}
-
-async function walkFiles(root: string): Promise<string[]> {
-  const out: string[] = [];
-  async function rec(dir: string) {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const ent of entries) {
-      if (ent.name.startsWith(".")) continue;
-      const full = path.join(dir, ent.name);
-      if (ent.isDirectory()) {
-        await rec(full);
-      } else if (ent.isFile()) {
-        out.push(full);
-      }
-    }
-  }
-  await rec(root);
-  return out;
 }
 
 function hasNullBytes(buf: Buffer): boolean {

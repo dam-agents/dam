@@ -15,6 +15,7 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { timeAgo, timeUntil } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { formatBytes } from "../../../lib/format-size.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import {
@@ -25,7 +26,6 @@ import { startupTips } from "../../agents/startup-tips.js";
 import { useApiKeys } from "../../api-keys/api/queries.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
-import { formatBytes } from "../../budgets/lib/pools.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useMonthlySpend } from "../../metrics/hooks/use-monthly-spend.js";
 import { formatTokens } from "../../metrics/lib/format.js";

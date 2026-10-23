@@ -17,6 +17,7 @@ export interface RunOnceOptions {
   env?: NodeJS.ProcessEnv;
   maxOutputBytes?: number;
   onLine?: (line: string) => void;
+  detached?: boolean;
 }
 
 export interface ProcessOutput {
@@ -94,6 +95,7 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
         cwd: opts.cwd,
         env: opts.env,
         stdio: ["ignore", "pipe", "pipe"],
+        detached: opts.detached === true,
       });
     } catch (error) {
       resolve(
@@ -114,8 +116,18 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
       resolve(result);
     };
 
-    const timer = setTimeout(() => {
+    const kill = (): void => {
+      if (opts.detached && child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+          return;
+        } catch {}
+      }
       child.kill("SIGKILL");
+    };
+
+    const timer = setTimeout(() => {
+      kill();
       settle(err({ kind: "timed-out", timeoutMs: opts.timeoutMs }));
     }, opts.timeoutMs);
 
@@ -145,7 +157,7 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
         retainedBytes += chunk.length;
         retain(text);
         if (retainedBytes > maxOutputBytes) {
-          child.kill("SIGKILL");
+          kill();
           settle(err({ kind: "output-capped", maxOutputBytes }));
         }
       });

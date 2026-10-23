@@ -27,7 +27,7 @@ The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 ### The Model Router
 
 Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, sends the platform's session id in a terminal with `env_http_headers`, and reads its model catalog from the router's `model_catalog_url`.
-The router routes each call by its provider-qualified model name (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`) to that Connection's host with the Connection's placeholder, so one Codex process serves every granted provider and no `-c base_url` override is needed on any thread, the title thread included.
+The router routes each call by its provider-qualified model name (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`) to that Connection's host with the Connection's placeholder, so one Codex process serves every granted provider and no `-c base_url` override is needed on any thread, those codex-acp starts on its own included.
 A session's subagent model (`subagentModel`) is the router's: Codex's subagent threads carry their own `thread-id` beside the session's, and the router sends their calls to that model, whatever the thread asked for.
 The subagent effort (`subagentEffort`) replaces the `reasoning.effort` those calls carry.
 Neither reaches a platform sub-agent, which follows the session's platform sub-agent settings.
@@ -43,7 +43,7 @@ So each entry carries a one-line template, and [`config.toml`](rootfs/etc/codex/
 The model is a per-turn choice.
 The platform sends it over ACP (`session/set_config_option`) before each prompt and again after a cold load; codex-acp accepts any slug the served catalog lists, so a running thread switches providers between turns with no process restart.
 No model is written into `~/.codex/config.toml` and the harness scripts pin none; the terminal TUI starts on the session's model through `-c model=`.
-After the first turn codex-acp makes a title with a hard-coded bare `gpt-5.6-luna`; the router puts that call, like every bare name Codex sends (`bareNamesFromSession`), on the session's model.
+A bare built-in name a session's own threads send, as its subagents and auto-review do, goes to the session's model (`bareNamesFromSession`); the one call codex-acp would make outside any session, its title generation on a hard-coded `gpt-5.6-luna`, is turned off (see [codex-acp patch](#codex-acp-patch)).
 
 ## The platform writes `~/.codex/config.toml`
 
@@ -113,7 +113,7 @@ The platform's collector therefore reshapes every `codex.*` log record:
 
 Codex reports no per-call cost.
 The Model Router prices every Codex call in a `platform.model_call` record of its own, and the Usage reads take the router's record where there is one, so Codex's own usage records count, as tokens at zero cost, only where no router record reached the store.
-Session titles run on a Codex thread of their own, so their calls count for the agent but not for the chat session.
+A terminal's title runs on a thread of the TUI's own, which carries the session's id; a chat session starts no title thread (see [codex-acp patch](#codex-acp-patch)).
 
 With the log exporter on, the chat app-server also starts Codex's turn-cost poller.
 The poller asks OpenAI's backend for turn prices only for a Codex login (`codex login`, or `CODEX_API_KEY`).
@@ -133,6 +133,22 @@ Codex mints its own thread id on the first turn, so the platform session id cann
 A managed `SessionStart` hook ([`requirements.toml`](rootfs/etc/codex/requirements.toml), shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal` resumes that thread when the file exists and starts a fresh conversation otherwise.
 A terminal closed before its first turn leaves no pin and simply starts fresh next time.
 The runtime manifest names the same directory as `terminalSessionPins`, so the session list shows the thread once, under the terminal session, with Codex's title.
+
+## codex-acp patch
+
+codex-acp 2.1.1 names a new chat session after its first turn: it starts an ephemeral Codex thread and runs one turn on a model it hard-codes, `gpt-5.6-luna`, with a short prompt and the user's first message.
+That turn carries Codex's whole base prompt and tool schemas, about as many input tokens as the session's own first call, and the thread names no parent and no platform session, so the [Model Router](../../../docs/architecture/harness-config.md#the-model-router) cannot send it to the session's provider or book it to the session: the bare model name lands on whichever granted provider lists it, the agent's default one first.
+Nothing in codex-acp 2.1.1 turns the generator off or names another model; [agentclientprotocol/codex-acp#663](https://github.com/agentclientprotocol/codex-acp/issues/663) asks for that upstream, where [#595](https://github.com/agentclientprotocol/codex-acp/pull/595) skips it on a provider other than OpenAI's own, which the platform's `openai-platform` provider is, and [#338](https://github.com/agentclientprotocol/codex-acp/pull/338) lets the client name the session at creation.
+
+Until upstream does, [`codex-acp-patch.mjs`](rootfs/usr/local/share/codex-platform/codex-acp-patch.mjs) edits codex-acp's bundle in memory as it loads.
+`harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so Codex and its tools do not inherit it.
+It patches one thing: every title generator is born with a title already, so no ephemeral thread starts.
+The session's title is what it was before the generator would have run: the platform derives one from the first prompt, and Codex's thread preview reaches it through the session listing.
+A terminal is not affected: Codex's own TUI names its thread, on the session's model behind a custom provider, and the terminal's calls carry the platform's session id.
+
+The hook patches only codex-acp 2.1.1 and only when the edit matches the bundle exactly.
+Otherwise it loads codex-acp unchanged and prints `codex-acp-patch: not applied …` to the pod log.
+**To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
 
 ## Usage
 

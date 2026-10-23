@@ -185,22 +185,6 @@ export interface SlackUpload {
   teamId: SlackWorkspace;
 }
 
-export interface SlackStartStream {
-  channel: string;
-  threadTs: string;
-  recipientTeamId: string;
-  recipientUserId: string;
-  markdownText?: string;
-  teamId: SlackWorkspace;
-}
-
-export interface SlackAppendStream {
-  channel: string;
-  ts: string;
-  markdownText: string;
-  teamId: SlackWorkspace;
-}
-
 export interface SlackStopStream {
   channel: string;
   ts: string;
@@ -281,8 +265,6 @@ export interface SlackGateway {
     teamId: SlackWorkspace;
   }): Promise<void>;
   postEphemeral(args: SlackPostEphemeral): Promise<void>;
-  startStream(args: SlackStartStream): Promise<{ ts: string }>;
-  appendStream(args: SlackAppendStream): Promise<void>;
   stopStream(args: SlackStopStream): Promise<void>;
   setStatus(args: SlackSetStatus): Promise<void>;
   addReaction(args: {

@@ -1214,6 +1214,53 @@ func alAttr(key, val string) ev {
 	return ev{"key": key, "value": ev{"string_value": val}}
 }
 
+func otelAccessLog(p bootstrapParams, statPrefix, body string, attrs []any, withQueryFormatters bool) ev {
+	tc := ev{
+		"@type":                  "type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig",
+		"stat_prefix":            statPrefix,
+		"disable_builtin_labels": true,
+		"resource_attributes":    otlpResourceAttrs(p.OTel.ServiceName, p.OTel.AgentID),
+		"body":                   ev{"string_value": body},
+		"attributes":             ev{"values": attrs},
+	}
+	if withQueryFormatters {
+		tc["formatters"] = reqWithoutQueryFormatters()
+	}
+	if p.OTel.GRPC {
+		tc["grpc_service"] = otlpGRPCService()
+	} else {
+		tc["http_service"] = otlpHTTPService(p.OTel.LogsURI)
+	}
+	return tc
+}
+
+func fileAccessLog(jsonFormat, filter ev, withQueryFormatters bool) ev {
+	logFormat := ev{"json_format": jsonFormat}
+	if withQueryFormatters {
+		logFormat["formatters"] = reqWithoutQueryFormatters()
+	}
+	logger := ev{
+		"name": "envoy.access_loggers.file",
+		"typed_config": ev{
+			"@type":      "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
+			"path":       "/dev/stdout",
+			"log_format": logFormat,
+		},
+	}
+	if filter != nil {
+		logger["filter"] = filter
+	}
+	return logger
+}
+
+func otelAccessLogLogger(tc ev, filter ev) ev {
+	logger := ev{"name": "envoy.access_loggers.open_telemetry", "typed_config": tc}
+	if filter != nil {
+		logger["filter"] = filter
+	}
+	return logger
+}
+
 func hcmAccessLog(p bootstrapParams, fileChain, otlpChain, statPrefix string) []any {
 	fileJSON := ev{
 		"service_name":   p.OTel.ServiceName,
@@ -1233,45 +1280,22 @@ func hcmAccessLog(p bootstrapParams, fileChain, otlpChain, statPrefix string) []
 	if fileChain != "" {
 		fileJSON["chain"] = fileChain
 	}
-	otlpTC := ev{
-		"@type":                  "type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig",
-		"stat_prefix":            statPrefix,
-		"disable_builtin_labels": true,
-		"formatters":             reqWithoutQueryFormatters(),
-		"resource_attributes":    otlpResourceAttrs(p.OTel.ServiceName, p.OTel.AgentID),
-		"body":                   ev{"string_value": "%REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE%"},
-		"attributes": ev{"values": []any{
-			alAttr("chain", otlpChain),
-			alAttr("method", "%REQ(:METHOD)%"),
-			alAttr("authority", "%REQ(:AUTHORITY)%"),
-			alAttr("path", "%REQ_WITHOUT_QUERY(:PATH)%"),
-			alAttr("response_code", "%RESPONSE_CODE%"),
-			alAttr("response_flags", "%RESPONSE_FLAGS%"),
-			alAttr("duration_ms", "%DURATION%"),
-			alAttr("upstream_host", "%UPSTREAM_HOST%"),
-			alAttr("bytes_received", "%BYTES_RECEIVED%"),
-			alAttr("bytes_sent", "%BYTES_SENT%"),
-			alAttr("x_request_id", "%REQ(X-REQUEST-ID)%"),
-		}},
-	}
-	if p.OTel.GRPC {
-		otlpTC["grpc_service"] = otlpGRPCService()
-	} else {
-		otlpTC["http_service"] = otlpHTTPService(p.OTel.LogsURI)
+	attrs := []any{
+		alAttr("chain", otlpChain),
+		alAttr("method", "%REQ(:METHOD)%"),
+		alAttr("authority", "%REQ(:AUTHORITY)%"),
+		alAttr("path", "%REQ_WITHOUT_QUERY(:PATH)%"),
+		alAttr("response_code", "%RESPONSE_CODE%"),
+		alAttr("response_flags", "%RESPONSE_FLAGS%"),
+		alAttr("duration_ms", "%DURATION%"),
+		alAttr("upstream_host", "%UPSTREAM_HOST%"),
+		alAttr("bytes_received", "%BYTES_RECEIVED%"),
+		alAttr("bytes_sent", "%BYTES_SENT%"),
+		alAttr("x_request_id", "%REQ(X-REQUEST-ID)%"),
 	}
 	return []any{
-		ev{
-			"name": "envoy.access_loggers.file",
-			"typed_config": ev{
-				"@type": "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
-				"path":  "/dev/stdout",
-				"log_format": ev{
-					"formatters":  reqWithoutQueryFormatters(),
-					"json_format": fileJSON,
-				},
-			},
-		},
-		ev{"name": "envoy.access_loggers.open_telemetry", "typed_config": otlpTC},
+		fileAccessLog(fileJSON, nil, true),
+		otelAccessLogLogger(otelAccessLog(p, statPrefix, "%REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE%", attrs, true), nil),
 	}
 }
 
@@ -1287,101 +1311,59 @@ func collectorAccessLog(p bootstrapParams) []any {
 			},
 		},
 	}
-	otlpTC := ev{
-		"@type":                  "type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig",
-		"stat_prefix":            "otel_transit",
-		"disable_builtin_labels": true,
-		"formatters":             reqWithoutQueryFormatters(),
-		"resource_attributes":    otlpResourceAttrs(p.OTel.ServiceName, p.OTel.AgentID),
-		"body":                   ev{"string_value": "telemetry delivery failure %REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE% %RESPONSE_FLAGS%"},
-		"attributes": ev{"values": []any{
-			alAttr("chain", "terminate_otel_collector"),
-			alAttr("method", "%REQ(:METHOD)%"),
-			alAttr("path", "%REQ_WITHOUT_QUERY(:PATH)%"),
-			alAttr("response_code", "%RESPONSE_CODE%"),
-			alAttr("response_flags", "%RESPONSE_FLAGS%"),
-			alAttr("duration_ms", "%DURATION%"),
-			alAttr("upstream_host", "%UPSTREAM_HOST%"),
-		}},
+	fileJSON := ev{
+		"service_name":   p.OTel.ServiceName,
+		"agent_id":       p.OTel.AgentID,
+		"chain":          "terminate_otel_collector",
+		"start_time":     "%START_TIME%",
+		"method":         "%REQ(:METHOD)%",
+		"path":           "%REQ_WITHOUT_QUERY(:PATH)%",
+		"response_code":  "%RESPONSE_CODE%",
+		"response_flags": "%RESPONSE_FLAGS%",
+		"duration_ms":    "%DURATION%",
+		"upstream_host":  "%UPSTREAM_HOST%",
 	}
-	if p.OTel.GRPC {
-		otlpTC["grpc_service"] = otlpGRPCService()
-	} else {
-		otlpTC["http_service"] = otlpHTTPService(p.OTel.LogsURI)
+	attrs := []any{
+		alAttr("chain", "terminate_otel_collector"),
+		alAttr("method", "%REQ(:METHOD)%"),
+		alAttr("path", "%REQ_WITHOUT_QUERY(:PATH)%"),
+		alAttr("response_code", "%RESPONSE_CODE%"),
+		alAttr("response_flags", "%RESPONSE_FLAGS%"),
+		alAttr("duration_ms", "%DURATION%"),
+		alAttr("upstream_host", "%UPSTREAM_HOST%"),
 	}
+	otel := otelAccessLog(p, "otel_transit", "telemetry delivery failure %REQ(:METHOD)% %REQ_WITHOUT_QUERY(:PATH)% %RESPONSE_CODE% %RESPONSE_FLAGS%", attrs, true)
 	return []any{
-		ev{
-			"name": "envoy.access_loggers.file",
-			"typed_config": ev{
-				"@type": "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
-				"path":  "/dev/stdout",
-				"log_format": ev{
-					"formatters": reqWithoutQueryFormatters(),
-					"json_format": ev{
-						"service_name":   p.OTel.ServiceName,
-						"agent_id":       p.OTel.AgentID,
-						"chain":          "terminate_otel_collector",
-						"start_time":     "%START_TIME%",
-						"method":         "%REQ(:METHOD)%",
-						"path":           "%REQ_WITHOUT_QUERY(:PATH)%",
-						"response_code":  "%RESPONSE_CODE%",
-						"response_flags": "%RESPONSE_FLAGS%",
-						"duration_ms":    "%DURATION%",
-						"upstream_host":  "%UPSTREAM_HOST%",
-					},
-				},
-			},
-			"filter": errFilter,
-		},
-		ev{"name": "envoy.access_loggers.open_telemetry", "typed_config": otlpTC, "filter": errFilter},
+		fileAccessLog(fileJSON, errFilter, true),
+		otelAccessLogLogger(otel, errFilter),
 	}
 }
 
 func l4AccessLog(p bootstrapParams) []any {
-	otlpTC := ev{
-		"@type":                  "type.googleapis.com/envoy.extensions.access_loggers.open_telemetry.v3.OpenTelemetryAccessLogConfig",
-		"stat_prefix":            "l4",
-		"disable_builtin_labels": true,
-		"resource_attributes":    otlpResourceAttrs(p.OTel.ServiceName, p.OTel.AgentID),
-		"body":                   ev{"string_value": "SNI %REQUESTED_SERVER_NAME%"},
-		"attributes": ev{"values": []any{
-			alAttr("chain", "l4_authz_passthrough"),
-			alAttr("requested_server_name", "%REQUESTED_SERVER_NAME%"),
-			alAttr("upstream_host", "%UPSTREAM_HOST%"),
-			alAttr("response_flags", "%RESPONSE_FLAGS%"),
-			alAttr("duration_ms", "%DURATION%"),
-			alAttr("bytes_received", "%BYTES_RECEIVED%"),
-			alAttr("bytes_sent", "%BYTES_SENT%"),
-		}},
+	fileJSON := ev{
+		"service_name":          p.OTel.ServiceName,
+		"agent_id":              p.OTel.AgentID,
+		"chain":                 "l4_authz_passthrough",
+		"start_time":            "%START_TIME%",
+		"requested_server_name": "%REQUESTED_SERVER_NAME%",
+		"upstream_host":         "%UPSTREAM_HOST%",
+		"response_flags":        "%RESPONSE_FLAGS%",
+		"duration_ms":           "%DURATION%",
+		"bytes_received":        "%BYTES_RECEIVED%",
+		"bytes_sent":            "%BYTES_SENT%",
 	}
-	if p.OTel.GRPC {
-		otlpTC["grpc_service"] = otlpGRPCService()
-	} else {
-		otlpTC["http_service"] = otlpHTTPService(p.OTel.LogsURI)
+	attrs := []any{
+		alAttr("chain", "l4_authz_passthrough"),
+		alAttr("requested_server_name", "%REQUESTED_SERVER_NAME%"),
+		alAttr("upstream_host", "%UPSTREAM_HOST%"),
+		alAttr("response_flags", "%RESPONSE_FLAGS%"),
+		alAttr("duration_ms", "%DURATION%"),
+		alAttr("bytes_received", "%BYTES_RECEIVED%"),
+		alAttr("bytes_sent", "%BYTES_SENT%"),
 	}
 	return []any{
-		ev{
-			"name": "envoy.access_loggers.file",
-			"typed_config": ev{
-				"@type": "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
-				"path":  "/dev/stdout",
-				"log_format": ev{
-					"json_format": ev{
-						"service_name":          p.OTel.ServiceName,
-						"agent_id":              p.OTel.AgentID,
-						"chain":                 "l4_authz_passthrough",
-						"start_time":            "%START_TIME%",
-						"requested_server_name": "%REQUESTED_SERVER_NAME%",
-						"upstream_host":         "%UPSTREAM_HOST%",
-						"response_flags":        "%RESPONSE_FLAGS%",
-						"duration_ms":           "%DURATION%",
-						"bytes_received":        "%BYTES_RECEIVED%",
-						"bytes_sent":            "%BYTES_SENT%",
-					},
-				},
-			},
-		},
-		ev{"name": "envoy.access_loggers.open_telemetry", "typed_config": otlpTC},
+		fileAccessLog(fileJSON, nil, false),
+		otelAccessLogLogger(otelAccessLog(p, "l4", "SNI %REQUESTED_SERVER_NAME%", attrs, false), nil),
 	}
 }
 

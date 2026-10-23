@@ -86,7 +86,7 @@ function tasksDone(): Observable<TaskDone> {
  * reset forgets the user's tasks on this replica only; another replica skips
  * a task it recorded before the reset until it restarts. The deployment's own
  * CurveBender Connection arrives for every user, so it is no connection the
- * user made and finishes nothing; the built-in provider still counts.
+ * user made and finishes nothing.
  */
 export function startUnlockAvatarsSaga(recorder: UnlockRecorder): Subscription {
   const recorded = new Set<string>();

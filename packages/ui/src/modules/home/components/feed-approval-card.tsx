@@ -1,16 +1,10 @@
-import { Settings } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
@@ -42,22 +36,13 @@ export function FeedApprovalCard({
   resolvedLabel = null,
   onResolved,
 }: Props) {
-  const {
-    actions,
-    primaryLabel,
-    inflight,
-    hostLabel,
-    expiredNote,
-    openSettings,
-  } = useApprovalActions(approval, ids);
+  const { actions, inflight, hostLabel, expiredNote, openSettings } =
+    useApprovalActions(approval, ids);
   const { data: connections } = useAppConnections();
   const connectionName = (id: string) =>
     connections?.find((connection) => connection.id === id)?.name;
   const [ownResolved, setOwnResolved] = useState<string | null>(null);
   const resolved = resolvedLabel ?? ownResolved;
-
-  const allowOnce = actions.find((a) => a.id === "allow-once");
-  const rest = actions.filter((a) => a.id !== "allow-once");
 
   const act = async (run: () => Promise<boolean>, label: string) => {
     if (!(await run())) return;
@@ -130,43 +115,13 @@ export function FeedApprovalCard({
           </span>
         ) : (
           <div className="flex items-center gap-2">
-            {allowOnce && (
-              <Button
-                size="sm"
-                disabled={allowOnce.disabled}
-                tooltip={allowOnce.tooltip}
-                onClick={() => void act(allowOnce.run, allowOnce.resolvedLabel)}
-              >
-                {primaryLabel}
-              </Button>
-            )}
-            <RowActionsMenu
-              label="More approval actions"
-              variant="outline"
-              className="h-8 w-8"
-              disabled={inflight}
-            >
-              {rest.map((action) => (
-                <DropdownMenuItem
-                  key={action.id}
-                  disabled={action.disabled}
-                  tone={action.danger ? "danger" : "default"}
-                  onSelect={() => void act(action.run, action.resolvedLabel)}
-                  title={action.tooltip}
-                >
-                  {action.label}
-                </DropdownMenuItem>
-              ))}
-              {hostLabel !== null && (
-                <>
-                  <DropdownMenuSeparator className="-mx-1" />
-                  <DropdownMenuItem onSelect={openSettings}>
-                    <Settings size={16} />
-                    Network settings
-                  </DropdownMenuItem>
-                </>
-              )}
-            </RowActionsMenu>
+            <ApprovalActionsMenu
+              actions={actions}
+              inflight={inflight}
+              hostLabel={hostLabel}
+              openSettings={openSettings}
+              onRun={(action) => void act(action.run, action.resolvedLabel)}
+            />
           </div>
         )}
       </div>

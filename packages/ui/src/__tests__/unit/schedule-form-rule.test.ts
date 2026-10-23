@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRRuleParts,
+  presetFormValues,
   scheduleFormDefaults,
   scheduleFormSchema,
   type ScheduleFormValues,
@@ -23,6 +24,30 @@ function issuesAt(values: ScheduleFormValues, path: string): string[] {
         .filter((i) => i.path.join(".") === path)
         .map((i) => i.message);
 }
+
+describe("presetFormValues", () => {
+  // TEST_SCENARIO: an existing schedule that is not in custom mode still offers its own rule when the user switches to custom.
+  it("keeps the given rule as the custom fallback, but a custom preset's own rule wins", () => {
+    expect(
+      presetFormValues(
+        { kind: "daily", hour: 9, minute: 5, days: [1, 2] },
+        "FREQ=DAILY;BYHOUR=9",
+      ),
+    ).toEqual({
+      kind: "daily",
+      interval: "30",
+      time: "09:05",
+      days: [1, 2],
+      customRRule: "FREQ=DAILY;BYHOUR=9",
+    });
+    expect(
+      presetFormValues(
+        { kind: "custom", rrule: "FREQ=DAILY;COUNT=3" },
+        "FREQ=DAILY;BYHOUR=9",
+      ).customRRule,
+    ).toBe("FREQ=DAILY;COUNT=3");
+  });
+});
 
 describe("the schedule form's cadence", () => {
   it.each(["0", "-5", "1.5", "", "2abc"])(

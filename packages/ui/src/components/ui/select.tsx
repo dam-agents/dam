@@ -53,4 +53,4 @@ function Select({ className, variant, size, ...props }: SelectProps) {
   );
 }
 
-export { Select, selectVariants };
+export { Select };

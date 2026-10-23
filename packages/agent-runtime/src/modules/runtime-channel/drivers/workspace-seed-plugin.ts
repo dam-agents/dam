@@ -4,9 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
-  DriverBinding,
   EventContext,
-  EventHandler,
   Plugin,
   Result,
   SkillsDomainError,
@@ -18,6 +16,7 @@ import {
   type SeedTarget,
 } from "../../git/protocol-client.js";
 import { sentinelExists } from "./sentinel.js";
+import { eventPlugin } from "../infrastructure/plugin-registry.js";
 
 const IMPL_NAME = "workspace-seed";
 const DONE_SENTINEL = "seed.done";
@@ -104,16 +103,7 @@ export function createWorkspaceSeedPlugin(deps: {
     deps.log(`[workspace-seed] seeded ${dest} from ${label}`);
   };
 
-  return {
-    name: IMPL_NAME,
-    bindEvent(kind: string, _binding: DriverBinding): EventHandler {
-      if (kind !== "workspace-seed") {
-        throw new Error(
-          `plugin "${IMPL_NAME}" does not handle event kind "${kind}"`,
-        );
-      }
-      return async (payload, ctx) =>
-        seed(workspaceSeedEventPayload.parse(payload), ctx);
-    },
-  };
+  return eventPlugin(IMPL_NAME, "workspace-seed", async (payload, ctx) =>
+    seed(workspaceSeedEventPayload.parse(payload), ctx),
+  );
 }

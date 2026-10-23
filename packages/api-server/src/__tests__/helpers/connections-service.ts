@@ -8,8 +8,8 @@ import type { XactLock } from "../../core/xact-lock.js";
 
 /**
  * TEST_OVERVIEW: the in-memory Connections store and service wiring the
- * deployment-owned provider tests read, so both the built-in provider's and
- * the deployment CurveBender's regressions run against one fake.
+ * deployment-owned provider tests read, so the deployment CurveBender's
+ * regressions run against one fake.
  */
 export function unused<T extends object>(fields: Partial<T> = {}): T {
   return new Proxy(fields, {
@@ -90,9 +90,6 @@ export function serviceHarness(opts: {
   store?: ConnectionsStore;
   lock?: XactLock;
   brandName: string;
-  platformProviderEnabled: () => Promise<boolean>;
-  platformProviderKey: string | null;
-  platformProviderCa?: string | null;
   curveBenderDeploymentKey?: string | null;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
@@ -157,9 +154,6 @@ export function serviceHarness(opts: {
     brandName: opts.brandName,
     connectionLock: opts.lock ?? keyedMutex(),
     resolveKbShare: unused(),
-    platformProviderEnabled: opts.platformProviderEnabled,
-    platformProviderKey: opts.platformProviderKey,
-    platformProviderCa: opts.platformProviderCa ?? null,
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey ?? null,
   });
   return { svc, rows, grants, secrets, fannedOut, secretReads };

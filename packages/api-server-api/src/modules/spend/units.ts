@@ -9,7 +9,6 @@ const PROVIDER_UNITS: Readonly<Record<string, SpendUnit>> = {
   bob: "bobcoin",
   "curve-bender": "free",
   "curve-bender-deployment": "free",
-  "platform-llm": "usd",
 };
 
 const UNPRICED_PROVIDERS: ReadonlySet<string> = new Set(["openai", "bedrock"]);

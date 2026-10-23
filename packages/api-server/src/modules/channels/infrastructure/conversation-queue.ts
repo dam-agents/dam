@@ -2,8 +2,38 @@ import {
   planCoalescedDelivery,
   settleRoundsRemaining,
 } from "../domain/turn-coalescing.js";
+import type { AcpClient } from "../../../core/acp-client.js";
+import { getLogger } from "../../../core/logger.js";
 
 export type SteerResult = "injected" | "refused" | "unsupported";
+
+export function getOrCreateQueue<T>(
+  queues: Map<string, ConversationQueue<T>>,
+  key: string,
+  create: () => ConversationQueue<T>,
+): ConversationQueue<T> {
+  let queue = queues.get(key);
+  if (!queue) {
+    queue = create();
+    queues.set(key, queue);
+  }
+  return queue;
+}
+
+export async function steerChannelTurn(
+  acp: Pick<AcpClient, "steer">,
+  sessionId: string,
+  frame: string,
+  log: { surface: string; fields: Record<string, unknown> },
+): Promise<SteerResult> {
+  const outcome = await acp.steer(sessionId, frame);
+  if (outcome === "injected") return "injected";
+  getLogger().debug(
+    { ...log.fields, outcome },
+    `${log.surface}.turn.steer_declined`,
+  );
+  return outcome === "unsupported" ? "unsupported" : "refused";
+}
 
 export interface ConversationQueue<T> {
   submit(message: T): Promise<void>;

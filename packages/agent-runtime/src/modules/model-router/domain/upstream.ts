@@ -47,18 +47,6 @@ export function upstreamWireOf(
           }
         : null;
     }
-    case "platform-llm": {
-      const base =
-        env.PLATFORM_LLM_BASE_URL ??
-        (env.OPENAI_BASE_URL ? stripV1(env.OPENAI_BASE_URL) : undefined);
-      return base
-        ? {
-            root: stripV1(base),
-            credential:
-              bearer("OPENAI_API_KEY") ?? bearer("ANTHROPIC_AUTH_TOKEN"),
-          }
-        : null;
-    }
     case "anthropic":
       return {
         root: stripV1(env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com"),

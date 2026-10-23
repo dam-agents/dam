@@ -4,7 +4,6 @@
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
-import { narrowPolicyToTemplate } from "../../modules/sandboxes/lib/setup-policy.js";
 import {
   buildStarterKitApplyInput,
   connectionRequirements,
@@ -14,7 +13,6 @@ import {
   kitScheduleCadence,
   ownedMatches,
   preselectedGrants,
-  providerPolicyForKit,
   requirementStatuses,
   shortKitVersion,
   type StarterKitSetupDraft,
@@ -66,7 +64,6 @@ const owned = [
 
 const complete: StarterKitSetupDraft = {
   name: " reviewer ",
-  providerRef: { id: "c-llm" } as StarterKitSetupDraft["providerRef"],
   connectionIds: ["c-gh"],
   slackChannelId: " C123 ",
   skippedSchedules: [],
@@ -104,7 +101,7 @@ describe("requirementStatuses", () => {
     expect(
       requirementStatuses(
         providerKit,
-        { ...complete, connectionIds: [] },
+        { ...complete, connectionIds: ["c-llm"] },
         owned,
         templates,
       )[0].satisfied,
@@ -131,11 +128,15 @@ describe("isStarterKitSetupComplete", () => {
 });
 
 describe("buildStarterKitApplyInput", () => {
-  test("trims the name, merges the provider into the grants, passes Slack and skipped schedules", () => {
+  test("trims the name, dedupes the grants, passes Slack and skipped schedules", () => {
     expect(
       buildStarterKitApplyInput(
         kit,
-        { ...complete, skippedSchedules: ["benchmark"] },
+        {
+          ...complete,
+          connectionIds: ["c-gh", "c-llm", "c-gh"],
+          skippedSchedules: ["benchmark"],
+        },
         owned,
         templates,
       ),
@@ -202,40 +203,7 @@ describe("shortKitVersion", () => {
   });
 });
 
-describe("providerPolicyForKit", () => {
-  const base = { recommended: "ibm-litellm" as const };
-  test("narrows the provider picker to the kit's provider requirement", () => {
-    expect(
-      providerPolicyForKit(
-        { connections: [{ accepts: ["anthropic", "openai"], required: true }] },
-        base,
-      ),
-    ).toEqual({ allow: ["anthropic", "openai"], recommended: "anthropic" });
-  });
-  test("keeps the base recommendation when the kit allows it", () => {
-    expect(
-      providerPolicyForKit(
-        {
-          connections: [
-            { accepts: ["ibm-litellm", "anthropic"], required: true },
-          ],
-        },
-        base,
-      ).recommended,
-    ).toBe("ibm-litellm");
-  });
-  test("prefers the kit's own provider list over anything under connections", () => {
-    expect(
-      providerPolicyForKit(
-        {
-          providers: ["openai"],
-          connections: [{ accepts: ["anthropic"], required: true }],
-        },
-        base,
-      ),
-    ).toEqual({ allow: ["openai"], recommended: "openai" });
-  });
-
+describe("connectionRequirements", () => {
   test("a provider requirement never reaches the connections section", () => {
     expect(
       connectionRequirements({
@@ -247,41 +215,11 @@ describe("providerPolicyForKit", () => {
     ).toEqual([["github"]]);
   });
 
-  test("falls back to the base policy when no requirement names a provider", () => {
-    expect(providerPolicyForKit(kit, base)).toBe(base);
+  test("recognises a provider requirement by its accepted template", () => {
     expect(isProviderRequirement(kit.connections[0])).toBe(false);
     expect(isProviderRequirement({ accepts: ["bob"], required: false })).toBe(
       true,
     );
-  });
-});
-
-describe("narrowPolicyToTemplate", () => {
-  const claudeCode = { providers: ["ibm-litellm", "anthropic"] as const };
-  test("keeps only providers the template declares it can run on", () => {
-    expect(
-      narrowPolicyToTemplate({ recommended: "ibm-litellm" }, claudeCode),
-    ).toEqual({
-      allow: ["ibm-litellm", "anthropic"],
-      recommended: "ibm-litellm",
-    });
-    expect(
-      narrowPolicyToTemplate(
-        { allow: ["openai", "anthropic"], recommended: "openai" },
-        claudeCode,
-      ),
-    ).toEqual({ allow: ["anthropic"], recommended: "anthropic" });
-    expect(
-      narrowPolicyToTemplate(
-        { allow: ["openai"], recommended: "openai" },
-        claudeCode,
-      ).allow,
-    ).toEqual([]);
-  });
-  test("leaves the policy alone when the template declares no providers", () => {
-    const base = { allow: ["bob" as const] };
-    expect(narrowPolicyToTemplate(base, { providers: undefined })).toBe(base);
-    expect(narrowPolicyToTemplate(base, null)).toBe(base);
   });
 });
 

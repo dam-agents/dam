@@ -8,8 +8,7 @@
  * lists itself resolves to the id whose last path segment is that name.
  * A dialect the provider does not serve is refused. Responses stream back
  * with only the model field
- * rewritten to the name the harness asked for, on every dialect. The
- * platform's self-hosted endpoint takes no key, so its calls carry none.
+ * rewritten to the name the harness asked for, on every dialect.
  */
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -186,12 +185,6 @@ beforeAll(async () => {
     template: "anthropic",
     dialects: ["anthropic-messages"] as const,
   };
-  const platform = {
-    alias: "platform" as const,
-    connectionId: "conn-platform",
-    template: "platform-llm",
-    dialects: all,
-  };
   const providers: CatalogProvider[] = [
     {
       ...cb,
@@ -237,16 +230,6 @@ beforeAll(async () => {
         entry(anthropic, "beta/claude-opus-4-7"),
       ],
     },
-    {
-      ...platform,
-      displayName: "Platform",
-      status: "listed",
-      listedAt: null,
-      entries: [
-        entry(platform, "deepseek-v4.1-flash"),
-        entry(platform, "qwen-9"),
-      ],
-    },
   ];
   router = createModelRouter({
     catalog: { providers: () => providers },
@@ -276,16 +259,6 @@ beforeAll(async () => {
           env: {
             ANTHROPIC_BASE_URL: `${upstreamBase}/ant`,
             ANTHROPIC_API_KEY: "platform:conn:conn-ant",
-          },
-        },
-        {
-          id: "conn-platform",
-          template: "platform-llm",
-          env: {
-            PLATFORM_LLM_BASE_URL: `${upstreamBase}/platform`,
-            OPENAI_BASE_URL: `${upstreamBase}/elsewhere/v1`,
-            OPENAI_API_KEY: "placeholder",
-            ANTHROPIC_AUTH_TOKEN: "placeholder",
           },
         },
       ],
@@ -320,7 +293,6 @@ beforeAll(async () => {
         "s-effort": { model: null, subagentEffort: "low" },
         "s-ibm": { model: "ibm/aws/claude-opus-5-5" },
         "s-ant": { model: "anthropic/claude-opus-4-8" },
-        "s-platform": { model: "platform/deepseek-v4.1-flash" },
         "s-gone": { model: "openai/gpt-5.5" },
       })[id] ?? null,
     onCall: (r) => calls.push(r),
@@ -427,34 +399,6 @@ describe("routing by qualified name", () => {
     expect(seen.length).toBe(2);
   });
 
-  /** TEST_SCENARIO: A call on each of the three dialects leaves for the
-   * platform's root carrying the layer's bearer placeholder, which names the
-   * Connection at the gateway, and not the client's own key. */
-  it("sends the bearer placeholder to the platform's endpoint on any dialect", async () => {
-    seen.length = 0;
-    for (const [path, harness] of [
-      ["/v1/messages", "pi"],
-      ["/v1/chat/completions", "pi"],
-      ["/v1/responses", "codex"],
-    ] as const) {
-      const r = await call(
-        path,
-        { model: "platform/deepseek-v4.1-flash", messages: [] },
-        { [HARNESS_HEADER]: harness, "x-api-key": "client-key" },
-      );
-      expect(r.status).toBe(200);
-    }
-    expect(seen.map((s) => s.path)).toEqual([
-      "/platform/v1/messages",
-      "/platform/v1/chat/completions",
-      "/platform/v1/responses",
-    ]);
-    for (const s of seen) {
-      expect(s.headers.authorization).toBe("Bearer placeholder");
-      expect(s.headers["x-api-key"]).toBeUndefined();
-      expect(s.body.model).toBe("deepseek-v4.1-flash");
-    }
-  });
   /** TEST_SCENARIO: An unknown qualified name is refused naming the granted
    * aliases, and a body with no model is refused; nothing reaches upstream. */
   it("refuses unknown names without calling upstream", async () => {
@@ -465,9 +409,7 @@ describe("routing by qualified name", () => {
       { [HARNESS_HEADER]: "codex" },
     );
     expect(unknown.status).toBe(404);
-    expect(unknown.text).toContain(
-      "granted providers: cb, ibm, anthropic, platform",
-    );
+    expect(unknown.text).toContain("granted providers: cb, ibm, anthropic");
     const none = await call(
       "/v1/responses",
       { input: [] },
@@ -621,42 +563,20 @@ describe("Claude Code's tier slots", () => {
   });
 
   /** TEST_SCENARIO: The slot's provider fills every tier with one model
-   * (the platform's preferred DeepSeek, or Anthropic's one Opus here), so
-   * the slot, not the word, says which tier was asked: the smallest. The
-   * platform's models carry no tier word, so a session on its DeepSeek runs
-   * every slot call on that DeepSeek, whether the slot is Anthropic's Haiku
-   * or the platform's own model, never on the ladder's guess; an id that
-   * fills no slot at all stays where it asked, as one the provider lists;
-   * and a session on a provider the agent no longer holds fails the side
-   * call as the main turn would, never on the provider the session left. */
-  it("reads a shared slot as the smallest tier, keeps a tierless provider on the session's model, and fails with the session", async () => {
+   * (Anthropic's one Opus here), so the slot, not the word, says which tier
+   * was asked: the smallest. An id that fills no slot at all stays where it
+   * asked, as one the provider lists; and a session on a provider the agent
+   * no longer holds fails the side call as the main turn would, never on the
+   * provider the session left. */
+  it("reads a shared slot as the smallest tier and fails with the session", async () => {
     seen.length = 0;
-    await call(
-      "/v1/messages",
-      { model: "claude/platform/deepseek-v4.1-flash", messages: [] },
-      { "x-test-session": "s-ibm", ...sideCall },
-    );
-    expect(seen[0]!.path).toBe("/ibm/v1/messages");
-    expect(seen[0]!.body.model).toBe("aws/claude-haiku-4-5");
     await call(
       "/v1/messages",
       { model: "claude/anthropic/beta/claude-opus-4-9", messages: [] },
       { "x-test-session": "s-ibm", ...sideCall },
     );
-    expect(seen[1]!.path).toBe("/ibm/v1/messages");
-    expect(seen[1]!.body.model).toBe("aws/claude-haiku-4-5");
-    for (const [model, runs] of [
-      ["claude/anthropic/claude-haiku-5-5", "deepseek-v4.1-flash"],
-      ["claude/platform/qwen-9", "qwen-9"],
-    ] as const) {
-      await call(
-        "/v1/messages",
-        { model, messages: [] },
-        { "x-test-session": "s-platform", ...sideCall },
-      );
-      expect(seen.at(-1)!.path).toBe("/platform/v1/messages");
-      expect(seen.at(-1)!.body.model).toBe(runs);
-    }
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-haiku-4-5");
     const gone = await call(
       "/v1/messages",
       { model: "claude/anthropic/claude-haiku-5-5", messages: [] },
@@ -664,15 +584,12 @@ describe("Claude Code's tier slots", () => {
     );
     expect(gone.status).toBe(404);
     expect(gone.text).toContain("claude/openai/gpt-5.5");
-    expect(seen).toHaveLength(4);
+    expect(seen).toHaveLength(1);
   });
 
   /** TEST_SCENARIO: The auto-mode classifier asks for Claude Code's own
    * Sonnet by a bare id. A session on IBM, which lists a deployment of it,
-   * resolves it there as any bare name; a session on the platform's
-   * tierless models runs it on the session's own model; and a bare id with
-   * no tier word is left to the bare-name rules, which refuse one that two
-   * providers list. */
+   * resolves it there as any bare name does. */
   it("sends the classifier's bare Sonnet to the session's provider", async () => {
     seen.length = 0;
     await call(
@@ -682,21 +599,7 @@ describe("Claude Code's tier slots", () => {
     );
     expect(seen[0]!.path).toBe("/ibm/v1/messages");
     expect(seen[0]!.body.model).toBe("aws/claude-sonnet-5");
-    await call(
-      "/v1/messages",
-      { model: "claude-sonnet-5", messages: [] },
-      { "x-test-session": "s-platform", ...sideCall },
-    );
-    expect(seen[1]!.path).toBe("/platform/v1/messages");
-    expect(seen[1]!.body.model).toBe("deepseek-v4.1-flash");
-    const plain = await call(
-      "/v1/messages",
-      { model: "gpt-5.5", messages: [] },
-      { "x-test-session": "s-platform", ...sideCall },
-    );
-    expect(plain.status).toBe(400);
-    expect(plain.text).toContain("several providers");
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(1);
   });
 
   /** TEST_SCENARIO: The session stays on the slot's provider, which has

@@ -2,6 +2,7 @@ import { ArrowLeft, Close, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -110,9 +111,9 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
       />
     ) : null;
   const frameFallback = (
-    <p className="py-6 text-center text-sm text-muted-foreground">
+    <PanelMessage>
       {preview.isLoading ? "Loading preview…" : "No preview available."}
-    </p>
+    </PanelMessage>
   );
 
   if (!openArtifactId) return null;
@@ -193,26 +194,16 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
 
       <div className="min-h-0 flex-1">
         {artifactError ? (
-          <div className="flex flex-col items-center gap-2 py-6">
-            <p className="text-sm text-muted-foreground">
-              Couldn't load the artifact.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetchArtifact()}
-            >
-              Retry
-            </Button>
-          </div>
+          <LoadFailed
+            what="Couldn't load the artifact."
+            onRetry={() => refetchArtifact()}
+          />
         ) : artifactPending ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            Loading…
-          </p>
+          <PanelMessage>Loading…</PanelMessage>
         ) : !artifact ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
+          <PanelMessage>
             Artifact not found — it may have been deleted.
-          </p>
+          </PanelMessage>
         ) : showFrame ? (
           (frame ?? frameFallback)
         ) : (

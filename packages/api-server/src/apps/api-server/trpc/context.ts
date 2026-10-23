@@ -8,8 +8,8 @@ import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructur
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { TRPCError } from "@trpc/server";
 import {
-  composeDefaultModelNotices,
   composeHarnessConfigModule,
+  createDefaultModelNoticeReader,
   isNoDefaultModelError,
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
@@ -138,12 +138,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
-      platformProviderKey: config.platformProvider?.apiKey ?? null,
-      platformProviderCa: config.platformProvider?.ca ?? null,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
-      platformProviderEnabled: async () =>
-        (await features.flags())["platform-provider"],
     });
     const secretRequests = composeSecretRequestsForOwner({
       ownerId: user.sub,
@@ -343,7 +339,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           ?.ownerSub === user.sub,
       ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
       defaultModelNotices: async () =>
-        composeDefaultModelNotices(db)(
+        createDefaultModelNoticeReader(db)(
           (await agentsRepo.list(user.sub)).map((agent) => agent.id),
         ),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),

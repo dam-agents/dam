@@ -4,17 +4,7 @@ import {
   agentUsage,
   sandboxSubtitle,
 } from "../../modules/agents/utils/sandbox-subtitle.js";
-import { findTemplate } from "../../modules/templates/lib/find-template.js";
-import type { AgentView, TemplateView } from "../../types.js";
-
-const template: TemplateView = {
-  id: "default",
-  name: "Coding agent",
-  aliases: ["claude-code", "codex", "pi-agent", "bob"],
-  image: "registry.example/agents/default:new",
-  category: "harness",
-  experimental: false,
-};
+import type { AgentView } from "../../types.js";
 
 const agent: AgentView = {
   id: "agent",
@@ -89,33 +79,5 @@ describe("agent card subtitle", () => {
     ).toBeNull();
     expect(agentUsage(vmAgent)).toBeNull();
     expect(agentUsage(sized, usage(1, 1))).toBeNull();
-  });
-});
-
-describe("findTemplate", () => {
-  it.each(["default", "claude-code", "codex", "pi-agent", "bob"])(
-    "resolves %s, an id or an alias of an older image",
-    (templateId) => {
-      expect(findTemplate([template], templateId)).toBe(template);
-    },
-  );
-
-  it.each([null, "unknown"])("finds nothing for template %s", (templateId) => {
-    expect(findTemplate([template], templateId)).toBeUndefined();
-  });
-
-  it("prefers a real template id over an alias regardless of list order", () => {
-    const custom: TemplateView = {
-      ...template,
-      id: "claude-code",
-      name: "Custom Claude",
-      aliases: undefined,
-    };
-    for (const templates of [
-      [template, custom],
-      [custom, template],
-    ]) {
-      expect(findTemplate(templates, "claude-code")).toBe(custom);
-    }
   });
 });

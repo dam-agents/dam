@@ -83,16 +83,20 @@ export const templateSpecSchema = z
   })
   .passthrough();
 
-const providerTypeSchema = z.custom<ProviderPresetType>(
-  (v) => typeof v === "string" && isProviderPresetType(v),
-  "unknown provider type",
-);
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the chart names a harness's providers by preset.
+ * An id the api-server no longer offers is dropped rather than refused, so
+ * values that still name a graduated provider keep the install starting.
+ */
+const providerTypesSchema = z
+  .array(z.string())
+  .transform((ids) => ids.filter(isProviderPresetType));
 
 export const harnessEntrySchema = z.object({
   displayName: z.string().min(1),
   description: z.string().optional(),
   releaseNotesUrl: z.string().optional(),
-  providers: z.array(providerTypeSchema).optional(),
+  providers: providerTypesSchema.optional(),
   tags: z.array(z.string()).default([]),
   experimental: z.boolean().default(false),
 });

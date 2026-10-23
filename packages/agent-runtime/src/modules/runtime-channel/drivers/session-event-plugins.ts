@@ -1,4 +1,4 @@
-import type { EventHandler, Plugin } from "agent-runtime-api";
+import type { Plugin } from "agent-runtime-api";
 import {
   initializationEventPayload,
   satelliteOutcomeEventPayload,
@@ -6,6 +6,7 @@ import {
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 
+import { eventPlugin } from "../infrastructure/plugin-registry.js";
 import type {
   SubAgentSessionStore,
   TriggerSessionDriver,
@@ -17,19 +18,10 @@ function sessionEventPlugin(
   name: string,
   toStart: (payload: unknown) => SessionStart,
 ): (deps: { driver: TriggerSessionDriver }) => Plugin {
-  return (deps) => ({
-    name,
-    bindEvent(kind: string): EventHandler {
-      if (kind !== name) {
-        throw new Error(
-          `plugin "${name}" does not handle event kind "${kind}"`,
-        );
-      }
-      return async (payload) => {
-        await deps.driver.start(toStart(payload));
-      };
-    },
-  });
+  return (deps) =>
+    eventPlugin(name, name, async (payload) => {
+      await deps.driver.start(toStart(payload));
+    });
 }
 
 export const createInitializationPlugin = sessionEventPlugin(
@@ -89,37 +81,30 @@ export function createSubAgentOutcomePlugin(deps: {
   driver: TriggerSessionDriver;
   sessions: SubAgentSessionStore;
 }): Plugin {
-  return {
-    name: "sub-agent-outcome",
-    bindEvent(kind: string): EventHandler {
-      if (kind !== "sub-agent-outcome") {
-        throw new Error(
-          `plugin "sub-agent-outcome" does not handle event kind "${kind}"`,
-        );
-      }
-      return async (payload) => {
-        const { task, ids, ...pair } =
-          subAgentOutcomeEventPayload.parse(payload);
-        const resumeSessionId = deps.sessions.sessionOf(ids);
-        await deps.driver.start(
-          resumeSessionId
-            ? {
-                task,
-                resumeSessionId,
-                ...(pair.model && { model: pair.model }),
-                keepSessionModel: true,
-              }
-            : {
-                task,
-                platformMeta: {
-                  type: SessionType.Regular,
-                  mode: SessionMode.Chat,
-                  follows: "chat",
-                  ...pair,
-                },
+  return eventPlugin(
+    "sub-agent-outcome",
+    "sub-agent-outcome",
+    async (payload) => {
+      const { task, ids, ...pair } = subAgentOutcomeEventPayload.parse(payload);
+      const resumeSessionId = deps.sessions.sessionOf(ids);
+      await deps.driver.start(
+        resumeSessionId
+          ? {
+              task,
+              resumeSessionId,
+              ...(pair.model && { model: pair.model }),
+              keepSessionModel: true,
+            }
+          : {
+              task,
+              platformMeta: {
+                type: SessionType.Regular,
+                mode: SessionMode.Chat,
+                follows: "chat",
+                ...pair,
               },
-        );
-      };
+            },
+      );
     },
-  };
+  );
 }

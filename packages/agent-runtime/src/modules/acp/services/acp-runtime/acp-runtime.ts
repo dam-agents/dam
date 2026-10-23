@@ -35,14 +35,10 @@ import {
 } from "api-server-api";
 
 import {
-  artifactTouchIn,
+  toolCallOutcomeIn,
   type ArtifactTouch,
-} from "../../infrastructure/artifact-touch.js";
-import {
-  subAgentSpawnIn,
   type SubAgentSpawn,
-} from "../../infrastructure/sub-agent-spawn.js";
-import { resultAcceptedIn } from "../../infrastructure/result-accepted.js";
+} from "../../infrastructure/tool-call-outcome.js";
 import {
   createToolActivityReader,
   type ToolActivity,
@@ -56,9 +52,13 @@ import {
   isNonNullObject,
   isRequest,
   isResponse,
+  paramsOf,
   parseFrame,
+  resultOf,
+  sessionUpdateOf,
+  stringAt,
   type JsonRpcId,
-} from "../../domain/frames.js";
+} from "api-server-api";
 import {
   harnessLostSession,
   rewriteAuthError,
@@ -107,12 +107,14 @@ import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
   type ModeRole,
+  type PromptFate,
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
+import { platformOf, withPlatform } from "../../domain/platform-meta.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
@@ -282,6 +284,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
+
+  function mapOutbound(
+    id: number,
+    mapping: Partial<OutboundMapping> & { method: string },
+  ): number {
+    outboundIdToClient.set(id, {
+      channel: null,
+      originalId: null,
+      promptSessionId: null,
+      attachSessionId: null,
+      platformMeta: null,
+      ...mapping,
+    });
+    return id;
+  }
+
+  function submitPrompt(
+    frame: unknown,
+    submission: Omit<PromptSubmission, "frame">,
+  ): PromptFate {
+    const fate = promptScheduler.submit({ ...submission, frame });
+    if (fate !== "refused") return fate;
+    outboundIdToClient.delete(submission.outboundId);
+    if (carriesContinuedFrom(frame))
+      deps.continuedFrom.markUnsent(submission.sessionId);
+    return fate;
+  }
   let waitingAttaches = 0;
 
   function engagedChannelsFor(sessionId: string): ClientChannel[] {
@@ -565,16 +594,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       engage(channel, sessionId);
     },
     openLoadRoute(sessionId) {
-      const outboundId = nextOutboundId++;
-      outboundIdToClient.set(outboundId, {
-        channel: null,
-        originalId: null,
+      return mapOutbound(nextOutboundId++, {
         method: "session/load",
-        promptSessionId: null,
         attachSessionId: sessionId,
-        platformMeta: null,
       });
-      return outboundId;
     },
     sendToAgent(frame) {
       sendToHarness(frame);
@@ -765,16 +788,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (pendingLoadId !== undefined) orphanLoad(sessionId, pendingLoadId);
       }, harnessLoadTimeoutMs),
     );
-    const outboundId = nextOutboundId++;
-    rehydrateLoadIds.set(sessionId, outboundId);
+    rehydrateLoadIds.set(sessionId, nextOutboundId);
     const method = sessionResumeSupported ? "session/resume" : "session/load";
-    outboundIdToClient.set(outboundId, {
-      channel: null,
-      originalId: null,
+    const outboundId = mapOutbound(nextOutboundId++, {
       method,
-      promptSessionId: null,
       attachSessionId: sessionId,
-      platformMeta: null,
       rehydrate: true,
     });
     sendToHarness(
@@ -917,14 +935,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         chosenMode,
         false,
       );
-      const outboundId = nextOutboundId++;
-      outboundIdToClient.set(outboundId, {
+      const outboundId = mapOutbound(nextOutboundId++, {
         channel: settingsChannel,
-        originalId: null,
         method,
-        promptSessionId: null,
-        attachSessionId: null,
-        platformMeta: null,
         settingSessionId: sessionId,
         ...(frame.critical && { critical: true }),
       });
@@ -1700,22 +1713,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       },
     };
     engage(channel, sessionId);
-    outboundIdToClient.set(outboundId, {
+    mapOutbound(outboundId, {
       channel,
-      originalId: null,
       method: "session/prompt",
       promptSessionId: sessionId,
-      attachSessionId: null,
-      platformMeta: null,
     });
     deps.sessionMetadata?.recordActivity(sessionId);
-    const frame = promptFrameFor(source, sessionId, outboundId);
-    const fate = promptScheduler.submit({
+    const fate = submitPrompt(promptFrameFor(source, sessionId, outboundId), {
       sessionId,
       channel,
       outboundId,
       originalId: null,
-      frame,
       promptId,
       source,
       typed: prompt,
@@ -1723,11 +1731,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       editable: false,
       steerable: true,
     });
-    if (fate === "refused") {
-      outboundIdToClient.delete(outboundId);
-      if (carriesContinuedFrom(frame)) deps.continuedFrom.markUnsent(sessionId);
-      return;
-    }
+    if (fate === "refused") return;
     if (
       harnessColdSessions.has(sessionId) &&
       !rehydratingSessions.has(sessionId)
@@ -2121,13 +2125,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ) {
         return;
       }
-      const accepted = resultAcceptedIn(frame);
-      if (accepted) deps.onResultAccepted?.(accepted);
+      const outcome = toolCallOutcomeIn(frame);
+      if (outcome?.accepted) deps.onResultAccepted?.(outcome.sessionId);
       if (!bootstrap.has(sessionId)) {
-        const touch = artifactTouchIn(frame);
-        if (touch) deps.onArtifactTouch(touch);
-        const spawn = subAgentSpawnIn(frame);
-        if (spawn) deps.onSubAgentSpawn?.(spawn);
+        if (outcome?.artifactTouch) deps.onArtifactTouch(outcome.artifactTouch);
+        if (outcome?.subAgentSpawn)
+          deps.onSubAgentSpawn?.(outcome.subAgentSpawn);
         const activity = deps.onToolActivity && toolActivityIn(frame);
         if (activity) deps.onToolActivity?.(activity);
       }
@@ -2378,7 +2381,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           });
         } else {
           bootstrap.requestLoad(channel, frame.id, paramsSid, {
-            tail: platformField(frame, "tail") === true,
+            tail: platformOf(frame)?.tail === true,
             loadToken,
           });
         }
@@ -2472,12 +2475,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         promptSessionId !== null
           ? promptFrameFor(frame, promptSessionId, outboundId)
           : rewriteCwd({ ...forwardFrame, id: outboundId }, deps.workingDir);
-      outboundIdToClient.set(outboundId, {
+      mapOutbound(outboundId, {
         channel,
         originalId: frame.id,
         method,
         promptSessionId,
-        attachSessionId: null,
         platformMeta,
         ...(continuedFrom !== undefined && { continuedFrom }),
         ...(settingSessionId !== null && { settingSessionId }),
@@ -2496,12 +2498,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.set(promptSessionId, { ...meta, title });
 
         syncSettings(promptSessionId);
-        const fate = promptScheduler.submit({
+        const fate = submitPrompt(rewritten, {
           sessionId: promptSessionId,
           channel,
           outboundId,
           originalId: frame.id,
-          frame: rewritten,
           promptId,
           runPrompt: surface === "cli",
           source: frame,
@@ -2515,12 +2516,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               surface === SCHEDULE_SURFACE ||
               surface === MESSAGE_SURFACE),
         });
-        if (fate === "refused") {
-          outboundIdToClient.delete(outboundId);
-          if (carriesContinuedFrom(rewritten))
-            deps.continuedFrom.markUnsent(promptSessionId);
-          return;
-        }
+        if (fate === "refused") return;
         if (
           retryOf !== null &&
           deps.undeliveredPrompts.forget(promptSessionId, retryOf)
@@ -2705,35 +2701,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 function extractContinuedFrom(
   frame: unknown,
 ): PlatformContinuedFrom | null | undefined {
-  const raw = platformField(frame, "continuedFrom");
+  const raw = platformOf(frame)?.continuedFrom;
   if (raw === undefined) return undefined;
   const parsed = platformContinuedFromSchema.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
 
 function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta) || !("platform" in meta)) return null;
-  const parsed = platformSessionMetaSchema.safeParse(meta.platform);
+  const parsed = platformSessionMetaSchema.safeParse(platformOf(frame));
   return parsed.success ? parsed.data : null;
 }
 
-function platformField(frame: unknown, key: string): unknown {
-  if (!isNonNullObject(frame)) return undefined;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return undefined;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return undefined;
-  const platform = meta.platform;
-  return isNonNullObject(platform) ? platform[key] : undefined;
-}
-
 function platformString(frame: unknown, key: string): string | null {
-  const value = platformField(frame, key);
-  return typeof value === "string" && value.length > 0 ? value : null;
+  const value = stringAt(platformOf(frame), key);
+  return value === "" ? null : value;
 }
 
 const TITLE_CHARS = 80;
@@ -2761,11 +2742,8 @@ function rehydrateFailureMessage(error: unknown): string {
 }
 
 function extractUndeliveredId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const id = params.id;
-  return typeof id === "string" && id.length > 0 ? id : null;
+  const id = stringAt(paramsOf(frame), "id");
+  return id === "" ? null : id;
 }
 
 const HANDOVER_PROMPT_CAP = 32;
@@ -2773,13 +2751,10 @@ const HANDOVER_PROMPT_CAP = 32;
 function extractUndeliveredPrompts(
   frame: unknown,
 ): PlatformUndeliveredPrompt[] | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
   const parsed = z
     .array(platformUndeliveredPromptSchema)
     .max(HANDOVER_PROMPT_CAP)
-    .safeParse(params.prompts);
+    .safeParse(paramsOf(frame)?.prompts);
   return parsed.success ? parsed.data : null;
 }
 
@@ -2795,13 +2770,8 @@ function stripPlatformMeta(frame: unknown): object {
   if (!isNonNullObject(frame)) return frame as object;
   const params = frame.params;
   if (!isNonNullObject(params)) return frame as object;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return frame as object;
-  const { platform: _platform, ...restMeta } = meta;
-  const nextParams: Record<string, unknown> = { ...params };
-  if (Object.keys(restMeta).length > 0) nextParams._meta = restMeta;
-  else delete nextParams._meta;
-  return { ...frame, params: nextParams };
+  if (!isNonNullObject(params._meta)) return frame as object;
+  return withPlatform(frame, () => null);
 }
 
 function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
@@ -2884,32 +2854,23 @@ function hasSessionCapability(
   frame: unknown,
   name: "close" | "resume" | "fork",
 ): boolean {
-  if (!isNonNullObject(frame)) return false;
-  const result = frame.result;
-  if (!isNonNullObject(result)) return false;
-  const caps = result.agentCapabilities;
+  const caps = resultOf(frame)?.agentCapabilities;
   if (!isNonNullObject(caps)) return false;
   const session = caps.sessionCapabilities;
-  if (!isNonNullObject(session)) return false;
-  return isNonNullObject(session[name]);
+  return isNonNullObject(session) && isNonNullObject(session[name]);
 }
 
 function isAgentOutputChunk(frame: unknown): boolean {
-  if (!isNonNullObject(frame) || frame.method !== "session/update")
-    return false;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return false;
-  const kind = params.update.sessionUpdate;
+  const kind = sessionUpdateOf(frame)?.sessionUpdate;
   return kind === "agent_message_chunk" || kind === "agent_thought_chunk";
 }
 
 function toolCallStateOf(
   frame: unknown,
 ): { toolCallId: string; started: boolean; settled: boolean } | null {
-  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
-  const { sessionUpdate, toolCallId, status } = params.update;
+  const update = sessionUpdateOf(frame);
+  if (update === null) return null;
+  const { sessionUpdate, toolCallId, status } = update;
   if (sessionUpdate !== "tool_call" && sessionUpdate !== "tool_call_update")
     return null;
   if (typeof toolCallId !== "string") return null;
@@ -2938,13 +2899,8 @@ function queueableBlocks(prompt: unknown): PromptBlock[] {
 }
 
 function extractStopReason(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const result = frame.result;
-  if (!isNonNullObject(result)) return null;
-  const stopReason = result.stopReason;
-  return typeof stopReason === "string" && stopReason.length > 0
-    ? stopReason
-    : null;
+  const stopReason = stringAt(resultOf(frame), "stopReason");
+  return stopReason === "" ? null : stopReason;
 }
 
 function extractTurnError(frame: unknown): PlatformTurnEndedParams["error"] {
@@ -2971,13 +2927,9 @@ function capped(text: string): string {
 const REPORTED_MODEL_META_KEY = "_claude/model";
 
 function extractReportedModel(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  if (frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const update = params.update;
-  if (!isNonNullObject(update) || !isNonNullObject(update._meta)) return null;
-  const model = update._meta[REPORTED_MODEL_META_KEY];
+  const update = sessionUpdateOf(frame);
+  const meta = isNonNullObject(update?._meta) ? update._meta : null;
+  const model = meta?.[REPORTED_MODEL_META_KEY];
   return typeof model === "string" && model !== "" && model !== "<synthetic>"
     ? model
     : null;
@@ -2990,11 +2942,8 @@ const NO_RESPONSE_FILLER = "No response requested.";
  * call, when a session it resumes ends on a stopped turn.
  */
 function isNoResponseFiller(frame: unknown): boolean {
-  if (!isNonNullObject(frame) || frame.method !== "session/update")
-    return false;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return false;
-  const update = params.update;
+  const update = sessionUpdateOf(frame);
+  if (update === null) return false;
   const content = update.content;
   return (
     update.sessionUpdate === "agent_message_chunk" &&
@@ -3047,44 +2996,30 @@ function settingKeyOf({ method, params }: SessionSettingFrame): string {
 }
 
 function extractReportedMode(frame: unknown): string | null {
-  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
-  const { sessionUpdate, currentModeId } = params.update;
-  return sessionUpdate === "current_mode_update" &&
-    typeof currentModeId === "string" &&
-    currentModeId !== ""
-    ? currentModeId
+  const update = sessionUpdateOf(frame);
+  const mode = update?.currentModeId;
+  return update?.sessionUpdate === "current_mode_update" &&
+    typeof mode === "string" &&
+    mode !== ""
+    ? mode
     : null;
 }
 
 function sessionUpdateKind(frame: unknown): string | null {
-  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
-  const kind = params.update.sessionUpdate;
+  const kind = sessionUpdateOf(frame)?.sessionUpdate;
   return typeof kind === "string" ? kind : null;
 }
 
 function extractAgentTextChunk(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  if (frame.method !== "session/update") return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const update = params.update;
-  if (!isNonNullObject(update)) return null;
-  if (update.sessionUpdate !== "agent_message_chunk") return null;
+  const update = sessionUpdateOf(frame);
+  if (update?.sessionUpdate !== "agent_message_chunk") return null;
   const content = update.content;
   if (!isNonNullObject(content) || content.type !== "text") return null;
   return typeof content.text === "string" ? content.text : null;
 }
 
 function extractParamsSessionId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const sid = params.sessionId;
-  return typeof sid === "string" ? sid : null;
+  return stringAt(paramsOf(frame), "sessionId");
 }
 
 function extractAgentRequestSessionId(frame: unknown): string | null {
@@ -3093,9 +3028,5 @@ function extractAgentRequestSessionId(frame: unknown): string | null {
 }
 
 function extractResultSessionId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const result = frame.result;
-  if (!isNonNullObject(result)) return null;
-  const sid = result.sessionId;
-  return typeof sid === "string" ? sid : null;
+  return stringAt(resultOf(frame), "sessionId");
 }

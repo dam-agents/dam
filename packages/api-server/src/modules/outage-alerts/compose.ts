@@ -35,7 +35,6 @@ export function composeOutageAlerts(deps: {
     choices: { harness: string | undefined; model: string | undefined },
   ) => Promise<string | null | undefined>;
   uiBaseUrl: string;
-  brandName: string;
   delayMs: number;
 }): OutageAlertsModule {
   const service = createOutageAlertsService({
@@ -48,7 +47,6 @@ export function composeOutageAlerts(deps: {
       fireTemplate: deps.fireTemplate,
     }),
     homeUrl: deps.uiBaseUrl,
-    brandName: deps.brandName,
     delayMs: deps.delayMs,
   });
   return {

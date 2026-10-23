@@ -412,9 +412,10 @@ export {
   ONCE_DELIVERY_WINDOW_MS,
   OnceResult,
   isOnceFinished,
+  localDateTimeIn,
   onceState,
 } from "./modules/schedules/once.js";
-export type { OnceState } from "./modules/schedules/once.js";
+export type { LocalDateTime, OnceState } from "./modules/schedules/once.js";
 export {
   ALL_DAYS,
   buildRRule,
@@ -471,8 +472,6 @@ export {
   bedrockEnvMappings,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
-  PLATFORM_LLM_TEMPLATE_ID,
-  platformLlmEnvMappings,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
@@ -844,8 +843,21 @@ export {
   STEER_METHOD,
   steerResponseSchema,
   steeringSupported,
+  isNonNullObject,
+  isRequest,
+  isResponse,
+  paramsOf,
+  parseFrame,
+  resultOf,
+  sessionUpdateOf,
+  stringAt,
 } from "./modules/acp/types.js";
 export type {
+  JsonRpcFrame,
+  JsonRpcId,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
   PlatformTurnEndedParams,
   PlatformRunEndedParams,
   PlatformPromptAcceptedParams,

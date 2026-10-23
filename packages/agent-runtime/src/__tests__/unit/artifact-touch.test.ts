@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artifactTouchIn } from "../../modules/acp/infrastructure/artifact-touch.js";
+import { toolCallOutcomeIn } from "../../modules/acp/infrastructure/tool-call-outcome.js";
 
 const SESSION = "abe53601-a7a2-4d17-9726-d93af979937a";
 const ARTIFACT = "38172c69-e53f-45fd-9b2e-5e7bc018fdd7";
@@ -52,9 +52,13 @@ function completed(rawOutput: unknown): unknown {
   };
 }
 
-describe("artifactTouchIn", () => {
+function touchOf(frame: unknown) {
+  return toolCallOutcomeIn(frame)?.artifactTouch ?? null;
+}
+
+describe("toolCallOutcomeIn artifact touch", () => {
   it("reads the session and artifact out of a captured tool result", () => {
-    const touch = artifactTouchIn(
+    const touch = touchOf(
       frame(completed([{ type: "text", text: CAPTURED_RESULT }])),
     );
 
@@ -68,7 +72,7 @@ describe("artifactTouchIn", () => {
   // TEST_SCENARIO: the adapter passes the tool's result through, so the shape it
   // TEST_SCENARIO: arrives in is the tool's, not ours.
   it("accepts a result that arrives as bare text", () => {
-    expect(artifactTouchIn(frame(completed(CAPTURED_RESULT)))).toEqual({
+    expect(touchOf(frame(completed(CAPTURED_RESULT)))).toEqual({
       sessionId: SESSION,
       artifactId: ARTIFACT,
       version: 1,
@@ -78,7 +82,7 @@ describe("artifactTouchIn", () => {
   it("ignores a tool result with no marker", () => {
     const other = JSON.stringify({ id: ARTIFACT, title: "Touch Test" });
     expect(
-      artifactTouchIn(frame(completed([{ type: "text", text: other }]))),
+      touchOf(frame(completed([{ type: "text", text: other }]))),
     ).toBeNull();
   });
 
@@ -89,16 +93,16 @@ describe("artifactTouchIn", () => {
       platform_artifact_touch: { v: 99, artifactId: ARTIFACT, version: 1 },
     });
     expect(
-      artifactTouchIn(frame(completed([{ type: "text", text: future }]))),
+      touchOf(frame(completed([{ type: "text", text: future }]))),
     ).toBeNull();
   });
 
   it("ignores text that is not JSON", () => {
     expect(
-      artifactTouchIn(frame(completed([{ type: "text", text: "{ oops" }]))),
+      touchOf(frame(completed([{ type: "text", text: "{ oops" }]))),
     ).toBeNull();
     expect(
-      artifactTouchIn(
+      touchOf(
         frame(completed([{ type: "text", text: "Saved the artifact." }])),
       ),
     ).toBeNull();
@@ -111,22 +115,18 @@ describe("artifactTouchIn", () => {
       ...(completed([{ type: "text", text: CAPTURED_RESULT }]) as object),
       status: "failed",
     };
-    expect(artifactTouchIn(frame(update))).toBeNull();
+    expect(touchOf(frame(update))).toBeNull();
   });
 
   it("ignores an update that is not a finished tool call", () => {
     expect(
-      artifactTouchIn(
-        frame({ sessionUpdate: "agent_message_chunk", text: "working" }),
-      ),
+      touchOf(frame({ sessionUpdate: "agent_message_chunk", text: "working" })),
     ).toBeNull();
   });
 
   it("ignores a frame with no session", () => {
     expect(
-      artifactTouchIn(
-        frame(completed([{ type: "text", text: CAPTURED_RESULT }]), ""),
-      ),
+      touchOf(frame(completed([{ type: "text", text: CAPTURED_RESULT }]), "")),
     ).toBeNull();
   });
 });

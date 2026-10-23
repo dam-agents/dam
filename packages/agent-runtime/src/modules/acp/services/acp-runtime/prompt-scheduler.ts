@@ -8,7 +8,7 @@ import type { PromptBlock, QueuedPrompt } from "api-server-api";
 
 import { randomUUID } from "node:crypto";
 
-import type { JsonRpcId } from "../../domain/frames.js";
+import type { JsonRpcId } from "api-server-api";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
 const PROMPT_QUEUE_CAP = 32;

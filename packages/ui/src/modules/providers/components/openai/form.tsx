@@ -2,26 +2,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-
 import { PROVIDERS } from "../../../../types.js";
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import {
+  ProviderFormShell,
+  ProviderSecretRow,
+  requiredSecretSchema,
+  stripWhitespace,
+} from "../provider-form-shell.js";
 
 const OPENAI_DISPLAY_NAME = PROVIDERS.openai.displayName;
 const OPENAI_KEY_PAGE_URL = "https://platform.openai.com/api-keys";
 
-const openaiCredentialSchema = z
-  .object({ value: z.string() })
-  .superRefine((data, ctx) => {
-    if (stripWhitespace(data.value).length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["value"],
-        message: "Required",
-      });
-    }
-  });
+const openaiCredentialSchema = z.object({ value: requiredSecretSchema });
 
 type FormValues = z.infer<typeof openaiCredentialSchema>;
 
@@ -65,29 +57,16 @@ export function OpenAIForm({
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      <div className="flex gap-3">
-        <Input
-          type="password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-          placeholder="sk-…"
-          aria-label="OpenAI API key"
-          {...register("value")}
-        />
-        <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
-        </Button>
-      </div>
-
-      {errors.value &&
-        value.length > 0 &&
-        errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-danger">
-            {errors.value.message}
-          </div>
-        )}
+      <ProviderSecretRow
+        register={register("value")}
+        placeholder="sk-…"
+        ariaLabel="OpenAI API key"
+        isEdit={isEdit}
+        isSubmitting={isSubmitting}
+        submitDisabled={submitDisabled}
+        value={value}
+        error={errors.value}
+      />
     </ProviderFormShell>
   );
 }

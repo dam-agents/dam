@@ -7,7 +7,7 @@ import {
   isResponse,
   parseFrame,
   type JsonRpcFrame,
-} from "../domain/frames.js";
+} from "api-server-api";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import type { SessionDefaultsStore } from "../infrastructure/session-defaults-store.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
@@ -32,6 +32,7 @@ import {
 import { parseQualifiedModel, RUN_ENDED_CAPABILITY } from "api-server-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 import type { KeepPolicy } from "../../processes/index.js";
+import { platformOf, withPlatform } from "../domain/platform-meta.js";
 
 export interface LeasePair {
   harness: string;
@@ -548,7 +549,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
 
     if (method === "session/new") {
-      const requested = platformChoice(params);
+      const requested = platformChoice(frame);
       if (requested.invalidSettings) {
         refuse(real, frame.id, {
           code: -32602,
@@ -596,7 +597,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         : null;
     if (sessionId === null) {
       if (method === "session/list" && isRequest(frame)) {
-        const harness = platformChoice(params).harness;
+        const harness = platformChoice(frame).harness;
         if (harness === undefined || !deps.harnessKnown(harness)) {
           reply(real, frame.id, deps.listSessions(isSessionRunning));
           return;
@@ -1094,10 +1095,9 @@ function withoutUnset(
 }
 
 function platformChoice(
-  params: Record<string, unknown> | undefined,
+  frame: unknown,
 ): Partial<SessionChoice> & { invalidSettings?: true } {
-  const meta = isNonNullObject(params?._meta) ? params._meta : undefined;
-  const platform = isNonNullObject(meta?.platform) ? meta.platform : undefined;
+  const platform = platformOf(frame);
   const text = (key: string): string | undefined => {
     const v = platform?.[key];
     return typeof v === "string" && v !== "" ? v : undefined;
@@ -1120,37 +1120,22 @@ function withPlatformChoice(
   frame: Record<string, unknown>,
   choice: SessionChoice,
 ): object {
-  const params = isNonNullObject(frame.params) ? frame.params : {};
-  const meta = isNonNullObject(params._meta) ? params._meta : {};
-  const platform = isNonNullObject(meta.platform) ? meta.platform : {};
-  const { provider: _provider, settings: _settings, ...rest } = platform;
-  return {
-    ...frame,
-    params: {
-      ...params,
-      _meta: {
-        ...meta,
-        platform: {
-          ...rest,
-          harness: choice.harness,
-          ...(choice.model !== null && { model: choice.model }),
-          ...(choice.settings && { settings: choice.settings }),
-        },
-      },
-    },
-  };
+  return withPlatform(frame, (platform) => {
+    const { provider: _provider, settings: _settings, ...rest } = platform;
+    return {
+      ...rest,
+      harness: choice.harness,
+      ...(choice.model !== null && { model: choice.model }),
+      ...(choice.settings && { settings: choice.settings }),
+    };
+  });
 }
 
 function withoutChoice(frame: Record<string, unknown>): object {
-  const params = isNonNullObject(frame.params) ? frame.params : undefined;
-  const meta = isNonNullObject(params?._meta) ? params._meta : undefined;
-  if (!params || !meta || !isNonNullObject(meta.platform)) return frame;
-  const {
-    harness: _h,
-    provider: _p,
-    model: _m,
-    settings: _s,
-    ...platform
-  } = meta.platform;
-  return { ...frame, params: { ...params, _meta: { ...meta, platform } } };
+  if (platformOf(frame) === null) return frame;
+  return withPlatform(
+    frame,
+    ({ harness: _h, provider: _p, model: _m, settings: _s, ...platform }) =>
+      platform,
+  );
 }

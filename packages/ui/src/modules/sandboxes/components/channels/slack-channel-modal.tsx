@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
+import { ToggleRow } from "@/components/ui/toggle-row";
 
 import type { AgentView } from "../../../../types.js";
 import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
@@ -89,31 +90,25 @@ export function SlackChannelModal({
           />
 
           <div className="flex w-full flex-col gap-3 rounded-md border border-border bg-background px-3 py-2.5">
-            <div className="flex items-start justify-between gap-3">
-              <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">
-                  Use custom emoji for agents
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Where the Slack app can't post under the agent's own name and
-                  avatar, each post opens with an emoji and the agent's name.
-                  Without custom emoji that is a robot face. Name the
-                  workspace's emoji for each avatar.
-                </span>
-              </span>
-              <Controller
-                control={control}
-                name="customEmojiEnabled"
-                render={({ field }) => (
-                  <Switch
-                    className="mt-0.5"
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    label="Use custom emoji for agents"
-                  />
-                )}
-              />
-            </div>
+            <ToggleRow
+              className="gap-3"
+              title="Use custom emoji for agents"
+              description="Where the Slack app can't post under the agent's own name and avatar, each post opens with an emoji and the agent's name. Without custom emoji that is a robot face. Name the workspace's emoji for each avatar."
+              control={
+                <Controller
+                  control={control}
+                  name="customEmojiEnabled"
+                  render={({ field }) => (
+                    <Switch
+                      className="mt-0.5"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      label="Use custom emoji for agents"
+                    />
+                  )}
+                />
+              }
+            />
             {watch("customEmojiEnabled") && (
               <div
                 className="grid grid-cols-1 gap-2 sm:grid-cols-2"

@@ -1,13 +1,4 @@
-import {
-  chmod,
-  mkdir,
-  readFile,
-  rename,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
-import { dirname } from "node:path";
-import { parse, stringify, type TomlTable } from "smol-toml";
+import { stringify, type TomlTable } from "smol-toml";
 import { z } from "zod";
 import type { HostAuth } from "../domain/host-auth.js";
 import { err, ok, type Result } from "../../../result.js";
@@ -16,7 +7,12 @@ import type {
   AuthStoreWriteError,
   MalformedAuthStoreError,
 } from "../domain/errors.js";
-import { errnoCode, errorMessage } from "../../shared/error-message.js";
+import {
+  describeTomlReadProblem,
+  readTomlTable,
+  writeTomlContents,
+} from "../../shared/toml-file.js";
+import { zodIssuesMessage } from "../../shared/error-message.js";
 
 export type HostUrl = string;
 
@@ -86,62 +82,58 @@ function fromHostAuth(value: HostAuth): TomlTable {
   };
 }
 
-async function readRawFile(
-  filePath: string,
-): Promise<Result<TomlTable, AuthStoreReadError | MalformedAuthStoreError>> {
-  let contents: string;
-  try {
-    contents = await readFile(filePath, "utf-8");
-  } catch (e) {
-    if (errnoCode(e) === "ENOENT") return ok({});
-    return err({
-      kind: "auth-store-read",
-      reason: `cannot read ${filePath}: ${errorMessage(e)}`,
-    });
-  }
-  try {
-    return ok(parse(contents));
-  } catch (e) {
-    return err({
-      kind: "malformed-auth-store",
-      reason: `invalid TOML in ${filePath}: ${errorMessage(e)}`,
-    });
-  }
-}
-
-async function writeFileAtomic(
-  filePath: string,
-  contents: string,
-): Promise<Result<void, AuthStoreWriteError>> {
-  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(tmp, contents, { encoding: "utf-8", mode: FILE_MODE });
-    await chmod(tmp, FILE_MODE);
-    await rename(tmp, filePath);
-    return ok(undefined);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    return err({
-      kind: "auth-store-write",
-      path: filePath,
-      reason: errorMessage(e),
-    });
-  }
+function hostsOf(table: TomlTable): TomlTable {
+  return (
+    table.hosts && typeof table.hosts === "object" ? table.hosts : {}
+  ) as TomlTable;
 }
 
 export function createTomlAuthStore(filePath: string): AuthStore {
+  async function readForWrite(): Promise<
+    Result<TomlTable, AuthStoreWriteError>
+  > {
+    const raw = await readTomlTable(filePath);
+    if (raw.ok) return raw;
+    return err({
+      kind: "auth-store-write",
+      path: filePath,
+      reason: `cannot read existing auth store: ${describeTomlReadProblem(filePath, raw.error)}`,
+    });
+  }
+
+  async function writeHosts(
+    merged: TomlTable,
+  ): Promise<Result<void, AuthStoreWriteError>> {
+    const written = await writeTomlContents(
+      filePath,
+      stringify(merged),
+      FILE_MODE,
+    );
+    if (written.ok) return written;
+    return err({
+      kind: "auth-store-write",
+      path: filePath,
+      reason: written.error,
+    });
+  }
+
   return {
     async read() {
-      const raw = await readRawFile(filePath);
-      if (!raw.ok) return raw;
+      const raw = await readTomlTable(filePath);
+      if (!raw.ok) {
+        return err({
+          kind:
+            raw.error.problem === "invalid"
+              ? ("malformed-auth-store" as const)
+              : ("auth-store-read" as const),
+          reason: describeTomlReadProblem(filePath, raw.error),
+        });
+      }
       const parsed = fileSchema.safeParse(raw.value);
       if (!parsed.success) {
         return err({
           kind: "malformed-auth-store",
-          reason: `invalid auth store in ${filePath}: ${parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; ")}`,
+          reason: `invalid auth store in ${filePath}: ${zodIssuesMessage(parsed.error)}`,
         });
       }
       const out = new Map<HostUrl, HostAuth>();
@@ -154,47 +146,21 @@ export function createTomlAuthStore(filePath: string): AuthStore {
     },
 
     async write(host, value) {
-      const raw = await readRawFile(filePath);
-      if (!raw.ok) {
-        return err({
-          kind: "auth-store-write",
-          path: filePath,
-          reason: `cannot read existing auth store: ${raw.error.reason}`,
-        });
-      }
-      const existing = raw.value;
-      const existingHosts = (
-        existing.hosts && typeof existing.hosts === "object"
-          ? (existing.hosts as TomlTable)
-          : {}
-      ) as TomlTable;
-      const mergedHosts: TomlTable = {
-        ...existingHosts,
-        [host]: fromHostAuth(value),
-      };
-      const merged: TomlTable = { ...existing, hosts: mergedHosts };
-      return writeFileAtomic(filePath, stringify(merged));
+      const raw = await readForWrite();
+      if (!raw.ok) return raw;
+      return writeHosts({
+        ...raw.value,
+        hosts: { ...hostsOf(raw.value), [host]: fromHostAuth(value) },
+      });
     },
 
     async remove(host) {
-      const raw = await readRawFile(filePath);
-      if (!raw.ok) {
-        return err({
-          kind: "auth-store-write",
-          path: filePath,
-          reason: `cannot read existing auth store: ${raw.error.reason}`,
-        });
-      }
-      const existing = raw.value;
-      const existingHosts = (
-        existing.hosts && typeof existing.hosts === "object"
-          ? (existing.hosts as TomlTable)
-          : {}
-      ) as TomlTable;
+      const raw = await readForWrite();
+      if (!raw.ok) return raw;
+      const existingHosts = hostsOf(raw.value);
       if (!(host in existingHosts)) return ok(undefined);
       const { [host]: _removed, ...remainingHosts } = existingHosts;
-      const merged: TomlTable = { ...existing, hosts: remainingHosts };
-      return writeFileAtomic(filePath, stringify(merged));
+      return writeHosts({ ...raw.value, hosts: remainingHosts });
     },
   };
 }

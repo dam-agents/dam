@@ -7,6 +7,12 @@ import {
   type SatelliteTool,
   type SatelliteView,
 } from "api-server-api";
+import {
+  errorResult,
+  json,
+  run,
+  type ToolContent,
+} from "../../core/mcp-tool-result.js";
 import { isTerminal } from "./domain/types.js";
 import type { SatelliteAgentOpsImpl } from "./services/agent-ops.js";
 
@@ -43,37 +49,14 @@ export const DEFAULT_SATELLITE_WAIT_MS = 240_000;
 
 const INLINE_WAIT_MS = 30_000;
 
-interface ToolContent {
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-function json(value: unknown, isError = false): ToolContent {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    ...(isError ? { isError: true } : {}),
-  };
-}
-
-async function run(fn: () => Promise<ToolContent>): Promise<ToolContent> {
-  try {
-    return await fn();
-  } catch (err) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: err instanceof Error ? err.message : String(err),
-        },
-      ],
-      isError: true,
-    };
-  }
+function failedJson(value: unknown): ToolContent {
+  return errorResult(JSON.stringify(value, null, 2));
 }
 
 function outcomeContent(outcome: JobOutcome): ToolContent {
-  return json(outcome, outcome.isError || outcome.status === "interrupted");
+  return outcome.isError || outcome.status === "interrupted"
+    ? failedJson(outcome)
+    : json(outcome);
 }
 
 export function scopedName(satellite: string, tool: string): string {
@@ -130,12 +113,9 @@ export function registerSatelliteTools(
           run(async () => {
             const parsed = toolArgsSchema.safeParse(args ?? {});
             if (!parsed.success)
-              return json(
-                {
-                  error: parsed.error.issues[0]?.message ?? "invalid arguments",
-                },
-                true,
-              );
+              return failedJson({
+                error: parsed.error.issues[0]?.message ?? "invalid arguments",
+              });
             const started = await deps.ops.start(
               deps.agentId,
               name,

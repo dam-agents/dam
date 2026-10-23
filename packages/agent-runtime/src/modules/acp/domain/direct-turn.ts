@@ -1,4 +1,4 @@
-import { isNonNullObject } from "./frames.js";
+import { isNonNullObject } from "api-server-api";
 
 const DIRECT_SURFACES = new Set(["ui", "cli"]);
 

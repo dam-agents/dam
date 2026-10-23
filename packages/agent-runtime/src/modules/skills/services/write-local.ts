@@ -5,10 +5,8 @@ import type {
   SkillWriteLocalInput,
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
-import {
-  ensureFrontmatterName,
-  parseFrontmatter,
-} from "../domain/frontmatter.js";
+import { parseFrontmatter } from "agent-runtime-api/skill-tree";
+import { ensureFrontmatterName } from "../domain/frontmatter.js";
 import { makeSkillSlug, type SkillName } from "../domain/skill-name.js";
 import type { SkillPath } from "../domain/skill-path.js";
 import {

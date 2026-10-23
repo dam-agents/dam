@@ -2,7 +2,7 @@ import type { CarbonIconType } from "@carbon/icons-react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 
-import { formatBytes } from "../../budgets/lib/pools.js";
+import { formatBytes } from "../../../lib/format-size.js";
 import { RESOURCE_ICON } from "../../budgets/lib/resource-icons.js";
 import type { AgentUsage } from "../utils/sandbox-subtitle.js";
 

@@ -1,4 +1,4 @@
-import type { JsonRpcId, JsonRpcResponse } from "../../domain/frames.js";
+import type { JsonRpcId, JsonRpcResponse } from "api-server-api";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
