@@ -28,7 +28,7 @@ export type ConnectionLimitRule =
 const CONNECTION_LIMIT_REFUSALS: Readonly<
   Record<NoConnectionLimit["reason"], string>
 > = {
-  free: "Calls on this Connection are free, so it takes no spend limit.",
+  free: "This Connection has no billing.",
   not_priced:
     "Calls on this Connection are not priced yet, so it takes no spend limit.",
   not_metered:

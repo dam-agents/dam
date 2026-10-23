@@ -48,7 +48,7 @@ type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
 
 const NO_PROVIDER_WARNING =
-  "No provider connected — the agent cannot reach a model";
+  "No model provider attached — the agent cannot reach a model";
 
 const PRESET_SUMMARY: Record<EgressPreset, string> = {
   trusted: "Trusted defaults",

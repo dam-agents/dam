@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -86,7 +86,7 @@ A stored one can be **updated in place** — the injected value, the client secr
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
 A provider that cannot say leaves the key unverified; the CurveBender deployment's key, which the user holds no copy of, leaves it unchecked.
-The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, and a key the provider refuses then reads as refused until it is replaced.
+The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, which the Providers page also does each time it opens, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
 A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
@@ -315,7 +315,7 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 
 The same proxy, reached with a key the deployment provides instead of the user's.
 The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
-It is not behind a feature flag: where the key is set, every user has it.
+It is not behind a feature flag: where the key is set, every user has it, and a user who connects nothing of their own still has a provider to run an agent on.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
