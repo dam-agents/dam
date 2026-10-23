@@ -503,7 +503,10 @@ export function createConnectionsService(deps: {
     await mintUnderLock(
       conn,
       auth,
-      writerDeps(connectionRefreshLockKey(conn.id)),
+      {
+        ...writerDeps(connectionRefreshLockKey(conn.id)),
+        standDownOnKindChangeOnly: true,
+      },
       async (fresh, freshAuth) => {
         const minted = await rejectIfInvalid(() =>
           mintClientCredentialsToken(deps.oauthEngine, {
@@ -534,7 +537,10 @@ export function createConnectionsService(deps: {
     await mintUnderLock(
       conn,
       auth,
-      writerDeps(gitHubAppMintLockKey(conn.id)),
+      {
+        ...writerDeps(gitHubAppMintLockKey(conn.id)),
+        standDownOnKindChangeOnly: true,
+      },
       async (fresh, freshAuth) => {
         const { privateKeyPem, minted } = await rejectIfInvalid(async () => {
           const pem = normalizePrivateKeyPem(rawPrivateKey);

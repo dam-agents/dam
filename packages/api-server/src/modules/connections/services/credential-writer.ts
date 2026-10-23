@@ -8,9 +8,11 @@ import { withoutRefreshFailureMarker } from "../domain/refresh-failure-marker.js
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the one place a Connection's credential token is
  * written. Every writer — refresh, re-mint, rotation, scope change — takes the
- * Connection's lock, re-reads the row, and stands down when the auth kind or
- * its expiry moved since the caller read it, so two writers racing leave the
- * newer token rather than overwriting it.
+ * Connection's lock, re-reads the row, and stands down when the auth kind
+ * moved since the caller read it. A writer that renews a token from the state
+ * itself also stands down when that state's expiry moved, so a spent refresh
+ * token is not presented twice; a writer acting on a user's new secret asks
+ * for the kind only, because the user's replacement must reach the store.
  */
 export type TokenAuth = Extract<
   ConnectionAuthConfig,

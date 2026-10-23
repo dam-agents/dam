@@ -147,7 +147,7 @@ function makeService(
     connectionLock: (_key, fn) => fn(),
     resolveKbShare: async () => null,
   });
-  return { svc, rows, stored, deleted, tokenCalls };
+  return { svc, repo, rows, stored, deleted, tokenCalls };
 }
 
 function createInput(overrides: Record<string, string> = {}) {
@@ -283,6 +283,24 @@ describe("client-credentials connection create", () => {
     expect(auth.refreshFailedAt).toBeUndefined();
     expect(auth.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 120);
     expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  it("stores the new client secret even when a refresh minted first", async () => {
+    const { svc, repo, stored } = makeService();
+    const id = await svc.createFromTemplate(createInput());
+    const readRow = repo.getById.bind(repo);
+    repo.getById = async (connectionId) => {
+      const fresh = await readRow(connectionId);
+      if (!fresh || fresh.auth.kind !== "client-credentials") return fresh;
+      return {
+        ...fresh,
+        auth: { ...fresh.auth, expiresAt: (fresh.auth.expiresAt ?? 0) + 120 },
+      };
+    };
+
+    await svc.update(id, { value: "rotated" });
+
+    expect(stored.get(SECRET_PATH)!.client_secret).toBe("rotated");
   });
 
   it("leaves the connection untouched when the new secret is rejected", async () => {

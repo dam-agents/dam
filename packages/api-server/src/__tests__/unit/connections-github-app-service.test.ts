@@ -155,7 +155,16 @@ function makeService(
     },
     resolveKbShare: async () => null,
   });
-  return { svc, rows, stored, deleted, tokenCalls, tokenBodies, lockKeys };
+  return {
+    svc,
+    repo,
+    rows,
+    stored,
+    deleted,
+    tokenCalls,
+    tokenBodies,
+    lockKeys,
+  };
 }
 
 function createInput(overrides: Record<string, string> = {}) {
@@ -341,6 +350,29 @@ describe("github-app connection create", () => {
     if (auth.kind !== "github-app") throw new Error("kind");
     expect(auth.refreshFailedAt).toBeUndefined();
     expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  it("stores the new private key even when a re-mint went first", async () => {
+    const { svc, repo, stored } = makeService();
+    const id = await svc.createFromTemplate(createInput());
+    const readRow = repo.getById.bind(repo);
+    repo.getById = async (connectionId) => {
+      const fresh = await readRow(connectionId);
+      if (!fresh || fresh.auth.kind !== "github-app") return fresh;
+      return {
+        ...fresh,
+        auth: { ...fresh.auth, expiresAt: (fresh.auth.expiresAt ?? 0) + 60 },
+      };
+    };
+
+    const { privateKey: rotatedPem } = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+    });
+    await svc.update(id, { value: rotatedPem });
+
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());
   });
 
   it("leaves the connection untouched when the new key is unusable", async () => {
