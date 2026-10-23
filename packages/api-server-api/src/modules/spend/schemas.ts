@@ -55,7 +55,36 @@ export const spendDailyInputSchema = z
   })
   .superRefine(checkDayRange);
 
-export const spendBreakdownInputSchema = spendDailyInputSchema;
+export const CALL_ROWS_RETENTION_DAYS = 30;
+
+const instantSchema = z.string().datetime({ offset: true });
+
+export const spendAtWindowSchema = z
+  .object({ fromAt: instantSchema, toAt: instantSchema })
+  .superRefine((at, ctx) => {
+    const span = Date.parse(at.toAt) - Date.parse(at.fromAt);
+    if (span <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fromAt"],
+        message: "fromAt must be before toAt",
+      });
+    } else if (span > SPEND_DAILY_MAX_DAYS * 86_400_000) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fromAt"],
+        message: `at most ${SPEND_DAILY_MAX_DAYS} days`,
+      });
+    }
+  });
+
+export const spendBreakdownInputSchema = z.union([
+  spendDailyInputSchema,
+  z.object({
+    agentId: z.string().min(1).optional(),
+    at: spendAtWindowSchema,
+  }),
+]);
 
 export const SPEND_SUB_AGENTS_PAGE = 50;
 export const SPEND_SUB_AGENTS_MAX = 10_000;
@@ -77,10 +106,18 @@ export const spendSessionsInputSchema = z
     agentId: z.string().min(1),
     from: utcDaySchema.optional(),
     to: utcDaySchema.optional(),
+    at: spendAtWindowSchema.optional(),
     sessionIds: z.array(z.string().min(1)).max(SPEND_SESSIONS_MAX).optional(),
     limit: z.number().int().min(1).max(SPEND_SESSIONS_MAX).optional(),
   })
   .superRefine((input, ctx) => {
+    if (input.at && (input.from || input.to)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["at"],
+        message: "give at or from/to, not both",
+      });
+    }
     if (input.from && input.to && input.from > input.to) {
       ctx.addIssue({
         code: "custom",
@@ -90,10 +127,18 @@ export const spendSessionsInputSchema = z
     }
   });
 
+export const SPEND_CALLS_MAX = 1000;
+
+export const spendCallsInputSchema = z.object({
+  agentId: z.string().min(1),
+  routerCallIds: z
+    .array(z.string().min(1).max(128))
+    .min(1)
+    .max(SPEND_CALLS_MAX),
+});
+
 export const SPEND_TURNS_MAX_WINDOWS = 200;
 export const SPEND_TURNS_MAX_SPAN_DAYS = 31;
-
-const instantSchema = z.string().datetime({ offset: true });
 
 export const spendTurnsInputSchema = z
   .object({

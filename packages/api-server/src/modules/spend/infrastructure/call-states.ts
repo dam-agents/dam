@@ -14,6 +14,7 @@ export interface CallMeta {
   readonly connectionId: string | null;
   readonly providers: readonly string[];
   readonly sessionId: string | null;
+  readonly routerCallId?: string | null;
   readonly startedAt: Date;
 }
 
@@ -100,6 +101,7 @@ export function createRedisCallStates(redis: Redis): CallStates {
           m_conn: meta.connectionId ?? "",
           m_providers: meta.providers.join(","),
           m_session: meta.sessionId ?? "",
+          m_router_call: meta.routerCallId ?? "",
           m_started: String(meta.startedAt.getTime()),
         })
         .expire(callKey(callId), CALL_TTL_SECONDS)
@@ -159,6 +161,7 @@ export function createRedisCallStates(redis: Redis): CallStates {
               connectionId: hash.m_conn || null,
               providers: (hash.m_providers ?? "").split(",").filter(Boolean),
               sessionId: hash.m_session || null,
+              routerCallId: hash.m_router_call || null,
               startedAt: new Date(Number(hash.m_started)),
             }
           : null,

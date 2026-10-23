@@ -1,10 +1,15 @@
-import type { AgentSpend, AgentSpendQuery } from "api-server-api";
+import type {
+  AgentSpend,
+  AgentSpendQuery,
+  SpendCallCost,
+} from "api-server-api";
 import {
   countSessions,
   foldAgentTotals,
   foldSubAgents,
   type AgentLedgerRow,
 } from "../domain/agent-spend.js";
+import { readRangeOf } from "../domain/read-window.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import { readSessionSpend, type SpawnedSubAgents } from "./session-spend.js";
 import type { AgentOwners } from "./spend-ingest.js";
@@ -12,6 +17,10 @@ import type { AgentPayers } from "./spend-service.js";
 
 export interface AgentSpendReader {
   read(query: AgentSpendQuery): Promise<AgentSpend>;
+  callCosts(
+    agentId: string,
+    routerCallIds: readonly string[],
+  ): Promise<SpendCallCost[]>;
 }
 
 /**
@@ -28,6 +37,21 @@ export function createAgentSpend(deps: {
   meteringStart(): Promise<Date>;
 }): AgentSpendReader {
   return {
+    async callCosts(agentId, routerCallIds) {
+      if (routerCallIds.length === 0) return [];
+      const [ownerSub, subAgentIds] = await Promise.all([
+        deps.owners.ownerOf(await deps.payers.payerOf(agentId)),
+        deps.subAgents.spawnSessions(agentId),
+      ]);
+      return ownerSub
+        ? deps.ledger.callCosts({
+            ownerSub,
+            callingAgentIds: [agentId, ...subAgentIds.keys()],
+            routerCallIds,
+          })
+        : [];
+    },
+
     async read(query) {
       const { agentId, from, to, sessionId } = query;
       const [payer, startedAt] = await Promise.all([
@@ -44,7 +68,20 @@ export function createAgentSpend(deps: {
       });
       if (!ownerSub) return view([]);
 
-      const range = { ownerSub, from, to };
+      const read = query.at
+        ? readRangeOf(
+            query.at,
+            new Date(),
+            startedAt,
+            await deps.ledger.callDetailSince(),
+          )
+        : { from, to, at: undefined, window: undefined };
+      const range = {
+        ownerSub,
+        from: read.from,
+        to: read.to,
+        ...(read.at && { at: read.at }),
+      };
       const needsTree =
         sessionId !== undefined ||
         (scope === "caller" && query.subAgentLimit !== undefined);
@@ -81,10 +118,8 @@ export function createAgentSpend(deps: {
         ...view(counted),
         ...(query.sessionLimit !== undefined && {
           sessions: await readSessionSpend(deps, {
-            ownerSub,
+            ...range,
             agentId,
-            from,
-            to,
             ...(sessionId !== undefined && { sessionIds: [sessionId] }),
             limit: query.sessionLimit,
           }),
@@ -92,6 +127,7 @@ export function createAgentSpend(deps: {
         ...(query.subAgentLimit !== undefined && {
           subAgents: foldSubAgents(subAgentRows, query.subAgentLimit),
         }),
+        ...(read.window && { window: read.window }),
       };
     },
   };

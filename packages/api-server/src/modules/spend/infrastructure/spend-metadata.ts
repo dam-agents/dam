@@ -11,6 +11,7 @@ export interface SpendMetadata {
   readonly connectionId: string | null;
   readonly sessionId: string | null;
   readonly harness: string | null;
+  readonly routerCallId: string | null;
   readonly model: string | null;
   readonly usage: RawUsage;
   readonly replyBytes: number | null;
@@ -43,6 +44,7 @@ export function parseSpendMetadata(
     connectionId: text(fields.conn) ?? null,
     sessionId: text(fields.session) ?? null,
     harness: text(fields.harness) ?? null,
+    routerCallId: text(fields.router_call) ?? null,
     model: text(fields.model) ?? null,
     usage: {
       inputTokens: amount(fields.input_tokens),

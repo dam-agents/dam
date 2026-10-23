@@ -36,6 +36,7 @@ export interface CallRecord {
   readonly providers: readonly string[];
   readonly sessionId: string | null;
   readonly harness: string | null;
+  readonly routerCallId: string | null;
   readonly path: string;
   readonly dialect: ApiDialect;
   readonly model: string | null;

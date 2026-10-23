@@ -382,6 +382,7 @@ export function createClickhouseReader(
         `SELECT
            Timestamp AS at,
            LogAttributes['request_id'] AS requestId,
+           LogAttributes['platform.call.id'] AS routerCallId,
            ${CALLING_AGENT_ID} AS agentId,
            LogAttributes['model'] AS model,
            ${TOK_IN} AS inputTokens,
@@ -400,6 +401,7 @@ export function createClickhouseReader(
       return r.map((x) => ({
         at: String(x.at ?? ""),
         requestId: String(x.requestId ?? ""),
+        routerCallId: String(x.routerCallId ?? ""),
         agentId: String(x.agentId ?? ""),
         model: String(x.model ?? ""),
         inputTokens: n(x.inputTokens),

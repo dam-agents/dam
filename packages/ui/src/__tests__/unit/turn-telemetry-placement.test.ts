@@ -19,6 +19,11 @@ vi.mock("../../modules/telemetry/api/queries.js", () => ({
   useTurn: () => ({ data: undefined, isPending: false, isError: false }),
 }));
 
+vi.mock("../../modules/spend/api/queries.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useCallCosts: () => ({ data: undefined }),
+}));
+
 const turn: TurnSummary = {
   turnId: "t1",
   promptId: "p1",

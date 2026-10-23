@@ -1,11 +1,33 @@
-import type { TelemetryLog, TelemetrySpan, TurnDetail } from "api-server-api";
+import type {
+  SpendCallCost,
+  TelemetryLog,
+  TelemetrySpan,
+  TurnDetail,
+} from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { labelVariants } from "@/components/ui/label";
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { callCostLabel } from "../../spend/lib/amounts-label.js";
+import { ESTIMATED_CALL_HELP } from "../../spend/lib/copy.js";
 import { placementOf } from "../lib/waterfall.js";
+
+function CallCost({ cost }: { cost: SpendCallCost | undefined }) {
+  const text = cost ? callCostLabel(cost) : null;
+  if (!cost || !text) return null;
+  return (
+    <p className="text-xs">
+      Cost: <span className="font-mono tabular-nums">{text}</span>
+      {cost.estimated && (
+        <span className="ml-2 text-2xs text-muted-foreground">
+          {ESTIMATED_CALL_HELP}
+        </span>
+      )}
+    </p>
+  );
+}
 
 function AttributeRows({ attributes }: { attributes: Record<string, string> }) {
   const entries = Object.entries(attributes).sort(([a], [b]) =>
@@ -30,7 +52,13 @@ function AttributeRows({ attributes }: { attributes: Record<string, string> }) {
   );
 }
 
-export function RecordDetail({ log }: { log: TelemetryLog }) {
+export function RecordDetail({
+  log,
+  cost,
+}: {
+  log: TelemetryLog;
+  cost: SpendCallCost | undefined;
+}) {
   const placement = placementOf(log);
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -46,6 +74,8 @@ export function RecordDetail({ log }: { log: TelemetryLog }) {
           {log.at}
         </span>
       </div>
+
+      <CallCost cost={cost} />
 
       <p className="text-2xs text-muted-foreground">
         Position on the timeline: {placement.label}.
@@ -68,9 +98,11 @@ export function RecordDetail({ log }: { log: TelemetryLog }) {
 export function SpanDetail({
   trace,
   span,
+  cost,
 }: {
   trace: TurnDetail;
   span: TelemetrySpan;
+  cost: SpendCallCost | undefined;
 }) {
   const attached = trace.logs.filter((l) => l.attachedTo === span.spanId);
   const failed = span.statusCode.includes("ERROR");
@@ -88,6 +120,8 @@ export function SpanDetail({
           {span.service}
         </span>
       </div>
+
+      <CallCost cost={cost} />
 
       {span.statusMessage !== "" && (
         <p className="font-mono text-xs text-danger">{span.statusMessage}</p>

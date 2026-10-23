@@ -18,6 +18,7 @@ const (
 	proxyCostMarginHeader    = "x-litellm-response-cost-margin-amount"
 	sessionStampHeader       = "x-platform-session"
 	harnessStampHeader       = "x-platform-harness"
+	callStampHeader          = "x-platform-call"
 )
 
 func spendMeterHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
@@ -104,6 +105,7 @@ func luaSpendMeterParams(p bootstrapParams, c envoyHostChain) string {
 		"local ADDRESS_HEADER = " + strconv.Quote(connectionAddressHeader) + "\n" +
 		"local SESSION_HEADER = " + strconv.Quote(sessionStampHeader) + "\n" +
 		"local HARNESS_HEADER = " + strconv.Quote(harnessStampHeader) + "\n" +
+		"local CALL_HEADER = " + strconv.Quote(callStampHeader) + "\n" +
 		"local ADDRESSED_PATH = " + strconv.Quote(luaAddressedPathPattern()) + "\n" +
 		"local PAYER = " + strconv.Quote(p.PayerID()) + "\n" +
 		"local CONNECTIONS = " + luaStringMap(templates) + "\n" +
@@ -453,6 +455,8 @@ function envoy_on_request(rh)
   local session, harness = stamp(h:get(SESSION_HEADER)), stamp(h:get(HARNESS_HEADER))
   if session ~= nil then md:set(NS, "session", session) end
   if harness ~= nil then md:set(NS, "harness", harness) end
+  local router_call = stamp(h:get(CALL_HEADER))
+  if router_call ~= nil then md:set(NS, "router_call", router_call) end
 end
 
 function envoy_on_response(rh)

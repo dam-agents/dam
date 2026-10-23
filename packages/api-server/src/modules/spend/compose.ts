@@ -1,7 +1,7 @@
 import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type { Subscription } from "rxjs";
-import type { SpendService } from "api-server-api";
+import { CALL_ROWS_RETENTION_DAYS, type SpendService } from "api-server-api";
 import { getLogger } from "../../core/logger.js";
 import type { PriceBook } from "./domain/prices.js";
 import { loadAnthropicPriceTable } from "./infrastructure/anthropic-price-table.js";
@@ -53,8 +53,6 @@ import {
   type CeilingUsers,
   type SpendCeilingsForOperator,
 } from "./services/spend-ceilings-admin.js";
-
-const CALL_ROWS_RETENTION_DAYS = 30;
 
 function composePriceBook(
   priceOverrides: readonly OperatorPriceInput[],

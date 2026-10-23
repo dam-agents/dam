@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { SessionCategory } from "../sessions/types.js";
 import type {
   spendBreakdownInputSchema,
+  spendCallsInputSchema,
   spendCeilingSetInputSchema,
   spendCeilingSourceSchema,
   spendCeilingUserSchema,
@@ -22,6 +23,7 @@ export type SpendBreakdownInput = z.infer<typeof spendBreakdownInputSchema>;
 export type SpendSessionsInput = z.infer<typeof spendSessionsInputSchema>;
 export type SpendSubAgentsInput = z.infer<typeof spendSubAgentsInputSchema>;
 export type SpendTurnsInput = z.infer<typeof spendTurnsInputSchema>;
+export type SpendCallsInput = z.infer<typeof spendCallsInputSchema>;
 export type SpendLimitScope = z.infer<typeof spendLimitScopeSchema>;
 export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
 export type SpendCeilingSource = z.infer<typeof spendCeilingSourceSchema>;
@@ -128,6 +130,7 @@ interface SpendAgentRow {
 export interface SpendBreakdown {
   from: string;
   to: string;
+  window?: SpendReadWindow;
   totals: (SpendAmount & SpendCounts)[];
   byDay: (SpendAmount & { day: string })[];
   byAgent: (SpendAmount & SpendAgentRow)[];
@@ -168,17 +171,21 @@ export interface SpendSessionRow {
   cacheWrite1hTokens: number;
   firstDay: string;
   lastDay: string;
+  firstAt?: string;
+  lastAt?: string;
 }
 
 export interface SpendSessions {
   rows: SpendSessionRow[];
   truncated: boolean;
+  window?: SpendReadWindow;
 }
 
 export interface AgentSpendQuery {
   agentId: string;
   from: string;
   to: string;
+  at?: { fromAt: string; toAt: string };
   sessionId?: string;
   sessionLimit?: number;
   subAgentLimit?: number;
@@ -208,6 +215,7 @@ export interface AgentSpend {
   sessionCount: number;
   sessions?: SpendSessions;
   subAgents?: { rows: SubAgentSpendRow[]; truncated: boolean };
+  window?: SpendReadWindow;
 }
 
 export interface SpendTurns {
@@ -226,12 +234,28 @@ export interface SpendMetering {
   earlierEstimatesUntil: string | null;
 }
 
+export interface SpendReadWindow {
+  granularity: "hour" | "day";
+  fromAt: string;
+  toAt: string;
+}
+
+export interface SpendCallCost extends SpendAmount {
+  routerCallId: string;
+  estimated: boolean;
+}
+
+export interface SpendCalls {
+  calls: SpendCallCost[];
+}
+
 export interface SpendService {
   daily(input: SpendDailyInput): Promise<SpendDailyRow[]>;
   breakdown(input: SpendBreakdownInput): Promise<SpendBreakdown>;
   sessions(input: SpendSessionsInput): Promise<SpendSessions>;
   subAgents(input: SpendSubAgentsInput): Promise<SpendSubAgents>;
   turns(input: SpendTurnsInput): Promise<SpendTurns>;
+  calls(input: SpendCallsInput): Promise<SpendCalls>;
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;
   setLimit(input: SpendSetLimitInput): Promise<void>;

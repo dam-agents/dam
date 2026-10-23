@@ -1,9 +1,15 @@
-import type { TurnDetail } from "api-server-api";
+import type { SpendCallCost, TurnDetail } from "api-server-api";
 import { useMemo } from "react";
 
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import { callCostLabel } from "../../spend/lib/amounts-label.js";
+import {
+  ESTIMATED_CALL_HELP,
+  MEASURED_CALL_HELP,
+} from "../../spend/lib/copy.js";
+import type { CallCostOf } from "../lib/call-costs.js";
 import {
   buildWaterfall,
   logEventLabel,
@@ -34,14 +40,33 @@ const offsetLabel = (ms: number): string =>
 
 export function TraceWaterfall({
   turn,
+  costOf,
   selectedKey,
   onSelect,
 }: {
   turn: TurnDetail;
+  costOf: CallCostOf | undefined;
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }) {
   const wf = useMemo(() => buildWaterfall(turn), [turn]);
+  const costs = useMemo(() => {
+    const byRow = new Map<string, SpendCallCost>();
+    if (!costOf) return byRow;
+    const shownOnSpan = new Set<string>();
+    for (const row of wf.rows) {
+      if (row.kind === "span") {
+        const cost = costOf.span(row.span, row.logs);
+        if (!cost) continue;
+        byRow.set(row.key, cost);
+        shownOnSpan.add(row.span.spanId);
+      } else if (!shownOnSpan.has(row.log.attachedTo ?? "")) {
+        const cost = costOf.log(row.log);
+        if (cost) byRow.set(row.key, cost);
+      }
+    }
+    return byRow;
+  }, [wf, costOf]);
 
   if (wf.rows.length === 0) {
     return (
@@ -56,6 +81,8 @@ export function TraceWaterfall({
     const selected = selectedKey === key;
     const isSpan = row.kind === "span";
     const placement = isSpan ? null : placementOf(row.log);
+    const cost = costs.get(key);
+    const costText = cost ? callCostLabel(cost) : null;
 
     return (
       <button
@@ -101,6 +128,14 @@ export function TraceWaterfall({
               title="Matched to this call by its request id"
             >
               call
+            </span>
+          )}
+          {cost && costText && (
+            <span
+              className="shrink-0 font-mono text-2xs tabular-nums text-foreground/80"
+              title={cost.estimated ? ESTIMATED_CALL_HELP : MEASURED_CALL_HELP}
+            >
+              {costText}
             </span>
           )}
         </span>

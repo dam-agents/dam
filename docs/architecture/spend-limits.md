@@ -42,7 +42,7 @@ The Connection is the one that the request named, else the chain's only model-pr
 An address that names no Connection of the chain counts as no address, so a false address cannot hide a call.
 When the chain has several model-provider Connections and the request names none, the meter names all their providers and no Connection.
 The meter keeps these facts in the call's gateway metadata, out of the agent's reach, and the gateway hands them to the ext_authz check, so the gate and the ledger see the same call.
-The meter also copies the session and the harness that the [Model Router](harness-config.md#the-model-router) stamps on the call, when each is at most 128 characters of printable ASCII.
+The meter also copies the session, the harness and the call id that the [Model Router](harness-config.md#the-model-router) stamps on the call, when each is at most 128 characters of printable ASCII.
 The stamp comes from the agent's pod, so it serves display only; the gateway removes it before the provider, on every chain.
 The meter also removes the request's compression offer, because a compressed reply cannot be read as it passes.
 It notes the path without the query and without a Connection address prefix, the API dialect of the path, and whether the path is billable.
@@ -132,9 +132,9 @@ The totals and the limits of that call stay correct, because they do not read th
 The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
 
-**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the start time, the unit and the cost.
+**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the Model Router's call id, the start time, the Connection, the model, the unit, the cost, the token counts, the web searches, the model time and whether the cost is estimated.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
-It serves only the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn; no total and no limit reads it.
+It serves the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn, the cost of each call in the turn timeline, `get_metrics` and `dam metrics`, found by the router call id within the owner's rows, the reads in hours, and the first and last call time of a Session; no limit reads it.
 A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
 
 **Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
@@ -144,6 +144,7 @@ The screens read T to say since when the spend is measured, to mark the days bef
 The api-server reads T once and keeps it.
 
 **Grouped read.** The screens read the rollup grouped by day, payer, Connection, model, Session, calling agent and unit, for at most 366 days.
+A read with an exact window, from `get_metrics` hours and `dam metrics --since`, sums the call rows that start inside it in the same groups; a window that starts more than 30 days ago, or before the first call row with a model, widens to its UTC days, and the result names the window it read.
 The api-server folds the rows into totals per unit, the model time, and spend by day, agent, model, Connection, session type and calling agent.
 A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
 The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.

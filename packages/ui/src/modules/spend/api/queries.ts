@@ -7,6 +7,8 @@ import {
 import {
   type SpendAmount,
   type SpendBreakdownInput,
+  type SpendCallCost,
+  type SpendCalls,
   type SpendSessionRow,
   type SpendSessions,
   type SpendTurns,
@@ -153,5 +155,28 @@ export function useTurnSpend(
     refetchInterval: open ? SPEND_REFRESH_MS : false,
     placeholderData: keepPreviousData,
     retry: false,
+  });
+}
+
+const byRouterCallId = (data: SpendCalls): Map<string, SpendCallCost> =>
+  new Map(data.calls.map((call) => [call.routerCallId, call]));
+
+export function useCallCosts(
+  agentId: string | null,
+  routerCallIds: readonly string[],
+  turnEndedAt: string,
+) {
+  const open = Date.now() - Date.parse(turnEndedAt) < OPEN_TURN_MS;
+  return useQuery({
+    ...trpc.spend.calls.queryOptions(
+      agentId && routerCallIds.length > 0
+        ? { agentId, routerCallIds: [...routerCallIds] }
+        : skipToken,
+    ),
+    select: byRouterCallId,
+    refetchInterval: (query) =>
+      open && (query.state.data?.calls.length ?? 0) < routerCallIds.length
+        ? SPEND_REFRESH_MS
+        : false,
   });
 }

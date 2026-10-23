@@ -115,6 +115,11 @@ export function dayCountersOf(row: SpendRow): readonly DayCounter[] {
   ];
 }
 
+export interface CallWindow {
+  readonly fromAt: Date;
+  readonly toAt: Date;
+}
+
 export function utcDay(at: Date): string {
   return at.toISOString().slice(0, 10);
 }

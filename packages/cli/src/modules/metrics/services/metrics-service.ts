@@ -3,6 +3,8 @@ import type {
   MetricsQuery,
   SpendBreakdown,
   SpendBreakdownInput,
+  SpendCalls,
+  SpendCallsInput,
   SpendMetering,
   SpendSessions,
   SpendSessionsInput,
@@ -18,6 +20,7 @@ export interface MetricsService {
   overview(query: MetricsQuery): MetricsResult<MetricsOverview>;
   breakdown(input: SpendBreakdownInput): MetricsResult<SpendBreakdown>;
   sessions(input: SpendSessionsInput): MetricsResult<SpendSessions>;
+  calls(input: SpendCallsInput): MetricsResult<SpendCalls>;
   metering(): MetricsResult<SpendMetering>;
 }
 
@@ -33,6 +36,9 @@ export function createMetricsService(deps: {
     },
     async sessions(input) {
       return trpcCall(() => deps.trpc.spend.sessions.query(input));
+    },
+    async calls(input) {
+      return trpcCall(() => deps.trpc.spend.calls.query(input));
     },
     async metering() {
       return trpcCall(() => deps.trpc.spend.metering.query());

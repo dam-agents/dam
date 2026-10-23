@@ -45,6 +45,7 @@ function spendPort(answer: AgentSpend = measuredSpend()) {
       queries.push(query);
       return answer;
     },
+    callCosts: async () => [],
   };
   return { port, queries };
 }
