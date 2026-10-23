@@ -1,16 +1,17 @@
 ---
 name: spawn-subagent
-description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result.
-  Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result.
+description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result, or run one shell command with no model and return its exact output.
+  Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step in a fresh sandbox.
   Its first step decides whether a platform sub-agent is needed at all.
   Hand-offs, fan-outs and long waits use the spawn_subagent and await_subagents tools; a driver SDK script (Python driver_sdk, JS driver-sdk.mjs) is only for orchestration logic that finishes in one foreground command.
-allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
+allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__fetch_subagent_output, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
 ---
 
 # Spawn a sub-agent
 
 The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox that runs one prompt to completion, reports one result, and is then removed.
 You (the driver) hand it a prompt plus the result shape you expect, and get the validated result back.
+Or you hand it a shell command (`script`): no model runs, and you get the command's exit code and its exact stdout and stderr.
 It runs unattended and cannot ask you anything.
 
 ## Step 1 — Decide: is a platform sub-agent needed?
@@ -41,11 +42,17 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
    A sub-agent on your own harness runs on this session's model and settings; on any other harness, pass `model` (one `list_harnesses` lists for it), or the spawn is refused.
    When the user set this session's platform sub-agents to a harness, model, mode or effort, those bind: a `harness` you omit is that one, another is refused, and the spawn result names what was set.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
+   **When the work is a command whose output you need** (a test suite, an eval, a benchmark, a build, a data transform), pass `script` instead of `prompt` and `schema`, and no model options: no model runs, so it costs no model call and the output is not retold.
+   Pass one or the other; a call with both is refused.
    Never pick a model through `env`: the platform then records no harness config and runs none of its checks.
    It returns the sub-agent id at once.
 3. **Wait.** Call `await_subagents` with the ids.
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
    A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
+   For a script, it gives the exit code and the start and end of stdout and stderr.
+4. **Save a script's output in full** with `fetch_subagent_output` and a `path`, then run the command it returns: it downloads the stream byte for byte to that file in this sandbox and checks it.
+   Read the file as often as you need; the user can open it too.
+   Fetch each stream once, since the platform deletes its copy after the download; one nobody fetches is deleted after seven days.
 
 For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in one `await_subagents` call.
 
@@ -70,7 +77,7 @@ The options below mean the same in both: the tools take them as camelCase JSON (
 The same SDK ships in two languages, both dependency-free and self-configuring from the pod (no URL or token to pass):
 
 - **Python** — `import driver_sdk as d` works in any `python3` on this image.
-- **JS** — `import { spawn, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";`
+- **JS** — `import { spawn, spawnScript, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";`
 
 Examples below are Python; the JS names are the camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
 
@@ -140,6 +147,33 @@ Time spent queued for compute counts too.
 
 **Give a heavy sub-agent more memory.** The harness default (often 1Gi) OOM-kills a clone plus install or build.
 An OOM-killed sub-agent fails fast with its reason.
+
+## Run a command from a driver script
+
+In a driver script, the SDK runs a command the same way the tools' `script` does: `spawn_script` (JS: `spawnScript`).
+No model turn runs: the sub-agent is set up with the same options as above, then runs the script once with `bash -lc` in its workspace.
+You get back what the script wrote, byte for byte, instead of a model's retelling of it.
+
+```python
+out = d.spawn_script(
+    "./bin/eval --suite smoke --json",
+    harness="claude-code",                       # the image the script runs in
+    seed={"url": "https://github.example/acme/tool", "commit": my_commit},
+    install="uv sync",
+    resources={"cpu": "4", "memory": "8Gi"},
+    ttl_ms=30 * 60_000,
+    label="eval:smoke",
+)
+report = json.loads(out.text("stdout"))          # or out.bytes("stdout"), out.download("stdout", path)
+```
+
+- **Exit 0 returns a `ScriptOutput`**; anything else raises `ScriptFailed` (an `InvocationFailed`) whose `reason` carries the exit code and the tail of stderr, and whose `output` still reads the streams.
+- **Each stream reads once.** A read checks the bytes against the hash the sub-agent reported, then the platform deletes the stream; one you never read is deleted after seven days.
+  `bytes` and `text` read at most 512 MiB into memory; use `download(stream, path)` for larger output, which streams to disk.
+- **Hand files back through stdout**: `cat results.parquet`, or `tar c reports/` for a directory, and keep logs on stderr.
+  Each stream carries at most 5 GiB.
+- **`ttl_ms` bounds the script.** The script is stopped a quarter of `ttl_ms` early (at most five minutes), with anything it started, so its output can still be uploaded; the spawn then fails.
+  Size `ttl_ms` for the script's run plus that margin.
 
 ## Choose the model per spawn
 

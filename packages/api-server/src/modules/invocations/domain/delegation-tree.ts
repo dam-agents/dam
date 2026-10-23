@@ -9,6 +9,8 @@ export interface DelegationRecord {
   driverAgentId: string;
   label: string | null;
   prompt: string;
+  script: string | null;
+  exitCode: number | null;
   templateId: string | null;
   image: string | null;
   connections: string[];
@@ -35,6 +37,8 @@ function toNode(
     errorReason: row.errorReason,
     result: row.status === "done" ? row.result : null,
     prompt: row.prompt,
+    script: row.script,
+    exitCode: row.exitCode,
     templateId: row.templateId,
     image: row.image,
     connections: row.connections,

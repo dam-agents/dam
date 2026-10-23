@@ -7,6 +7,9 @@ have to be baked too). The Python twin of ``/usr/local/lib/driver-sdk.mjs``:
   schema-validated result. It takes the same setup a starter kit applies:
   ``image``, ``seed``, ``install``, ``env``, ``resources``, ``backend``,
   ``skills``. The sub-agent runs on this driver's provider.
+- ``spawn_script`` runs a shell command on a sub-agent set up the same way,
+  with no model turn, and returns its exit code, stdout and stderr byte for
+  byte.
 - ``list_images`` / ``list_connections`` / ``budget`` read what a spawn can use.
 - ``s`` is shorthand for result schemas.
 
@@ -17,6 +20,7 @@ stdout stays clean.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -28,11 +32,14 @@ from typing import Any
 
 __all__ = [
     "InvocationFailed",
+    "ScriptFailed",
+    "ScriptOutput",
     "budget",
     "list_connections",
     "list_images",
     "s",
     "spawn",
+    "spawn_script",
 ]
 
 _DEFAULT_POLL_SECONDS = 5.0
@@ -197,6 +204,78 @@ def budget() -> dict[str, Any]:
     return _request("GET", "/budget")
 
 
+def _target_body(
+    *,
+    harness: str | None,
+    image: str | None,
+    connections: list[str] | None,
+    seed: dict[str, Any] | None,
+    install: str | None,
+    env: dict[str, str] | None,
+    resources: dict[str, str] | None,
+    backend: str | None,
+    skills: list[dict[str, str]] | None,
+    ttl_ms: int | None,
+    memory: str | None,
+    cpu: str | None,
+    label: str | None,
+) -> dict[str, Any]:
+    if harness is None and image is None:
+        raise ValueError("pass harness= (or image=)")
+    if resources is not None and (memory is not None or cpu is not None):
+        raise ValueError("pass cpu and memory inside resources=, not beside it")
+    body: dict[str, Any] = {}
+    if harness is not None:
+        body["harness"] = harness
+    if image is not None:
+        body["image"] = image
+    if label is not None:
+        body["label"] = label
+    if connections:
+        body["connections"] = connections
+    if seed is not None:
+        body["seed"] = seed
+    if install is not None:
+        body["install"] = {"command": install}
+    if env:
+        body["env"] = [{"name": k, "value": v} for k, v in env.items()]
+    if resources is not None:
+        body["resources"] = resources
+    if backend is not None:
+        body["backend"] = backend
+    if skills:
+        body["skills"] = skills
+    if ttl_ms is not None:
+        body["ttlMs"] = ttl_ms
+    if memory is not None:
+        body["memory"] = memory
+    if cpu is not None:
+        body["cpu"] = cpu
+    return body
+
+
+def _await(
+    invocation_id: str,
+    name: str,
+    *,
+    ttl_ms: int | None,
+    poll_seconds: float,
+    timeout_seconds: float | None,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + (
+        timeout_seconds
+        if timeout_seconds is not None
+        else (ttl_ms / 1000 + 60 if ttl_ms else _DEFAULT_SPAWN_TIMEOUT_S)
+    )
+    while True:
+        view = _request("GET", f"/invocations/{invocation_id}")
+        if view["status"] != "running":
+            return view
+        if time.monotonic() > deadline:
+            raise InvocationFailed(invocation_id, f"{name} (client timeout)")
+        time.sleep(poll_seconds)
+
+
 def spawn(
     prompt: str,
     schema: Any,
@@ -255,38 +334,24 @@ def spawn(
     spawn once the sub-agent boots. Omit ``model`` to run on this agent's
     default model, on the harness that default runs on; on any other
     harness, or with no default, the spawn is refused."""
-    if harness is None and image is None:
-        raise ValueError("pass harness= (or image=)")
-    if resources is not None and (memory is not None or cpu is not None):
-        raise ValueError("pass cpu and memory inside resources=, not beside it")
+    body = _target_body(
+        harness=harness,
+        image=image,
+        connections=connections,
+        seed=seed,
+        install=install,
+        env=env,
+        resources=resources,
+        backend=backend,
+        skills=skills,
+        ttl_ms=ttl_ms,
+        memory=memory,
+        cpu=cpu,
+        label=label,
+    )
     name = label or harness or image or "invocation"
-    body: dict[str, Any] = {"prompt": prompt, "schema": s(schema)}
-    if harness is not None:
-        body["harness"] = harness
-    if image is not None:
-        body["image"] = image
-    if label is not None:
-        body["label"] = label
-    if connections:
-        body["connections"] = connections
-    if seed is not None:
-        body["seed"] = seed
-    if install is not None:
-        body["install"] = {"command": install}
-    if env:
-        body["env"] = [{"name": k, "value": v} for k, v in env.items()]
-    if resources is not None:
-        body["resources"] = resources
-    if backend is not None:
-        body["backend"] = backend
-    if skills:
-        body["skills"] = skills
-    if ttl_ms is not None:
-        body["ttlMs"] = ttl_ms
-    if memory is not None:
-        body["memory"] = memory
-    if cpu is not None:
-        body["cpu"] = cpu
+    body["prompt"] = prompt
+    body["schema"] = s(schema)
     harness_config: dict[str, Any] = {}
     if model is not None:
         harness_config["model"] = model
@@ -300,19 +365,170 @@ def spawn(
     invocation_id = _request("POST", "/invocations", body)["id"]
     _log(f"spawned {name} ({invocation_id})")
 
-    deadline = time.monotonic() + (
-        timeout_seconds
-        if timeout_seconds is not None
-        else (ttl_ms / 1000 + 60 if ttl_ms else _DEFAULT_SPAWN_TIMEOUT_S)
+    view = _await(
+        invocation_id,
+        name,
+        ttl_ms=ttl_ms,
+        poll_seconds=poll_seconds,
+        timeout_seconds=timeout_seconds,
     )
-    while True:
-        view = _request("GET", f"/invocations/{invocation_id}")
-        status = view["status"]
-        if status == "done":
-            _log(f"{name} ({invocation_id}) done")
-            return view.get("result")
-        if status == "failed":
-            raise InvocationFailed(invocation_id, name, view.get("errorReason"))
-        if time.monotonic() > deadline:
-            raise InvocationFailed(invocation_id, f"{name} (client timeout)")
-        time.sleep(poll_seconds)
+    if view["status"] == "failed":
+        raise InvocationFailed(invocation_id, name, view.get("errorReason"))
+    _log(f"{name} ({invocation_id}) done")
+    return view.get("result")
+
+
+_STREAMS = ("stdout", "stderr")
+_CHUNK_BYTES = 1024 * 1024
+_MAX_IN_MEMORY_BYTES = 512 * 1024 * 1024
+
+
+class ScriptOutput:
+    """What a script sub-agent left behind: ``exit_code`` and its stdout and
+    stderr, held by the platform until read. Each read checks the bytes
+    against the sha256 the sub-agent reported, then tells the platform to
+    delete that stream, so a stream reads once. A stream nobody reads is
+    deleted after seven days."""
+
+    def __init__(
+        self, invocation_id: str, exit_code: int | None, output: dict[str, Any]
+    ):
+        self.invocation_id = invocation_id
+        self.exit_code = exit_code
+        self._output = dict(output)
+
+    def size(self, stream: str) -> int | None:
+        blob = self._output.get(stream)
+        return blob["sizeBytes"] if blob else None
+
+    def bytes(self, stream: str) -> bytes:
+        size = self.size(stream) or 0
+        if size > _MAX_IN_MEMORY_BYTES:
+            raise RuntimeError(
+                f"invocation {self.invocation_id}: its {stream} is {size} bytes, too large to read "
+                f"into memory; use download({stream!r}, path)"
+            )
+        link = self._link(stream)
+        with urllib.request.urlopen(link["url"]) as res:
+            body = res.read()
+        self._verify(stream, link, len(body), hashlib.sha256(body).hexdigest())
+        self._ack(stream)
+        return body
+
+    def text(self, stream: str) -> str:
+        return self.bytes(stream).decode("utf-8", errors="replace")
+
+    def download(self, stream: str, path: str) -> None:
+        link = self._link(stream)
+        digest = hashlib.sha256()
+        size = 0
+        with urllib.request.urlopen(link["url"]) as res, open(path, "wb") as out:
+            while chunk := res.read(_CHUNK_BYTES):
+                digest.update(chunk)
+                size += len(chunk)
+                out.write(chunk)
+        self._verify(stream, link, size, digest.hexdigest())
+        self._ack(stream)
+
+    def _path(self, stream: str) -> str:
+        if stream not in _STREAMS:
+            raise ValueError(f"stream is one of {_STREAMS}, not {stream!r}")
+        return f"/invocations/{self.invocation_id}/output/{stream}"
+
+    def _link(self, stream: str) -> dict[str, Any]:
+        path = self._path(stream)
+        if stream not in self._output:
+            raise RuntimeError(
+                f"invocation {self.invocation_id} holds no {stream}: it was already read, or it expired"
+            )
+        return _request("GET", path)
+
+    def _verify(
+        self, stream: str, link: dict[str, Any], size: int, digest: str
+    ) -> None:
+        if size != link["sizeBytes"] or digest != link["sha256"]:
+            raise RuntimeError(
+                f"invocation {self.invocation_id}: the {stream} read back did not match what the script produced "
+                f"({size} bytes, sha256 {digest}; expected {link['sizeBytes']} bytes, sha256 {link['sha256']}); "
+                "it is kept, so read it again"
+            )
+
+    def _ack(self, stream: str) -> None:
+        _request("POST", f"{self._path(stream)}/ack")
+        self._output.pop(stream, None)
+
+
+class ScriptFailed(InvocationFailed):
+    """A script sub-agent failed: its script exited non-zero, was killed, ran
+    past its deadline, or its setup failed. ``reason`` carries the exit code
+    and the tail of stderr; ``output`` still reads what the script wrote."""
+
+    def __init__(
+        self, invocation_id: str, label: str, reason: str | None, output: ScriptOutput
+    ):
+        super().__init__(invocation_id, label, reason)
+        self.output = output
+
+
+def spawn_script(
+    script: str,
+    *,
+    harness: str | None = None,
+    image: str | None = None,
+    connections: list[str] | None = None,
+    seed: dict[str, Any] | None = None,
+    install: str | None = None,
+    env: dict[str, str] | None = None,
+    resources: dict[str, str] | None = None,
+    backend: str | None = None,
+    skills: list[dict[str, str]] | None = None,
+    ttl_ms: int | None = None,
+    memory: str | None = None,
+    cpu: str | None = None,
+    label: str | None = None,
+    poll_seconds: float = _DEFAULT_POLL_SECONDS,
+    timeout_seconds: float | None = None,
+) -> ScriptOutput:
+    """Run ``script`` on a sub-agent instead of a prompt, and block until it
+    ends. No model turn runs: the sub-agent is set up exactly as ``spawn``
+    sets one up (``seed``, ``install``, ``env``, ``resources``, ``backend``,
+    ``skills``), then runs ``bash -lc script`` in its workspace once.
+
+    Returns a ``ScriptOutput`` when the script exits 0; read its streams with
+    ``bytes``, ``text`` or ``download``. Any other end raises ``ScriptFailed``
+    with the exit code and the tail of stderr in ``reason``. ``ttl_ms`` is the
+    script's deadline: past it the script is killed and the spawn fails."""
+    if not script.strip():
+        raise ValueError("pass a script")
+    body = _target_body(
+        harness=harness,
+        image=image,
+        connections=connections,
+        seed=seed,
+        install=install,
+        env=env,
+        resources=resources,
+        backend=backend,
+        skills=skills,
+        ttl_ms=ttl_ms,
+        memory=memory,
+        cpu=cpu,
+        label=label,
+    )
+    body["script"] = script
+    name = label or harness or image or "invocation"
+
+    invocation_id = _request("POST", "/invocations", body)["id"]
+    _log(f"spawned {name} ({invocation_id})")
+    view = _await(
+        invocation_id,
+        name,
+        ttl_ms=ttl_ms,
+        poll_seconds=poll_seconds,
+        timeout_seconds=timeout_seconds,
+    )
+    output = ScriptOutput(invocation_id, view.get("exitCode"), view.get("output") or {})
+    if view["status"] == "failed":
+        raise ScriptFailed(invocation_id, name, view.get("errorReason"), output)
+    _log(f"{name} ({invocation_id}) done")
+    return output

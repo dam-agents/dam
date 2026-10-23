@@ -31,6 +31,11 @@ function makeService(row: InvocationRow) {
     listUnreapedByRoot: async () => [],
     delete: async () => {},
     markTranscriptCaptured: async () => {},
+    finishScript: async () => true,
+    dropOutputStream: async () => {},
+    clearOutput: async () => {},
+    listExpiredOutputs: async () => [],
+    listScriptsByRoot: async () => [],
     deleteReapedByRoot: async () => 0,
   };
   const service = createInvocationsService({
@@ -44,6 +49,7 @@ function makeService(row: InvocationRow) {
     runtimeMutator: {} as never,
     wakeAgent: async () => {},
     readHarnessConfigSupport: async () => null,
+    scriptOutputsAvailable: true,
   });
   return { rows, service };
 }
@@ -72,6 +78,10 @@ function runningRow(resultSchema: unknown): InvocationRow {
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
+    script: null,
+    exitCode: null,
+    output: null,
+    outputExpiresAt: null,
     harnessConfig: null,
     driverSessionId: null,
   };

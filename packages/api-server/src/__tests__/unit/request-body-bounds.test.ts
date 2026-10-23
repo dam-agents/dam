@@ -158,6 +158,7 @@ describe("request body bounds", () => {
         }),
       } as unknown as K8sClient,
       hello: {} as never,
+      invocationScripts: {} as never,
       sessionDirectory: {} as never,
       artifactTouchesFor: () => ({}) as never,
       kbPublish: {} as KbPublishGate,

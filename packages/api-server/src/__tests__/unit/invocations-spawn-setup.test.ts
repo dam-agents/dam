@@ -37,6 +37,11 @@ function repoStub(overrides: Partial<InvocationsRepository> = {}) {
     listByRoot: async () => [],
     listUnreapedByRoot: async () => [],
     delete: async () => {},
+    finishScript: async () => true,
+    dropOutputStream: async () => {},
+    clearOutput: async () => {},
+    listExpiredOutputs: async () => [],
+    listScriptsByRoot: async () => [],
     deleteReapedByRoot: async () => 0,
     ...overrides,
   };
@@ -75,6 +80,7 @@ function makeService(opts: { failPin?: boolean } = {}) {
     wakeAgent: async () => {},
     reaper: { reap: async () => {} },
     readHarnessConfigSupport: async () => null,
+    scriptOutputsAvailable: true,
     skills: {
       applyEntries: async (input) => {
         skillsApplied.push(input);
@@ -220,6 +226,7 @@ function makeFailingSkillsService(
       },
     },
     readHarnessConfigSupport: async () => null,
+    scriptOutputsAvailable: true,
     skills: { applyEntries } as never,
   });
   return { service, failed, deleted };
@@ -480,6 +487,7 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
   const app = new Hono();
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
+    scriptOutputs: {} as never,
     k8s: {
       getCustomObject: async (plural: string, id: string) =>
         plural === AGENTS_PLURAL && id === "driver-1"

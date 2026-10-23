@@ -60,8 +60,9 @@ export const performFetchResultSchema = z
 
 export const spawnInvocationInputSchema = z
   .object({
-    prompt: z.string().min(1),
-    schema: z.record(z.string(), z.unknown()),
+    prompt: z.string().min(1).optional(),
+    schema: z.record(z.string(), z.unknown()).optional(),
+    script: z.string().min(1).optional(),
     harness: z.string().min(1).optional(),
     image: z.string().min(1).optional(),
     connections: z.array(z.string()).optional(),

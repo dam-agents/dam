@@ -78,6 +78,7 @@ import {
   createArtifactTouchReporter,
   createToolApprovalReporter,
   createEnvPlugin,
+  createInvocationScriptPlugin,
   createEnvStateStore,
   staleEnvReason,
   createModelDiscovery,
@@ -656,6 +657,13 @@ const reconcileOnState = imageSkillReconciler
     }
   : undefined;
 
+const invocationScripts = createInvocationScriptPlugin({
+  workDir,
+  spawnEnv: () => mergedSpawnEnv(envStore),
+  harness: harnessClient.invocations.v1,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
   onSessionDefaults: (defaults) => acpRuntime.receiveDefaults(defaults),
@@ -694,6 +702,7 @@ const runtimeChannel = await composeRuntimeChannel({
       onPlatformEntry: (entry) => platformMcpEntry.set(entry),
     }),
     createSkillInstallPlugin({ install: skillsService.install }),
+    invocationScripts,
   ],
   onContributionsApplied: setupGitCredentialHelper,
   ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
@@ -1157,7 +1166,11 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
+      idle:
+        acp.idle &&
+        !anyPtyBusy() &&
+        !kbPublish.isBusy() &&
+        !invocationScripts.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
       openLinks: acp.openLinks,

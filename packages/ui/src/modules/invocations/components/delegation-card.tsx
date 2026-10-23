@@ -102,16 +102,29 @@ export function DelegationCard({
 
       {open && (
         <div className="-mx-3 flex flex-col gap-2.5 border-t border-border/40 px-3 py-2.5">
-          <Field label="Prompt">
-            <ToolContentBlock text={node.prompt} />
-          </Field>
-          {node.status === "done" && (
+          {node.script === null ? (
+            <Field label="Prompt">
+              <ToolContentBlock text={node.prompt} />
+            </Field>
+          ) : (
+            <Field label="Script">
+              <ToolContentBlock text={node.script} />
+            </Field>
+          )}
+          {node.exitCode !== null && (
+            <Field label="Exit code">
+              <ToolContentBlock text={String(node.exitCode)} />
+            </Field>
+          )}
+          {node.status === "done" && node.script === null && (
             <Field label="Result">
               <ToolContentBlock text={JSON.stringify(node.result, null, 2)} />
             </Field>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <OpenConversation node={node} driverAgentId={driverAgentId} />
+            {node.script === null && (
+              <OpenConversation node={node} driverAgentId={driverAgentId} />
+            )}
             {node.status === "running" && (
               <StopDelegation node={node} driverAgentId={driverAgentId} />
             )}

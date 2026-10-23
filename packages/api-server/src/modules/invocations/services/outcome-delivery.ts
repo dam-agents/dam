@@ -4,6 +4,7 @@ import {
   wakeOutcomeTurn,
   type OutcomeTurnDeps,
 } from "../../../core/outcome-turn.js";
+import { heldStreams } from "../domain/script-output.js";
 import type { InvocationRow } from "../infrastructure/invocations-repository.js";
 import type { SubAgentOutcomesRepository } from "../infrastructure/sub-agent-outcomes-repository.js";
 
@@ -19,9 +20,27 @@ export interface SubAgentOutcomeDeliveryDeps extends OutcomeTurnDeps {
 
 function describe(row: InvocationRow): string {
   const name = row.label ? `${row.label} (${row.id})` : row.id;
+  if (row.script !== null) return describeScript(name, row);
   return row.status === "done"
     ? `${name} — done. Result:\n${JSON.stringify(row.result, null, 2)}`
     : `${name} — failed: ${row.errorReason ?? "no reason recorded"}`;
+}
+
+function describeScript(name: string, row: InvocationRow): string {
+  const ended =
+    row.status === "done"
+      ? `${name}: the script is done, exit code 0.`
+      : `${name}: the script failed: ${row.errorReason ?? "no reason recorded"}.`;
+  const held = heldStreams(row.output);
+  const streams =
+    held.length > 0
+      ? `Its ${held
+          .map((s) => `${s} is ${row.output![s]!.sizeBytes} bytes`)
+          .join(
+            ", ",
+          )}; call await_subagents with this id to see their start and end, or fetch_subagent_output to save one in full to a file.`
+      : "It left no output to read.";
+  return `${ended} ${streams}`;
 }
 
 function byDriver(rows: InvocationRow[]): Map<string, InvocationRow[]> {

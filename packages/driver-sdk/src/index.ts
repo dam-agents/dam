@@ -16,3 +16,10 @@ export {
   type ImageInfo,
   type ConnectionInfo,
 } from "./spawn.js";
+export {
+  spawnScript,
+  ScriptOutput,
+  ScriptFailed,
+  type OutputStream,
+  type SpawnScriptOptions,
+} from "./script.js";

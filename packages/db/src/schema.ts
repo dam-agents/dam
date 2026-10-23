@@ -990,8 +990,12 @@ export const invocations = pgTable(
     cpu: text("cpu"),
     memory: text("memory"),
     ttlMs: integer("ttl_ms"),
-    resultSchema: jsonb("result_schema").notNull(),
+    resultSchema: jsonb("result_schema"),
     result: jsonb("result"),
+    script: text("script"),
+    exitCode: integer("exit_code"),
+    output: jsonb("output"),
+    outputExpiresAt: timestamp("output_expires_at", { withTimezone: true }),
     status: text("status").notNull().default("running"),
     errorReason: text("error_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1026,6 +1030,9 @@ export const invocations = pgTable(
     index("invocations_status_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.status} = 'running'`),
+    index("invocations_output_expiry_idx")
+      .on(table.outputExpiresAt)
+      .where(sql`${table.outputExpiresAt} IS NOT NULL`),
   ],
 );
 

@@ -204,6 +204,7 @@ Unless the preferences say `"lockComposer": false`, add this to `createSurface` 
 - Lock only when the form covers every answer the user may want to give: a confirmation, a short closed question, or a choice with an "Other" option and a text field.
 - Do not lock a long form, a question the user may want to discuss, or a card that only shows a result.
 - The form needs a `Button` with an `event` action in the tree under `root`; without one the chat reports an error.
+- To show the result in the same surface later, update it without the button; that ends the lock.
 - The lock ends when the user sends the form or a newer reply arrives, and the chat never locks a form that has an error.
 
 ## Recommend where you can

@@ -42,6 +42,11 @@ import {
 import type { InvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createSetupFailure } from "./services/setup-failure.js";
 import {
+  createScriptOutputs,
+  type OutputBlobStore,
+  type ScriptOutputs,
+} from "./services/script-outputs.js";
+import {
   createInvocationPinReconciler,
   type InvocationPinReconciler,
 } from "./services/invocation-pin.js";
@@ -73,6 +78,7 @@ export function composeInvocationsForOwner(opts: {
   wakeAgent: (agentId: string) => Promise<void>;
   frames: DelegationFramesPort;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  scriptOutputsAvailable: boolean;
   spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
@@ -87,6 +93,7 @@ export function composeInvocationsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
+    scriptOutputsAvailable: opts.scriptOutputsAvailable,
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
@@ -125,6 +132,8 @@ export function composeInvocationLivenessSweep(opts: {
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  runsScripts: (agentId: string) => Promise<boolean | null>;
+  outputs: ScriptOutputs;
   batchSize: number;
   frames: DelegationFramesPort;
 }): InvocationLivenessSweep {
@@ -135,6 +144,8 @@ export function composeInvocationLivenessSweep(opts: {
     readTargetRestart: opts.readTargetRestart,
     hasAgent: opts.hasAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
+    runsScripts: opts.runsScripts,
+    outputs: opts.outputs,
     batchSize: opts.batchSize,
   });
 }
@@ -183,10 +194,26 @@ export function createInvocationsCleanupHook(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   frames: DelegationFramesPort;
+  outputs: ScriptOutputs;
 }): (agentId: string) => Promise<void> {
   const repo = createInvocationsRepository(opts.db);
   return createDriverCascade({
     repo,
+    reaper: composeReaper(repo, opts.agentsFor, opts.frames),
+    outputs: opts.outputs,
+  });
+}
+
+export function composeScriptOutputs(opts: {
+  db: Db;
+  agentsFor: (owner: string) => AgentsService;
+  frames: DelegationFramesPort;
+  store: OutputBlobStore;
+}): ScriptOutputs {
+  const repo = createInvocationsRepository(opts.db);
+  return createScriptOutputs({
+    repo,
+    store: opts.store,
     reaper: composeReaper(repo, opts.agentsFor, opts.frames),
   });
 }

@@ -31,7 +31,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Agent** — a running harness with its own workspace; created from a template or a starter kit, opened in a chat view, can hibernate and wake.
 - **Starter kit** — a ready setup an agent is created from (connections, schedules, size).
 - **Connection** — a stored credential (model provider, GitHub, Slack…) granted to agents.
-- **Schedule** — a recurring task on an agent.
+- **Schedule** — a task on an agent, recurring or one-time (*At a time*, with a date and time); it runs on its own and wakes a sleeping agent.
+- **Asleep** — an agent hibernated after being idle for its *Sleep after being idle for* setting (5 minutes, 15 minutes, 1 hour, Never), shown in the owner's list of agents.
+  While waiting for an agent to fall asleep, watch only that list: opening its chat may wake it.
 - **Artifact** — a work product an agent or user publishes, shareable by link.
 - **Settings** — API keys, providers, connections, appearance, usage, schedules, about.
 - **Home** — what changed since the user last looked; agents, usage, spend.
@@ -43,16 +45,23 @@ Builds published before these accounts were added have only `qa-owner`; there an
 - **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
   - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`, and a test GitHub user who owns it.
     An agent reaches it through a **GitHub** connection, made either way a user makes one:
-    **Connect with GitHub** (OAuth), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may only read the repository and write its issues.
+    **Connect with GitHub** (OAuth), or a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN` and which may read the repository, write its issues and pull requests, and push and delete branches.
     With OAuth the install's GitHub OAuth App is the sandbox's, so the form needs no client ID; the browser leaves DAM for GitHub's sign-in.
     Right after the step that sends it there, call `githubSignIn({ screen, browser })` from `suite/lib/sandbox.ts`: it signs in as the test user (password and a fresh authenticator code), gives the App's consent when GitHub asks, and returns once the browser is back on DAM.
     Never drive GitHub's pages yourself, never type a GitHub value in a test, and never open another GitHub page: only the sign-in's own pages are reachable.
     The connection then shows the test user's login (`sandbox.githubLogin()`) as its account; `sandbox.githubUser()` says whether this instance has the test user.
-    Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
+    Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat.
+    The one exception is a pull request: `sandboxPull(id)` finds the newest one of the sandbox repository whose title holds the run's id (its link, title, state and branch), so an AC that the pull request "appears on GitHub" checks that it is `open`.
+    Never read the repository's files or any other GitHub page.
+    The agent clones and pushes the sandbox repository over git, and opens the pull request through GitHub's REST API; GitHub's GraphQL endpoint stays closed, so `gh pr create` fails and the agent has to fall back to the REST call — a criterion failed only by that is a model mistake to triage, not a product failure.
   - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
     An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
-    The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text)`, `botReplies(ts)`.
+    The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text, threadTs?)`, `botReplies(ts)`.
+    DAM drops the fourth bot or app post in a row in one conversation (a channel's top level, or one thread) until a person writes there, and the test person's posts count as app posts.
+    So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
+    A task that should post in Slack gets a thread of its own the same way: the root, then its link (`threadLink(root)`) in the task's prompt, then `botReplies(root)` for the agent's post — a post at the channel's top level would follow earlier runs' posts there and be dropped.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
+  - **Cleanup after a pass only**: after the last criterion, `closeSandboxPull(pull)` closes the run's pull request and deletes its branch, and the test deletes its agent; a failed run keeps both for its report.
   - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
     Without it, such ACs are `blocked`, naming `lend_model`.
   - A sandbox whose credentials are not set leaves its ACs `testable: no — external dependency`.

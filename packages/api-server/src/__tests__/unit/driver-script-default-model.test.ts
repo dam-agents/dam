@@ -24,6 +24,7 @@ function makeOps(
   const asked: Array<[string, string]> = [];
   const ops = createDriverOps({
     agents: { get: async () => null },
+    scriptOutputs: {} as never,
     invocationsServiceFor: () =>
       ({
         spawn: async (input: Record<string, unknown>) => {

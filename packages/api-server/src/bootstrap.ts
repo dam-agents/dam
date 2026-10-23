@@ -260,6 +260,8 @@ import {
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
+  composeScriptOutputs,
+  runtimeRunsScripts,
   HARNESS_CONFIG_STEP,
   composeInvocationPinReconciler,
   listInvocationAgentIds,
@@ -1757,6 +1759,13 @@ export async function bootstrap() {
     },
   });
 
+  const scriptOutputs = composeScriptOutputs({
+    db,
+    agentsFor: (owner) => harnessAgentsServiceFor(owner),
+    frames: delegationFrames,
+    store: artifacts,
+  });
+
   const agentCleanupSources: AgentCleanupSource[] = [
     environments.cleanupSource,
     {
@@ -1821,6 +1830,7 @@ export async function bootstrap() {
         db,
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         frames: delegationFrames,
+        outputs: scriptOutputs,
       }),
     },
     {
@@ -1969,6 +1979,11 @@ export async function bootstrap() {
     db,
     agentsFor: harnessAgentsServiceFor,
     readHarnessConfigSupport,
+    runsScripts: async (agentId) => {
+      const capabilities = await readAgentCapabilities(agentId);
+      return capabilities == null ? null : runtimeRunsScripts(capabilities);
+    },
+    outputs: scriptOutputs,
     readTargetRestart: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
       return agent
@@ -2233,6 +2248,7 @@ export async function bootstrap() {
     }),
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
+    scriptOutputs,
     sessionMessages: runtimeDelivery.sessionMessages,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({

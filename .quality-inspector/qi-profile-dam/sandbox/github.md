@@ -28,8 +28,9 @@ It holds nothing real and nobody else; never use `dam-agents`, your own account,
 5. **The token.** As the test user: your avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
    - Resource owner: the sandbox organization.
    - Repository access: **Only select repositories** → the sandbox repository.
-   - Repository permissions: **Issues: Read and write** (Metadata: Read-only is added by itself).
+   - Repository permissions: **Contents: Read and write**, **Issues: Read and write**, **Pull requests: Read and write** (Metadata: Read-only is added by itself).
      Nothing else.
+     A token made for an earlier version with Issues only: edit it and add the two others.
    - Expiration: the longest the organization allows; a new token later replaces this line.
    - If the organization asks to approve fine-grained tokens, approve this one under the organization's **Settings** → **Personal access tokens**.
 
@@ -47,5 +48,5 @@ It holds nothing real and nobody else; never use `dam-agents`, your own account,
 7. **The egress.** The sign-in on `github.com` needs rules the inspector's kit denies by default (quality-inspector 3.9.0 or later): the inspector lists them as `by-hand` — add each one, with its method and path, in the agent's network settings.
 
 The nested DAM gets the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`), so **Connect with GitHub** needs no client ID in the form.
-Issues the agent files in the repository carry the run's id in their title; the test closes them.
+Issues and pull requests the agent opens in the repository carry the run's id in their title; after a passing run the test closes them and deletes the pull request's branch, and after a failed run it keeps them for the report — close those yourself once you have read it.
 If GitHub ever asks the test user to verify a new device or to confirm its account settings, sign in as the user once yourself and answer it.

@@ -9,7 +9,10 @@ import {
   type HarnessCatalog,
   type InvocationView,
   type ProviderPresetType,
+  type InvocationOutputLink,
+  type InvocationOutputStream,
   type spawnInvocationRequestSchema,
+  type spawnScriptInvocationRequestSchema,
   type TemplatesService,
 } from "api-server-api";
 import {
@@ -21,12 +24,14 @@ import {
   NoSpawnModelError,
   InvalidSchemaError,
   ModelNameError,
+  NoOutputStoreError,
   ProviderMismatchError,
   SpendLimitReachedError,
   UnresolvableDriverError,
   type DriverProvider,
   type InvocationOrigin,
   type InvocationsService,
+  type ScriptOutputs,
   type SpawnInput,
 } from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
@@ -37,6 +42,10 @@ import {
 } from "../../modules/harness-config/index.js";
 
 export type SpawnRequest = z.infer<typeof spawnInvocationRequestSchema>;
+export type ScriptSpawnRequest = z.infer<
+  typeof spawnScriptInvocationRequestSchema
+>;
+type SpawnTargetRequest = Omit<ScriptSpawnRequest, "script">;
 
 export type SpawnOutcome =
   | { ok: true; id: string }
@@ -60,6 +69,7 @@ export interface DriverOpsDeps {
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
   defaultModel?: (driverId: string, harness: string) => Promise<string | null>;
+  scriptOutputs: Pick<ScriptOutputs, "link" | "ack" | "preview">;
 }
 
 const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
@@ -132,6 +142,133 @@ function driverOps(
     return model ? { ...body.harnessConfig, model } : body.harnessConfig;
   };
 
+  const resolveSpawn = async (
+    body: SpawnTargetRequest,
+  ): Promise<
+    | Extract<SpawnOutcome, { ok: false }>
+    | {
+        ok: true;
+        target: SpawnInput["target"];
+        setup: SpawnInput["setup"];
+        connections: string[];
+        driverGrantIds: string[];
+        providers: ReturnType<typeof providersOf>;
+      }
+  > => {
+    const target: SpawnInput["target"] = body.image
+      ? { image: body.image }
+      : {};
+    const carried = body.harness
+      ? deps.harnesses.harnesses.find((h) => h.name === body.harness)
+      : undefined;
+    if (carried) {
+      if (!body.image) target.templateId = DEFAULT_TEMPLATE_ID;
+      target.harness = carried.name;
+      if (carried.providers) target.runsOn = carried.providers;
+    } else if (body.harness) {
+      const templates = await deps.templates.list();
+      const matches = templates.filter((t) => t.spec.harness === body.harness);
+      if (matches.length !== 1) {
+        const available = [
+          ...new Set([
+            ...deps.harnesses.harnesses.map((h) => h.name),
+            ...templates.flatMap((t) => t.spec.harness ?? []),
+          ]),
+        ]
+          .sort()
+          .join(", ");
+        const problem =
+          matches.length === 0
+            ? `no harness "${body.harness}" on this install`
+            : `the "${body.harness}" harness has several templates on this install`;
+        return {
+          ok: false,
+          kind: "invalid",
+          message: `${problem} — available: ${available}`,
+        };
+      }
+      const [template] = matches;
+      if (!body.image) target.templateId = template!.id;
+      if (template!.spec.providers) target.runsOn = template!.spec.providers;
+    }
+
+    const connections = body.connections ?? [];
+    const resources =
+      body.resources ??
+      (body.cpu !== undefined || body.memory !== undefined
+        ? {
+            ...(body.cpu !== undefined ? { cpu: body.cpu } : {}),
+            ...(body.memory !== undefined ? { memory: body.memory } : {}),
+          }
+        : undefined);
+    const [granted, owned] = await Promise.all([
+      conns.getAgentConnections(driverId),
+      conns.listConnections(),
+    ]);
+    const driverGrantIds = granted.connections.map((g) => g.connectionId);
+    const grantSet = new Set(driverGrantIds);
+
+    return {
+      ok: true,
+      target,
+      setup: {
+        ...(body.seed ? { seed: body.seed } : {}),
+        ...(body.install ? { install: body.install } : {}),
+        ...(resources ? { resources } : {}),
+        env: body.env,
+        skills: body.skills,
+      },
+      connections,
+      driverGrantIds,
+      providers: providersOf(owned, grantSet),
+    };
+  };
+
+  const refusalOf = (err: unknown, origin: InvocationOrigin): SpawnOutcome => {
+    if (err instanceof AttenuationError) {
+      securityLog("warn", "invocation.attenuation_denied", {
+        category: "authz",
+        actor: owner,
+        actorKind: "agent",
+        surface: "mcp",
+        decision: "deny",
+        agentId: driverId,
+        reason: "connection-not-granted-to-driver",
+        detail: { offending: err.offending },
+      });
+      return { ok: false, kind: "forbidden", message: err.message };
+    }
+    if (
+      err instanceof InvalidSchemaError ||
+      err instanceof ModelNameError ||
+      err instanceof ProviderMismatchError
+    ) {
+      return { ok: false, kind: "invalid", message: err.message };
+    }
+    if (err instanceof NoSpawnModelError) {
+      return {
+        ok: false,
+        kind: "invalid",
+        message:
+          origin === "script" ? NO_SCRIPT_SPAWN_MODEL_MESSAGE : err.message,
+      };
+    }
+    if (
+      err instanceof UnresolvableDriverError ||
+      err instanceof NoOutputStoreError
+    ) {
+      return { ok: false, kind: "conflict", message: err.message };
+    }
+    if (err instanceof SpendLimitReachedError) {
+      return {
+        ok: false,
+        kind: "spend_limit_reached",
+        message: err.message,
+      };
+    }
+    throw err;
+  };
+
   return {
     async spawn(
       body: SpawnRequest,
@@ -139,65 +276,11 @@ function driverOps(
         origin: "script",
       },
     ): Promise<SpawnOutcome> {
-      const target: SpawnInput["target"] = body.image
-        ? { image: body.image }
-        : {};
-      const carried = body.harness
-        ? deps.harnesses.harnesses.find((h) => h.name === body.harness)
-        : undefined;
-      if (carried) {
-        if (!body.image) target.templateId = DEFAULT_TEMPLATE_ID;
-        target.harness = carried.name;
-        if (carried.providers) target.runsOn = carried.providers;
-      } else if (body.harness) {
-        const templates = await deps.templates.list();
-        const matches = templates.filter(
-          (t) => t.spec.harness === body.harness,
-        );
-        if (matches.length !== 1) {
-          const available = [
-            ...new Set([
-              ...deps.harnesses.harnesses.map((h) => h.name),
-              ...templates.flatMap((t) => t.spec.harness ?? []),
-            ]),
-          ]
-            .sort()
-            .join(", ");
-          const problem =
-            matches.length === 0
-              ? `no harness "${body.harness}" on this install`
-              : `the "${body.harness}" harness has several templates on this install`;
-          return {
-            ok: false,
-            kind: "invalid",
-            message: `${problem} — available: ${available}`,
-          };
-        }
-        const [template] = matches;
-        if (!body.image) target.templateId = template!.id;
-        if (template!.spec.providers) target.runsOn = template!.spec.providers;
-      }
-
+      const base = await resolveSpawn(body);
+      if (!base.ok) return base;
+      const { target, setup, connections, driverGrantIds } = base;
+      const { driverProviders, attachableProviders } = base.providers;
       const harnessConfig = await withDefaultModel(body, from.origin);
-      const connections = body.connections ?? [];
-      const resources =
-        body.resources ??
-        (body.cpu !== undefined || body.memory !== undefined
-          ? {
-              ...(body.cpu !== undefined ? { cpu: body.cpu } : {}),
-              ...(body.memory !== undefined ? { memory: body.memory } : {}),
-            }
-          : undefined);
-      const [granted, owned] = await Promise.all([
-        conns.getAgentConnections(driverId),
-        conns.listConnections(),
-      ]);
-      const driverGrantIds = granted.connections.map((g) => g.connectionId);
-      const grantSet = new Set(driverGrantIds);
-      const { driverProviders, attachableProviders } = providersOf(
-        owned,
-        grantSet,
-      );
 
       try {
         const { id } = await invocations.spawn({
@@ -206,13 +289,7 @@ function driverOps(
           driverProviders,
           attachableProviders,
           target,
-          setup: {
-            ...(body.seed ? { seed: body.seed } : {}),
-            ...(body.install ? { install: body.install } : {}),
-            ...(resources ? { resources } : {}),
-            env: body.env,
-            skills: body.skills,
-          },
+          setup,
           connections,
           prompt: body.prompt,
           schema: body.schema,
@@ -224,49 +301,54 @@ function driverOps(
         });
         return { ok: true, id };
       } catch (err) {
-        if (err instanceof AttenuationError) {
-          securityLog("warn", "invocation.attenuation_denied", {
-            category: "authz",
-            actor: owner,
-            actorKind: "agent",
-            surface: "mcp",
-            decision: "deny",
-            agentId: driverId,
-            reason: "connection-not-granted-to-driver",
-            detail: { offending: err.offending },
-          });
-          return { ok: false, kind: "forbidden", message: err.message };
-        }
-        if (
-          err instanceof InvalidSchemaError ||
-          err instanceof ModelNameError ||
-          err instanceof ProviderMismatchError
-        ) {
-          return { ok: false, kind: "invalid", message: err.message };
-        }
-        if (err instanceof NoSpawnModelError) {
-          return {
-            ok: false,
-            kind: "invalid",
-            message:
-              from.origin === "script"
-                ? NO_SCRIPT_SPAWN_MODEL_MESSAGE
-                : err.message,
-          };
-        }
-        if (err instanceof UnresolvableDriverError) {
-          return { ok: false, kind: "conflict", message: err.message };
-        }
-        if (err instanceof SpendLimitReachedError) {
-          return {
-            ok: false,
-            kind: "spend_limit_reached",
-            message: err.message,
-          };
-        }
-        throw err;
+        return refusalOf(err, from.origin);
       }
     },
+
+    async spawnScript(
+      body: ScriptSpawnRequest,
+      from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
+        origin: "script",
+      },
+    ): Promise<SpawnOutcome> {
+      const base = await resolveSpawn(body);
+      if (!base.ok) return base;
+      try {
+        const { id } = await invocations.spawnScript({
+          driverAgentId: driverId,
+          driverGrantIds: base.driverGrantIds,
+          target: base.target,
+          setup: base.setup,
+          connections: base.connections,
+          script: body.script,
+          ...(body.label !== undefined ? { label: body.label } : {}),
+          ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
+          origin: from.origin,
+          driverSessionId: from.driverSessionId ?? null,
+        });
+        return { ok: true, id };
+      } catch (err) {
+        return refusalOf(err, from.origin);
+      }
+    },
+
+    outputLink: (
+      invocationId: string,
+      stream: InvocationOutputStream,
+    ): Promise<InvocationOutputLink | null> =>
+      deps.scriptOutputs.link(invocationId, driverId, stream),
+
+    ackOutput: (
+      invocationId: string,
+      stream: InvocationOutputStream,
+    ): Promise<boolean> =>
+      deps.scriptOutputs.ack(invocationId, driverId, stream),
+
+    outputPreview: (
+      invocationId: string,
+      stream: InvocationOutputStream,
+      edgeBytes: number,
+    ) => deps.scriptOutputs.preview(invocationId, driverId, stream, edgeBytes),
 
     get: (invocationId: string): Promise<InvocationView | null> =>
       invocations.get(invocationId, driverId),

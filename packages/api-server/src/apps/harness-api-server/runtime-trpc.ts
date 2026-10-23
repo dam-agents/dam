@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import type {
   ArtifactTouchService,
   HarnessContext,
+  InvocationScriptReports,
   KbPublishGate,
   RuntimeDeliveryService,
   SessionDirectoryService,
@@ -20,6 +21,7 @@ export interface RuntimeTrpcDeps {
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
   kbPublish: KbPublishGate;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
+  invocationScripts: InvocationScriptReports;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -56,6 +58,7 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         artifactTouches: deps.artifactTouchesFor(verified.owner),
         kbPublish: deps.kbPublish,
         toolApprovals: deps.toolApprovalsFor(verified.owner),
+        invocationScripts: deps.invocationScripts,
       }),
     });
   });

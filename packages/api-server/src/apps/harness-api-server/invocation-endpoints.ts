@@ -1,14 +1,17 @@
 import type { Hono } from "hono";
 import {
   hasOversizedArray,
+  invocationOutputStreamSchema,
   OVERSIZED_ARRAY_MESSAGE,
   spawnInvocationRequestSchema,
+  spawnScriptInvocationRequestSchema,
 } from "api-server-api";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   createDriverOps,
+  type DriverOps,
   type DriverOpsDeps,
-  type SpawnRequest,
+  type SpawnOutcome,
 } from "./driver-ops.js";
 import { resolveAgent } from "./agent-auth.js";
 
@@ -39,18 +42,18 @@ export function mountInvocationRoutes(
     const ops = await driverOps(c.req.param("id")!);
     if (!ops) return c.json({ error: "not found" }, 404);
 
-    let body: SpawnRequest;
+    let spawn: () => Promise<SpawnOutcome>;
     try {
       const raw: unknown = await c.req.json();
       if (hasOversizedArray(raw)) {
         return c.json({ error: OVERSIZED_ARRAY_MESSAGE }, 400);
       }
-      body = spawnInvocationRequestSchema.parse(raw);
+      spawn = spawnFor(ops, raw);
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
 
-    const outcome = await ops.spawn(body);
+    const outcome = await spawn();
     if (!outcome.ok) {
       return c.json(
         { error: outcome.message, kind: outcome.kind },
@@ -69,6 +72,44 @@ export function mountInvocationRoutes(
     return c.json(view);
   });
 
+  app.get(
+    "/api/agents/:id/invocations/:invocationId/output/:stream",
+    async (c) => {
+      const ops = await driverOps(c.req.param("id")!);
+      if (!ops) return c.json({ error: "not found" }, 404);
+      const stream = invocationOutputStreamSchema.safeParse(
+        c.req.param("stream"),
+      );
+      if (!stream.success) return c.json({ error: "not found" }, 404);
+
+      const link = await ops.outputLink(
+        c.req.param("invocationId")!,
+        stream.data,
+      );
+      if (!link) return c.json({ error: "no such output" }, 404);
+      return c.json(link);
+    },
+  );
+
+  app.post(
+    "/api/agents/:id/invocations/:invocationId/output/:stream/ack",
+    async (c) => {
+      const ops = await driverOps(c.req.param("id")!);
+      if (!ops) return c.json({ error: "not found" }, 404);
+      const stream = invocationOutputStreamSchema.safeParse(
+        c.req.param("stream"),
+      );
+      if (!stream.success) return c.json({ error: "not found" }, 404);
+
+      const acked = await ops.ackOutput(
+        c.req.param("invocationId")!,
+        stream.data,
+      );
+      if (!acked) return c.json({ error: "not found" }, 404);
+      return c.body(null, 204);
+    },
+  );
+
   app.get("/api/agents/:id/connections", async (c) => {
     const ops = await driverOps(c.req.param("id")!);
     if (!ops) return c.json({ error: "not found" }, 404);
@@ -86,4 +127,22 @@ export function mountInvocationRoutes(
     if (!ops) return c.json({ error: "not found" }, 404);
     return c.json(await ops.budget());
   });
+}
+
+function spawnFor(ops: DriverOps, raw: unknown): () => Promise<SpawnOutcome> {
+  const fields =
+    typeof raw === "object" && raw !== null ? Object.keys(raw) : [];
+  if (!fields.includes("script")) {
+    const body = spawnInvocationRequestSchema.parse(raw);
+    return () => ops.spawn(body);
+  }
+  const conflicting = ["prompt", "schema", "harnessConfig"].filter((f) =>
+    fields.includes(f),
+  );
+  if (conflicting.length > 0)
+    throw new Error(
+      `a script spawn takes no ${conflicting.join(", ")}: pass a script or a prompt`,
+    );
+  const body = spawnScriptInvocationRequestSchema.parse(raw);
+  return () => ops.spawnScript(body);
 }

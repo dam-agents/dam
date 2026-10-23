@@ -30,6 +30,7 @@ import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js
 import {
   composeSubAgentAwaitMarks,
   composeInvocationsForOwner,
+  type ScriptOutputs,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
 } from "../../modules/invocations/index.js";
@@ -104,6 +105,7 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  scriptOutputs: ScriptOutputs;
   sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
@@ -189,6 +191,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       wakeAgent,
       frames: deps.delegationFrames,
       readHarnessConfigSupport,
+      scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
     });
 
@@ -247,6 +250,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         isSlackUnlinked: async () => false,
       }).budgets,
     defaultLimits,
+    scriptOutputs: deps.scriptOutputs,
   };
 
   const readChatFormPreferences = createChatFormPreferencesReader(db);
@@ -284,7 +288,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
       const agent = await agentsRepo.get(agentId, owner);
-      if (!agent || agent.spec.environmentOf) return null;
+      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
+        return null;
       return deps.environmentsFor(owner).forOwningAgent(agentId);
     },
     agentTelemetry,
@@ -309,6 +314,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     }),
     kbPublish: kbPublishGate,
     toolApprovalsFor: deps.toolApprovalsFor,
+    invocationScripts: deps.scriptOutputs,
   });
 
   const server = serve(

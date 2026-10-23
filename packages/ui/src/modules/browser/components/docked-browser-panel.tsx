@@ -195,7 +195,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </span>
           </DropdownMenuSwitchItem>
         </RowActionsMenu>
-        <SidePanelCloseButton />
+        <SidePanelCloseButton corner="-mr-3" />
         {stream.page.loading && (
           <span
             aria-hidden

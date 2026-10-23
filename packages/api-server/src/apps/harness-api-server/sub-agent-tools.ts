@@ -7,8 +7,12 @@ import {
 } from "agent-runtime-api";
 import {
   formatQualifiedModel,
+  INVOCATION_OUTPUT_STREAMS,
+  type InvocationOutput,
+  invocationOutputStreamSchema,
   parseQualifiedModel,
   spawnInvocationRequestSchema,
+  spawnScriptInvocationRequestSchema,
 } from "api-server-api";
 import {
   errorResult,
@@ -20,7 +24,11 @@ import {
   NO_SPAWN_MODEL_MESSAGE,
   type SubAgentAwaitMarks,
 } from "../../modules/invocations/index.js";
-import type { DriverOps, SpawnRequest } from "./driver-ops.js";
+import type {
+  DriverOps,
+  ScriptSpawnRequest,
+  SpawnOutcome,
+} from "./driver-ops.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The wait sits under Node's own 300s request
@@ -49,9 +57,40 @@ const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its o
 - checked-result: a result the platform validates against a schema.
 A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources.
 
-The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); connections you pass must be your own grants (see list_connections). The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
+When the work is a command whose output you need (a test suite, an eval, a benchmark, a build, a data transform), pass script instead of prompt. No model runs: the sub-agent runs the command once and you get its exit code and its exact stdout and stderr. A non-zero exit fails the sub-agent with the exit code and the tail of stderr. Write a prompt only when the work needs judgment. Pass prompt (with schema) or script, never both; a script takes no schema, model, mode or configOptions.
 
-const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
+With a prompt, the sub-agent runs it to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); connections you pass must be your own grants (see list_connections). The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
+
+const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result; for a script, its exit code and the start and end of its stdout and stderr), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
+
+const FETCH_DESCRIPTION = `Save the full stdout or stderr of a finished script sub-agent to a file in your sandbox, as await_subagents only shows its start and end. Returns one shell command: run it, and it downloads the stream byte for byte to the path you give and checks its sha256. Then read the file as often as you need. The platform deletes its copy once the download is checked, so fetch each stream once; one nobody fetches is deleted after seven days.`;
+
+function noStream(id: string, stream: string): string {
+  return `fetch_subagent_output: ${id} holds no ${stream}. It is not one of your script sub-agents, it has not finished, or the stream was already read or expired.`;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one shell line that brings a stream into the
+ * agent's sandbox byte for byte, so the bytes never pass through a tool
+ * result. It downloads through the presigned link, checks the sha256 the
+ * sub-agent reported, and only then acks, so a failed download keeps the
+ * stream for another try. The ack goes to the driver's own route, found from
+ * the PLATFORM_MCP_URL every agent has.
+ */
+function downloadCommand(input: {
+  id: string;
+  stream: string;
+  path: string;
+  url: string;
+  sha256: string;
+}): string {
+  const ack = `"\${PLATFORM_MCP_URL%/mcp}/invocations/${input.id}/output/${input.stream}/ack"`;
+  return [
+    `curl -fsS -o '${input.path}' '${input.url}'`,
+    `printf '%s  %s\\n' '${input.sha256}' '${input.path}' | sha256sum -c --quiet -`,
+    `curl -fsS -X POST ${ack}`,
+  ].join(" && ");
+}
 
 const spawnShape = spawnInvocationRequestSchema.shape;
 
@@ -72,12 +111,23 @@ const needsInput = z
 
 const spawnInput = {
   needs: needsInput,
-  prompt: spawnShape.prompt.describe(
-    "The sub-agent's whole task. It sees only this, so include everything it needs.",
-  ),
-  schema: spawnShape.schema.describe(
-    'JSON Schema the result must match, e.g. {"type":"integer"} or {"type":"object","properties":{"pass":{"type":"boolean"}},"required":["pass"]}. The platform checks shape only, never truth.',
-  ),
+  prompt: spawnShape.prompt
+    .optional()
+    .describe(
+      "The sub-agent's whole task, for a model. It sees only this, so include everything it needs. Pass this or script.",
+    ),
+  schema: spawnShape.schema
+    .optional()
+    .describe(
+      'Required with prompt, left out with script: JSON Schema the result must match, e.g. {"type":"integer"} or {"type":"object","properties":{"pass":{"type":"boolean"}},"required":["pass"]}. The platform checks shape only, never truth.',
+    ),
+  script: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "A shell command run once with bash -lc in the sub-agent's workspace, after seed and install, with no model turn. You get its exit code, stdout and stderr. Pass this or prompt.",
+    ),
   harness: spawnShape.harness.describe(
     "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image; with neither, the harness the user set for this session's platform sub-agents.",
   ),
@@ -169,7 +219,7 @@ function withHarnessConfig<T extends object>(
  */
 export function unmetNeed(
   needs: readonly SpawnNeed[],
-  body: SpawnRequest,
+  body: Omit<ScriptSpawnRequest, "script">,
   ownHarness: string | null,
 ): string | null {
   if (needs.includes("different-harness")) {
@@ -195,9 +245,19 @@ export function unmetNeed(
   return null;
 }
 
+interface ScriptEnd {
+  exitCode: number | null;
+  streams: InvocationOutput;
+}
+
 type Settled =
-  | { id: string; status: "done"; result: unknown }
-  | { id: string; status: "failed"; reason: string | undefined }
+  | { id: string; status: "done"; result: unknown; script?: ScriptEnd }
+  | {
+      id: string;
+      status: "failed";
+      reason: string | undefined;
+      script?: ScriptEnd;
+    }
   | { id: string; status: "running" }
   | { id: string; status: "unknown" };
 
@@ -206,13 +266,46 @@ async function readAll(ops: DriverOps, ids: string[]): Promise<Settled[]> {
     ids.map(async (id): Promise<Settled> => {
       const view = await ops.get(id);
       if (!view) return { id, status: "unknown" };
+      const script =
+        view.output !== undefined
+          ? {
+              script: { exitCode: view.exitCode ?? null, streams: view.output },
+            }
+          : {};
       if (view.status === "done")
-        return { id, status: "done", result: view.result };
+        return { id, status: "done", result: view.result, ...script };
       if (view.status === "failed")
-        return { id, status: "failed", reason: view.errorReason };
+        return { id, status: "failed", reason: view.errorReason, ...script };
       return { id, status: "running" };
     }),
   );
+}
+
+const PREVIEW_EDGE_BYTES = 1_000;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what await_subagents tells about a finished
+ * script: its exit code and, per stream, the size and the first and last
+ * bytes. The whole output never goes into the model's context; the agent
+ * reads a stream in full with fetch_subagent_output.
+ */
+async function scriptReport(
+  ops: DriverOps,
+  id: string,
+  script: ScriptEnd,
+): Promise<object> {
+  const streams = await Promise.all(
+    INVOCATION_OUTPUT_STREAMS.map(async (stream) => {
+      if (!script.streams[stream]) return [stream, "already read or expired"];
+      const preview = await ops.outputPreview(id, stream, PREVIEW_EDGE_BYTES);
+      return [stream, preview ?? "already read or expired"];
+    }),
+  );
+  return {
+    exitCode: script.exitCode,
+    ...Object.fromEntries(streams),
+    read: "fetch_subagent_output saves a stream in full to a file",
+  };
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -229,13 +322,28 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function summarize(settled: Settled[]) {
-  return {
-    done: settled.flatMap((s) =>
-      s.status === "done" ? [{ id: s.id, result: s.result }] : [],
+async function summarize(ops: DriverOps, settled: Settled[]) {
+  const ended = await Promise.all(
+    settled.map(async (s) =>
+      (s.status === "done" || s.status === "failed") && s.script
+        ? { ...s, report: await scriptReport(ops, s.id, s.script) }
+        : { ...s, report: undefined },
     ),
-    failed: settled.flatMap((s) =>
-      s.status === "failed" ? [{ id: s.id, reason: s.reason ?? null }] : [],
+  );
+  return {
+    done: ended.flatMap((s) =>
+      s.status === "done"
+        ? [
+            s.report
+              ? { id: s.id, ...s.report }
+              : { id: s.id, result: s.result },
+          ]
+        : [],
+    ),
+    failed: ended.flatMap((s) =>
+      s.status === "failed"
+        ? [{ id: s.id, reason: s.reason ?? null, ...s.report }]
+        : [],
     ),
     running: settled.flatMap((s) => (s.status === "running" ? [s.id] : [])),
     unknown: settled.flatMap((s) => (s.status === "unknown" ? [s.id] : [])),
@@ -377,6 +485,42 @@ function unlistedModel(
   return `no granted provider lists ${model} for that harness; listed: ${names.length > 0 ? names.join(", ") : "none"}`;
 }
 
+const BOTH_KINDS =
+  "pass either prompt (with schema) for a model turn, or script for a command, not both";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a spawn is either a prompt for a model or a
+ * script with no model, never both, and the tool says which field to drop
+ * instead of guessing: a call that names both is ambiguous about whether the
+ * caller wants the command's output or a model's judgment of it.
+ */
+function workKindRefusal(
+  script: string | undefined,
+  rest: {
+    prompt?: string | undefined;
+    schema?: unknown;
+    model?: string | undefined;
+    mode?: string | undefined;
+    configOptions?: Record<string, string> | undefined;
+  },
+  needs: readonly SpawnNeed[],
+): string | null {
+  if (script === undefined) {
+    if (rest.prompt === undefined)
+      return "pass a prompt (with schema) for a model turn, or a script for a command";
+    return rest.schema === undefined || rest.schema === null
+      ? "a prompt needs a schema: the JSON Schema its result must match"
+      : null;
+  }
+  const extra = (
+    ["prompt", "schema", "model", "mode", "configOptions"] as const
+  ).filter((field) => rest[field] !== undefined && rest[field] !== null);
+  if (extra.length > 0) return `${BOTH_KINDS}; drop ${extra.join(", ")}`;
+  if (needs.includes("checked-result"))
+    return "checked-result, but a script's output is not checked against a schema";
+  return null;
+}
+
 const UNIDENTIFIED_SESSION =
   "this session does not identify itself to the platform (Bob sessions and terminal sessions do not), so its platform sub-agent settings cannot apply. Pass a harness and a provider-qualified model (list_harnesses lists each harness's models).";
 
@@ -400,7 +544,10 @@ export function registerSubAgentTools(
 
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
-      const { needs, ...rest } = args;
+      const { needs, script, ...rest } = args;
+      const kindRefusal = workKindRefusal(script, rest, needs);
+      if (kindRefusal)
+        return errorResult(`spawn_subagent refused: ${kindRefusal}`);
       let session: SessionSubAgentContext | null;
       try {
         session = (await deps.sessionContext?.()) ?? null;
@@ -415,52 +562,79 @@ export function registerSubAgentTools(
       if (!resolved.ok)
         return errorResult(`spawn_subagent refused: ${resolved.message}`);
       const { ok: _ok, bound, modelFrom, ...choice } = resolved;
-      const parsed = spawnInvocationRequestSchema.safeParse(
-        withHarnessConfig({
-          ...rest,
-          ...choice,
-          schema: schemaFromText(rest.schema),
-        }),
-      );
-      if (!parsed.success) {
-        return errorResult(
+      const refusedParse = (issues: { message: string }[]) =>
+        errorResult(
           unidentified && rest.harness === undefined && rest.image === undefined
             ? `spawn_subagent refused: ${UNIDENTIFIED_SESSION}`
-            : `spawn_subagent refused: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+            : `spawn_subagent refused: ${issues.map((i) => i.message).join("; ")}`,
         );
-      }
-      const body = parsed.data;
-      const { catalogModels } = deps;
-      const { model } = choice;
-      const target = body.harness;
-      if (model && target && catalogModels) {
-        const listed = () => catalogModels(target);
-        const refusal = await match(modelFrom)
-          .with("session", undefined, () => null)
-          .with("setting", async () => {
-            const unlisted = unlistedModel(model, await listed());
-            return unlisted
-              ? `this session's platform sub-agent setting names ${model}, and ${unlisted}. Ask the user to change the setting.`
-              : null;
-          })
-          .with("spawn", async () => unlistedModel(model, await listed()))
-          .exhaustive();
-        if (refusal) return errorResult(`spawn_subagent refused: ${refusal}`);
-      }
-      const [harness, driverSessionId] = await Promise.all([
+      const [ownHarness, driverSessionId] = await Promise.all([
         session?.harness ? Promise.resolve(session.harness) : ops.harness(),
         deps.spawningSession(),
       ]);
-      const unmet = unmetNeed(needs, body, harness);
-      if (unmet) {
-        return errorResult(
+      const from = { origin: "tool" as const, driverSessionId };
+      const refusedNeed = (unmet: string) =>
+        errorResult(
           `spawn_subagent refused: ${unmet}. Do the work in this sandbox, with your harness's own subagent if it has one, or state a need the request bears out.`,
         );
+
+      let outcome: SpawnOutcome;
+      let tag: string | undefined;
+      let boundNote: string[];
+      if (script !== undefined) {
+        const {
+          prompt: _prompt,
+          schema: _schema,
+          model: _model,
+          mode: _mode,
+          configOptions: _configOptions,
+          ...target
+        } = rest;
+        const parsed = spawnScriptInvocationRequestSchema.safeParse({
+          ...target,
+          ...(choice.harness !== undefined && { harness: choice.harness }),
+          script,
+        });
+        if (!parsed.success) return refusedParse(parsed.error.issues);
+        const body = parsed.data;
+        const unmet = unmetNeed(needs, body, ownHarness);
+        if (unmet) return refusedNeed(unmet);
+        outcome = await ops.spawnScript(body, from);
+        tag = body.label ?? body.harness ?? body.image;
+        boundNote = bound.filter((b) => b.startsWith("harness "));
+      } else {
+        const parsed = spawnInvocationRequestSchema.safeParse(
+          withHarnessConfig({
+            ...rest,
+            ...choice,
+            schema: schemaFromText(rest.schema),
+          }),
+        );
+        if (!parsed.success) return refusedParse(parsed.error.issues);
+        const body = parsed.data;
+        const { catalogModels } = deps;
+        const { model } = choice;
+        const target = body.harness;
+        if (model && target && catalogModels) {
+          const listed = () => catalogModels(target);
+          const refusal = await match(modelFrom)
+            .with("session", undefined, () => null)
+            .with("setting", async () => {
+              const unlisted = unlistedModel(model, await listed());
+              return unlisted
+                ? `this session's platform sub-agent setting names ${model}, and ${unlisted}. Ask the user to change the setting.`
+                : null;
+            })
+            .with("spawn", async () => unlistedModel(model, await listed()))
+            .exhaustive();
+          if (refusal) return errorResult(`spawn_subagent refused: ${refusal}`);
+        }
+        const unmet = unmetNeed(needs, body, ownHarness);
+        if (unmet) return refusedNeed(unmet);
+        outcome = await ops.spawn(body, from);
+        tag = body.label ?? body.harness ?? body.image;
+        boundNote = bound;
       }
-      const outcome = await ops.spawn(body, {
-        origin: "tool",
-        driverSessionId,
-      });
       if (!outcome.ok) {
         return errorResult(
           unidentified && outcome.message === NO_SPAWN_MODEL_MESSAGE
@@ -468,14 +642,13 @@ export function registerSubAgentTools(
             : `spawn_subagent refused: ${outcome.message}`,
         );
       }
-      const tag = body.label ?? body.harness ?? body.image ?? outcome.id;
       return textResult(
         [
-          `[invoke] spawned ${tag} -> ${outcome.id}`,
+          `[invoke] spawned ${tag ?? outcome.id} -> ${outcome.id}`,
           `needs: ${needs.join(", ")}`,
-          ...(bound.length > 0
+          ...(boundNote.length > 0
             ? [
-                `set by this session's platform sub-agent settings: ${bound.join(", ")} (arguments for these are ignored)`,
+                `set by this session's platform sub-agent settings: ${boundNote.join(", ")} (arguments for these are ignored)`,
               ]
             : []),
           JSON.stringify({ id: outcome.id }),
@@ -548,7 +721,7 @@ export function registerSubAgentTools(
           settled = await readAll(ops, unique);
           await heartbeat(settled);
         }
-        const summary = summarize(settled);
+        const summary = await summarize(ops, settled);
         if (!signal.aborted) {
           await awaits.markCollected([
             ...summary.done.map((d) => d.id),
@@ -561,6 +734,42 @@ export function registerSubAgentTools(
             );
         }
         return json(summary);
+      }),
+  );
+
+  server.tool(
+    "fetch_subagent_output",
+    FETCH_DESCRIPTION,
+    {
+      id: z
+        .string()
+        .min(1)
+        .describe("A script sub-agent's id, from spawn_subagent."),
+      stream: invocationOutputStreamSchema.describe(
+        "Which stream to read: stdout or stderr.",
+      ),
+      path: z
+        .string()
+        .min(1)
+        .max(1024)
+        .describe(
+          "Where to save the stream in your sandbox. You get one shell command that downloads it there and checks it; run that command yourself, then read the file.",
+        ),
+    },
+    ({ id, stream, path }) =>
+      run(async () => {
+        if (/['\n\r]/.test(path))
+          return errorResult(
+            "fetch_subagent_output refused: the path must not contain a quote or a line break",
+          );
+        const link = await ops.outputLink(id, stream);
+        if (!link) return errorResult(noStream(id, stream));
+        return textResult(
+          [
+            `Run this command to save the ${stream} of ${id} (${link.sizeBytes} bytes) to ${path}. It checks the sha256 and then tells the platform to delete its copy; the link works for 15 minutes.`,
+            downloadCommand({ id, stream, path, ...link }),
+          ].join("\n"),
+        );
       }),
   );
 
@@ -580,7 +789,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "get_budget",
-    "Read your owner's compute: what is reserved now (cpu, memory) and the default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
+    "Read your owner's default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
     {},
     () => run(async () => json(await ops.budget())),
   );
