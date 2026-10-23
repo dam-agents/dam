@@ -8,7 +8,11 @@ import type { SessionsPort, TerminalStrategy } from "./sessions-service.js";
 import {
   connectTerminalBridge,
   type BridgeResult,
+  type ReconnectNotice,
+  type ReconnectTarget,
 } from "../infrastructure/terminal-bridge.js";
+import { terminalPath } from "../domain/terminal-path.js";
+import { wsUrl } from "../../shared/ws-url.js";
 
 export type ChatError =
   | BootstrapError
@@ -27,7 +31,8 @@ export interface ChatService {
     reset?: boolean;
     onAttach?: (sessionId: string) => void | Promise<void>;
     title?: (sessionId: string) => string;
-  }): Promise<Result<{ bridge: BridgeResult; sessionId: string }, ChatError>>;
+    reconnectNotice: (notice: ReconnectNotice) => string;
+  }): Promise<Result<BridgeResult, ChatError>>;
   listSessions(input: {
     agentRef: string;
     serverFlag?: string;
@@ -105,19 +110,40 @@ export function createChatService(deps: {
         });
       if (r.kind !== "ready") return err(r);
 
-      await input.onAttach?.(r.sessionId);
-      const bridge = await connectTerminalBridge({
-        host,
-        token,
-        terminalPath: r.terminalPath,
-        stdin: process.stdin as NodeJS.ReadStream & {
-          setRawMode(mode: boolean): void;
-        },
-        stdout: process.stdout,
-        title: input.title?.(r.sessionId),
-      });
+      const reconnectTo = async (
+        sessionId: string,
+      ): Promise<ReconnectTarget> => {
+        const tok = await deps.tokenProvider.getValidAccessToken(host);
+        if (!tok.ok)
+          return {
+            kind: tok.error.kind === "refresh-transient" ? "wait" : "stop",
+            reason: `cannot refresh the sign-in: ${tok.error.kind}`,
+          };
+        return {
+          kind: "connect",
+          url: wsUrl(
+            host,
+            terminalPath(agentId, sessionId, "reconnect"),
+            tok.value,
+          ),
+        };
+      };
 
-      return ok({ bridge, sessionId: r.sessionId });
+      await input.onAttach?.(r.sessionId);
+      return ok(
+        await connectTerminalBridge({
+          url: wsUrl(host, r.terminalPath, token),
+          sessionId: r.sessionId,
+          reconnectTo,
+          stdin: process.stdin as NodeJS.ReadStream & {
+            setRawMode(mode: boolean): void;
+          },
+          stdout: process.stdout,
+          status: process.stderr,
+          reconnectNotice: input.reconnectNotice,
+          title: input.title,
+        }),
+      );
     },
   };
 }

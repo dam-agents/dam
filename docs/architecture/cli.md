@@ -228,7 +228,12 @@ Session strategy is resolved **client-side**: sessions are agent-owned, so the C
 There is no server-side session endpoint.
 A `--reset` flag tells the relay to kill the PTY and spawn a fresh one, which also clears the agent-side session.
 The CLI sends no keepalive of its own: it answers the relay's 30-second ping ([sessions](sessions.md)), which keeps an attach open while the harness sits quiet.
-On disconnect or exit the CLI prints a ready-to-paste resume command and the leave hint again; it does not reconnect by itself.
+Once pings have arrived, a connection that gets none for about two and a half intervals counts as lost, because a dead network path can leave the socket open with no error.
+After a drop the CLI reconnects to the same session by itself, under the terminal reconnect rules ([sessions](sessions.md)).
+While it reconnects, it resets the terminal's modes, shows a reconnecting notice with the reason and the attempt, and keeps stdin raw without sending it, so Ctrl+C stops the attempts.
+Every attempt reads the token again, so an access token that expired during a long attach is refreshed, and a refresh that fails on the network is tried again with the next attempt.
+The attempt targets the session the harness last moved its PTY to, and the screen is cleared just before the replay.
+On exit, on a drop that does not reconnect, and when it gives up or the user stops it, the CLI prints a ready-to-paste resume command and the leave hint again.
 `dam session list` reads the same agent-owned session list.
 
 ## Headless runs
