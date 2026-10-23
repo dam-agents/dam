@@ -4,7 +4,6 @@ import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   CURVE_BENDER_WORK_MODEL,
   formatQualifiedModel,
-  parseQualifiedModel,
   preferredModelOf,
 } from "api-server-api";
 
@@ -17,22 +16,6 @@ export function sharedCurveBender(
 ): ProviderConnectionRef | undefined {
   return connections.find(
     (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  );
-}
-
-export function curveBenderSelected(input: {
-  model?: string | null;
-  provider?: string | null;
-  connections: readonly ProviderConnectionRef[];
-}): boolean {
-  const alias = parseQualifiedModel(input.model, {
-    claudePrefix: true,
-  })?.alias;
-  if (alias) return alias === CURVE_BENDER_ALIAS;
-  if (!input.provider) return false;
-  return (
-    input.connections.find((c) => c.id === input.provider)?.type ===
-    "curve-bender"
   );
 }
 

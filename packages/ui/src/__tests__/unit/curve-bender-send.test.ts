@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   CURVE_BENDER_ALIAS,
-  curveBenderSelected,
   sharedCurveBender,
 } from "../../modules/sessions/lib/curve-bender.js";
 import { sendPreparation } from "../../modules/sessions/lib/send-preparation.js";
@@ -246,37 +245,5 @@ describe("the shared CurveBender in the composer", () => {
   it("finds the deployment's provider among the owner's connections", () => {
     expect(sharedCurveBender([ownCurveBender, shared])).toEqual(shared);
     expect(sharedCurveBender([ownCurveBender])).toBeUndefined();
-  });
-
-  // TEST_SCENARIO: the alert knows CurveBender is selected from the qualified model on a routed session, and from the provider on a session that names a bare model.
-  it("reads the selected provider", () => {
-    expect(
-      curveBenderSelected({
-        model: deepSeek,
-        provider: null,
-        connections: [shared],
-      }),
-    ).toBe(true);
-    expect(
-      curveBenderSelected({
-        model: "opus",
-        provider: "cb",
-        connections: [shared],
-      }),
-    ).toBe(true);
-    expect(
-      curveBenderSelected({
-        model: "anthropic/opus",
-        provider: "cb",
-        connections: [shared],
-      }),
-    ).toBe(false);
-    expect(
-      curveBenderSelected({
-        model: null,
-        provider: "ant",
-        connections: [anthropic],
-      }),
-    ).toBe(false);
   });
 });

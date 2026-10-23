@@ -9,7 +9,6 @@ import {
 } from "../api/session-pair.js";
 import {
   curveBenderModelName,
-  curveBenderSelected,
   sharedCurveBender,
 } from "../lib/curve-bender.js";
 import type { ProviderConnectionRef } from "../lib/session-pair-options.js";
@@ -20,12 +19,10 @@ export function useCurveBender(input: {
   agentId: string | null;
   routed: boolean | undefined;
   session: { harness: string | null; model: string | null } | null;
-  selection: { model: string | null; provider: string | null } | undefined;
   onChooseSessionModel: (model: string) => Promise<void>;
 }): {
   shared: ProviderConnectionRef | undefined;
-  selected: boolean | null;
-  tryIt: () => void;
+  tryIt: () => Promise<boolean>;
 } {
   const providers = useProviderConnections(input.agentId);
   const shared = sharedCurveBender(providers.owned);
@@ -35,15 +32,16 @@ export function useCurveBender(input: {
   );
   const setPair = useStore((s) => s.setNextSessionPair);
 
-  const tryIt = async () => {
+  const tryIt = async (): Promise<boolean> => {
     const { agentId, session } = input;
-    if (!agentId || !shared) return;
+    if (!agentId || !shared) return false;
     const attached = !providers.granted.some((p) => p.id === shared.id);
-    if (attached && !(await attachProviderQuietly(agentId, shared.id))) return;
+    if (attached && !(await attachProviderQuietly(agentId, shared.id)))
+      return false;
     const model = curveBenderModelName(catalog.data, shared.id);
     if (session) {
       await input.onChooseSessionModel(model);
-      return;
+      return true;
     }
     const pair: SessionPair = {
       harness: PI_HARNESS,
@@ -52,18 +50,8 @@ export function useCurveBender(input: {
     };
     setPair(agentId, pair);
     void rememberFirstModel(agentId, pair);
+    return true;
   };
 
-  return {
-    shared,
-    selected:
-      !providers.loaded || input.selection === undefined
-        ? null
-        : curveBenderSelected({
-            model: input.selection.model,
-            provider: input.selection.provider,
-            connections: providers.granted,
-          }),
-    tryIt: () => void tryIt(),
-  };
+  return { shared, tryIt };
 }

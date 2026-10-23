@@ -365,16 +365,6 @@ export function ChatView() {
             model: currentSession.model ?? null,
           }
         : null,
-    selection: sessionId
-      ? currentSession
-        ? {
-            model: currentSession.model ?? null,
-            provider: currentSession.provider ?? null,
-          }
-        : undefined
-      : harnessStatus === undefined
-        ? undefined
-        : { model: pair?.model ?? null, provider: pair?.provider ?? null },
     onChooseSessionModel: chooseSessionModel,
   });
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
@@ -1113,11 +1103,7 @@ export function ChatView() {
           />
           <KitUpdateBar agentId={selectedAgent} />
           <HomeVolumeBar agentId={selectedAgent} />
-          <CurveBenderAlert
-            visible={!!shared}
-            selected={curveBender.selected}
-            onTry={curveBender.tryIt}
-          />
+          <CurveBenderAlert visible={!!shared} onTry={curveBender.tryIt} />
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}
