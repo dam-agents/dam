@@ -77,7 +77,8 @@ The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
 Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
 An install with no meanings shows only the heading.
-Upstream identity providers themselves (e.g. w3id) are realm configuration managed outside the chart.
+Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
+The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.
 
 Anyone the realm lets sign in can start: there is no approval step, and a first sign-in goes through the Terms-of-Use gate straight to the agent list.
 The chart's `signUps` value is the kill switch for growth the install cannot absorb.
