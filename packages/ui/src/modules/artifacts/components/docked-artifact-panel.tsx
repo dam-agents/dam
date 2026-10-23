@@ -1,5 +1,5 @@
 import { ArrowLeft, Close, Save } from "@carbon/icons-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
@@ -56,7 +56,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const { fullPage, toggleFullPage } = useFullPage();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { fullPage, toggleFullPage } = useFullPage(rootRef);
 
   const { data: versions } = useArtifactVersions(openArtifactId);
   const latest = artifact?.version;
@@ -126,6 +127,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
 
   return (
     <div
+      ref={rootRef}
+      data-full-page={fullPage || undefined}
       className={cn(
         "flex h-full flex-col",
         fullPage && "fixed inset-0 z-overlay bg-background",

@@ -267,7 +267,7 @@ export function ClassicChatLayout({
                 : undefined
             }
             className={cn(
-              "flex flex-col bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
+              "flex flex-col bg-background relative z-content has-[[data-full-page]]:z-overlay max-md:fixed max-md:inset-0 max-md:z-overlay",
               panel === null && "hidden",
               panel === "dock" && dockHiddenOnPhone && "max-md:hidden",
               panelFills

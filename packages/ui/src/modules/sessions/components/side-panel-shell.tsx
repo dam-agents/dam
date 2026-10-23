@@ -253,7 +253,7 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-chrome relative z-content",
+          "flex bg-chrome relative z-content has-[[data-full-page]]:z-overlay",
           tabbed
             ? cn(
                 mobilePanelOpen &&
