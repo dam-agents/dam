@@ -12,16 +12,23 @@ import {
   OP_OUTPUT,
   OP_SESSION,
 } from "api-server-api";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
 import { readNextSessionPair } from "../api/session-pair.js";
+import { useTerminalReconnect } from "../hooks/use-terminal-reconnect.js";
 import { pairMeta } from "../lib/session-pair-options.js";
+import {
+  freshPty,
+  terminalCloseDrop,
+  terminalSocketUrl,
+} from "../lib/terminal-socket.js";
 
-type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
+type ConnectionState =
+  "connecting" | "live" | "reconnecting" | "disconnected" | "exited";
 
 export function Terminal({
   agentId,
@@ -54,6 +61,21 @@ export function Terminal({
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
   const userConnect = useRef(false);
+  const [pty] = useState(freshPty);
+  const socket = useRef<WebSocket | null>(null);
+  const retryConnect = useCallback(() => {
+    if (!connectEnabled.current) {
+      setState("disconnected");
+      return;
+    }
+    setReconnectKey((k) => k + 1);
+  }, []);
+  const reconnect = useTerminalReconnect(retryConnect);
+  const handleStopReconnect = () => {
+    reconnect.stop();
+    socket.current?.close();
+    setState("disconnected");
+  };
   const handleReconnect = () => {
     connectEnabled.current = true;
     userConnect.current = true;
@@ -118,14 +140,26 @@ export function Terminal({
       const lease = fresh ? readNextSessionPair(agentId) : null;
       const wakes = userConnect.current;
       userConnect.current = false;
+      const reset = pty.reset(Boolean(fresh));
       ws = new WebSocket(
-        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}${wakes ? "" : "&wake=0"}${lease ? `&${new URLSearchParams(pairMeta(lease.pair)).toString()}` : ""}`,
+        terminalSocketUrl({
+          location,
+          agentId,
+          sessionId,
+          token,
+          reset,
+          wakes,
+          lease: lease ? pairMeta(lease.pair) : null,
+        }),
       );
       ws.binaryType = "arraybuffer";
+      socket.current = ws;
+      let live = false;
+      let exited = false;
 
       ws.onopen = () => {
         if (cancelled || !ws || !term) return;
-        setState("live");
+        setState((s) => (s === "reconnecting" ? s : "live"));
         ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
         onConnected?.();
@@ -138,6 +172,12 @@ export function Terminal({
         } catch {
           return;
         }
+        if (!live) {
+          live = true;
+          pty.attached();
+          reconnect.live();
+          setState((s) => (s === "reconnecting" ? "live" : s));
+        }
         if (frame.op === OP_OUTPUT) {
           if (!firstOutputSeen) {
             firstOutputSeen = true;
@@ -145,6 +185,7 @@ export function Terminal({
           }
           term?.write(new TextDecoder().decode(frame.data));
         } else if (frame.op === OP_EXIT) {
+          exited = true;
           setExitCode(frame.code);
           setState("exited");
         } else if (frame.op === OP_SESSION) {
@@ -153,17 +194,22 @@ export function Terminal({
       };
 
       ws.onclose = (e) => {
-        if (cancelled) return;
+        if (cancelled || exited) return;
+        const step = reconnect.dropped(
+          terminalCloseDrop(e.code, e.reason),
+          live,
+        );
+        if (step.kind === "retry") {
+          setState("reconnecting");
+          return;
+        }
         if (e.code === 1008)
           setRefusal(
             e.reason === "provider-removed"
               ? "This session's model provider was removed from the agent"
               : e.reason,
           );
-        setState((s) => (s === "exited" ? s : "disconnected"));
-      };
-      ws.onerror = () => {
-        if (!cancelled) setState("disconnected");
+        setState("disconnected");
       };
 
       term.onData((data) => {
@@ -186,6 +232,7 @@ export function Terminal({
       ro.observe(container);
     })().catch((err) => {
       console.error("[terminal] connect failed:", err);
+      reconnect.stop();
       setState("disconnected");
     });
 
@@ -207,6 +254,24 @@ export function Terminal({
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Spinner size={18} />
             Connecting terminal…
+          </div>
+        </div>
+      )}
+      {state === "reconnecting" && (
+        <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <Spinner size={18} />
+              Reconnecting terminal…
+            </div>
+            {reconnect.status && (
+              <p className="text-xs text-muted-foreground">
+                {reconnect.status.reason} · attempt {reconnect.status.attempt}
+              </p>
+            )}
+            <Button variant="outline" onClick={handleStopReconnect}>
+              Stop
+            </Button>
           </div>
         </div>
       )}
