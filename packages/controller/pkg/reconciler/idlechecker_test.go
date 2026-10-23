@@ -21,7 +21,7 @@ func idleCheckerCfg(timeout time.Duration) *config.Config {
 	return &config.Config{
 		Namespace: "test-agents",
 		AgentBase: config.AgentBase{
-			IdleTimeout: config.Duration(timeout),
+			VMIdleTimeout: config.Duration(timeout),
 		},
 	}
 }
@@ -322,7 +322,6 @@ func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
 		annRunnerAwaiting: "rolled-agent,another-agent",
 	})
 	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runner)
-	checker.config.VM.Enabled = true
 	checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 
 	checker.check(context.Background())
@@ -342,7 +341,6 @@ func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
 		agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 		ss := agentStatefulSet("rolled-agent", 1)
 		checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runnerDeployment(annotations))
-		checker.config.VM.Enabled = true
 		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 
 		checker.check(context.Background())

@@ -47,7 +47,7 @@ type runnerCapacityState struct {
 
 // UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; records each runner pod whose resize the node deferred or refused, each one sitting on a node the cluster has lost, and each runner Deployment that wants a pod and has none available. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit, has lost, or cannot start is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
 func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
-	if !r.config.VM.Enabled || r.config.VM.Runner.HostAddress != "" {
+	if r.config.VM.Runner.HostAddress != "" {
 		return nil
 	}
 	pool, pending, agents, lost, unavailable, ok := r.vmPool(ctx)

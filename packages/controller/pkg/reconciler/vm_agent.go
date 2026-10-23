@@ -62,8 +62,8 @@ var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 // UNIT_BOUNDARY_DESCRIPTION: the runner took the stop but the guest is still being signalled, quiesced and powered off. The runner answers a stop at once, so a machine reads stopped only on a later status.
 var errMachineStopping = errors.New("the machine is still stopping")
 
-// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container, and takes it from its boot on, while the container is down, so the api-server can push the machine's env before the Backend switches.
-func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
+// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner and points the Agent's Service at it, so the api-server dials a machine exactly as it dialled a pod.
+func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
 	name, spec := agent.Name, &agent.Spec
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {
@@ -93,7 +93,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		func() error { sec, secErr = r.ownedSecretRef(ctx, agent); return nil },
 		func() error {
 			leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
-			if k8serrors.IsNotFound(leafErr) && r.config.VM.Enabled {
+			if k8serrors.IsNotFound(leafErr) {
 				leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, ownerGatewayName(r.config.ReleaseName, owner)+ownerGatewayLeafSuffix, metav1.GetOptions{})
 			}
 			return nil
@@ -258,7 +258,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	}
 	r.watchRunnerPressure(runner, owner)
 
-	if publish && st.Port > 0 {
+	if st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
@@ -364,9 +364,6 @@ func (r *AgentReconciler) applyHostRunnerEndpoints(ctx context.Context, svc *cor
 const orphanGrace = 30 * time.Minute
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
-	if !r.config.VM.Enabled {
-		return
-	}
 	if r.config.VM.Runner.HostAddress != "" {
 		r.dropPodRunners(ctx)
 		r.sweepHostRunner(ctx)
@@ -569,9 +566,6 @@ func (r *AgentReconciler) cachedOwnerAgents(ctx context.Context, owner string, v
 // UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first, so an owner who never had a runner is not reported as an unreachable one. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
 func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) error {
 	r.unwatchMachine(name)
-	if !r.config.VM.Enabled {
-		return nil
-	}
 	if owner == "" && r.config.VM.Runner.HostAddress == "" {
 		return r.deleteMachineEverywhere(ctx, name)
 	}
@@ -641,7 +635,7 @@ func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
 
 func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) error {
 	r.unwatchMachine(name)
-	if !r.config.VM.Enabled || owner == "" {
+	if owner == "" {
 		return nil
 	}
 	agent, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
@@ -653,6 +647,13 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	}
 	if !anyVMAgent([]unstructured.Unstructured{*agent}) {
 		return nil
+	}
+	if r.config.VM.Runner.HostAddress == "" {
+		if _, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{}); k8serrors.IsNotFound(err) {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("reading the owner's VM runner: %w", err)
+		}
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
@@ -1053,7 +1054,7 @@ func (r *AgentReconciler) machineDiskGiB(ctx context.Context, runner *vmrunner.C
 	return max(int(pool.Value()>>30), 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. On a runner that grows a disk at the next start, the size worked out here only names the disk an older runner keeps (machineDiskGiB); the path rule holds on every runner. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. On a runner that grows a disk at the next start, the size worked out here only names the disk an older runner keeps (machineDiskGiB); the path rule holds on every runner. The size is one quantity, rounded once, and the path is not configurable: HOME is fixed, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount declares raises the disk rather than being dropped, since a spec that asks for 50Gi must not quietly get the chart's 10Gi. Several of them take the largest and not the sum, because they are all nested inside the one path a machine keeps and a sum would size the disk for capacity no single mount could have claimed.
 func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
 	for _, m := range resolveSpecMounts(spec, defaults) {
 		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {

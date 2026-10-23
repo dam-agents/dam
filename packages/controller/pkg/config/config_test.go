@@ -36,7 +36,6 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
-	assert.Empty(t, cfg.AgentTemplateDefaults.AgentHome)
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
 
@@ -64,17 +63,6 @@ func TestLoadFromEnv_Telemetry(t *testing.T) {
 	assert.Equal(t, 4318, cfg.TelemetryCollectorPort)
 }
 
-func TestLoadFromEnv_RejectsMissingRequiredAgentBase(t *testing.T) {
-	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{}`,
-	})
-	_, err := LoadFromEnv()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "terminationGracePeriod")
-}
-
 func TestLoadFromEnv_RejectsMissingStorageSize(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":   "platform",
@@ -84,17 +72,6 @@ func TestLoadFromEnv_RejectsMissingStorageSize(t *testing.T) {
 	_, err := LoadFromEnv()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "storageSize")
-}
-
-func TestLoadFromEnv_RejectsMissingContainerSecurityContext(t *testing.T) {
-	setEnv(t, map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"terminationGracePeriod": 5}`,
-	})
-	_, err := LoadFromEnv()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "containerSecurityContext")
 }
 
 func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
@@ -142,30 +119,14 @@ func TestLoadFromEnv_AgentBase_Parsed(t *testing.T) {
 		"POD_NAME":              "controller-0",
 		"AGENT_BASE": `{
 			"imagePullSecrets": ["regcred"],
-			"storageClass": "platform-rwx",
-			"idleTimeout": "30m",
-			"terminationGracePeriod": 10,
-			"runtimeClassName": "kata",
-			"nodeSelector": {"workload": "agents"},
-			"tolerations": [{"key": "dedicated", "operator": "Equal", "value": "agents", "effect": "NoSchedule"}],
-			"probes": {"startup": {"httpGet": {"path": "/h", "port": "acp"}, "periodSeconds": 5}},
-			"containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}
+			"vmIdleTimeout": "30m"
 		}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	b := cfg.AgentBase
 	assert.Equal(t, []string{"regcred"}, b.ImagePullSecrets)
-	assert.Equal(t, "platform-rwx", b.StorageClass)
-	assert.Equal(t, 30*time.Minute, b.IdleTimeout.AsDuration())
-	assert.Equal(t, int64(10), b.TerminationGracePeriod)
-	assert.Equal(t, "kata", b.RuntimeClassName)
-	assert.Equal(t, "agents", b.NodeSelector["workload"])
-	require.Len(t, b.Tolerations, 1)
-	assert.Equal(t, "dedicated", b.Tolerations[0].Key)
-	require.NotNil(t, b.Probes)
-	require.NotNil(t, b.Probes.Startup)
-	require.NotNil(t, b.ContainerSecurityContext)
+	assert.Equal(t, 30*time.Minute, b.VMIdleTimeout.AsDuration())
 }
 
 func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
@@ -173,7 +134,6 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 		"AGENT_TEMPLATE_DEFAULTS": `{
-			"agentHome": "/home/agent",
 			"imagePullPolicy": "IfNotPresent",
 			"storageSize": "10Gi",
 			"resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
@@ -184,7 +144,6 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	d := cfg.AgentTemplateDefaults
-	assert.Equal(t, "/home/agent", d.AgentHome)
 	assert.Equal(t, "IfNotPresent", d.ImagePullPolicy)
 	assert.Equal(t, "10Gi", d.StorageSize)
 	require.Len(t, d.Mounts, 2)
@@ -198,11 +157,11 @@ func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"terminationGracePeriod": 5, "idleTimeout": "0s", "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`,
+		"AGENT_BASE":            `{"vmIdleTimeout": "0s"}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
-	assert.Equal(t, time.Duration(0), cfg.AgentBase.IdleTimeout.AsDuration())
+	assert.Equal(t, time.Duration(0), cfg.AgentBase.VMIdleTimeout.AsDuration())
 }
 
 func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
@@ -237,7 +196,8 @@ func TestLoadFromEnv_GatewayEgressPeers(t *testing.T) {
 }
 
 const (
-	minAgentBaseJSON             = `{"terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
+	minAgentBaseJSON             = `{"vmIdleTimeout": "5m"}`
+	minAgentVMJSON               = `{"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"}}`
 	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
 )
 
@@ -263,6 +223,9 @@ func setEnv(t *testing.T, vars map[string]string) {
 	}
 	if _, ok := vars["AGENT_TEMPLATE_DEFAULTS"]; !ok {
 		t.Setenv("AGENT_TEMPLATE_DEFAULTS", minAgentTemplateDefaultsJSON)
+	}
+	if _, ok := vars["AGENT_VM"]; !ok {
+		t.Setenv("AGENT_VM", minAgentVMJSON)
 	}
 	for k, v := range vars {
 		t.Setenv(k, v)
@@ -391,13 +354,13 @@ func TestLoadFromEnv_RejectsAVMRunnerWithNoMemoryLimit(t *testing.T) {
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 	}
-	base["AGENT_VM"] = `{"enabled":true,"runner":{"image":"vm-runner:1","storage":"40Gi"}}`
+	base["AGENT_VM"] = `{"runner":{"image":"vm-runner:1","storage":"40Gi"}}`
 	setEnv(t, base)
 	_, err := LoadFromEnv()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "limits.memory")
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"}}`
+	base["AGENT_VM"] = `{"runner":{"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -411,13 +374,13 @@ func TestLoadFromEnv_RejectsRunnerPodsWithNoReleaseDirectory(t *testing.T) {
 		"POD_NAME":              "controller-0",
 	}
 	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `}}`
+	base["AGENT_VM"] = `{"runner":{` + runner + `}}`
 	setEnv(t, base)
 	_, err := LoadFromEnv()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "releaseHostPath")
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"hostAddress":"192.168.5.2"}}`
+	base["AGENT_VM"] = `{"runner":{` + runner + `,"hostAddress":"192.168.5.2"}}`
 	setEnv(t, base)
 	_, err = LoadFromEnv()
 	require.NoError(t, err)
@@ -431,13 +394,13 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	}
 	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
 	for _, bad := range []string{`"rollout":{"maxConcurrent":-1}`, `"rollout":{"maxConcurrentPercent":101}`, `"rollout":{"maxConcurrentPercent":-5}`, `"rollout":{"stalledTimeout":"-1m"}`} {
-		base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,` + bad + `}}`
+		base["AGENT_VM"] = `{"runner":{` + runner + `,` + bad + `}}`
 		setEnv(t, base)
 		_, err := LoadFromEnv()
 		assert.Error(t, err, bad)
 	}
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"maxConcurrentPercent":10,"settleTimeout":"15m","stalledTimeout":"45m","idleWait":"2h"}}}`
+	base["AGENT_VM"] = `{"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"maxConcurrentPercent":10,"settleTimeout":"15m","stalledTimeout":"45m","idleWait":"2h"}}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
@@ -446,64 +409,4 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
 	assert.Equal(t, 45*time.Minute, cfg.VM.Runner.Rollout.StalledTimeout.AsDuration())
 	assert.Equal(t, 2*time.Hour, cfg.VM.Runner.Rollout.IdleWait.AsDuration())
-}
-
-// TEST_SCENARIO: the runtime migration's retention window comes from the chart as a duration. A negative one is a values typo, refused at start rather than read as "delete at once"; a set one is read as given.
-func TestLoadFromEnv_ReadsTheRuntimeMigrationRetention(t *testing.T) {
-	base := map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-	}
-	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"-1h"}}`
-	setEnv(t, base)
-	_, err := LoadFromEnv()
-	assert.Error(t, err)
-
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"168h"}}`
-	setEnv(t, base)
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.Equal(t, 7*24*time.Hour, cfg.VM.RuntimeMigration.Retention.AsDuration())
-}
-
-// TEST_SCENARIO: the copy Job caps come from the chart as counts. A negative one is a values typo, refused at start; set ones are read as given.
-func TestLoadFromEnv_ReadsTheRuntimeMigrationCopyCaps(t *testing.T) {
-	base := map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-	}
-	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"ownerConcurrency":-1}}`
-	setEnv(t, base)
-	_, err := LoadFromEnv()
-	assert.Error(t, err)
-
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"concurrency":4,"ownerConcurrency":2}}`
-	setEnv(t, base)
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.Equal(t, 4, cfg.VM.RuntimeMigration.Concurrency)
-	assert.Equal(t, 2, cfg.VM.RuntimeMigration.OwnerConcurrency)
-}
-
-// TEST_SCENARIO: the chart says whether a copy reads a clone of its source; left out, the controller clones.
-func TestLoadFromEnv_ReadsWhetherTheRuntimeMigrationCopyClones(t *testing.T) {
-	base := map[string]string{
-		"PLATFORM_RELEASE_NAME": "platform",
-		"POD_NAME":              "controller-0",
-	}
-	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{}}`
-	setEnv(t, base)
-	cfg, err := LoadFromEnv()
-	require.NoError(t, err)
-	assert.Nil(t, cfg.VM.RuntimeMigration.CloneSource)
-
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"cloneSource":false}}`
-	setEnv(t, base)
-	cfg, err = LoadFromEnv()
-	require.NoError(t, err)
-	require.NotNil(t, cfg.VM.RuntimeMigration.CloneSource)
-	assert.False(t, *cfg.VM.RuntimeMigration.CloneSource)
 }

@@ -129,7 +129,7 @@ func TestAMachinesSecretsAreReadInTwoRounds(t *testing.T) {
 	r.client = slowSecretsClient{r.client.(*fake.Clientset), delay}
 
 	started := time.Now()
-	_, reached, err := r.reconcileVMAgent(ctx, agent, agentOwnerRef(agent), "10.96.42.42", true, true)
+	_, reached, err := r.reconcileVMAgent(ctx, agent, agentOwnerRef(agent), "10.96.42.42", true)
 	elapsed := time.Since(started)
 
 	require.NoError(t, err)

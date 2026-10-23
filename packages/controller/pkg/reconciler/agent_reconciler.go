@@ -47,7 +47,6 @@ type AgentReconciler struct {
 
 	budgetMu              sync.Mutex
 	ownerLocks            map[string]*sync.Mutex
-	deniedWakes           map[string]string
 	parkedRetry           map[string]struct{}
 	memoryGraces          map[string]memoryGrace
 	memoryWaitWrites      sync.Map
@@ -102,7 +101,6 @@ type AgentReconciler struct {
 	preflightMu           sync.Mutex
 	preflight             vmPreflightResult
 	preflightDone         bool
-	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
 	ownerGatewayAnswered  sync.Map
@@ -231,7 +229,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	owner := agent.Labels["agent-platform.ai/owner"]
 
 	if !agentSpec.IsVM() {
-		return r.setError(ctx, name, "this Agent's spec still selects the container backend, which this install no longer runs: its runtime migration must be finished from the cluster before it can start")
+		return r.setError(ctx, name, "this Agent's spec still selects the container backend, which this install no longer runs: nothing starts it here, and an operator has to move it to a machine first")
 	}
 
 	if err := r.ensureConcreteSize(ctx, agent); err != nil {
@@ -359,14 +357,6 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	overBudget := ""
 	awaiting, awaitingReason := "", ""
 	parked := false
-	if running && !autoRetry && r.wakeAlreadyDenied(name, lastActivity) {
-		running = false
-		parked = true
-	}
-	if running {
-		r.clearDeniedWake(name)
-	}
-
 	if parked && autoRetry {
 		r.recordParkedRetry(name)
 	} else {
@@ -417,7 +407,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		timer.mark("gatewayStatefulSet")
 		return nil
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the old order: a parked agent retried every few seconds must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
+	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the runner call. The runner can still refuse a machine for lack of room, so an agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the other order: a parked agent retried every few seconds must not start and stop a gateway pod each time.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
 	// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for the owner's storage is answered the same way until space frees, so this pass keeps the old order rather than start a gateway pod the refusal will scale down again.
 	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAwaitingWarmUp || lastReady.Reason == apiv1.ReasonAwaitingMemory || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
@@ -434,9 +424,6 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
-	if !r.config.VM.Enabled {
-		return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
-	}
 	if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
 		secretRefused = refusal
 	}
@@ -448,7 +435,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		pairAtRest = !machineRuns
 	}
-	machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns, true)
+	machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns)
 	if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
 		r.publishCertificateWait(ctx, agent, err)
 		return fmt.Errorf("agent %s: %w, requeuing", name, err)
@@ -823,7 +810,6 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	r.ownerGatewayLegacyRevisions.Delete(name)
 	r.ownerGatewayEpochs.Delete(name)
 
-	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
 	r.memoryWaitWrites.Delete(name)
 	unresolvedGrants.forget(name)
@@ -1044,7 +1030,7 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the Service once and leaves it as it is, except that a headless one replaces one with a cluster address: a runtime migration that is aborted after its boot leaves the Service a machine needs, and a Service's cluster address cannot be changed in place.
+// UNIT_BOUNDARY_DESCRIPTION: creates the Service once and leaves it as it is, except that a headless one replaces one with a cluster address: a machine needs a Service it can remap a published port on, and a cluster address cannot be changed in place.
 func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
 	cli := r.client.CoreV1().Services(desired.Namespace)
 	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})

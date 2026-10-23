@@ -47,7 +47,7 @@ func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images"}}
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
 	err := r.Reconcile(context.Background(), agent)

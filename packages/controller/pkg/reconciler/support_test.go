@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -103,19 +103,12 @@ var testConfig = &config.Config{
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
 	AgentBase: config.AgentBase{
-		TerminationGracePeriod: 5,
-		ContainerSecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-		},
+		VMIdleTimeout: config.Duration(5 * time.Minute),
 	},
 	AgentTemplateDefaults: config.AgentTemplateDefaults{
 		ImagePullPolicy: "IfNotPresent",
 		StorageSize:     "10Gi",
 	},
-	AgentProbesEnabled: true,
-	RequestsFraction:   0.5,
-	RequestsMinCPU:     resource.MustParse("100m"),
-	RequestsMinMemory:  resource.MustParse("128Mi"),
 }
 
 var testAgent = &apiv1.AgentSpec{

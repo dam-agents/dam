@@ -7,9 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -20,26 +17,6 @@ import (
 // TEST_OVERVIEW: StartFailed tells the api-server that the pod or machine running the Agent's current spec keeps failing, so an image update can be rolled back on a crash loop or a harness that never becomes ready. It must never come from the old pod a roll replaces, which exits too.
 
 var startNow = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
-
-func agentContainer(pod *corev1.Pod, cs corev1.ContainerStatus) *corev1.Pod {
-	cs.Name = AgentContainerName
-	pod.Status.ContainerStatuses = []corev1.ContainerStatus{cs}
-	return pod
-}
-
-func crashing(restarts int32, exitCode int32, reason string) corev1.ContainerStatus {
-	return corev1.ContainerStatus{
-		RestartCount:         restarts,
-		State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
-		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: exitCode, Reason: reason}},
-	}
-}
-
-func runningSince(ago time.Duration) corev1.ContainerStatus {
-	return corev1.ContainerStatus{
-		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.NewTime(startNow.Add(-ago))}},
-	}
-}
 
 // TEST_SCENARIO: each pod shape the agent StatefulSet can show during and after an image change. Only a pod of the update revision, unready now, with three own exits or ten unready minutes since its container started, is a failure. The old pod a roll replaces exits with 143 on SIGTERM and keeps its restart count: it must not count, nor may a pod read before the StatefulSet observed its new template.
 func startFailedCondition(t *testing.T, r *AgentReconciler) map[string]any {
@@ -129,15 +106,3 @@ func TestPublishVMReadinessReportsACrashLoopOnThisGeneration(t *testing.T) {
 	assert.Equal(t, apiv1.ReasonCrashLoop, cond["reason"])
 	assert.EqualValues(t, 2, cond["observedGeneration"])
 }
-
-func denied(message string) error {
-	return &apierrors.StatusError{ErrStatus: metav1.Status{Status: metav1.StatusFailure, Code: 400, Message: message}}
-}
-
-func agentSSOn(image string) *appsv1.StatefulSet {
-	ss := rolloutSS("my-agent", 1, 1, "r1")
-	ss.Spec.Template.Spec.Containers = []corev1.Container{{Name: AgentContainerName, Image: image}}
-	return ss
-}
-
-const stackroxDenial = `admission webhook "policyeval.stackrox.io" denied the request: The attempted operation violated 1 enforced policy: Policy: Block images older than 1 year`

@@ -161,45 +161,38 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithAgentCacheSynced(agentInformer.Informer().HasSynced).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
 
-	var runnerFactory informers.SharedInformerFactory
 	var runnerInformer, runnerPodInformer, nodeInformer cache.SharedIndexInformer
-	if cfg.VM.Enabled {
-		runnerFactory = informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
-			informers.WithNamespace(cfg.Namespace),
-			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
-			}),
-			stripManagedFields,
-		)
-		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
-		runnerPods := runnerFactory.Core().V1().Pods()
-		runnerPodInformer = runnerPods.Informer()
-		agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
-		// UNIT_BOUNDARY_DESCRIPTION: nodes are cluster-scoped, so they take a factory of their own. A not-ready agent's reconcile asks about a node on every retry, and on a lost node those retries add up across the owner's agents. The watch keeps only the name and the Ready condition: the rest of a node object carries every image and attached volume of a shared cluster to answer one question.
-		nodes := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second, informers.WithTransform(func(obj interface{}) (interface{}, error) {
-			if node, ok := obj.(*corev1.Node); ok {
-				ready := make([]corev1.NodeCondition, 0, 1)
-				for _, c := range node.Status.Conditions {
-					if c.Type == corev1.NodeReady {
-						ready = append(ready, c)
-					}
+	runnerFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+		informers.WithNamespace(cfg.Namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
+		}),
+		stripManagedFields,
+	)
+	runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
+	runnerPods := runnerFactory.Core().V1().Pods()
+	runnerPodInformer = runnerPods.Informer()
+	agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
+	// UNIT_BOUNDARY_DESCRIPTION: nodes are cluster-scoped, so they take a factory of their own. A not-ready agent's reconcile asks about a node on every retry, and on a lost node those retries add up across the owner's agents. The watch keeps only the name and the Ready condition: the rest of a node object carries every image and attached volume of a shared cluster to answer one question.
+	nodes := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second, informers.WithTransform(func(obj interface{}) (interface{}, error) {
+		if node, ok := obj.(*corev1.Node); ok {
+			ready := make([]corev1.NodeCondition, 0, 1)
+			for _, c := range node.Status.Conditions {
+				if c.Type == corev1.NodeReady {
+					ready = append(ready, c)
 				}
-				node.ManagedFields, node.Labels, node.Annotations = nil, nil, nil
-				node.Status = corev1.NodeStatus{Conditions: ready}
 			}
-			return obj, nil
-		})).Core().V1().Nodes()
-		nodeInformer = nodes.Informer()
-		agentReconciler.WithNodeCache(nodes.Lister(), nodeInformer.HasSynced)
-	}
+			node.ManagedFields, node.Labels, node.Annotations = nil, nil, nil
+			node.Status = corev1.NodeStatus{Conditions: ready}
+		}
+		return obj, nil
+	})).Core().V1().Nodes()
+	nodeInformer = nodes.Informer()
+	agentReconciler.WithNodeCache(nodes.Lister(), nodeInformer.HasSynced)
 
-	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
-	if cfg.VM.Enabled {
-		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
-		idleChecker.WithOwnerLock(agentReconciler.OwnerLock)
-		agentReconciler.CheckVMInstall(ctx)
-		go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
-	}
+	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg).WithMachineHalt(agentReconciler.HaltMachine).WithOwnerLock(agentReconciler.OwnerLock)
+	agentReconciler.CheckVMInstall(ctx)
+	go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
 	go idleChecker.RunLoop(ctx)
 
 	orphanSweep := func() {
@@ -261,34 +254,32 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	})
 	go runDeleteWorker(ctx, agentReconciler, deleteQueue)
 
-	if cfg.VM.Enabled {
-		requeueOwner := func(obj interface{}, isInInitialList bool) {
-			if m, err := meta.Accessor(obj); err == nil {
-				for _, name := range agentReconciler.OwnerVMAgents(reconciler.AgentOwner(m.GetLabels())) {
-					agentQueue.add(isInInitialList, name)
-				}
+	requeueOwner := func(obj interface{}, isInInitialList bool) {
+		if m, err := meta.Accessor(obj); err == nil {
+			for _, name := range agentReconciler.OwnerVMAgents(reconciler.AgentOwner(m.GetLabels())) {
+				agentQueue.add(isInInitialList, name)
 			}
 		}
-		if _, err := runnerInformer.AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
-			AddFunc: requeueOwner,
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				if resourceVersionChanged(oldObj, newObj) {
-					requeueOwner(newObj, false)
-				}
-			},
-			DeleteFunc: func(obj interface{}) {
-				if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-					obj = tombstone.Obj
-				}
-				requeueOwner(obj, false)
-			},
-		}); err != nil {
-			slog.Error("watching VM runner deployments", "error", err)
-			return
-		}
-		runnerFactory.Start(ctx.Done())
-		go nodeInformer.RunWithContext(ctx)
 	}
+	if _, err := runnerInformer.AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		AddFunc: requeueOwner,
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if resourceVersionChanged(oldObj, newObj) {
+				requeueOwner(newObj, false)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+				obj = tombstone.Obj
+			}
+			requeueOwner(obj, false)
+		},
+	}); err != nil {
+		slog.Error("watching VM runner deployments", "error", err)
+		return
+	}
+	runnerFactory.Start(ctx.Done())
+	go nodeInformer.RunWithContext(ctx)
 
 	podInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Pod]{
 		AddFunc: func(pod *corev1.Pod, isInInitialList bool) {

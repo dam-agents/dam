@@ -4,12 +4,10 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -46,10 +44,6 @@ const (
 	annRollRev             = "agent-platform.ai/roll-rev"
 	annStatefulSetTemplate = "agent-platform.ai/statefulset-template"
 )
-
-func sanitizeMountName(path string) string {
-	return strings.ReplaceAll(strings.TrimPrefix(path, "/"), "/", "-")
-}
 
 // UNIT_BOUNDARY_DESCRIPTION: an Agent's secretRef names a Secret by name alone, in the namespace that also holds every other owner's credentials, the runners' tokens and the gateways' keys, and every key of it lands in the agent's environment on both backends. So only a Secret carrying the Agent's own owner label is honoured, and never one the platform manages — the credentials a gateway injects and the pull Secrets the api-server writes carry the managed-by label, and a runner's token and certificate its component — because those are meant for everything except the agent. The refusal names the label to add rather than the Secret's contents, so an operator's Secret that predates the rule is one label away from working.
 func (r *AgentReconciler) ownedSecretRef(ctx context.Context, agent *apiv1.Agent) (*corev1.Secret, error) {
@@ -164,38 +158,3 @@ func BuildAgentService(name string, cfg *config.Config, ownerRef metav1.OwnerRef
 		},
 	}
 }
-
-func toResourceList(m map[string]string) corev1.ResourceList {
-	rl := make(corev1.ResourceList)
-	for k, v := range m {
-		q, err := resource.ParseQuantity(v)
-		if err != nil || q.Sign() <= 0 {
-			slog.Warn("ignoring invalid resource quantity in agent spec; chart default applies",
-				"resource", k, "value", v)
-			continue
-		}
-		rl[corev1.ResourceName(k)] = q
-	}
-	return rl
-}
-
-func deriveRequest(limit resource.Quantity, fraction float64, floor resource.Quantity, milli bool) resource.Quantity {
-	var derived resource.Quantity
-	if milli {
-		derived = *resource.NewMilliQuantity(int64(float64(limit.MilliValue())*fraction), limit.Format)
-	} else {
-		derived = *resource.NewQuantity(int64(float64(limit.Value())*fraction), limit.Format)
-	}
-	if derived.Cmp(floor) < 0 {
-		derived = floor
-	}
-	if derived.Cmp(limit) > 0 {
-		derived = limit
-	}
-	return derived
-}
-
-const (
-	agentTrustedCAsConfigMap = "agent-trusted-cas"
-	agentTrustedCAsKey       = "extra-cas.crt"
-)

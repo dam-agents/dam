@@ -46,12 +46,12 @@ const (
 )
 
 func (r *AgentReconciler) ownerGatewayServes(spec *apiv1.AgentSpec) bool {
-	return r.config.VM.Enabled && r.config.VM.Gateway.PerOwner && spec.IsVM()
+	return r.config.VM.Gateway.PerOwner && spec.IsVM()
 }
 
 func (r *AgentReconciler) ownerGatewayOn(owner string) bool {
 	_, refused := r.ownerGatewayRefused.Load(owner)
-	return r.config.VM.Enabled && r.config.VM.Gateway.PerOwner && !refused
+	return r.config.VM.Gateway.PerOwner && !refused
 }
 
 func ownerGatewayProxyPort(slot int) int    { return ownerGatewayPortBase + 2*slot }
@@ -796,7 +796,7 @@ func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, svcName str
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the agent's Service selects its owner gateway, whatever the flag says: until the agent has moved back, its policies must keep admitting the owner gateway, or the pod its traffic still reaches is refused at the harness and at ext-authz.
 func (r *AgentReconciler) onOwnerGateway(ctx context.Context, spec *apiv1.AgentSpec, name string) (bool, error) {
-	if !r.config.VM.Enabled || !spec.IsVM() {
+	if !spec.IsVM() {
 		return false, nil
 	}
 	_, ok, err := r.servedDesiredUp(ctx, name)

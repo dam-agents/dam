@@ -53,7 +53,10 @@ const (
 	// whispers to the agent in every conversation; an older CRD would prune it.
 	// Agent gen 20: environmentOf added to AgentSpec — the Agent that owns this
 	// one as an Environment, immutable; an older CRD would prune it.
-	AgentSchemaGeneration = 20
+	// Agent gen 21: runtimeClassName, nodeSelector and runtimeMigrationAttempts
+	// removed — the container backend, its per-template scheduling and its
+	// runtime migration are gone, and every Agent is a machine.
+	AgentSchemaGeneration = 21
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

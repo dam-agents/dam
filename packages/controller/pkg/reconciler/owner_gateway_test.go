@@ -593,7 +593,7 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupReconciler(t, agentCR())
-	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1}}}
+	r.config.VM = config.VMConfig{Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1}}}
 	for _, owner := range []string{"owner-a", "owner-b"} {
 		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
 	}
@@ -626,7 +626,7 @@ func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 func TestOwnerGateway_TemplateChangesRollTheWidthOfTheShare(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupReconciler(t, agentCR())
-	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	r.config.VM = config.VMConfig{Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
 	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d"}
 	for _, owner := range owners {
 		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
@@ -780,7 +780,7 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 func TestOwnerGateway_AMidRollGatewayTakesACorrectiveChangeWhenTheFleetShrinks(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupReconciler(t, agentCR())
-	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	r.config.VM = config.VMConfig{Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
 	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d", "owner-e"}
 	for _, owner := range owners {
 		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))

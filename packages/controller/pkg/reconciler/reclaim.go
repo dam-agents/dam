@@ -59,7 +59,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		if !ok {
 			continue
 		}
-		up, err := r.agentDesiredUp(ctx, peer.Name, peer.Spec.IsVM())
+		up, err := r.agentDesiredUp(ctx, peer.Name)
 		if err != nil {
 			return nil, err
 		}

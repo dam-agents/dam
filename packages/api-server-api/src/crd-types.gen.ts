@@ -7,8 +7,7 @@
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
  * but observed status the controller derives from activity. Security context
- * is chart-only (config.AgentBase); scheduling is chart-wide except
- * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
+ * and scheduling are chart-only (config.AgentBase, config.VM).
  */
 export interface AgentSpecCR {
   /**
@@ -22,13 +21,12 @@ export interface AgentSpecCR {
    */
   avatar?: string;
   /**
-   * Backend selects the isolation substrate the agent workload runs on;
-   * nil = container. Immutable after create (enforced by the api-server,
-   * the sole spec writer), except that a runtime migration moves a
-   * container agent to `vm`, never back. `vm` runs the agent as a persistent microVM on
-   * its owner's VM runner instead of a StatefulSet: the controller
-   * drives the runner's machine API, and the agent Service resolves to the
-   * machine's published port; the paired gateway is unaffected.
+   * Backend is the isolation substrate, always `vm`: every Agent is a
+   * persistent microVM on its owner's VM runner. The api-server writes it on
+   * every create, and the controller refuses an Agent that selects
+   * anything else rather than reading it as a machine, so a container Agent
+   * left over from before the switch is visible instead of silently
+   * converted. Kept as a field for one release, then removed.
    */
   backend?: {
     type: "container" | "vm";
@@ -155,14 +153,6 @@ export interface AgentSpecCR {
    */
   name?: string;
   /**
-   * NodeSelector overrides the chart-wide node selector; empty = inherit.
-   * Container backend only — rejected on the vm backend, whose machine is
-   * placed with its owner's VM runner.
-   */
-  nodeSelector?: {
-    [k: string]: string;
-  };
-  /**
    * RequireConnectionAddress makes the agent's gateway inject a Connection's
    * credential only into a request that names that Connection, by its token
    * placeholder or its path prefix. Every other request goes upstream with
@@ -182,11 +172,6 @@ export interface AgentSpecCR {
       [k: string]: string;
     };
   };
-  /**
-   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
-   * Selects among *container* runtimes only — rejected on the vm backend.
-   */
-  runtimeClassName?: string;
   /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
    * agent container (operator-supplied envs).

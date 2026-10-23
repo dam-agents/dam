@@ -14,8 +14,6 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
-const iptablesInitContainerName = "egress-lockdown"
-
 func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desired *corev1.Service, kind, name string) (*corev1.Service, error) {
 	cli := client.CoreV1().Services(desired.Namespace)
 

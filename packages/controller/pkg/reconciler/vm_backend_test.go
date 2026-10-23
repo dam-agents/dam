@@ -484,7 +484,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	}
 	agent.Labels[envoyOwnerLabel] = testOwner
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), readyRunnerPod(), runnerSecret(), runnerTLSSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		ReleaseHostPath: "/var/lib/platform-runner-releases",

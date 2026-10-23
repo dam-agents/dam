@@ -3,7 +3,6 @@ package reconciler
 import (
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,7 +20,6 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
-	typednetworkingv1 "k8s.io/client-go/kubernetes/typed/networking/v1"
 	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -96,12 +93,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
 		AgentBase: config.AgentBase{
-			TerminationGracePeriod: 5,
-			IdleTimeout:            config.Duration(time.Hour),
-			VMIdleTimeout:          config.Duration(time.Hour),
-			ContainerSecurityContext: &corev1.SecurityContext{
-				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			},
+			VMIdleTimeout: config.Duration(time.Hour),
 		},
 		AgentTemplateDefaults: config.AgentTemplateDefaults{
 			ImagePullPolicy: "IfNotPresent",
@@ -109,9 +101,6 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		},
 		DefaultUserCPUBudget:    resource.MustParse("4"),
 		DefaultUserMemoryBudget: resource.MustParse("8Gi"),
-		RequestsFraction:        0.5,
-		RequestsMinCPU:          resource.MustParse("100m"),
-		RequestsMinMemory:       resource.MustParse("128Mi"),
 		LegacyAgentCPULimit:     resource.MustParse("1"),
 		LegacyAgentMemoryLimit:  resource.MustParse("2Gi"),
 	}
@@ -505,107 +494,3 @@ func TestEnsureLeafSecretOwnerReference_NoSecretYetIsNoop(t *testing.T) {
 	r, _ := setupReconciler(t, agent)
 	assert.NoError(t, r.ensureSecretOwnerReference(context.Background(), EnvoyLeafSecretName("my-agent"), nil, agentOwnerRef(agent)))
 }
-
-func enableWarmPool(r *AgentReconciler, sizes ...config.WarmPoolSize) {
-	r.config.WarmPool = config.WarmPool{
-		Enabled:      true,
-		StorageClass: "platform-rwx-immediate",
-		Sizes:        sizes,
-	}
-}
-
-func getAgentSTS(t *testing.T, client *fake.Clientset, name string) *appsv1.StatefulSet {
-	t.Helper()
-	ss, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), name, metav1.GetOptions{})
-	require.NoError(t, err)
-	return ss
-}
-
-func seedAgentSTSWithClaim(t *testing.T, client *fake.Clientset, name, mount, pvc string) {
-	t.Helper()
-	ss := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
-		Spec: appsv1.StatefulSetSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Volumes: []corev1.Volume{
-						{Name: mount, VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc}}},
-						{Name: "ca-cert", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-					},
-				},
-			},
-		},
-	}
-	_, err := client.AppsV1().StatefulSets("test-agents").Create(context.Background(), ss, metav1.CreateOptions{})
-	require.NoError(t, err)
-}
-
-func writesAfterSettle(t *testing.T, r *AgentReconciler, cs *fake.Clientset, agent *apiv1.Agent) []string {
-	t.Helper()
-	require.NoError(t, r.Reconcile(context.Background(), agent))
-	cs.ClearActions()
-	dyn := r.dynamic.(*dynfake.FakeDynamicClient)
-	dyn.ClearActions()
-	require.NoError(t, r.Reconcile(context.Background(), agent))
-	var writes []string
-	for _, a := range append(cs.Actions(), dyn.Actions()...) {
-		if a.GetVerb() == "update" && a.GetResource().Resource != "agents" {
-			writes = append(writes, a.GetResource().Resource+"/"+a.GetSubresource())
-		}
-	}
-	return writes
-}
-
-// TEST_SCENARIO: an agent whose objects already match is reconciled on every pod event, wake and drift pass, and the single agent worker spends each reconcile's API calls in turn. On dev each one rewrote eleven objects that had not changed — envoy bootstrap, two Certificates, two AuthorizationPolicies, four NetworkPolicies and two Services — about 90 ms per reconcile, and a write each for the API server and the watchers behind it. A settled agent is now left as it is.
-type overlapBarrier struct {
-	mu       sync.Mutex
-	want     int
-	arrived  int
-	all      chan struct{}
-	timedOut bool
-}
-
-func (b *overlapBarrier) arrive() {
-	b.mu.Lock()
-	if b.arrived++; b.arrived == b.want {
-		close(b.all)
-	}
-	b.mu.Unlock()
-	select {
-	case <-b.all:
-	case <-time.After(time.Second):
-		b.mu.Lock()
-		b.timedOut = true
-		b.mu.Unlock()
-	}
-}
-
-type overlappingNetworkPolicies struct {
-	*fake.Clientset
-	reads *overlapBarrier
-}
-
-func (c overlappingNetworkPolicies) NetworkingV1() typednetworkingv1.NetworkingV1Interface {
-	return overlapNetworking{c.Clientset.NetworkingV1(), c.reads}
-}
-
-type overlapNetworking struct {
-	typednetworkingv1.NetworkingV1Interface
-	reads *overlapBarrier
-}
-
-func (n overlapNetworking) NetworkPolicies(ns string) typednetworkingv1.NetworkPolicyInterface {
-	return overlapNetworkPolicyReads{n.NetworkingV1Interface.NetworkPolicies(ns), n.reads}
-}
-
-type overlapNetworkPolicyReads struct {
-	typednetworkingv1.NetworkPolicyInterface
-	reads *overlapBarrier
-}
-
-func (p overlapNetworkPolicyReads) Get(ctx context.Context, name string, opts metav1.GetOptions) (*networkingv1.NetworkPolicy, error) {
-	p.reads.arrive()
-	return p.NetworkPolicyInterface.Get(ctx, name, opts)
-}
-
-// TEST_SCENARIO: every reconcile applies the Agent's own objects — envoy bootstrap, leaf certificate, ServiceAccount, ext-authz Service, two AuthorizationPolicies, three NetworkPolicies and the gateway Service — before it starts the pod or the machine. None of them reads another, so they are applied at once: one after the other, they took about 130 ms of every wake of a vm agent on dev, and the single agent worker spent them on every reconcile that a wake had to wait behind.

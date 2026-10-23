@@ -231,7 +231,7 @@ func (r *AgentReconciler) runnerWarmingUp(ctx context.Context, owner string) boo
 // UNIT_BOUNDARY_DESCRIPTION: differs from what their counts call for, for the
 // UNIT_BOUNDARY_DESCRIPTION: caller to reconcile so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
-	if r.agentCache == nil || !r.config.VM.Enabled {
+	if r.agentCache == nil {
 		return nil
 	}
 	items, err := r.agentCache.ByNamespace(r.config.Namespace).List(labels.Everything())

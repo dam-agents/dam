@@ -16,19 +16,17 @@ import (
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
-func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vm bool) (bool, error) {
-	if vm {
-		if up, ok, err := r.servedDesiredUp(ctx, name); err != nil || ok {
-			return up, err
-		}
-		name = GatewayName(name)
+// UNIT_BOUNDARY_DESCRIPTION: whether the Agent should be running, read from the record its reconcile keeps on its gateway Service, and from the gateway's own replicas for an Agent that has not written one yet.
+func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string) (bool, error) {
+	if up, ok, err := r.servedDesiredUp(ctx, name); err != nil || ok {
+		return up, err
 	}
-	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("reading agent statefulset: %w", err)
+		return false, fmt.Errorf("reading the gateway statefulset: %w", err)
 	}
 	return ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1, nil
 }
@@ -79,22 +77,6 @@ func parseQuantityOr(s string, def resource.Quantity) resource.Quantity {
 		return def
 	}
 	return q
-}
-
-func (r *AgentReconciler) wakeAlreadyDenied(name, lastActivity string) bool {
-	r.budgetMu.Lock()
-	defer r.budgetMu.Unlock()
-	denied, ok := r.deniedWakes[name]
-	return ok && denied == lastActivity
-}
-
-func (r *AgentReconciler) recordDeniedWake(name, lastActivity string) {
-	r.budgetMu.Lock()
-	defer r.budgetMu.Unlock()
-	if r.deniedWakes == nil {
-		r.deniedWakes = make(map[string]string)
-	}
-	r.deniedWakes[name] = lastActivity
 }
 
 func (r *AgentReconciler) recordParkedRetry(name string) {
@@ -167,12 +149,6 @@ func (r *AgentReconciler) clearMemoryGrace(name string) {
 	r.budgetMu.Lock()
 	defer r.budgetMu.Unlock()
 	delete(r.memoryGraces, name)
-}
-
-func (r *AgentReconciler) clearDeniedWake(name string) {
-	r.budgetMu.Lock()
-	defer r.budgetMu.Unlock()
-	delete(r.deniedWakes, name)
 }
 
 func (r *AgentReconciler) ownerLock(owner string) *sync.Mutex {

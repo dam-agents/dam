@@ -84,7 +84,7 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 
 	interval := c.checkInterval()
 	slog.Info("idle checker started",
-		"timeout", c.config.AgentBase.IdleTimeout.AsDuration(), "interval", interval)
+		"timeout", c.config.AgentBase.VMIdleTimeout.AsDuration(), "interval", interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -104,7 +104,7 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 }
 
 func (c *IdleChecker) shortestEffectiveTimeout() time.Duration {
-	global := c.config.AgentBase.IdleTimeout.AsDuration()
+	global := c.config.AgentBase.VMIdleTimeout.AsDuration()
 	observed := time.Duration(c.shortestObservedTimeout.Load())
 	if observed > 0 && (global <= 0 || observed < global) {
 		return observed
@@ -193,9 +193,6 @@ func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Uns
 // UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout. An install without virtualization runs no runner, and its controller holds no grant on Deployments, so the read is skipped there rather than refused on every sweep. A read that fails on an install that does run them hibernates nothing this pass: the pin is what keeps a roll's machines up, and one sweep of waiting costs less than a roll that has to give up.
 func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context, owner string) (map[string]bool, error) {
 	awaiting := map[string]bool{}
-	if !c.config.VM.Enabled {
-		return awaiting, nil
-	}
 	selector := "app.kubernetes.io/component=" + vmRunnerComponent
 	if owner != "" {
 		selector += "," + envoyOwnerLabel + "=" + owner
