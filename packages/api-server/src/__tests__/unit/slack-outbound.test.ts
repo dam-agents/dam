@@ -331,15 +331,19 @@ describe("slack outbound — cross-workspace reach", () => {
    * TEST_SCENARIO: Slack can refuse a file share that carries the text, for
    * example for blocks it will not take on a file. The text must still reach
    * the conversation, so the worker falls back to the two posts: the text
-   * first, with the file's id in its metadata, then the bare file.
+   * first, with the file's id in its metadata, then the bare file. Slack
+   * completes an upload only once, so the fallback uploads the file again.
    */
   it("a file share Slack refuses with the text falls back to the text, then the file", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     const share = h.gw.shareFile.bind(h.gw);
+    const shared: string[] = [];
     h.gw.shareFile = async (args) => {
+      shared.push(args.fileId);
       if (args.blocks) throw new Error("internal_error");
       await share(args);
     };
+    const posts = vi.spyOn(h.gw, "postMessage");
     const result = await h.post("report attached", {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
@@ -354,6 +358,11 @@ describe("slack outbound — cross-workspace reach", () => {
       { kind: "upload", channelId: "C-ALERTS", filename: "report.md" },
     ]);
     expect(h.uploads()[0]).not.toHaveProperty("text");
+    expect(shared).toEqual(["F1-report.md", "F2-report.md"]);
+    expect(posts.mock.calls[0]![0].metadata).toEqual({
+      eventType: "agent_post",
+      payload: { files: ["F2-report.md"] },
+    });
   });
 
   /**

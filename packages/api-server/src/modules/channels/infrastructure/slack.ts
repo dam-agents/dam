@@ -2206,6 +2206,38 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       : null;
   }
 
+  async function stageFile(
+    gw: SlackGateway,
+    teamId: SlackWorkspace,
+    attachment: ChannelAttachment,
+  ): Promise<
+    | { reserved: SlackReservedFile; bytesSent: Promise<string | null> }
+    | { error: string }
+  > {
+    let reserved: SlackReservedFile;
+    try {
+      reserved = await gw.reserveFile({
+        filename: attachment.filename,
+        length: attachment.data.length,
+        teamId,
+      });
+    } catch (err) {
+      return { error: formatError(err) };
+    }
+    const bytesSent = gw
+      .sendFileBytes({
+        reserved,
+        file: attachment.data,
+        filename: attachment.filename,
+        teamId,
+      })
+      .then(
+        () => null,
+        (err: unknown) => formatError(err),
+      );
+    return { reserved, bytesSent };
+  }
+
   async function postWithAttachment(
     gw: SlackGateway,
     target: { id: string; teamId: SlackWorkspace },
@@ -2219,31 +2251,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await post([]);
       return null;
     }
-    let reserved: SlackReservedFile;
-    try {
-      reserved = await gw.reserveFile({
-        filename: attachment.filename,
-        length: attachment.data.length,
-        teamId: target.teamId,
-      });
-    } catch (err) {
-      await post([]);
-      return formatError(err);
-    }
-    const bytesSent = gw
-      .sendFileBytes({
-        reserved,
-        file: attachment.data,
-        filename: attachment.filename,
-        teamId: target.teamId,
-      })
-      .then(
-        () => null,
-        (err: unknown) => formatError(err),
-      );
-    const share = (blocks?: SlackBlock[]) =>
+    const share = (fileId: string, blocks?: SlackBlock[]) =>
       gw.shareFile({
-        fileId: reserved.fileId,
+        fileId,
         filename: attachment.filename,
         ...(attachment.title !== undefined ? { title: attachment.title } : {}),
         ...persona,
@@ -2252,22 +2262,32 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ...(blocks ? { blocks } : {}),
         teamId: target.teamId,
       });
-    if (fileBlocks && (await bytesSent) === null) {
-      try {
-        await share(fileBlocks);
-        return null;
-      } catch (err) {
-        getLogger().warn(
-          { channelId: target.id, err: formatError(err) },
-          "slack.file_post.failed: posting the text and the file apart",
-        );
-      }
+    if (fileBlocks) {
+      const staged = await stageFile(gw, target.teamId, attachment);
+      const failure =
+        "error" in staged
+          ? staged.error
+          : ((await staged.bytesSent) ??
+            (await share(staged.reserved.fileId, fileBlocks).then(
+              () => null,
+              (err: unknown) => formatError(err),
+            )));
+      if (failure === null) return null;
+      getLogger().warn(
+        { channelId: target.id, err: failure },
+        "slack.file_post.failed: posting the text and the file apart",
+      );
     }
-    await post([reserved.fileId]);
-    const uploadError = await bytesSent;
+    const staged = await stageFile(gw, target.teamId, attachment);
+    if ("error" in staged) {
+      await post([]);
+      return staged.error;
+    }
+    await post([staged.reserved.fileId]);
+    const uploadError = await staged.bytesSent;
     if (uploadError !== null) return uploadError;
     try {
-      await share();
+      await share(staged.reserved.fileId);
       return null;
     } catch (err) {
       return formatError(err);

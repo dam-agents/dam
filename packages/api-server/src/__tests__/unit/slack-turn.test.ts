@@ -408,7 +408,7 @@ describe("slack reply / react tools", () => {
     ).toEqual(["markdown", "context"]);
     expect(sent.metadata).toEqual({
       eventType: "agent_post",
-      payload: { files: ["F1-report.md"] },
+      payload: { files: ["F2-report.md"] },
     });
     expect(
       h
@@ -464,7 +464,7 @@ describe("slack reply / react tools", () => {
     await tick();
 
     expect(deletes).toHaveBeenCalledWith("C1", posted.ts, "");
-    expect(fileDeletes).toHaveBeenCalledWith("F1-report.md", "");
+    expect(fileDeletes).toHaveBeenCalledWith("F2-report.md", "");
     expect(ephemerals().at(-1)).toBe("Post deleted. The agent will be told.");
     expect(prompts.at(-1)).toEqual({
       resume: "sess-42",
