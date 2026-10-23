@@ -95,6 +95,7 @@ export function otlpLogRecord(
       duration_ms: record.durationMs,
       request_id: record.requestId ?? "",
       "platform.model.router": true,
+      "platform.call.id": record.callId,
       "platform.connection.id": record.connectionId,
       "platform.provider.alias": record.alias,
       "platform.model.upstream": record.upstreamId,

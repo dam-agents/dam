@@ -37,6 +37,8 @@ function windowClauses(w: TelemetryWindow): string[] {
   ];
 }
 
+const MODEL_CALL_BODY = "platform.model_call";
+
 export const ownedSpans = (w: TelemetryWindow): string =>
   [
     `${OWNER} IN {agentIds:Array(String)}`,
@@ -56,7 +58,14 @@ export const ownedLogs = (f: TelemetryLogFilter): string =>
       : ["LogAttributes['session.id'] = {sessionId:String}"]),
     ...(f.promptId === undefined
       ? []
-      : ["LogAttributes['prompt.id'] = {promptId:String}"]),
+      : [
+          f.routerCallsWithin === undefined
+            ? "LogAttributes['prompt.id'] = {promptId:String}"
+            : `(LogAttributes['prompt.id'] = {promptId:String}
+   OR (Body = '${MODEL_CALL_BODY}'
+     AND Timestamp >= parseDateTimeBestEffort({callsFromIso:String})
+     AND Timestamp < parseDateTimeBestEffort({callsToIso:String})))`,
+        ]),
     ...(f.event === undefined ? [] : ["Body = {event:String}"]),
     ...(f.contains === undefined
       ? []
@@ -79,6 +88,12 @@ const logParams = (agentIds: readonly string[], f: TelemetryLogFilter) => ({
   ...windowParams(agentIds, f),
   ...(f.traceId === undefined ? {} : { traceId: f.traceId }),
   ...(f.promptId === undefined ? {} : { promptId: f.promptId }),
+  ...(f.routerCallsWithin === undefined
+    ? {}
+    : {
+        callsFromIso: f.routerCallsWithin.fromIso,
+        callsToIso: f.routerCallsWithin.toIso,
+      }),
   ...(f.event === undefined ? {} : { event: f.event }),
   ...(f.contains === undefined ? {} : { contains: f.contains }),
 });

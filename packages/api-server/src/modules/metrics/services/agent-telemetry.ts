@@ -1,10 +1,13 @@
 import {
+  AGENT_TELEMETRY_DEFAULT_DAYS,
   formatSpendAmount,
   type AgentSpend,
   type AgentSpendQuery,
   type agentMetricsInputSchema,
   type CallContext,
   type SpendAmount,
+  type SpendCallCost,
+  type SpendReadWindow,
   type SpendSessionRow,
   type SubAgentSpendRow,
 } from "api-server-api";
@@ -26,17 +29,26 @@ export interface AgentTelemetryQuery {
   sessionId?: string;
 }
 
-export interface AgentMetricsQuery extends AgentTelemetryQuery {
+export interface AgentMetricsQuery {
+  days?: number;
+  hours?: number;
+  limit: number;
+  sessionId?: string;
   granularity: AgentMetricsGranularity;
 }
 
 export interface AgentSpendPort {
   read(query: AgentSpendQuery): Promise<AgentSpend>;
+  callCosts(
+    agentId: string,
+    routerCallIds: readonly string[],
+  ): Promise<SpendCallCost[]>;
 }
 
 interface Measured {
   available: true;
-  windowDays: number;
+  windowDays?: number;
+  windowHours?: number;
   sessionId?: string;
 }
 
@@ -47,13 +59,16 @@ export interface Unavailable {
 
 type Priced<T extends SpendAmount> = T & { amount: string };
 
-type MeasuredCall = Omit<CallContext, "costUsd">;
+type MeasuredCall = Omit<CallContext, "costUsd" | "routerCallId"> & {
+  cost: (Priced<SpendAmount> & { estimated: boolean }) | null;
+};
 
 export type AgentMetricsResult =
   | (Measured & {
       granularity: AgentMetricsGranularity;
       measuredSince: string;
       window: { from: string; to: string };
+      readWindow?: SpendReadWindow;
       totals: Priced<AgentSpend["totals"][number]>[];
       modelTimeMs: number;
       sessionCount: number;
@@ -90,6 +105,7 @@ export interface AgentTelemetryService {
 }
 
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 
 const ROWS_CAPPED =
   "The rows below are only the most recent up to limit — truncated says whether more exist, so do not expect the rows to sum to the totals.";
@@ -98,14 +114,29 @@ const SUB_AGENT_ROWS =
   "Each sub-agent row is that sub-agent's own calls: a sub-agent that spawned its own has them as rows of their own.";
 
 const CALL_ROWS =
-  "The call rows come from this agent's own telemetry and carry no cost; the totals are the measured spend.";
+  "The call rows come from this agent's own telemetry, each with the measured cost of its call when the gateway recorded one; the totals are the measured spend.";
+
+const BOTH_WINDOWS = "Give days or hours, not both.";
+
+function windowText(
+  window: { from: string; to: string },
+  read: SpendReadWindow | undefined,
+  hours: number | undefined,
+): string {
+  if (read?.granularity === "hour")
+    return `the last ${hours === 1 ? "hour" : `${hours} hours`}, ${read.fromAt} to ${read.toAt}`;
+  const days = `UTC days ${window.from} to ${window.to}`;
+  return read
+    ? `${days} (whole days: per-call rows that count hours are kept for 30 days)`
+    : days;
+}
 
 function totalsCoverFor(
   query: AgentMetricsQuery,
   spend: AgentSpend,
   window: { from: string; to: string },
 ): string {
-  const days = `UTC days ${window.from} to ${window.to}`;
+  const days = windowText(window, spend.window, query.hours);
   const whose =
     spend.scope === "payer"
       ? `Measured spend of this agent and its sub-agents, ${days}.`
@@ -143,9 +174,11 @@ function priced<T extends SpendAmount>(amount: T): Priced<T> {
   };
 }
 
-function windowFor(query: AgentTelemetryQuery): MetricsWindow {
+function windowFor(
+  query: Pick<AgentMetricsQuery, "days" | "hours" | "sessionId">,
+): MetricsWindow {
   return {
-    hours: query.days * 24,
+    hours: query.hours ?? (query.days ?? AGENT_TELEMETRY_DEFAULT_DAYS) * 24,
     ...(query.sessionId === undefined ? {} : { sessionId: query.sessionId }),
   };
 }
@@ -154,10 +187,14 @@ function page<T>(rows: T[], limit: number): { rows: T[]; truncated: boolean } {
   return { rows: rows.slice(0, limit), truncated: rows.length > limit };
 }
 
-function measured(query: AgentTelemetryQuery): Measured {
+function measured(
+  query: Pick<AgentMetricsQuery, "days" | "hours" | "sessionId">,
+): Measured {
   return {
     available: true,
-    windowDays: query.days,
+    ...(query.hours === undefined
+      ? { windowDays: query.days ?? AGENT_TELEMETRY_DEFAULT_DAYS }
+      : { windowHours: query.hours }),
     ...(query.sessionId === undefined ? {} : { sessionId: query.sessionId }),
   };
 }
@@ -185,12 +222,26 @@ export function createAgentTelemetry(deps: {
 }): AgentTelemetryService {
   return {
     async metrics(agentId, query) {
+      if (query.days !== undefined && query.hours !== undefined)
+        throw new Error(BOTH_WINDOWS);
       if (query.granularity === "call" && !deps.reader)
         return unavailable(NO_CALL_ROWS);
-      const window = utcDaysOf(query.days);
+      const now = Date.now();
+      const asked = utcDaysOf(
+        query.hours === undefined
+          ? (query.days ?? AGENT_TELEMETRY_DEFAULT_DAYS)
+          : Math.ceil(query.hours / 24) + 1,
+        now,
+      );
       const spend = await deps.spend.read({
         agentId,
-        ...window,
+        ...asked,
+        ...(query.hours !== undefined && {
+          at: {
+            fromAt: new Date(now - query.hours * HOUR_MS).toISOString(),
+            toAt: new Date(now).toISOString(),
+          },
+        }),
         ...(query.sessionId !== undefined && { sessionId: query.sessionId }),
         ...(query.granularity === "session" && {
           sessionLimit: query.limit,
@@ -199,11 +250,20 @@ export function createAgentTelemetry(deps: {
           subAgentLimit: query.limit,
         }),
       });
+      const window = spend.window
+        ? {
+            from: spend.window.fromAt.slice(0, 10),
+            to: new Date(Date.parse(spend.window.toAt) - 1)
+              .toISOString()
+              .slice(0, 10),
+          }
+        : asked;
       const base = {
         ...measured(query),
         granularity: query.granularity,
         measuredSince: spend.measuredSince,
         window,
+        ...(spend.window && { readWindow: spend.window }),
         totals: spend.totals.map(priced),
         modelTimeMs: spend.modelTimeMs,
         sessionCount: spend.sessionCount,
@@ -243,9 +303,25 @@ export function createAgentTelemetry(deps: {
           ),
           query.limit,
         );
+        const costs = new Map(
+          (
+            await deps.spend.callCosts(
+              agentId,
+              rows.flatMap((row) =>
+                row.routerCallId ? [row.routerCallId] : [],
+              ),
+            )
+          ).map(({ routerCallId, unit, costMicros, estimated }) => [
+            routerCallId,
+            { ...priced({ unit, costMicros }), estimated },
+          ]),
+        );
         return {
           ...base,
-          calls: rows.map(({ costUsd: _cost, ...call }) => call),
+          calls: rows.map(({ costUsd: _cost, routerCallId, ...call }) => ({
+            ...call,
+            cost: costs.get(routerCallId) ?? null,
+          })),
           truncated,
         };
       }

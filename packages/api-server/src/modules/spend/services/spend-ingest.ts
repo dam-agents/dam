@@ -32,6 +32,11 @@ export interface SessionOwnership {
 
 export type StartedCall = CallMeta & { readonly callId: string };
 
+interface SettledAt {
+  readonly startedAt: Date;
+  readonly routerCallId?: string | null;
+}
+
 export interface SpendIngest {
   callStarted(call: StartedCall): Promise<void>;
   record(record: CallRecord): Promise<void>;
@@ -97,19 +102,31 @@ export function createSpendIngest(deps: {
   const putCall = (
     callId: string,
     row: SpendRow,
-    costMicros: number,
-    startedAt: Date,
+    amounts: CallAmounts,
+    call: SettledAt,
   ) =>
     deps.ledger
       .putCall({
         callId,
+        routerCallId: call.routerCallId ?? "",
         callingAgentId: row.callingAgentId,
         ownerSub: row.ownerSub,
         payer: row.payer,
         sessionId: row.sessionId,
-        startedAt,
+        connectionId: row.connectionId,
+        providerTemplate: row.provider,
+        model: row.model,
+        startedAt: call.startedAt,
         unit: row.unit,
-        costMicros,
+        costMicros: amounts.costMicros,
+        uncachedInputTokens: amounts.uncachedInputTokens,
+        outputTokens: amounts.outputTokens,
+        cacheReadTokens: amounts.cacheReadTokens,
+        cacheWrite5mTokens: amounts.cacheWrite5mTokens,
+        cacheWrite1hTokens: amounts.cacheWrite1hTokens,
+        webSearches: amounts.webSearches,
+        durationMs: amounts.durationMs,
+        estimated: amounts.estimatedCalls > 0,
       })
       .catch((err: unknown) =>
         log().warn(
@@ -123,7 +140,7 @@ export function createSpendIngest(deps: {
     row: SpendRow,
     amounts: CallAmounts,
     final: boolean,
-    startedAt: Date,
+    call: SettledAt,
   ) => {
     const applied = await deps.calls.apply(callId, row, amounts, final);
     if (!applied) return;
@@ -139,7 +156,7 @@ export function createSpendIngest(deps: {
     }
     if (!final) return;
     await deps.calls.release(callId);
-    await putCall(callId, applied.row, amounts.costMicros, startedAt);
+    await putCall(callId, applied.row, amounts, call);
   };
 
   const referenceCost = async (row: SpendRow) => {
@@ -186,7 +203,11 @@ export function createSpendIngest(deps: {
         state.row,
         { ...state.amounts, estimatedCalls: 1 },
         true,
-        state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
+        {
+          startedAt:
+            state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
+          routerCallId: state.meta?.routerCallId ?? null,
+        },
       );
       return;
     }
@@ -215,7 +236,10 @@ export function createSpendIngest(deps: {
           ? 1
           : 0,
     );
-    await settle(callId, row, estimate, true, state.meta.startedAt);
+    await settle(callId, row, estimate, true, {
+      startedAt: state.meta.startedAt,
+      routerCallId: state.meta.routerCallId ?? null,
+    });
   };
 
   return {
@@ -272,7 +296,7 @@ export function createSpendIngest(deps: {
       const amounts = measure.needsReferenceCost
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
-      await settle(record.callId, row, amounts, record.final, record.startedAt);
+      await settle(record.callId, row, amounts, record.final, record);
       if (record.final)
         log().debug(
           {

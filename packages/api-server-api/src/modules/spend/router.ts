@@ -7,6 +7,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   spendBreakdownInputSchema,
+  spendCallsInputSchema,
   spendCeilingSetInputSchema,
   spendDailyInputSchema,
   spendSessionsInputSchema,
@@ -50,6 +51,13 @@ export const spendRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.turns(input);
+    }),
+
+  calls: readAgentProcedure
+    .input(spendCallsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.spend.calls(input);
     }),
 
   metering: readAgentProcedure.query(({ ctx }) => ctx.spend.metering()),

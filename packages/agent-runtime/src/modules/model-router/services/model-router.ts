@@ -3,6 +3,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { Readable } from "node:stream";
 import {
@@ -46,8 +47,10 @@ import {
 
 export const MODEL_ROUTER_DEFAULT_PORT = 24180;
 export const HARNESS_HEADER = "x-platform-harness";
+export const CALL_HEADER = "x-platform-call";
 
 export interface ModelCallRecord {
+  callId: string;
   connectionId: string;
   alias: ProviderAlias;
   upstreamId: string;
@@ -145,6 +148,7 @@ const REQ_DROP = new Set([
   "x-api-key",
   HARNESS_HEADER,
   SESSION_HEADER,
+  CALL_HEADER,
 ]);
 const RES_DROP = new Set([
   "content-encoding",
@@ -365,6 +369,8 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       headers[wire.credential.header] = wire.credential.value;
     if (STAMP_VALUE.test(harness)) headers[HARNESS_HEADER] = harness;
     if (session && STAMP_VALUE.test(session)) headers[SESSION_HEADER] = session;
+    const callId = randomUUID();
+    headers[CALL_HEADER] = callId;
     const beta = anthropicBetaFor(
       headers["anthropic-beta"],
       entry.template === ANTHROPIC_OAUTH_TEMPLATE,
@@ -389,6 +395,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
             : "no-usage-event"
           : null;
       deps.onCall?.({
+        callId,
         connectionId: entry.connectionId,
         alias: entry.alias,
         upstreamId: entry.upstreamId,

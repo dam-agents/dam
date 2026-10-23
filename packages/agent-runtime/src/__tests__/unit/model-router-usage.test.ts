@@ -232,6 +232,7 @@ describe("usage of an unstreamed body", () => {
 });
 
 const record = (over: Partial<ModelCallRecord> = {}): ModelCallRecord => ({
+  callId: "call-1",
   connectionId: "conn-ibm",
   alias: "ibm",
   upstreamId: "gpt-5.5",

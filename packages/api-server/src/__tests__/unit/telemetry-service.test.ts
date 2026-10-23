@@ -801,7 +801,8 @@ describe("reading one turn", () => {
     /**
      * TEST_SCENARIO: the prompt id already isolates the records, so the
      * padding admits the turn's own root span and its last record, never a
-     * neighbour.
+     * neighbour; the router's call records, which carry no prompt id, are
+     * read through the unpadded window.
      */
     const { reader, seen } = capturingReader();
     const service = createTelemetryService({
@@ -824,6 +825,10 @@ describe("reading one turn", () => {
       toIso: "2026-09-16T12:00:07.001Z",
       sessionId: "s1",
       promptId: "p-1",
+      routerCallsWithin: {
+        fromIso: "2026-09-16T12:00:00.000Z",
+        toIso: "2026-09-16T12:00:05.001Z",
+      },
     });
     expect(seen.spanWindow).toEqual({
       fromIso: "2026-09-16T11:59:58.000Z",

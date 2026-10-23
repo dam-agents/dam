@@ -1,6 +1,8 @@
 import type { SpendAmount, SpendLimitState, SpendUnit } from "api-server-api";
 import { match } from "ts-pattern";
 
+import { formatDateTime } from "@/lib/format-time";
+
 import { getBrand } from "../../../brand.js";
 import { formatTokens } from "../../metrics/lib/format.js";
 import { joinNames } from "./coverage.js";
@@ -420,9 +422,25 @@ export function coveredDetail(micros: number): string {
   return `${paidCell(micros)} covered by your subscription, at API prices`;
 }
 
+export function callSpanLine(firstAt: string, lastAt: string): string {
+  const at = (iso: string) =>
+    formatDateTime(iso, {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  return `Calls from ${at(firstAt)} to ${at(lastAt)}.`;
+}
+
 export function subAgentPart(amounts: string): string {
   return `Of this, ${amounts} came from sub-agents.`;
 }
+
+export const ESTIMATED_CALL_HELP =
+  "Estimated: the provider reported no usage for this call.";
+
+export const MEASURED_CALL_HELP = "The measured cost of this call.";
 
 export function turnLineHelp(showsCost: boolean): string {
   const telemetry =
