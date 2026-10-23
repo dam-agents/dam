@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -96,7 +96,10 @@ Before the user types, the page shows what the save will do — the template, th
 The submit then runs the ordinary create or rotation, with its validation; a refused secret leaves the link usable until it expires.
 A header template may also name a **credential check**, which the GitHub personal access token templates do: the token is tried on the user endpoint of its GitHub host before it is stored, on create and on rotation alike.
 The check passes, naming the account, the expiry and, for a classic token, the scopes; fails, with GitHub's reason (bad credentials, or SSO authorization an organization requires); or stays unchecked when GitHub gives no answer about the token.
-The page holds a token that does not pass, so the user can fix it on the same link, and saves it on a confirmed "save anyway": the user is warned, never blocked.
+The Kubernetes template names one too: the api-server posts a SelfSubjectReview to the cluster's API server with the token, trusting the Connection's stored CA when it has one and the public roots otherwise, as the gateway does.
+Any authenticated identity may create a SelfSubjectReview, so the check needs no permission beyond the token.
+It passes naming the user the token acts as (`system:serviceaccount:<namespace>:<name>`) and the expiry from the token's `exp` claim; fails on a 401, saying the token expired when its claim is past, and on a certificate the CA or the public roots do not trust; and stays unchecked on a cluster older than Kubernetes 1.28, another answer, or no answer.
+The page holds a token that does not pass, and one that passes but expires within a day, so the user can fix it on the same link, and saves it on a confirmed "save anyway": the user is warned, never blocked.
 Saved through any path, the token keeps the result and its time on the Connection, which every listing carries, so a token saved after a failed check does not read like a healthy one; the owner can check one stored credential again, which replaces the result, and a provider key is checked again with its provider check.
 The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
 The page covers the static and minting kinds; OAuth needs no secret here.

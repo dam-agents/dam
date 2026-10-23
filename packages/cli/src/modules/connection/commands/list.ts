@@ -12,6 +12,7 @@ import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { formatExpiry } from "../domain/credential-check.js";
 import { formatScope, scopeOf } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
@@ -23,6 +24,7 @@ const HEADER = [
   "PROVIDER",
   "HOSTS",
   "SCOPE",
+  "EXPIRES",
 ];
 
 function sortViews(
@@ -61,6 +63,7 @@ function tableFor(views: readonly ConnectionView[]): string {
       providerCell(c),
       c.hosts.join(","),
       formatScope(scopeOf(c)),
+      c.check?.expiresAt ? formatExpiry(c.check.expiresAt) : "—",
     ]),
   ]);
 }
@@ -110,7 +113,8 @@ export function buildListCommand(deps: {
     )
     .addHelpText(
       "after",
-      "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
+      "\nEXPIRES is when the credential expires, as its last check found it.\n" +
+        "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
         "`preferred` on the one a new agent's sessions use when `dam agent create`\n" +
         "names no --provider.\n" +
         "\nExamples:\n" +

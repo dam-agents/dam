@@ -22,10 +22,12 @@ import { TEST_CLUSTER_CERT as CA_PEM } from "../helpers/test-cluster-cert.js";
  * nothing is stored and the caller gets the check back. Without that ask the
  * token is saved with its result. A stored token can be checked again, which
  * replaces the result; a Connection whose template names no check has none.
+ * A Kubernetes service-account token is checked on the API server its
+ * Connection names, with the CA the user gave, and a token that expires
+ * within a day is held like one that fails.
  */
 
 configureLogger({ level: "error", write: () => {} });
-
 
 function unused<T extends object>(fields: Partial<T> = {}): T {
   return new Proxy(fields, {
@@ -231,6 +233,32 @@ describe("Kubernetes token check", () => {
       status: "passed",
       account: "system:serviceaccount:ops:deployer",
     });
+  });
+
+  // TEST_SCENARIO: a token that passes but expires within a day, as a service-account token EKS shortened to 24 hours does, is held on the secret-entry page like a failing one, so the user sees the expiry before saving; saved anyway, it keeps its passed check.
+  it("holds a token that expires within a day when asked", async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    const { svc, rows } = makeService({ status: "passed", expiresAt });
+    const err = await svc
+      .createFromTemplate(kubernetes(), { holdUnlessPassed: true })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CredentialCheckNotPassed);
+    expect((err as CredentialCheckNotPassed).check).toMatchObject({
+      status: "passed",
+      expiresAt,
+    });
+    expect(rows.size).toBe(0);
+    await svc.createFromTemplate(kubernetes());
+    const [view] = await svc.listConnections();
+    expect(view?.check).toMatchObject({ status: "passed", expiresAt });
+  });
+
+  // TEST_SCENARIO: a token that expires later than a day is saved at once.
+  it("saves a token that expires later", async () => {
+    const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const { svc, rows } = makeService({ status: "passed", expiresAt });
+    await svc.createFromTemplate(kubernetes(), { holdUnlessPassed: true });
+    expect(rows.size).toBe(1);
   });
 
   // TEST_SCENARIO: a cluster with a publicly trusted certificate has no CA, and the check trusts the public roots alone.

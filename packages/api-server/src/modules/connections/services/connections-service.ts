@@ -20,6 +20,7 @@ import {
   type Contribution,
   type CredentialCheck,
   type CredentialCheckPolicy,
+  credentialExpiresSoon,
   type ProviderBalance,
   type ProviderKeyCheck,
   type ProviderKeyRecheck,
@@ -860,7 +861,11 @@ export function createConnectionsService(deps: {
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "header" }>,
   ): Promise<string | undefined> {
-    if (!conn.contributions.some((c) => c.kind === "egress-inject" && c.upstreamCa)) {
+    if (
+      !conn.contributions.some(
+        (c) => c.kind === "egress-inject" && c.upstreamCa,
+      )
+    ) {
       return undefined;
     }
     const stored = await deps.secretStore.get(auth.valueRef);
@@ -905,7 +910,11 @@ export function createConnectionsService(deps: {
     check: CredentialCheck | null,
     policy: CredentialCheckPolicy | undefined,
   ): void {
-    if (policy?.holdUnlessPassed && check && check.status !== "passed") {
+    if (
+      policy?.holdUnlessPassed &&
+      check &&
+      (check.status !== "passed" || credentialExpiresSoon(check))
+    ) {
       throw new CredentialCheckNotPassed(check);
     }
   }

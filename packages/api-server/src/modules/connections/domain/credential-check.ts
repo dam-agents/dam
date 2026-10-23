@@ -49,7 +49,12 @@ export function credentialProbeTarget(
 
 export class CredentialCheckNotPassed extends Error {
   constructor(readonly check: CredentialCheck) {
-    super(check.reason ?? `the credential check ${check.status}`);
+    super(
+      check.reason ??
+        (check.status === "passed"
+          ? "the credential expires within a day"
+          : `the credential check ${check.status}`),
+    );
   }
 }
 

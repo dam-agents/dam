@@ -1,6 +1,10 @@
 import { CheckmarkFilled, WarningAlt } from "@carbon/icons-react";
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
-import type { CredentialCheck, SecretRequestView } from "api-server-api";
+import {
+  type CredentialCheck,
+  credentialExpiresSoon,
+  type SecretRequestView,
+} from "api-server-api";
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -83,10 +87,23 @@ function SavedPage({ check }: { check?: CredentialCheck }) {
     );
   }
   const details = check ? credentialCheckDetails(check) : [];
+  const expiresSoon = check ? credentialExpiresSoon(check) : false;
   return (
     <Terminal
-      title={check ? "Secret checked and saved" : "Secret saved"}
-      icon={<CheckmarkFilled size={24} className="text-success" />}
+      title={
+        expiresSoon
+          ? "Secret checked and saved; it expires within a day"
+          : check
+            ? "Secret checked and saved"
+            : "Secret saved"
+      }
+      icon={
+        expiresSoon ? (
+          <WarningAlt size={24} className="text-warning-fg" />
+        ) : (
+          <CheckmarkFilled size={24} className="text-success" />
+        )
+      }
     >
       {details.length > 0 && (
         <span className="mb-3 block" data-testid="secret-request-check">
@@ -262,6 +279,12 @@ function HeldCheck({ check }: { check: CredentialCheck }) {
       <div>
         <p className="font-semibold text-warning-fg">{copy.title}</p>
         {check.reason && <p className="mt-1">{check.reason}.</p>}
+        {check.status === "passed" &&
+          credentialCheckDetails(check).map((d) => (
+            <p key={d} className="mt-1 font-mono text-foreground">
+              {d}
+            </p>
+          ))}
         <p className="mt-1 text-muted-foreground">{copy.hint}</p>
       </div>
     </Callout>
