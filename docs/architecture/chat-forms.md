@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-10-16
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -90,6 +90,7 @@ A block that a finished reply never closes counts as complete, so its errors sho
 A surface can ask the chat to lock its text input while the form waits, through the platform extension `urn:platform:a2ui:extension:chat:v1` in the surface's metadata (`lockComposer`).
 The input is locked only while the newest finished reply holds that surface, valid and complete; it shows that the user should answer the form.
 A surface that asks for the lock must render a button that sends an event, otherwise it is a validation error.
+A later reply that updates the surface so that it renders no such button, for example to show the result, ends the lock instead.
 Only components the surface renders from its root count, so a button no component lists, or one in a template over an empty list, does not.
 A block with any error never locks the input, so a broken form cannot leave the user without a way to answer.
 Sending the form, or any newer reply, ends the lock.
