@@ -550,16 +550,16 @@ export function BandCapabilities({ brandName }: { brandName: string }) {
               <p className="mt-5 max-w-md text-[16px] leading-relaxed text-muted-foreground">
                 Each agent runs in its own sandbox, keeps its files, and keeps
                 working after you log off. Build it from reusable blocks,
-                connect the tools you already use, and hand off the work.{" "}
-                <a
-                  href={LOGIN_DOCS_URL}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-accent hover:underline"
-                >
-                  Read the docs
-                </a>
+                connect the tools you already use, and hand off the work.
               </p>
+              <a
+                href={LOGIN_DOCS_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="mt-3 inline-block text-[16px] text-accent hover:underline"
+              >
+                Read the docs
+              </a>
             </div>
 
             {/* Right — agent with floating scene cards */}
@@ -1153,17 +1153,21 @@ function testimonials(brandName: string) {
     {
       tag: "Code review across repos",
       role: "A four-person product dev team",
+      description:
+        "The team works alongside chemists and PMs and runs scheduled code-review agents across its GitHub repos. A Slack-connected agent answers non-developers’ questions about a codebase the team inherited.",
       quote:
         "We have now set up many scheduled PR code-guardian agents for many of our code repos. This was done just via natural language. No friction setting it up.",
     },
     {
       tag: "Fleet operations",
       role: "An infrastructure and operations lead",
+      description: `Their ${brandName} agent sweeps a fleet of clusters every morning and carries requests from Slack over to the team’s GitHub.`,
       quote: `${brandName} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub.`,
     },
     {
       tag: "Team knowledge base",
       role: "A compiler team",
+      description: `The team keeps its shared knowledge base on ${brandName}, and an agent in six of the team’s Slack channels answers engineers’ questions from it. The team now owns and runs the agent itself.`,
       quote:
         "Immensely useful to have this agent on [our] Slack channels.",
     },
@@ -1198,7 +1202,7 @@ function useTestimonialCarousel() {
 
 function CarouselDots({ count, idx, onSelect }: { count: number; idx: number; onSelect: (i: number) => void }) {
   return (
-    <div className="mt-10 flex gap-2">
+    <div className="mt-4 flex gap-2">
       {Array.from({ length: count }, (_, i) => (
         <button
           key={i}
@@ -1238,31 +1242,24 @@ export function BandTestimonials({ brandName }: { brandName: string }) {
 
           <div className="flex flex-col items-center justify-center">
             <div
-              className="min-h-[420px] w-full transition-opacity duration-400"
+              className="min-h-[320px] w-full transition-opacity duration-400"
               style={{ opacity: fade ? 1 : 0 }}
             >
-              <svg
-                className="mb-6 size-10 text-foreground opacity-10"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"
-                  fill="currentColor"
-                />
-              </svg>
-              <p className="text-[32px] font-normal leading-[1.5] text-foreground md:text-[42px]">
-                {t.quote}
-              </p>
-              <div className="mt-6 flex items-center gap-3">
-                <span className="text-[13px] font-medium text-muted-foreground">
-                  {t.role}
-                </span>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-[13px] font-medium text-muted-foreground">
+              <div className="mb-5 flex items-center gap-3">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                   {t.tag}
                 </span>
+              </div>
+              <p className="text-[16px] font-semibold text-foreground">
+                {t.role}
+              </p>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
+                {t.description}
+              </p>
+              <div className="mt-6 border-l-2 border-foreground/10 pl-4">
+                <p className="text-[20px] font-normal leading-[1.5] text-foreground md:text-[24px]">
+                  &ldquo;{t.quote}&rdquo;
+                </p>
               </div>
             </div>
             <CarouselDots count={items.length} idx={idx} onSelect={goTo} />
