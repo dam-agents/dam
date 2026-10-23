@@ -14,25 +14,110 @@ const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
+const MENU_ITEM = '[role^="menuitem"]';
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the visible height of a menu that overflows, taken
+ * as the start of the row the space Radix reports cuts plus half that row, so the
+ * cut row itself is the cue that the list continues. A menu whose rows all fit
+ * keeps its full height, and a menu with no cut row gets no cap.
+ * The rows come in with their own heights because they differ: a Mode row has
+ * two lines, a plain row one.
+ */
+export function halfRowHeight(
+  content: { available: number; height: number },
+  rows: readonly { top: number; height: number }[],
+): number | null {
+  if (content.height <= content.available) return null;
+  if (!rows.some((row) => row.top + row.height > content.available))
+    return null;
+  const cut = rows
+    .filter((row) => row.top + row.height / 2 <= content.available)
+    .pop();
+  return cut ? Math.round(cut.top + cut.height / 2) : null;
+}
+
+function availableHeight(el: HTMLElement): number {
+  const reported = Number.parseFloat(
+    getComputedStyle(el).getPropertyValue(
+      "--radix-dropdown-menu-content-available-height",
+    ),
+  );
+  return Number.isFinite(reported) ? reported : el.clientHeight;
+}
+
+function rowsOf(el: HTMLElement) {
+  const box = el.getBoundingClientRect();
+  return [...el.querySelectorAll<HTMLElement>(MENU_ITEM)].map((row) => {
+    const rect = row.getBoundingClientRect();
+    return { top: rect.top - box.top + el.scrollTop, height: rect.height };
+  });
+}
+
 function DropdownMenuContent({
   className,
   align = "end",
   sideOffset = 4,
+  children,
+  style,
+  ref,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const [el, setEl] = React.useState<HTMLDivElement | null>(null);
+  const [maxHeight, setMaxHeight] = React.useState<number | null>(null);
+  const setNode = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      setEl(node);
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
+
+  React.useEffect(() => {
+    if (!el) return;
+    const sync = () =>
+      setMaxHeight(
+        halfRowHeight(
+          { available: availableHeight(el), height: el.scrollHeight },
+          rowsOf(el),
+        ),
+      );
+    sync();
+    const resize = new ResizeObserver(sync);
+    resize.observe(el);
+    const added = new MutationObserver(sync);
+    added.observe(el, { childList: true, subtree: true });
+    window.addEventListener("resize", sync);
+    return () => {
+      resize.disconnect();
+      added.disconnect();
+      window.removeEventListener("resize", sync);
+    };
+  }, [el]);
+
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        ref={setNode}
         align={align}
         sideOffset={sideOffset}
         collisionPadding={8}
+        style={{
+          ...style,
+          ...(maxHeight !== null && {
+            maxHeight: `min(${maxHeight}px, var(--radix-dropdown-menu-content-available-height))`,
+          }),
+        }}
         className={cn(
           menuContentClassName,
           "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
           className,
         )}
         {...props}
-      />
+      >
+        {children}
+      </DropdownMenuPrimitive.Content>
     </DropdownMenuPrimitive.Portal>
   );
 }
