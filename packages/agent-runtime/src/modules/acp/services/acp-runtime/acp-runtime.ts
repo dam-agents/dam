@@ -107,6 +107,7 @@ import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
   type ModeRole,
+  type PromptFate,
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
@@ -283,6 +284,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
+
+  function mapOutbound(
+    id: number,
+    mapping: Partial<OutboundMapping> & { method: string },
+  ): number {
+    outboundIdToClient.set(id, {
+      channel: null,
+      originalId: null,
+      promptSessionId: null,
+      attachSessionId: null,
+      platformMeta: null,
+      ...mapping,
+    });
+    return id;
+  }
+
+  function submitPrompt(
+    frame: unknown,
+    submission: Omit<PromptSubmission, "frame">,
+  ): PromptFate {
+    const fate = promptScheduler.submit({ ...submission, frame });
+    if (fate !== "refused") return fate;
+    outboundIdToClient.delete(submission.outboundId);
+    if (carriesContinuedFrom(frame))
+      deps.continuedFrom.markUnsent(submission.sessionId);
+    return fate;
+  }
   let waitingAttaches = 0;
 
   function engagedChannelsFor(sessionId: string): ClientChannel[] {
@@ -566,16 +594,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       engage(channel, sessionId);
     },
     openLoadRoute(sessionId) {
-      const outboundId = nextOutboundId++;
-      outboundIdToClient.set(outboundId, {
-        channel: null,
-        originalId: null,
+      return mapOutbound(nextOutboundId++, {
         method: "session/load",
-        promptSessionId: null,
         attachSessionId: sessionId,
-        platformMeta: null,
       });
-      return outboundId;
     },
     sendToAgent(frame) {
       sendToHarness(frame);
@@ -766,16 +788,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (pendingLoadId !== undefined) orphanLoad(sessionId, pendingLoadId);
       }, harnessLoadTimeoutMs),
     );
-    const outboundId = nextOutboundId++;
-    rehydrateLoadIds.set(sessionId, outboundId);
+    rehydrateLoadIds.set(sessionId, nextOutboundId);
     const method = sessionResumeSupported ? "session/resume" : "session/load";
-    outboundIdToClient.set(outboundId, {
-      channel: null,
-      originalId: null,
+    const outboundId = mapOutbound(nextOutboundId++, {
       method,
-      promptSessionId: null,
       attachSessionId: sessionId,
-      platformMeta: null,
       rehydrate: true,
     });
     sendToHarness(
@@ -918,14 +935,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         chosenMode,
         false,
       );
-      const outboundId = nextOutboundId++;
-      outboundIdToClient.set(outboundId, {
+      const outboundId = mapOutbound(nextOutboundId++, {
         channel: settingsChannel,
-        originalId: null,
         method,
-        promptSessionId: null,
-        attachSessionId: null,
-        platformMeta: null,
         settingSessionId: sessionId,
         ...(frame.critical && { critical: true }),
       });
@@ -1701,22 +1713,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       },
     };
     engage(channel, sessionId);
-    outboundIdToClient.set(outboundId, {
+    mapOutbound(outboundId, {
       channel,
-      originalId: null,
       method: "session/prompt",
       promptSessionId: sessionId,
-      attachSessionId: null,
-      platformMeta: null,
     });
     deps.sessionMetadata?.recordActivity(sessionId);
-    const frame = promptFrameFor(source, sessionId, outboundId);
-    const fate = promptScheduler.submit({
+    const fate = submitPrompt(promptFrameFor(source, sessionId, outboundId), {
       sessionId,
       channel,
       outboundId,
       originalId: null,
-      frame,
       promptId,
       source,
       typed: prompt,
@@ -1724,11 +1731,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       editable: false,
       steerable: true,
     });
-    if (fate === "refused") {
-      outboundIdToClient.delete(outboundId);
-      if (carriesContinuedFrom(frame)) deps.continuedFrom.markUnsent(sessionId);
-      return;
-    }
+    if (fate === "refused") return;
     if (
       harnessColdSessions.has(sessionId) &&
       !rehydratingSessions.has(sessionId)
@@ -2472,12 +2475,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         promptSessionId !== null
           ? promptFrameFor(frame, promptSessionId, outboundId)
           : rewriteCwd({ ...forwardFrame, id: outboundId }, deps.workingDir);
-      outboundIdToClient.set(outboundId, {
+      mapOutbound(outboundId, {
         channel,
         originalId: frame.id,
         method,
         promptSessionId,
-        attachSessionId: null,
         platformMeta,
         ...(continuedFrom !== undefined && { continuedFrom }),
         ...(settingSessionId !== null && { settingSessionId }),
@@ -2496,12 +2498,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.set(promptSessionId, { ...meta, title });
 
         syncSettings(promptSessionId);
-        const fate = promptScheduler.submit({
+        const fate = submitPrompt(rewritten, {
           sessionId: promptSessionId,
           channel,
           outboundId,
           originalId: frame.id,
-          frame: rewritten,
           promptId,
           runPrompt: surface === "cli",
           source: frame,
@@ -2515,12 +2516,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               surface === SCHEDULE_SURFACE ||
               surface === MESSAGE_SURFACE),
         });
-        if (fate === "refused") {
-          outboundIdToClient.delete(outboundId);
-          if (carriesContinuedFrom(rewritten))
-            deps.continuedFrom.markUnsent(promptSessionId);
-          return;
-        }
+        if (fate === "refused") return;
         if (
           retryOf !== null &&
           deps.undeliveredPrompts.forget(promptSessionId, retryOf)
