@@ -56,7 +56,7 @@ const environment: EnvironmentView = {
   state: "running",
 };
 
-// TEST_SCENARIO: a running Environment shows as its card, with that it runs, its expiry, its app's link opening in a new tab, and the extend and delete controls; the tab asks for that agent's Environments and links to its section.
+// TEST_SCENARIO: a running Environment shows as its card, with that it runs, its expiry, its app's link opening in a new tab, and the menu with the extend and delete controls; the tab asks for that agent's Environments and links to its section.
 it("lists the agent's Environments as their cards", () => {
   state.environments = [environment];
   state.asked = [];
@@ -68,8 +68,7 @@ it("lists the agent's Environments as their cards", () => {
   expect(html).toContain("Expires in");
   expect(html).toContain('href="https://app-pr-42-abcdef.env.example.com"');
   expect(html).toContain('target="_blank"');
-  expect(html).toContain('aria-label="Extend pr-42"');
-  expect(html).toContain('aria-label="Delete pr-42"');
+  expect(html).toContain('aria-label="Actions for pr-42"');
   expect(html).toContain('data-testid="environments-panel-manage"');
 });
 
