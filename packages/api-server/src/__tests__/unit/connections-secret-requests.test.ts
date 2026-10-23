@@ -494,7 +494,12 @@ describe("secret requests an agent makes", () => {
       requestedBy: { id: "agent-1", name: "reviewer" },
       unexpectedHosts: [],
     });
-    await alice.submit({ requestId: ticket.requestId, fields: { value: "t" } });
+    expect(
+      await alice.submit({
+        requestId: ticket.requestId,
+        fields: { value: "t" },
+      }),
+    ).toMatchObject({ status: "saved", granted: true });
     expect(w.updateAgentConnections).toHaveBeenCalledWith("agent-1", {
       grant: ["conn-000000000001"],
       revoke: [],
@@ -507,6 +512,22 @@ describe("secret requests an agent makes", () => {
     expect(
       await w.forAgent("alice", "agent-2").status(ticket.requestId),
     ).toEqual({ status: "expired" });
+  });
+
+  // TEST_SCENARIO: a grant the platform refuses still saves the secret, and both the owner's page and the agent learn that the agent did not get the connection.
+  it("tells the owner and the agent when the grant fails", async () => {
+    const w = world();
+    w.updateAgentConnections.mockRejectedValueOnce(new Error("conflict"));
+    const agent = w.forAgent("alice", "agent-1");
+    const ticket = await agent.request(githubPat);
+    expect(
+      await w
+        .forOwner("alice")
+        .submit({ requestId: ticket.requestId, fields: { value: "t" } }),
+    ).toMatchObject({ status: "saved", granted: false });
+    expect(await agent.status(ticket.requestId)).toMatchObject({
+      granted: false,
+    });
   });
 
   // TEST_SCENARIO: an agent cannot steer a secret to a host it chose, nor ask for a new secret of a connection it does not hold, because the owner trusts the page to send the secret where the service lives.

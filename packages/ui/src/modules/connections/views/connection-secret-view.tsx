@@ -50,7 +50,7 @@ export function ConnectionSecretView() {
     );
   }
   if (done?.kind === "saved") {
-    return <SavedPage check={done.check} />;
+    return <SavedPage check={done.check} granted={done.granted} />;
   }
   if (done?.kind === "cancelled") {
     return (
@@ -72,15 +72,36 @@ export function ConnectionSecretView() {
 }
 
 type Outcome =
-  { kind: "saved"; check?: CredentialCheck } | { kind: "cancelled" };
+  | { kind: "saved"; check?: CredentialCheck; granted?: boolean }
+  | { kind: "cancelled" };
 
-function SavedPage({ check }: { check?: CredentialCheck }) {
+function GrantFailed({ granted }: { granted?: boolean }) {
+  if (granted !== false) return null;
+  return (
+    <span
+      className="mb-3 block text-warning-fg"
+      data-testid="secret-request-not-granted"
+    >
+      The agent that asked for it did not get it. Grant the connection in the
+      agent's Connections section.
+    </span>
+  );
+}
+
+function SavedPage({
+  check,
+  granted,
+}: {
+  check?: CredentialCheck;
+  granted?: boolean;
+}) {
   if (check && check.status !== "passed") {
     return (
       <Terminal
         title="Secret saved without a passing check"
         icon={<WarningAlt size={24} className="text-warning-fg" />}
       >
+        <GrantFailed granted={granted} />
         {check.reason ? `${check.reason}. ` : ""}The command that opened this
         page reports it too. Replace the secret once you have a working one.
       </Terminal>
@@ -114,6 +135,7 @@ function SavedPage({ check }: { check?: CredentialCheck }) {
           ))}
         </span>
       )}
+      <GrantFailed granted={granted} />
       You can close this page. The command that opened it reports the result.
     </Terminal>
   );
@@ -153,6 +175,9 @@ function SecretForm({
           onDone({
             kind: "saved",
             ...(result.check ? { check: result.check } : {}),
+            ...(result.granted !== undefined
+              ? { granted: result.granted }
+              : {}),
           });
         },
       },

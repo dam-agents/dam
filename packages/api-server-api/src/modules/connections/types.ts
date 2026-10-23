@@ -433,7 +433,12 @@ export interface SecretRequestState {
 }
 
 export type SecretRequestSubmitResult =
-  | { status: "saved"; connectionId: string; check?: CredentialCheck }
+  | {
+      status: "saved";
+      connectionId: string;
+      check?: CredentialCheck;
+      granted?: boolean;
+    }
   | { status: "check-not-passed"; check: CredentialCheck };
 
 export interface SecretRequestsService {

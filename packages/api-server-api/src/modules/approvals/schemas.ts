@@ -49,6 +49,8 @@ export const approvalActionOutcomeSchema = z.object({
 
 export const EGRESS_PROPOSAL_REASON_MAX = 300;
 
+const hasNoControlCharacter = (value: string) => !/\p{Cc}/u.test(value);
+
 export const egressProposalInputSchema = z.object({
   host: z
     .string()
@@ -65,7 +67,13 @@ export const egressProposalInputSchema = z.object({
     .min(1)
     .max(1024)
     .regex(/^(?:\*|\/\S*)$/, "path must be * or start with /")
+    .refine(hasNoControlCharacter, "path must hold no control characters")
     .default("*"),
-  reason: z.string().trim().min(1).max(EGRESS_PROPOSAL_REASON_MAX),
+  reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(EGRESS_PROPOSAL_REASON_MAX)
+    .refine(hasNoControlCharacter, "reason must be one line of plain text"),
 });
 export type EgressProposalInput = z.infer<typeof egressProposalInputSchema>;

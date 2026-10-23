@@ -1,3 +1,4 @@
+import { egressProposalInputSchema } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import { configureLogger } from "../../core/logger.js";
@@ -116,5 +117,16 @@ describe("egress proposals", () => {
     expect(await world({ allowed: true }).proposals.propose(issues)).toEqual({
       status: "already-allowed",
     });
+  });
+
+  // TEST_SCENARIO: the owner reads the agent's path and reason in a terminal too, so a control character that could rewrite what the owner sees is refused.
+  it("refuses control characters in the agent's text", () => {
+    for (const bad of [
+      { ...issues, reason: "ok\u001b[2K" },
+      { ...issues, path: "/repos/\u0007" },
+    ]) {
+      expect(egressProposalInputSchema.safeParse(bad).success).toBe(false);
+    }
+    expect(egressProposalInputSchema.safeParse(issues).success).toBe(true);
   });
 });

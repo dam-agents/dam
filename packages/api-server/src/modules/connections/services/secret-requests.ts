@@ -268,7 +268,12 @@ export function createSecretRequestsService(deps: {
         result: "success",
         detail: { action: claimed.action },
       });
-      return { status: "saved", connectionId, ...(check ? { check } : {}) };
+      return {
+        status: "saved",
+        connectionId,
+        ...(check ? { check } : {}),
+        ...granted,
+      };
     },
 
     async cancel(requestId) {
