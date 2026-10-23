@@ -9,60 +9,85 @@ repo="$(jq -r '.sandbox_github_repo // ""' <<<"$cfg")"
 fails=0
 ok() { echo "ok $*"; }
 bad() { echo "FAIL $*"; fails=1; }
+lower() { tr 'A-Z' 'a-z' <<<"$1"; }
 
-# GitHub: who the token is, and that it sees the sandbox repository, which is no fork.
-if [ -z "${E2E_SANDBOX_GITHUB_TOKEN:-}" ] || [ -z "$repo" ]; then
-  bad "github E2E_SANDBOX_GITHUB_TOKEN or profile.sandbox_github_repo is not set"
-else
-  gh_get() { curl -s --max-time 20 -H "Authorization: Bearer $E2E_SANDBOX_GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/$1"; }
-  login="$(gh_get user | jq -r '.login // empty' 2>/dev/null)"
-  r="$(gh_get "repos/$repo")"
-  if [ -z "$login" ]; then bad "github the token is refused (expired, or no egress for GET api.github.com/user)"
-  elif [ "$(jq -r '.full_name // empty' <<<"$r" | tr 'A-Z' 'a-z')" != "$(tr 'A-Z' 'a-z' <<<"$repo")" ]; then bad "github the token cannot see $repo"
-  elif [ "$(jq -r .fork <<<"$r")" = true ]; then bad "github $repo is a fork — use a repository of its own"
-  elif [ "$(jq -r '.has_issues' <<<"$r")" != true ]; then bad "github $repo has issues turned off"
-  else ok "github token of $login sees $repo"; fi
+# GitHub, per test user (account github, github2): who the token is, and that it sees the sandbox
+# repository, which is no fork.
+gh_get() { curl -s --max-time 20 -H "Authorization: Bearer $1" -H 'Accept: application/vnd.github+json' "https://api.github.com/$2"; }
+gh_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X "$2" -H "Authorization: Bearer $1" \
+  -H 'Accept: application/vnd.github+json' ${4:+-d "$4"} "https://api.github.com/repos/$repo/$3"; }
+gh_user() {  # <account id> <its line prefix, E2E_SANDBOX_<ID>_>
+  local id="$1" p="$2" v tok want login r g name what m path body
+  v="${p}TOKEN"; tok="${!v:-}"; v="${p}LOGIN"; want="${!v:-}"
+  if [ -z "$tok" ] || [ -z "$repo" ]; then bad "$id ${p}TOKEN or profile.sandbox_github_repo is not set"; return; fi
+  login="$(gh_get "$tok" user | jq -r '.login // empty' 2>/dev/null)"
+  r="$(gh_get "$tok" "repos/$repo")"
+  if [ -z "$login" ]; then bad "$id the token is refused (expired, or no egress for GET api.github.com/user)"
+  elif [ "$(jq -r '.full_name // empty' <<<"$r" | tr 'A-Z' 'a-z')" != "$(lower "$repo")" ]; then bad "$id the token cannot see $repo"
+  elif [ "$(jq -r .fork <<<"$r")" = true ]; then bad "$id $repo is a fork — use a repository of its own"
+  elif [ "$(jq -r '.has_issues' <<<"$r")" != true ]; then bad "$id $repo has issues turned off"
+  else ok "$id token of $login sees $repo"; fi
   # The write grants the cleanup needs, by writes that change nothing: a pull request and a branch
   # that do not exist. A public repository is readable with no grant, so only a write tells: 403
   # without the grant, 404 or 422 (not found) with it.
-  gh_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X "$1" -H "Authorization: Bearer $E2E_SANDBOX_GITHUB_TOKEN" \
-    -H 'Accept: application/vnd.github+json' ${3:+-d "$3"} "https://api.github.com/repos/$repo/$2"; }
   for g in "Pull requests:pull requests:PATCH:pulls/999999999:{}" "Contents:branches:DELETE:git/refs/heads/qi-sandbox-check-no-such-branch:"; do
     IFS=: read -r name what m path body <<<"$g"
-    case "$(gh_code "$m" "$path" "$body")" in
-      (404|422) ok "github the token may write $repo's $what";;
-      (403) bad "github the token may not write $repo's $what — give it $name: Read and write";;
-      (*) bad "github no answer from $m api.github.com/repos/$repo/$path (its egress rule is added by hand)";;
+    case "$(gh_code "$tok" "$m" "$path" "$body")" in
+      (404|422) ok "$id the token may write $repo's $what";;
+      (403) bad "$id the token may not write $repo's $what — give it $name: Read and write";;
+      (*) bad "$id no answer from $m api.github.com/repos/$repo/$path (its egress rule is added by hand)";;
     esac
   done
-  # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32,
-  # and GitHub knows the OAuth App (a made-up code is refused as a bad code, not as a bad client).
-  if [ -n "$login" ] && [ "$(tr 'A-Z' 'a-z' <<<"$login")" != "$(tr 'A-Z' 'a-z' <<<"${E2E_SANDBOX_GITHUB_LOGIN:-}")" ]; then
-    bad "github the token is $login's, not E2E_SANDBOX_GITHUB_LOGIN's — create it as the test user"
+  # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32.
+  if [ -n "$login" ] && [ "$(lower "$login")" != "$(lower "$want")" ]; then
+    bad "$id the token is $login's, not ${p}LOGIN's — create it as the test user"
   fi
-  [ -n "${E2E_SANDBOX_GITHUB_PASSWORD:-}" ] || bad "github E2E_SANDBOX_GITHUB_PASSWORD is not set"
-  tr -d ' =' <<<"${E2E_SANDBOX_GITHUB_TOTP_SECRET:-}" | grep -qiE '^[A-Z2-7]{16,}$' \
-    && ok "github the test user's TOTP secret is base32" || bad "github E2E_SANDBOX_GITHUB_TOTP_SECRET is not a base32 TOTP secret"
-  e="$(curl -s --max-time 20 -X POST -H 'Accept: application/json' \
-        --data-urlencode "client_id=${E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID:-none}" --data-urlencode "client_secret=${E2E_SANDBOX_GITHUB_OAUTH_CLIENT_SECRET:-none}" \
-        --data-urlencode code=qi-sandbox-check https://github.com/login/oauth/access_token | jq -r '.error // empty' 2>/dev/null)"
-  case "$e" in
-    (bad_verification_code) ok "github the OAuth App answers its client id and secret";;
-    (incorrect_client_credentials) bad "github the OAuth App refuses E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID / _SECRET";;
-    (*) bad "github no answer from POST github.com/login/oauth/access_token (its egress rule is added by hand)";;
-  esac
+  v="${p}PASSWORD"; [ -n "${!v:-}" ] || bad "$id ${p}PASSWORD is not set"
+  v="${p}TOTP_SECRET"
+  tr -d ' =' <<<"${!v:-}" | grep -qiE '^[A-Z2-7]{16,}$' \
+    && ok "$id the test user's TOTP secret is base32" || bad "$id ${p}TOTP_SECRET is not a base32 TOTP secret"
+}
+gh_user github E2E_SANDBOX_GITHUB_
+# The second user and person are optional: with all their lines empty, a check that needs two
+# people is testable: no, and the rest runs as before. A line half filled is a mistake.
+if [ -z "${E2E_SANDBOX_GITHUB2_TOKEN:-}${E2E_SANDBOX_GITHUB2_LOGIN:-}${E2E_SANDBOX_GITHUB2_PASSWORD:-}${E2E_SANDBOX_GITHUB2_TOTP_SECRET:-}" ]; then
+  ok "github2 not set — a check with two GitHub users is testable: no"
+else gh_user github2 E2E_SANDBOX_GITHUB2_; fi
+if [ -n "${E2E_SANDBOX_GITHUB2_LOGIN:-}" ] && [ "$(lower "$E2E_SANDBOX_GITHUB2_LOGIN")" = "$(lower "${E2E_SANDBOX_GITHUB_LOGIN:-}")" ]; then
+  bad "github2 is the same user as github — sign up a second one"
 fi
+# GitHub knows the OAuth App both users sign in through (a made-up code is refused as a bad code,
+# not as a bad client).
+e="$(curl -s --max-time 20 -X POST -H 'Accept: application/json' \
+      --data-urlencode "client_id=${E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID:-none}" --data-urlencode "client_secret=${E2E_SANDBOX_GITHUB_OAUTH_CLIENT_SECRET:-none}" \
+      --data-urlencode code=qi-sandbox-check https://github.com/login/oauth/access_token | jq -r '.error // empty' 2>/dev/null)"
+case "$e" in
+  (bad_verification_code) ok "github the OAuth App answers its client id and secret";;
+  (incorrect_client_credentials) bad "github the OAuth App refuses E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID / _SECRET";;
+  (*) bad "github no answer from POST github.com/login/oauth/access_token (its egress rule is added by hand)";;
+esac
 
-# Slack: the bot, the app-level token and the person, and the channel both are in.
+# Slack: the bot, the app-level token and the two people, each in the channel, all in one workspace,
+# and the two people two accounts apart from the bot.
 sl() { curl -s --max-time 20 -X POST -H "Authorization: Bearer $1" "https://slack.com/api/$2" ${3:+--data-urlencode "$3"}; }
-for who in BOT HUMAN; do
-  v="E2E_SANDBOX_SLACK_${who}_TOKEN"; w="$(tr 'A-Z' 'a-z' <<<"$who")"
+users=""
+for t in slack:BOT_TOKEN:bot slack:HUMAN_TOKEN:human slack2:HUMAN_TOKEN:human; do
+  IFS=: read -r id name w <<<"$t"
+  v="E2E_SANDBOX_$(tr 'a-z' 'A-Z' <<<"$id")_$name"
+  if [ "$id" = slack2 ] && [ -z "${!v:-}" ]; then ok "slack2 not set — a check with two Slack people is testable: no"; continue; fi
   r="$(sl "${!v:-none}" auth.test)"
-  [ "$(jq -r .ok <<<"$r" 2>/dev/null)" = true ] && ok "slack $w token is $(jq -r .user <<<"$r") in $(jq -r .team <<<"$r")" \
-    || bad "slack $w token refused: $(jq -r '.error // "no answer (egress for slack.com?)"' <<<"$r" 2>/dev/null)"
+  if [ "$(jq -r .ok <<<"$r" 2>/dev/null)" = true ]; then
+    ok "$id $w token is $(jq -r .user <<<"$r") in $(jq -r .team <<<"$r")"
+    u="$(jq -r '.team_id + ":" + .user_id' <<<"$r")"
+    case " $users " in
+      (*" $u "*) bad "$id $w token is the same Slack account as another sandbox token — use a person of its own";;
+      (*) [ -z "$users" ] || [ "${users%%:*}" = "${u%%:*}" ] || bad "$id $w token is in another workspace than the bot";;
+    esac
+    users="${users:+$users }$u"
+  else bad "$id $w token refused: $(jq -r '.error // "no answer (egress for slack.com?)"' <<<"$r" 2>/dev/null)"; fi
   r="$(sl "${!v:-none}" conversations.info "channel=${E2E_SANDBOX_SLACK_CHANNEL_ID:-none}")"
-  [ "$(jq -r .channel.is_member <<<"$r" 2>/dev/null)" = true ] && ok "slack $w is in the channel" \
-    || bad "slack $w is not in E2E_SANDBOX_SLACK_CHANNEL_ID's channel: $(jq -r '.error // "not a member — invite it"' <<<"$r" 2>/dev/null)"
+  [ "$(jq -r .channel.is_member <<<"$r" 2>/dev/null)" = true ] && ok "$id $w is in the channel" \
+    || bad "$id $w is not in E2E_SANDBOX_SLACK_CHANNEL_ID's channel: $(jq -r '.error // "not a member — invite it"' <<<"$r" 2>/dev/null)"
 done
 r="$(sl "${E2E_SANDBOX_SLACK_APP_TOKEN:-none}" apps.connections.open)"
 [ "$(jq -r .ok <<<"$r" 2>/dev/null)" = true ] && ok "slack Socket Mode answers the app-level token" \
