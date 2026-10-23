@@ -35,17 +35,25 @@ export async function botUserId(): Promise<string> {
   return String((await slack(env.E2E_SANDBOX_SLACK_BOT_TOKEN, 'auth.test')).user_id);
 }
 
-export async function personSays(text: string): Promise<string> {
-  const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.postMessage', { channel: sandbox.channelId(), text });
+export async function personSays(text: string, threadTs?: string): Promise<string> {
+  const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.postMessage',
+    { channel: sandbox.channelId(), text, ...(threadTs ? { thread_ts: threadTs } : {}) });
   return String(j.ts);
+}
+
+let personId: string | undefined;
+async function personUserId(): Promise<string> {
+  personId ??= String((await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'auth.test')).user_id);
+  return personId;
 }
 
 export async function botReplies(ts: string, ms = 300_000): Promise<string[]> {
   const until = Date.now() + ms;
   for (;;) {
     const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'conversations.replies', { channel: sandbox.channelId(), ts });
-    const messages = (j.messages as { ts: string; text?: string; bot_id?: string }[]) ?? [];
-    const replies = messages.filter((m) => m.ts !== ts && m.bot_id).map((m) => m.text ?? '');
+    const messages = (j.messages as { ts: string; text?: string; bot_id?: string; user?: string }[]) ?? [];
+    const me = await personUserId();
+    const replies = messages.filter((m) => m.ts !== ts && m.bot_id && m.user !== me).map((m) => m.text ?? '');
     if (replies.length || Date.now() > until) return replies;
     await new Promise((r) => setTimeout(r, 10_000));
   }

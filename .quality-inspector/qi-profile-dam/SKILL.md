@@ -51,7 +51,9 @@ Builds published before these accounts were added have only `qa-owner`; there an
     Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
   - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
     An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
-    The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text)`, `botReplies(ts)`.
+    The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text, threadTs?)`, `botReplies(ts)`.
+    DAM drops the fourth bot or app post in a row in one conversation (a channel's top level, or one thread) until a person writes there, and the test person's posts count as app posts.
+    So each request goes in a thread of its own: a root without a mention (`personSays(text)`), then the mention in that thread (`personSays(text, root)`), then `botReplies(root)`.
     A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
   - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
     Without it, such ACs are `blocked`, naming `lend_model`.
