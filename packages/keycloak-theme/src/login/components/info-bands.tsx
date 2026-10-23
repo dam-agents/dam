@@ -1238,7 +1238,7 @@ export function BandTestimonials({ brandName }: { brandName: string }) {
 
           <div className="flex flex-col items-center justify-center">
             <div
-              className="w-full transition-opacity duration-400"
+              className="min-h-[420px] w-full transition-opacity duration-400"
               style={{ opacity: fade ? 1 : 0 }}
             >
               <svg
