@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { SERVER_ENV_VAR } from "../../cli/index.js";
 import type { ChatError, ChatService } from "../services/chat-service.js";
 import type { TerminalStrategy } from "../services/sessions-service.js";
+import type { ReconnectNotice } from "../infrastructure/terminal-bridge.js";
 import {
   EXIT_AGENT_NOT_RESOLVED,
   EXIT_BELOW_FLOOR,
@@ -49,6 +50,7 @@ export function buildChatCommand(deps: {
             if (opts.pause && !(await deps.pause())) process.exit(EXIT_SIGINT);
           },
           title: (sessionId) => attachTitle(agentRef, sessionId),
+          reconnectNotice,
         });
 
         if (!result.ok) {
@@ -56,8 +58,8 @@ export function buildChatCommand(deps: {
           process.exit(exitCodeFor(result.error));
         }
 
-        const { bridge, sessionId } = result.value;
-        const resume = resumeCommand(agentRef, sessionId);
+        const bridge = result.value;
+        const resume = resumeCommand(agentRef, bridge.sessionId);
         const status =
           bridge.kind === "exited"
             ? `\x1b[33mSession ended\x1b[0m \x1b[2mProcess exited with code ${bridge.code}\x1b[0m`
@@ -79,6 +81,15 @@ const LEAVE_HINT =
 
 export function attachNotice(agentRef: string, sessionId: string): string {
   return `\x1b[2m${LEAVE_HINT} Come back with:\x1b[0m ${resumeCommand(agentRef, sessionId)}`;
+}
+
+export function reconnectNotice({
+  reason,
+  attempt,
+  delayMs,
+}: ReconnectNotice): string {
+  const seconds = Math.max(1, Math.round(delayMs / 1000));
+  return `\x1b[33mReconnecting\x1b[0m \x1b[2m${reason}\x1b[0m\n\nAttempt ${attempt} in ${seconds} s, to the same session. Press Ctrl+C to stop.`;
 }
 
 export function attachTitle(agentRef: string, sessionId: string): string {

@@ -2,6 +2,7 @@ export interface DiscoveredMcpAuth {
   authorizationEndpoint: string;
   tokenEndpoint: string;
   registrationEndpoint?: string;
+  clientIdMetadataDocumentSupported?: boolean;
   scopes?: string[];
 }
 
@@ -10,6 +11,7 @@ interface AuthServerMetadata {
   authorization_endpoint?: string;
   token_endpoint?: string;
   registration_endpoint?: string;
+  client_id_metadata_document_supported?: boolean;
   scopes_supported?: string[];
   grant_types_supported?: string[];
 }
@@ -72,6 +74,9 @@ async function fetchAuthServerMetadata(
           tokenEndpoint: data.token_endpoint,
           ...(data.registration_endpoint
             ? { registrationEndpoint: data.registration_endpoint }
+            : {}),
+          ...(data.client_id_metadata_document_supported === true
+            ? { clientIdMetadataDocumentSupported: true }
             : {}),
           ...(data.scopes_supported && data.scopes_supported.length > 0
             ? { scopes: data.scopes_supported }

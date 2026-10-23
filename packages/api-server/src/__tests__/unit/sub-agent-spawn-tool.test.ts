@@ -161,6 +161,26 @@ describe("spawn_subagent harness config", () => {
     });
   });
 
+  /** TEST_SCENARIO: The agent leaves out both harness and image, in a
+   * session with no platform sub-agent setting. The sub-agent runs on the
+   * agent's own harness instead of being refused, and on the session's
+   * harness it takes the session's model; a session the platform cannot
+   * identify falls back to the agent's harness. */
+  it("runs a spawn naming neither harness nor image on the agent's own harness", async () => {
+    const own = setup(async () => ({
+      settings: {},
+      harness: "codex",
+      inherited: { model: "openai/gpt-5.5" },
+    }));
+    await own.spawn({ harness: undefined });
+    expect(own.spawned[0]!.harness).toBe("codex");
+    expect(own.spawned[0]!.harnessConfig).toEqual({ model: "openai/gpt-5.5" });
+
+    const unidentified = setup();
+    await unidentified.spawn({ harness: undefined });
+    expect(unidentified.spawned[0]!.harness).toBe("claude-code");
+  });
+
   /** TEST_SCENARIO: The agent names a model its provider does not list for
    * the target harness (IBM's deployment without its azure/ prefix). The
    * spawn is refused naming the listed models, so no sub-agent sits on a

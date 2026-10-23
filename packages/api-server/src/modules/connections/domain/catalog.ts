@@ -908,7 +908,7 @@ const CUSTOM_MCP_OAUTH: OAuthConnectionTemplate = {
   category: "mcp",
   isCustom: true,
   description:
-    "MCP server that authenticates with OAuth — discovery + DCR run at create time.",
+    "MCP server that authenticates with OAuth — discovery and client registration (Client ID Metadata Document, else DCR) run at create time.",
   iconSlug: "mcp",
   authKind: "oauth",
   dynamicRegistration: true,

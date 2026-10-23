@@ -129,7 +129,7 @@ const spawnInput = {
       "A shell command run once with bash -lc in the sub-agent's workspace, after seed and install, with no model turn. You get its exit code, stdout and stderr. Pass this or prompt.",
     ),
   harness: spawnShape.harness.describe(
-    "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image; with neither, the harness the user set for this session's platform sub-agents.",
+    "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image; with neither, the harness the user set for this session's platform sub-agents, else your own.",
   ),
   image: spawnShape.image.describe(
     "A custom image to run instead of the default one. Pass harness too only when the image carries that harness.",
@@ -374,7 +374,9 @@ export type ResolvedSubAgent =
  * UNIT_BOUNDARY_DESCRIPTION: what a platform sub-agent runs on, setting by
  * setting. The session's platform sub-agent settings bind: a spawn on
  * another harness is refused, a spawn naming none gets the set one, and a
- * set model, mode or config option outranks the spawn's. Below them the
+ * set model, mode or config option outranks the spawn's. With no set
+ * harness, a spawn naming neither harness nor image runs on the agent's own,
+ * since models read the harness as optional and leave it out. Below them the
  * spawn's own choice, then, on the session's own harness, the session's
  * model and settings, then the harness defaults; with no model at all the
  * spawn route refuses the spawn. The session's settings
@@ -384,6 +386,7 @@ export type ResolvedSubAgent =
 export function resolveSubAgent(
   args: SpawnArgs,
   session: SessionSubAgentContext | null,
+  ownHarness: string | null,
 ): ResolvedSubAgent {
   const set = session ? platformSubagentChoice(session.settings) : null;
   if (set?.harness && args.harness && args.harness !== set.harness)
@@ -392,7 +395,8 @@ export function resolveSubAgent(
       message: `this session's platform sub-agent setting runs every sub-agent on ${set.harness}, not ${args.harness}. Spawn on ${set.harness}, or ask the user to change the setting`,
     };
   const harness =
-    args.harness ?? (args.image ? undefined : (set?.harness ?? undefined));
+    args.harness ??
+    (args.image ? undefined : (set?.harness ?? ownHarness ?? undefined));
   const bound = set?.harness && harness === set.harness ? set : null;
   const inherited =
     harness !== undefined && harness === session?.harness
@@ -558,7 +562,11 @@ export function registerSubAgentTools(
         );
       }
       const unidentified = session === null && deps.sessionIdentified === false;
-      const resolved = resolveSubAgent(rest, session);
+      const [ownHarness, driverSessionId] = await Promise.all([
+        session?.harness ? Promise.resolve(session.harness) : ops.harness(),
+        deps.spawningSession(),
+      ]);
+      const resolved = resolveSubAgent(rest, session, ownHarness);
       if (!resolved.ok)
         return errorResult(`spawn_subagent refused: ${resolved.message}`);
       const { ok: _ok, bound, modelFrom, ...choice } = resolved;
@@ -568,10 +576,6 @@ export function registerSubAgentTools(
             ? `spawn_subagent refused: ${UNIDENTIFIED_SESSION}`
             : `spawn_subagent refused: ${issues.map((i) => i.message).join("; ")}`,
         );
-      const [ownHarness, driverSessionId] = await Promise.all([
-        session?.harness ? Promise.resolve(session.harness) : ops.harness(),
-        deps.spawningSession(),
-      ]);
       const from = { origin: "tool" as const, driverSessionId };
       const refusedNeed = (unmet: string) =>
         errorResult(

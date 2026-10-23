@@ -270,6 +270,7 @@ The platform applies nothing, so the invariant below holds.
 
 **Completion is the agent's word.** While an update is pending the agent's MCP session carries a tool that reports it done for the targeted commit — moving the Seed Stamp there even when every change was declined — and one that withdraws it.
 Both clear the pending mark and raise the agents hint, so the UI drops the button at once.
+While the update is pending, the session lists badge its session — the initialization session opened since the update started — the way an onboarding session is badged.
 An abandoned update stays pending; the button then reopens its session or starts again against the current head.
 
 ## Invariants

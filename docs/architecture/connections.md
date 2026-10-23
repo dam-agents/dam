@@ -252,6 +252,10 @@ That is an accepted limit rather than a guarded one — the reply is a refusal t
 
 An MCP endpoint contributes an `egress-allow` for its host and an `mcp-entry` carrying the server URL.
 OAuth adds a placeholder Authorization header on the `mcp-entry`; a static-header credential instead adds an `egress-inject` (as Custom Header does), keeping the secret gateway-side.
+The OAuth client is found at create time, in the order the MCP authorization spec gives: a client ID the user entered, else the platform's **Client ID Metadata Document** when the authorization server says it accepts one, else Dynamic Client Registration.
+The document is one per deployment, served without sign-in beside the OAuth callback, which is its only redirect URI; its URL is the client ID, so no client is registered per server and there is no client secret to keep.
+An authorization server fetches only an HTTPS client ID, so a deployment served over plain HTTP registers instead.
+One rule in the [connections module](../../packages/api-server/src/modules/connections/) picks the client, for the create path and for the discovery that tells the UI and CLI a server takes OAuth.
 
 ### Shared knowledge base
 
