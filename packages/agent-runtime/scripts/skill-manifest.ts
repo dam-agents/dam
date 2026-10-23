@@ -6,7 +6,7 @@ import {
   parseShippedSkillManifest,
   type ShippedSkillManifest,
 } from "../src/modules/skills/domain/shipped-manifest.js";
-import { hashSkillDir } from "../src/modules/skills/infrastructure/local-skill-repository.js";
+import { hashSkillDir } from "agent-runtime-api/skill-tree";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

@@ -33,17 +33,12 @@ export function navigationMode({
     : "layout";
 }
 
-export function useViewportWidth() {
+export function useNarrowShell() {
   const [width, setWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  return width;
-}
-
-export function useNarrowShell() {
-  const width = useViewportWidth();
   return { narrow: width < MOBILE_BREAKPOINT, viewport: width };
 }

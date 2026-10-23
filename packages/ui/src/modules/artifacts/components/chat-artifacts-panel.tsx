@@ -11,7 +11,7 @@ import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyState, LoadFailed } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { formatBytes } from "@/lib/format-size";
@@ -89,7 +89,9 @@ export function ChatArtifactsPanel({
     [artifacts, term],
   );
   const shownBytes = shown.reduce((sum, a) => sum + a.sizeBytes, 0);
-  const openArtifactId = useStore((s) => s.openArtifactId);
+  const openArtifactId = useStore((s) =>
+    s.dock?.kind === "artifact" ? s.dock.id : null,
+  );
   const openArtifact = useOpenArtifact();
 
   const openRow = (id: string) =>
@@ -200,23 +202,13 @@ export function ChatArtifactsPanel({
         />
       </div>
       {failed ? (
-        <EmptyState
-          bordered={false}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                void artifactsQuery.refetch();
-                void foldersQuery.refetch();
-              }}
-            >
-              Retry
-            </Button>
-          }
-        >
-          Couldn't load artifacts.
-        </EmptyState>
+        <LoadFailed
+          what="Couldn't load artifacts."
+          onRetry={() => {
+            void artifactsQuery.refetch();
+            void foldersQuery.refetch();
+          }}
+        />
       ) : loading || groups.length === 0 ? (
         <EmptyState bordered={false}>
           {loading

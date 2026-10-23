@@ -547,36 +547,6 @@ export function createBoltSlackGateway(
       } as ChatPostEphemeralArgs);
     },
 
-    async startStream(args): Promise<{ ts: string }> {
-      if (!app) throw new Error("slack app not started");
-      const token = await tokenFor(args.teamId);
-      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      const res = await app.client.chat.startStream({
-        token,
-        channel: args.channel,
-        thread_ts: args.threadTs,
-        recipient_team_id: args.recipientTeamId,
-        recipient_user_id: args.recipientUserId,
-        ...(args.markdownText !== undefined
-          ? { markdown_text: args.markdownText }
-          : {}),
-      });
-      if (!res.ts) throw new Error("chat.startStream returned no ts");
-      return { ts: res.ts };
-    },
-
-    async appendStream(args) {
-      if (!app) throw new Error("slack app not started");
-      const token = await tokenFor(args.teamId);
-      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      await app.client.chat.appendStream({
-        token,
-        channel: args.channel,
-        ts: args.ts,
-        markdown_text: args.markdownText,
-      });
-    },
-
     async stopStream(args) {
       if (!app) throw new Error("slack app not started");
       const token = await tokenFor(args.teamId);

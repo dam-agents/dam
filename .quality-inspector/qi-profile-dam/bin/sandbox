@@ -22,6 +22,22 @@ else
   elif [ "$(jq -r .fork <<<"$r")" = true ]; then bad "github $repo is a fork — use a repository of its own"
   elif [ "$(jq -r '.has_issues' <<<"$r")" != true ]; then bad "github $repo has issues turned off"
   else ok "github token of $login sees $repo"; fi
+  # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32,
+  # and GitHub knows the OAuth App (a made-up code is refused as a bad code, not as a bad client).
+  if [ -n "$login" ] && [ "$(tr 'A-Z' 'a-z' <<<"$login")" != "$(tr 'A-Z' 'a-z' <<<"${E2E_SANDBOX_GITHUB_LOGIN:-}")" ]; then
+    bad "github the token is $login's, not E2E_SANDBOX_GITHUB_LOGIN's — create it as the test user"
+  fi
+  [ -n "${E2E_SANDBOX_GITHUB_PASSWORD:-}" ] || bad "github E2E_SANDBOX_GITHUB_PASSWORD is not set"
+  tr -d ' =' <<<"${E2E_SANDBOX_GITHUB_TOTP_SECRET:-}" | grep -qiE '^[A-Z2-7]{16,}$' \
+    && ok "github the test user's TOTP secret is base32" || bad "github E2E_SANDBOX_GITHUB_TOTP_SECRET is not a base32 TOTP secret"
+  e="$(curl -s --max-time 20 -X POST -H 'Accept: application/json' \
+        --data-urlencode "client_id=${E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID:-none}" --data-urlencode "client_secret=${E2E_SANDBOX_GITHUB_OAUTH_CLIENT_SECRET:-none}" \
+        --data-urlencode code=qi-sandbox-check https://github.com/login/oauth/access_token | jq -r '.error // empty' 2>/dev/null)"
+  case "$e" in
+    (bad_verification_code) ok "github the OAuth App answers its client id and secret";;
+    (incorrect_client_credentials) bad "github the OAuth App refuses E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID / _SECRET";;
+    (*) bad "github no answer from POST github.com/login/oauth/access_token (its egress rule is added by hand)";;
+  esac
 fi
 
 # Slack: the bot, the app-level token and the person, and the channel both are in.

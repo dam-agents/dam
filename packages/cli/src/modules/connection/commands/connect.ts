@@ -16,6 +16,7 @@ import {
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
+import { pollUntil } from "../../shared/poll.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { exitCancelled } from "../../shared/prompt.js";
 import {
@@ -368,8 +369,12 @@ export function buildConnectCommand(deps: {
       }
       process.stderr.write("Waiting for authorization…\n");
 
-      const outcome = await pollUntilActive(svc, id, timeoutSeconds);
-      if (outcome !== "active") {
+      const active = await pollUntil(() => svc.getConnection(id), {
+        timeoutSeconds,
+        intervalMs: POLL_INTERVAL_MS,
+        until: (res) => res.ok && res.value?.status === "active",
+      });
+      if (!active) {
         process.stderr.write(
           `error: couldn't confirm the connection finished within ${timeoutSeconds}s; ` +
             "it may still complete — check `dam connection list`\n",
@@ -827,20 +832,6 @@ function checkClusterTrust(
   return true;
 }
 
-async function pollUntilActive(
-  svc: ConnectionService,
-  id: string,
-  timeoutSeconds: number,
-): Promise<"active" | "timeout"> {
-  const deadline = Date.now() + timeoutSeconds * 1000;
-  while (true) {
-    const res = await svc.getConnection(id);
-    if (res.ok && res.value?.status === "active") return "active";
-    if (Date.now() + POLL_INTERVAL_MS >= deadline) return "timeout";
-    await sleep(POLL_INTERVAL_MS);
-  }
-}
-
 function emitSuccess(args: {
   json: boolean;
   verb: "Created" | "Connected";
@@ -882,10 +873,6 @@ function parseTimeout(raw: string | undefined): number | null {
   if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function slugifyTemplateName(templateName: string): string {

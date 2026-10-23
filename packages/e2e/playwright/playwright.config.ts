@@ -69,12 +69,6 @@ const suite: NamedProject[] = [
     dependencies: ["chain", "own-agents"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
-  {
-    name: "platform-provider",
-    testMatch: /24-.*\.spec\.ts$/,
-    dependencies: ["api-keys", "live-events", "new-layout"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
   ...(full
     ? [
         {
@@ -120,14 +114,12 @@ const suite: NamedProject[] = [
 const prSkip =
   process.env.E2E_SCOPE === "pr"
     ? new RegExp(
-        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26|27" : "12|18|21|24"})-`,
+        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|25|26|27" : "12|18|21"})-`,
       )
     : undefined;
 
 const prEmpty = new Set(
-  laneBackend === "vm"
-    ? ["platform-provider", "new-layout", "agent-backend"]
-    : ["platform-provider"],
+  laneBackend === "vm" ? ["new-layout", "agent-backend"] : [],
 );
 
 const agentBackend: NamedProject = {

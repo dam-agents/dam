@@ -1,5 +1,6 @@
 import type { BudgetVmUsage, PoolLevel } from "api-server-api";
 
+import { formatBytes } from "../../../lib/format-size.js";
 import type { AgentView } from "../../../types.js";
 
 export interface PoolSegment {
@@ -190,12 +191,6 @@ export function topCpuAgents(
     .sort((a, b) => b.cpuMilli - a.cpuMilli)
     .slice(0, limit)
     .map((t) => t.agent);
-}
-
-export function formatBytes(bytes: number): string {
-  const gib = bytes / 1024 ** 3;
-  if (gib >= 1) return `${gib.toFixed(1)} GiB`;
-  return `${Math.round(bytes / 1024 ** 2)} MiB`;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a pool's warning-sign text: the advice at every level, and at critical also what the platform does and, for a user without a Slack link, the command that links it.

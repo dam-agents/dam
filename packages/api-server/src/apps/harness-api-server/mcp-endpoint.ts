@@ -7,7 +7,7 @@ import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
+import { TRPCClientError } from "@trpc/client";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
@@ -36,7 +36,7 @@ import type {
   ChannelAttachment,
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
+import { agentPodClient } from "../../core/agent-pod-client.js";
 import type {
   SubAgentAwaitMarks,
   InvocationsService,
@@ -189,6 +189,9 @@ export interface McpSessionDeps {
   } | null;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the tools read an attachment from the Agent's home and ask its runtime about Sessions, so the budget covers a large file's read rather than a bare round trip.
+const MCP_RUNTIME_TIMEOUT_MS = 60_000;
+
 const SESSION_SETTINGS_INSTRUCTIONS =
   "Your model, effort and other session settings, apart from the permission mode, are not set in your harness's own settings file: a session runs on what was picked in it, else on the default the owner set for its kind (chat, Slack or Telegram, or schedules) on the agent's Providers page. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu, or to change the default on the Providers page.";
 
@@ -213,12 +216,8 @@ export function createMcpSession(
     },
   );
 
-  const runtimeClient = createTRPCClient<AppRouter>({
-    links: [
-      httpBatchLink({
-        url: `http://${podBaseUrl(agentId, deps.k8s.namespace)}/api/trpc`,
-      }),
-    ],
+  const runtimeClient = agentPodClient(agentId, deps.k8s.namespace, {
+    timeoutMs: MCP_RUNTIME_TIMEOUT_MS,
   });
 
   const channelAudit = (surface: ChannelType) =>

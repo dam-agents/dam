@@ -34,7 +34,7 @@ interface Props {
 const noop = () => {};
 
 export function DockedDelegationPanel({ driverAgentId, id }: Props) {
-  const close = useStore((s) => s.setOpenDelegation);
+  const setDock = useStore((s) => s.setDock);
   const agents = useAgentsList();
   const ids = useMemo(() => [id], [id]);
   const {
@@ -65,7 +65,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <SidePanelCloseButton onClose={() => close(null)} />
+        <SidePanelCloseButton onClose={() => setDock(null)} />
       </div>
       {node ? (
         <PanelBody

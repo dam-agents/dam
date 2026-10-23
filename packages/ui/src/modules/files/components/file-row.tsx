@@ -49,7 +49,9 @@ export function FileRow({
 }: Props) {
   const panel = useFilesPanel();
   const isDir = type === "dir";
-  const isActive = useStore((s) => s.openFilePath) === path && !isDir;
+  const isActive =
+    useStore((s) => (s.dock?.kind === "file" ? s.dock.path : null)) === path &&
+    !isDir;
   const targetDir = isDir ? path : parentDirOf(path);
   const [menuOpen, setMenuOpen] = useState(false);
 

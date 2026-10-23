@@ -1,16 +1,16 @@
-import { Launch, Time, TrashCan } from "@carbon/icons-react";
+import { Time } from "@carbon/icons-react";
 import type { ScanFailure, SkillSource } from "api-server-api";
 
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
-import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
 import { SourceError } from "./skill-source-error.js";
+import {
+  SkillSourceActions,
+  SkillSourceHeader,
+} from "./skill-source-header.js";
 
 function SourceListRow({
   source,
@@ -33,26 +33,9 @@ function SourceListRow({
   onRemove: () => void;
   onManageConnections?: () => void;
 }) {
-  const canRemove = !source.system && !source.fromTemplate;
   return (
     <div className={cn(divided && "border-t border-border")}>
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-md font-medium text-foreground">
-              {source.name}
-            </p>
-            {visibility === "private" && (
-              <Badge variant="muted" className="shrink-0">
-                Private
-              </Badge>
-            )}
-          </div>
-          <p className="truncate font-mono text-xs text-muted-foreground">
-            {repoSlug(source.gitUrl)}
-            {source.path ? ` · ${source.path}` : ""}
-          </p>
-        </div>
+      <SkillSourceHeader source={source} visibility={visibility}>
         {scanning ? (
           <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
             <Spinner size={14} /> Scanning…
@@ -69,26 +52,13 @@ function SourceListRow({
             </span>
           )
         )}
-        <RowActionsMenu label="Source actions">
-          <DropdownMenuItem disabled={scanning} onSelect={onRescan}>
-            Re-scan
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() =>
-              window.open(source.gitUrl, "_blank", "noopener,noreferrer")
-            }
-          >
-            <span className="flex-1">View on GitHub</span>
-            <Launch size={14} />
-          </DropdownMenuItem>
-          {canRemove && (
-            <DropdownMenuItem tone="danger" onSelect={onRemove}>
-              <TrashCan size={14} />
-              <span className="flex-1">Remove source</span>
-            </DropdownMenuItem>
-          )}
-        </RowActionsMenu>
-      </div>
+        <SkillSourceActions
+          source={source}
+          busy={scanning}
+          onRescan={onRescan}
+          onRemove={onRemove}
+        />
+      </SkillSourceHeader>
       {error && !scanning && (
         <SourceError
           failure={error}

@@ -68,8 +68,14 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function useFileMutations(agentId: string | null) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const openFilePath = useStore((s) => s.openFilePath);
-  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
+  const openFilePath = useStore((s) =>
+    s.dock?.kind === "file" ? s.dock.path : null,
+  );
+  const setDock = useStore((s) => s.setDock);
+  const setOpenFile = useCallback(
+    (path: string) => setDock({ kind: "file", path }),
+    [setDock],
+  );
   const renameExpandedDir = useStore((s) => s.renameExpandedDir);
   const pruneExpandedDir = useStore((s) => s.pruneExpandedDir);
 
@@ -118,9 +124,9 @@ export function useFileMutations(agentId: string | null) {
       const tryRename = async (overwrite: boolean) => {
         await renameMutation.mutateAsync({ from, to, overwrite });
         if (agentId) renameExpandedDir(agentId, from, to);
-        if (openFilePath === from) setOpenFilePath(to);
+        if (openFilePath === from) setOpenFile(to);
         else if (openFilePath?.startsWith(from + "/"))
-          setOpenFilePath(to + openFilePath.slice(from.length));
+          setOpenFile(to + openFilePath.slice(from.length));
       };
 
       try {
@@ -161,7 +167,7 @@ export function useFileMutations(agentId: string | null) {
       agentId,
       renameExpandedDir,
       openFilePath,
-      setOpenFilePath,
+      setOpenFile,
       showConfirm,
     ],
   );
@@ -199,7 +205,7 @@ export function useFileMutations(agentId: string | null) {
           openFilePath === path ||
           (openFilePath ?? "").startsWith(path + "/")
         ) {
-          setOpenFilePath(null);
+          setDock(null);
         }
         emitToast({ kind: "success", message: `Deleted ${path}` });
       } catch (err) {
@@ -214,7 +220,7 @@ export function useFileMutations(agentId: string | null) {
       agentId,
       pruneExpandedDir,
       openFilePath,
-      setOpenFilePath,
+      setDock,
       showConfirm,
     ],
   );

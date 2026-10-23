@@ -48,7 +48,7 @@ export function SidebarSection({
         className={cn(
           "flex items-center gap-1 shrink-0 border-border",
           tiles ? "mt-2 h-10 pl-2 pr-2" : "h-12 pl-3 pr-2",
-          open && !tiles && "border-b",
+          open && "border-b",
           headerClassName,
           tiles && "border-t-0",
         )}

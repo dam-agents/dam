@@ -1,10 +1,15 @@
 import type { IncomingMessage } from "node:http";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { match } from "ts-pattern";
 import { JOSEError, JWKSInvalid, JWKSTimeout } from "jose/errors";
 import type { Context } from "hono";
 import { ALL_SCOPES, type Scope, type UserIdentity } from "api-server-api";
 import type { Result } from "../../../core/result.js";
-import { securityLog } from "../../../core/security-log.js";
+import {
+  securityLog,
+  type ActorKind,
+  type SecurityCategory,
+} from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
 import {
   isApiKeyToken,
@@ -44,7 +49,6 @@ class UnauthorizedError extends Error {
 }
 
 class AuthUnavailableError extends Error {
-  readonly reason = "jwks-unavailable";
   constructor(cause: unknown) {
     super("Authentication unavailable: JWKS could not be retrieved", {
       cause,
@@ -237,32 +241,97 @@ function wsLogBase(site: WsAuthSite) {
   };
 }
 
+const DENIAL_LOG: Record<
+  AuthDenialKind,
+  {
+    httpEvent: string;
+    wsEvent: string;
+    category: SecurityCategory;
+    actorKind: ActorKind;
+    reason: string | { http: string; ws: string };
+    wsFields: { decision: "deny" } | { result: "failure" };
+  }
+> = {
+  "missing-token": {
+    httpEvent: "authn.deny",
+    wsEvent: "ws.authn_deny",
+    category: "authn",
+    actorKind: "external",
+    reason: { http: "missing-bearer", ws: "missing-token" },
+    wsFields: { decision: "deny" },
+  },
+  "auth-unavailable": {
+    httpEvent: "authn.unavailable",
+    wsEvent: "ws.authn_unavailable",
+    category: "authn",
+    actorKind: "external",
+    reason: "jwks-unavailable",
+    wsFields: { result: "failure" },
+  },
+  unauthorized: {
+    httpEvent: "authn.deny",
+    wsEvent: "ws.authn_deny",
+    category: "authn",
+    actorKind: "external",
+    reason: "verify-failed",
+    wsFields: { decision: "deny" },
+  },
+  forbidden: {
+    httpEvent: "authz.deny",
+    wsEvent: "ws.authz_deny",
+    category: "authz",
+    actorKind: "user",
+    reason: "missing-required-role",
+    wsFields: { decision: "deny" },
+  },
+};
+
+function logDenial(
+  site: AuthSite,
+  kind: AuthDenialKind,
+  fields: {
+    actor: string | null;
+    reason?: string;
+    detail?: Record<string, unknown>;
+  },
+): void {
+  const config = DENIAL_LOG[kind];
+  const reason =
+    fields.reason ??
+    (typeof config.reason === "string"
+      ? config.reason
+      : config.reason[site.edge]);
+  const { event, edgeFields } = match(site)
+    .with({ edge: "http" }, (s) => ({
+      event: config.httpEvent,
+      edgeFields: {
+        result: "failure" as const,
+        reason,
+        target: s.target,
+        sourceIp: s.sourceIp,
+        ...(fields.detail === undefined ? {} : { detail: fields.detail }),
+      },
+    }))
+    .with({ edge: "ws" }, (s) => ({
+      event: config.wsEvent,
+      edgeFields: { ...config.wsFields, reason, ...wsLogBase(s) },
+    }))
+    .exhaustive();
+  securityLog("warn", event, {
+    category: config.category,
+    actor: fields.actor,
+    actorKind: config.actorKind,
+    ...edgeFields,
+  });
+}
+
 export async function authenticatePrincipal(
   verify: (token: string) => Promise<VerifiedPrincipal>,
   token: string | null | undefined,
   site: AuthSite,
 ): Promise<AuthenticateResult> {
   if (!token) {
-    if (site.edge === "http") {
-      securityLog("warn", "authn.deny", {
-        category: "authn",
-        actor: null,
-        actorKind: "external",
-        result: "failure",
-        reason: "missing-bearer",
-        target: site.target,
-        sourceIp: site.sourceIp,
-      });
-    } else {
-      securityLog("warn", "ws.authn_deny", {
-        category: "authn",
-        actor: null,
-        actorKind: "external",
-        decision: "deny",
-        reason: "missing-token",
-        ...wsLogBase(site),
-      });
-    }
+    logDenial(site, "missing-token", { actor: null });
     return { ok: false, kind: "missing-token" };
   }
 
@@ -271,51 +340,17 @@ export async function authenticatePrincipal(
     principal = await verify(token);
   } catch (err) {
     if (err instanceof AuthUnavailableError) {
-      if (site.edge === "http") {
-        securityLog("warn", "authn.unavailable", {
-          category: "authn",
-          actor: null,
-          actorKind: "external",
-          result: "failure",
-          reason: err.reason,
-          target: site.target,
-          sourceIp: site.sourceIp,
-          detail: { cause: describeJwksFailure(err.cause) },
-        });
-      } else {
-        securityLog("warn", "ws.authn_unavailable", {
-          category: "authn",
-          actor: null,
-          actorKind: "external",
-          result: "failure",
-          reason: err.reason,
-          ...wsLogBase(site),
-        });
-      }
+      logDenial(site, "auth-unavailable", {
+        actor: null,
+        detail: { cause: describeJwksFailure(err.cause) },
+      });
       return { ok: false, kind: "auth-unavailable" };
     }
     if (err instanceof ForbiddenError) {
-      if (site.edge === "http") {
-        securityLog("warn", "authz.deny", {
-          category: "authz",
-          actor: err.sub,
-          actorKind: "user",
-          result: "failure",
-          reason: "missing-required-role",
-          target: site.target,
-          sourceIp: site.sourceIp,
-          detail: { requiredRole: err.requiredRole },
-        });
-      } else {
-        securityLog("warn", "ws.authz_deny", {
-          category: "authz",
-          actor: err.sub,
-          actorKind: "user",
-          decision: "deny",
-          reason: "missing-required-role",
-          ...wsLogBase(site),
-        });
-      }
+      logDenial(site, "forbidden", {
+        actor: err.sub,
+        detail: { requiredRole: err.requiredRole },
+      });
       return { ok: false, kind: "forbidden" };
     }
     const reason =
@@ -324,26 +359,7 @@ export async function authenticatePrincipal(
         : err instanceof Error
           ? err.name
           : "verify-failed";
-    if (site.edge === "http") {
-      securityLog("warn", "authn.deny", {
-        category: "authn",
-        actor: null,
-        actorKind: "external",
-        result: "failure",
-        reason,
-        target: site.target,
-        sourceIp: site.sourceIp,
-      });
-    } else {
-      securityLog("warn", "ws.authn_deny", {
-        category: "authn",
-        actor: null,
-        actorKind: "external",
-        decision: "deny",
-        reason,
-        ...wsLogBase(site),
-      });
-    }
+    logDenial(site, "unauthorized", { actor: null, reason });
     return { ok: false, kind: "unauthorized" };
   }
 

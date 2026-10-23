@@ -166,7 +166,7 @@ function OpenConversation({
   node: DelegationNode;
   driverAgentId: string;
 }) {
-  const setOpenDelegation = useStore((s) => s.setOpenDelegation);
+  const setDock = useStore((s) => s.setDock);
   const confirmDiscard = useDockDraftGuard();
   const blocked =
     node.status === "running"
@@ -181,7 +181,7 @@ function OpenConversation({
       disabled={blocked !== null}
       onClick={async () => {
         if (!(await confirmDiscard())) return;
-        setOpenDelegation({ driverAgentId, id: node.id });
+        setDock({ kind: "delegation", driverAgentId, id: node.id });
       }}
     >
       <Chat size={14} /> Open conversation

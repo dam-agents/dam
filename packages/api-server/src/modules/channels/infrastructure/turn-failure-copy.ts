@@ -1,7 +1,50 @@
-import type { AcpTurnAbandonedError } from "../../../core/acp-client.js";
+import { AcpTurnAbandonedError } from "../../../core/acp-client.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
+import { isNoDefaultModelError } from "../../harness-config/index.js";
+import {
+  isAgentStoppedError,
+  isAgentWakeTimeoutError,
+  wakeFailureReasonToken,
+} from "../../agents/index.js";
+import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 
-export function turnFailureUserCopy(err: AcpTurnAbandonedError): string {
+export interface TurnFailure {
+  reason: string;
+  copy: (ctx: { uiBaseUrl: string; agentId: string }) => string;
+}
+
+export function classifyTurnFailure(err: unknown): TurnFailure {
+  if (isAgentWakeTimeoutError(err))
+    return {
+      reason: wakeFailureReasonToken(err.failure),
+      copy: () => wakeFailureUserCopy(err.failure),
+    };
+  if (err instanceof AcpTurnAbandonedError)
+    return {
+      reason: turnFailureReasonToken(err),
+      copy: () => turnFailureUserCopy(err),
+    };
+  if (isAgentStoppedError(err))
+    return {
+      reason: "agent-stopped",
+      copy: () =>
+        err.disabled
+          ? "This agent is disabled by its owner — ask them to enable it."
+          : "This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.",
+    };
+  if (isNoDefaultModelError(err))
+    return {
+      reason: "no-default-model",
+      copy: ({ uiBaseUrl, agentId }) =>
+        noDefaultModelUserCopy(err, uiBaseUrl, agentId),
+    };
+  return {
+    reason: "acp-error",
+    copy: () => "Something went wrong while relaying this message — try again.",
+  };
+}
+
+function turnFailureUserCopy(err: AcpTurnAbandonedError): string {
   switch (err.abandonCause) {
     case "connection-lost":
       return (
@@ -17,7 +60,7 @@ export function turnFailureUserCopy(err: AcpTurnAbandonedError): string {
   }
 }
 
-export function turnFailureReasonToken(err: AcpTurnAbandonedError): string {
+function turnFailureReasonToken(err: AcpTurnAbandonedError): string {
   switch (err.abandonCause) {
     case "connection-lost":
       return "relay-lost";
@@ -26,7 +69,7 @@ export function turnFailureReasonToken(err: AcpTurnAbandonedError): string {
   }
 }
 
-export function noDefaultModelUserCopy(
+function noDefaultModelUserCopy(
   err: NoDefaultModelError,
   uiBaseUrl: string,
   agentId: string,

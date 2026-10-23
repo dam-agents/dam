@@ -100,7 +100,7 @@ describe("the Compute budgets section", () => {
     expect(html).toContain("16 CPU");
     expect(html).toContain("16Gi memory (default)");
     expect(html).toContain("100Gi storage (default)");
-    expect(html).toContain("Reserves 3 CPU, 6Gi now");
+    expect(html).toContain("Reserves 3 CPU, 6 GiB now");
     expect(html).toContain("Set by op@example.com");
     expect(state.inputs[0]).toEqual({ sort: "changed", offset: 0, limit: 25 });
   });

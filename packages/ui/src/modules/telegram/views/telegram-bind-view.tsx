@@ -1,21 +1,12 @@
-import { useState } from "react";
-
-import type { AgentView } from "../../../types.js";
+import type { BindPickerCopy } from "../../agents/components/bind/agent-bind-picker.js";
 import {
-  AgentBindPicker,
-  type BindPickerCopy,
-} from "../../agents/components/bind/agent-bind-picker.js";
-import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
-import { withCommandChips } from "../../agents/components/bind/command-chip.js";
-import { useBindTelegramChat } from "../api/mutations.js";
-import { useTelegramBindFlow } from "../api/queries.js";
-import {
-  type BindErrorCopy,
-  bindErrorCopy,
-  callbackErrorCopy,
   readCallbackErrorFromSearch,
   readFlowIdFromSearch,
-} from "../lib/bind-flow.js";
+} from "../../agents/components/bind/bind-flow.js";
+import { ChannelBindView } from "../../agents/components/bind/channel-bind-view.js";
+import { useBindTelegramChat } from "../api/mutations.js";
+import { useTelegramBindFlow } from "../api/queries.js";
+import { bindErrorCopy, callbackErrorCopy } from "../lib/bind-flow.js";
 import { TelegramBindSuccess } from "./telegram-bind-success.js";
 
 const flowId = readFlowIdFromSearch(window.location.search);
@@ -24,66 +15,31 @@ const callbackError = readCallbackErrorFromSearch(window.location.search);
 export function TelegramBindView() {
   const bind = useBindTelegramChat();
   const flow = useTelegramBindFlow(flowId);
-  const [error, setError] = useState<BindErrorCopy | null>(null);
-  const [bound, setBound] = useState<{
-    agentName: string;
-    chatTitle: string | null;
-  } | null>(null);
-
-  if (callbackError) {
-    return <TerminalError copy={callbackErrorCopy(callbackError)} />;
-  }
-  if (!flowId) {
-    return (
-      <TerminalError
-        copy={{
-          title: "This page is opened from Telegram",
-          hint: "Send `/bind` in the chat to get a fresh link.",
-          terminal: true,
-        }}
-      />
-    );
-  }
-  if (bound) {
-    return (
-      <TelegramBindSuccess
-        agentName={bound.agentName}
-        chatTitle={bound.chatTitle}
-      />
-    );
-  }
-  if (error?.terminal) {
-    return <TerminalError copy={error} />;
-  }
-  if (flow.isSuccess && !flow.data) {
-    return <TerminalError copy={bindErrorCopy("BAD_REQUEST")} />;
-  }
-
-  const pick = (agent: AgentView) => {
-    setError(null);
-    bind.mutate(
-      { agentId: agent.id, flowId },
-      {
-        onSuccess: (res) =>
-          setBound({
-            agentName: agent.name,
-            chatTitle: flow.data?.chatTitle ?? res.chatTitle,
-          }),
-        onError: (e) => {
-          const code = (e as { data?: { code?: string } }).data?.code;
-          setError(bindErrorCopy(code));
-        },
-      },
-    );
-  };
-
   return (
-    <AgentBindPicker
-      copy={pickerCopy(flow.data)}
-      error={error}
-      pending={bind.isPending}
-      onPick={pick}
-      onAgentCreated={() => setError(null)}
+    <ChannelBindView
+      messenger="telegram"
+      flowId={flowId}
+      callbackError={callbackError}
+      missingFlow={{
+        title: "This page is opened from Telegram",
+        hint: "Send `/bind` in the chat to get a fresh link.",
+        terminal: true,
+      }}
+      flow={flow}
+      bind={bind}
+      bound={(agent, result, flow) => ({
+        agentName: agent.name,
+        chatTitle: flow?.chatTitle ?? result.chatTitle,
+      })}
+      success={(bound) => (
+        <TelegramBindSuccess
+          agentName={bound.agentName}
+          chatTitle={bound.chatTitle}
+        />
+      )}
+      pickerCopy={pickerCopy}
+      callbackCopy={callbackErrorCopy}
+      errorCopy={bindErrorCopy}
     />
   );
 }
@@ -110,12 +66,4 @@ function pickerCopy(
         ? null
         : { kind: "telegram-chat", name: chatTitle },
   };
-}
-
-function TerminalError({ copy }: { copy: BindErrorCopy }) {
-  return (
-    <BindTerminalPage messenger="telegram" title={copy.title}>
-      <p>{withCommandChips(copy.hint)}</p>
-    </BindTerminalPage>
-  );
 }

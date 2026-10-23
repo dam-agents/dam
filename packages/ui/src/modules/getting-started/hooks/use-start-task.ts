@@ -6,6 +6,7 @@ import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { newestAgent } from "../lib/newest-agent.js";
 import { FIRST_MESSAGE_PREFILL, SCHEDULE_PREFILL } from "../lib/tasks.js";
 
@@ -13,8 +14,8 @@ import { FIRST_MESSAGE_PREFILL, SCHEDULE_PREFILL } from "../lib/tasks.js";
  * UNIT_BOUNDARY_DESCRIPTION: A click on a checklist task takes the user to the
  * place where they do it. Tasks done on an Agent open the newest one, and a
  * chat task leaves a starting line in its composer. The artifact task opens
- * the Artifacts tab in a chat or with JanUI on, and the Artifacts
- * page elsewhere. With no Agent yet, those
+ * the Artifacts tab in a chat or when the shell has one to open, and the
+ * Artifacts page elsewhere. With no Agent yet, those
  * tasks create one first, because each needs an Agent to act on.
  */
 export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
@@ -31,6 +32,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const inChat = useStore((s) => s.view === "chat");
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   const setView = useStore((s) => s.setView);
 
   return useCallback(
@@ -58,7 +60,8 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
         .with("apply-starter-kit", async () => setKitBrowserOpen(true))
         .with("create-schedule", () => openChat(SCHEDULE_PREFILL))
         .with("create-artifact", async () => {
-          if (!inChat && !newLayout) return setView("artifacts");
+          if (!inChat && !newLayout && !rightToolbar)
+            return setView("artifacts");
           setSidePanelTab("artifacts");
           setArtifactsSectionOpen(true);
           setMobileScreen("files");
@@ -80,6 +83,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
       setArtifactsSectionOpen,
       inChat,
       newLayout,
+      rightToolbar,
       setView,
     ],
   );

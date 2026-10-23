@@ -133,6 +133,30 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+const DEFAULT_RRULE = "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30";
+
+export function presetFormValues(
+  preset: FrequencyPreset,
+  customRRuleFallback = DEFAULT_RRULE,
+): Pick<
+  ScheduleFormValues,
+  "kind" | "interval" | "time" | "days" | "customRRule"
+> {
+  return {
+    kind: preset.kind,
+    interval:
+      preset.kind === "minutely" || preset.kind === "hourly"
+        ? String(preset.interval)
+        : "30",
+    time:
+      preset.kind === "daily"
+        ? `${pad(preset.hour)}:${pad(preset.minute)}`
+        : "09:00",
+    days: preset.kind === "custom" ? [...ALL_DAYS] : preset.days,
+    customRRule: preset.kind === "custom" ? preset.rrule : customRRuleFallback,
+  };
+}
+
 export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
   const preset: FrequencyPreset = existing?.rrule
     ? detectPreset(existing.rrule)
@@ -147,20 +171,7 @@ export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
     sessionTitle: existing?.sessionTitle ?? "",
     timezone: existing?.timezone ?? detectTimezone(),
     sessionMode: existing?.sessionMode ?? "fresh",
-    kind: preset.kind,
-    interval:
-      preset.kind === "minutely" || preset.kind === "hourly"
-        ? String(preset.interval)
-        : "30",
-    time:
-      preset.kind === "daily"
-        ? `${pad(preset.hour)}:${pad(preset.minute)}`
-        : "09:00",
-    days: preset.kind === "custom" ? [...ALL_DAYS] : preset.days,
-    customRRule:
-      preset.kind === "custom"
-        ? preset.rrule
-        : (existing?.rrule ?? "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7;BYMINUTE=30"),
+    ...presetFormValues(preset, existing?.rrule ?? undefined),
     quietHours: existing?.quietHours ?? [],
   };
 }

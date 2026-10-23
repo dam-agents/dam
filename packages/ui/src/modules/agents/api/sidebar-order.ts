@@ -4,7 +4,7 @@ import type { SidebarOrder } from "api-server-api";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
-const NO_ORDER: SidebarOrder = { agents: [], sessions: {} };
+const NO_ORDER: SidebarOrder = { agents: [] };
 const orderKey = () => trpc.sidebarOrder.get.queryKey();
 const SCOPE = { id: "sidebar-order" };
 

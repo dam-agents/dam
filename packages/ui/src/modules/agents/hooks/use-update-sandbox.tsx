@@ -4,6 +4,7 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useUpgradeAgentMutation } from "../api/mutations.js";
+import { useAgentsList } from "../api/queries.js";
 import { ReleaseNotesLink } from "../components/release-notes-link.js";
 import { releaseNotesUrl } from "./use-release-notes-url.js";
 
@@ -48,5 +49,17 @@ export function useUpdateSandbox() {
   return {
     updateOne,
     updatingId: upgrade.isPending ? upgrade.variables.id : null,
+  };
+}
+
+export function useAgentUpdateAction(agentId: string | null) {
+  const agents = useAgentsList();
+  const { updateOne, updatingId } = useUpdateSandbox();
+  const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
+  return {
+    agent,
+    update: agent?.templateUpdate ?? null,
+    updateOne,
+    pending: agent !== undefined && updatingId === agent.id,
   };
 }

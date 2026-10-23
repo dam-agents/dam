@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { ProbeError } from "../domain/errors.js";
-import { errorMessage } from "../../shared/error-message.js";
+import { errorMessage, zodIssuesMessage } from "../../shared/error-message.js";
 
 const versionInfoSchema = z.object({
   serverVersion: z.string(),
@@ -70,9 +70,7 @@ export function createHttpVersionProbe(
         return err({
           kind: "probe-error",
           code: "malformed-response",
-          message: parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; "),
+          message: zodIssuesMessage(parsed.error),
         });
       }
 

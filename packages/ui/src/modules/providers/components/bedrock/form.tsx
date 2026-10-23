@@ -3,7 +3,6 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import {
@@ -11,7 +10,12 @@ import {
   type BedrockPins,
   PROVIDERS,
 } from "../../../../types.js";
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import {
+  ProviderFormShell,
+  ProviderSecretRow,
+  requiredSecretSchema,
+  stripWhitespace,
+} from "../provider-form-shell.js";
 
 const BEDROCK_DISPLAY_NAME = PROVIDERS.bedrock.displayName;
 const DEFAULT_REGION = "us-east-1";
@@ -19,9 +23,7 @@ const BEDROCK_CONSOLE_URL = "https://console.aws.amazon.com/bedrock/";
 const REGION_RE = new RegExp(`^(?:${BEDROCK_REGION_PATTERN})$`);
 
 const bedrockCredentialSchema = z.object({
-  value: z
-    .string()
-    .refine((v) => stripWhitespace(v).length > 0, { message: "Required" }),
+  value: requiredSecretSchema,
   region: z
     .string()
     .trim()
@@ -87,21 +89,14 @@ export function BedrockForm({
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      <div className="flex gap-3">
-        <Input
-          type="password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-          placeholder="Bedrock API key"
-          aria-label="Bedrock API key"
-          {...register("value")}
-        />
-        <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
-        </Button>
-      </div>
+      <ProviderSecretRow
+        register={register("value")}
+        placeholder="Bedrock API key"
+        ariaLabel="Bedrock API key"
+        isEdit={isEdit}
+        isSubmitting={isSubmitting}
+        submitDisabled={submitDisabled}
+      />
 
       {!isEdit && (
         <div className="grid grid-cols-1 gap-3">

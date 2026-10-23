@@ -1,16 +1,12 @@
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import {
   delegationFramesSchema,
   sessionHistorySchema,
-  type AppRouter,
 } from "agent-runtime-api";
 import { z } from "zod";
 
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { agentPodClient } from "../../../core/agent-pod-client.js";
 import { invocationScheduleId } from "../domain/target-name.js";
 import type { DelegationFramesPort } from "../services/delegation-frames.js";
-
-const CALL_TIMEOUT_MS = 15_000;
 
 const sessionListSchema = z.object({
   sessions: z.array(
@@ -45,15 +41,8 @@ function pickInvocationSession(
   return mine.at(-1)?.sessionId ?? null;
 }
 
-function clientFor(agentId: string, namespace: string) {
-  return createTRPCClient<AppRouter>({
-    links: [
-      httpBatchLink({
-        url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
-      }),
-    ],
-  });
-}
+// UNIT_BOUNDARY_DESCRIPTION: a frames read is two calls, and they share one budget so a slow target cannot eat the whole capture window before the frames are stored.
+const READ_TIMEOUT_MS = 15_000;
 
 async function logged<T>(
   what: string,
@@ -62,7 +51,7 @@ async function logged<T>(
   call: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   try {
-    return await call(AbortSignal.timeout(CALL_TIMEOUT_MS));
+    return await call(AbortSignal.timeout(READ_TIMEOUT_MS));
   } catch (err) {
     process.stderr.write(
       `[invocations] ${what} ${agentId} failed: ${err instanceof Error ? err.message : err}\n`,
@@ -78,7 +67,7 @@ export function createPodSessionClient(opts: {
   return {
     readFromTarget: (targetId) =>
       logged("frames read", targetId, null, async (signal) => {
-        const client = clientFor(targetId, opts.namespace);
+        const client = agentPodClient(targetId, opts.namespace);
         const { sessions } = sessionListSchema.parse(
           await client.sessions.list.query(undefined, { signal }),
         );
@@ -91,28 +80,25 @@ export function createPodSessionClient(opts: {
 
     async storeOnRoot(rootId, invocationId, frames) {
       if (!(await opts.isReady(rootId))) return null;
-      return logged("frames store on", rootId, null, async (signal) =>
+      return logged("frames store on", rootId, null, async () =>
         storedSchema.parse(
-          await clientFor(
+          await agentPodClient(
             rootId,
             opts.namespace,
-          ).sessions.storeDelegationFrames.mutate(
-            { invocationId, frames },
-            { signal },
-          ),
+          ).sessions.storeDelegationFrames.mutate({ invocationId, frames }),
         ),
       );
     },
 
     readFromRoot: (rootId, invocationId) =>
-      logged("frames read from", rootId, null, async (signal) => {
+      logged("frames read from", rootId, null, async () => {
         const stored = delegationFramesSchema
           .nullable()
           .parse(
-            await clientFor(
+            await agentPodClient(
               rootId,
               opts.namespace,
-            ).sessions.delegationFrames.query({ invocationId }, { signal }),
+            ).sessions.delegationFrames.query({ invocationId }),
           );
         return stored?.frames ?? null;
       }),

@@ -1,6 +1,6 @@
 import type { LibraryArtifact } from "api-server-api";
 import { ARTIFACT_TITLE_MAX_LENGTH } from "api-server-api";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -22,14 +22,6 @@ export function RenameArtifactDialog({ artifact, onClose }: Props) {
   const [title, setTitle] = useState(artifact.title);
   const update = useUpdateArtifact();
   const pending = update.isPending;
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !pending) onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [pending, onClose]);
 
   const save = () => {
     if (pending) return;

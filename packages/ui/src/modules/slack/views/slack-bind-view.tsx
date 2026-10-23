@@ -1,23 +1,14 @@
-import { useState } from "react";
-
 import { getBrand } from "../../../brand.js";
-import type { AgentView } from "../../../types.js";
+import type { BindPickerCopy } from "../../agents/components/bind/agent-bind-picker.js";
 import {
-  AgentBindPicker,
-  type BindPickerCopy,
-} from "../../agents/components/bind/agent-bind-picker.js";
-import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
-import { withCommandChips } from "../../agents/components/bind/command-chip.js";
+  readCallbackErrorFromSearch,
+  readFlowIdFromSearch,
+} from "../../agents/components/bind/bind-flow.js";
+import { ChannelBindView } from "../../agents/components/bind/channel-bind-view.js";
 import { isSlackDirectMessageId } from "../../sandboxes/lib/shared-channels.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import { useSlackBindFlow } from "../api/queries.js";
-import {
-  type BindErrorCopy,
-  bindErrorCopy,
-  callbackErrorCopy,
-  readCallbackErrorFromSearch,
-  readFlowIdFromSearch,
-} from "../lib/bind-flow.js";
+import { bindErrorCopy, callbackErrorCopy } from "../lib/bind-flow.js";
 import { SlackBindSuccess } from "./slack-bind-success.js";
 
 const flowId = readFlowIdFromSearch(window.location.search);
@@ -27,68 +18,28 @@ export function SlackBindView() {
   const brandShort = getBrand().short;
   const bind = useBindSlackChannel();
   const flow = useSlackBindFlow(flowId);
-  const [error, setError] = useState<BindErrorCopy | null>(null);
-  const [bound, setBound] = useState<{
-    agentId: string;
-    agentName: string;
-    slackChannelId: string;
-    channelTitle: string | null;
-  } | null>(null);
-
-  if (callbackError) {
-    return (
-      <TerminalError copy={callbackErrorCopy(callbackError, brandShort)} />
-    );
-  }
-  if (!flowId) {
-    return (
-      <TerminalError
-        copy={{
-          title: "This page is opened from Slack",
-          hint: `Run \`/${brandShort} bind\` in the channel to get a fresh link.`,
-          terminal: true,
-        }}
-      />
-    );
-  }
-  if (bound) {
-    return <SlackBindSuccess {...bound} />;
-  }
-  if (error?.terminal) {
-    return <TerminalError copy={error} />;
-  }
-  if (flow.isSuccess && !flow.data) {
-    return <TerminalError copy={bindErrorCopy("BAD_REQUEST", brandShort)} />;
-  }
-
-  const pick = (agent: AgentView) => {
-    setError(null);
-    bind.mutate(
-      { agentId: agent.id, flowId },
-      {
-        onSuccess: (res) =>
-          setBound({
-            agentId: agent.id,
-            agentName: agent.name,
-            slackChannelId: res.slackChannelId,
-            channelTitle: flow.data?.name ?? res.channelTitle,
-          }),
-        onError: (e) => {
-          const code = (e as { data?: { code?: string } }).data?.code;
-          setError(bindErrorCopy(code, brandShort));
-        },
-      },
-    );
-  };
-
-  const copy = pickerCopy(flow.data);
   return (
-    <AgentBindPicker
-      copy={copy}
-      error={error}
-      pending={bind.isPending}
-      onPick={pick}
-      onAgentCreated={() => setError(null)}
+    <ChannelBindView
+      messenger="slack"
+      flowId={flowId}
+      callbackError={callbackError}
+      missingFlow={{
+        title: "This page is opened from Slack",
+        hint: `Run \`/${brandShort} bind\` in the channel to get a fresh link.`,
+        terminal: true,
+      }}
+      flow={flow}
+      bind={bind}
+      bound={(agent, result, flow) => ({
+        agentId: agent.id,
+        agentName: agent.name,
+        slackChannelId: result.slackChannelId,
+        channelTitle: flow?.name ?? result.channelTitle,
+      })}
+      success={(bound) => <SlackBindSuccess {...bound} />}
+      pickerCopy={pickerCopy}
+      callbackCopy={(code) => callbackErrorCopy(code, brandShort)}
+      errorCopy={(code) => bindErrorCopy(code, brandShort)}
     />
   );
 }
@@ -118,12 +69,4 @@ function pickerCopy(
             name: channelName ? `#${channelName}` : null,
           },
   };
-}
-
-function TerminalError({ copy }: { copy: BindErrorCopy }) {
-  return (
-    <BindTerminalPage messenger="slack" title={copy.title}>
-      <p>{withCommandChips(copy.hint)}</p>
-    </BindTerminalPage>
-  );
 }

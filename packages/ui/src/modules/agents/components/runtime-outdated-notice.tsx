@@ -1,28 +1,18 @@
-import { useAgentsList } from "../api/queries.js";
-import { useUpdateSandbox } from "../hooks/use-update-sandbox.js";
-import { UpdateAvailableAction } from "./update-available-action.js";
+import { useAgentUpdateAction } from "../hooks/use-update-sandbox.js";
+import { AgentOutdatedNotice } from "./agent-outdated-notice.js";
 
 export function RuntimeOutdatedNotice({ agentId }: { agentId: string | null }) {
-  const agents = useAgentsList();
-  const { updateOne, updatingId } = useUpdateSandbox();
-  const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
-  const update = agent?.templateUpdate ?? null;
+  const { agent, update, updateOne, pending } = useAgentUpdateAction(agentId);
   if (!agent || !update) return null;
 
   return (
-    <div
-      role="status"
-      className="flex items-center gap-2 border-b border-border/50 px-4 py-2 text-xs text-muted-foreground"
+    <AgentOutdatedNotice
+      agent={agent}
+      onUpdate={() => void updateOne(agent)}
+      pending={pending}
     >
-      <span className="flex-1">
-        This agent’s version is too old for live updates, so the session list
-        and files can take a few seconds to update.
-      </span>
-      <UpdateAvailableAction
-        agent={agent}
-        onUpdate={() => void updateOne(agent)}
-        pending={updatingId === agent.id}
-      />
-    </div>
+      This agent’s version is too old for live updates, so the session list and
+      files can take a few seconds to update.
+    </AgentOutdatedNotice>
   );
 }

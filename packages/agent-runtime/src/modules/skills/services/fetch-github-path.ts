@@ -1,30 +1,14 @@
 import * as path from "node:path";
 import type { Result, SkillsDomainError } from "agent-runtime-api";
 import { ok } from "agent-runtime-api";
-import type {
-  DetectedOwnerRepo,
-  GitHubRestClient,
-  GithubFetchOpts,
-  SubtreeFile,
+import {
+  anonymousFirst,
+  isGithubNotFound,
+  type DetectedOwnerRepo,
+  type GitHubRestClient,
+  type SubtreeFile,
 } from "../infrastructure/github-rest-client.js";
 import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
-
-export function isGithubNotFound(
-  res: Result<unknown, SkillsDomainError>,
-): boolean {
-  return (
-    !res.ok &&
-    res.error.kind === "UpstreamGitHubError" &&
-    res.error.status === 404
-  );
-}
-
-async function anonymousFirst<T>(
-  call: (opts: GithubFetchOpts) => Promise<Result<T, SkillsDomainError>>,
-): Promise<Result<T, SkillsDomainError>> {
-  const anonymous = await call({ withAuth: false });
-  return isGithubNotFound(anonymous) ? call({ withAuth: true }) : anonymous;
-}
 
 export async function fetchGithubPath(
   deps: { github: GitHubRestClient; repo: LocalSkillRepository },

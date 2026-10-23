@@ -6,7 +6,6 @@ import { AddRow, ListSection } from "@/components/ui/list-section";
 
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
-import { sameSourcePath } from "../../lib/skill-identity.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
@@ -31,25 +30,8 @@ export function SkillSourcesSection({
   onRemove: (source: SkillSource) => void;
   onManageConnections: (() => void) | undefined;
 }) {
-  const {
-    sources,
-    sourcesLoaded,
-    skillsBySource,
-    loadingBySource,
-    revalidatingBySource,
-    errorBySource,
-    scannedAtBySource,
-    visibilityBySource,
-    stateLoaded,
-    installedRef,
-    mutationsDisabled,
-    busyKey,
-    busySourceId,
-    sets,
-    installed,
-  } = surface;
-  const { searching, shownSources, filteredBySource, suppressedBySource } =
-    derived;
+  const { sources, sourcesLoaded, hiddenSources, sets } = surface;
+  const { searching, shownSources } = derived;
 
   if (searching && shownSources.length === 0) return null;
 
@@ -70,7 +52,7 @@ export function SkillSourcesSection({
       addRow={onAddSource && <AddSourceRow onClick={onAddSource} />}
       isEmpty={sourcesLoaded && sources.length === 0}
       empty={
-        surface.hiddenSources.length > 0
+        hiddenSources.length > 0
           ? "Every skill source is hidden for this agent. Add source lists them to show again."
           : "No skill sources connected. Add a GitHub repo to browse and install its skills."
       }
@@ -82,31 +64,12 @@ export function SkillSourcesSection({
           <SkillSourceCard
             key={src.id}
             source={src}
-            skills={skillsBySource[src.id]}
-            filteredNames={filteredBySource?.get(src.id) ?? null}
-            loading={!!loadingBySource[src.id]}
-            revalidating={!!revalidatingBySource[src.id]}
-            error={errorBySource[src.id] ?? null}
-            scannedAt={scannedAtBySource[src.id]}
-            visibility={visibilityBySource[src.id]}
-            installedRef={installedRef}
-            busyKey={busyKey}
-            disabled={mutationsDisabled}
-            stateLoaded={stateLoaded}
-            readOnly={readOnly}
-            onToggle={surface.toggle}
-            onUpdate={surface.update}
-            onRescan={() => void surface.refreshSource(src.id)}
+            surface={surface}
+            derived={derived}
             onRemove={() => onRemove(src)}
             onHide={() => void surface.setSourceHidden(src.id, true)}
-            hasInstalled={installed.some(
-              (r) =>
-                r.source === src.gitUrl && sameSourcePath(r.path, src.path),
-            )}
             onOpenSkill={(skill) => onOpenSkill(src, skill)}
-            suppressedNames={suppressedBySource.get(src.id)}
             onToggleAll={(on, scope) => onToggleAll(src, on, scope)}
-            bulkBusy={busySourceId === src.id}
             onManageConnections={onManageConnections}
           />
         ))

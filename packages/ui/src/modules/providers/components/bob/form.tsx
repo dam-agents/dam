@@ -4,12 +4,15 @@ import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
 import { FormField } from "@/components/form-field";
-import { Button } from "@/components/ui/button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import {
+  ProviderFormShell,
+  ProviderSecretRow,
+  stripWhitespace,
+} from "../provider-form-shell.js";
 
 const BOB_KEY_PAGE_URL = "https://bob.ibm.com/admin/apikeys";
 
@@ -118,21 +121,14 @@ export function BobForm({
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      <div className="flex gap-3">
-        <Input
-          type="password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-          placeholder="bob_prod_bob-apikey_…"
-          aria-label="Bob API key"
-          {...register("value")}
-        />
-        <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
-        </Button>
-      </div>
+      <ProviderSecretRow
+        register={register("value")}
+        placeholder="bob_prod_bob-apikey_…"
+        ariaLabel="Bob API key"
+        isEdit={isEdit}
+        isSubmitting={isSubmitting}
+        submitDisabled={submitDisabled}
+      />
 
       <DisclosureToggle
         open={advancedOpen}

@@ -259,28 +259,6 @@ spec:
               value: {{ include "platform.featureModes" . | quote }}
             - name: FEATURE_DEFAULT_MODE
               value: {{ include "platform.featureDefault" . | quote }}
-            {{- with .Values.apiServer.platformProvider }}
-            {{- if and .baseUrl (or (dig "apiKeySecret" "name" "" .) .apiKey) }}
-            - name: PLATFORM_PROVIDER_BASE_URL
-              value: {{ .baseUrl | quote }}
-            - name: PLATFORM_PROVIDER_MODEL
-              value: {{ .model | quote }}
-            - name: PLATFORM_PROVIDER_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  {{- if dig "apiKeySecret" "name" "" . }}
-                  name: {{ .apiKeySecret.name }}
-                  key: {{ .apiKeySecret.key | default "api-key" }}
-                  {{- else }}
-                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
-                  key: PLATFORM_PROVIDER_API_KEY
-                  {{- end }}
-            {{- if dig "caConfigMap" "name" "" . }}
-            - name: PLATFORM_PROVIDER_CA_FILE
-              value: /etc/platform/platform-provider-ca/ca.crt
-            {{- end }}
-            {{- end }}
-            {{- end }}
             {{- with dig "curveBenderDeployment" dict .Values.apiServer }}
             {{- if or (dig "apiKeySecret" "name" "" .) .apiKey }}
             - name: CURVE_BENDER_DEPLOYMENT_API_KEY
@@ -662,11 +640,6 @@ spec:
               mountPath: /etc/platform/extra-cas
               readOnly: true
             {{- end }}
-            {{- if dig "platformProvider" "caConfigMap" "name" "" .Values.apiServer }}
-            - name: platform-provider-ca
-              mountPath: /etc/platform/platform-provider-ca
-              readOnly: true
-            {{- end }}
           {{- if .Values.probes.enabled }}
           # Startup shields boot from liveness: migrations run before any
           # listener exists, and at >1 replica the losers of the migration
@@ -748,17 +721,4 @@ spec:
         - name: extra-cas
           configMap:
             name: {{ include "platform.fullname" . }}-apiserver-extra-cas
-        {{- end }}
-        {{- with dig "platformProvider" "caConfigMap" dict .Values.apiServer }}
-        {{- if .name }}
-        # Optional: a missing ConfigMap or key leaves the built-in provider
-        # off, logged by the api-server, instead of blocking the pod's start.
-        - name: platform-provider-ca
-          configMap:
-            name: {{ .name }}
-            optional: true
-            items:
-              - key: {{ required "apiServer.platformProvider.caConfigMap.key is required with its name" .key }}
-                path: ca.crt
-        {{- end }}
         {{- end }}

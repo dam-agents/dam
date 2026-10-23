@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelIndicator } from "../../modules/sessions/components/model-indicator.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
-import { SessionPairPlaceholder } from "../../modules/sessions/components/session-pair-placeholder.js";
 
 const carried: HarnessCapability[] = [
   {
@@ -362,9 +361,10 @@ describe("session pair model choices", () => {
   // TEST_SCENARIO: Before the agent reports the harnesses it carries, the composer shows the pair a new session would run on, and the popover a loader.
   it("shows the expected pair and a loader before the agent answers", () => {
     const html = renderToStaticMarkup(
-      createElement(SessionPairPlaceholder, {
+      createElement(SessionPairPicker, {
         agentId: "agent",
         agentHarness: "pi",
+        pending: true,
         onConnectProviders: state.connectProviders,
       }),
     );
@@ -383,9 +383,10 @@ describe("session pair model choices", () => {
       )?.[0];
     const triggers = [
       renderToStaticMarkup(
-        createElement(SessionPairPlaceholder, {
+        createElement(SessionPairPicker, {
           agentId: "agent",
           agentHarness: "pi",
+          pending: true,
           onConnectProviders: state.connectProviders,
         }),
       ),
@@ -416,9 +417,10 @@ describe("session pair model choices", () => {
   it("labels the placeholder with the picked pair", () => {
     state.chosen = { harness: "pi", provider: "curve", model: "glm" };
     const html = renderToStaticMarkup(
-      createElement(SessionPairPlaceholder, {
+      createElement(SessionPairPicker, {
         agentId: "agent",
         agentHarness: "pi",
+        pending: true,
         onConnectProviders: state.connectProviders,
       }),
     );
@@ -428,9 +430,10 @@ describe("session pair model choices", () => {
   it("warns before the agent answers when no provider is connected", () => {
     state.noProviders = true;
     const html = renderToStaticMarkup(
-      createElement(SessionPairPlaceholder, {
+      createElement(SessionPairPicker, {
         agentId: "agent",
         agentHarness: "pi",
+        pending: true,
         onConnectProviders: state.connectProviders,
       }),
     );

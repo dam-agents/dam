@@ -1,6 +1,7 @@
 import type { SessionDirectoryEntry } from "agent-runtime-api";
 
 import type { HarnessClient } from "./harness-client.js";
+import { safeReport } from "./infrastructure/report.js";
 
 export interface SessionDirectoryReporter {
   report(): void;
@@ -43,19 +44,17 @@ export function createSessionDirectoryReporter(deps: {
     attempted = new Set(sessions.map((s) => s.sessionId));
     if (current === reported) return;
     inFlight = true;
-    try {
-      await deps.client.sessionDirectory.v1.report.mutate({
-        protocolVersion: "v1",
-        sessions,
-      });
-      reported = current;
-    } catch (err) {
-      deps.log(
-        `[runtime] session directory report failed: ${(err as Error).message}`,
-      );
-    } finally {
-      inFlight = false;
-    }
+    const sent = await safeReport(
+      () =>
+        deps.client.sessionDirectory.v1.report.mutate({
+          protocolVersion: "v1",
+          sessions,
+        }),
+      deps.log,
+      "[runtime] session directory report",
+    );
+    inFlight = false;
+    if (sent) reported = current;
   };
 
   /**

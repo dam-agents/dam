@@ -24,7 +24,7 @@ function fakeK8s(byOwner: boolean, host: boolean) {
 describe("finding the runner to read usage from", () => {
   it("an owner without a Secret of their own is read through the host runner's", async () => {
     const { k8s, selectors } = fakeK8s(false, true);
-    await readRunnerUsage(k8s, "owner-host", 0);
+    await readRunnerUsage(k8s, "owner-host");
     expect(selectors).toEqual([
       "agent-platform.ai/vm-runner-usage=true,agent-platform.ai/owner=owner-host",
       "agent-platform.ai/vm-runner-usage=true,!agent-platform.ai/owner",
@@ -33,7 +33,7 @@ describe("finding the runner to read usage from", () => {
 
   it("an owner with a runner pod of their own never falls back to another Secret", async () => {
     const { k8s, selectors } = fakeK8s(true, true);
-    await readRunnerUsage(k8s, "owner-pod", 0);
+    await readRunnerUsage(k8s, "owner-pod");
     expect(selectors).toHaveLength(1);
   });
 });

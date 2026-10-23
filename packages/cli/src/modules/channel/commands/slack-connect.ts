@@ -2,10 +2,8 @@ import { Command } from "commander";
 import { ChannelType } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
-import {
-  printServiceError,
-  exitOnServiceError,
-} from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { describeChannelError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_INVALID_INPUT,
@@ -73,23 +71,7 @@ export function buildSlackConnectCommand(deps: {
         }
 
         const res = await svc.connectSlack(agent.id, channelId, opts.ambient);
-        if (!res.ok) {
-          if (res.error.kind === "channel-conflict") {
-            process.stderr.write(
-              "error: this agent is already connected to that Slack channel\n",
-            );
-            process.exit(EXIT_INVALID_INPUT);
-          }
-          if (
-            res.error.kind === "channel-precondition" ||
-            res.error.kind === "invalid-input"
-          ) {
-            process.stderr.write(`error: ${res.error.message}\n`);
-            process.exit(EXIT_INVALID_INPUT);
-          }
-          printServiceError(res.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(res, host, describeChannelError);
 
         if (opts.ambient) {
           const slackCh = res.value.find(

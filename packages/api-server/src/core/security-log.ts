@@ -32,7 +32,7 @@ export interface SecurityFields {
   surface?: SecuritySurface;
   result?: "success" | "failure";
   decision?: "allow" | "deny" | "hold" | "expired";
-  agentId?: string;
+  agentId?: string | null;
   target?: string;
   sourceIp?: string;
   correlationId?: string;

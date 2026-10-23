@@ -1,5 +1,6 @@
 import { request } from "node:https";
 import { z } from "zod";
+import { createMemoryTtlStore } from "../../../core/ttl-store.js";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../agents/infrastructure/labels.js";
 import type { RunnerUsage } from "../domain/vm-usage.js";
@@ -41,18 +42,17 @@ const runnerUsageSchema = z.object({
   ),
 });
 
-const cache = new Map<string, { at: number; usage: RunnerUsage | null }>();
+const cache = createMemoryTtlStore<{ usage: RunnerUsage | null }>(CACHE_MS);
 
-// UNIT_BOUNDARY_DESCRIPTION: what the owner's runner says it uses, or null when the owner has no runner, its Secret is not written yet, or the runner cannot be read in time. Every caller treats null as unknown and refuses nothing on it, because the runner refuses a machine it has no room for on its own. One read serves an owner for CACHE_MS, so the home dashboard and a burst of creates cost one runner call.
+// UNIT_BOUNDARY_DESCRIPTION: what the owner's runner says it uses, or null when the owner has no runner, its Secret is not written yet, or the runner cannot be read in time. Every caller treats null as unknown and refuses nothing on it, because the runner refuses a machine it has no room for on its own. One read serves an owner for CACHE_MS, so the home dashboard and a burst of creates cost one runner call; an absent runner is cached too, as an answer rather than a miss.
 export async function readRunnerUsage(
   k8s: K8sClient,
   owner: string,
-  now: number = Date.now(),
 ): Promise<RunnerUsage | null> {
-  const hit = cache.get(owner);
-  if (hit && now - hit.at < CACHE_MS) return hit.usage;
+  const hit = await cache.peek(owner);
+  if (hit !== null) return hit.usage;
   const usage = await fetchUsage(k8s, owner).catch(() => null);
-  cache.set(owner, { at: now, usage });
+  await cache.set(owner, { usage });
   return usage;
 }
 

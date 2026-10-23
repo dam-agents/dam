@@ -33,3 +33,28 @@ export function isOnceFinished(
   const state = onceState(status);
   return state !== "pending" && state !== "delivering";
 }
+
+export interface LocalDateTime {
+  date: string;
+  time: string;
+}
+
+export function localDateTimeIn(
+  instant: Date,
+  timeZone: string,
+): LocalDateTime {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const f = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return {
+    date: `${f.year}-${f.month}-${f.day}`,
+    time: `${f.hour}:${f.minute}`,
+  };
+}

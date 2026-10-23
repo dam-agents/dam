@@ -2,6 +2,7 @@ import { ChevronRight, Renew } from "@carbon/icons-react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { PanelMessage } from "@/components/ui/empty-state";
 import { formatDateTime } from "@/lib/format-time";
 
 import type { Schedule, SessionView } from "../../../types.js";
@@ -117,9 +118,7 @@ export function ScheduleResultsModal({
           !sessionsQuery.isPending &&
           !sessionsQuery.isError &&
           sessions.length === 0 && (
-            <p className="px-5 py-6 text-center text-sm text-muted-foreground md:px-6">
-              No runs yet.
-            </p>
+            <PanelMessage className="px-5 md:px-6">No runs yet.</PanelMessage>
           )}
         {sessions.map((session) => (
           <ResultRow

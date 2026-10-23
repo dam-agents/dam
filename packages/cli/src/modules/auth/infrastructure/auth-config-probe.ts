@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { AuthConfigProbeError } from "../domain/errors.js";
-import { errorMessage } from "../../shared/error-message.js";
+import { errorMessage, zodIssuesMessage } from "../../shared/error-message.js";
 
 export interface AuthConfig {
   issuer: string;
@@ -62,9 +62,7 @@ export function createAuthConfigProbe(): AuthConfigProbe {
         return err({
           kind: "auth-config-probe",
           code: "malformed-response",
-          message: parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; "),
+          message: zodIssuesMessage(parsed.error),
         });
       }
 

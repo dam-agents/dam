@@ -38,4 +38,4 @@ function Callout({ className, tone, variant, size, ...props }: CalloutProps) {
   );
 }
 
-export { Callout, calloutVariants };
+export { Callout };

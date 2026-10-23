@@ -1,29 +1,19 @@
-import type { EventKind } from "agent-runtime-api";
+import {
+  composeOutcomeTurn,
+  deliverOutcomeTurn,
+  wakeOutcomeTurn,
+  type OutcomeTurnDeps,
+} from "../../../core/outcome-turn.js";
 import type { InvocationRow } from "../infrastructure/invocations-repository.js";
 import type { SubAgentOutcomesRepository } from "../infrastructure/sub-agent-outcomes-repository.js";
 
-const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CLAIM_BATCH = 100;
 export const CLAIM_LEASE_MS = 60_000;
 const MAX_OUTCOMES_PER_TURN = 20;
-const MAX_TURN_CHARS = 64 * 1024;
 const RETRY_BATCH = 200;
 
-export interface SubAgentOutcomeDeliveryDeps {
+export interface SubAgentOutcomeDeliveryDeps extends OutcomeTurnDeps {
   repo: SubAgentOutcomesRepository;
-  bump: (
-    agentId: string,
-    events: {
-      id: string;
-      kind: EventKind;
-      payload: unknown;
-      expiresAt: Date;
-    }[],
-  ) => Promise<number>;
-  enqueue: (agentId: string) => Promise<void>;
-  wakeUnlessStopped: (agentId: string) => Promise<boolean>;
-  pairFields: (agentId: string) => Promise<Record<string, unknown>>;
-  log: (msg: string) => void;
   now?: () => Date;
 }
 
@@ -32,36 +22,6 @@ function describe(row: InvocationRow): string {
   return row.status === "done"
     ? `${name} — done. Result:\n${JSON.stringify(row.result, null, 2)}`
     : `${name} — failed: ${row.errorReason ?? "no reason recorded"}`;
-}
-
-function composeTurn(rows: InvocationRow[]): {
-  told: InvocationRow[];
-  task: string;
-} {
-  const told: InvocationRow[] = [];
-  const parts: string[] = [];
-  let budget = MAX_TURN_CHARS;
-  for (const row of rows.slice(0, MAX_OUTCOMES_PER_TURN)) {
-    const part = describe(row);
-    if (told.length > 0 && part.length + 1 > budget) break;
-    const trimmed =
-      part.length + 1 > budget
-        ? `${part.slice(0, Math.max(budget - 1, 0))}\n(trimmed to fit this turn; call await_subagents with this id for the full result)`
-        : part;
-    told.push(row);
-    parts.push(trimmed);
-    budget -= trimmed.length + 1;
-  }
-  const task = [
-    told.length === 1
-      ? "A sub-agent you spawned has finished."
-      : `${told.length} sub-agents you spawned have finished.`,
-    "",
-    ...parts,
-    "",
-    "Carry on with whatever you were asked to do with this result. If nothing was asked, summarize it briefly.",
-  ].join("\n");
-  return { told, task };
 }
 
 function byDriver(rows: InvocationRow[]): Map<string, InvocationRow[]> {
@@ -74,30 +34,6 @@ function byDriver(rows: InvocationRow[]): Map<string, InvocationRow[]> {
   return grouped;
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Wakes a Driver for turns already in its outbox,
- * unless the user stopped it: a stop wins, so the turn waits there for the
- * Driver's next deliberate wake, and the rows are marked woken either way so
- * the hourly retry does not wake it behind the user's back. The stop check
- * and the wake are one conditional write on the Agent, so a stop landing in
- * between is never erased.
- */
-async function wake(
-  deps: SubAgentOutcomeDeliveryDeps,
-  driverAgentId: string,
-  rows: InvocationRow[],
-): Promise<void> {
-  try {
-    if (!(await deps.wakeUnlessStopped(driverAgentId)))
-      deps.log(
-        `[sub-agents] ${driverAgentId} is stopped; its outcome turn waits for the next wake`,
-      );
-    await deps.repo.markWoken(rows.map((r) => r.id));
-  } catch (err) {
-    deps.log(`[sub-agents] ${driverAgentId} did not wake: ${String(err)}`);
-  }
-}
-
 async function deliverTo(
   deps: SubAgentOutcomeDeliveryDeps,
   now: () => Date,
@@ -105,46 +41,42 @@ async function deliverTo(
   driverAgentId: string,
   rows: InvocationRow[],
 ): Promise<boolean> {
-  const { told, task } = composeTurn(rows);
-  const toldIds = new Set(told.map((r) => r.id));
+  const { told, task } = composeOutcomeTurn({
+    descriptions: rows.map(describe),
+    subject: (count) =>
+      count === 1
+        ? "A sub-agent you spawned has finished."
+        : `${count} sub-agents you spawned have finished.`,
+    trimHint: "call await_subagents with this id for the full result",
+    maxPerTurn: MAX_OUTCOMES_PER_TURN,
+  });
   await deps.repo.release(
-    rows.filter((r) => !toldIds.has(r.id)).map((r) => r.id),
+    rows.slice(told).map((r) => r.id),
     lease,
   );
 
-  const ids = told.map((r) => r.id);
+  const ids = rows.slice(0, told).map((r) => r.id);
   const firedAt = now().getTime();
-  try {
-    await deps.bump(driverAgentId, [
-      {
-        id: `sub-agent-outcome:${driverAgentId}:${ids[0]!}:${firedAt}`,
-        kind: "sub-agent-outcome",
-        payload: {
-          task,
-          ids,
-          ...(await deps.pairFields(driverAgentId)),
-        },
-        expiresAt: new Date(firedAt + EVENT_TTL_MS),
-      },
-    ]);
-  } catch (err) {
-    deps.log(
-      `[sub-agents] could not write the outcome turn for ${driverAgentId}: ${String(err)}`,
-    );
-    await deps.repo.release(ids, lease);
-    return false;
-  }
-  await deps.repo.markDelivered(ids, lease);
-
-  try {
-    await deps.enqueue(driverAgentId);
-  } catch (err) {
-    deps.log(
-      `[sub-agents] ${driverAgentId} not enqueued; the outbox sweep will carry it: ${String(err)}`,
-    );
-  }
-  await wake(deps, driverAgentId, told);
-  return true;
+  return deliverOutcomeTurn(deps, {
+    tag: "sub-agents",
+    agentId: driverAgentId,
+    task,
+    firedAt,
+    event: {
+      id: `sub-agent-outcome:${driverAgentId}:${ids[0]!}:${firedAt}`,
+      kind: "sub-agent-outcome",
+      payloadKey: "ids",
+      payloadValues: ids,
+    },
+    release: () => deps.repo.release(ids, lease),
+    markWritten: () => deps.repo.markDelivered(ids, lease),
+    wake: () =>
+      wakeOutcomeTurn(deps, {
+        tag: "sub-agents",
+        agentId: driverAgentId,
+        markWoken: () => deps.repo.markWoken(ids),
+      }),
+  });
 }
 
 /**
@@ -192,7 +124,11 @@ export function createSubAgentOutcomeWakeRetry(
     const rows = await deps.repo.listDeliveredUnwoken(RETRY_BATCH);
     const grouped = byDriver(rows);
     for (const [driverAgentId, driverRows] of grouped)
-      await wake(deps, driverAgentId, driverRows);
+      await wakeOutcomeTurn(deps, {
+        tag: "sub-agents",
+        agentId: driverAgentId,
+        markWoken: () => deps.repo.markWoken(driverRows.map((r) => r.id)),
+      });
     return grouped.size;
   };
 }

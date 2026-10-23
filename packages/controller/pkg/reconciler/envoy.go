@@ -159,7 +159,7 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	return out
 }
 
-var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "bob", "bedrock", "platform-llm"}
+var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "curve-bender-deployment", "bob", "bedrock"}
 
 func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
 	out := map[string]string{}

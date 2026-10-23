@@ -1,16 +1,11 @@
-import { Settings } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
 import { useNow } from "../../../hooks/use-now.js";
 import { useStore } from "../../../store.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
+import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import {
@@ -41,10 +36,6 @@ function EgressApprovalCard({
     approval,
     group.map((a) => a.id),
   );
-  const allowOnce = actions.find((a) => a.id === "allow-once");
-  const denyOnce = actions.find((a) => a.id === "dismiss");
-  const rest = actions.filter((a) => a !== allowOnce && a !== denyOnce);
-
   return (
     <div
       data-testid="chat-egress-approval"
@@ -61,58 +52,17 @@ function EgressApprovalCard({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {allowOnce && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={allowOnce.disabled}
-            tooltip={allowOnce.tooltip}
-            onClick={() => void allowOnce.run()}
-            className="bg-background"
-          >
-            {allowOnce.label}
-          </Button>
-        )}
-        {denyOnce && (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={denyOnce.disabled}
-            tooltip={denyOnce.tooltip}
-            onClick={() => void denyOnce.run()}
-            className="bg-background"
-          >
-            {denyOnce.label}
-          </Button>
-        )}
-        <RowActionsMenu
-          label="More approval actions"
+        <ApprovalActionsMenu
+          actions={actions}
+          inline={["allow-once", "dismiss"]}
           variant="outline"
-          className="h-8 w-8 bg-background"
-          disabled={inflight}
+          className="bg-background"
+          inflight={inflight}
+          hostLabel={hostLabel}
+          openSettings={openSettings}
+          onRun={(action) => void action.run()}
           contentProps={{ align: "start" }}
-        >
-          {rest.map((action) => (
-            <DropdownMenuItem
-              key={action.id}
-              disabled={action.disabled}
-              tone={action.danger ? "danger" : "default"}
-              onSelect={() => void action.run()}
-              title={action.tooltip}
-            >
-              {action.label}
-            </DropdownMenuItem>
-          ))}
-          {hostLabel !== null && (
-            <>
-              <DropdownMenuSeparator className="-mx-1" />
-              <DropdownMenuItem onSelect={openSettings}>
-                <Settings size={16} />
-                Network settings
-              </DropdownMenuItem>
-            </>
-          )}
-        </RowActionsMenu>
+        />
       </div>
       {queued > 0 && (
         <div className="flex flex-wrap items-center gap-x-2 text-2xs text-muted-foreground">

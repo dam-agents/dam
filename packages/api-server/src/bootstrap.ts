@@ -148,9 +148,9 @@ import {
   composeFirePair,
   composeScheduleModelForFire,
   composeHarnessConfigReset,
-  composeInitializationPairResolver,
   composeSessionChoicesValidator,
-  composeUnattendedAgentsReader,
+  createInitializationPairResolver,
+  createUnattendedAgentsReader,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
@@ -308,10 +308,7 @@ import {
 } from "./modules/connections/compose.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
-import {
-  startPlatformProviderSaga,
-  sweepManagedConnections,
-} from "./modules/connections/sagas/platform-provider.js";
+import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
 import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
@@ -660,7 +657,7 @@ export async function bootstrap() {
       (await agentsRepo.get(agentId))?.spec.harness,
   });
   let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
-  const resolveInitializationPair = composeInitializationPairResolver({
+  const resolveInitializationPair = createInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
       return firePair(agentId, "chat", preferred);
@@ -718,13 +715,13 @@ export async function bootstrap() {
       agentsRepo.isOwnedBy(agentId, ownerSub),
     spillLog: async (agentId, ref, output) => {
       try {
-        return await createAgentWorkspaceFiles(
-          `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
-        ).write({
-          path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
-          bytes: Buffer.from(output, "utf8"),
-          contentType: "text/plain",
-        });
+        return await createAgentWorkspaceFiles(agentId, config.namespace).write(
+          {
+            path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
+            bytes: Buffer.from(output, "utf8"),
+            contentType: "text/plain",
+          },
+        );
       } catch {
         return null;
       }
@@ -778,12 +775,6 @@ export async function bootstrap() {
     db,
     shareBaseUrl: config.shareBaseUrl,
     curveBenderDeployment: config.curveBenderDeployment !== null,
-    platformProvider: config.platformProvider && {
-      baseUrl: config.platformProvider.baseUrl,
-      model: config.platformProvider.model,
-      name: config.brand.name,
-      ca: config.platformProvider.ca,
-    },
     e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(
@@ -854,19 +845,8 @@ export async function bootstrap() {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
-      platformProviderKey: config.platformProvider?.apiKey ?? null,
-      platformProviderCa: config.platformProvider?.ca ?? null,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
-      platformProviderEnabled: async () =>
-        (
-          await composeFeaturesForOwner({
-            db,
-            owner: ownerId,
-            surface: "system",
-            modes: config.featureModes,
-          }).features.flags()
-        )["platform-provider"],
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -939,14 +919,13 @@ export async function bootstrap() {
         connectionId,
       ),
   );
-  const platformProviderSub = startPlatformProviderSaga(connectionsServiceFor);
   sweepManagedConnections(
     () => listManagedConnectionOwners(db),
     connectionsServiceFor,
   ).catch((err: unknown) =>
     getLogger().error(
       { reason: formatError(err) },
-      "connections.platform_provider_sweep_failed",
+      "connections.managed_provider_sweep_failed",
     ),
   );
   const publicAgentPageService = publicAgentPage.service;
@@ -1435,9 +1414,7 @@ export async function bootstrap() {
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
-          createAgentWorkspaceFiles(
-            `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
-          ),
+          createAgentWorkspaceFiles(agentId, config.namespace),
         listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
         agentIcon: agentIcons?.iconUrl ?? null,
@@ -1675,7 +1652,7 @@ export async function bootstrap() {
         ? { ownerSub: agent.owner, name: agent.name, disabled: agent.disabled }
         : null;
     },
-    unattendedCandidates: composeUnattendedAgentsReader(db),
+    unattendedCandidates: createUnattendedAgentsReader(db),
     enabledSchedules: async (agentIds) =>
       (await schedulesBoot.repo.listEnabledByAgents(agentIds)).map((s) => ({
         agentId: s.agentId,
@@ -1701,7 +1678,6 @@ export async function bootstrap() {
       return grantedTemplates.templateOf(agentId, pair.provider);
     },
     uiBaseUrl: config.uiBaseUrl,
-    brandName: config.brand.name,
     delayMs: config.outageAlertDelayMinutes * 60_000,
   });
   const outageAlertsSaga = outageAlerts.startSaga();
@@ -2333,7 +2309,6 @@ export async function bootstrap() {
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
     attachFirstProviderSub.unsubscribe();
-    platformProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();

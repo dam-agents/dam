@@ -33,14 +33,6 @@ export const UNIT_NAMES: Readonly<Record<SpendUnit, string>> = {
   free: "USD",
 };
 
-export const UNIT_EXPLANATIONS: Readonly<Record<SpendUnit, string | null>> = {
-  usd: null,
-  usd_list:
-    "Subscription value: what calls on the Claude subscription would cost at Anthropic's API prices. The subscription is not billed per call.",
-  bobcoin: "Bobcoins: the credits that Bob counts in each reply.",
-  free: null,
-};
-
 export const NO_LIMIT_REASONS: Readonly<
   Record<"free" | "not_priced" | "not_metered", string>
 > = {
