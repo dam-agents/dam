@@ -49,8 +49,10 @@ export function ArtifactRowMenuItems({
 }) {
   const { Item, Separator } = MENU_PARTS[menu];
   const showConfirm = useStore((s) => s.showConfirm);
-  const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openArtifactId = useStore((s) =>
+    s.dock?.kind === "artifact" ? s.dock.id : null,
+  );
+  const setDock = useStore((s) => s.setDock);
   const { mutate: deleteArtifact } = useDeleteArtifact();
   const startSession = useStartArtifactSession(artifact);
 
@@ -62,7 +64,7 @@ export function ArtifactRowMenuItems({
     );
     if (!confirmed) return;
 
-    if (openArtifactId === artifact.id) setOpenArtifactId(null);
+    if (openArtifactId === artifact.id) setDock(null);
     deleteArtifact({ id: artifact.id });
   };
 

@@ -18,7 +18,7 @@ interface Props {
 }
 
 export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
-  const close = useStore((s) => s.setOpenProcessOutputKey);
+  const setDock = useStore((s) => s.setDock);
   const { data: list, isPending } = useProcesses(agentId, {
     enabled: true,
     poll: false,
@@ -37,7 +37,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
           className="shrink-0"
           aria-label="Back to processes"
           tooltip="Back to processes"
-          onClick={() => close(null)}
+          onClick={() => setDock(null)}
         >
           <ArrowLeft size={16} />
         </Button>

@@ -11,18 +11,10 @@ import {
   createBrowserSlice,
 } from "./modules/browser/store.js";
 import {
-  type ChangesSlice,
-  createChangesSlice,
-} from "./modules/changes/store.js";
-import {
   createFeaturesSlice,
   type FeaturesSlice,
 } from "./modules/features/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
-import {
-  createInvocationsSlice,
-  type InvocationsSlice,
-} from "./modules/invocations/store.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -72,12 +64,10 @@ export type PlatformStore = DialogSlice &
   SessionsSlice &
   FilesSlice &
   ArtifactsSlice &
-  InvocationsSlice &
   BrowserSlice &
   FeaturesSlice &
   PermissionsSlice &
   ProcessesSlice &
-  ChangesSlice &
   SidePanelSlice &
   SpendSlice;
 
@@ -91,12 +81,10 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createSessionsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
-  ...createInvocationsSlice(...a),
   ...createBrowserSlice(...a),
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
   ...createProcessesSlice(...a),
-  ...createChangesSlice(...a),
   ...createSidePanelSlice(...a),
   ...createSpendSlice(...a),
 }));

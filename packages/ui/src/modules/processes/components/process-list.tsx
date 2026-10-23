@@ -18,7 +18,9 @@ interface Props {
 
 export function ProcessList({ agentId, list, alwaysOn }: Props) {
   const now = useNow(1_000);
-  const openOutputKey = useStore((s) => s.openProcessOutputKey);
+  const openOutputKey = useStore((s) =>
+    s.dock?.kind === "process-output" ? s.dock.key : null,
+  );
   const toggleOutput = useToggleProcessOutput();
   const groups = useMemo(
     () => groupProcesses(list.running, alwaysOn),

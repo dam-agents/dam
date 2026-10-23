@@ -17,7 +17,7 @@ vi.hoisted(() => {
 function chatStore() {
   useStore.getState().resetChatContext();
   useStore.setState({ view: "chat", selectedAgent: "a1", dialog: null });
-  useStore.getState().setOpenArtifactId("art-1");
+  useStore.getState().setDock({ kind: "artifact", id: "art-1" });
   return useStore;
 }
 
@@ -30,7 +30,7 @@ describe("leaving the chat with a docked artifact", () => {
     store.getState().selectAgent("a2");
     expect(store.getState().dialog).toBeNull();
     expect(store.getState().selectedAgent).toBe("a2");
-    expect(store.getState().openArtifactId).toBeNull();
+    expect(store.getState().dock).toBeNull();
   });
 
   // TEST_SCENARIO: a sidebar Agent click with an unsaved edit asks, and "Keep editing" stays in the same chat with the artifact still open.
@@ -42,7 +42,7 @@ describe("leaving the chat with a docked artifact", () => {
     store.getState().closeDialog(false);
     await settle();
     expect(store.getState().selectedAgent).toBe("a1");
-    expect(store.getState().openArtifactId).toBe("art-1");
+    expect(store.getState().dock).toEqual({ kind: "artifact", id: "art-1" });
     expect(store.getState().openArtifactDirty).toBe(true);
   });
 
@@ -54,6 +54,6 @@ describe("leaving the chat with a docked artifact", () => {
     store.getState().closeDialog(true);
     await settle();
     expect(store.getState().view).toBe("home");
-    expect(store.getState().openArtifactId).toBeNull();
+    expect(store.getState().dock).toBeNull();
   });
 });

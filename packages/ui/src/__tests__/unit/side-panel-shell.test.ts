@@ -11,8 +11,7 @@ const fake = vi.hoisted(() => ({
   toolbar: false,
   desktop: false,
   store: {
-    openFilePath: null as string | null,
-    openArtifactId: null as string | null,
+    dock: null,
     setSidePanelTab: () => {},
     sidePanelMaximized: null as string | null,
     setSidePanelMaximized: () => {},
