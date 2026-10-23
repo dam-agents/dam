@@ -8,6 +8,8 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
@@ -61,28 +63,41 @@ function KitUpdateBarContent({
     start.mutate(agentId, {
       onSuccess: (status) => setStartedUpdate(status.pending),
     });
+  const starting = start.isPending || startedUpdate !== null;
+  const busy = starting || skip.isPending;
 
   return (
     <div className="px-4 md:px-8" data-testid="kit-update-bar">
       <ChatColumn>
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-kit-line bg-kit-surface px-4 py-2">
-          <span className="min-w-0 truncate text-sm font-medium text-kit">
-            {pending
-              ? `${kitName} update in progress`
-              : `${kitName} has a newer version`}
+        <div
+          aria-busy={starting}
+          className={cn(
+            "mb-3 flex items-center justify-between gap-3 rounded-xl border border-kit-line bg-kit-surface px-4 py-2 transition-opacity",
+            starting && "opacity-60",
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-kit">
+            {starting && <Spinner size={14} className="text-kit" />}
+            <span className="truncate">
+              {starting
+                ? `Starting the ${kitName} update…`
+                : pending
+                  ? `${kitName} update in progress`
+                  : `${kitName} has a newer version`}
+            </span>
           </span>
           <div className="flex shrink-0 items-center gap-1">
             {!pending && (
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={skip.isPending || start.isPending}
+                disabled={busy}
                 onClick={() => skip.mutate(agentId)}
               >
                 Skip this version
               </Button>
             )}
-            {pending && sessionId && (
+            {pending && sessionId && !starting && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -101,16 +116,16 @@ function KitUpdateBarContent({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={start.isPending || skip.isPending}
+                  disabled={busy}
                   tone="accent"
                   onClick={startUpdate}
                 >
-                  <Renew size={16} />
-                  {start.isPending
-                    ? "Starting…"
-                    : pending
-                      ? "Start again"
-                      : "Update"}
+                  {starting ? (
+                    <Spinner size={16} className="text-current" />
+                  ) : (
+                    <Renew size={16} />
+                  )}
+                  {starting ? "Starting…" : pending ? "Start again" : "Update"}
                 </Button>
               </HoverCardTrigger>
               <HoverCardContent
