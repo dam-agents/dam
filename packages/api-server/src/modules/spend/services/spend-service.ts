@@ -331,10 +331,12 @@ export function createSpendService(deps: {
       return foldTurns(windows, rows);
     },
 
-    async calls({ routerCallIds }) {
+    async calls({ agentId, routerCallIds }) {
+      const subAgentIds = await deps.subAgents.spawnSessions(agentId);
       return {
         calls: await deps.ledger.callCosts({
           ownerSub: deps.ownerSub,
+          callingAgentIds: [agentId, ...subAgentIds.keys()],
           routerCallIds,
         }),
       };

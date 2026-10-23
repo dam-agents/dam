@@ -39,10 +39,17 @@ export function createAgentSpend(deps: {
   return {
     async callCosts(agentId, routerCallIds) {
       if (routerCallIds.length === 0) return [];
-      const ownerSub = await deps.owners.ownerOf(
-        await deps.payers.payerOf(agentId),
-      );
-      return ownerSub ? deps.ledger.callCosts({ ownerSub, routerCallIds }) : [];
+      const [ownerSub, subAgentIds] = await Promise.all([
+        deps.owners.ownerOf(await deps.payers.payerOf(agentId)),
+        deps.subAgents.spawnSessions(agentId),
+      ]);
+      return ownerSub
+        ? deps.ledger.callCosts({
+            ownerSub,
+            callingAgentIds: [agentId, ...subAgentIds.keys()],
+            routerCallIds,
+          })
+        : [];
     },
 
     async read(query) {

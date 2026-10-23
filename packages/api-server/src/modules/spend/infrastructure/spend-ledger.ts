@@ -22,11 +22,12 @@ import type {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import type { BreakdownRow } from "../domain/breakdown.js";
-import type {
-  CallAmounts,
-  CallWindow,
-  DayCounter,
-  SpendRow,
+import {
+  utcDay,
+  type CallAmounts,
+  type CallWindow,
+  type DayCounter,
+  type SpendRow,
 } from "../domain/ledger.js";
 import type { AgentLedgerRow } from "../domain/agent-spend.js";
 import type { SessionLedgerRow } from "../domain/sessions.js";
@@ -88,6 +89,7 @@ export interface SpendLedger {
   }): Promise<TurnWindowRow[]>;
   callCosts(query: {
     ownerSub: string;
+    callingAgentIds: readonly string[];
     routerCallIds: readonly string[];
   }): Promise<SpendCallCost[]>;
   callDetailSince(): Promise<Date | null>;
@@ -538,7 +540,13 @@ export function createSpendLedger(db: Db): SpendLedger {
         },
       );
       return rows.map((r) => {
-        const time = times.get(`${r.callingAgentId}\u0000${r.sessionId}`);
+        const measured = times.get(`${r.callingAgentId}\u0000${r.sessionId}`);
+        // A day read prunes the calls older than 30 days, so a stale firstAt
+        // would name a later day than firstDay; keep days only then.
+        const time =
+          measured && utcDay(new Date(measured.firstAt)) === r.firstDay
+            ? measured
+            : undefined;
         return {
           callingAgentId: r.callingAgentId,
           sessionId: r.sessionId,
@@ -688,8 +696,8 @@ export function createSpendLedger(db: Db): SpendLedger {
       }));
     },
 
-    async callCosts({ ownerSub, routerCallIds }) {
-      if (routerCallIds.length === 0) return [];
+    async callCosts({ ownerSub, callingAgentIds, routerCallIds }) {
+      if (callingAgentIds.length === 0 || routerCallIds.length === 0) return [];
       const rows = await db
         .select({
           routerCallId: spendCalls.routerCallId,
@@ -701,6 +709,7 @@ export function createSpendLedger(db: Db): SpendLedger {
         .where(
           and(
             eq(spendCalls.ownerSub, ownerSub),
+            inArray(spendCalls.callingAgentId, [...callingAgentIds]),
             inArray(spendCalls.routerCallId, [...routerCallIds]),
           ),
         );
