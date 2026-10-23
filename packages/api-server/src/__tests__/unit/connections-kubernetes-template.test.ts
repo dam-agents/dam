@@ -7,28 +7,7 @@ import {
   UPSTREAM_CA_SECRET_FIELD,
 } from "../../modules/connections/domain/connection-sds.js";
 import { contributionHash } from "../../modules/runtime-delivery/domain/contribution-hash.js";
-
-const CA_PEM = `-----BEGIN CERTIFICATE-----
-MIIDMjCCAhqgAwIBAgIUMiX4bseuRVT+8L+EjCMZs2MIUAMwDQYJKoZIhvcNAQEL
-BQAwIDEeMBwGA1UEAwwVcGxhdGZvcm0tdGVzdC1jbHVzdGVyMB4XDTI2MDcwMjEy
-MjM1MloXDTM2MDYyOTEyMjM1MlowIDEeMBwGA1UEAwwVcGxhdGZvcm0tdGVzdC1j
-bHVzdGVyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwI5z1cP2t3k2
-wu/2LlckhwjH5UhC7WJ6hgTh9bFnvK3IKa3dvy3/yqECvK93JRMh/ADSaM9w0F3d
-9q1UMidXy8T/ulb4BFNDOh07DE0W8WVbrHHZ6mXVwdSfKyB40zZ37yW0LzTLUjv7
-fAbnABEmcHl7nbTKf2AfidjiU+wOr7QC/R66aLkgC3uqU45mq01bnaEwjmWTb6RY
-c1GTg29HxpuBsAgCZwmwiQFYMqUbEu1i5pxL5vTIkCMw3PuPi3sOR4gF9OKs5FmW
-7S+Hr9wUE1LEx6au0fVEhgDwTBPzqHCx/VXdqw3tkv1fP/TS+K4pTLXNinXwwZ2C
-PF4DLJHsuQIDAQABo2QwYjAdBgNVHQ4EFgQUrbEUzJTKwRH5SYZEEFswPNzV53Qw
-HwYDVR0jBBgwFoAUrbEUzJTKwRH5SYZEEFswPNzV53QwDwYDVR0TAQH/BAUwAwEB
-/zAPBgNVHREECDAGhwR/AAABMA0GCSqGSIb3DQEBCwUAA4IBAQB9MglpUjdZ2vUg
-5li/5lKmV3I+6SvxD40fjuNAMGTxcPWsiYDh75C4LhhlykosPRXPIDYrB//gHbLp
-hvl64Ektlaoqdg8Fgy7hlJWCyLtZfCS1g3Z0oZ8nbHCNt+zuT1cFKdzeHKzAHSrD
-odtUCpQz+iQ0G+u48thi1UJ+NGCkcXC72F+wYYQsKteY2qqI1R/SaXTf0zWOFUMR
-iRE24pgARhd1wueI7Cpdk7FG9lZAHawuOXWODa4sbT182EcVzjG7/Ncwvjpq1Owi
-JG2IiAQ+BegQRj1cxNtzkakdTQWYSSw9TdnevQSjjcjPN3jh0kbj0PnSLqhEUNzv
-HUAT/xFb
------END CERTIFICATE-----
-`;
+import { TEST_CLUSTER_CERT as CA_PEM } from "../helpers/test-cluster-cert.js";
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };

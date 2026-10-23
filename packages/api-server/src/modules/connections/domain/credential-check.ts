@@ -1,6 +1,8 @@
 import {
   credentialCheckSchema,
+  githubHostOf,
   type Connection,
+  type Contribution,
   type CredentialCheck,
   type ProviderKeyCheck,
 } from "api-server-api";
@@ -8,21 +10,51 @@ import { keyCheckOf } from "./provider-key-check.js";
 
 export const CREDENTIAL_CHECK_INPUT_KEY = "credentialCheck";
 
-export type CredentialCheckKind = "github-user";
+export type CredentialCheckKind = "github-user" | "kubernetes-token";
 
 export type CredentialProbeOutcome = Omit<CredentialCheck, "at">;
+
+export interface CredentialProbeTarget {
+  host: string;
+  port?: number;
+  caPem?: string;
+}
 
 export interface CredentialProbe {
   probe(
     kind: CredentialCheckKind,
-    host: string,
+    target: CredentialProbeTarget,
     value: string,
   ): Promise<CredentialProbeOutcome>;
 }
 
+export function credentialProbeTarget(
+  kind: CredentialCheckKind,
+  contributions: readonly Contribution[],
+  caPem: string | undefined,
+): CredentialProbeTarget {
+  if (kind === "github-user") {
+    return { host: githubHostOf(contributions) ?? "github.com" };
+  }
+  const inject = contributions.find((c) => c.kind === "egress-inject");
+  if (inject?.kind !== "egress-inject") {
+    throw new Error("a Kubernetes connection injects its token on one host");
+  }
+  return {
+    host: inject.host,
+    ...(inject.port ? { port: inject.port } : {}),
+    ...(caPem ? { caPem } : {}),
+  };
+}
+
 export class CredentialCheckNotPassed extends Error {
   constructor(readonly check: CredentialCheck) {
-    super(check.reason ?? `the credential check ${check.status}`);
+    super(
+      check.reason ??
+        (check.status === "passed"
+          ? "the credential expires within a day"
+          : `the credential check ${check.status}`),
+    );
   }
 }
 

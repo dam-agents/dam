@@ -116,7 +116,9 @@ For `dam connection connect` and `dam connection update`, the user types the sec
 3. The command ends when the user saves (exit `0`; `--json` gives the connection's ID), cancels, or lets the link expire after ten minutes (exit `1`).
    Run it again for a new link.
 4. Read the `check` in the `--json` output before you tell the user the connection is ready.
-   A GitHub token is checked when it is saved: `"status": "passed"` names the `account`, so tell the user which account it is.
+   A GitHub or Kubernetes token is checked when it is saved: `"status": "passed"` names the `account`, so tell the user which account it is.
+   When `expiresAt` is set, tell the user when the token expires; the CLI warns when that is within a day.
+   A Kubernetes token's `account` is the user it acts as, such as `system:serviceaccount:<namespace>:<name>`.
    `"failed"` or `"unchecked"` means the user saved it anyway after a warning: tell them the `reason` and that agents using it may be refused, and offer `dam connection update` to replace it.
 
 The page takes a multi-line key (a GitHub App private key in PEM) as well, so don't build a `--private-key "$(cat …)"` command.

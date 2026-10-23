@@ -1,4 +1,8 @@
-import type { CredentialCheck, SecretRequestDestination } from "api-server-api";
+import {
+  type CredentialCheck,
+  credentialExpiresSoon,
+  type SecretRequestDestination,
+} from "api-server-api";
 
 export function readSecretRequestId(search: string): string | null {
   const id = new URLSearchParams(search).get("request");
@@ -45,7 +49,7 @@ export function credentialCheckDetails(check: CredentialCheck): string[] {
   if (check.account) details.push(`Account: ${check.account}`);
   if (check.expiresAt) {
     details.push(
-      `Expires: ${new Date(check.expiresAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`,
+      `Expires: ${new Date(check.expiresAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,
     );
   }
   if (check.scopes) {
@@ -60,6 +64,12 @@ export function heldCheckCopy(check: CredentialCheck): {
   title: string;
   hint: string;
 } {
+  if (check.status === "passed" && credentialExpiresSoon(check)) {
+    return {
+      title: "This secret expires within a day",
+      hint: "Agents that use it will be refused once it expires. Enter a longer-lived secret above, or save it anyway.",
+    };
+  }
   return check.status === "failed"
     ? {
         title: "This secret did not pass the check",

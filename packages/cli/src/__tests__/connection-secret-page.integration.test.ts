@@ -315,6 +315,26 @@ describe("connection secrets entered on the web page (integration)", () => {
     );
   });
 
+  // TEST_SCENARIO: a token that passed but expires within a day, such as a service-account token EKS shortened to 24 hours, is reported with its expiry and the command to replace it, so the agent tells the user before it stops working.
+  it("connect warns of a token that expires within a day", async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    fixture = await startFixture([], { check: { ...PASSED, expiresAt } });
+    const r = await dam([
+      "connection",
+      "connect",
+      "github-pat",
+      "--name",
+      "work-github",
+      "--value",
+      "ghp_flag",
+    ]);
+    expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+    expect(r.stderr).toContain(
+      `warning: work-github expires within a day, at ${expiresAt.slice(0, 16).replace("T", " ")} UTC`,
+    );
+    expect(r.stderr).toContain("dam connection update work-github");
+  });
+
   // TEST_SCENARIO: a rotation without the new value asks the server for a link for that connection and reports the update once the user saved it.
   it("update waits for the secret entered on the page", async () => {
     fixture = await startFixture([
@@ -444,6 +464,16 @@ describe("connection secrets entered on the web page (integration)", () => {
     const r = await dam(["connection", "test", "my-github"]);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain("has no credential check");
+  });
+
+  // TEST_SCENARIO: the table shows when each checked credential expires, so a short-lived token is visible before it stops working.
+  it("list shows when a checked token expires", async () => {
+    fixture = await startFixture([], { check: PASSED });
+    const r = await dam(["connection", "list"]);
+    expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+    const [header, row] = r.stdout.split("\n");
+    expect(header).toMatch(/EXPIRES/);
+    expect(row).toContain("2026-11-21 10:00 UTC");
   });
 
   // TEST_SCENARIO: a token saved after a failed check is still active, since it is stored and granted, but the table says the check failed, so it does not read like a healthy connection.

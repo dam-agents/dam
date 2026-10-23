@@ -589,6 +589,10 @@ export type {
   SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
+  CREDENTIAL_EXPIRES_SOON_MS,
+  credentialExpiresSoon,
+} from "./modules/connections/credential-expiry.js";
+export {
   authConfig as connectionAuthConfigSchema,
   providerKeyCheck as providerKeyCheckSchema,
   credentialCheck as credentialCheckSchema,

@@ -1,9 +1,23 @@
-import type { CredentialCheck } from "api-server-api";
+import { type CredentialCheck, credentialExpiresSoon } from "api-server-api";
+
+export function formatExpiry(expiresAt: string): string {
+  return `${expiresAt.slice(0, 16).replace("T", " ")} UTC`;
+}
 
 export function credentialCheckWarning(
   name: string,
   check: CredentialCheck | undefined,
 ): string | null {
+  if (
+    check?.status === "passed" &&
+    check.expiresAt &&
+    credentialExpiresSoon(check)
+  ) {
+    return (
+      `warning: ${name} expires within a day, at ${formatExpiry(check.expiresAt)}.\n` +
+      `  Replace it with a longer-lived one with \`dam connection update ${name}\`.\n`
+    );
+  }
   if (!check || check.status === "passed") return null;
   const what =
     check.status === "failed"
