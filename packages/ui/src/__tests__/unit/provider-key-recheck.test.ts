@@ -150,7 +150,8 @@ describe("provider key recheck", () => {
       ],
     ]);
     const row = rowOf(render(), "Edit Anthropic");
-    expect(row).toContain('aria-label="Edit Anthropic, key rejected"');
+    expect(row).toContain('aria-label="Edit Anthropic, Key rejected on');
+    expect(row).toContain("HTTP 401");
     expect(row).toContain("Configured · Key rejected");
     expect(row).not.toContain("Configured · Connected");
   });
@@ -176,6 +177,9 @@ describe("provider key recheck", () => {
     const row = rowOf(render(), "Edit OpenAI");
     expect(row).toContain("Configured · Unverified");
     expect(row).not.toContain("Configured · Connected");
+    expect(row).toContain(
+      'aria-label="Edit OpenAI, Could not verify the key on',
+    );
     expect(row).toContain("HTTP 503");
   });
 

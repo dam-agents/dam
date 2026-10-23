@@ -43,7 +43,15 @@ export function ProviderRow({
   footer,
 }: Props) {
   const name = givenName ?? providerName(type);
-  const rejected = connected && keyCheck?.result === "refused";
+  const problem =
+    connected && keyCheck && keyCheck.result !== "ok" ? keyCheck : null;
+  const problemText = problem
+    ? `${
+        problem.result === "refused"
+          ? "Key rejected"
+          : "Could not verify the key"
+      } on ${formatTimestamp(problem.checkedAt)} (${problem.detail})`
+    : null;
   const body = (
     <>
       <CardIcon provider={type} templateId={templateId} />
@@ -60,6 +68,7 @@ export function ProviderRow({
             degraded={degraded}
             keyCheck={keyCheck}
             checking={!!checking}
+            reason={problemText}
           />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
@@ -85,7 +94,7 @@ export function ProviderRow({
   );
   const layout = "flex w-full items-start gap-3 p-4";
   const label = connected
-    ? `${connectedAction} ${name}${rejected ? ", key rejected" : ""}`
+    ? `${connectedAction} ${name}${problemText ? `, ${problemText}` : ""}`
     : `Connect ${name}`;
 
   if (footer) {
@@ -130,11 +139,13 @@ function ConnectionBadge({
   degraded,
   keyCheck,
   checking,
+  reason,
 }: {
   connected: boolean;
   degraded: boolean;
   keyCheck: ProviderKeyCheck | null | undefined;
   checking: boolean;
+  reason: string | null;
 }) {
   const pill = "ml-auto shrink-0 gap-1.5";
   if (!connected)
@@ -152,11 +163,7 @@ function ConnectionBadge({
     );
   if (keyCheck?.result === "refused")
     return (
-      <Badge
-        variant="danger"
-        className={pill}
-        title={`Key rejected on ${formatTimestamp(keyCheck.checkedAt)} (${keyCheck.detail})`}
-      >
+      <Badge variant="danger" className={pill} title={reason ?? undefined}>
         Configured · Key rejected
       </Badge>
     );
@@ -172,11 +179,7 @@ function ConnectionBadge({
     );
   if (keyCheck?.result === "unverified")
     return (
-      <Badge
-        variant="warning"
-        className={pill}
-        title={`Could not verify the key on ${formatTimestamp(keyCheck.checkedAt)}: ${keyCheck.detail}`}
-      >
+      <Badge variant="warning" className={pill} title={reason ?? undefined}>
         Configured · Unverified
       </Badge>
     );
