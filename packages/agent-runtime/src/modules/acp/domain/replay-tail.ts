@@ -1,4 +1,4 @@
-import { isNonNullObject, parseFrame } from "./frames.js";
+import { isNonNullObject, parseFrame } from "api-server-api";
 
 type FrameShape =
   | { kind: "chunk"; run: string }

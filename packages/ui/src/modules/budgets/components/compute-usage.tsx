@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { formatGi } from "../../../lib/format-size.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useBudgetReserved } from "../api/queries.js";
-import { formatCores, formatGi } from "../lib/format.js";
+import { formatCores } from "../lib/format.js";
 import {
   BYTES_PER_MI,
   type ComputeCellState,

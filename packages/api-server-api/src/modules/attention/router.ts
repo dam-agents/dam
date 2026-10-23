@@ -8,6 +8,7 @@ import { t } from "../../trpc.js";
 
 import {
   attentionDismissInputSchema,
+  attentionListForOwnerPageInputSchema,
   attentionSessionsForAgentInputSchema,
 } from "./schemas.js";
 
@@ -15,6 +16,11 @@ export const attentionRouter = t.router({
   listForOwner: readAgentProcedure
     .use(requireWildcardBinding)
     .query(({ ctx }) => ctx.attention.listForOwner()),
+
+  listForOwnerPage: readAgentProcedure
+    .use(requireWildcardBinding)
+    .input(attentionListForOwnerPageInputSchema)
+    .query(({ ctx, input }) => ctx.attention.listForOwnerPage(input)),
 
   sessionsForAgent: readAgentProcedure
     .input(attentionSessionsForAgentInputSchema)

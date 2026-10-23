@@ -6,39 +6,42 @@ import {
   EXIT_AGENT_NOT_RESOLVED,
   EXIT_RUNTIME_FAILURE,
 } from "../../shared/exit-codes.js";
-import { printServiceError, printTrpcError } from "../../shared/trpc/print.js";
+import {
+  exitOnServiceError,
+  printTrpcError,
+  serviceErrorDescription,
+  type ErrorDescription,
+} from "../../shared/trpc/print.js";
 import {
   AgentUnavailableAtTransportError,
   NonJsonAnswerAtTransportError,
 } from "../../shared/trpc/trpc-client.js";
 import { startFailure } from "./wait-or-exit.js";
 
-function exitCodeForResolveError(error: ResolveError): number {
-  return error.kind === "not-found" || error.kind === "ambiguous"
-    ? EXIT_AGENT_NOT_RESOLVED
-    : EXIT_RUNTIME_FAILURE;
-}
-
-function printResolveError(error: ResolveError, host: string): void {
+export function describeResolveError(
+  error: ResolveError,
+  host: string,
+): ErrorDescription {
   switch (error.kind) {
     case "not-found":
-      if (error.via === "id") {
-        process.stderr.write(`error: no agent with id \`${error.ref}\`\n`);
-      } else {
-        process.stderr.write(`error: no agent named "${error.ref}"\n`);
-      }
-      return;
+      return {
+        stderr:
+          error.via === "id"
+            ? `error: no agent with id \`${error.ref}\`\n`
+            : `error: no agent named "${error.ref}"\n`,
+        exitCode: EXIT_AGENT_NOT_RESOLVED,
+      };
     case "ambiguous":
-      process.stderr.write(`error: multiple agents named "${error.ref}":\n`);
-      for (const m of error.matches) {
-        process.stderr.write(`  - \`${m.id}\`\n`);
-      }
-      process.stderr.write("hint: specify by id instead\n");
-      return;
+      return {
+        stderr:
+          `error: multiple agents named "${error.ref}":\n` +
+          error.matches.map((m) => `  - \`${m.id}\`\n`).join("") +
+          "hint: specify by id instead\n",
+        exitCode: EXIT_AGENT_NOT_RESOLVED,
+      };
     case "auth-required":
     case "transport":
-      printServiceError(error, host);
-      return;
+      return serviceErrorDescription(error, host);
   }
 }
 
@@ -48,10 +51,7 @@ export async function resolveAgentOrExit(
   host: string,
 ): Promise<AgentView> {
   const resolved = await resolveAgent(agentService, ref);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
+  exitOnServiceError(resolved, host, describeResolveError);
   return resolved.value;
 }
 

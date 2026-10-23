@@ -36,7 +36,7 @@ export async function waitForAgentIdRunning(
   await expect
     .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
       timeout: timeoutMs,
-      intervals: [2_000],
+      intervals: [250, 500, 1_000],
       message: `agent ${agentId} did not reach running state`,
     })
     .toBe("running");

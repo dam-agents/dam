@@ -124,18 +124,6 @@ function makeDeps(opts: {
   };
 }
 
-function authWrite(auth: unknown): string {
-  const chunks = (auth as { queryChunks?: unknown[] }).queryChunks ?? [];
-  return chunks
-    .map((chunk) => {
-      const value = (chunk as { value?: unknown }).value;
-      if (Array.isArray(value)) return value.join("");
-      if (value === undefined || typeof value === "object") return "";
-      return String(value);
-    })
-    .join(" ");
-}
-
 describe("github-app re-mint", () => {
   it("signs with the stored key, hits the installation endpoint, and hot-swaps token + SDS", async () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
@@ -154,10 +142,12 @@ describe("github-app re-mint", () => {
     expect(deps.putCalls[0].fields.private_key).toBeUndefined();
 
     expect(deps.dbUpdates).toHaveLength(1);
-    const write = authWrite(deps.dbUpdates[0].auth);
-    expect(write).toContain("jsonb_set");
-    expect(write).toContain("expiresAt");
-    expect(write).toContain("refreshFailedAt");
+    expect(deps.dbUpdates[0].auth).toMatchObject({
+      kind: "github-app",
+      expiresAt: Math.floor(Date.parse("2027-01-15T13:00:00Z") / 1000),
+    });
+    expect(deps.dbUpdates[0].auth).not.toHaveProperty("refreshFailedAt");
+    expect(deps.dbUpdates[0].auth).not.toHaveProperty("refreshBackoff");
   });
 
   it("throws (leaving state untouched) when the private key is gone", async () => {
@@ -208,10 +198,10 @@ describe("github-app re-mint with a stored scope", () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
     await remintGitHubAppOne(SCOPED_CONN, SCOPED_AUTH, deps);
 
-    const write = authWrite(deps.dbUpdates[0].auth);
-    expect(write).toContain("expiresAt");
-    expect(write).not.toContain("repositories");
-    expect(write).not.toContain("permissions");
+    const write = deps.dbUpdates[0].auth as ConnectionAuthConfig;
+    expect(write).toHaveProperty("expiresAt");
+    expect(write).not.toHaveProperty("repositories");
+    expect(write).not.toHaveProperty("permissions");
   });
 
   it("scoped auth round-trips through the wire schema", () => {
@@ -241,7 +231,7 @@ describe("github-app re-mint with picked repository ids", () => {
   it("never names the ids in the row it writes back", async () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
     await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
-    expect(authWrite(deps.dbUpdates[0].auth)).not.toContain("repositoryIds");
+    expect(deps.dbUpdates[0].auth).not.toHaveProperty("repositoryIds");
   });
 
   it("mints against the scope as it stands inside the lock, not the one the tick carried in", async () => {

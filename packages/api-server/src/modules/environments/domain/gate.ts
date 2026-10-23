@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { EnvironmentRecord } from "./environment.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the path every Environment address reserves for the hand-off of its session and its sign-out; the relay never forwards it to the app.
+// UNIT_BOUNDARY_DESCRIPTION: the path every Environment address reserves for the hand-off of its session, the steps of a sign-in and its sign-out; the relay never forwards it to the app.
 export const RESERVED_PREFIX = "/.platform/";
 
 // UNIT_BOUNDARY_DESCRIPTION: a visitor's session on one Environment address, in a `__Host-` cookie (https) that the browser sends to that exact origin only, so no other Environment or platform host can set or read it. Over plain http (the local cluster) the prefix cannot be used, and the cookie is host-only anyway.
@@ -197,9 +197,14 @@ export function safeNext(path: string | undefined): string {
   return path;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the request headers the relay never passes on: the platform's own credentials, and the headers that only describe this hop.
+// UNIT_BOUNDARY_DESCRIPTION: the platform's own credentials, which never reach an Environment's app: the issuers its identity provider's tokens may name, and what makes a token a platform API key.
+export interface PlatformCredentials {
+  issuers: readonly string[];
+  isApiKey: (token: string) => boolean;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the request headers the relay never passes on: the headers that only describe this hop, and the one that names the declared ports. `Authorization` is judged by its value, in platformCredential.
 const DROPPED_REQUEST_HEADERS = new Set([
-  "authorization",
   "host",
   "connection",
   "proxy-authorization",
@@ -207,20 +212,64 @@ const DROPPED_REQUEST_HEADERS = new Set([
 ]);
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether an `Authorization` value is one of the
+ * platform's own credentials: a platform API key, or a bearer token whose
+ * issuer is one of the platform's identity provider's addresses, or that
+ * names none. The value of a token's `iss` claim is read, not checked: an
+ * app's token from any other issuer reaches the app, and a value that may be
+ * the platform's is dropped whatever its signature, and so is a bearer value
+ * that is not one token, such as two `Authorization` headers a client joined.
+ * Any other scheme passes.
+ */
+export function platformCredential(
+  value: string,
+  platform: PlatformCredentials,
+): boolean {
+  const match = /^\s*bearer\s+(\S+)\s*$/i.exec(value);
+  if (!match) return /^\s*bearer\b/i.test(value);
+  const token = match[1]!;
+  if (platform.isApiKey(token)) return true;
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  try {
+    const claims: unknown = JSON.parse(
+      Buffer.from(parts[1]!, "base64url").toString("utf8"),
+    );
+    const iss =
+      claims !== null && typeof claims === "object" && "iss" in claims
+        ? claims.iss
+        : undefined;
+    return typeof iss !== "string" || platform.issuers.includes(iss);
+  } catch {
+    return true;
+  }
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: The headers an Environment's app gets. The
  * platform's session cookies are dropped and every other cookie passes, so the
- * app sees only cookies it set itself on its own address; `Authorization` is
- * dropped too, since a platform token must never reach a build. The original
- * host and scheme go on as the usual forwarded headers, for an app that builds
- * its own URLs.
+ * app sees only cookies it set itself on its own address. An `Authorization`
+ * header passes only when it is not one of the platform's own credentials, so
+ * an app that signs its users in itself gets their tokens, and a platform
+ * token never reaches a build. The original host and scheme go on as the usual
+ * forwarded headers, for an app that builds its own URLs.
  */
 export function relayHeaders(
   incoming: Headers,
-  opts: { address: string; publicHost: string; scheme: string },
+  opts: {
+    address: string;
+    publicHost: string;
+    scheme: string;
+    platform: PlatformCredentials;
+  },
 ): Headers {
   const out = new Headers();
   for (const [name, value] of incoming) {
     if (DROPPED_REQUEST_HEADERS.has(name)) continue;
+    if (name === "authorization") {
+      if (!platformCredential(value, opts.platform)) out.set(name, value);
+      continue;
+    }
     if (name === "cookie") {
       const kept = value
         .split(";")
@@ -236,6 +285,13 @@ export function relayHeaders(
   return out;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the address of each of an Environment's endpoints, `<endpoint>-<host>`, the first DNS label under the environments domain.
+export function endpointAddresses(
+  record: Pick<EnvironmentRecord, "host" | "endpoints">,
+): string[] {
+  return record.endpoints.map((e) => `${e.name}-${record.host}`);
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The origins of one Environment's endpoints, as a
  * browser names them: every one of its addresses, with the scheme and the
@@ -248,8 +304,8 @@ export function environmentOrigins(
 ): Set<string> {
   const port = /:\d+$/.exec(opts.hostHeader ?? "")?.[0] ?? "";
   return new Set(
-    record.endpoints.map(
-      (e) => `${opts.scheme}://${e.name}-${record.host}.${opts.domain}${port}`,
+    endpointAddresses(record).map(
+      (address) => `${opts.scheme}://${address}.${opts.domain}${port}`,
     ),
   );
 }
@@ -275,4 +331,42 @@ export function requestAllowed(
 ): boolean {
   if (source.origin === undefined || own.has(source.origin)) return true;
   return source.origin === "null" && source.site === "same-origin";
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The gate's own answer to a browser's CORS
+ * preflight from another endpoint of the same Environment, or null for any
+ * other request. A browser sends a preflight without cookies before a
+ * cross-origin call that needs one, so no session can admit it, and any client
+ * can claim an origin, so the app never gets it: the gate allows the method
+ * and headers asked for, with credentials. The call that follows carries the
+ * session and is checked as any other, and its answer is the app's, which
+ * decides whether the page may read it.
+ */
+export function siblingPreflight(
+  request: {
+    method: string;
+    origin: string | undefined;
+    requestMethod: string | undefined;
+    requestHeaders: string | undefined;
+  },
+  own: ReadonlySet<string>,
+): Record<string, string> | null {
+  if (
+    request.method !== "OPTIONS" ||
+    request.requestMethod === undefined ||
+    request.origin === undefined ||
+    !own.has(request.origin)
+  )
+    return null;
+  return {
+    "Access-Control-Allow-Origin": request.origin,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": request.requestMethod,
+    ...(request.requestHeaders && {
+      "Access-Control-Allow-Headers": request.requestHeaders,
+    }),
+    "Access-Control-Max-Age": "600",
+    Vary: "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
+  };
 }

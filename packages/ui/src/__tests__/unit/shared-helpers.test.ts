@@ -61,10 +61,14 @@ describe("formatTimestamp / formatDate", () => {
 });
 
 describe("formatBytes", () => {
-  test("base 1024, rounded KB, one-decimal MB", () => {
+  test("binary prefixes, bytes below a KiB, a whole number without decimals", () => {
     expect(formatBytes(512)).toBe("512 B");
-    expect(formatBytes(1536)).toBe("2 KB");
-    expect(formatBytes(1024 * 1024 * 1.5)).toBe("1.5 MB");
+    expect(formatBytes(1536)).toBe("1.5 KiB");
+    expect(formatBytes(2048)).toBe("2 KiB");
+    expect(formatBytes(1024 * 1024 * 768)).toBe("768 MiB");
+    expect(formatBytes(1024 * 1024 * 1.5)).toBe("1.5 MiB");
+    expect(formatBytes(1024 ** 3 * 2.25)).toBe("2.3 GiB");
+    expect(formatBytes(1024 ** 3 * 12)).toBe("12 GiB");
   });
 });
 

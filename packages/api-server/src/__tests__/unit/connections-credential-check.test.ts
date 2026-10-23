@@ -40,8 +40,6 @@ function makeService(initial: CredentialProbeOutcome) {
   const answer = { outcome: initial };
   const svc = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),

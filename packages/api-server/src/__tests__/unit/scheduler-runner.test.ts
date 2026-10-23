@@ -150,34 +150,37 @@ function makeDeps(opts?: {
     async getOwnerById() {
       return "owner-sub";
     },
-    async recordFire(
+    async writeStatus(
       _id: string,
-      result: string,
-      nextRun: Date | null,
+      patch: {
+        lastFiredAt?: Date;
+        lastFiredResult?: string | null;
+        nextRun?: Date | null;
+      },
       tx?: unknown,
     ) {
-      if (tx) calls.push(`record:${result}`);
-      fires.push({ result, nextRun });
-      storedLastRun = WAKE_STAMP;
+      if (tx) calls.push(`record:${patch.lastFiredResult}`);
+      if (patch.lastFiredAt !== undefined) {
+        storedLastRun = WAKE_STAMP;
+        if (patch.nextRun === undefined)
+          stampedFires.push(patch.lastFiredResult as string);
+        else
+          fires.push({
+            result: patch.lastFiredResult as string,
+            nextRun: patch.nextRun,
+          });
+      } else if (patch.lastFiredResult !== undefined) {
+        stampedResults.push({
+          result: patch.lastFiredResult,
+          nextRun: patch.nextRun,
+        });
+      } else nextRuns.push(patch.nextRun ?? null);
     },
     async transaction<T>(fn: (tx: unknown) => Promise<T>) {
       calls.push("begin");
       const out = await fn({});
       calls.push("commit");
       return out;
-    },
-    async setNextRun(_id: string, nextRun: Date | null) {
-      nextRuns.push(nextRun);
-    },
-    async stampFire(_id: string, result: string) {
-      stampedFires.push(result);
-    },
-    async stampResult(
-      _id: string,
-      result: string | null,
-      nextRun?: Date | null,
-    ) {
-      stampedResults.push({ result, nextRun });
     },
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
       patches.push(patch);

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Collapsed, JanUI's sidebar stays in the layout one icon wide: a tile that expands it again, Home, then what the tree lists under its Agents label — one tile per Agent in the tree's manual order with a dot while that Agent awaits an approval or holds an unread Session, or, while the grouping is All sessions, one tile per Session with its harness icon and its name in a tooltip — a New agent tile closing them, and Settings.
+// TEST_OVERVIEW: Collapsed, JanUI's sidebar stays in the layout one icon wide: a tile that expands it again, Home, then what the tree lists under its Agents label — one tile per Agent in the tree's manual order with a dot while that Agent awaits an approval or holds an unread Session, or, while the grouping is All sessions, one tile per Session with its harness icon and its name in a tooltip — a New agent tile leading them, and Settings.
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -44,6 +44,15 @@ vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
     complete: true,
     loading: false,
     unreadable: false,
+  }),
+  useActivityFeed: () => ({
+    items: env.sessions,
+    openSessionKey: env.openSessionKey,
+    loading: false,
+    failed: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: () => {},
   }),
 }));
 vi.mock("../../modules/agents/api/mutations.js", () => ({
@@ -143,8 +152,8 @@ it("draws the expand, home and settings tiles and one tile per Agent", () => {
   ).toEqual(["a1", "a2"]);
 });
 
-// TEST_SCENARIO: the Agents end with a New agent tile, in the same column and at the same size as theirs.
-it("ends the Agent tiles with a New agent tile", () => {
+// TEST_SCENARIO: the Agents lead with a New agent tile, in the same column and at the same size as theirs.
+it("leads the Agent tiles with a New agent tile", () => {
   const html = render();
   expect(html).toContain('data-testid="sidebar-rail-new-agent"');
   expect(html).toContain('aria-label="New agent"');

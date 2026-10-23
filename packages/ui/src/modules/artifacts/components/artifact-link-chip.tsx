@@ -25,7 +25,9 @@ export function ArtifactLinkChip({
   children?: ReactNode;
 }) {
   const { data: artifact } = useArtifact(artifactId);
-  const openArtifactId = useStore((s) => s.openArtifactId);
+  const openArtifactId = useStore((s) =>
+    s.dock?.kind === "artifact" ? s.dock.id : null,
+  );
   const openArtifact = useOpenArtifact();
 
   const label =

@@ -107,6 +107,19 @@ export const slackIgnoredApps = pgTable(
   (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
 );
 
+export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
+  channelId: text("channel_id").primaryKey(),
+  dropped: integer("dropped").notNull(),
+  lastDroppedAt: timestamp("last_dropped_at", {
+    withTimezone: true,
+  }).notNull(),
+  recent: jsonb("recent")
+    .$type<
+      { at: string; thread: boolean; sender: "agent" | "app"; name: string }[]
+    >()
+    .notNull(),
+});
+
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
   url: text("url").notNull(),
@@ -1080,6 +1093,12 @@ export const attentionRecords = pgTable(
     index("attention_records_owner_activity_idx").on(
       table.ownerSub,
       table.activityAt,
+    ),
+    // UNIT_BOUNDARY_DESCRIPTION: "All sessions" pages by (activity time, session id) with keyset paging, so the record is indexed in exactly that order for one owner, the coalesce included.
+    index("attention_records_owner_feed_idx").on(
+      table.ownerSub,
+      sql`coalesce(${table.activityAt}, ${table.createdAt})`,
+      table.sessionId,
     ),
     index("attention_records_activity_idx").on(table.activityAt),
   ],

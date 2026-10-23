@@ -22,8 +22,8 @@ import { createSchedulesService } from "./services/schedules-service.js";
 import {
   createSchedulerRunner,
   type SchedulerRunner,
-  type SpendHoldGate,
 } from "./services/scheduler-runner.js";
+import type { SpendHoldGate } from "../spend/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { startResumeHeldOnceSaga } from "./sagas/resume-held-once.js";
 import type { FirePair } from "../harness-config/index.js";

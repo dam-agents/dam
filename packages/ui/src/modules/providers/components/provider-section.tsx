@@ -14,7 +14,6 @@ import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { AllAgentsProviderLimit } from "../../spend/components/all-agents-provider-limit.js";
@@ -25,6 +24,7 @@ import {
   type ProviderRowDef,
   providerRowName,
 } from "../lib/provider-rows.js";
+import { CurveBenderInfoDialog } from "./curve-bender-info-dialog.js";
 import { ProviderBalance } from "./provider-balance.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import type { ProviderItem } from "./provider-item.js";
@@ -37,7 +37,6 @@ export function ProviderSection({
 } = {}) {
   const { itemByType, itemByTemplateId, isPending } = useProviderItems();
   const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
-  const { data: flags, isPending: flagsPending } = useFeatures();
   const { data: templates, isPending: templatesPending } =
     useConnectionTemplates();
   const itemOf = (row: ProviderRowDef) =>
@@ -48,10 +47,6 @@ export function ProviderSection({
     !!templates?.some((t) => t.id === templateId);
   const rows = PROVIDER_ROWS.filter((row) => {
     const item = itemOf(row);
-    if (row.type === "platform")
-      return (
-        !!flags?.["platform-provider"] && (!onConnected || item !== undefined)
-      );
     if (row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)
       return configured(row.templateId) && (!onConnected || item !== undefined);
     return true;
@@ -64,8 +59,7 @@ export function ProviderSection({
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
   const recheck = useRecheckProviderKeys();
-  const loading =
-    isPending || catalogPending || flagsPending || templatesPending;
+  const loading = isPending || catalogPending || templatesPending;
   const checkable = rows.some((row) => {
     const item = itemOf(row);
     return !!item && hasKeyCheck(item.conn.templateId);
@@ -74,6 +68,7 @@ export function ProviderSection({
     provider: ProviderPresetType;
     item?: ProviderItem;
   } | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const disconnectProvider = async (item: ProviderItem) => {
     const ok = await showConfirm(
@@ -113,7 +108,6 @@ export function ProviderSection({
           : rows.map((row) => {
               const item = itemOf(row);
               const managed =
-                row.type === "platform" ||
                 row.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID;
               return (
                 <ProviderRow
@@ -158,10 +152,17 @@ export function ProviderSection({
                       />
                     )
                   }
-                  connectedAction={onConnected && "Use"}
+                  connectedAction={
+                    item && managed && !onConnected
+                      ? "About"
+                      : onConnected && "Use"
+                  }
                   onOpen={
                     managed
-                      ? item && onConnected && (() => onConnected(item.id))
+                      ? item &&
+                        (onConnected
+                          ? () => onConnected(item.id)
+                          : () => setInfoOpen(true))
                       : () =>
                           item && onConnected
                             ? onConnected(item.id)
@@ -171,6 +172,8 @@ export function ProviderSection({
               );
             })}
       </div>
+
+      {infoOpen && <CurveBenderInfoDialog onClose={() => setInfoOpen(false)} />}
 
       {dialog && (
         <ProviderConnectDialog

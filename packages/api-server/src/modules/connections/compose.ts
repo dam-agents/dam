@@ -1,7 +1,6 @@
 import type { Db } from "db";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
-  PLATFORM_LLM_TEMPLATE_ID,
   type ConnectionsService,
   type HarnessCatalog,
   type SecretRequestsService,
@@ -29,13 +28,10 @@ import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-prov
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createCredentialProbe } from "./infrastructure/credential-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
-import {
-  buildCatalog,
-  type OperatorCredentials,
-  type PlatformProviderEndpoint,
-} from "./domain/catalog.js";
+import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import {
   createConnectionsService,
+  REMOVED_PROVIDER_TEMPLATE_IDS,
   type ManagedProviderConnections,
 } from "./services/connections-service.js";
 import {
@@ -89,7 +85,6 @@ export interface ComposeConnectionsAtBootOpts {
   secretRequestStores: SecretRequestStores;
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
-  platformProvider?: PlatformProviderEndpoint | null;
   curveBenderDeployment?: boolean;
   e2eEnabled?: boolean;
 }
@@ -100,7 +95,6 @@ export function composeConnectionsAtBoot(
   const templates = createConnectionTemplateRegistry(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
-      platformProvider: opts.platformProvider ?? null,
       curveBenderDeployment: opts.curveBenderDeployment ?? false,
     }),
   );
@@ -156,8 +150,8 @@ export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
 export async function listManagedConnectionOwners(db: Db): Promise<string[]> {
   const repo = createConnectionsRepository(db);
   const owners = await Promise.all(
-    [PLATFORM_LLM_TEMPLATE_ID, CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID].map((id) =>
-      repo.listOwnersOfTemplate(id),
+    [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID, ...REMOVED_PROVIDER_TEMPLATE_IDS].map(
+      (templateId) => repo.listOwnersOfTemplate(templateId),
     ),
   );
   return [...new Set(owners.flat())];
@@ -243,9 +237,6 @@ export function composeConnectionsForOwner(opts: {
   oauthCallbackUrl: string;
   brandName: string;
   maxSharedKbConnections?: number;
-  platformProviderEnabled: () => Promise<boolean>;
-  platformProviderKey: string | null;
-  platformProviderCa: string | null;
   curveBenderDeploymentKey: string | null;
   harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
 }): ConnectionsService & ManagedProviderConnections {
@@ -298,9 +289,6 @@ export function composeConnectionsForOwner(opts: {
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),
-    platformProviderEnabled: opts.platformProviderEnabled,
-    platformProviderKey: opts.platformProviderKey,
-    platformProviderCa: opts.platformProviderCa,
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey,
     harnesses: opts.harnesses,
     ...(opts.maxSharedKbConnections !== undefined

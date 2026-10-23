@@ -185,7 +185,6 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let modelsThreads = false;
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
-  let nextStreamTs = 1;
   let nextPostTs = 100000;
   const stagedFiles = new Map<string, string>();
   let nextFileId = 1;
@@ -263,35 +262,6 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         user: args.user,
         text: args.text,
         ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
-      });
-    },
-
-    async startStream(args) {
-      const ts = `stream-${nextStreamTs++}`;
-      outbound.push({
-        kind: "stream_start",
-        teamId: args.teamId,
-        channel: args.channel,
-        threadTs: args.threadTs,
-        ts,
-        text: args.markdownText ?? "",
-        ...(args.recipientTeamId !== undefined
-          ? { recipientTeamId: args.recipientTeamId }
-          : {}),
-        ...(args.recipientUserId !== undefined
-          ? { recipientUserId: args.recipientUserId }
-          : {}),
-      });
-      return { ts };
-    },
-
-    async appendStream(args) {
-      outbound.push({
-        kind: "stream_append",
-        teamId: args.teamId,
-        channel: args.channel,
-        ts: args.ts,
-        text: args.markdownText,
       });
     },
 

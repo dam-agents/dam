@@ -1,6 +1,7 @@
-import { App, LogLevel } from "@slack/bolt";
+import { App, LogLevel, SocketModeReceiver } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
 import { FileTooLargeError } from "./slack-gateway.js";
+import { keepSocketModeConnected } from "./socket-mode-reconnect.js";
 import { renderSlackPostText } from "./slack-post-text.js";
 import { classifySlackSender } from "./slack-sender.js";
 import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
@@ -183,6 +184,7 @@ export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
   let app: BoltApp | null = null;
+  let socketKeeper: { stop(): void } | null = null;
   const workspaces = new Map<string, WorkspaceAuth>();
 
   async function authFor(
@@ -264,8 +266,13 @@ export function createBoltSlackGateway(
     async start(handlers: SlackGatewayHandlers): Promise<boolean> {
       if (app) return true;
 
-      const bolt = new App({
+      const receiver = new SocketModeReceiver({
         appToken: deps.appToken,
+        logLevel: LogLevel.INFO,
+        autoReconnectEnabled: false,
+      });
+      const bolt = new App({
+        receiver,
         socketMode: true,
         ignoreSelf: false,
         logLevel: LogLevel.INFO,
@@ -452,12 +459,15 @@ export function createBoltSlackGateway(
         );
         return false;
       }
+      socketKeeper = keepSocketModeConnected(receiver.client);
       void deps.renewTokens();
 
       return true;
     },
 
     async stop() {
+      socketKeeper?.stop();
+      socketKeeper = null;
       if (app) {
         await app.stop();
         app = null;
@@ -545,36 +555,6 @@ export function createBoltSlackGateway(
         ...(args.username ? { username: args.username } : {}),
         ...(args.iconUrl ? { icon_url: args.iconUrl } : {}),
       } as ChatPostEphemeralArgs);
-    },
-
-    async startStream(args): Promise<{ ts: string }> {
-      if (!app) throw new Error("slack app not started");
-      const token = await tokenFor(args.teamId);
-      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      const res = await app.client.chat.startStream({
-        token,
-        channel: args.channel,
-        thread_ts: args.threadTs,
-        recipient_team_id: args.recipientTeamId,
-        recipient_user_id: args.recipientUserId,
-        ...(args.markdownText !== undefined
-          ? { markdown_text: args.markdownText }
-          : {}),
-      });
-      if (!res.ts) throw new Error("chat.startStream returned no ts");
-      return { ts: res.ts };
-    },
-
-    async appendStream(args) {
-      if (!app) throw new Error("slack app not started");
-      const token = await tokenFor(args.teamId);
-      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      await app.client.chat.appendStream({
-        token,
-        channel: args.channel,
-        ts: args.ts,
-        markdown_text: args.markdownText,
-      });
     },
 
     async stopStream(args) {

@@ -4,6 +4,10 @@ export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
 
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
+export const AUTH_ERROR_HINT_LINK_TEXT = "Settings › Providers";
+
+export const AUTH_ERROR_HINT = `The provider rejected the key this agent uses — it may be wrong, revoked or expired. In ${AUTH_ERROR_HINT_LINK_TEXT}, replace the key or recheck it with Recheck keys if shown, then send the message again.`;
+
 export const PROMPT_NOT_QUEUED_CODE = "PROMPT_NOT_QUEUED";
 
 export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
@@ -11,6 +15,83 @@ export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
 export const REWRITE_REFUSED_CODE = "REWRITE_REFUSED";
 
 export const REWRITE_BUSY_CODE = "REWRITE_BUSY";
+
+export type JsonRpcId = string | number;
+
+export interface JsonRpcRequest<P = unknown> {
+  jsonrpc?: string;
+  id: JsonRpcId;
+  method: string;
+  params?: P;
+}
+
+export interface JsonRpcResponse {
+  jsonrpc?: string;
+  id: JsonRpcId;
+  result?: unknown;
+  error?: unknown;
+}
+
+export interface JsonRpcNotification {
+  jsonrpc?: string;
+  method: string;
+  params?: unknown;
+}
+
+export type JsonRpcFrame =
+  JsonRpcRequest | JsonRpcResponse | JsonRpcNotification;
+
+export function isNonNullObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+export function paramsOf(frame: unknown): Record<string, unknown> | null {
+  if (!isNonNullObject(frame)) return null;
+  return isNonNullObject(frame.params) ? frame.params : null;
+}
+
+export function resultOf(frame: unknown): Record<string, unknown> | null {
+  if (!isNonNullObject(frame)) return null;
+  return isNonNullObject(frame.result) ? frame.result : null;
+}
+
+export function sessionUpdateOf(
+  frame: unknown,
+): Record<string, unknown> | null {
+  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
+  const params = paramsOf(frame);
+  return params !== null && isNonNullObject(params.update)
+    ? params.update
+    : null;
+}
+
+export function stringAt(value: unknown, key: string): string | null {
+  const found = isNonNullObject(value) ? value[key] : undefined;
+  return typeof found === "string" ? found : null;
+}
+
+export function parseFrame(line: string): JsonRpcFrame | null {
+  try {
+    const f = JSON.parse(line);
+    return f && typeof f === "object" ? (f as JsonRpcFrame) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isRequest<P = unknown>(msg: unknown): msg is JsonRpcRequest<P> {
+  if (!isNonNullObject(msg)) return false;
+  const m = msg as Partial<JsonRpcRequest>;
+  return m.id !== undefined && typeof m.method === "string";
+}
+
+export function isResponse(msg: unknown): msg is JsonRpcResponse {
+  if (!isNonNullObject(msg)) return false;
+  const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
+  if (m.id === undefined) return false;
+  if (m.method !== undefined) return false;
+  return m.result !== undefined || m.error !== undefined;
+}
 
 export const STEER_METHOD = "_session/steering";
 

@@ -360,18 +360,6 @@ jq -e '.liveness.timeoutSeconds == 10 and .liveness.failureThreshold == 6 and .l
 probes=$(pg_probes --set postgres.livenessProbe.timeoutSeconds=30 --set postgres.readinessProbe.failureThreshold=3)
 jq -e '.liveness.timeoutSeconds == 30 and .liveness.failureThreshold == 6 and .readiness.failureThreshold == 3' <<<"$probes" >/dev/null ||
   { echo "postgres.livenessProbe / readinessProbe overrides did not reach the Postgres pod: $probes" >&2; exit 1; }
-# The built-in provider's CA reaches the api-server as a file from the named
-# ConfigMap key, which the default values leave out entirely.
-ca=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/app.yaml \
-  --set apiServer.platformProvider.baseUrl=https://llm.models.svc:8443 --set apiServer.platformProvider.apiKey=k \
-  --set apiServer.platformProvider.caConfigMap.name=openshift-service-ca.crt \
-  --set apiServer.platformProvider.caConfigMap.key=service-ca.crt |
-  yq -o=json 'select(.kind == "Deployment") | .spec.template.spec')
-jq -e '(.containers[0].env[] | select(.name == "PLATFORM_PROVIDER_CA_FILE") | .value) as $file
-  | (.containers[0].volumeMounts[] | select(.name == "platform-provider-ca") | .mountPath + "/ca.crt") == $file
-  and any(.volumes[]; .name == "platform-provider-ca" and .configMap.name == "openshift-service-ca.crt"
-    and .configMap.items == [{"key": "service-ca.crt", "path": "ca.crt"}])' <<<"$ca" >/dev/null ||
-  { echo "apiServer.platformProvider.caConfigMap did not mount the CA file the api-server reads: $ca" >&2; exit 1; }
 # The node-loss alert counts one installation's runners only. Two installations
 # sharing a Prometheus would otherwise share one sum, so an affected one would
 # fire the other's alert as well, and the alert would name no installation.

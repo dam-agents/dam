@@ -12,6 +12,7 @@ import {
   type EnvVar,
   type ChannelConfig,
   type SlackConversationLabel,
+  type SlackLoopGuardDrops,
   type ContributionKind,
   type DriverFailure,
   type WorkspaceFailure,
@@ -33,6 +34,7 @@ import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
 import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
+import { getLogger } from "../../../core/logger.js";
 import {
   assembleAgent,
   type InfraAgent,
@@ -629,6 +631,9 @@ export function createAgentsService(deps: {
   ) => Promise<
     (SlackConversationRef & { label: SlackConversationLabel | null })[]
   >;
+  readSlackLoopGuardDrops?: (
+    slackChannelIds: string[],
+  ) => Promise<Map<string, SlackLoopGuardDrops>>;
 }): AgentsService {
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
@@ -705,24 +710,63 @@ export function createAgentsService(deps: {
     return labels;
   }
 
-  async function labelledChannelsOf(agentId: string): Promise<ChannelConfig[]> {
-    const channels = await deps.listChannelsByAgent(agentId);
-    return withConversationLabels(
-      channels,
-      await slackConversationLabels([channels]),
-    );
+  type SlackChannelNotes = {
+    labels: Map<string, SlackConversationLabel | null>;
+    loopGuard: Map<string, SlackLoopGuardDrops>;
+  };
+
+  async function slackLoopGuardDrops(
+    channelLists: ChannelConfig[][],
+  ): Promise<Map<string, SlackLoopGuardDrops>> {
+    const ids = [
+      ...new Set(
+        channelLists
+          .flat()
+          .flatMap((c) =>
+            c.type === ChannelType.Slack ? c.slackChannelId : [],
+          ),
+      ),
+    ];
+    if (!deps.readSlackLoopGuardDrops || ids.length === 0) return new Map();
+    return deps.readSlackLoopGuardDrops(ids).catch((err: unknown) => {
+      getLogger().warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "agent.channels.loop_guard_unread",
+      );
+      return new Map();
+    });
   }
 
-  function withConversationLabels(
+  async function slackChannelNotes(
+    channelLists: ChannelConfig[][],
+  ): Promise<SlackChannelNotes> {
+    const [labels, loopGuard] = await Promise.all([
+      slackConversationLabels(channelLists),
+      slackLoopGuardDrops(channelLists),
+    ]);
+    return { labels, loopGuard };
+  }
+
+  async function labelledChannelsOf(agentId: string): Promise<ChannelConfig[]> {
+    const channels = await deps.listChannelsByAgent(agentId);
+    return withSlackChannelNotes(channels, await slackChannelNotes([channels]));
+  }
+
+  function withSlackChannelNotes(
     channels: ChannelConfig[],
-    labels: Map<string, SlackConversationLabel | null>,
+    notes: SlackChannelNotes,
   ): ChannelConfig[] {
     return channels.map((channel) => {
       if (channel.type !== ChannelType.Slack) return channel;
-      const label = labels.get(
+      const label = notes.labels.get(
         slackConversationKey(slackConversationRef(channel)),
       );
-      return label ? { ...channel, label } : channel;
+      const loopGuard = notes.loopGuard.get(channel.slackChannelId);
+      return {
+        ...channel,
+        ...(label ? { label } : {}),
+        ...(loopGuard ? { loopGuard } : {}),
+      };
     });
   }
 
@@ -879,13 +923,13 @@ export function createAgentsService(deps: {
     const boundChannels = txResult.value.channels;
     const [status, channelLabels, templateUpdate] = await Promise.all([
       safeStatus(id),
-      slackConversationLabels([boundChannels]),
+      slackChannelNotes([boundChannels]),
       templateUpdateFor(infra),
     ]);
     return ok(
       assembleAgent(
         infra,
-        withConversationLabels(boundChannels, channelLabels),
+        withSlackChannelNotes(boundChannels, channelLabels),
         status.failures,
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
@@ -926,7 +970,7 @@ export function createAgentsService(deps: {
             .statusMany([...infraIds])
             .catch(() => new Map<string, ContributionsStatus>()),
           deps.agentEnvRepo.listMany([...infraIds]),
-          slackConversationLabels([...channelMap.values()]),
+          slackChannelNotes([...channelMap.values()]),
           deps.onboardingChecklists.readMany([...infraIds]),
         ]);
 
@@ -948,7 +992,7 @@ export function createAgentsService(deps: {
           : undefined;
         return assembleAgent(
           withUserEnv(infra, envMap.get(infra.id) ?? []),
-          withConversationLabels(channelMap.get(infra.id) ?? [], channelLabels),
+          withSlackChannelNotes(channelMap.get(infra.id) ?? [], channelLabels),
           status?.failures ?? [],
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,

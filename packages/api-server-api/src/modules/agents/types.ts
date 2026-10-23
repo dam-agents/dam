@@ -74,6 +74,21 @@ export type SlackConversationLabel =
   | { kind: "group-direct-message"; members: string[] }
   | { kind: "gone" };
 
+export interface SlackLoopGuardDrop {
+  at: string;
+  thread: boolean;
+  sender: "agent" | "app";
+  name: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bot and app posts the loop guard dropped in one Slack conversation in the day since its last drop; `recent` holds the newest few, newest first.
+export interface SlackLoopGuardDrops {
+  limit: number;
+  dropped: number;
+  lastDroppedAt: string;
+  recent: SlackLoopGuardDrop[];
+}
+
 export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
@@ -82,6 +97,7 @@ export interface SlackChannel extends Channel {
   ambient?: boolean;
   default?: boolean;
   customEmoji?: string[] | null;
+  loopGuard?: SlackLoopGuardDrops;
 }
 
 export type ChannelConfig = SlackChannel;

@@ -8,8 +8,10 @@ import { useStore } from "../../../store.js";
 import { fetchFileContent } from "../api/queries.js";
 
 export function useFileTree(selectedAgent: string | null) {
-  const openFilePath = useStore((s) => s.openFilePath);
-  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
+  const openFilePath = useStore((s) =>
+    s.dock?.kind === "file" ? s.dock.path : null,
+  );
+  const setDock = useStore((s) => s.setDock);
   const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
@@ -33,7 +35,7 @@ export function useFileTree(selectedAgent: string | null) {
       if (!(await confirmDiscard())) return;
       try {
         await fetchFileContent(selectedAgent, path);
-        setOpenFilePath(path, opts);
+        setDock({ kind: "file", path }, opts);
         revealFiles();
       } catch (err) {
         emitToast({
@@ -46,7 +48,7 @@ export function useFileTree(selectedAgent: string | null) {
       selectedAgent,
       openFilePath,
       confirmDiscard,
-      setOpenFilePath,
+      setDock,
       setOpenFileEdit,
       revealFiles,
     ],

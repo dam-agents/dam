@@ -1,5 +1,4 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
-import { routesSessionPairs } from "agent-runtime-api";
 import {
   SessionMode,
   SessionType,
@@ -10,7 +9,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -93,6 +91,7 @@ import { EnvironmentsPanel } from "../../environments/components/environments-pa
 import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
@@ -126,10 +125,7 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import {
-  rememberFirstModel,
-  useProviderConnections,
-} from "../api/session-pair.js";
+import { rememberFirstModel } from "../api/session-pair.js";
 import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
@@ -152,7 +148,6 @@ import {
 } from "../components/rewritable-message.js";
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
-import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SetupInstructionsCard } from "../components/setup-instructions-card.js";
 import {
   appSidePanelTabs,
@@ -167,9 +162,9 @@ import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
+import { useChatScroll } from "../hooks/use-chat-scroll.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
-import { useHasModelChoices } from "../hooks/use-has-model-choices.js";
-import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
+import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
@@ -185,6 +180,7 @@ import {
   classicPanel,
 } from "../lib/classic-chat-layout.js";
 import { defaultKindOf } from "../lib/default-kind.js";
+import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
@@ -269,27 +265,14 @@ export function ChatView() {
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
-  const openFilePath = useStore((s) => s.openFilePath);
-  const openArtifactId = useStore((s) => s.openArtifactId);
-  const openBrowserAgentId = useStore((s) =>
-    s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
-  );
+  const dock = useStore((s) => s.dock);
   const openBrowser = useOpenBrowser();
   const closeBrowser = useStore((s) => s.setOpenBrowser);
-  const openChangesAgentId = useStore((s) =>
-    s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
-  );
   const toggleChanges = useToggleChanges();
-  const openDelegation = useStore((s) =>
-    s.openDelegation?.driverAgentId === s.selectedAgent
-      ? s.openDelegation
-      : null,
-  );
   const processesEnabled = useProcessesEnabled();
   const newLayout = useNewLayout();
+  const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
-  const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
-  const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const runningProcesses = useRunningProcesses(
     processesEnabled ? selectedAgent : null,
@@ -305,7 +288,6 @@ export function ChatView() {
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
   const terminalFreshRef = useRef(false);
-  const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
@@ -339,54 +321,20 @@ export function ChatView() {
   const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const sessionTemplateId = useSessionTemplateId(selectedAgent, sessionId);
-  const carried = (selectedAgent && harnessStatus?.harnesses) || [];
-  const sessionHarness =
-    currentSession?.harness ??
-    (currentSession && harnessStatus?.modelRouter
-      ? (harnessStatus.defaultHarness ?? carried[0]?.name)
-      : undefined);
-  const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
-  const harnessesPending =
-    !harnessStatus?.harnesses &&
-    !harnessStatus?.catalog &&
-    (harnessStatusQuery.isPending || !agentOperable);
-  const newSessionAgent =
-    !sessionId && (carried.length > 0 || harnessesPending)
-      ? selectedAgent
-      : null;
-  const pendingPairAgent = harnessesPending ? newSessionAgent : null;
-  const pickable =
-    newSessionAgent && carried.length > 0 && !pairOutdated
-      ? {
-          agentId: newSessionAgent,
-          carried,
-          defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
-          routed: harnessStatus?.modelRouter ?? false,
-        }
-      : null;
-  const nextSessionPair = useNextSessionPair(
-    pickable?.routed ? pickable.agentId : null,
-    carried.map((h) => h.name),
-    pickable?.defaultHarness,
-  );
-  const routedAgent = harnessStatus?.modelRouter ? selectedAgent : null;
-  const newPairHasChoices = useHasModelChoices(
-    routedAgent,
-    nextSessionPair?.harness,
-  );
-  const sessionHasChoices = useHasModelChoices(
-    currentSession ? routedAgent : null,
-    sessionHarness,
-  );
-  const providerConnections = useProviderConnections(newSessionAgent);
-  const noProviders =
-    !!newSessionAgent &&
-    providerConnections.loaded &&
-    providerConnections.owned.length === 0;
-  const noGrantedProvider =
-    !!newSessionAgent &&
-    providerConnections.loaded &&
-    providerConnections.granted.length === 0;
+  const {
+    choice,
+    newSessionAgent,
+    noProviders,
+    noGrantedProvider,
+    needsModel,
+  } = useNewSessionChoice({
+    agentId: selectedAgent,
+    sessionId,
+    status: harnessStatus,
+    statusPending: harnessStatusQuery.isPending,
+    operable: agentOperable,
+    session: currentSession,
+  });
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -409,8 +357,13 @@ export function ChatView() {
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
 
-  const stickRef = useRef(true);
-  const [showJump, setShowJump] = useState(false);
+  const {
+    messagesRef,
+    scrollToBottom,
+    loadOlderKeepingScroll,
+    showJump,
+    historyShown,
+  } = useChatScroll({ messages, sessionId, loadingSession, loadOlderMessages });
   const features = useFeatures().data;
   const telemetryEnabled = features?.["agent-telemetry"] ?? false;
   const delegationOwners = useDelegationOwners(messages);
@@ -487,14 +440,6 @@ export function ChatView() {
     ? shown.findIndex((m) => m.id === rewriting.messageId)
     : -1;
 
-  const scrollToBottom = useCallback(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    stickRef.current = true;
-    setShowJump(false);
-    el.scrollTop = el.scrollHeight;
-  }, []);
-
   const sendAndFollow = useCallback(
     (...args: Parameters<typeof sendPrompt>) => {
       scrollToBottom();
@@ -533,89 +478,6 @@ export function ChatView() {
       sendAndFollow(withRendererMetadata(text), ...rest),
     [sendAndFollow, withRendererMetadata],
   );
-
-  const pendingPrependRef = useRef<{
-    height: number;
-    before: string;
-  } | null>(null);
-
-  const loadOlderKeepingScroll = useCallback(
-    async (before: string): Promise<"paged" | "reloaded" | "noop"> => {
-      const el = messagesRef.current;
-      if (el) {
-        pendingPrependRef.current = { height: el.scrollHeight, before };
-        el.style.overflowAnchor = "none";
-      }
-      const outcome = await loadOlderMessages(before);
-      if (outcome !== "paged") {
-        pendingPrependRef.current = null;
-        if (el) el.style.overflowAnchor = "";
-        if (outcome === "reloaded") scrollToBottom();
-      }
-      return outcome;
-    },
-    [loadOlderMessages, scrollToBottom],
-  );
-
-  useLayoutEffect(() => {
-    const pending = pendingPrependRef.current;
-    const el = messagesRef.current;
-    if (!pending || !el) return;
-    if (messages.some((m) => m.loadOlderBefore === pending.before)) {
-      pending.height = el.scrollHeight;
-      return;
-    }
-    pendingPrependRef.current = null;
-    el.scrollTop += el.scrollHeight - pending.height;
-    el.style.overflowAnchor = "";
-  }, [messages]);
-
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const inner = el.firstElementChild;
-
-    const FOLLOW_WITHIN_PX = 60;
-    const JUMP_BEYOND_PX = 200;
-    const fromBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight;
-
-    const onScroll = () => {
-      const distance = fromBottom();
-      stickRef.current = distance < FOLLOW_WITHIN_PX;
-      setShowJump(distance > JUMP_BEYOND_PX);
-    };
-
-    const ro = new ResizeObserver(() => {
-      if (stickRef.current) el.scrollTop = el.scrollHeight;
-    });
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    ro.observe(el);
-    if (inner) ro.observe(inner);
-    onScroll();
-
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      ro.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (messages.length === 0) {
-      stickRef.current = true;
-      setShowJump(false);
-    }
-  }, [messages.length]);
-
-  const historyShown = !loadingSession || messages.length > 0;
-  useLayoutEffect(() => {
-    if (!historyShown) return;
-    const el = messagesRef.current;
-    if (!el) return;
-    stickRef.current = true;
-    setShowJump(false);
-    el.scrollTop = el.scrollHeight;
-  }, [historyShown, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -739,13 +601,29 @@ export function ChatView() {
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const canOpenBrowser = agentView?.requireConnectionAddress === true;
+  // UNIT_BOUNDARY_DESCRIPTION: the browser, changes and delegation docks belong to one agent, so a dock left by a previously selected agent counts as nothing docked here.
+  const shownDock =
+    dock === null
+      ? null
+      : dock.kind === "browser" || dock.kind === "changes"
+        ? dock.agentId === selectedAgent
+          ? dock
+          : null
+        : dock.kind === "delegation"
+          ? dock.driverAgentId === selectedAgent
+            ? dock
+            : null
+          : dock.kind === "process-output" && !processesEnabled
+            ? null
+            : dock;
   const docked: DockedItems = {
-    file: openFilePath !== null,
-    artifact: openArtifactId !== null,
-    processOutput: openProcessOutputKey !== null && selectedAgent !== null,
-    changes: openChangesAgentId !== null,
-    browser: openBrowserAgentId !== null && canOpenBrowser,
-    delegation: openDelegation !== null,
+    file: shownDock?.kind === "file",
+    artifact: shownDock?.kind === "artifact",
+    processOutput:
+      shownDock?.kind === "process-output" && selectedAgent !== null,
+    changes: shownDock?.kind === "changes",
+    browser: shownDock?.kind === "browser" && canOpenBrowser,
+    delegation: shownDock?.kind === "delegation",
   };
   const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
   const changesAvailable = useChangesAvailable(selectedAgent, sessionId);
@@ -772,17 +650,7 @@ export function ChatView() {
     hiddenTabs,
     dockedTab !== null,
   );
-  const dockedItem =
-    dockedTab &&
-    [
-      dockedTab,
-      openBrowserAgentId,
-      openDelegation?.id,
-      openFilePath,
-      openArtifactId,
-      openChangesAgentId,
-      openProcessOutputKey,
-    ].join("\n");
+  const dockedItem = dockedTab && dockKey(shownDock);
   const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
   const dockHiddenOnPhone =
     phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
@@ -826,38 +694,38 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
-  const dock =
-    openBrowserAgentId && canOpenBrowser ? (
+  const dockPanel =
+    shownDock?.kind === "browser" && canOpenBrowser ? (
       <DockedBrowserPanel
-        key={openBrowserAgentId}
-        agentId={openBrowserAgentId}
-        agentName={selectedAgentName ?? openBrowserAgentId}
+        key={shownDock.agentId}
+        agentId={shownDock.agentId}
+        agentName={selectedAgentName ?? shownDock.agentId}
       />
-    ) : openDelegation ? (
+    ) : shownDock?.kind === "delegation" ? (
       <DockedDelegationPanel
-        key={openDelegation.id}
-        driverAgentId={openDelegation.driverAgentId}
-        id={openDelegation.id}
+        key={shownDock.id}
+        driverAgentId={shownDock.driverAgentId}
+        id={shownDock.id}
       />
-    ) : openFilePath ? (
+    ) : shownDock?.kind === "file" ? (
       <DockedFilePanel onOpenFile={openFileHandler} />
-    ) : openArtifactId ? (
+    ) : shownDock?.kind === "artifact" ? (
       <DockedArtifactPanel
-        key={openArtifactId}
+        key={shownDock.id}
         agentId={selectedAgent}
         onSendPrompt={sendArtifactPrompt}
       />
-    ) : openChangesAgentId ? (
+    ) : shownDock?.kind === "changes" ? (
       <DockedChangesPanel
-        key={`${openChangesAgentId}:${sessionId ?? ""}`}
-        agentId={openChangesAgentId}
+        key={`${shownDock.agentId}:${sessionId ?? ""}`}
+        agentId={shownDock.agentId}
         sessionId={sessionId}
       />
-    ) : openProcessOutputKey && selectedAgent ? (
+    ) : shownDock?.kind === "process-output" && selectedAgent ? (
       <DockedProcessOutputPanel
-        key={openProcessOutputKey}
+        key={shownDock.key}
         agentId={selectedAgent}
-        outputKey={openProcessOutputKey}
+        outputKey={shownDock.key}
       />
     ) : null;
 
@@ -1167,97 +1035,104 @@ export function ChatView() {
                 ? "No LLM provider connected to this agent."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
-                  : (nextSessionPair?.model === null && newPairHasChoices) ||
-                      (sessionHasChoices && !currentSession?.model)
+                  : needsModel
                     ? "Choose a model for this session first."
                     : null
             }
           />
-          {!hasPendingPermission && pickable && (
-            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-              <ChatColumn>
-                <SessionPairPicker
-                  {...pickable}
-                  open={pairPickerOpen}
-                  onOpenChange={setPairPickerOpen}
-                  onConnectProviders={() => setProvidersModal(true)}
-                  newLayout={newLayout}
-                />
-              </ChatColumn>
-            </div>
-          )}
-          {!hasPendingPermission && pendingPairAgent && (
-            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-              <ChatColumn>
-                <SessionPairPlaceholder
-                  agentId={pendingPairAgent}
-                  agentHarness={agentView?.harness}
-                  open={pairPickerOpen}
-                  onOpenChange={setPairPickerOpen}
-                  onConnectProviders={() => setProvidersModal(true)}
-                />
-              </ChatColumn>
-            </div>
-          )}
-          {!hasPendingPermission && !pickable && !pendingPairAgent && (
-            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-              <ChatColumn>
-                {selectedAgent && pairOutdated ? (
-                  <SessionPairOutdatedNotice agentId={selectedAgent} />
-                ) : selectedAgent && currentSession && sessionHarness ? (
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <ModelIndicator
-                      agentId={selectedAgent}
-                      kind={defaultKindOf(sessionView?.type)}
-                      follows={currentSession.follows}
-                      followsDefaults={harnessStatus?.followsDefaults ?? false}
-                      onFollowDefault={(afterNextDefaults) => {
-                        const kind = defaultKindOf(sessionView?.type);
-                        if (kind)
-                          void configureSession({}, kind, afterNextDefaults);
-                      }}
-                      harness={sessionHarness}
-                      provider={currentSession.provider ?? null}
-                      model={currentSession.model ?? null}
-                      settings={currentSession.settings}
-                      carried={harnessStatus?.harnesses ?? []}
-                      routed={harnessStatus?.modelRouter ?? false}
-                      turnRunning={busy}
-                      onChoose={(value) =>
-                        void chooseSessionModel(value, () => {
-                          if (harnessStatus?.modelRouter && sessionHarness)
-                            void rememberFirstModel(selectedAgent, {
-                              harness: sessionHarness,
-                              provider: null,
-                              model: value,
-                            });
-                        })
+          {!hasPendingPermission &&
+            (choice.kind === "picker" || choice.kind === "pending") && (
+              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                <ChatColumn>
+                  {choice.kind === "picker" ? (
+                    <SessionPairPicker
+                      agentId={choice.agentId}
+                      carried={choice.carried}
+                      defaultHarness={choice.defaultHarness}
+                      routed={choice.routed}
+                      open={pairPickerOpen}
+                      onOpenChange={setPairPickerOpen}
+                      onConnectProviders={() => setProvidersModal(true)}
+                      newLayout={newLayout}
+                    />
+                  ) : (
+                    <SessionPairPicker
+                      agentId={choice.agentId}
+                      agentHarness={agentView?.harness}
+                      pending
+                      open={pairPickerOpen}
+                      onOpenChange={setPairPickerOpen}
+                      onConnectProviders={() => setProvidersModal(true)}
+                    />
+                  )}
+                </ChatColumn>
+              </div>
+            )}
+          {!hasPendingPermission &&
+            choice.kind !== "picker" &&
+            choice.kind !== "pending" && (
+              <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                <ChatColumn>
+                  {choice.kind === "outdated" ? (
+                    <SessionPairOutdatedNotice agentId={choice.agentId} />
+                  ) : choice.kind === "session" &&
+                    selectedAgent &&
+                    currentSession ? (
+                    <div className="flex min-w-0 items-center justify-between gap-3">
+                      <ModelIndicator
+                        agentId={selectedAgent}
+                        kind={defaultKindOf(sessionView?.type)}
+                        follows={currentSession.follows}
+                        followsDefaults={
+                          harnessStatus?.followsDefaults ?? false
+                        }
+                        onFollowDefault={(afterNextDefaults) => {
+                          const kind = defaultKindOf(sessionView?.type);
+                          if (kind)
+                            void configureSession({}, kind, afterNextDefaults);
+                        }}
+                        harness={choice.harness}
+                        provider={currentSession.provider ?? null}
+                        model={currentSession.model ?? null}
+                        settings={currentSession.settings}
+                        carried={harnessStatus?.harnesses ?? []}
+                        routed={harnessStatus?.modelRouter ?? false}
+                        turnRunning={busy}
+                        onChoose={(value) =>
+                          void chooseSessionModel(value, () => {
+                            if (harnessStatus?.modelRouter)
+                              void rememberFirstModel(selectedAgent, {
+                                harness: choice.harness,
+                                provider: null,
+                                model: value,
+                              });
+                          })
+                        }
+                        onConfigure={(change) => void configureSession(change)}
+                        onNewSession={() => handleNewSession(true)}
+                      />
+                      <SessionPullRequests
+                        repositories={currentSession.repositories}
+                      />
+                    </div>
+                  ) : choice.kind === "defaults" ? (
+                    <Button
+                      variant="link"
+                      size="inline"
+                      tone="muted"
+                      className="pl-3 text-sm"
+                      onClick={() =>
+                        navigateToSandboxHome(choice.agentId, "setup")
                       }
-                      onConfigure={(change) => void configureSession(change)}
-                      onNewSession={() => handleNewSession(true)}
-                    />
-                    <SessionPullRequests
-                      repositories={currentSession.repositories}
-                    />
-                  </div>
-                ) : selectedAgent ? (
-                  <Button
-                    variant="link"
-                    size="inline"
-                    tone="muted"
-                    className="pl-3 text-sm"
-                    onClick={() =>
-                      navigateToSandboxHome(selectedAgent, "setup")
-                    }
-                  >
-                    {harnessCurrent?.model
-                      ? `${harnessCurrent.model} · Configure defaults`
-                      : "Configure defaults"}
-                  </Button>
-                ) : null}
-              </ChatColumn>
-            </div>
-          )}
+                    >
+                      {harnessCurrent?.model
+                        ? `${harnessCurrent.model} · Configure defaults`
+                        : "Configure defaults"}
+                    </Button>
+                  ) : null}
+                </ChatColumn>
+              </div>
+            )}
           {!hasPendingPermission && selectedAgent && (
             <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
               <ChatColumn>
@@ -1279,7 +1154,7 @@ export function ChatView() {
         />
       )}
       {}
-      {newLayout ? (
+      {newLayout || rightToolbar ? (
         <SidePanelShell
           mainClassName="@container/chat"
           activeTab={activeTab}
@@ -1330,7 +1205,7 @@ export function ChatView() {
               )}
             </>
           }
-          dock={dock}
+          dock={dockPanel}
         >
           <h1 className="sr-only">
             {[selectedAgentName, sessionView?.title]
@@ -1338,14 +1213,19 @@ export function ChatView() {
               .join(" · ")}
           </h1>
           {!newLayout && (
-            <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
+            // UNIT_BOUNDARY_DESCRIPTION: the tabbed panel leaves the chat without a bar of its own on a wide window, as JanUI's chat has none, so that bar appears there only while the status has a badge to show; a phone keeps it, because the rail waits for a panel there and the navigation button has nowhere else to go.
+            <header
+              data-testid="chat-top-bar"
+              className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex"
+            >
               <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
                 <MobileMenuButton />
                 <span
                   aria-hidden
                   className={cn(
                     "h-2 w-2 shrink-0 rounded-full",
-                    agentView && "hidden @max-[149px]:block",
+                    // UNIT_BOUNDARY_DESCRIPTION: the avatar already carries the state, so the dot marks only a chat whose Agent has not loaded yet.
+                    agentView && "hidden",
                     dotColor,
                   )}
                 />
@@ -1361,19 +1241,8 @@ export function ChatView() {
                       avatar={agentView.avatar}
                       size={28}
                       mood={avatarMood(agentDisplay?.state, agentView)}
-                      className="@max-[149px]:hidden"
                     />
                   )}
-                  <span className="flex min-w-0 flex-col items-start text-left">
-                    <span className="max-w-full truncate text-sm font-bold text-foreground">
-                      {selectedAgentName}
-                    </span>
-                    {sessionView?.title && (
-                      <span className="max-w-full truncate text-2xs text-muted-foreground">
-                        {sessionView.title}
-                      </span>
-                    )}
-                  </span>
                 </button>
                 {agentView && (
                   <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
@@ -1386,7 +1255,7 @@ export function ChatView() {
               </div>
               <div
                 data-chat-status
-                className="flex shrink-0 items-center gap-2 md:ml-auto"
+                className="flex shrink-0 items-center gap-2"
               >
                 <ChatHeaderStatus
                   selectedAgent={selectedAgent}
@@ -1480,10 +1349,15 @@ export function ChatView() {
           onOpenFile={openFileHandler}
           panel={shownClassicPanel}
           dockHiddenOnPhone={dockHiddenOnPhone}
-          dock={dock}
+          dock={dockPanel}
           maximizable={
             shownClassicPanel === "dock"
-              ? maximizableView(dockedTab, true, openFilePath, openArtifactId)
+              ? maximizableView(
+                  dockedTab,
+                  true,
+                  shownDock?.kind === "file" ? shownDock.path : null,
+                  shownDock?.kind === "artifact" ? shownDock.id : null,
+                )
               : null
           }
           onClosePanel={() => {

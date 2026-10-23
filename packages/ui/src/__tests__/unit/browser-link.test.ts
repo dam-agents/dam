@@ -10,6 +10,7 @@ import {
   streamPageReload,
 } from "../../modules/browser/lib/browser-link.js";
 import { createBrowserSlice } from "../../modules/browser/store.js";
+import { createSidePanelSlice } from "../../modules/sessions/store/side-panel.js";
 import type { PlatformStore } from "../../store.js";
 
 describe("parseBrowserLink", () => {
@@ -64,10 +65,17 @@ describe("browser open request", () => {
   // TEST_SCENARIO: clicking a button opens the panel and asks it to go to the page. The panel takes the request once; reopening the panel later must not send the user back to an old page.
   test("is taken once", () => {
     const store = create<PlatformStore>()(
-      (...a) => createBrowserSlice(...a) as unknown as PlatformStore,
+      (...a) =>
+        ({
+          ...createBrowserSlice(...a),
+          ...createSidePanelSlice(...a),
+        }) as unknown as PlatformStore,
     );
     store.getState().setOpenBrowser("agent-1", "http://localhost:4444/");
-    expect(store.getState().openBrowserAgentId).toBe("agent-1");
+    expect(store.getState().dock).toEqual({
+      kind: "browser",
+      agentId: "agent-1",
+    });
     expect(store.getState().takeBrowserOpenRequest()?.url).toBe(
       "http://localhost:4444/",
     );

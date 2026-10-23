@@ -1,4 +1,3 @@
-import { TRPCClientError } from "@trpc/client";
 import {
   budgetCpuSchema,
   budgetSizeSchema,
@@ -9,15 +8,7 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
-import { FormField } from "@/components/form-field";
-import {
-  DialogActions,
-  DialogBody,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
-import { Input } from "@/components/ui/input";
-
+import { OperatorOverrideDialog } from "../../operator/components/operator-override-dialog.js";
 import { useSetUserBudget } from "../api/mutations.js";
 import {
   BUDGET_APPLIES_NEXT_START,
@@ -101,26 +92,6 @@ export function UserBudgetDialog({ entry, defaults, onClose }: Props) {
     }
   }
   const allValid = fields.every((field) => parsed[field].ok);
-  const failure = setBudget.error;
-  const notFound =
-    failure instanceof TRPCClientError && failure.data?.code === "NOT_FOUND";
-  const badRequest =
-    failure instanceof TRPCClientError && failure.data?.code === "BAD_REQUEST";
-  const emailError =
-    notFound && !entry
-      ? failure.message
-      : email.trim() !== "" && !user.success
-        ? "Enter an email address."
-        : undefined;
-  const formError = !failure
-    ? undefined
-    : notFound
-      ? entry
-        ? BUDGET_REMOVED_MEANWHILE
-        : undefined
-      : badRequest
-        ? failure.message
-        : BUDGET_SAVE_FAILED;
   const pending = setBudget.isPending;
   const canSave =
     user.success && allValid && Object.keys(change).length > 0 && !pending;
@@ -131,84 +102,51 @@ export function UserBudgetDialog({ entry, defaults, onClose }: Props) {
   };
 
   return (
-    <Modal size="sm" onClose={pending ? undefined : onClose}>
-      <form
-        className="contents"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!canSave || !user.success) return;
-          const input: UserBudgetSetInput = { user: user.data, ...change };
-          setBudget.mutate(input, { onSuccess: onClose });
-        }}
-      >
-        <DialogHeader
-          title={entry ? "Change compute budget" : SET_BUDGET}
-          subtitle={
-            entry
-              ? `For ${entry.email ?? entry.ownerSub}. ${BUDGET_APPLIES_NEXT_START}`
-              : BUDGET_APPLIES_NEXT_START
-          }
-          onClose={onClose}
-          closeDisabled={pending}
-        />
-        <DialogBody className="flex flex-col gap-4">
-          {!entry && (
-            <FormField label="User's email" error={emailError}>
-              <Input
-                autoFocus
-                type="email"
-                autoComplete="off"
-                placeholder="name@example.com"
-                variant={emailError ? "invalid" : "standard"}
-                aria-invalid={emailError !== undefined}
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                  setBudget.reset();
-                }}
-              />
-            </FormField>
-          )}
-          {fields.map((field, index) => {
-            const error = parsed[field].ok ? undefined : FIELDS[field].invalid;
-            return (
-              <FormField
-                key={field}
-                label={FIELDS[field].label}
-                hint={`${FIELDS[field].hint} Empty uses the default.`}
-                error={error}
-              >
-                <Input
-                  autoFocus={entry !== null && index === 0}
-                  autoComplete="off"
-                  placeholder={placeholder[field]}
-                  variant={error ? "invalid" : "standard"}
-                  className="w-36 font-mono"
-                  aria-invalid={error !== undefined}
-                  value={draft[field]}
-                  onChange={(event) => {
-                    setDraft({ ...draft, [field]: event.target.value });
-                    setBudget.reset();
-                  }}
-                />
-              </FormField>
-            );
-          })}
-          {formError && (
-            <p role="alert" className="text-sm text-danger">
-              {formError}
-            </p>
-          )}
-        </DialogBody>
-        <DialogActions
-          onCancel={onClose}
-          cancelDisabled={pending}
-          label="Save"
-          pendingLabel="Saving…"
-          pending={pending}
-          disabled={!canSave}
-        />
-      </form>
-    </Modal>
+    <OperatorOverrideDialog
+      title={entry ? "Change compute budget" : SET_BUDGET}
+      subtitle={
+        entry
+          ? `For ${entry.email ?? entry.ownerSub}. ${BUDGET_APPLIES_NEXT_START}`
+          : BUDGET_APPLIES_NEXT_START
+      }
+      user={
+        entry
+          ? null
+          : {
+              value: email,
+              valid: user.success,
+              onChange: (text) => {
+                setEmail(text);
+                setBudget.reset();
+              },
+            }
+      }
+      failure={setBudget.error}
+      errorCopy={{
+        removedMeanwhile: BUDGET_REMOVED_MEANWHILE,
+        saveFailed: BUDGET_SAVE_FAILED,
+        showServerMessage: true,
+      }}
+      fields={fields.map((field, index) => ({
+        label: FIELDS[field].label,
+        hint: `${FIELDS[field].hint} Empty uses the default.`,
+        placeholder: placeholder[field],
+        error: parsed[field].ok ? undefined : FIELDS[field].invalid,
+        value: draft[field],
+        autoFocus: entry !== null && index === 0,
+        onChange: (text) => {
+          setDraft({ ...draft, [field]: text });
+          setBudget.reset();
+        },
+      }))}
+      pending={pending}
+      canSave={canSave}
+      onSave={() => {
+        if (!user.success) return;
+        const input: UserBudgetSetInput = { user: user.data, ...change };
+        setBudget.mutate(input, { onSuccess: onClose });
+      }}
+      onClose={onClose}
+    />
   );
 }

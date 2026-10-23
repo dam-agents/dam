@@ -10,6 +10,10 @@ import {
 } from "api-server-api";
 
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import {
+  providerEgressScopes,
+  scopeCovers,
+} from "../../modules/connections/domain/provider-egress-scopes.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import { configureLogger } from "../../core/logger.js";
 
@@ -51,8 +55,6 @@ function makeService(
     templates: templates(opts.configured ?? true),
     ...(opts.store ? { store: opts.store } : {}),
     brandName: "Acme",
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     curveBenderDeploymentKey:
       opts.key === undefined ? DEPLOYMENT_KEY : opts.key,
   });
@@ -195,6 +197,54 @@ describe("deployment CurveBender connection", () => {
     expect(injectionScopes(personal.contributions)).toEqual(["(every path)"]);
   });
 
+  // TEST_SCENARIO: the egress gate decides by a rule's host and path glob, not by the credential's segment-boundary scope, so a path under one of the four (Claude Code's /v1/messages/count_tokens) has to be granted for the host itself; the key still rides only the four scopes, so the proxy's other routes stay keyless.
+  it("allows the host on every path while the key stays on the four", () => {
+    const deployment = buildCatalog({}, { curveBenderDeployment: true }).find(
+      (t) => t.id === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    )!;
+    expect(injectionScopes(deployment.contributions)).toEqual(ALLOWED_PATHS);
+    expect(deployment.contributions).toContainEqual({
+      kind: "egress-allow",
+      host: CURVE_BENDER_HOST,
+    });
+
+    const scopes = providerEgressScopes([
+      {
+        templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+        contributions: deployment.contributions,
+      },
+    ]);
+    const request = { host: CURVE_BENDER_HOST, port: 443, tls: true };
+    for (const path of ["/v1/messages/count_tokens", "/v1/messages?beta=true"])
+      expect(
+        scopes.some((scope) => scopeCovers(scope, { ...request, path })),
+      ).toBe(true);
+  });
+
+  // TEST_SCENARIO: DAM inference is gone from the catalog, but a user who held it keeps its Connection, grants and key copy; the deployment-owned reconcile, and so the boot sweep, removes it rather than leaving its env to point sessions at a server nothing prices.
+  it("removes a DAM inference Connection left from before the removal", async () => {
+    const store = newConnectionsStore();
+    store.rows.set("conn-old", {
+      id: "conn-old",
+      ownerId: "owner",
+      templateId: "platform-llm",
+      name: "Acme",
+      inputs: {},
+      auth: {
+        kind: "header",
+        valueRef: { storeId: "test", path: "old-secret", field: "" },
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+      contributions: [],
+    });
+    const { svc, rows } = makeService({ store });
+
+    await svc.listAndReconcileConnections();
+
+    expect(rows.has("conn-old")).toBe(false);
+  });
+
   // TEST_SCENARIO: a listing checks a settled connection by reading its Secret once, not once for the key and again for a CA CurveBender never has.
   it("reads the connection's Secret once per listing", async () => {
     const { svc, secretReads } = makeService();
@@ -237,7 +287,7 @@ describe("deployment CurveBender connection", () => {
     expect(noKeyIn(await svc.listTemplates())).toBe(true);
   });
 
-  // TEST_SCENARIO: the user's own create, update and delete refuse the deployment provider with its own words, not the built-in provider's feature hint, so its Secret keeps the deployment's key.
+  // TEST_SCENARIO: the user's own create, update and delete refuse the deployment provider with its own words, so its Secret keeps the deployment's key.
   it("refuses to change the connection by hand", async () => {
     const { svc, rows } = makeService();
     await svc.listAndReconcileConnections();

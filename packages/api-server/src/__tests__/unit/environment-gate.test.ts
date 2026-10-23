@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and `Authorization` never reach the app, the app cannot set those cookies, and every response is uncacheable. Any other host passes on untouched.
+// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: a visitor without a session is sent to the share host's front door, which signs them in with the share session (passing a signed-in visitor straight through), decides access and hands the address a one-time code bound to the visitor's browser, which the address trades for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. An Environment with several endpoints is one sign-in: the browser passes through each other endpoint, which gets a session of its own, and returns to the page it asked for; a page of one endpoint can then call another, its CORS preflight is answered by the gate, and a refusal it gets carries CORS headers so the page can read it. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another, and a code opens nothing in another browser; the address's session ends with the share session it came from, and signing out ends both; a request another site's page makes in the visitor's name is refused; anyone else is refused, with a page that says whom to ask; the platform's own cookies and its own credentials in `Authorization` never reach the app, while the app's own bearer token does; the app cannot set the platform's cookies, and every response is uncacheable. Any other host passes on untouched.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -10,9 +10,11 @@ import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import {
   domainOf,
   parseAddress,
+  platformCredential,
   relayHeaders,
   requestAllowed,
   safeNext,
+  siblingPreflight,
 } from "../../modules/environments/domain/gate.js";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
 import { createEnvironmentGate } from "../../modules/environments/gate/environment-gate.js";
@@ -22,6 +24,17 @@ import { createEnvironmentSignIn } from "../../modules/environments/services/env
 const DOMAIN = "env.test";
 const SHARE = "share.test";
 const OWNER = "owner-sub";
+const PLATFORM = {
+  issuers: ["http://keycloak.test/realms/platform"],
+  isApiKey: (token: string) => token.startsWith("pk_"),
+};
+
+// UNIT_BOUNDARY_DESCRIPTION: an unsigned JWT naming an issuer: the gate reads a token's issuer and never its signature.
+function jwt(iss: string | null): string {
+  const part = (o: object) =>
+    Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `${part({ alg: "none" })}.${part(iss === null ? { sub: "x" } : { iss, sub: "x" })}.sig`;
+}
 const closers: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
@@ -54,6 +67,7 @@ async function world(
     email?: string | null;
     ownerList?: string[];
     environmentList?: string[] | null;
+    endpoints?: { name: string; port: number }[];
   } = {},
 ) {
   const seen: { path: string; headers: http.IncomingHttpHeaders }[] = [];
@@ -91,12 +105,14 @@ async function world(
 
   const records = [record("pr-1-abcdef", 4444), record("pr-2-abcdef", 4444)];
   records[0]!.access = opts.environmentList ?? null;
+  if (opts.endpoints) records[0]!.endpoints = opts.endpoints;
   const woken: string[] = [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, faked: the ones still alive, by id.
   const shareSessions = new Set(["share-1"]);
   const signIn = createEnvironmentSignIn({
     handoffs: createMemoryTtlStore(60_000),
     sessions: createMemoryTtlStore(3_600_000),
+    chains: createMemoryTtlStore(300_000),
     share: {
       alive: async (id) => shareSessions.has(id),
       end: async (id) => void shareSessions.delete(id),
@@ -151,12 +167,13 @@ async function world(
   const gate = createEnvironmentGate({
     domain: DOMAIN,
     scheme: "http",
-    frontDoorUrl: (address, next, binding) =>
-      `http://${SHARE}/e/${address}?next=${encodeURIComponent(next)}&b=${binding}`,
+    frontDoorUrl: (address, next, binding, chain) =>
+      `http://${SHARE}/e/${address}?next=${encodeURIComponent(next)}&b=${binding}${chain ? `&chain=${chain}` : ""}`,
     signOutUrl: (address) => shareSignIn.logoutUrl(`/e/${address}`),
     repo,
     ownerList,
     signIn,
+    platform: PLATFORM,
     ensureReady: async (id) => void woken.push(id),
     stampActivity: async () => {},
     upstream: () => ({ host: "127.0.0.1", port: runtimePort }),
@@ -278,11 +295,48 @@ async function world(
     return session.cookies[0]!.split(";")[0]!;
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: a whole sign-in to an Environment with several endpoints, as one browser walks it: the first address, then every step of the chain until the browser lands back on the page it asked for. Each address keeps its own cookies, as a browser keeps them per host; returns the session cookie each address set, and every stop on the way.
+  async function signInAll(first: string, path = "/page?x=1") {
+    const jar = new Map<string, string[]>();
+    const keep = (host: string, cookies: string[]) => {
+      const held = jar.get(host) ?? [];
+      for (const c of cookies) {
+        const pair = c.split(";")[0]!;
+        const name = pair.split("=")[0]!;
+        const i = held.findIndex((h) => h.split("=")[0] === name);
+        if (i >= 0) held[i] = pair;
+        else held.push(pair);
+      }
+      jar.set(host, held);
+    };
+    const cookieFor = (host: string) =>
+      host === SHARE ? "share=share-1" : (jar.get(host) ?? []).join("; ");
+    const stops: string[] = [];
+    let url = new URL(`http://${first}.${DOMAIN}${path}`);
+    for (let hop = 0; hop < 30; hop++) {
+      stops.push(url.href);
+      const res = await request(url.host, `${url.pathname}${url.search}`, {
+        accept: "text/html",
+        cookie: cookieFor(url.host),
+      });
+      keep(url.host, res.cookies);
+      const refresh = /http-equiv="refresh" content="0;url=([^"]+)"/.exec(
+        res.body,
+      )?.[1];
+      const to =
+        res.location ?? (refresh ? refresh.replaceAll("&amp;", "&") : null);
+      if (to === null) return { last: res, url, jar, stops };
+      url = new URL(to, url);
+    }
+    throw new Error("the sign-in never landed");
+  }
+
   return {
     request,
     abortedUpload,
     frontDoor,
     signInTo,
+    signInAll,
     shareLogins,
     shareSessions,
     records,
@@ -295,14 +349,14 @@ async function world(
 }
 
 describe("the Environment gate", () => {
-  // TEST_SCENARIO: the owner signs in once and the address relays to the runtime's forward for the declared port, waking the Environment first. The app gets its own cookies and the original host, never the platform's session cookie or Authorization; it cannot set the session cookie, nor a cookie for the whole environments domain; and the answer is uncacheable whatever the app said.
+  // TEST_SCENARIO: the owner signs in once and the address relays to the runtime's forward for the declared port, waking the Environment first. The app gets its own cookies and the original host, never the platform's session cookie or a platform token in Authorization; it cannot set the session cookie, nor a cookie for the whole environments domain; and the answer is uncacheable whatever the app said.
   it("relays the owner's request to the declared port", async () => {
     const w = await world();
     const cookie = await w.signInTo("app-pr-1-abcdef");
 
     const res = await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/a?b=1", {
       cookie: `${cookie}; app=1`,
-      authorization: "Bearer platform-token",
+      authorization: `Bearer ${jwt("http://keycloak.test/realms/platform")}`,
     });
 
     expect(res.status).toBe(200);
@@ -539,10 +593,17 @@ describe("the Environment gate", () => {
 
   // TEST_SCENARIO: a request another origin's page makes in the visitor's name — a script's call, a form post (an opaque-origin one too), a WebSocket from a page of another Environment — is refused before it reaches the app, though the browser sent the session cookie; a link from anywhere, the address's own calls (its form post under no-referrer too) and calls between endpoints of one Environment pass.
   it("refuses a request another origin makes in the visitor's name", async () => {
-    const w = await world();
-    w.records[0]!.endpoints.push({ name: "api", port: 5555 });
-    const cookie = await w.signInTo("app-pr-1-abcdef");
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "api", port: 5555 },
+      ],
+    });
     const host = `app-pr-1-abcdef.${DOMAIN}`;
+    const signedIn = await w.signInAll("app-pr-1-abcdef");
+    expect(signedIn.url.href).toBe(`http://${host}/page?x=1`);
+    const cookie = signedIn.jar.get(host)!.join("; ");
+    const seenBefore = w.seen.length;
     const evil = `http://app-pr-2-abcdef.${DOMAIN}`;
 
     expect(
@@ -556,7 +617,7 @@ describe("the Environment gate", () => {
     );
     expect(posted.status).toBe(403);
     expect(posted.body).toContain("another site");
-    expect(w.seen).toHaveLength(0);
+    expect(w.seen).toHaveLength(seenBefore);
 
     expect((await w.request(host, "/", { cookie })).status).toBe(200);
     const own = await w.request(
@@ -595,6 +656,200 @@ describe("the Environment gate", () => {
       socket.on("error", () => resolve(0));
     });
     expect(ws).toBe(403);
+  });
+
+  // TEST_SCENARIO: an Environment with three endpoints is one sign-in: after the first address trades its code, the browser passes through each other endpoint, each of which gets a session cookie of its own bound to a secret of its own, and lands back on the page it asked for; each endpoint then admits the visitor, and a session of one endpoint still opens nothing on another.
+  it("signs a visitor in to every endpoint of an Environment at once", async () => {
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "auth", port: 4445 },
+        { name: "api", port: 4446 },
+      ],
+    });
+    const signedIn = await w.signInAll("app-pr-1-abcdef");
+
+    expect(signedIn.url.href).toBe(`http://app-pr-1-abcdef.${DOMAIN}/page?x=1`);
+    expect(signedIn.last.status).toBe(200);
+    const visited = signedIn.stops.map((u) => new URL(u).host);
+    expect(visited).toContain(`auth-pr-1-abcdef.${DOMAIN}`);
+    expect(visited).toContain(`api-pr-1-abcdef.${DOMAIN}`);
+    const sessions = ["app", "auth", "api"].map((e) => {
+      const held = signedIn.jar.get(`${e}-pr-1-abcdef.${DOMAIN}`) ?? [];
+      return held.find((c) => c.startsWith("platform-env="))!;
+    });
+    expect(new Set(sessions).size).toBe(3);
+    for (const [i, e] of ["app", "auth", "api"].entries())
+      expect(
+        (
+          await w.request(`${e}-pr-1-abcdef.${DOMAIN}`, "/", {
+            cookie: sessions[i]!,
+          })
+        ).status,
+      ).toBe(200);
+    expect(
+      (
+        await w.request(`auth-pr-1-abcdef.${DOMAIN}`, "/", {
+          cookie: sessions[0]!,
+        })
+      ).status,
+    ).toBe(401);
+  });
+
+  // TEST_SCENARIO: a step of the sign-in chain with a chain id no front door made still signs the visitor in to that address alone, and goes nowhere else; an Environment with one endpoint signs in with no chain at all.
+  it("refuses a sign-in chain that is not the visitor's own", async () => {
+    const one = await world();
+    const single = await one.signInAll("app-pr-1-abcdef");
+    expect(single.stops.some((u) => u.includes("/.platform/signin"))).toBe(
+      false,
+    );
+
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "auth", port: 4445 },
+      ],
+    });
+    const start = await w.request(`auth-pr-1-abcdef.${DOMAIN}`, "/", {
+      accept: "text/html",
+    });
+    const door = new URL(start.location!);
+    door.searchParams.set("chain", "A".repeat(43));
+    const forged = await w.request(SHARE, `${door.pathname}${door.search}`, {
+      cookie: "share=share-1",
+    });
+    expect(forged.status).toBe(302);
+    const handoff = new URL(forged.location!);
+    const traded = await w.request(
+      handoff.host,
+      `${handoff.pathname}${handoff.search}`,
+      { cookie: start.cookies[0]!.split(";")[0]! },
+    );
+    expect(traded.location).toBe("/");
+  });
+
+  // TEST_SCENARIO: a page of one endpoint calls another endpoint of the same Environment: the browser's preflight, which carries no cookie, is answered by the gate with credentials allowed for that origin and never reaches the app; the call itself carries the session and reaches the app; and a preflight from another Environment's page gets no such answer.
+  it("answers a preflight from the Environment's own endpoints", async () => {
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "auth", port: 4445 },
+      ],
+    });
+    const signedIn = await w.signInAll("app-pr-1-abcdef");
+    const auth = `auth-pr-1-abcdef.${DOMAIN}`;
+    const sibling = `http://app-pr-1-abcdef.${DOMAIN}`;
+    const seenBefore = w.seen.length;
+
+    const preflight = await new Promise<http.IncomingMessage>((resolve) => {
+      http
+        .request(
+          {
+            host: "127.0.0.1",
+            port: w.port,
+            path: "/realms/x/.well-known/openid-configuration",
+            method: "OPTIONS",
+            headers: {
+              host: auth,
+              origin: sibling,
+              "access-control-request-method": "GET",
+              "access-control-request-headers": "authorization",
+            },
+          },
+          resolve,
+        )
+        .end();
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe(sibling);
+    expect(preflight.headers["access-control-allow-credentials"]).toBe("true");
+    expect(preflight.headers["access-control-allow-headers"]).toBe(
+      "authorization",
+    );
+    expect(w.seen).toHaveLength(seenBefore);
+
+    const call = await w.request(
+      auth,
+      "/realms/x/.well-known/openid-configuration",
+      {
+        origin: sibling,
+        cookie: signedIn.jar.get(auth)!.join("; "),
+      },
+    );
+    expect(call.status).toBe(200);
+    expect(w.seen).toHaveLength(seenBefore + 1);
+
+    const foreign = await new Promise<http.IncomingMessage>((resolve) => {
+      http
+        .request(
+          {
+            host: "127.0.0.1",
+            port: w.port,
+            path: "/",
+            method: "OPTIONS",
+            headers: {
+              host: auth,
+              origin: `http://app-pr-2-abcdef.${DOMAIN}`,
+              "access-control-request-method": "GET",
+            },
+          },
+          resolve,
+        )
+        .end();
+    });
+    expect(foreign.statusCode).toBe(403);
+    expect(foreign.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a page of one endpoint that calls another endpoint before it has a session there gets the gate's 401 with CORS headers for its own origin, so the page reads the status instead of a network error; another Environment's page gets the refusal with none.
+  it("lets a sibling endpoint's page read the gate's refusal", async () => {
+    const w = await world({
+      endpoints: [
+        { name: "app", port: 4444 },
+        { name: "auth", port: 4445 },
+      ],
+    });
+    const call = await new Promise<http.IncomingMessage>((resolve) => {
+      http
+        .request(
+          {
+            host: "127.0.0.1",
+            port: w.port,
+            path: "/x",
+            headers: {
+              host: `auth-pr-1-abcdef.${DOMAIN}`,
+              origin: `http://app-pr-1-abcdef.${DOMAIN}`,
+            },
+          },
+          resolve,
+        )
+        .end();
+    });
+    expect(call.statusCode).toBe(401);
+    expect(call.headers["access-control-allow-origin"]).toBe(
+      `http://app-pr-1-abcdef.${DOMAIN}`,
+    );
+    expect(call.headers["access-control-allow-credentials"]).toBe("true");
+  });
+
+  // TEST_SCENARIO: an app that signs its users in itself gets their bearer tokens in Authorization, while a platform API key, a token the platform's identity provider issued and a token that names no issuer never reach it.
+  it("passes the app's own Authorization and drops the platform's", async () => {
+    const w = await world();
+    const cookie = await w.signInTo("app-pr-1-abcdef");
+    const host = `app-pr-1-abcdef.${DOMAIN}`;
+    const reached = async (authorization: string) => {
+      await w.request(host, "/", { cookie, authorization });
+      return w.seen.at(-1)!.headers.authorization;
+    };
+
+    const own = `Bearer ${jwt("https://keycloak-pr-1.env.test/realms/app")}`;
+    expect(await reached(own)).toBe(own);
+    expect(await reached("Basic dXNlcjpwYXNz")).toBe("Basic dXNlcjpwYXNz");
+    expect(await reached("Bearer pk_secret")).toBeUndefined();
+    expect(
+      await reached(`Bearer ${jwt("http://keycloak.test/realms/platform")}`),
+    ).toBeUndefined();
+    expect(await reached(`Bearer ${jwt(null)}`)).toBeUndefined();
   });
 
   // TEST_SCENARIO: an address that names no Environment, or an endpoint it did not declare, answers 404; a request for another host passes to the rest of the api-server.
@@ -697,9 +952,105 @@ describe("Environment addresses", () => {
         cookie:
           "__Host-platform-env=s; platform-env =t; __Host-platform-env-signin=u; platform-envx=keep; a=1",
       }),
-      { address: "x", publicHost: "h", scheme: "https" },
+      { address: "x", publicHost: "h", scheme: "https", platform: PLATFORM },
     );
     expect(out.get("cookie")).toBe("platform-envx=keep; a=1");
+  });
+});
+
+describe("a sign-in chain", () => {
+  // TEST_SCENARIO: a chain continues only for the person and share sign-in that started it, and only at the endpoint whose turn it is; it walks every other endpoint in order and then returns where the visitor began, after which it is gone.
+  it("continues only its own sign-in, in order", async () => {
+    const signIn = createEnvironmentSignIn({
+      handoffs: createMemoryTtlStore(60_000),
+      sessions: createMemoryTtlStore(3_600_000),
+      chains: createMemoryTtlStore(300_000),
+      share: { alive: async () => true, end: async () => {} },
+      addressUrl: (a) => `http://${a}.${DOMAIN}`,
+      now: () => Date.now(),
+    });
+    const visitor = { sub: OWNER, email: null, shareSession: "share-1" };
+    const hop = await signIn.startChain(
+      visitor,
+      ["auth-pr-1", "api-pr-1"],
+      `http://app-pr-1.${DOMAIN}/page`,
+    );
+    const chain = new URL(hop!).searchParams.get("chain")!;
+    expect(new URL(hop!).host).toBe(`auth-pr-1.${DOMAIN}`);
+
+    expect(
+      await signIn.continueChain(
+        chain,
+        { ...visitor, sub: "someone-else" },
+        "auth-pr-1",
+      ),
+    ).toBeNull();
+    expect(
+      await signIn.continueChain(
+        chain,
+        { ...visitor, shareSession: "share-2" },
+        "auth-pr-1",
+      ),
+    ).toBeNull();
+    expect(await signIn.continueChain(chain, visitor, "api-pr-1")).toBeNull();
+
+    const next = await signIn.continueChain(chain, visitor, "auth-pr-1");
+    expect(new URL(next!).host).toBe(`api-pr-1.${DOMAIN}`);
+    expect(await signIn.continueChain(chain, visitor, "api-pr-1")).toBe(
+      `http://app-pr-1.${DOMAIN}/page`,
+    );
+    expect(await signIn.continueChain(chain, visitor, "api-pr-1")).toBeNull();
+    expect(await signIn.startChain(visitor, [], "http://x")).toBeNull();
+  });
+});
+
+describe("the platform's own credentials", () => {
+  // TEST_SCENARIO: an Authorization value is the platform's when it is a bearer API key, a bearer token whose issuer is one of the platform's or that names none or cannot be read, or a bearer value that is not one token, such as two joined headers; a token from another issuer and any other scheme are the app's.
+  it("tells the platform's credentials from an app's", () => {
+    const of = (v: string) => platformCredential(v, PLATFORM);
+    expect(of("Bearer pk_abc")).toBe(true);
+    expect(of(`Bearer ${jwt("http://keycloak.test/realms/platform")}`)).toBe(
+      true,
+    );
+    expect(of(`bearer   ${jwt(null)}`)).toBe(true);
+    expect(of("Bearer not.a-json.token")).toBe(true);
+    expect(
+      of(`Bearer ${jwt("http://keycloak.test/realms/platform")}, Bearer x`),
+    ).toBe(true);
+    expect(of("Bearer")).toBe(true);
+    expect(of(`Bearer ${jwt("https://other.example/realms/x")}`)).toBe(false);
+    expect(of("Bearer opaque-token")).toBe(false);
+    expect(of("Basic dXNlcjpwYXNz")).toBe(false);
+  });
+});
+
+describe("a preflight from another endpoint", () => {
+  // TEST_SCENARIO: only a real preflight (OPTIONS with a requested method) from one of the Environment's own origins gets the gate's answer, and the answer allows exactly what was asked.
+  it("is answered only for the Environment's own origins", () => {
+    const own = new Set(["https://app-pr-1-abcdef.env.test"]);
+    const ask = (over: Partial<Parameters<typeof siblingPreflight>[0]>) =>
+      siblingPreflight(
+        {
+          method: "OPTIONS",
+          origin: "https://app-pr-1-abcdef.env.test",
+          requestMethod: "POST",
+          requestHeaders: undefined,
+          ...over,
+        },
+        own,
+      );
+    expect(ask({})).toMatchObject({
+      "Access-Control-Allow-Origin": "https://app-pr-1-abcdef.env.test",
+      "Access-Control-Allow-Methods": "POST",
+    });
+    expect(ask({})!["Access-Control-Allow-Headers"]).toBeUndefined();
+    expect(
+      ask({ requestHeaders: "x-a" })!["Access-Control-Allow-Headers"],
+    ).toBe("x-a");
+    expect(ask({ method: "GET" })).toBeNull();
+    expect(ask({ requestMethod: undefined })).toBeNull();
+    expect(ask({ origin: "https://app-pr-2-abcdef.env.test" })).toBeNull();
+    expect(ask({ origin: undefined })).toBeNull();
   });
 });
 

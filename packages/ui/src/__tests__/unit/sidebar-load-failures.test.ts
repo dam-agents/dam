@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: In JanUI's sidebar a failed read is never shown as an answer. An Agent's list whose first page failed offers a retry instead of saying it has no Sessions, and an old pin whose first lookup failed offers a retry instead of vanishing; the pin stays stored either way. An Agent's list ends with its New session row once every page is read and it lists no Session, whether it has none, all are pinned or the filter hides them, and a filter that hid an unpinned one says so.
+// TEST_OVERVIEW: In JanUI's sidebar a failed read is never shown as an answer. An Agent's list whose first page failed offers a retry instead of saying it has no Sessions, and an old pin whose first lookup failed offers a retry instead of vanishing; the pin stays stored either way. An Agent's list leads with its New session row once every page is read and it lists no Session, whether it has none, all are pinned or the filter hides them, and a filter that hid an unpinned one says so.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -270,8 +270,8 @@ it("offers no later-page retry while the Agent cannot answer", () => {
   ).toContain('data-testid="sidebar-agent-sessions-more-failed"');
 });
 
-// TEST_SCENARIO: an Agent's list always ends with its New session row, whatever it holds or is still fetching, so the row the Agent's own page offers is also the row its list leads to.
-it("always ends an Agent's list with its New session row", () => {
+// TEST_SCENARIO: an Agent's list always leads with its New session row, whatever it holds or is still fetching, so the row the Agent's own page offers is also the first row its list offers.
+it("always leads an Agent's list with its New session row", () => {
   const render = () =>
     renderToStaticMarkup(
       createElement(AgentSessionList, {
@@ -309,7 +309,7 @@ const chat = (sessionId: string) => ({
   updatedAt: "2026-10-01T08:00:00Z",
 });
 
-// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, and still ends with its New session row. A filter that hid an unpinned Session says so above that row, also when the Sessions it left are all pinned.
+// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, and still leads with its New session row. A filter that hid an unpinned Session says so below that row, also when the Sessions it left are all pinned.
 it("offers the New session row for a list whose Sessions are all pinned or filtered out", () => {
   const render = () =>
     renderToStaticMarkup(

@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -96,6 +96,7 @@ Other Agents' posts are never ignored.
 
 Bot posts can answer each other — two readers, or an Agent and a webhook — so a conversation admits at most **three bot posts since a person last posted there**; later ones start nothing until a person posts.
 The count is per thread (and per channel top level) and lives in the leader's memory, so a restart only allows a new run of the same size.
+A dropped post leaves a record for its channel in Postgres — how many were dropped, the time of the last one, and the newest few with their sender — and every connected Agent's Channels page shows it until a day passes without a drop; the record is only a view of the guard, which never reads it.
 A bot sender gets no private notices, since a notice needs a person, and a bot post in a 1:1 DM starts nothing — that conversation is with one person.
 A tag of an Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn; whoever tagged it gets the reason instead — a person privately, a bot in one footer-less notice in the thread, which starts nothing.
 
@@ -203,6 +204,7 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Transport.** Socket Mode, one workspace-level WebSocket to Slack, opened by the lease-holding replica at boot so slash commands, mentions and DMs work in chats that have no binding yet (mirroring the Telegram client).
   The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened.
   Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.
+  The gateway reconnects a dropped socket itself, with the Socket Mode client's own reconnect turned off: the first reconnect runs 1 s after the drop, and a reconnect Slack refuses, even `invalid_auth` on the app token, is retried after 5 s, 15 s, 30 s and then every 60 s, so a Slack auth outage stops only Slack, never the api-server, and the socket comes back once Slack accepts the token again.
 - **Token provenance.** The App-Level Token (`xapp-…`) is app-scoped: it comes from Helm values and stays singular, so one Socket Mode connection serves every installed workspace, and it alone decides whether the Slack worker runs.
   A **Bot Token is per workspace**, because Slack scopes one to one workspace, and every workspace gets its token the same way: by completing Slack's install handshake, the token that mints landing in a K8s Secret with a row pointing at it — no credential in Postgres, and none served from api-server env.
   Neither token is per-Agent.
@@ -372,12 +374,14 @@ Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — th
 
 ## Persistence touchpoints
 
-Channels touch three stores; the substrate details live on [persistence](persistence.md):
+Channels touch these stores; the substrate details live on [persistence](persistence.md):
 
 - **Identity-link and binding tables (Postgres).** A binding **is** its (Agent, workspace, conversation) triple, so an Agent cannot connect to one conversation twice while several Agents may share it, and a conversation with **no** default is a state the store permits and the routing handles.
   An identity link ties a messenger user to a platform identity, populated by Slack's `/platform login` — which is what authorizes the in-chat bind/unbind/ambient/default commands.
   Table shapes and indexes: [persistence](persistence.md).
   Telegram's token and Slack's app-level token live in api-server env from Helm values; a Slack workspace's bot token is a K8s Secret, which its install row points at.
+
+- **Loop guard drops (Postgres).** One row per Slack conversation where the bot-post limit dropped a post, written by the leader and read with the Agent's channels; a drop more than a day after the last starts the count again.
 
 - **The Agent's workspace (per-Agent PVC).** A Slack attachment lands there for the agent to open, so a channel speaker writes to persistent state ([persistence](persistence.md)).
 

@@ -1,4 +1,6 @@
+import { AUTH_ERROR_HINT } from "api-server-api";
 import { describe, it, expect } from "vitest";
+
 import {
   rewriteAuthError,
   rewriteCwd,
@@ -11,8 +13,9 @@ describe("rewriteAuthError", () => {
       error: { message: "authentication_error: bad key" },
     });
     const out = JSON.parse(rewriteAuthError(input));
-    expect(out.error.message).toMatch(/Authentication Error:/);
-    expect(out.error.message).toMatch(/authentication_error: bad key/);
+    expect(out.error.message).toBe(
+      `${AUTH_ERROR_HINT}\n\nError: authentication_error: bad key`,
+    );
   });
 
   it("prepends hint on sessionUpdate text content", () => {
@@ -25,9 +28,8 @@ describe("rewriteAuthError", () => {
       },
     });
     const out = JSON.parse(rewriteAuthError(input));
-    expect(out.params.update.content.text).toMatch(/Authentication Error:/);
-    expect(out.params.update.content.text).toMatch(
-      /authentication_error occurred/,
+    expect(out.params.update.content.text).toBe(
+      `${AUTH_ERROR_HINT}\n\nError: authentication_error occurred`,
     );
   });
 

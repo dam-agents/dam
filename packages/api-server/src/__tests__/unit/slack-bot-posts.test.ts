@@ -10,7 +10,7 @@
  */
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AgentsService } from "api-server-api";
+import type { AgentsService, SlackLoopGuardDrop } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
@@ -86,6 +86,7 @@ function harness(
   };
   const prompts: Record<string, string[]> = { "agent-a": [], "agent-b": [] };
   const ignored: SlackIgnoredApp[] = [...(opts.ignored ?? [])];
+  const loopGuardDrops: { channelId: string; drop: SlackLoopGuardDrop }[] = [];
   const ignoredApps: SlackIgnoredApps = {
     list: async () => [...ignored],
     ignore: async (_channel, app) => {
@@ -150,6 +151,11 @@ function harness(
     setSlackChannelAmbient: async () => {},
     agentsFor: () => ({}) as never,
     ignoredApps,
+    loopGuardDrops: {
+      record: async (channelId, drop) => {
+        loopGuardDrops.push({ channelId, drop });
+      },
+    },
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
@@ -170,6 +176,7 @@ function harness(
     gw,
     prompts,
     ignored,
+    loopGuardDrops,
     async mention(sender: SlackSender, text: string, ts = "1.1") {
       await worker.connect();
       await gw.fireMention({ sender, channel: "C1", ts, text });
@@ -395,13 +402,24 @@ describe("a post by another app or webhook", () => {
 
 describe("the loop bound", () => {
   /** TEST_SCENARIO: Bot posts keep arriving in one thread with no person
-   *  posting. The first three are admitted, the fourth is dropped. A person's
-   *  post resets the count, so the next bot post is admitted again. */
+   *  posting. The first three are admitted, the fourth is dropped and recorded
+   *  for the channel, naming the app and the thread. A person's post resets
+   *  the count, so the next bot post is admitted again. */
   it("stops bot posts after the limit until a person posts", async () => {
     const h = harness({ a: { ambient: true } });
     for (const ts of ["9.1", "9.2", "9.3", "9.4"])
       await h.message(fromFlux, "status", { ts, threadTs: "9.0" });
     expect(h.loopBoundHits()).toBe(1);
+    expect(h.loopGuardDrops).toEqual([
+      {
+        channelId: "C1",
+        drop: expect.objectContaining({
+          thread: true,
+          sender: "app",
+          name: "FluxCD",
+        }),
+      },
+    ]);
 
     await h.message({ kind: "person", user: "U1" }, "thanks", {
       ts: "9.5",

@@ -21,8 +21,8 @@ import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
   type InvocationsService,
-  type SpendHoldGate,
 } from "./services/invocations-service.js";
+import type { SpendHoldGate } from "../spend/index.js";
 import {
   createInvocationLivenessSweep,
   type InvocationLivenessSweep,

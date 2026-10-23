@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -59,6 +59,7 @@ It runs two listeners:
   Failures leave the router as tRPC error codes: what the caller caused (a malformed identifier, a duplicate, a resource it does not own) is a client error with its message intact, except the media-type rejection, whose message would echo the request header; everything else is an internal error whose message and stack are redacted on the wire and logged server-side with the cause.
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls.
   Not exposed outside the cluster and carries no user authentication.
+  A failure the caller caused leaves it as a client error code, as on the public port: a Postgres rejection of a malformed identifier or of a duplicate row becomes a bad request or a conflict rather than an internal error.
 
 Channel-relayed turns (Slack, Telegram) are watched for **liveness, not duration** — a turn is never failed for taking long, and on Slack's addressed turns an answer the relay lost is recovered after the fact ([channel-turns](channel-turns.md)).
 
@@ -73,7 +74,7 @@ The public port also accepts streamed bundled file imports per agent and proxies
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent.
 Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, activity retention, agent and invocation reapers) run this way, and each replica re-asserts its scheduler registrations periodically so a Redis dataset loss cannot silently stop the sweeps.
-Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, Environment hand-off codes and sessions, and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres.
+Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows, artifact share sign-ins, share sessions and render grants, Environment hand-off codes, sign-in chains and sessions, and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres.
 The per-agent MCP endpoint is **stateless** — it mints no streamable-HTTP session id and builds a server and transport per request — so any replica serves any harness call and nothing has to pin a gateway to a replica.
 Affinity was tried first and does not work here: a Service `sessionAffinity` is bypassed on a waypoint-fronted Service, and a consistent-hash `DestinationRule` on source IP leaves the waypoint's route without a hash policy, which degrades ring hash to per-request random.
 Since every harness call still traverses the waypoint, it is itself replicated with its own disruption budget when the api-server runs more than one replica.

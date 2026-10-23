@@ -1,5 +1,5 @@
 import { stripContinuedFrom } from "./continued-from.js";
-import { isNonNullObject, parseFrame } from "./frames.js";
+import { isNonNullObject, parseFrame } from "api-server-api";
 
 export type RewriteCut =
   | { kind: "start" }

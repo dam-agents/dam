@@ -1,11 +1,12 @@
 import { nextUtcMidnight } from "api-server-api";
+import type { SpendHoldReason } from "../../spend/index.js";
 
 export type ChannelSpendHold = (
   agentId: string,
-) => Promise<"limit" | "ceiling" | null>;
+) => Promise<SpendHoldReason | null>;
 
 export function spendHoldUserCopy(
-  reason: "limit" | "ceiling",
+  reason: SpendHoldReason,
   agentName: string,
   brandName: string,
   resetAt: string,

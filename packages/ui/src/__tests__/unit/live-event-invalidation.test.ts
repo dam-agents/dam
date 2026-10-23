@@ -63,6 +63,15 @@ it("refetches the owner's notices on a schedules and an attention hint", async (
   expect(notices.calls()).toBe(3);
 });
 
+// TEST_SCENARIO: "All sessions" reads the record page by page under the attention path, so an attention hint must refresh its loaded pages as it refreshes the bounded reply; otherwise a Session renamed or deleted in another tab stays stale in that list.
+it("refreshes the paged All sessions list on an attention hint", async () => {
+  const pages = counter();
+  await watch(trpc.attention.listForOwnerPage.queryKey({}), pages.fn);
+
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+  expect(pages.calls()).toBe(2);
+});
+
 // TEST_SCENARIO: the live-event stream drops and re-subscribes, and the server answers a new subscription with a sync hint. That hint must refresh every family the stream carries — the agent list, harness config, approvals, egress rules, schedules, budgets, starter-kit updates, knowledge-base shares, artifacts, attention and getting started — because that is how the screen catches up on the events it missed while the connection was down, and no other trigger covers a family the hint forgets.
 it("refreshes every live family on a sync hint", async () => {
   const families: Record<string, QueryKey> = {

@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  parseFrame,
-  isRequest,
-  isResponse,
-} from "../../modules/acp/domain/frames.js";
+import { parseFrame, isRequest, isResponse } from "api-server-api";
 
 describe("frames", () => {
   it("parseFrame parses a JSON object and returns null for anything else", () => {

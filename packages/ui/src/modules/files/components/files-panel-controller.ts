@@ -86,8 +86,10 @@ export function useFilesPanelController({
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   useWorkspaceWatch(selectedAgent);
-  const openFilePath = useStore((s) => s.openFilePath);
-  const setOpenFilePath = useStore((s) => s.setOpenFilePath);
+  const openFilePath = useStore((s) =>
+    s.dock?.kind === "file" ? s.dock.path : null,
+  );
+  const setDock = useStore((s) => s.setDock);
   const toggleExpandedDir = useStore((s) => s.toggleExpandedDir);
   const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const expandedDirs = useStore((s) =>
@@ -114,8 +116,8 @@ export function useFilesPanelController({
   useFileWatch(selectedAgent, openFilePath);
 
   useEffect(() => {
-    if (openFileError) setOpenFilePath(null);
-  }, [openFileError, setOpenFilePath]);
+    if (openFileError) setDock(null);
+  }, [openFileError, setDock]);
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [pendingNew, setPendingNew] = useState<PendingNew | null>(null);
@@ -257,7 +259,7 @@ export function useFilesPanelController({
 
   const handleCancelRename = useCallback(() => setRenamingPath(null), []);
   const handleCancelNew = useCallback(() => setPendingNew(null), []);
-  const closeFile = useCallback(() => setOpenFilePath(null), [setOpenFilePath]);
+  const closeFile = useCallback(() => setDock(null), [setDock]);
 
   const handleFileInputChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {

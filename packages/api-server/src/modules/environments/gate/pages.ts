@@ -20,13 +20,17 @@ const CSS = `
  * through: a missing Environment, a visitor who may not open it, or one that
  * is not answering. It never names the Environment's owner or anything the
  * visitor could not already see in the address. A refusal on the share host
- * offers to switch account, by the share host's own sign-out.
+ * offers to switch account, by the share host's own sign-out. A step of a
+ * sign-in moves the browser on by itself, with a link for one that does not;
+ * it is a page, not a redirect, so a sign-in through many endpoints never
+ * reaches the browser's limit on redirects in a row.
  */
 export function renderGatePage(input: {
   brandName: string;
   title: string;
   body: string;
   switchAccount?: { action: string; next: string };
+  continueTo?: string;
 }): string {
   return `<!doctype html>
 <html lang="en">
@@ -34,12 +38,14 @@ export function renderGatePage(input: {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="robots" content="noindex"/>
+${input.continueTo ? `<meta http-equiv="refresh" content="0;url=${escapeHtml(input.continueTo)}"/>` : ""}
 <title>${escapeHtml(input.title)}</title>
 <style>${CSS}</style>
 </head>
 <body><div class="center"><div class="card">
 <h1>${escapeHtml(input.title)}</h1>
 <p>${escapeHtml(input.body)}</p>
+${input.continueTo ? `<p><a href="${escapeHtml(input.continueTo)}">Continue</a></p>` : ""}
 ${
   input.switchAccount
     ? `<form method="post" action="${escapeHtml(input.switchAccount.action)}"><input type="hidden" name="next" value="${escapeHtml(input.switchAccount.next)}"><button type="submit">Switch account</button></form>`

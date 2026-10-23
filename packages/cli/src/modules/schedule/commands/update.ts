@@ -6,14 +6,10 @@ import {
   detectTimezone,
   hasVisibleOccurrence,
 } from "api-server-api";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SCHEDULE_NOT_FOUND,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import {
   buildPresetFromFlags,
@@ -158,14 +154,7 @@ export function buildUpdateCommand(deps: {
       const svc = deps.createScheduleService(host);
 
       const current = await svc.get(id);
-      if (!current.ok) {
-        if (current.error.kind === "schedule-not-found") {
-          process.stderr.write(`error: schedule not found: ${id}\n`);
-          process.exit(EXIT_SCHEDULE_NOT_FOUND);
-        }
-        printServiceError(current.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(current, host, describeScheduleError);
       const view = current.value;
       if (view.type === "once") {
         await updateOnce(svc, host, view, opts);
@@ -238,18 +227,7 @@ export function buildUpdateCommand(deps: {
         precheck: opts.precheckNone ? null : (opts.precheck ?? view.precheck),
         ...choicesOrExit(opts, view, true),
       });
-      if (!result.ok) {
-        if (result.error.kind === "schedule-not-found") {
-          process.stderr.write(`error: schedule not found: ${id}\n`);
-          process.exit(EXIT_SCHEDULE_NOT_FOUND);
-        }
-        if (result.error.kind === "invalid-input") {
-          process.stderr.write(`error: ${result.error.message}\n`);
-          process.exit(EXIT_INVALID_INPUT);
-        }
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host, describeScheduleError);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
@@ -294,18 +272,7 @@ async function updateOnce(
     timezone,
     ...choicesOrExit(opts, view, false),
   });
-  if (!result.ok) {
-    if (result.error.kind === "schedule-not-found") {
-      process.stderr.write(`error: schedule not found: ${view.id}\n`);
-      process.exit(EXIT_SCHEDULE_NOT_FOUND);
-    }
-    if (result.error.kind === "invalid-input") {
-      process.stderr.write(`error: ${result.error.message}\n`);
-      process.exit(EXIT_INVALID_INPUT);
-    }
-    printServiceError(result.error, host);
-    process.exit(EXIT_RUNTIME_FAILURE);
-  }
+  exitOnServiceError(result, host, describeScheduleError);
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(result.value)}\n`);
   } else {

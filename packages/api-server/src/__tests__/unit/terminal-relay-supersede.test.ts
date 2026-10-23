@@ -257,3 +257,39 @@ describe("terminal relay keepalive", () => {
     expect(ws.readyState).toBe(WebSocket.OPEN);
   });
 });
+
+describe("terminal relay connect failure", () => {
+  // TEST_SCENARIO: the agent's socket refuses the connection (its pod is gone). The viewer is closed with the connect reason instead of being left open.
+  it("closes with failed to connect when the agent's socket refuses", async () => {
+    const relay = createTerminalRelay(
+      "ns",
+      { ...repo, ensureReady: async () => {} } as unknown as AgentsRepository,
+      presence,
+      fakeBus(),
+      () => "ws://127.0.0.1:1",
+    );
+    const server = createServer();
+    servers.push(server);
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "ui",
+        attached: () => {},
+      }),
+    );
+    await new Promise<void>((r) => server.listen(0, r));
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${(server.address() as { port: number }).port}/`,
+    );
+    sockets.push(ws);
+    const closed = new Promise<{ code: number; reason: string }>((r) =>
+      ws.once("close", (code, reason) =>
+        r({ code, reason: reason.toString() }),
+      ),
+    );
+    expect(await closed).toEqual({
+      code: 1011,
+      reason: "failed to connect to agent",
+    });
+  });
+});

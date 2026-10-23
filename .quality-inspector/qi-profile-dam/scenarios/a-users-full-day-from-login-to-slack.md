@@ -26,12 +26,12 @@ Then the agent's page shows the Slack channel as connected
 
 ## AC-5 — the agent falls asleep before its task
 
-Given that agent, set to sleep after being idle for 5 minutes
-When the owner schedules a one-time task fifteen minutes from now that tells the agent to post a short status of that pull request to the Slack channel, and then leaves the platform alone
+Given that agent, set to sleep after being idle for 5 minutes, and a new thread the test person started in the sandbox Slack channel for this run
+When the owner schedules a one-time task fifteen minutes from now that tells the agent to post a short status of that pull request in that thread, and then leaves the platform alone
 Then before the scheduled time the agent is shown as Asleep in the owner's list of agents
 
 ## AC-6 — the scheduled task posts to Slack with nobody watching
 
 Given that scheduled task and the agent asleep
 When the scheduled time passes with nobody using the platform
-Then within ten minutes of it a message from the agent appears in the sandbox Slack channel with a link to that pull request
+Then within ten minutes of it a message from the agent appears in that Slack thread with a link to that pull request

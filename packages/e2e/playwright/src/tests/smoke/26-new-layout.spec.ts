@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and with the Unified right toolbar experiment on, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation. The Unified right toolbar experiment is its own flag: on, the right rail draws tiles with Documentation and Artifacts among them, and an Agent's chat gets that rail without JanUI too. A Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -88,14 +88,16 @@ test("keeps the current layout while the experiment is off", async ({
   await openHome(page);
   await expect(page.getByTestId("agent-row").first()).toBeVisible();
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
+  await expect(page.getByTestId("side-panel-tab-artifacts")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation.
+// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation and Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation. On a phone the bar stays inside the viewport with the panel closed, whichever flag draws it.
 test("draws the right toolbar from its own flag", async ({ page }) => {
   await setNewLayout(false);
   await setUnifiedRightToolbar(true);
   await openHome(page);
   await expect(page.getByTestId("side-panel-docs")).toBeVisible();
+  await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
     56,
   );
@@ -104,9 +106,29 @@ test("draws the right toolbar from its own flag", async ({ page }) => {
   await setUnifiedRightToolbar(false);
   await openHome(page);
   await expect(page.getByTestId("side-panel-docs")).toHaveCount(0);
+  await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
     49,
   );
+
+  const phoneWidth = 390;
+  const expectRailOnScreen = async () => {
+    const box = await page.getByTestId("side-panel-bar").boundingBox();
+    expect(
+      box!.x,
+      "the rail starts inside the viewport",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      box!.x + box!.width,
+      "the rail ends inside the viewport",
+    ).toBeLessThanOrEqual(phoneWidth);
+  };
+  await page.setViewportSize({ width: phoneWidth, height: 844 });
+  await openHome(page);
+  await expectRailOnScreen();
+  await setUnifiedRightToolbar(true);
+  await openHome(page);
+  await expectRailOnScreen();
 });
 
 // TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
@@ -191,7 +213,7 @@ test("switches the chat between the sections and the side panel", async ({
   const agentId = agentIds.get(AGENTS[1])!;
   await openHome(page);
   await page.evaluate(() =>
-    localStorage.setItem("platform-debug:features-menu", "true"),
+    localStorage.setItem("platform-debug:features-menu", "1"),
   );
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
   await waitForAgentRunning(api, AGENTS[1]);
@@ -232,6 +254,59 @@ test("switches the chat between the sections and the side panel", async ({
   ).toBeVisible();
 
   await switchLayout(false);
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+  await expect(page.getByTestId("chat-sections")).toBeVisible();
+});
+
+// TEST_SCENARIO: the Unified right toolbar alone gives an Agent's chat, with JanUI off, the tiled rail in place of the classic column of Files and Artifacts sections; the rail's Artifacts tab opens the panel, a wide window draws no bar of its own while a phone keeps one with the navigation button, and turning the flag off brings the sections back.
+test("gives the chat the tiled rail without JanUI", async ({ page }) => {
+  test.setTimeout(240_000);
+  await setNewLayout(false);
+  await setUnifiedRightToolbar(false);
+  const agentId = agentIds.get(AGENTS[1])!;
+  const chatPath = `/chat/${encodeURIComponent(agentId)}`;
+  const navigateInApp = (path: string) =>
+    page.evaluate((to) => {
+      history.pushState(null, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+
+  await openHome(page);
+  await page.evaluate(() =>
+    localStorage.setItem("platform-debug:features-menu", "1"),
+  );
+  await page.goto(`${baseUrl}${chatPath}`);
+  await waitForAgentRunning(api, AGENTS[1]);
+  await expect(page.getByTestId("chat-sections")).toBeVisible();
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+
+  const toolbarSwitch = page.getByRole("switch", {
+    name: "Unified right toolbar",
+  });
+  const switchToolbar = async (on: boolean) => {
+    await navigateInApp("/settings/features");
+    await toolbarSwitch.click();
+    await expect(toolbarSwitch).toHaveAttribute("aria-checked", String(on));
+    await navigateInApp(chatPath);
+    await expect(chatInput(page)).toBeVisible();
+  };
+
+  await switchToolbar(true);
+  const bar = page.getByTestId("side-panel-bar");
+  await expect(bar).toBeVisible();
+  expect((await bar.boundingBox())?.width).toBe(56);
+  await expect(page.getByTestId("chat-sections")).toHaveCount(0);
+  await expect(page.getByTestId("chat-top-bar")).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("chat-top-bar")).toBeVisible();
+  await expect(page.getByTestId("open-mobile-nav")).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await bar.getByTestId("side-panel-tab-artifacts").click();
+  await expect(
+    page.getByTestId("side-panel").getByRole("heading", { name: "Artifacts" }),
+  ).toBeVisible();
+
+  await switchToolbar(false);
   await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
   await expect(page.getByTestId("chat-sections")).toBeVisible();
 });

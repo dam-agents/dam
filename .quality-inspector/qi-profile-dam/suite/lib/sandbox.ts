@@ -1,9 +1,9 @@
 /* UNIT_BOUNDARY_DESCRIPTION: The sandbox test person and test user of the quality-inspector
- * profile. Slack: post as the person, read the bot's replies in a thread, and wait for the
- * bot's own top-level posts in the channel after a slackNow() timestamp (channelPosts). GitHub:
+ * profile. Slack: post as the person, read the bot's replies in a thread, and give a thread's
+ * link (threadLink) for a task that tells the agent where to post. GitHub:
  * sandboxPull finds the newest pull request of the sandbox repository whose title holds the
- * run's id, and closeSandboxPull closes it and deletes its branch (a branch already gone is no error) — the cleanup a test calls
- * last, after its last criterion, so a failed run keeps both; neither reads the repository's
+ * run's id, and closeSandboxPull closes it and deletes its branch (a branch already gone is no error) —
+ * the cleanup a test calls last, after its last criterion, so a failed run keeps both; neither reads the repository's
  * files. githubSignIn finishes DAM's "Connect with GitHub" on github.com as the sandbox test user
  * (the password, a TOTP code computed per RFC 6238 and never reused, the OAuth App's consent
  * when GitHub asks) and returns once the browser is back on DAM, so a test never names a
@@ -39,39 +39,32 @@ export async function botUserId(): Promise<string> {
   return String((await slack(env.E2E_SANDBOX_SLACK_BOT_TOKEN, 'auth.test')).user_id);
 }
 
-export async function personSays(text: string): Promise<string> {
-  const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.postMessage', { channel: sandbox.channelId(), text });
+export async function personSays(text: string, threadTs?: string): Promise<string> {
+  const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.postMessage',
+    { channel: sandbox.channelId(), text, ...(threadTs ? { thread_ts: threadTs } : {}) });
   return String(j.ts);
+}
+
+let personId: string | undefined;
+async function personUserId(): Promise<string> {
+  personId ??= String((await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'auth.test')).user_id);
+  return personId;
 }
 
 export async function botReplies(ts: string, ms = 300_000): Promise<string[]> {
   const until = Date.now() + ms;
   for (;;) {
     const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'conversations.replies', { channel: sandbox.channelId(), ts });
-    const messages = (j.messages as { ts: string; text?: string; bot_id?: string }[]) ?? [];
-    const replies = messages.filter((m) => m.ts !== ts && m.bot_id).map((m) => m.text ?? '');
+    const messages = (j.messages as { ts: string; text?: string; bot_id?: string; user?: string }[]) ?? [];
+    const me = await personUserId();
+    const replies = messages.filter((m) => m.ts !== ts && m.bot_id && m.user !== me).map((m) => m.text ?? '');
     if (replies.length || Date.now() > until) return replies;
     await new Promise((r) => setTimeout(r, 10_000));
   }
 }
 
-export const slackNow = (): string => (Date.now() / 1000).toFixed(6);
-
-export async function channelPosts(
-  since: string,
-  match: (p: { text: string; name: string }) => boolean = () => true,
-  ms = 600_000,
-): Promise<{ text: string; name: string }[]> {
-  const until = Date.now() + ms;
-  type M = { ts: string; thread_ts?: string; text?: string; bot_id?: string; username?: string; bot_profile?: { name?: string } };
-  for (;;) {
-    const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'conversations.history', { channel: sandbox.channelId(), oldest: since, limit: '100' });
-    const posts = ((j.messages as M[]) ?? [])
-      .filter((m) => m.bot_id && (!m.thread_ts || m.thread_ts === m.ts))
-      .map((m) => ({ text: m.text ?? '', name: m.username ?? m.bot_profile?.name ?? '' }));
-    if (posts.some(match) || Date.now() > until) return posts;
-    await new Promise((r) => setTimeout(r, 15_000));
-  }
+export async function threadLink(ts: string): Promise<string> {
+  return String((await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.getPermalink', { channel: sandbox.channelId(), message_ts: ts })).permalink);
 }
 
 async function github(method: string, path: string, body?: unknown, gone = false): Promise<unknown> {

@@ -51,12 +51,16 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-async function harness(agent: Partial<InfraAgent> | null) {
+async function harness(
+  agent: Partial<InfraAgent> | null,
+  get: () => Promise<InfraAgent | null> = async () =>
+    agent as InfraAgent | null,
+) {
   const upstream = await fakeAgent();
   const wake = deferred();
   const ensureReady = vi.fn((_id: string, _opts?: object) => wake.promise);
   const repo = {
-    get: vi.fn(async () => agent as InfraAgent | null),
+    get: vi.fn(get),
     peekCached: vi.fn(() => agent as InfraAgent | null),
     ensureReady,
     patchAnnotation: vi.fn(async () => {}),
@@ -205,6 +209,15 @@ describe("agent tRPC relay during a wake", () => {
     expect(h.upstream.received).toEqual([]);
     h.wake.resolve();
     await until(() => h.upstream.received.includes("first"));
+  });
+
+  // TEST_SCENARIO: the agent read itself can fail (a database blip). That is a failed wake, not a hung socket: the relay closes with 1011 rather than leaving the client open with its timers running.
+  it("closes with agent unavailable when the agent read fails", async () => {
+    const h = await harness(null, async () => {
+      throw new Error("db down");
+    });
+    expect(await h.closed).toEqual({ code: 1011, reason: "agent unavailable" });
+    expect(h.ensureReady).not.toHaveBeenCalled();
   });
 
   it("refuses a stopped agent as before", async () => {

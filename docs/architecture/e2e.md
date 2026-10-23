@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
@@ -55,7 +55,9 @@ The reduction is measured, not guessed: over five weeks of CI ending 2026-10-18,
 A spec that never fails for real, or that costs a lane minutes for a surface the other lane proves just as well, earns nothing on a pull request.
 
 Deferral is not a coverage gap: a change reaches main through the merge queue, whose run takes the full set on the tree it queues, and the nightly run takes it on main again.
-The Playwright config owns the list, and it is the one place that decides it: the workflow passes the event's scope as `E2E_SCOPE`, and the config turns that into what each project runs and which projects a reduced run leaves with no spec at all.
+The Playwright config owns the list of specs a run takes: the workflow passes the event's scope as `E2E_SCOPE`, and the config turns that into what each project runs and which projects a reduced run leaves with no spec at all.
+A spec may read that same scope for its own route: the scheduled-fire case waits up to a minute for a cron tick on a full run, and fires the same trigger with run-now on a pull request.
+What that route leaves out is proved by the merge queue's container lane, which takes the full set on the tree it queues.
 Each lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
 The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 

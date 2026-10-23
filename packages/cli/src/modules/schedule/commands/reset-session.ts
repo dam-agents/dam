@@ -1,14 +1,8 @@
 import { Command } from "commander";
-import {
-  printServiceError,
-  exitOnServiceError,
-} from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SCHEDULE_NOT_FOUND,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 
@@ -36,14 +30,7 @@ export function buildResetSessionCommand(deps: {
       const svc = deps.createScheduleService(host);
 
       const current = await svc.get(id);
-      if (!current.ok) {
-        if (current.error.kind === "schedule-not-found") {
-          process.stderr.write(`error: schedule not found: ${id}\n`);
-          process.exit(EXIT_SCHEDULE_NOT_FOUND);
-        }
-        printServiceError(current.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(current, host, describeScheduleError);
 
       const sessionMode = current.value.sessionMode ?? "fresh";
       if (sessionMode !== "continuous") {

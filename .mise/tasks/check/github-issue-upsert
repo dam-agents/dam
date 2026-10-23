@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#MISE description="issue-upsert edits, creates and closes the one issue it finds by title, and needs a close comment to close"
+#MISE hide=true
+# github/issue-upsert is the sequence the nightly base-pin check and the
+# vulnerability summary both run. Its failures are silent on a scheduled job:
+# a search whose quoting broke files a second issue, a close without its
+# comment leaves none, a missing label leaves the issue unlabelled. A stub `gh`
+# answers the search and records every call with its argument boundaries, so
+# this checks the four shapes without touching GitHub.
+set -euo pipefail
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/bin"
+# One line per call, each argument in angle brackets: a title that a caller
+# failed to quote into one argument shows up as two brackets, not as the same
+# string as a correct call.
+cat > "$tmp/bin/gh" <<'SH'
+#!/bin/sh
+for arg in "$@"; do printf '<%s>' "$arg"; done >> "$GH_LOG"
+printf '\n' >> "$GH_LOG"
+if [ "$1 $2" = "issue list" ]; then printf '%s' "${GH_EXISTING:-}"; fi
+exit 0
+SH
+chmod +x "$tmp/bin/gh"
+export PATH="$tmp/bin:$PATH" GITHUB_REPOSITORY=o/r
+task="$PWD/.mise/tasks/github/issue-upsert"
+title="Base image pins are behind (automated)"
+printf 'body\n' > "$tmp/body"
+fail=0
+
+line() { local out='' a; for a in "$@"; do out="$out<$a>"; done; printf '%s' "$out"; }
+search=$(line issue list --repo o/r --state open --search "in:title \"$title\"" \
+  --json number --jq '.[0].number // empty')
+
+# expect <label> <open issue number or empty> <expected calls, one per line> <task args…>
+expect() {
+  local label=$1 existing=$2 want=$3 rc=0
+  shift 3
+  : > "$tmp/log"
+  GH_LOG="$tmp/log" GH_EXISTING="$existing" "$task" "$@" > /dev/null 2>&1 || rc=$?
+  local got; got=$(cat "$tmp/log")
+  if [ "$got" != "$want" ]; then
+    echo "FAIL: $label: expected"$'\n'"$want"$'\n'"got"$'\n'"$got" >&2
+    fail=1
+  fi
+  return "$rc"
+}
+
+expect "a body with nothing open creates the issue, labelled" "" \
+"$search
+$(line issue create --repo o/r --title "$title" --body-file "$tmp/body" --label security,vulnerability)" \
+  --title "$title" --body-file "$tmp/body" || { echo "FAIL: the task refused a create" >&2; fail=1; }
+expect "a body with an open issue edits it and creates nothing" 7 \
+"$search
+$(line issue edit 7 --repo o/r --body-file "$tmp/body")" \
+  --title "$title" --body-file "$tmp/body" || { echo "FAIL: the task refused an edit" >&2; fail=1; }
+expect "no body with an open issue closes it, with the comment" 7 \
+"$search
+$(line issue close 7 --repo o/r --comment gone)" \
+  --title "$title" --close-comment gone || { echo "FAIL: the task refused a close" >&2; fail=1; }
+expect "no body and no open issue calls nothing else" "" \
+"$search" \
+  --title "$title" --close-comment gone || { echo "FAIL: the task refused an idle close" >&2; fail=1; }
+if expect "closing without a comment" 7 "$search" --title "$title"; then
+  echo "FAIL: the task closed an issue without a comment" >&2
+  fail=1
+fi
+
+exit "$fail"

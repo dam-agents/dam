@@ -1,10 +1,10 @@
 import type { PoolLevel } from "api-server-api";
 
 import { getBrand } from "../../../brand.js";
+import { formatBytes } from "../../../lib/format-size.js";
 import type { AgentView } from "../../../types.js";
 import { usePoolUsage } from "../api/queries.js";
 import {
-  formatBytes,
   memoryBar,
   poolWarning,
   storageBar,

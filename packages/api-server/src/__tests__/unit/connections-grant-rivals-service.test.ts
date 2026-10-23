@@ -94,8 +94,6 @@ function setup(
   const fanOut = vi.fn(async () => {});
   const service = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     isOwnedAgent: async (agentId) => agentId === AGENT,
     ownerId: OWNER,
     repo: unused<ConnectionsDeps["repo"]>({

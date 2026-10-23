@@ -375,7 +375,13 @@ export function useAcpSession(
         setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
         useStore.getState().setRewriting(null);
       }
-      useStore.getState().setRewritePending(live.sessionId);
+      const pending = { sessionId: live.sessionId, takeBack: false };
+      useStore.getState().setRewritePending(pending);
+      const endPending = () => {
+        // UNIT_BOUNDARY_DESCRIPTION: a take-back started while this rewind was in flight owns the slot now; its own suppression must survive this one's end.
+        if (useStore.getState().rewritePending === pending)
+          useStore.getState().setRewritePending(null);
+      };
       const result = (await live.connection.agent
         .request("platform/rewriteFrom", {
           sessionId: live.sessionId,
@@ -405,7 +411,7 @@ export function useAcpSession(
           }
           throw err;
         })
-        .finally(() => useStore.getState().setRewritePending(null))) as {
+        .finally(endPending)) as {
         sessionId: string;
       };
       if (!optimistic) {

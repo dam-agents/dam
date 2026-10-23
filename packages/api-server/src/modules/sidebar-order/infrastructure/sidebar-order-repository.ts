@@ -16,7 +16,7 @@ export function createSidebarOrderRepository(db: Db): SidebarOrderRepository {
         .from(sidebarAgentOrder)
         .where(eq(sidebarAgentOrder.owner, owner))
         .orderBy(asc(sidebarAgentOrder.position));
-      return { agents: rows.map((row) => row.agentId), sessions: {} };
+      return { agents: rows.map((row) => row.agentId) };
     },
 
     async replaceAgents(owner, agentIds) {

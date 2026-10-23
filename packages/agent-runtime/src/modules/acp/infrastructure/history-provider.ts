@@ -9,8 +9,6 @@ export interface HistoryProvider {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-const MAX_EXEC_OUTPUT_BYTES = 32 * 1024 * 1024;
-
 function validateLines(
   sessionId: string,
   lines: readonly string[],
@@ -31,58 +29,6 @@ function validateLines(
     valid.push(line);
   }
   return valid;
-}
-
-export interface ExecHistoryProviderDeps {
-  command: readonly string[];
-  cwd: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-  log: (msg: string) => void;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Runs the harness image's declared session-history
- * command (runtime-manifest `sessionHistory.command`) to read one session's
- * replay without touching the harness process. The command receives the
- * session id as its final argument and must print one `session/update`
- * JSON-RPC frame per line for that session. Any deviation — non-zero exit,
- * timeout, malformed or foreign frames — resolves to null so the caller falls
- * back to the harness `session/load`; the provider accelerates, it never
- * decides.
- */
-export function createExecHistoryProvider(
-  deps: ExecHistoryProviderDeps,
-): HistoryProvider {
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxOutputBytes = deps.maxOutputBytes ?? MAX_EXEC_OUTPUT_BYTES;
-  return {
-    async fetch(sessionId) {
-      if (deps.command.length === 0) {
-        deps.log(`history provider for ${sessionId}: no command declared`);
-        return null;
-      }
-      const command = [...deps.command, sessionId];
-      const result = await runOnce({
-        command,
-        cwd: deps.cwd,
-        timeoutMs,
-        maxOutputBytes,
-      });
-      if (!result.ok) {
-        deps.log(
-          `history provider for ${sessionId}: ${describeFailure(command.join(" "), result.error)}`,
-        );
-        return null;
-      }
-      const lines = validateLines(sessionId, result.value.stdout.split("\n"));
-      if (lines === null) {
-        deps.log(`history provider for ${sessionId}: emitted an invalid frame`);
-        return null;
-      }
-      return lines;
-    },
-  };
 }
 
 export interface WorkerHistoryProviderDeps {

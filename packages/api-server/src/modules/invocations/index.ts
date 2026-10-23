@@ -29,7 +29,6 @@ export {
   UnresolvableDriverError,
   type InvocationsService,
   type Reachability,
-  type SpendHoldGate,
   type SpawnInput,
 } from "./services/invocations-service.js";
 export { createTargetAdmission } from "./services/target-admission.js";

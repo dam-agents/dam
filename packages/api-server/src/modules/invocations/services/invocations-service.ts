@@ -23,6 +23,7 @@ import {
 import { harnessConfigEvent } from "../../harness-config/index.js";
 import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
 import { createInputFromSetup } from "../../agents/index.js";
+import type { SpendHoldGate, SpendHoldReason } from "../../spend/index.js";
 import { getLogger } from "../../../core/logger.js";
 import {
   type DriverProvider,
@@ -103,13 +104,6 @@ export class ProviderMismatchError extends Error {
     this.name = "ProviderMismatchError";
   }
 }
-
-export type SpendHoldReason = "limit" | "ceiling";
-
-export type SpendHoldGate = (input: {
-  agentId: string;
-  connectionId?: string;
-}) => Promise<SpendHoldReason | null>;
 
 const SPEND_HOLD_MESSAGE: Record<SpendHoldReason, string> = {
   limit:

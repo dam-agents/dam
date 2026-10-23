@@ -19,6 +19,7 @@ import {
 } from "../../lib/slack-channels.js";
 import { ChannelRow } from "./channel-row.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
+import { SlackLoopGuardNotice } from "./slack-loop-guard-notice.js";
 
 type ModalTarget = SlackChannel | "new" | null;
 
@@ -124,36 +125,39 @@ function SlackChannelRow({
   };
 
   return (
-    <ChannelRow
-      title={label}
-      badge={
-        channel.default && (
-          <Badge variant="muted" className="shrink-0">
-            Default
-          </Badge>
-        )
-      }
-      subtitle={
-        isSlackConversationGone(channel)
-          ? "No longer available in Slack. Disconnect to remove it."
-          : channel.ambient
-            ? "Ambient on"
-            : "Ambient off"
-      }
-      actionsLabel={`Slack channel ${label} actions`}
-      menuTestId="slack-channel-menu"
-      actions={
-        <>
-          <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
-          <DropdownMenuItem
-            tone="danger"
-            disabled={disconnectSlack.isPending}
-            onSelect={() => void handleDisconnect()}
-          >
-            Disconnect
-          </DropdownMenuItem>
-        </>
-      }
-    />
+    <div>
+      <ChannelRow
+        title={label}
+        badge={
+          channel.default && (
+            <Badge variant="muted" className="shrink-0">
+              Default
+            </Badge>
+          )
+        }
+        subtitle={
+          isSlackConversationGone(channel)
+            ? "No longer available in Slack. Disconnect to remove it."
+            : channel.ambient
+              ? "Ambient on"
+              : "Ambient off"
+        }
+        actionsLabel={`Slack channel ${label} actions`}
+        menuTestId="slack-channel-menu"
+        actions={
+          <>
+            <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
+            <DropdownMenuItem
+              tone="danger"
+              disabled={disconnectSlack.isPending}
+              onSelect={() => void handleDisconnect()}
+            >
+              Disconnect
+            </DropdownMenuItem>
+          </>
+        }
+      />
+      {channel.loopGuard && <SlackLoopGuardNotice drops={channel.loopGuard} />}
+    </div>
   );
 }

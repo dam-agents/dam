@@ -9,9 +9,12 @@ name: Build
 # One file, as each job here needs a job of the others: check-test gates
 # every merge, the merges gate publishing, and security reads them all. A
 # called workflow is one node in its caller's graph, so a split would make
-# each part wait for the whole of the one before. Local actions are `./`
-# and cache keys YAML anchors, for the reasons cd.yml gives; e2e.yml
-# restores some of these caches and spells their keys the same.
+# each part wait for the whole of the one before. What each build and merge job
+# runs is a composite action under .github/actions/: a called workflow would
+# insert a job name between the caller's and this run's, and e2e.yml waits on
+# these names. Local actions are `./` and cache keys YAML anchors, for the
+# reasons cd.yml gives; e2e.yml restores some of these caches and spells their
+# keys the same.
 
 on:
   workflow_call:
@@ -459,45 +462,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      - uses: ./.github/actions/image-build # zizmor: ignore[self-repository]
         with:
-          install_args: nodejs pnpm crane usage uv conda:pigz
+          arch: ${{ matrix.arch }}
+          components: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
+          cacheonly: ${{ inputs.verify }}
+          apt-base-cache: "true"
+          artifact: digests-agents
+          upload: ${{ !inputs.verify }}
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
-        id: agent-tools
-      - name: Build
-        env:
-          ARCH: ${{ matrix.arch }}
-          AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
-          PR: ${{ inputs.verify }}
-          # A tool that the agent-tools cache lacks installs in this step, and
-          # mise reads the token from MISE_GITHUB_TOKEN.
-          MISE_GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # A PR or a merge group only proves its agents build.
-          read -r -a agents <<< "$AGENTS"
-          [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
-          .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
-      # The images' apt base is made by the build above, not by agent-tools, so
-      # main writes it here: the day it is dated by keeps a rebuild daily, and
-      # every job that builds an agent image restores it from this entry. An
-      # older day's entry is left to the repo's 10 GB budget, which retires it.
-      - if: ${{ github.ref == 'refs/heads/main' && steps.agent-tools.outputs.apt-base-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/platform-agent-oci/apt-base
-            ~/.cache/platform-agent-oci/apt-base.key
-          key: ${{ steps.agent-tools.outputs.apt-base-key }}
-      - if: ${{ !inputs.verify }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: digests-agents-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests
-          retention-days: 1
-          if-no-files-found: error
 
   merge-agents:
     name: merge multi-arch agent manifests
@@ -509,24 +483,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: ./.github/actions/image-merge # zizmor: ignore[self-repository]
         with:
-          pattern: digests-agents-*
-          path: ${{ runner.temp }}/digests
-          merge-multiple: true
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-        with:
-          install_args: crane usage
+          components: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
+          artifact: digests-agents
+          composite: ${{ needs.appversion.outputs.composite }}
+          source-shas: ${{ needs.changes.outputs.source_shas }}
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Create manifest lists and push
-        env:
-          AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
-          COMPOSITE: ${{ needs.appversion.outputs.composite }}
-          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: |
-          read -r -a agents <<< "$AGENTS"
-          SOURCE_SHA_TAGGED="$AGENTS" .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" "${agents[@]}"
 
   build-workloads:
     # One job per arch, one workload after another, like build-agents, and
@@ -548,27 +512,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      - uses: ./.github/actions/image-build # zizmor: ignore[self-repository]
         with:
-          install_args: nodejs pnpm crane usage uv conda:pigz
+          arch: ${{ matrix.arch }}
+          components: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          artifact: digests-workloads
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
-      - name: Build
-        env:
-          ARCH: ${{ matrix.arch }}
-          WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
-          # k-search's tools are never cached, so its build always installs.
-          MISE_GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          read -r -a workloads <<< "$WORKLOADS"
-          .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: digests-workloads-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests
-          retention-days: 1
-          if-no-files-found: error
 
   merge-workloads:
     name: merge multi-arch workload manifests
@@ -580,24 +530,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: ./.github/actions/image-merge # zizmor: ignore[self-repository]
         with:
-          pattern: digests-workloads-*
-          path: ${{ runner.temp }}/digests
-          merge-multiple: true
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-        with:
-          install_args: crane usage
+          components: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          artifact: digests-workloads
+          composite: ${{ needs.appversion.outputs.composite }}
+          source-shas: ${{ needs.changes.outputs.source_shas }}
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Create manifest lists and push
-        env:
-          WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
-          COMPOSITE: ${{ needs.appversion.outputs.composite }}
-          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: |
-          read -r -a workloads <<< "$WORKLOADS"
-          SOURCE_SHA_TAGGED="$WORKLOADS" .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" "${workloads[@]}"
 
   build-mock:
     name: build mock (e2e fixture)
@@ -613,16 +553,14 @@ jobs:
           persist-credentials: false
           # The push tag is the mock's source sha, which needs the history.
           fetch-depth: 0
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      # Pushes mock:<source sha> alone, which no merge reads.
+      - uses: ./.github/actions/image-build # zizmor: ignore[self-repository]
         with:
-          install_args: nodejs pnpm crane usage uv conda:pigz
+          arch: amd64
+          components: mock:source
+          upload: "false"
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
-      - name: Build
-        env:
-          MISE_GITHUB_TOKEN: ${{ github.token }}
-        run: .mise/tasks/image/ci-build amd64 mock:source
 
   mirror-images:
     name: mirror third-party images

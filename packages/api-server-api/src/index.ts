@@ -57,7 +57,6 @@ export type {
   HarnessConfigSnapshotPatch,
 } from "./modules/harness-config/types.js";
 export {
-  defaultKindSchema,
   harnessConfigSnapshotSchema,
   sessionPairSchema,
 } from "./modules/harness-config/schemas.js";
@@ -67,13 +66,11 @@ export {
   isClaudeModel,
   isQualifiedModel,
   parseQualifiedModel,
-  type QualifiedModel,
 } from "./modules/harness-config/model-name.js";
 export {
   orderByAlias,
   resolveDefaultProvider,
   type ProviderChoice,
-  type SavedProviderChoice,
 } from "./modules/harness-config/default-provider.js";
 
 export type {
@@ -93,8 +90,6 @@ export type {
   SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
-  WakeAgentError,
-  WakeAgentResult,
   RuntimeMigration,
   RuntimeMigrationPhase,
   ConnectSlackResult,
@@ -104,6 +99,8 @@ export type {
   UnbindTelegramChatResult,
   SlackChannel,
   SlackConversationLabel,
+  SlackLoopGuardDrop,
+  SlackLoopGuardDrops,
   ChannelConfig,
   RuntimeFleet,
   RuntimeFleetAgent,
@@ -133,9 +130,7 @@ export {
   budgetSizeSchema,
   storageFullSchema,
   USER_BUDGETS_PAGE_MAX,
-  userBudgetRemoveInputSchema,
   userBudgetSetInputSchema,
-  userBudgetsListInputSchema,
   userBudgetsSortSchema,
   userBudgetUserSchema,
 } from "./modules/budgets/schemas.js";
@@ -166,29 +161,16 @@ export {
   MICROS_PER_UNIT,
   PLATFORM_REFUSAL_HEADER,
   SPEND_DAILY_MAX_DAYS,
-  SPEND_LIMIT_MAX_MICROS,
   SPEND_SESSIONS_DEFAULT_LIMIT,
   SPEND_SESSIONS_MAX,
   SPEND_SUB_AGENTS_MAX,
   SPEND_SUB_AGENTS_PAGE,
-  SPEND_TURNS_MAX_SPAN_DAYS,
-  SPEND_TURNS_MAX_WINDOWS,
-  spendBreakdownInputSchema,
   spendCeilingSetInputSchema,
-  spendCeilingSourceSchema,
   spendCeilingUsdTextSchema,
   spendCeilingUserSchema,
   spendDailyInputSchema,
-  spendLimitAmountSchema,
   spendLimitAmountTextSchema,
-  spendLimitScopeSchema,
-  spendLimitStateSchema,
-  spendSessionsInputSchema,
   spendSetLimitInputSchema,
-  spendStatusInputSchema,
-  spendSubAgentsInputSchema,
-  spendTurnsInputSchema,
-  spendUnitSchema,
 } from "./modules/spend/schemas.js";
 export {
   formatLocalResetTime,
@@ -199,7 +181,6 @@ export {
   connectionLimitRefusal,
   connectionLimitRule,
   spendUnitOfProvider,
-  type ConnectionLimitRule,
 } from "./modules/spend/units.js";
 export {
   spendTurnWindows,
@@ -234,8 +215,6 @@ export type {
   SpendCeilingSetInput,
   SpendCeilingsService,
   SpendCeilingUser,
-  SpendSubAgents,
-  SpendSubAgentsInput,
   SubAgentSpendRow,
   SpendStatus,
   SpendStatusInput,
@@ -287,7 +266,6 @@ export type {
   StarterKitConnectionRequirement,
   StarterKitEgressRule,
   OnboardingStep,
-  StarterKitResources,
   StarterKitSchedule,
   StarterKitScheduleOverride,
   StarterKitView,
@@ -295,7 +273,6 @@ export type {
   ResolvedStarterKit,
   SeedStamp,
   KitUpdatePending,
-  KitUpdateState,
   KitUpdateStatus,
   KitUpdateCommit,
   KitUpdateChanges,
@@ -306,7 +283,6 @@ export {
   starterKitApplyInputSchema,
   starterKitCatalogSchema,
   starterKitScheduleOverrideSchema,
-  starterKitCategorySchema,
   starterKitSchema,
   seedStampSchema,
   kitUpdatePendingSchema,
@@ -390,8 +366,6 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
-export type { OperatorStatus } from "./modules/operator/types.js";
-export { operatorStatusSchema } from "./modules/operator/schemas.js";
 export type {
   AvatarUnlock,
   GettingStartedProgress,
@@ -411,10 +385,10 @@ export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,
   OnceResult,
-  isOnceFinished,
+  localDateTimeIn,
   onceState,
 } from "./modules/schedules/once.js";
-export type { OnceState } from "./modules/schedules/once.js";
+export type { LocalDateTime, OnceState } from "./modules/schedules/once.js";
 export {
   ALL_DAYS,
   buildRRule,
@@ -424,10 +398,7 @@ export {
   rruleNextFire,
   rruleToText,
 } from "./modules/schedules/rrule.js";
-export type {
-  FrequencyPreset,
-  VisibleOccurrence,
-} from "./modules/schedules/rrule.js";
+export type { FrequencyPreset } from "./modules/schedules/rrule.js";
 
 export type {
   ProviderPresetType,
@@ -445,11 +416,7 @@ export {
   modelTokens,
   preferredModelOf,
 } from "./modules/connections/preferred-models.js";
-export type {
-  ModelRole,
-  PreferredModel,
-  ProviderListing,
-} from "./modules/connections/preferred-models.js";
+export type { ProviderListing } from "./modules/connections/preferred-models.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
   KB_AGGREGATE_MCP_SERVER,
@@ -461,7 +428,6 @@ export {
   harnessFits,
   PROVIDERS,
   BALANCE_PROVIDER_TYPES,
-  KEY_CHECK_TEMPLATE_IDS,
   hasKeyCheck,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,
@@ -471,8 +437,6 @@ export {
   bedrockEnvMappings,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
-  PLATFORM_LLM_TEMPLATE_ID,
-  platformLlmEnvMappings,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
@@ -487,7 +451,6 @@ export {
   providerTypeForTemplateId,
   templateIdForProvider,
   PROVIDER_ALIASES,
-  PROVIDER_ALIAS_RE,
   aliasForProviderType,
   aliasForTemplateId,
   hasServerAutoMode,
@@ -498,7 +461,6 @@ export {
 } from "./modules/connections/providers.js";
 
 export {
-  CONNECTION_EGRESS_PLACEHOLDER_PREFIX,
   connectionEgressPathPrefix,
   connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
@@ -507,46 +469,29 @@ export {
   unaddressableRivalHost,
 } from "./modules/connections/egress-addressing.js";
 export {
-  GH_ENTERPRISE_TOKEN_ENV,
   GH_HOSTS_FILE_PATH,
-  GH_TOKEN_AVAILABLE_ENV,
-  GH_TOKEN_ENV,
   GITCONFIG_FILE_PATH,
   composeGitHubAccounts,
   githubAccountGroups,
   githubHostOf,
   isGitHubEnterpriseServer,
 } from "./modules/connections/github-accounts.js";
-export type {
-  GitHubAccountGroup,
-  GitHubAccountSource,
-} from "./modules/connections/github-accounts.js";
+export type { GitHubAccountSource } from "./modules/connections/github-accounts.js";
 export {
-  AWS_CONFIG_FILE_PATH,
-  AWS_CREDENTIALS_FILE_PATH,
   AWS_PROFILE_ENV,
   awsProfiles,
   awsProfileSlug,
   composeAwsProfiles,
   signingTargetOf,
 } from "./modules/connections/aws-profiles.js";
+
+export { defaultAccountGroups } from "./modules/connections/default-accounts.js";
 export type {
-  AwsProfile,
-  AwsProfileSource,
-} from "./modules/connections/aws-profiles.js";
-export {
-  defaultAccountGroupKey,
-  defaultAccountGroups,
-} from "./modules/connections/default-accounts.js";
-export type {
-  DefaultAccount,
   DefaultAccountGroup,
   DefaultAccountKind,
-  DefaultAccountNaming,
   DefaultAccountSource,
 } from "./modules/connections/default-accounts.js";
 export {
-  DEFAULT_ACCOUNT_KINDS,
   contestedDefaultAccounts,
   preferenceGroupOf,
 } from "./modules/connections/preference-group.js";
@@ -621,10 +566,8 @@ export type {
   SecretRequestDestination,
   SecretRequestField,
   SecretRequestState,
-  SecretRequestStatus,
   SecretRequestTicket,
   SecretRequestView,
-  SecretRequestSubmitResult,
   SecretRequestsService,
 } from "./modules/connections/types.js";
 export {
@@ -645,7 +588,6 @@ export type {
   ConnectionUpdateInput,
   ConnectionRequestSecretInput,
   SecretlessConnectionCreateInput,
-  SecretRequestSubmitInput,
 } from "./modules/connections/schemas.js";
 
 export {
@@ -663,15 +605,19 @@ export type {
   AttentionDismissal,
   AttentionItem,
   AttentionList,
+  AttentionListCursor,
   AttentionService,
+  AttentionSessionPage,
   DefaultModelNotice,
-  DefaultModelState,
   DismissedEntry,
   OutageAlertAffectedBy,
   OutageAlertAgent,
   OutageAlertNotice,
 } from "./modules/attention/types.js";
-export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
+export {
+  ATTENTION_FEED_LIMIT,
+  ATTENTION_PAGE_LIMIT,
+} from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
@@ -726,10 +672,7 @@ export {
   skillSourcePathSchema,
 } from "./modules/skills/schemas.js";
 export type { PlatformFeatureId } from "./modules/skills/platform-skills.js";
-export {
-  platformSkillFeature,
-  platformSkillsForFeature,
-} from "./modules/skills/platform-skills.js";
+export { platformSkillFeature } from "./modules/skills/platform-skills.js";
 
 export type { FilesService } from "./modules/files/router.js";
 
@@ -745,7 +688,6 @@ export type {
   ApprovalsService,
   ApprovalListOptions,
   ApprovalActionOutcome,
-  ApprovalDismissManyOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export {
@@ -754,21 +696,12 @@ export {
   recordedOptionsOf,
   recordedToolOf,
 } from "./modules/approvals/format.js";
-export {
-  PERMISSION_OPTIONS_MAX,
-  RPC_ID_MAX,
-  TOOL_CALL_ID_MAX,
-  TOOL_NAME_MAX,
-} from "./modules/approvals/format.js";
+export { RPC_ID_MAX, TOOL_CALL_ID_MAX } from "./modules/approvals/format.js";
 export {
   toolApprovalEndedInputSchema,
   toolApprovalWaitingInputSchema,
 } from "./modules/approvals/harness.js";
-export type {
-  ToolApprovalEndedInput,
-  ToolApprovalReports,
-  ToolApprovalWaitingInput,
-} from "./modules/approvals/harness.js";
+export type { ToolApprovalReports } from "./modules/approvals/harness.js";
 
 export type {
   RuleVerdict,
@@ -825,7 +758,6 @@ export {
   CONTINUED_FROM_LABEL_MAX,
   CONTINUED_FROM_TEXT_MAX,
   capInlineImages,
-  queuedPromptSchema,
   platformQueueMetaSchema,
   platformQueueChangedParamsSchema,
   buildPlatformQueueChangedNotification,
@@ -838,16 +770,30 @@ export {
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  AUTH_ERROR_HINT,
+  AUTH_ERROR_HINT_LINK_TEXT,
   REWRITE_BUSY_CODE,
   REWRITE_REFUSED_CODE,
   platformRewriteFromParamsSchema,
   STEER_METHOD,
   steerResponseSchema,
   steeringSupported,
+  isNonNullObject,
+  isRequest,
+  isResponse,
+  paramsOf,
+  parseFrame,
+  resultOf,
+  sessionUpdateOf,
+  stringAt,
 } from "./modules/acp/types.js";
 export type {
+  JsonRpcFrame,
+  JsonRpcId,
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
   PlatformTurnEndedParams,
-  PlatformRunEndedParams,
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,
   PlatformRunStartedParams,
@@ -860,7 +806,6 @@ export type {
   PlatformQueueChangedParams,
   PlatformSessionResetParams,
   PlatformUpdateQueuedParams,
-  PlatformRemoveQueuedParams,
   PlatformRewriteFromParams,
 } from "./modules/acp/types.js";
 
@@ -999,31 +944,19 @@ export type {
   SatellitesService,
   WorkItem,
 } from "./modules/satellites/types.js";
-export {
-  A2UI_BASIC_CATALOG_ID,
-  A2UI_PLATFORM_CATALOG_ID,
-  CHAT_FORM_CATALOG_IDS,
-  chatFormCapabilities,
-} from "./modules/chat-forms/capabilities.js";
+export { chatFormCapabilities } from "./modules/chat-forms/capabilities.js";
 export {
   findRendererBlocks,
   joinRendererBlocks,
-  type RendererBlock,
-  type RendererTag,
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
 export type {
   EnvironmentEndpoint,
   EnvironmentView,
-  EnvironmentsService,
 } from "./modules/environments/types.js";
 export {
   ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
-  ENVIRONMENT_EXPIRY_MAX_DAYS,
   environmentAccessSchema,
-  environmentEndpointNameSchema,
-  environmentEndpointSchema,
   environmentEndpointsSchema,
   environmentNameSchema,
-  environmentViewSchema,
 } from "./modules/environments/schemas.js";

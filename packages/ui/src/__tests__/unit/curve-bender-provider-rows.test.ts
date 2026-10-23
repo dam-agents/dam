@@ -1,9 +1,13 @@
-// TEST_OVERVIEW: Settings / Providers offers CurveBender twice: the user-keyed integration reads "(custom key)" and keeps its Connect action, while the deployment's integration, named without the suffix, appears only where the install configures it and reads Connected as a static row once its connection exists, so an unconfigured install offers nothing it cannot serve.
+// TEST_OVERVIEW: Settings / Providers offers CurveBender twice: the user-keyed integration reads "(custom key)" and keeps its Connect action, while the deployment's integration, named without the suffix, appears only where the install configures it and reads Connected once its connection exists; its row opens a read-only explainer rather than a form, so an unconfigured install offers nothing it cannot serve.
 import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  CURVE_BENDER_DOCS_URL,
+  CurveBenderInfoDialog,
+} from "../../modules/providers/components/curve-bender-info-dialog.js";
 import { ProviderSection } from "../../modules/providers/components/provider-section.js";
 
 type Item = { id: string; conn: { templateId: string } };
@@ -15,6 +19,17 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
+const passthrough = vi.hoisted(
+  () =>
+    ({ children }: { children?: unknown }) =>
+      children,
+);
+vi.mock("@/components/modal", () => ({
+  Modal: passthrough,
+  DialogHeader: passthrough,
+  DialogBody: passthrough,
+  DialogFooter: passthrough,
+}));
 vi.mock("../../modules/spend/components/all-agents-provider-limit.js", () => ({
   AllAgentsProviderLimit: () => null,
 }));
@@ -93,8 +108,8 @@ describe("CurveBender provider rows", () => {
     expect(render()).not.toContain(`title="${SHARED}"`);
   });
 
-  // TEST_SCENARIO: a configured install shows the deployment integration under the original name, Connected and static once its connection exists, so no connect form or Disconnect reaches it.
-  it("shows the deployment integration connected and static", () => {
+  // TEST_SCENARIO: a configured install shows the deployment integration under the original name and Connected once its connection exists; its row is a button that opens the explainer, since the user holds no key to edit, and no connect form or Disconnect reaches it.
+  it("opens the explainer from the connected deployment row", () => {
     deploymentConfigured();
     state.itemsByTemplate = new Map([
       [
@@ -106,8 +121,27 @@ describe("CurveBender provider rows", () => {
     expect(html).toContain(`title="${CUSTOM}"`);
     expect(html).toContain(`title="${SHARED}"`);
     expect(html).toContain("Connected");
+    expect(html).toMatch(
+      new RegExp(`<button[^>]*aria-label="About ${SHARED}"`),
+    );
     expect(html).not.toContain(`aria-label="Connect ${SHARED}"`);
     expect(html).not.toContain(`aria-label="Edit ${SHARED}"`);
     expect(html).not.toContain("Disconnect");
+  });
+
+  // TEST_SCENARIO: the explainer is read-only: it says what CurveBender is and that inference is free within fair use, and its only control is Close, with the docs link opening in a new tab.
+  it("explains the deployment integration without a form", () => {
+    const html = renderToStaticMarkup(
+      createElement(CurveBenderInfoDialog, { onClose: () => {} }),
+    );
+    expect(html).toContain("CurveBender</a> is an IBM Research platform");
+    expect(html).toContain(
+      "All Acme users are provided with free inference on CurveBender, subject to fair-use policy.",
+    );
+    expect(html).toContain(`href="${CURVE_BENDER_DOCS_URL}"`);
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toMatch(/<button[^>]*>Close<\/button>/);
+    expect(html).not.toContain("<input");
   });
 });

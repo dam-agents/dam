@@ -85,8 +85,8 @@ Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
 A model provider's key is proven where the provider offers a check.
-A provider that cannot say leaves the key unverified; a provider with no check (the CurveBender deployment's key, the built-in platform provider) leaves it unchecked.
-The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, the built-in platform provider excepted, which replaces each result, and a key the provider refuses then reads as refused until it is replaced.
+A provider that cannot say leaves the key unverified; the CurveBender deployment's key, which the user holds no copy of, leaves it unchecked.
+The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
 A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
@@ -316,44 +316,18 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 The same proxy, reached with a key the deployment provides instead of the user's.
 The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
 It is not behind a feature flag: where the key is set, every user has it.
-The Connection is the deployment's, managed exactly like the built-in preset's below — provisioned by the user's own Connection listing, following the deployment's key, removed when the deployment drops the key, and refused to the user's own create, update and delete.
+The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
-Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance.
+Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.
 Its Secret holds a copy of the deployment's key, which the gateway injects on these four path prefixes alone, the paths the runtime calls — `/v1/models` for the model listing, `/v1/messages` (with `/v1/messages/count_tokens` under it), `/v1/chat/completions` and `/v1/responses`.
+The Connection allows CurveBender's host on every path and scopes only the key, because an egress rule matches by host and path glob, not by a credential's scope.
 Each prefix is matched at a segment boundary, so `/v1/messagesX` is a path outside the scope, not a longer match ([credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
 One key serves every user, and the gateway's scope keeps it off the rest of the proxy: the management routes (`/key/*`, `/user/*`, `/spend/*`), where a key that outlives its Connection could be minted, the shared key's spend read, or the key deleted for everyone, and the shared-identity routes (`/v1/files`, `/v1/batches`, `/v1/vector_stores`, `/v1/assistants`, `/v1/threads`, `/v1/memory`, `/v1/mcp/*`, `/v1/traces`, …), where every user's agent would read what another stored under the one identity the key names.
-The chain carrying this path-scoped credential matches whole path segments and refuses an escaped slash, so `/v1/messages/../../key/generate` cannot step out of its scope (the rules are on [credential-gateway](credential-gateway.md#path-scoped-chains-and-the-request-path)).
 The user-keyed preset above keeps injecting on its host's every path, since the key is that user's own.
 Bob never reaches this Connection through the gateway: the Model Router folds Bob's compiled-in `/inference` prefix in the pod and calls `/v1/chat/completions`, so the deployment preset carries no `/inference` rewrite.
 The scope is not evidence that the key itself is limited: the operator must still mint the deployment's key for inference only, with LiteLLM `allowed_routes: ["llm_api_routes"]`, so a path the gateway does not know about cannot manage keys or reach another user's stored state.
 Calls are metered and attributed to the Connection that made them, and the key never reaches the agent or a browser.
 Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
-
-### Built-in preset: platform LLM
-
-A model server the operator hosts in the cluster, offered as a provider the user never gives a key for.
-The install names the server's root URL over HTTPS, its model and its key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a root URL or a key the preset does not exist and the built-in provider [feature](features.md) is off for everyone.
-A root URL that is not HTTPS also leaves the feature off, with an error in the api-server log, because the gateway can inject the key and meter calls only on TLS it terminates.
-The user never connects it: the feature flag owns the Connection.
-Turning the flag on gives the user one Connection from the built-in preset, named after the brand; turning it off removes it, which revokes it from every Agent holding it.
-Connection names are unique per user, so when the user already has a Connection named after the brand it takes the first free name of the brand followed by `LLM`, then that numbered from 2.
-When the install turns the feature on for everyone there is no flag change to react to, so the user's own listing of their Connections provisions it, and a listing with the flag off removes a leftover one.
-Only that listing reconciles: the listings agent creation and sub-agent spawns make internally change nothing.
-An existing Connection follows the operator: when the install's root URL, model, key, CA or brand changes, the next reconcile (the user's listing, a flag change, or the boot sweep) rewrites its name, contributions and Secret and re-delivers the Agents holding it.
-At boot the api-server reconciles every user holding one, so dropping the root URL removes them all and a changed endpoint reaches users who do not come back.
-Flag changes, listings and the boot sweep may run at once on different replicas; each reads the flag and the user's Connections under one per-owner lock, so whichever runs last decides.
-The user's own create, update and delete refuse the preset, so the Connection cannot be duplicated, dropped or given another key while the flag says it should exist.
-It is created like any provider Connection, so the [first-provider grant](agent-lifecycle.md#create) attaches it to Agents that hold no provider; otherwise a user grants it per Agent.
-Its credential is a copy of the operator's key in the Connection's Secret, written when the Connection is created and rewritten when the operator's key changes, as an IBM LiteLLM Connection holds the user's key.
-It contributes the base URLs and inert key placeholders each harness reads (the OpenAI route under `/v1`, the Anthropic route at the root), the model pin, and the injection of the key as a bearer token on the server's host and port.
-So every call leaves through the gateway's credential chain, which [meters](spend-limits.md) it like any model-provider call.
-The server is in the cluster, so the gateway also needs a network path to it, which the chart opens per peer, and must trust the server's certificate.
-The install can name a ConfigMap key holding the CA that signed it; the api-server reads it at boot and writes it into each Connection's Secret as its upstream CA, as a Kubernetes Connection holds a pasted one, so the gateway validates the server against that CA alone.
-On OpenShift the service-serving signer is such a key in every namespace, so a server with a service-serving certificate needs no CA pasted anywhere.
-A CA the api-server cannot read leaves the feature off, with an error in its log.
-Without a named CA the gateway validates the server against system trust and the install's extra upstream CAs.
-Calls on it cost what the operator prices its model at, in dollars, so its spend counts toward the user's limits.
-A Connection left without a credential by an earlier release is replaced by a keyed one, since it has no Secret to rewrite.
 
 ### App preset: AWS Bedrock
 

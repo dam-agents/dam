@@ -1,5 +1,6 @@
-import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
+import type { KindHandler, Plugin } from "agent-runtime-api";
 import { expandHome } from "../../../core/expand-home.js";
+import { contributionPlugin } from "../infrastructure/plugin-registry.js";
 import {
   leaseEnvOf,
   type EnvLayer,
@@ -31,94 +32,83 @@ export interface EnvPluginDeps {
 }
 
 export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
-  return {
-    name: IMPL_NAME,
-
-    bind(kind: string, _binding: DriverBinding): KindHandler {
-      if (kind !== "env") {
-        throw new Error(
-          `plugin "${IMPL_NAME}" does not handle kind "${kind}" — bind it to "env" only`,
+  const handle: KindHandler = async (contributions, ctx) => {
+    const env: Record<string, string> = {};
+    const providerEnv = new Map<string, Record<string, string>>();
+    const providerTemplate = new Map<string, string>();
+    const harnessEnv = new Map<string, Record<string, string>>();
+    for (const c of contributions) {
+      if (c.kind !== "env") continue;
+      if (c.provider !== undefined && c.providerTemplate !== undefined)
+        providerTemplate.set(c.provider, c.providerTemplate);
+      const layer =
+        c.provider !== undefined
+          ? layerOf(providerEnv, c.provider)
+          : c.harness !== undefined
+            ? layerOf(harnessEnv, c.harness)
+            : null;
+      if (layer) {
+        if (!Object.hasOwn(layer, c.name)) layer[c.name] = c.placeholder;
+      } else if (c.name === KUBECONFIG_ENV) {
+        env[c.name] = joinPathList(
+          env[c.name],
+          expandHome(c.placeholder, ctx.agentHome),
         );
+      } else if (!Object.hasOwn(env, c.name)) {
+        env[c.name] = c.placeholder;
       }
-      return async (contributions, ctx) => {
-        const env: Record<string, string> = {};
-        const providerEnv = new Map<string, Record<string, string>>();
-        const providerTemplate = new Map<string, string>();
-        const harnessEnv = new Map<string, Record<string, string>>();
-        for (const c of contributions) {
-          if (c.kind !== "env") continue;
-          if (c.provider !== undefined && c.providerTemplate !== undefined)
-            providerTemplate.set(c.provider, c.providerTemplate);
-          const layer =
-            c.provider !== undefined
-              ? layerOf(providerEnv, c.provider)
-              : c.harness !== undefined
-                ? layerOf(harnessEnv, c.harness)
-                : null;
-          if (layer) {
-            if (!Object.hasOwn(layer, c.name)) layer[c.name] = c.placeholder;
-          } else if (c.name === KUBECONFIG_ENV) {
-            env[c.name] = joinPathList(
-              env[c.name],
-              expandHome(c.placeholder, ctx.agentHome),
-            );
-          } else if (!Object.hasOwn(env, c.name)) {
-            env[c.name] = c.placeholder;
-          }
-        }
-        env[GH_AVAILABLE_ENV] =
-          Object.hasOwn(env, GH_TOKEN_ENV) ||
-          Object.hasOwn(env, GH_ENTERPRISE_TOKEN_ENV) ||
-          env[GH_AVAILABLE_ENV] === "true"
-            ? "true"
-            : "false";
-        const next: RuntimeEnvState = {
-          env,
-          providers: layersOf(providerEnv).map((layer) => {
-            const template = providerTemplate.get(layer.id);
-            return template === undefined ? layer : { ...layer, template };
-          }),
-          harnesses: layersOf(harnessEnv),
-        };
+    }
+    env[GH_AVAILABLE_ENV] =
+      Object.hasOwn(env, GH_TOKEN_ENV) ||
+      Object.hasOwn(env, GH_ENTERPRISE_TOKEN_ENV) ||
+      env[GH_AVAILABLE_ENV] === "true"
+        ? "true"
+        : "false";
+    const next: RuntimeEnvState = {
+      env,
+      providers: layersOf(providerEnv).map((layer) => {
+        const template = providerTemplate.get(layer.id);
+        return template === undefined ? layer : { ...layer, template };
+      }),
+      harnesses: layersOf(harnessEnv),
+    };
 
-        const prev = deps.store.state();
-        const base = envEquals(prev.env, next.env)
-          ? null
-          : { namesChanged: !sameNames(prev.env, next.env) };
-        const providers = changedLayers(prev.providers, next.providers);
-        const harnesses = changedLayers(prev.harnesses, next.harnesses);
-        const defaultMoved = prev.providers[0]?.id !== next.providers[0]?.id;
-        const templatesChanged = next.providers.some(
-          (l) =>
-            prev.providers.find((p) => p.id === l.id)?.template !== l.template,
-        );
-        if (
-          !base &&
-          providers.length === 0 &&
-          harnesses.length === 0 &&
-          !defaultMoved &&
-          !templatesChanged
-        ) {
-          ctx.log("env unchanged");
-          return;
-        }
-        deps.store.write(next);
-        const defaultEnv = (s: RuntimeEnvState): Record<string, string> =>
-          leaseEnvOf(s, {
-            harness: null,
-            provider: s.providers[0]?.id ?? null,
-          });
-        const namesChanged = !sameNames(defaultEnv(prev), defaultEnv(next));
-        ctx.log(
-          `wrote ${Object.keys(env).length} env var(s), ` +
-            `${String(next.providers.length)} provider and ` +
-            `${String(next.harnesses.length)} harness layer(s)` +
-            (namesChanged ? "" : " (values only)"),
-        );
-        deps.onChange?.({ namesChanged, base, providers, harnesses });
-      };
-    },
+    const prev = deps.store.state();
+    const base = envEquals(prev.env, next.env)
+      ? null
+      : { namesChanged: !sameNames(prev.env, next.env) };
+    const providers = changedLayers(prev.providers, next.providers);
+    const harnesses = changedLayers(prev.harnesses, next.harnesses);
+    const defaultMoved = prev.providers[0]?.id !== next.providers[0]?.id;
+    const templatesChanged = next.providers.some(
+      (l) => prev.providers.find((p) => p.id === l.id)?.template !== l.template,
+    );
+    if (
+      !base &&
+      providers.length === 0 &&
+      harnesses.length === 0 &&
+      !defaultMoved &&
+      !templatesChanged
+    ) {
+      ctx.log("env unchanged");
+      return;
+    }
+    deps.store.write(next);
+    const defaultEnv = (s: RuntimeEnvState): Record<string, string> =>
+      leaseEnvOf(s, {
+        harness: null,
+        provider: s.providers[0]?.id ?? null,
+      });
+    const namesChanged = !sameNames(defaultEnv(prev), defaultEnv(next));
+    ctx.log(
+      `wrote ${Object.keys(env).length} env var(s), ` +
+        `${String(next.providers.length)} provider and ` +
+        `${String(next.harnesses.length)} harness layer(s)` +
+        (namesChanged ? "" : " (values only)"),
+    );
+    deps.onChange?.({ namesChanged, base, providers, harnesses });
   };
+  return contributionPlugin(IMPL_NAME, "env", () => handle);
 }
 
 function layerOf(

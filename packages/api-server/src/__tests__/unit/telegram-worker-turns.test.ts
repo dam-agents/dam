@@ -99,6 +99,27 @@ describe("telegram worker turns", () => {
   });
 
   /**
+   * TEST_SCENARIO: A turn that fails with an error nobody classified used to
+   * leave the Telegram chat in silence. A person now gets the same sentence
+   * Slack posts for it, so a failed turn is never silent on either surface.
+   */
+  it("posts the generic failure sentence for an unclassified error", async () => {
+    const h = await started(
+      telegramWorkerHarness({
+        turn: () => Promise.reject(new Error("the relay fell over")),
+      }),
+    );
+
+    h.sendDirect(JANE, "a question");
+
+    await vi.waitFor(() =>
+      expect(h.posts).toContain(
+        "Something went wrong while relaying this message — try again.",
+      ),
+    );
+  });
+
+  /**
    * TEST_SCENARIO: A follow-up in the same chat while its turn runs is steered
    * into that turn, so the agent reads it before it answers and the chat gets
    * one answer, as the shared conversation queue intends.

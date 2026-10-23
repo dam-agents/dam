@@ -53,7 +53,7 @@ function dirtyChat() {
   env.history.state = "in-app";
   const uninstall = installBrowserHistory();
   useStore.setState({ dialog: null });
-  useStore.getState().setOpenArtifactId("art-1");
+  useStore.getState().setDock({ kind: "artifact", id: "art-1" });
   useStore.getState().setOpenArtifactDirty(true);
   return uninstall;
 }
@@ -73,7 +73,7 @@ describe("browser history with an unsaved artifact edit", () => {
       "/chat/a1?q=1",
     );
     expect(useStore.getState().view).toBe("chat");
-    expect(useStore.getState().openArtifactId).toBe("art-1");
+    expect(useStore.getState().dock).toEqual({ kind: "artifact", id: "art-1" });
     uninstall();
   });
 
@@ -87,7 +87,7 @@ describe("browser history with an unsaved artifact edit", () => {
     useStore.getState().closeDialog(true);
     await settle();
     expect(useStore.getState().view).toBe("settings");
-    expect(useStore.getState().openArtifactId).toBeNull();
+    expect(useStore.getState().dock).toBeNull();
     uninstall();
   });
 });
