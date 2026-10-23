@@ -114,7 +114,11 @@
       { "id": "github", "what": "a GitHub test user with a TOTP second factor, an organization of its own with one repository, an OAuth App there for DAM's GitHub sign-in, and the user's fine-grained token that may write issues, pull requests and branches in that repository only",
         "guide": "sandbox/github.md", "credentials": ["TOKEN", "LOGIN", "PASSWORD", "TOTP_SECRET", "OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET"] },
       { "id": "slack", "what": "a free Slack workspace with one channel, DAM's Slack app in it, and a second person who writes to the agent",
-        "guide": "sandbox/slack.md", "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"] }
+        "guide": "sandbox/slack.md", "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"] },
+      { "id": "github2", "what": "a second GitHub test user with a TOTP second factor, a member of the github sandbox's organization who may write its repository, and that user's fine-grained token for the repository only",
+        "guide": "sandbox/github-second.md", "credentials": ["TOKEN", "LOGIN", "PASSWORD", "TOTP_SECRET"] },
+      { "id": "slack2", "what": "a second test person in the slack sandbox's workspace and channel, with a user token of an app of its own",
+        "guide": "sandbox/slack-second.md", "credentials": ["HUMAN_TOKEN"] }
     ]
   },
   "config": {

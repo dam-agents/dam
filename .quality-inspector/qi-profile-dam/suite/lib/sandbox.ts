@@ -1,26 +1,35 @@
-/* UNIT_BOUNDARY_DESCRIPTION: The sandbox test person and test user of the quality-inspector
- * profile. Slack: post as the person, read the bot's replies in a thread, and give a thread's
- * link (threadLink) for a task that tells the agent where to post. GitHub:
+/* UNIT_BOUNDARY_DESCRIPTION: The sandbox test people and test users of the quality-inspector
+ * profile: the first (accounts github, slack) and the second (github2, slack2), picked by `who`,
+ * the first when it is left out; the second is optional. Slack: post as a person, read the bot's
+ * replies in a thread, and give a thread's link (threadLink) for a task that tells the agent where
+ * to post. A test person's post may carry a bot_id (it comes through an app), so a reply is a bot
+ * post by neither person; the reading person's id must resolve, the other's may fail (a token the
+ * instance lacks or broke, whose person posts nothing to tell apart). GitHub:
  * sandboxPull finds the newest pull request of the sandbox repository whose title holds the
  * run's id, and closeSandboxPull closes it and deletes its branch (a branch already gone is no error) —
  * the cleanup a test calls last, after its last criterion, so a failed run keeps both; neither reads the repository's
- * files. githubSignIn finishes DAM's "Connect with GitHub" on github.com as the sandbox test user
+ * files. githubSignIn finishes DAM's "Connect with GitHub" on github.com as a sandbox test user
  * (the password, a TOTP code computed per RFC 6238 and never reused, the OAuth App's consent
  * when GitHub asks) and returns once the browser is back on DAM, so a test never names a
- * sandbox host. The values come from the E2E_SANDBOX_* lines, which the inspector masks in
- * every run artefact; the install's GitHub OAuth App (overlay @sandbox:github) is on only
- * while every E2E_SANDBOX_GITHUB_* line is filled. */
+ * sandbox host. GitHub keeps a browser signed in and the sign-in's pages have no sign-out, so
+ * each test user signs in in a browser of its own: the second from another account's session. The values come from the E2E_SANDBOX_* lines, which the inspector masks in
+ * every run artefact; the install's GitHub OAuth App (overlay @sandbox:github), which both test
+ * users sign in through, is on only while every E2E_SANDBOX_GITHUB_* line is filled. */
 import { createHmac } from 'node:crypto';
 
 const env = process.env;
 
+export type Who = 'first' | 'second';
+const githubVar = (who: Who, name: string) => env[`E2E_SANDBOX_${who === 'second' ? 'GITHUB2' : 'GITHUB'}_${name}`] ?? '';
+const humanToken = (who: Who) => (who === 'second' ? env.E2E_SANDBOX_SLACK2_HUMAN_TOKEN : env.E2E_SANDBOX_SLACK_HUMAN_TOKEN) ?? '';
+
 export const sandbox = {
-  slack: () => !!(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN && env.E2E_SANDBOX_SLACK_BOT_TOKEN && env.E2E_SANDBOX_SLACK_CHANNEL_ID),
+  slack: (who: Who = 'first') => !!(humanToken(who) && env.E2E_SANDBOX_SLACK_BOT_TOKEN && env.E2E_SANDBOX_SLACK_CHANNEL_ID),
   githubRepo: () => (env.E2E_SANDBOX_GITHUB_TOKEN ? JSON.parse(env.QI_PROFILE_CONFIG ?? '{}').sandbox_github_repo ?? '' : ''),
-  githubUser: () =>
-    !!(env.E2E_SANDBOX_GITHUB_LOGIN && env.E2E_SANDBOX_GITHUB_PASSWORD && env.E2E_SANDBOX_GITHUB_TOTP_SECRET &&
+  githubUser: (who: Who = 'first') =>
+    !!(githubVar(who, 'LOGIN') && githubVar(who, 'PASSWORD') && githubVar(who, 'TOTP_SECRET') &&
        env.E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID && env.E2E_SANDBOX_GITHUB_OAUTH_CLIENT_SECRET),
-  githubLogin: () => env.E2E_SANDBOX_GITHUB_LOGIN ?? '',
+  githubLogin: (who: Who = 'first') => githubVar(who, 'LOGIN'),
   channelId: () => env.E2E_SANDBOX_SLACK_CHANNEL_ID ?? '',
 };
 
@@ -39,32 +48,39 @@ export async function botUserId(): Promise<string> {
   return String((await slack(env.E2E_SANDBOX_SLACK_BOT_TOKEN, 'auth.test')).user_id);
 }
 
-export async function personSays(text: string, threadTs?: string): Promise<string> {
-  const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.postMessage',
+export async function personSays(text: string, threadTs?: string, who: Who = 'first'): Promise<string> {
+  const j = await slack(humanToken(who), 'chat.postMessage',
     { channel: sandbox.channelId(), text, ...(threadTs ? { thread_ts: threadTs } : {}) });
   return String(j.ts);
 }
 
-let personId: string | undefined;
-async function personUserId(): Promise<string> {
-  personId ??= String((await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'auth.test')).user_id);
-  return personId;
+const personIds: Partial<Record<Who, string>> = {};
+async function personUserIds(reader: Who): Promise<string[]> {
+  for (const who of ['first', 'second'] as const) {
+    if (personIds[who] || !humanToken(who)) continue;
+    try {
+      personIds[who] = String((await slack(humanToken(who), 'auth.test')).user_id);
+    } catch (e) {
+      if (who === reader) throw e;
+    }
+  }
+  return Object.values(personIds);
 }
 
-export async function botReplies(ts: string, ms = 300_000): Promise<string[]> {
+export async function botReplies(ts: string, ms = 300_000, who: Who = 'first'): Promise<string[]> {
   const until = Date.now() + ms;
   for (;;) {
-    const j = await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'conversations.replies', { channel: sandbox.channelId(), ts });
+    const j = await slack(humanToken(who), 'conversations.replies', { channel: sandbox.channelId(), ts });
     const messages = (j.messages as { ts: string; text?: string; bot_id?: string; user?: string }[]) ?? [];
-    const me = await personUserId();
-    const replies = messages.filter((m) => m.ts !== ts && m.bot_id && m.user !== me).map((m) => m.text ?? '');
+    const people = await personUserIds(who);
+    const replies = messages.filter((m) => m.ts !== ts && m.bot_id && !people.includes(m.user ?? '')).map((m) => m.text ?? '');
     if (replies.length || Date.now() > until) return replies;
     await new Promise((r) => setTimeout(r, 10_000));
   }
 }
 
-export async function threadLink(ts: string): Promise<string> {
-  return String((await slack(env.E2E_SANDBOX_SLACK_HUMAN_TOKEN, 'chat.getPermalink', { channel: sandbox.channelId(), message_ts: ts })).permalink);
+export async function threadLink(ts: string, who: Who = 'first'): Promise<string> {
+  return String((await slack(humanToken(who), 'chat.getPermalink', { channel: sandbox.channelId(), message_ts: ts })).permalink);
 }
 
 async function github(method: string, path: string, body?: unknown, gone = false): Promise<unknown> {
@@ -103,7 +119,7 @@ function totp(secret: string, at = Date.now()): string {
   let bits = '';
   for (const c of secret.toUpperCase().replace(/[\s=-]/g, '')) {
     const v = alphabet.indexOf(c);
-    if (v < 0) throw new Error('E2E_SANDBOX_GITHUB_TOTP_SECRET is not base32');
+    if (v < 0) throw new Error('the GitHub test user\'s TOTP secret is not base32');
     bits += v.toString(2).padStart(5, '0');
   }
   const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => parseInt(b, 2)));
@@ -114,12 +130,12 @@ function totp(secret: string, at = Date.now()): string {
   return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, '0');
 }
 
-let lastCode = '';
-async function freshCode(): Promise<string> {
+const lastCode: Partial<Record<Who, string>> = {};
+async function freshCode(who: Who): Promise<string> {
   for (;;) {
     const left = 30_000 - (Date.now() % 30_000);
-    const code = totp(env.E2E_SANDBOX_GITHUB_TOTP_SECRET ?? '');
-    if (left > 5_000 && code !== lastCode) return (lastCode = code);
+    const code = totp(githubVar(who, 'TOTP_SECRET'));
+    if (left > 5_000 && code !== lastCode[who]) return (lastCode[who] = code);
     await new Promise((r) => setTimeout(r, left + 500));
   }
 }
@@ -136,20 +152,23 @@ type Brw = { url(): Promise<string>; waitForURL(u: RegExp, o?: { timeout?: numbe
 
 const onGitHub = async (browser: Brw) => /^https:\/\/github\.com\//.test(await browser.url());
 
-export async function githubSignIn({ screen, browser }: { screen: Scr; browser: Brw }, timeout = 60_000): Promise<void> {
-  if (!sandbox.githubUser()) throw new Error('the GitHub sandbox test user is not set (E2E_SANDBOX_GITHUB_*)');
+export async function githubSignIn(
+  { screen, browser, who = 'first' }: { screen: Scr; browser: Brw; who?: Who },
+  timeout = 60_000,
+): Promise<void> {
+  if (!sandbox.githubUser(who)) throw new Error(`the ${who} GitHub sandbox test user is not set (E2E_SANDBOX_GITHUB${who === 'second' ? '2' : ''}_*)`);
   const app = new RegExp('^' + (env.APP_URL ?? 'http://localhost:4444').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'));
   await browser.waitForURL(/^https:\/\/github\.com\/(login|sessions?)\b/, { timeout }).catch(() => undefined);
   if (!(await onGitHub(browser))) return;
   const login = screen.getByLabel(/username or email/i).first();
   if (await login.isVisible()) {
-    await login.fill(sandbox.githubLogin());
-    await screen.getByLabel(/^password$/i).first().fill(env.E2E_SANDBOX_GITHUB_PASSWORD ?? '');
+    await login.fill(sandbox.githubLogin(who));
+    await screen.getByLabel(/^password$/i).first().fill(githubVar(who, 'PASSWORD'));
     await screen.getByRole('button', /^sign in$/i).first().tap();
   }
   const code = screen.getByLabel(/authentication code|code from your authenticator/i).first();
   await code.waitFor({ state: 'visible', timeout });
-  await code.fill(await freshCode());
+  await code.fill(await freshCode(who));
   await browser.waitForURL(/^(?!https:\/\/github\.com\/sessions\/two-factor)/, { timeout: 10_000 }).catch(async () => {
     const verify = screen.getByRole('button', /^verify$/i).first();
     if (await verify.isVisible()) await verify.tap();
