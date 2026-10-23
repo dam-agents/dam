@@ -93,6 +93,7 @@ import {
   type ProviderKeyProbeOutcome,
 } from "../domain/provider-key-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
+import { oauthClientSource } from "../domain/client-id-metadata.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
 import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
@@ -1720,9 +1721,7 @@ export function createConnectionsService(deps: {
         const meta = await discoverMcpAuth(new URL(input.url));
         return {
           auth:
-            meta &&
-            (meta.registrationEndpoint ||
-              meta.clientIdMetadataDocumentSupported)
+            meta && oauthClientSource(meta, deps.oauthCallbackUrl)
               ? "oauth"
               : "none",
         };

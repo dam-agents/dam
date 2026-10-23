@@ -154,7 +154,7 @@ describe("custom MCP OAuth client", () => {
 });
 
 describe("discoverMcp", () => {
-  function service() {
+  function service(callbackUrl = CALLBACK) {
     return createConnectionsService({
       harnesses: { default: "claude-code", harnesses: [] },
       ownerId: "owner",
@@ -169,7 +169,7 @@ describe("discoverMcp", () => {
       providerBalance: unused(),
       credentialProbe: unused(),
       providerKeyProbe: unused(),
-      oauthCallbackUrl: CALLBACK,
+      oauthCallbackUrl: callbackUrl,
       brandName: "Test",
       connectionLock: (_key, fn) => fn(),
       isOwnedAgent: async () => true,
@@ -184,6 +184,17 @@ describe("discoverMcp", () => {
     await expect(service().discoverMcp({ url: MCP_URL })).resolves.toEqual({
       auth: "oauth",
     });
+  });
+
+  // TEST_SCENARIO: on a deployment served over plain HTTP the create path cannot use a metadata document, so discovery must not offer OAuth that create then refuses.
+  it("reports none for a metadata-document-only server on a plain-HTTP deployment", async () => {
+    mcpServer({ cimd: true });
+
+    await expect(
+      service("http://localhost:4444/api/oauth/callback").discoverMcp({
+        url: MCP_URL,
+      }),
+    ).resolves.toEqual({ auth: "none" });
   });
 
   // TEST_SCENARIO: a server with neither way to get a client stays reported as auth-less, as before.

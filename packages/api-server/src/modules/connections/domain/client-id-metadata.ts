@@ -25,11 +25,29 @@ export function clientIdMetadataUrl(callbackUrl: string): string {
   return new URL(CLIENT_ID_METADATA_FILE, callbackUrl).href;
 }
 
-export function usableClientIdMetadataUrl(
+export type OAuthClientSource =
+  | { kind: "metadata-document"; clientId: string }
+  | { kind: "registration"; registrationEndpoint: string };
+
+export function oauthClientSource(
+  server: {
+    clientIdMetadataDocumentSupported?: boolean;
+    registrationEndpoint?: string;
+  },
   callbackUrl: string,
-): string | undefined {
-  const url = clientIdMetadataUrl(callbackUrl);
-  return new URL(url).protocol === "https:" ? url : undefined;
+): OAuthClientSource | null {
+  const metadataUrl = clientIdMetadataUrl(callbackUrl);
+  if (
+    server.clientIdMetadataDocumentSupported &&
+    new URL(metadataUrl).protocol === "https:"
+  )
+    return { kind: "metadata-document", clientId: metadataUrl };
+  if (server.registrationEndpoint)
+    return {
+      kind: "registration",
+      registrationEndpoint: server.registrationEndpoint,
+    };
+  return null;
 }
 
 export function clientIdMetadataDocument(opts: {
