@@ -82,7 +82,11 @@ import {
   type DomainEvent,
   type TurnOutcome,
 } from "../../../events.js";
-import type { IdentityLinkService } from "./../services/identity-link-service.js";
+import type {
+  ExternalLink,
+  IdentityLinkService,
+} from "./../services/identity-link-service.js";
+import type { ChannelOwner } from "./owner-copy.js";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -1292,6 +1296,7 @@ export type SlackWorkerDeps = {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<SlackOAuthPending>;
   getInstanceOwner: (agentId: string) => Promise<string | null>;
+  ownerDisplayName: (sub: string) => Promise<string | null>;
   channelRegistry: ChannelRegistry;
   unbindSlackChannel: (
     agentId: string,
@@ -1332,6 +1337,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     oauthConfig,
     pendingOAuthFlows,
     getInstanceOwner,
+    ownerDisplayName,
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
@@ -1944,6 +1950,59 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch {
       return null;
     }
+  }
+
+  async function resolveChannelOwner(
+    instanceName: string,
+    teamId: SlackWorkspace,
+  ): Promise<ChannelOwner | null> {
+    let owner: string | null;
+    let name: string | null;
+    try {
+      owner = await getInstanceOwner(instanceName);
+      name = owner ? await ownerDisplayName(owner) : null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, step: "name", error: formatError(err) },
+        "slack.owner_lookup.failed",
+      );
+      return null;
+    }
+    if (!owner || !name) return null;
+    return {
+      name,
+      slackUserId: await ownerSlackUserId(instanceName, owner, teamId),
+    };
+  }
+
+  async function ownerSlackUserId(
+    instanceName: string,
+    owner: string,
+    teamId: SlackWorkspace,
+  ): Promise<string | null> {
+    try {
+      const links = await identityLinks.externalLinksOf("slack", owner);
+      const inWorkspace =
+        links.find((link) => link.teamId === teamId) ??
+        (await soleWorkspaceLink(links, teamId));
+      return inWorkspace?.externalUserId ?? null;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, step: "link", error: formatError(err) },
+        "slack.owner_lookup.failed",
+      );
+      return null;
+    }
+  }
+
+  async function soleWorkspaceLink(
+    links: ExternalLink[],
+    teamId: SlackWorkspace,
+  ): Promise<ExternalLink | undefined> {
+    const legacy = links.find((link) => link.teamId === null);
+    if (!legacy) return undefined;
+    const active = await listWorkspaces();
+    return active.length === 1 && active[0] === teamId ? legacy : undefined;
   }
 
   const AGENT_NAME_TTL_MS = 30_000;
@@ -2943,11 +3002,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           });
 
     const isDirectMessage = isDirectMessageId(ctx.channel);
-    const [turnContext, agentName] = await Promise.all([
+    const [turnContext, agentName, owner] = await Promise.all([
       turnContractContext(gw, ctx.channel, eventTs, ctx.teamId, {
         batched: batched || privateReply,
       }),
       resolveAgentDisplayName(instanceName),
+      resolveChannelOwner(instanceName, ctx.teamId),
     ]);
     const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
@@ -2962,6 +3022,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       reach: { isDirectMessage, ambient: ctx.ambient },
       roster: rosterCopy(ctx.roster, instanceName),
       ...(ctx.whisper ? { whisper: ctx.whisper } : {}),
+      owner,
       ...contractContext,
     });
     const earlierTurn =
@@ -5397,14 +5458,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
-    const agentName = await resolveAgentDisplayName(args.instanceName);
-    const { botUserId, ...contractContext } = await turnContractContext(
-      gw,
-      args.channel,
-      args.eventTs,
-      args.teamId,
-      { batched: args.messages.length > 1 },
-    );
+    const [agentName, owner, turnContext] = await Promise.all([
+      resolveAgentDisplayName(args.instanceName),
+      resolveChannelOwner(args.instanceName, args.teamId),
+      turnContractContext(gw, args.channel, args.eventTs, args.teamId, {
+        batched: args.messages.length > 1,
+      }),
+    ]);
+    const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
@@ -5419,6 +5480,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ambient: true,
       },
       roster: rosterCopy(args.roster, args.instanceName),
+      owner,
       ...contractContext,
     });
     const guidance = [
