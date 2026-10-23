@@ -1278,10 +1278,7 @@ export const spendCalls = pgTable(
       table.startedAt,
     ),
     index("spend_calls_started_idx").on(table.startedAt),
-    index("spend_calls_router_call_idx").on(
-      table.ownerSub,
-      table.routerCallId,
-    ),
+    index("spend_calls_router_call_idx").on(table.ownerSub, table.routerCallId),
   ],
 );
 

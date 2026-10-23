@@ -759,10 +759,10 @@
       "breakpoints": true
     },
     {
-      "idx": 104,
+      "idx": 108,
       "version": "7",
-      "when": 1792686062444,
-      "tag": "0104_spend_call_provider",
+      "when": 1792751329596,
+      "tag": "0108_spend_call_detail",
       "breakpoints": true
     }
   ]
