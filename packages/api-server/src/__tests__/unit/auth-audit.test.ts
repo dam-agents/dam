@@ -223,3 +223,91 @@ describe("auth middleware audit", () => {
     );
   });
 });
+
+describe("ws edge auth denials", () => {
+  const site = {
+    edge: "ws" as const,
+    relay: "trpc",
+    agentId: "agent-1",
+    sourceIp: "1.2.3.4",
+  };
+
+  it("logs ws.authn_deny with a decision for a missing token", async () => {
+    const cap = capture();
+    const result = await authenticatePrincipal(auth.verify, null, site);
+    expect(result).toEqual({ ok: false, kind: "missing-token" });
+    const rec = cap.records()[0]!;
+    expect(rec).toMatchObject({
+      msg: "ws.authn_deny",
+      category: "authn",
+      actor: null,
+      actorKind: "external",
+      decision: "deny",
+      reason: "missing-token",
+      surface: "ws",
+      agentId: "agent-1",
+      sourceIp: "1.2.3.4",
+      detail: { relay: "trpc" },
+    });
+    expect(rec.result).toBeUndefined();
+  });
+
+  it("logs ws.authn_unavailable with a failure result and no decision", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(new JWKSTimeout());
+    const result = await authenticatePrincipal(auth.verify, "x", site);
+    expect(result).toEqual({ ok: false, kind: "auth-unavailable" });
+    const rec = cap.records()[0]!;
+    expect(rec).toMatchObject({
+      msg: "ws.authn_unavailable",
+      category: "authn",
+      actorKind: "external",
+      result: "failure",
+      reason: "jwks-unavailable",
+      surface: "ws",
+    });
+    expect(rec.decision).toBeUndefined();
+    expect(rec.detail).toEqual({ relay: "trpc" });
+  });
+
+  it("logs ws.authz_deny against the decoded sub when the role is missing", async () => {
+    const cap = capture();
+    verifyMock.mockResolvedValueOnce({
+      payload: {
+        sub: "kc-denied",
+        azp: "platform-ui",
+        preferred_username: "u",
+        realm_access: { roles: ["some-other-role"] },
+      },
+    });
+    const result = await authenticatePrincipal(auth.verify, "x", site);
+    expect(result).toEqual({ ok: false, kind: "forbidden" });
+    expect(cap.records()[0]).toMatchObject({
+      msg: "ws.authz_deny",
+      category: "authz",
+      actor: "kc-denied",
+      actorKind: "user",
+      decision: "deny",
+      reason: "missing-required-role",
+      surface: "ws",
+      detail: { relay: "trpc" },
+    });
+  });
+
+  it("logs ws.authn_deny with the verify-error class on a bad JWT", async () => {
+    const cap = capture();
+    verifyMock.mockRejectedValueOnce(
+      new JWTExpired('"exp" claim timestamp check failed', {}),
+    );
+    const result = await authenticatePrincipal(auth.verify, "x", site);
+    expect(result).toEqual({ ok: false, kind: "unauthorized" });
+    expect(cap.records()[0]).toMatchObject({
+      msg: "ws.authn_deny",
+      category: "authn",
+      actor: null,
+      decision: "deny",
+      reason: "JWTExpired",
+      surface: "ws",
+    });
+  });
+});
