@@ -19,6 +19,12 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
           : payload.path,
     };
   }
+  if (payload.kind === "egress_proposal") {
+    return {
+      title: `Proposed rule: ${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
+      subtitle: `${payload.path} · ${payload.reason}`,
+    };
+  }
   if (payload.kind === "spend_limit") {
     const effective = payload.amountMicros * (payload.extensions + 1);
     return {

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an owner picks one of the fixed avatar characters for an agent at create or later in its settings. The choice travels on the Agent's spec, so the UI and Slack show the same character, and renaming the agent keeps it. An agent with no choice shows the character picked from its owner and name.
+// TEST_OVERVIEW: an owner picks one of the fixed avatar characters for an agent at create or later in its settings, or clears the choice. The choice travels on the Agent's spec, so the UI and Slack show the same character, and renaming the agent keeps it. An agent with no choice shows the character picked from its owner and name, and a rename stores that character so the avatar stays.
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import { toAgentView } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
@@ -16,7 +16,7 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
   }) as T;
 }
 
-function setup() {
+function setup(stored: { avatar?: string } = {}) {
   const patchSpec = vi.fn(
     async (
       id: string,
@@ -52,7 +52,11 @@ function setup() {
             name: id,
             labels: { "agent-platform.ai/owner": "owner-1" },
           },
-          spec: { name: "test-agent", image: "example.com/agent:latest" },
+          spec: {
+            name: "test-agent",
+            image: "example.com/agent:latest",
+            ...stored,
+          },
         }),
       create: persist,
       updateSpec: patchSpec,
@@ -108,11 +112,35 @@ describe("an agent's chosen avatar", () => {
 
   // TEST_SCENARIO: the settings picker changes the character, and a save that does not touch it leaves it alone.
   it("is changed only by an update that names it", async () => {
-    const { agents, patchSpec } = setup();
+    const { agents, patchSpec } = setup({ avatar: "lens" });
     await agents.update({ id: "agent-1", avatar: "wave" });
     await agents.update({ id: "agent-1", name: "renamed" });
+    await agents.update({ id: "agent-1", description: "notes" });
     expect(patchSpec.mock.calls[0]![2]).toEqual({ avatar: "wave" });
     expect(patchSpec.mock.calls[1]![2]).not.toHaveProperty("avatar");
+    expect(patchSpec.mock.calls[2]![2]).not.toHaveProperty("avatar");
+  });
+
+  // TEST_SCENARIO: an agent with no choice shows the character picked from its owner and its name, so a rename by any client (the CLI, an API key) stores the character it showed before, and the avatar does not change under the user.
+  it("is kept as shown when an agent with no choice is renamed", async () => {
+    const { agents, patchSpec } = setup();
+    await agents.update({ id: "agent-1", name: "renamed" });
+    expect(patchSpec.mock.calls[0]![2]).toEqual({
+      name: "renamed",
+      avatar: avatarCharacter(undefined, "owner-1", "test-agent"),
+    });
+  });
+
+  // TEST_SCENARIO: `dam agent update --avatar-default` sends null; the merge patch then drops the field, so the agent shows the character picked from its owner and name again.
+  it("is cleared by an update that sends null", async () => {
+    const { agents, patchSpec } = setup({ avatar: "lens" });
+    await agents.update({ id: "agent-1", avatar: null });
+    await agents.update({ id: "agent-1", name: "renamed", avatar: null });
+    expect(patchSpec.mock.calls[0]![2]).toEqual({ avatar: null });
+    expect(patchSpec.mock.calls[1]![2]).toEqual({
+      name: "renamed",
+      avatar: null,
+    });
   });
 });
 

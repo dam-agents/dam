@@ -1045,7 +1045,7 @@ keycloak:
   extraWebOrigins: []
 
   # -- Login page presentation. With `allowPassword: false` the page shows
-  # only the identity-provider CTA(s) — for deployments (e.g. w3id) where
+  # only the identity-provider CTA(s) — for deployments (e.g. w3id, IBMid) where
   # SSO is the expected sign-in path; it falls back to the password form
   # when no identity provider is configured on the realm. The default keeps
   # the username/password form, with any identity-provider buttons offered

@@ -48,6 +48,8 @@ import { composeSkillsModule } from "../../modules/skills/compose.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
+import type { AgentSecretRequests } from "../../modules/connections/services/agent-secret-requests.js";
+import type { EgressProposals } from "../../modules/approvals/services/egress-proposals.js";
 import { mountAgentKbRoutes } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
@@ -116,6 +118,11 @@ export interface HarnessApiServerAppDeps {
   spendHold: SpendHoldGate;
   spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
   toolApprovalsFor: (owner: string) => ToolApprovalReports;
+  agentSecretRequestsFor: (
+    owner: string,
+    agentId: string,
+  ) => AgentSecretRequests;
+  egressProposalsFor: (owner: string, agentId: string) => EgressProposals;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -297,6 +304,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
     sessionMessages: deps.sessionMessages,
+    agentSecretRequestsFor: deps.agentSecretRequestsFor,
+    egressProposalsFor: deps.egressProposalsFor,
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,

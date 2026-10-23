@@ -40,6 +40,10 @@ export function printOutcomeAndExit(
         process.stdout.write(
           `${wording.pastTense} — wrote permanent ${describeRule(outcome.rule)}. It now appears in \`dam network list <agent>\`.\n`,
         );
+      } else if (outcome.type === "egress_proposal") {
+        process.stdout.write(
+          `${wording.pastTense} — the proposed egress rule was not written.\n`,
+        );
       } else if (opts.once) {
         process.stdout.write(`${wording.onceLine}\n`);
       } else {

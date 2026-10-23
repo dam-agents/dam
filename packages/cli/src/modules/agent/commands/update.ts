@@ -1,5 +1,9 @@
 import { Command, Option } from "commander";
-import type { DefaultKind, SessionPair } from "api-server-api";
+import {
+  agentUpdateInputSchema,
+  type DefaultKind,
+  type SessionPair,
+} from "api-server-api";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveConnectionRef } from "../../connection/index.js";
 import type { AgentService } from "../services/agent-service.js";
@@ -8,10 +12,27 @@ import {
   type AgentModelsService,
 } from "../services/agent-models-service.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { exitOnServiceError } from "../../shared/trpc/print.js";
+import {
+  exitOnServiceError,
+  printServiceError,
+} from "../../shared/trpc/print.js";
 import { parseSettingFlags } from "../../shared/setting-flags.js";
-import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { parseOrExit } from "../../shared/parse-or-exit.js";
+import {
+  EXIT_AGENT_NOT_RESOLVED,
+  EXIT_INVALID_INPUT,
+  EXIT_RUNTIME_FAILURE,
+  EXIT_SUCCESS,
+} from "../../shared/exit-codes.js";
+import type { AvatarUploader } from "../infrastructure/avatar-upload-client.js";
+import { renderAvatar } from "../domain/agent-avatar.js";
+import type { AgentView } from "../domain/agent-view.js";
 import { resolveAgentOrExit } from "./errors.js";
+import {
+  addAvatarOptions,
+  avatarFromFlagsOrExit,
+  type AvatarOpts,
+} from "./avatar-flags.js";
 import {
   isModelProvider,
   modelEntries,
@@ -20,7 +41,8 @@ import {
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
-interface UpdateOpts {
+interface UpdateOpts extends AvatarOpts {
+  name?: string;
   provider: string[];
   removeProvider: string[];
   harness?: string;
@@ -70,12 +92,18 @@ export function buildUpdateCommand(deps: {
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
   createAgentModelsService: (host: string) => AgentModelsService;
+  createAvatarUploader: (host: string) => AvatarUploader;
 }): Command {
-  return new Command("update")
+  const cmd = new Command("update")
     .description(
-      "Change which model providers an Agent may use and the harness and model its sessions start on",
+      "Change an Agent's name and avatar, which model providers it may use, and the harness and model its sessions start on",
     )
     .argument("<ref>", "Agent Ref — name or 'agent-…' ID")
+    .option(
+      "--name <name>",
+      "rename the agent (not `agent-` plus 16 hex characters, the shape of an ID)",
+    );
+  return addAvatarOptions(cmd, "show")
     .option(
       "--provider <id-or-name>",
       "grant a model-provider connection to the agent (repeatable)",
@@ -119,10 +147,15 @@ export function buildUpdateCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("--json", "emit the agent's providers, harnesses and defaults")
+    .option(
+      "--json",
+      "emit the agent's providers, harnesses and defaults, and the agent itself under `agent`",
+    )
     .addHelpText(
       "after",
       "\nExamples:\n" +
+        '  dam agent update my-agent --name "Release helper" --avatar compass\n' +
+        "  dam agent update my-agent --avatar-file ./logo.png\n" +
         "  dam agent update my-agent --model ibm/gpt-5.5\n" +
         "  dam agent update my-agent --harness codex --model openai/gpt-5.5 --setting effort=high\n" +
         '  dam agent update my-agent --provider "My provider" --remove-provider conn-123\n' +
@@ -143,6 +176,11 @@ export function buildUpdateCommand(deps: {
         opts.settingsDefault === true;
       const providersGiven =
         opts.provider.length > 0 || opts.removeProvider.length > 0;
+      const identityGiven =
+        opts.name !== undefined ||
+        opts.avatar !== undefined ||
+        opts.avatarFile !== undefined ||
+        opts.avatarDefault === true;
       if (opts.sameAsChat && opts.kind === "chat")
         invalid("--same-as-chat needs --kind channel or --kind scheduled");
       if (opts.sameAsChat && pairGiven)
@@ -151,18 +189,22 @@ export function buildUpdateCommand(deps: {
         );
       if (settings && opts.settingsDefault)
         invalid("pass --setting or --settings-default, not both");
-      if (!pairGiven && !providersGiven && !opts.sameAsChat)
+      if (!pairGiven && !providersGiven && !opts.sameAsChat && !identityGiven)
         invalid(
-          "nothing to change: pass --provider, --remove-provider, --harness, --model, --setting or --same-as-chat",
+          "nothing to change: pass --name, --avatar, --avatar-file, --avatar-default, --provider, --remove-provider, --harness, --model, --setting or --same-as-chat",
         );
 
       const host = await resolveActiveHost(deps, opts.server);
-      const agent = await resolveAgentOrExit(
-        deps.createAgentService(host),
-        ref,
-        host,
-      );
+      const agentService = deps.createAgentService(host);
+      let agent = await resolveAgentOrExit(agentService, ref, host);
       const svc = deps.createAgentModelsService(host);
+
+      if (identityGiven)
+        agent = await updateIdentityOrExit(agent, opts, {
+          agentService,
+          uploader: deps.createAvatarUploader(host),
+          host,
+        });
 
       if (providersGiven) {
         const all = await svc.connections();
@@ -209,12 +251,45 @@ export function buildUpdateCommand(deps: {
 
       const models = await readAgentModels(svc, agent.id);
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(models)}\n`);
+        process.stdout.write(`${JSON.stringify({ ...models, agent })}\n`);
       } else {
         process.stdout.write(
-          `✓ Updated ${agent.name}.\n${renderEntries(modelEntries(models))}`,
+          `✓ Updated ${agent.name}.\n${renderEntries([
+            ["NAME", agent.name],
+            ["AVATAR", renderAvatar(agent.avatar)],
+            ...modelEntries(models),
+          ])}`,
         );
       }
       process.exit(EXIT_SUCCESS);
     });
+}
+
+async function updateIdentityOrExit(
+  agent: AgentView,
+  opts: UpdateOpts,
+  deps: { agentService: AgentService; uploader: AvatarUploader; host: string },
+): Promise<AgentView> {
+  const avatar = await avatarFromFlagsOrExit(opts, {
+    ...deps,
+    current: agent.avatar,
+  });
+  const input = await parseOrExit(agentUpdateInputSchema, {
+    id: agent.id,
+    ...(opts.name !== undefined && { name: opts.name }),
+    ...(avatar !== undefined && { avatar }),
+  });
+  const updated = await deps.agentService.updateIdentity(input);
+  if (updated.ok) return updated.value;
+  if (updated.error.kind === "not-found") {
+    process.stderr.write(`error: no agent with id \`${agent.id}\`\n`);
+    return process.exit(EXIT_AGENT_NOT_RESOLVED);
+  }
+  printServiceError(updated.error, deps.host);
+  return process.exit(
+    updated.error.kind === "transport" &&
+      updated.error.serverCode === "CONFLICT"
+      ? EXIT_INVALID_INPUT
+      : EXIT_RUNTIME_FAILURE,
+  );
 }

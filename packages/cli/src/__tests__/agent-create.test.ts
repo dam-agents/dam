@@ -64,6 +64,9 @@ function setup(connections: ConnectionView[] = [provider]) {
       deleteAgent: vi.fn(),
       restart: vi.fn(),
       setDisabled: vi.fn(),
+      updateIdentity: vi.fn(),
+      unlockedCharacters: vi.fn(),
+      customAvatarsEnabled: vi.fn(),
       runtimeFleet: vi.fn(),
     }),
     createTemplateService: () => ({
@@ -73,6 +76,7 @@ function setup(connections: ConnectionView[] = [provider]) {
       }),
     }),
     createTrpcClient: () => trpc,
+    createAvatarUploader: () => ({ upload: vi.fn() }),
   });
 
   async function run(args: string[], exitCode: number) {

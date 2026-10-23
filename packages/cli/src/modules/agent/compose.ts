@@ -6,6 +6,7 @@ import {
   createAgentTrpcClient,
   type TrpcClient,
 } from "../shared/trpc/trpc-client.js";
+import { buildAvatarsCommand } from "./commands/avatars.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
@@ -23,6 +24,10 @@ import {
   createAgentService,
   type AgentService,
 } from "./services/agent-service.js";
+import {
+  createAvatarUploader,
+  type AvatarUploader,
+} from "./infrastructure/avatar-upload-client.js";
 
 export interface AgentModuleOptions {
   buildTrpc: (host: string) => TrpcClient;
@@ -52,6 +57,15 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
         }),
     });
 
+  const createUploader = (host: string): AvatarUploader =>
+    createAvatarUploader({
+      host,
+      getToken: async () => {
+        const token = await opts.tokenProvider.getValidAccessToken(host);
+        return token.ok ? token.value : null;
+      },
+    });
+
   const shared = {
     compatService: opts.compatService,
     configService: opts.configService,
@@ -61,6 +75,7 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
     ...shared,
     createAgentModelsService: createModelsService,
   };
+  const withIdentity = { ...withModels, createAvatarUploader: createUploader };
 
   const parent = new Command("agent").description(
     "Address Agents by name or ID",
@@ -71,10 +86,12 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
     ...shared,
     createTemplateService: opts.templateService,
     createTrpcClient: opts.buildTrpc,
+    createAvatarUploader: createUploader,
   };
   parent.addCommand(buildCreateCommand(createDeps));
   parent.addCommand(buildCreateInteractiveCommand(createDeps));
-  parent.addCommand(buildUpdateCommand(withModels));
+  parent.addCommand(buildUpdateCommand(withIdentity));
+  parent.addCommand(buildAvatarsCommand(shared));
   parent.addCommand(buildModelsCommand(withModels));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));

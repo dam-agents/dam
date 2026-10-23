@@ -10,7 +10,7 @@ import {
   trpcCall,
   trpcErrorCode,
 } from "../../shared/trpc/classify.js";
-import type { RuntimeFleet } from "api-server-api";
+import type { AgentUpdateInput, RuntimeFleet } from "api-server-api";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
@@ -34,6 +34,17 @@ export interface AgentService {
     disabled: boolean,
   ): Promise<
     Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
+  >;
+  updateIdentity(
+    input: Pick<AgentUpdateInput, "id" | "name" | "avatar">,
+  ): Promise<
+    Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
+  >;
+  unlockedCharacters(): Promise<
+    Result<readonly string[], TransportError | AuthRequiredError>
+  >;
+  customAvatarsEnabled(): Promise<
+    Result<boolean, TransportError | AuthRequiredError>
   >;
 }
 
@@ -84,6 +95,25 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
       } catch (e) {
         return notFoundOnMutate(e, id);
       }
+    },
+    async updateIdentity(input) {
+      try {
+        return ok(await deps.trpc.agents.update.mutate(input));
+      } catch (e) {
+        return notFoundOnMutate(e, input.id);
+      }
+    },
+    async unlockedCharacters() {
+      return trpcCall(async () =>
+        (await deps.trpc.gettingStarted.progress.query()).unlocks.map(
+          (u) => u.character,
+        ),
+      );
+    },
+    async customAvatarsEnabled() {
+      return trpcCall(
+        async () => (await deps.trpc.features.flags.query())["custom-avatars"],
+      );
     },
   };
 }

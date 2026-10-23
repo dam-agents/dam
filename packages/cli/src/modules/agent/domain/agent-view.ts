@@ -6,6 +6,7 @@ export interface AgentView {
   templateId: string | null;
   image: string;
   description?: string;
+  avatar?: string | null;
   env?: EnvVar[];
   state: AgentState;
   disabled?: boolean;

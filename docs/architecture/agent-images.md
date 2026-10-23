@@ -107,7 +107,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   Selkies is installed into the base image from hash-pinned wheels, and streams only royalty-free codecs ([browser-panel](browser-panel.md)).
 - docker and k3s are baked in but not started.
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
-  A service gets only `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
+  A service gets only `PATH`, the gateway's proxy and CA variables, `PLATFORM_ENVIRONMENT_OF`, `XDG_RUNTIME_DIR` and `MISE_SYSTEM_DATA_DIR` of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - The agent's own services, its [Startup Items](agent-processes.md#startup-items), are openrc user services of root in `~/.config/rc`, started at every boot, a new image included, by openrc's stock `user` service as `user.root`, one of the image's two services in the `default` runlevel, beside `platform-env`, which serves the Environment Link only on an Environment; OpenRC comes from Debian testing through an apt pin for them.
 - aube stands in for pnpm; npm stays for tools that call it.
   An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image, and last until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).

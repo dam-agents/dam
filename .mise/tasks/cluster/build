@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Rebuild images, load them into k3s and restart what runs them"
+#USAGE flag "--environment <name>" help="Rebuild them for this agent's Environment of that name"
 #USAGE arg "<component>..." var=#true help="controller, api-server, ui, keycloak, or agents: every agent image the cluster has deployed"
 set -eo pipefail
 eval "components=($usage_component)"

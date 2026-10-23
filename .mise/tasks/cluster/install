@@ -6,12 +6,16 @@
 #USAGE flag "--set <key=val>" var=#true
 #USAGE flag "--no-restart"
 #USAGE flag "--no-mesh"
-# Every agent runs as a microVM, so this install needs a VM runner: on a Mac one
-# runner on the Mac's own hypervisor (cluster:host-runner), elsewhere the
-# chart's VM runner pods, which on a lima VM need nested virtualization (Apple
-# silicon M3+; PLATFORM_NESTED_VIRT=1 picks the pods on a Mac too). A host or a
-# lima VM that cannot open /dev/kvm fails the install: nested virtualization is
-# created with the VM, so gaining it costs a cluster:delete and a reinstall.
+#USAGE flag "--environment <name>" help="Install into this agent's Environment of that name, over the Environment Link"
+#USAGE flag "--backchannel" help="With --environment: also answer on the backchannel addresses, which cluster:open forwards to this agent"
+#USAGE flag "--backchannel-port <port>" default="4444" help="The port of the backchannel addresses, which cluster:open forwards"
+# vm-backend agents run as microVMs (virtualization.enabled): on a Mac on one
+# VM runner on the Mac's own hypervisor (cluster:host-runner), elsewhere on the
+# chart's VM runner pods, which on a lima VM needs nested virtualization (Apple
+# silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Outside CI they
+# are on by default on an Apple silicon Mac and in a sandbox (IS_SANDBOX) that
+# can open /dev/kvm, and off with a warning elsewhere; the values or
+# --set=virtualization.enabled=true|false decide either way.
 # SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD
 # also skips importing them. --no-mesh (local-only, refused under CI) installs
 # no Istio dataplane, so AuthorizationPolicies exist but nothing enforces
@@ -20,6 +24,15 @@
 # mesh and warns about it.
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
+#
+# --environment <name> installs into one of this agent's Environments
+# (docs/architecture/environments.md), from this checkout: k3s is the
+# Environment's own, reached over the Environment Link (.mise/lib/
+# cluster-environment.sh). Its endpoints app, keycloak, share and content, all
+# on one port, give the public URLs; the host-name bridge listens on that port.
+# A component whose source image:resolve finds in the registry is pulled there,
+# under the local tag the chart runs, and only a changed one is built here and
+# streamed in. No mesh and no vm agents: the Environment's kernel has neither.
 #
 # Both install and upgrade share the same flow:
 #   ensure VM/k3s → cert-manager → build images → load into k3s → helm install/upgrade
@@ -43,6 +56,10 @@ e2e_mark "install started"
 NO_MESH="${usage_no_mesh:-false}"
 NO_MESH_MARKER=platform-local-no-mesh
 NO_MESH_BY="mise run cluster:install -- --no-mesh"
+if [ "$CLUSTER_TARGET" = environment ] && [ "$NO_MESH" != true ]; then
+  NO_MESH=true
+  NO_MESH_BY="mise run cluster:install -- --environment $CLUSTER_ENVIRONMENT"
+fi
 if [ -n "${PLATFORM_SANDBOX:-}" ] && [ "$NO_MESH" != true ]; then
   NO_MESH=true
   NO_MESH_BY="PLATFORM_SANDBOX=$PLATFORM_SANDBOX mise run cluster:install"
@@ -70,7 +87,8 @@ if [ "$NO_MESH" = true ] && [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
 fi
 no_mesh_warning
 
-if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+# An Environment builds only what the registry lacks, when it loads them.
+if [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ]; then
   mise run //packages/controller:oci ::: //packages/api-server:oci ::: //packages/ui:oci ::: //packages/keycloak-theme:oci
 fi
 
@@ -85,7 +103,40 @@ for kv in ${sets[@]+"${sets[@]}"}; do HELM_EXTRA_ARGS+=("--set=$kv"); done
 # the cluster's gateways must trust it too or every injected connection fails
 # its TLS handshake. Nowhere else does the file exist.
 OUTER_GATEWAY_CA=/etc/platform/ca/ca.crt
-if [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
+# An Environment is such an agent too, with a gateway of its own: its CA and
+# address are read on it, and its endpoints name the public URLs.
+APP_PORT=4444
+BACKCHANNEL="${usage_backchannel:-false}"
+if [ "$CLUSTER_TARGET" = environment ]; then
+  ENV_VALUES="$(env_describe | env_chart_values)" || { echo "FATAL: cannot install into Environment $CLUSTER_ENVIRONMENT; see above" >&2; exit 1; }
+  while IFS='=' read -r key value; do
+    case "$key" in
+      bridge.port) BRIDGE_PORT="$value" ;;
+      bridge.scheme) BRIDGE_SCHEME="$value" ;;
+      bridge.publicPort) BRIDGE_PUBLIC_PORT="$value" ;;
+      *) HELM_EXTRA_ARGS+=("--set-string=$key=$value") ;;
+    esac
+  done <<< "$ENV_VALUES"
+  # Traefik's app entrypoint listens on the backchannel port, which
+  # cluster:open forwards as it is; the bridge needs a port of its own.
+  APP_PORT="$usage_backchannel_port"
+  if [ "$BRIDGE_PORT" = "$APP_PORT" ]; then
+    echo "FATAL: the Environment's endpoints use port $BRIDGE_PORT, which the install's ingress listens on; give them another (the cluster-ops skill uses 4400), or pass --backchannel-port." >&2
+    exit 1
+  fi
+  if [ "$BACKCHANNEL" = true ]; then
+    HELM_EXTRA_ARGS+=(--set=backchannel.enabled=true "--set-string=backchannel.port=$APP_PORT")
+  fi
+  node_sh cat "$OUTER_GATEWAY_CA" > "$ENV_DIR/outer-gateway-ca.crt"
+  HELM_EXTRA_ARGS+=("--set-file=controller.gatewayUpstreamExtraCAs=$ENV_DIR/outer-gateway-ca.crt")
+  OUTER_GATEWAY_IP=$(node_sh getent ahostsv4 github.com | awk 'NR==1 {print $1}')
+  if [ -n "$OUTER_GATEWAY_IP" ]; then
+    HELM_EXTRA_ARGS+=("--set=controller.gatewayEgress.extraCidrs[0]=$OUTER_GATEWAY_IP/32")
+  fi
+elif [ "$BACKCHANNEL" = true ]; then
+  echo "FATAL: --backchannel is for an install in an Environment (--environment <name>)." >&2
+  exit 1
+elif [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
   HELM_EXTRA_ARGS+=("--set-file=controller.gatewayUpstreamExtraCAs=$OUTER_GATEWAY_CA")
   # The guest resolves every public name to that gateway's private address, which
   # this cluster's gateways may reach only once their egress policy names it.
@@ -111,6 +162,36 @@ AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # Probe by opening: the node can exist while the device cgroup still denies it.
 kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; }
+# A local install runs vm agents wherever this host can: on an Apple silicon
+# Mac's own hypervisor, or in a sandbox that is the node and can open
+# /dev/kvm, such as a platform vm agent whose runner's node allows nesting.
+# Elsewhere it leaves them off and says why. The values or a --set decide
+# either way, and CI is not local: e2e:install chooses for each lane.
+VIRT_DEFAULTED=""
+VIRT_OFF_NOTE=""
+if [ -z "$VIRT_CHOSEN" ] && [ -z "${CI:-}${GITHUB_ACTIONS:-}" ]; then
+  if [ "$CLUSTER_TARGET" = environment ]; then
+    VIRT_OFF_NOTE="an Environment has no /dev/kvm"
+  elif [ -n "${IS_SANDBOX:-}" ]; then
+    if kvm_usable; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="this sandbox cannot open /dev/kvm"; fi
+  elif [ "$(uname -s)" = Darwin ]; then
+    if [ "$(uname -m)" = arm64 ]; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="the Mac's VM runner needs Apple silicon"; fi
+  else
+    # Ceiling: the lima VM is created with nested virtualization only on a Mac
+    # (vz); a qemu VM on a KVM host that nests could run them too.
+    VIRT_OFF_NOTE="outside a sandbox, a Linux host's k3s VM gets no /dev/kvm from this install"
+  fi
+fi
+virt_off_warning() {
+  [ -z "$VIRT_OFF_NOTE" ] || echo "WARN: vm-backend agents are off: $VIRT_OFF_NOTE (--set=virtualization.enabled=true to try anyway)." >&2
+}
+if [ -n "$VIRT_DEFAULTED" ]; then
+  echo "vm-backend agents are on, the local default (--set=virtualization.enabled=false turns them off)"
+  VIRT_ENABLED=1
+  HELM_EXTRA_ARGS+=(--set=virtualization.enabled=true)
+  AGENT_VALUE_FLAGS+=(--set=virtualization.enabled=true)
+fi
+virt_off_warning
 # On a Mac the VM runner runs on the Mac itself, on its own hypervisor, rather
 # than as pods in the k3s VM on a hypervisor nested inside it: a nested guest
 # boots several times slower, and only M3 and later nest at all.
@@ -126,8 +207,12 @@ fi
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
 # template's catch-all ignore.
 NODEPORT_FORWARD='.portForwards = [{"guestPortRange": [30000, 32767], "hostIP": "127.0.0.1"}] + .portForwards'
-if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
-  echo "FATAL: this host cannot open /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
+if [ -n "$VIRT_ENABLED" ] && [ "$CLUSTER_TARGET" = environment ]; then
+  echo "FATAL: virtualization.enabled=true needs /dev/kvm on the node, which an Environment does not have." >&2
+  exit 1
+fi
+if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
+  echo "FATAL: virtualization.enabled=true needs a usable /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
   exit 1
 fi
 
@@ -140,7 +225,15 @@ wait_for_nodes() {
 }
 
 # 1. Provision cluster and set KUBECONFIG
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$CLUSTER_TARGET" = environment ]; then
+  # The image's k3s service, in the default runlevel from now on, and the
+  # tunnel to its API once k3s has written its kubeconfig.
+  echo "Starting k3s on Environment $CLUSTER_ENVIRONMENT..."
+  env_k3s start
+  echo "Waiting for k3s to be ready..."
+  for _ in $(seq 1 60); do env_tunnel && break; sleep 2; done
+  wait_for_nodes
+elif [ -n "${IS_SANDBOX:-}" ]; then
   # A running systemd, not an installed systemctl: containers often ship the
   # binary with something else as PID 1, and the k3s installer then fails
   # to enable a unit nothing will ever start.
@@ -282,7 +375,16 @@ K3S_CONFIG_YAML='kubelet-arg:
   - "container-log-max-size=10Mi"
   - "container-log-max-files=3"
 '
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$CLUSTER_TARGET" = environment ]; then
+  if ! node_sh grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
+    echo "Configuring k3s container log rotation (issue #244)..."
+    node_sh mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
+    printf '%s' "$K3S_CONFIG_YAML" | node_sh tee "$K3S_LOGROT_DROPIN" >/dev/null
+    env_k3s restart
+    wait_for_nodes
+    kubectl wait --for=condition=Ready node --all --timeout=120s
+  fi
+elif [ -n "${IS_SANDBOX:-}" ]; then
   if ! as_root grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
     echo "Configuring k3s container log rotation (issue #244)..."
     as_root mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
@@ -350,18 +452,21 @@ prepull_images() {
   ) || return 0
   # istiod injects the waypoint's proxy at run time, from beside its own image.
   images+=$'\n'$(printf '%s\n' "$images" | sed -n 's|/pilot:|/proxyv2:|p' | head -n1)
-  printf '%s\n' "$images" | grep . | xargs -P 6 -I{} bash -c 'pull_one "$1"' _ {}
+  # An Environment's pulls share one SSH connection, whose sshd opens at most
+  # ten sessions at once.
+  local jobs=6
+  [ "$CLUSTER_TARGET" != environment ] || jobs=3
+  printf '%s\n' "$images" | grep . | xargs -P "$jobs" -I{} bash -c 'pull_one "$1"' _ {}
 }
 pull_one() {
-  local start=$SECONDS cmd=(timeout 300 k3s crictl pull "$1")
-  if [ -n "${IS_SANDBOX:-}" ]; then cmd=(as_root "${cmd[@]}"); else cmd=(limactl shell "$LIMA_INSTANCE" sudo "${cmd[@]}"); fi
-  if "${cmd[@]}" >/dev/null 2>&1; then
+  local start=$SECONDS
+  if node_sh timeout 300 k3s crictl pull "$1" >/dev/null 2>&1; then
     echo "pulled $1 in $((SECONDS - start))s"
   else
     echo "could not pull $1; the kubelet will"
   fi
 }
-export -f pull_one as_root
+export -f pull_one
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
@@ -438,20 +543,50 @@ else
       echo "WARN: no build task for '$name' ($image) — skipping" >&2
     fi
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
-  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
+  [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
   # Like the agents', off Linux its build runs in the VM, so it waits for one.
   if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
     mise run //packages/vm-runner:oci
     RUNNER_IMAGE_BUILT=1
   fi
 
-  COMPONENTS=(controller api-server ui keycloak vm-runner)
+  COMPONENTS=(controller api-server ui keycloak)
+  [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
+  # An Environment pulls each image the registry has for this checkout's
+  # source itself, under the local tag the chart runs, rather than this agent
+  # pulling it and streaming it over the link; only an image the registry
+  # lacks is built here and streamed in. So a run on main builds nothing.
+  load_env_images() {
+    local c ref task
+    for c in "$@"; do
+      ref="$(env_reuse_ref "$c")"
+      if [ -n "$ref" ]; then
+        echo "$c unchanged: the node pulls $ref"
+        env_pull_as "$ref" "$c" || return 1
+        continue
+      fi
+      echo "$c changed: building it here"
+      if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
+        case "$c" in
+          controller|api-server|ui) task="//packages/$c:oci" ;;
+          keycloak) task="//packages/keycloak-theme:oci" ;;
+          *) task="//packages/agents:oci" ;;
+        esac
+        if [ "$task" = //packages/agents:oci ]; then mise run "$task" -- "$c" || return 1; else mise run "$task" || return 1; fi
+      fi
+      mise run cluster:import -- "$(.mise/tasks/image/resolve import-path "$c")" || return 1
+    done
+  }
   # CI brings the cluster up while this run's images are still building, and
   # e2e:ci-images pulls them in the background. Each batch it has finished is
   # imported while the rest are still on their way, so only the last to land
   # is imported after the wait.
   load_images() {
     local c remaining=("$@") left images=()
+    if [ "$CLUSTER_TARGET" = environment ]; then
+      load_env_images "$@"
+      return
+    fi
     if [ -n "${CI_IMAGES_STATUS:-}" ]; then
       # e2e:ci-images writes each image's file here, as CI_BUILD_READY_DIR:
       # e2e.yml sets that to this same directory, since one run of it builds
@@ -532,15 +667,26 @@ fi
 # is idempotent and works on both. The port follows `--set=port=…` so the
 # ingress listens where the chart's URLs point (dev defaults to 4444, the
 # e2e install passes 6555); the last install wins.
-APP_PORT=4444
-if [ -n "$HELM_VALUES" ]; then
-  APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"
+# In an Environment the port is the backchannel's, set above, and the
+# entrypoint trusts the forwarded headers: the gate relays only to the node's
+# loopback, where the host-name bridge and cluster:open's forward reach it,
+# and the bridge's X-Forwarded-Proto is what tells Keycloak the browser uses
+# https.
+TRAEFIK_FORWARDED=""
+if [ "$CLUSTER_TARGET" = environment ]; then
+  TRAEFIK_FORWARDED='
+        forwardedHeaders:
+          insecure: true'
+else
+  if [ -n "$HELM_VALUES" ]; then
+    APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"
+  fi
+  for arg in "${HELM_EXTRA_ARGS[@]}"; do
+    case "$arg" in
+      --set=port=*) APP_PORT="${arg#--set=port=}" ;;
+    esac
+  done
 fi
-for arg in "${HELM_EXTRA_ARGS[@]}"; do
-  case "$arg" in
-    --set=port=*) APP_PORT="${arg#--set=port=}" ;;
-  esac
-done
 kubectl apply -f - <<YAML
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
@@ -555,8 +701,13 @@ spec:
         expose:
           default: true
         exposedPort: $APP_PORT
-        protocol: TCP
+        protocol: TCP$TRAEFIK_FORWARDED
 YAML
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "Installing the host-name bridge on port $BRIDGE_PORT..."
+  env_bridge_manifest "$(yq '.controller.envoyImage' helm/values.yaml)" \
+    "$BRIDGE_PORT" "$APP_PORT" "$BRIDGE_SCHEME" "$BRIDGE_PUBLIC_PORT" | kubectl apply -f -
+fi
 
 # 2. Install cert-manager, beside the Istio install below: neither needs the
 # other, and each spends most of its time waiting for its pods. Its output is
@@ -1019,6 +1170,12 @@ echo ""
 echo "=== Cluster ready ==="
 no_mesh_warning
 echo "KUBECONFIG=$KUBECONFIG"
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "Open it at $(printf '%s\n' "$ENV_VALUES" | sed -n 's/^urls.ui=//p'), behind the Environment's sign-in."
+  if [ "$BACKCHANNEL" = true ]; then
+    echo "From this agent's browser: mise run cluster:open -- --environment $CLUSTER_ENVIRONMENT --port $APP_PORT, then http://localhost:$APP_PORT"
+  fi
+fi
 echo ""
 kubectl get pods
 

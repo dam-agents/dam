@@ -9,16 +9,17 @@ The characters tell a user's Agents apart at a glance and show each one's state 
 
 ## Choosing a character
 
-The owner picks the character in the Agent's settings, and the choice is stored on the Agent spec, so renaming keeps it.
+The owner picks the character in the Agent's settings, or with `dam agent update --avatar` ([CLI](cli.md#agent-lifecycle)), and the choice is stored on the Agent spec, so renaming keeps it.
+Going back to the default (`--avatar-default`) clears the stored choice.
 A user picks only from the characters they unlocked on the [Getting Started Checklist](getting-started.md); the rest show as eggs.
 A create from the UI stores the unlocked character the owner uses least, so new Agents differ by default; the kit modal shows it, or the kit's own avatar when the kit declares one, and lets the owner pick another before applying.
 A kit's character is the one exception to the unlock rule: the kit author chose it, so the modal applies it even when the owner has not unlocked it.
 An Agent with no stored choice, or one the platform does not know, shows a character picked by a hash of its name and its owner's identity.
-A rename from the settings page stores the character the page shows, so the Agent keeps it; a rename by any other path can change it.
+A rename of an Agent with no stored choice stores the character it showed before the rename, so the avatar does not change; the api-server does this for every client.
 
 ## Custom avatars
 
-Behind the `custom-avatars` [experimental feature](features.md), the picker also takes one emoji, or an uploaded JPG or PNG.
+Behind the `custom-avatars` [experimental feature](features.md), the picker and the CLI also take one emoji, or an uploaded JPG or PNG.
 The spec then stores `emoji:<emoji>` or `image:<id>`; anything else that is not a known character falls back to the hashed character.
 An emoji is accepted only as a single RGI emoji, and is drawn as SVG text, so it looks like the viewer's system emoji.
 An upload is at most 2 MB; the api-server crops it to a 512 px square PNG and stores it in Postgres under the SHA-256 of that PNG.

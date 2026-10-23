@@ -79,7 +79,8 @@ The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
 Above its heading the page shows what the brand name stands for: the install's brand values hold a list of meanings, which reach the theme the same way, and the page swaps the one on screen for another at random every few seconds, never the same one twice in a row.
 An install with no meanings shows only the heading.
-Upstream identity providers themselves (e.g. w3id) are realm configuration managed outside the chart.
+Upstream identity providers themselves (e.g. w3id, IBMid) and the rule for who they admit are realm configuration managed outside the chart.
+The page knows the IBM sign-in providers, w3id and IBMid, by their alias on the realm and shows the IBM logo on their buttons, so a realm can offer both while sign-in moves from one to the other.
 
 Anyone the realm lets sign in can start: there is no approval step, and a first sign-in goes through the Terms-of-Use gate straight to the agent list.
 The chart's `signUps` value is the kill switch for growth the install cannot absorb.
@@ -256,6 +257,13 @@ That re-published prompt is for attached ACP clients such as the CLI.
 The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
+
+An Agent can also **propose** a rule before it needs one (the `egress_proposal` tool on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
+A held request waits only as long as the hold, so a job that runs while nobody watches would fail on a host its owner never saw; a proposal waits seven days instead.
+It is an approval of its own type that holds no request: the owner sees the rule and the Agent's reason where waiting network approvals show, and allows it, allows the whole host, or declines.
+Only the owner's verdict writes a rule, the same rule a verdict on a held request writes; the Agent never writes one.
+One rule shape is one proposal, so asking again joins the open one; a rule for every host is not proposed, a request a rule already allows files nothing, and an Agent holds at most twenty proposals open.
+The Agent reads back the verdict of its own proposals only.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.

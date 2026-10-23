@@ -11,7 +11,9 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 - The cert-manager and Gateway API manifests are `github.com` release files the inspector's kit opens (quality-inspector 3.1.0 or later); the `trusted` preset allows the hosts GitHub redirects them to, so `egress` names neither.
 - `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
   The inspector's VM kernel cannot run the Istio ambient dataplane, so the nested install runs without it; applied as a `file` prerequisite (quality-inspector 2.21.0 or later).
-- `sandbox` (quality-inspector 3.4.0 or later; the GitHub sign-in 3.9.0) — two throwaway accounts the inspector's operator creates once at onboarding: a GitHub test user with an organization, one repository, an OAuth App and a fine-grained token (`sandbox/github.md`), and a Slack workspace with DAM's app and a test person (`sandbox/slack.md`).
+- `sandbox` (quality-inspector 3.4.0 or later; the GitHub sign-in 3.9.0) — throwaway accounts the inspector's operator creates once at onboarding: a GitHub test user with an organization, one repository, an OAuth App and a fine-grained token (`sandbox/github.md`), and a Slack workspace with DAM's app and a test person (`sandbox/slack.md`).
+  A second GitHub test user in that organization (`github2`, `sandbox/github-second.md`) and a second test person in that channel (`slack2`, `sandbox/slack-second.md`) let a test act as two people.
+  They are optional and accounts of their own: the overlays `@sandbox:github` and `@sandbox:slack` do not wait on their lines, and `bin/sandbox check` passes while all of an account's lines are empty (the kit's `verify-onboarding.sh` still lists them as not set).
   The install connects the workspace through `apiServer.slackAppToken` and the legacy `apiServer.slackBotToken` import (overlay `@sandbox:slack`), takes the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`) and lets the nested gateways reach the VM's gateway (`controller.gatewayEgress.extraCidrs`, both overlay `@sandbox:github`).
   The GitHub sign-in's pages are the only `github.com` paths in `egress`, each with its method — the inspector's kit admits no other shape there; `suite/lib/sandbox.ts` → `githubSignIn` drives them, so a test never names GitHub.
   `controller.gatewayUpstreamExtraCAs` is the VM gateway's CA, so nested gateways and the api-server trust the TLS it intercepts.
@@ -29,6 +31,13 @@ The inspector's operator adds this repository as a skill source with path `.qual
 The inspector's kit (quality-inspector 3.0.0 or later) opens `GET /repos/*/*/contents/.quality-inspector/*` and `GET /repos/*/*/contents/.quality-inspector?*` for every repository and nothing else of it, so this directory needs no egress rule of its own.
 Keep `.quality-inspector/` free of symlinks and submodules: the Contents API answers a symlink to a file with that file's content, and the inspector's gate fails on one.
 
+## Egress rules
+
+An inspector that runs on DAM needs no rule typed by hand: it proposes each `egress` entry it lacks to its owner with the platform's `egress_proposal` tool (`propose`), with the entry's host, method and path and its `why` as the reason, once `{profile.<key>}` is filled in.
+The owner allows each one where waiting approvals show — on Home or in the inspector's chat — and the rule is written as the owner would type it; its `status` action tells the inspector which ones are allowed.
+An older DAM without the tool keeps the manual path: the operator adds the rule in the agent's network settings.
+`bin/sandbox check` names a missing rule the same way.
+
 ## Config (`work/CONFIG.md` of the inspector)
 
 | Key                                                                                                            | Default                                    | Purpose                                    |
@@ -40,7 +49,9 @@ Keep `.quality-inspector/` free of symlinks and submodules: the Contents API ans
 
 ## Sandbox accounts
 
-| Account  | The operator creates                                                                                                              | Lines in `work/env/credentials.env`                                                                           |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `github` | a test user with an authenticator code, an organization, one repository, an OAuth App, a fine-grained token (`sandbox/github.md`) | `E2E_SANDBOX_GITHUB_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`, `_OAUTH_CLIENT_ID`, `_OAUTH_CLIENT_SECRET` |
-| `slack`  | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`)                          | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID`                                    |
+| Account   | The operator creates                                                                                                                                                 | Lines in `work/env/credentials.env`                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `github`  | a test user with an authenticator code, an organization, one repository, an OAuth App, a fine-grained token (`sandbox/github.md`)                                    | `E2E_SANDBOX_GITHUB_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`, `_OAUTH_CLIENT_ID`, `_OAUTH_CLIENT_SECRET` |
+| `slack`   | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`)                                                             | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID`                                    |
+| `github2` | a second test user with an authenticator code, a member of `github`'s organization with Write on its repository, its fine-grained token (`sandbox/github-second.md`) | `E2E_SANDBOX_GITHUB2_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`                                            |
+| `slack2`  | a second test person in `slack`'s channel, with an app of its own (`sandbox/slack-second.md`)                                                                        | `E2E_SANDBOX_SLACK2_HUMAN_TOKEN`                                                                              |

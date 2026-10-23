@@ -121,7 +121,7 @@ export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
   name: agentNameSchema.max(255).optional(),
   description: z.string().optional(),
-  avatar: avatarSchema.optional(),
+  avatar: avatarSchema.nullable().optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
