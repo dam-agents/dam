@@ -15,6 +15,7 @@ import {
   agentStoreRefusal,
   readAgentStoreMarker,
 } from "./modules/agent-store/fence.js";
+import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
 import {
   composeStorageGate,
   composeUserBudgetsAdmin,
@@ -397,6 +398,17 @@ export async function bootstrap() {
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
   reportControlGrants(getLogger(), await reconcileControlGrants(db));
+  if (config.agentStorePreviewReport)
+    await reportAbsorbPreview({
+      listCustomObjects: (plural) =>
+        createK8sClient(api, config.namespace).listCustomObjects(plural),
+      db,
+      logger: getLogger(),
+      defaults: {
+        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
+        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+      },
+    });
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
