@@ -1,9 +1,6 @@
-import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import { match } from "ts-pattern";
 import type {
   ConnectionsService,
-  CredentialCheck,
   SecretRequestsService,
   SecretRequestView,
 } from "api-server-api";
@@ -26,9 +23,16 @@ import {
   type SecretRequestOutcome,
 } from "../domain/secret-request.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
+import {
+  badRequest,
+  issueSecretRequest,
+  secretRequestStatus,
+} from "./secret-request-issuer.js";
 
-export const SECRET_REQUEST_TTL_MS = 10 * 60 * 1000;
-export const SECRET_REQUEST_PATH = "/connections/secret";
+export {
+  SECRET_REQUEST_PATH,
+  SECRET_REQUEST_TTL_MS,
+} from "./secret-request-issuer.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a Secret Request lets the user's own agent run
@@ -53,12 +57,13 @@ export function createSecretRequestsService(deps: {
   repo: Pick<ConnectionsRepository, "get" | "listAgentsForConnection">;
   connections: Pick<
     ConnectionsService,
-    "createFromTemplate" | "update" | "getConnection"
+    "createFromTemplate" | "update" | "getConnection" | "updateAgentConnections"
   >;
   agentName: (agentId: string) => Promise<string | null>;
   now?: () => number;
 }): SecretRequestsService {
   const now = deps.now ?? (() => Date.now());
+  const issuer = { ...deps, now };
 
   async function owned(requestId: string): Promise<PendingSecretRequest> {
     const pending = await deps.pending.peek(requestId);
@@ -85,13 +90,6 @@ export function createSecretRequestsService(deps: {
     return pending;
   }
 
-  function badRequest(err: unknown): TRPCError {
-    return new TRPCError({
-      code: "BAD_REQUEST",
-      message: err instanceof Error ? err.message : String(err),
-    });
-  }
-
   async function grantedAgents(
     connectionId: string,
   ): Promise<{ id: string; name: string }[]> {
@@ -101,77 +99,46 @@ export function createSecretRequestsService(deps: {
     );
   }
 
-  return {
-    async request(input) {
-      if (input.action === "create") {
-        const template = deps.templates.get(input.connection.templateId);
-        if (!template) {
-          throw badRequest(`unknown template ${input.connection.templateId}`);
-        }
-        try {
-          planConnection(template, input.connection);
-        } catch (err) {
-          throw badRequest(err);
-        }
-      } else {
-        const conn = await deps.repo.get(input.connectionId, deps.ownerId);
-        if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
-        if (!isSecretRequestAuthKind(conn.auth.kind)) {
-          throw badRequest(
-            `a ${conn.auth.kind} connection takes no secret on this page`,
-          );
-        }
-      }
-      const requestId = randomBytes(24).toString("base64url");
-      const expiresAt = now() + SECRET_REQUEST_TTL_MS;
-      await deps.pending.set(requestId, {
-        ...input,
-        ownerId: deps.ownerId,
-        expiresAt,
-      } as PendingSecretRequest);
-      securityLog("info", "connection.secret_request_created", {
+  async function grantTo(
+    agentId: string,
+    connectionId: string,
+  ): Promise<boolean> {
+    try {
+      await deps.connections.updateAgentConnections(agentId, {
+        grant: [connectionId],
+        revoke: [],
+      });
+      return true;
+    } catch (err) {
+      securityLog("warn", "connection.secret_request_grant_failed", {
         category: "credential",
         actor: deps.ownerId,
         actorKind: "user",
-        result: "success",
-        detail: { action: input.action },
+        agentId,
+        target: connectionId,
+        result: "failure",
+        reason: err instanceof Error ? err.message : String(err),
       });
-      return {
-        requestId,
-        url: `${deps.uiBaseUrl}${SECRET_REQUEST_PATH}?${new URLSearchParams({ request: requestId })}`,
-        expiresAt: new Date(expiresAt).toISOString(),
-      };
-    },
+      return false;
+    }
+  }
 
-    async status(requestId) {
-      const outcome = await deps.outcomes.peek(requestId);
-      if (outcome?.ownerId === deps.ownerId) {
-        return match(outcome)
-          .with({ status: "saving" }, () => ({ status: "pending" as const }))
-          .with({ status: "saved" }, (o) => ({
-            status: "saved" as const,
-            connectionId: o.connectionId,
-            ...(o.check ? { check: o.check } : {}),
-          }))
-          .with({ status: "cancelled" }, () => ({
-            status: "cancelled" as const,
-          }))
-          .exhaustive();
-      }
-      const pending = await deps.pending.peek(requestId);
-      if (
-        !pending ||
-        pending.ownerId !== deps.ownerId ||
-        pending.expiresAt <= now()
-      ) {
-        return { status: "expired" };
-      }
-      return { status: "pending" };
-    },
+  return {
+    request: (input) => issueSecretRequest(issuer, input),
+
+    status: (requestId) => secretRequestStatus(issuer, requestId),
 
     async get(requestId) {
       const pending = await owned(requestId);
       const expiresAt = new Date(pending.expiresAt).toISOString();
+      const requestedBy = pending.agentId
+        ? {
+            requestedBy: {
+              id: pending.agentId,
+              name: (await deps.agentName(pending.agentId)) ?? pending.agentId,
+            },
+          }
+        : {};
       if (pending.action === "update") {
         const conn = await deps.repo.get(pending.connectionId, deps.ownerId);
         if (!conn || !isSecretRequestAuthKind(conn.auth.kind)) return null;
@@ -190,6 +157,7 @@ export function createSecretRequestsService(deps: {
           customDestination: template?.isCustom ?? false,
           envNames: envNamesOf(conn.contributions),
           grantedAgents: await grantedAgents(conn.id),
+          ...requestedBy,
           fields: secretFieldsFor(conn.auth.kind),
           expiresAt,
         } satisfies SecretRequestView;
@@ -218,6 +186,7 @@ export function createSecretRequestsService(deps: {
           : {}),
         envNames: envNamesOf(planned.contributions),
         grantedAgents: [],
+        ...requestedBy,
         fields: secretFieldsFor(pending.connection.authKind),
         expiresAt,
       } satisfies SecretRequestView;
@@ -246,8 +215,10 @@ export function createSecretRequestsService(deps: {
           message: "This link has expired or was already used.",
         });
       }
+      const requester = claimed.agentId ? { agentId: claimed.agentId } : {};
       await deps.outcomes.set(requestId, {
         ownerId: deps.ownerId,
+        ...requester,
         status: "saving",
       });
       const policy = { holdUnlessPassed: saveAnyway !== true };
@@ -277,11 +248,17 @@ export function createSecretRequestsService(deps: {
         throw err;
       }
       const check = (await deps.connections.getConnection(connectionId))?.check;
+      const granted =
+        claimed.agentId && claimed.action === "create"
+          ? { granted: await grantTo(claimed.agentId, connectionId) }
+          : {};
       await deps.outcomes.set(requestId, {
         ownerId: deps.ownerId,
+        ...requester,
         status: "saved",
         connectionId,
         ...(check ? { check } : {}),
+        ...granted,
       });
       securityLog("info", "connection.secret_request_saved", {
         category: "credential",
@@ -296,9 +273,11 @@ export function createSecretRequestsService(deps: {
 
     async cancel(requestId) {
       await owned(requestId);
-      if (!(await deps.pending.consume(requestId))) return;
+      const claimed = await deps.pending.consume(requestId);
+      if (!claimed) return;
       await deps.outcomes.set(requestId, {
         ownerId: deps.ownerId,
+        ...(claimed.agentId ? { agentId: claimed.agentId } : {}),
         status: "cancelled",
       });
     },

@@ -414,6 +414,7 @@ export interface SecretRequestView {
   tokenEndpoint?: { url: string } | { discoveredFrom: string };
   envNames: string[];
   grantedAgents: { id: string; name: string }[];
+  requestedBy?: { id: string; name: string };
   fields: SecretRequestField[];
   expiresAt: string;
 }
@@ -428,6 +429,7 @@ export interface SecretRequestState {
   status: SecretRequestStatus;
   connectionId?: string;
   check?: CredentialCheck;
+  granted?: boolean;
 }
 
 export type SecretRequestSubmitResult =

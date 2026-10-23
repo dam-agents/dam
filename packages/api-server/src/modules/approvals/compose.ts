@@ -38,6 +38,10 @@ import {
 } from "./services/delivery-sweeper.js";
 import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
 import { createToolApprovalReports } from "./services/tool-approval-reports.js";
+import {
+  createEgressProposals,
+  type EgressProposals,
+} from "./services/egress-proposals.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 
@@ -151,11 +155,26 @@ export function createSpendQuestionStore(db: Db): {
   };
 }
 
+export function composeEgressProposals(deps: {
+  db: Db;
+  ruleMatcher: EgressRuleMatcher;
+  agentId: string;
+  ownerSub: string;
+}): EgressProposals {
+  return createEgressProposals({
+    repo: createApprovalsRepository(deps.db),
+    ruleMatcher: deps.ruleMatcher,
+    agentId: deps.agentId,
+    ownerSub: deps.ownerSub,
+  });
+}
+
 export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
   return createApprovalsRepository(db).listDistinctAgentIds();
 }
 
 export type {
+  EgressProposals,
   ApprovalsRelayService,
   ExtAuthzDecision,
   ExtAuthzGate,

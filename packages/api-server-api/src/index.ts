@@ -603,6 +603,7 @@ export {
   connectionCreateInputSchema,
   connectionHeaderNameSchema,
   connectionNameSchema,
+  secretlessConnectionCreateInputSchema,
 } from "./modules/connections/schemas.js";
 export type {
   ConnectionCreateInput,
@@ -704,6 +705,7 @@ export type {
   ApprovalVerdict,
   ApprovalPayload,
   SpendLimitPayload,
+  EgressProposalPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -712,6 +714,11 @@ export type {
   ApprovalActionOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
+export {
+  EGRESS_PROPOSAL_REASON_MAX,
+  egressProposalInputSchema,
+} from "./modules/approvals/schemas.js";
+export type { EgressProposalInput } from "./modules/approvals/schemas.js";
 export {
   acpNativeRowId,
   permissionOptionKindsOf,

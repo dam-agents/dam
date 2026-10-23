@@ -256,6 +256,13 @@ The web chat does not read it: a held request belongs to the agent, not to a ses
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
 
+An Agent can also **propose** a rule before it needs one (`propose_egress_rule` on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
+A held request waits only as long as the hold, so a job that runs while nobody watches would fail on a host its owner never saw; a proposal waits seven days instead.
+It is an approval of its own type that holds no request: the owner sees the rule and the Agent's reason where waiting network approvals show, and allows it, allows the whole host, or declines.
+Only the owner's verdict writes a rule, the same rule a verdict on a held request writes; the Agent never writes one.
+One rule shape is one proposal, so asking again joins the open one; a rule for every host is not proposed, a request a rule already allows files nothing, and an Agent holds at most twenty proposals open.
+The Agent reads back the verdict of its own proposals only.
+
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.

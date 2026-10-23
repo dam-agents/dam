@@ -20,6 +20,7 @@ import {
   createSecretRequestsService,
   SECRET_REQUEST_TTL_MS,
 } from "../../modules/connections/services/secret-requests.js";
+import { createAgentSecretRequests } from "../../modules/connections/services/agent-secret-requests.js";
 
 /**
  * TEST_OVERVIEW: a Secret Request lets the user's agent run `dam connection
@@ -58,6 +59,13 @@ function world(
     opts.createFromTemplate ?? (async () => "conn-000000000001"),
   );
   const update = vi.fn(async () => {});
+  const updateAgentConnections = vi.fn(async () => {});
+  const repo = {
+    get: async (id: string, owner: string) =>
+      opts.connections?.find((c) => c.id === id && c.ownerId === owner) ?? null,
+    listAgentsForConnection: async (id: string) => opts.grants?.[id] ?? [],
+    listConnectionsForAgent: async () => [],
+  };
   const getConnection = vi.fn(async (id: string) =>
     opts.check ? ({ id, check: opts.check } as ConnectionView) : null,
   );
@@ -68,17 +76,35 @@ function world(
       pending,
       outcomes,
       templates,
-      repo: {
-        get: async (id, owner) =>
-          opts.connections?.find((c) => c.id === id && c.ownerId === owner) ??
-          null,
-        listAgentsForConnection: async (id) => opts.grants?.[id] ?? [],
+      repo,
+      connections: {
+        createFromTemplate,
+        update,
+        getConnection,
+        updateAgentConnections,
       },
-      connections: { createFromTemplate, update, getConnection },
       agentName: async (id) => (id === "agent-1" ? "reviewer" : null),
       now: () => clock.now,
     });
-  return { forOwner, createFromTemplate, update, clock };
+  const forAgent = (ownerId: string, agentId: string) =>
+    createAgentSecretRequests({
+      ownerId,
+      agentId,
+      uiBaseUrl: "https://dam.example.com",
+      pending,
+      outcomes,
+      templates,
+      repo,
+      now: () => clock.now,
+    });
+  return {
+    forOwner,
+    forAgent,
+    createFromTemplate,
+    update,
+    updateAgentConnections,
+    clock,
+  };
 }
 
 const githubPat = {
@@ -454,5 +480,62 @@ describe("secret requests", () => {
         },
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
+describe("secret requests an agent makes", () => {
+  // TEST_SCENARIO: an agent asks its owner for a token; the page names the agent, and the connection the owner saves is granted to that agent, which reads back only that it was saved and granted.
+  it("grants the saved connection to the agent that asked", async () => {
+    const w = world();
+    const agent = w.forAgent("alice", "agent-1");
+    const ticket = await agent.request(githubPat);
+    const alice = w.forOwner("alice");
+    expect(await alice.get(ticket.requestId)).toMatchObject({
+      requestedBy: { id: "agent-1", name: "reviewer" },
+      unexpectedHosts: [],
+    });
+    await alice.submit({ requestId: ticket.requestId, fields: { value: "t" } });
+    expect(w.updateAgentConnections).toHaveBeenCalledWith("agent-1", {
+      grant: ["conn-000000000001"],
+      revoke: [],
+    });
+    expect(await agent.status(ticket.requestId)).toEqual({
+      status: "saved",
+      connectionId: "conn-000000000001",
+      granted: true,
+    });
+    expect(
+      await w.forAgent("alice", "agent-2").status(ticket.requestId),
+    ).toEqual({ status: "expired" });
+  });
+
+  // TEST_SCENARIO: an agent cannot steer a secret to a host it chose, nor ask for a new secret of a connection it does not hold, because the owner trusts the page to send the secret where the service lives.
+  it("refuses a host the template does not preset and a connection not granted", async () => {
+    const held = {
+      id: "conn-abc",
+      ownerId: "alice",
+      templateId: "github-pat",
+      name: "gh",
+      auth: { kind: "header" },
+    } as Connection;
+    const w = world({
+      connections: [held],
+      grants: { "conn-abc": ["agent-2"] },
+    });
+    const agent = w.forAgent("alice", "agent-1");
+    await expect(
+      agent.request({
+        action: "create",
+        connection: { ...githubPat.connection, host: "evil.example" },
+      }),
+    ).rejects.toThrow(/presets/);
+    await expect(
+      agent.request({ action: "update", connectionId: "conn-abc" }),
+    ).rejects.toBeInstanceOf(TRPCError);
+    await expect(
+      w
+        .forAgent("alice", "agent-2")
+        .request({ action: "update", connectionId: "conn-abc" }),
+    ).resolves.toMatchObject({ requestId: expect.any(String) });
   });
 });

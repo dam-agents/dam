@@ -85,6 +85,10 @@ import {
 } from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 import { registerChatFormTools } from "../../modules/chat-forms/index.js";
+import { registerConnectionSecretTools } from "../../modules/connections/mcp-tools.js";
+import type { AgentSecretRequests } from "../../modules/connections/services/agent-secret-requests.js";
+import { registerEgressProposalTools } from "../../modules/approvals/mcp-tools.js";
+import type { EgressProposals } from "../../modules/approvals/services/egress-proposals.js";
 import type { ChatFormPreferences } from "api-server-api/chat-forms";
 
 function resolveWorkspacePath(input: string): string {
@@ -187,6 +191,8 @@ export interface McpSessionDeps {
     granted: SatelliteView[];
     waitDeadlineMs: number;
   } | null;
+  secretRequests?: AgentSecretRequests;
+  egressProposals?: EgressProposals;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the tools read an attachment from the Agent's home and ask its runtime about Sessions, so the budget covers a large file's read rather than a bare round trip.
@@ -1450,6 +1456,12 @@ export function createMcpSession(
 
   if (deps.chatForms) registerChatFormTools(server, deps.chatForms);
 
+  if (deps.secretRequests)
+    registerConnectionSecretTools(server, { requests: deps.secretRequests });
+
+  if (deps.egressProposals)
+    registerEgressProposalTools(server, { proposals: deps.egressProposals });
+
   if (deps.environments)
     registerEnvironmentTools(server, { environments: deps.environments });
 
@@ -1513,6 +1525,11 @@ export interface MountMcpDeps {
   satelliteOps?: SatelliteAgentOpsImpl;
   satelliteWaitDeadlineMs?: number;
   sessionMessages?: SessionMessages;
+  agentSecretRequestsFor?: (
+    owner: string,
+    agentId: string,
+  ) => AgentSecretRequests;
+  egressProposalsFor?: (owner: string, agentId: string) => EgressProposals;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -1611,6 +1628,12 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ...(spendStatusFor
         ? { spendStatus: () => spendStatusFor(agentId, verified.owner) }
         : {}),
+      ...(deps.agentSecretRequestsFor && {
+        secretRequests: deps.agentSecretRequestsFor(verified.owner, agentId),
+      }),
+      ...(deps.egressProposalsFor && {
+        egressProposals: deps.egressProposalsFor(verified.owner, agentId),
+      }),
       satellites:
         deps.satelliteOps && grantedSatellites.length > 0
           ? {

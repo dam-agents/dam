@@ -51,8 +51,20 @@ export interface SpendLimitPayload {
   extensions: number;
 }
 
+export interface EgressProposalPayload {
+  kind: "egress_proposal";
+  host: string;
+  port?: number;
+  method: string;
+  path: string;
+  reason: string;
+}
+
 export type ApprovalPayload =
-  ExtAuthzPayload | AcpNativePayload | SpendLimitPayload;
+  | ExtAuthzPayload
+  | AcpNativePayload
+  | SpendLimitPayload
+  | EgressProposalPayload;
 
 export interface ApprovalView {
   id: string;

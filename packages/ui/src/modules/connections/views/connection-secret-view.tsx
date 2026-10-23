@@ -174,8 +174,11 @@ function SecretForm({
       iconSlug={view.iconSlug}
     >
       <p className="mt-4 text-sm text-muted-foreground">
-        A command you ran asks for this secret. Enter it here, not in a chat:{" "}
-        {getBrand().name} stores it, and your agents never see it.
+        {view.requestedBy
+          ? `Your agent ${view.requestedBy.name} asks for this secret.`
+          : "A command you ran asks for this secret."}{" "}
+        Enter it here, not in a chat: {getBrand().name} stores it, and your
+        agents never see it.
       </p>
       <Summary view={view} />
       {view.customDestination && view.unexpectedHosts.length === 0 && (
@@ -345,7 +348,12 @@ function Summary({ view }: { view: SecretRequestView }) {
         : "no agent yet",
     ]);
   } else {
-    rows.push(["Used by", "no agent until you grant it"]);
+    rows.push([
+      "Used by",
+      view.requestedBy
+        ? `${view.requestedBy.name}, once you save`
+        : "no agent until you grant it",
+    ]);
   }
   return (
     <dl

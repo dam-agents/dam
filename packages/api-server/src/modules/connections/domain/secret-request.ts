@@ -23,23 +23,23 @@ export type SecretRequestAuthKind = Extract<
   "header" | "client-credentials" | "github-app" | "sigv4"
 >;
 
-export type PendingSecretRequest =
-  | {
-      action: "create";
-      ownerId: string;
-      connection: SecretlessConnectionCreateInput;
-      expiresAt: number;
-    }
-  | {
-      action: "update";
-      ownerId: string;
-      connectionId: string;
-      expiresAt: number;
-    };
+export type PendingSecretRequest = {
+  ownerId: string;
+  agentId?: string;
+  expiresAt: number;
+} & (
+  | { action: "create"; connection: SecretlessConnectionCreateInput }
+  | { action: "update"; connectionId: string }
+);
 
-export type SecretRequestOutcome = { ownerId: string } & (
+export type SecretRequestOutcome = { ownerId: string; agentId?: string } & (
   | { status: "saving" }
-  | { status: "saved"; connectionId: string; check?: CredentialCheck }
+  | {
+      status: "saved";
+      connectionId: string;
+      check?: CredentialCheck;
+      granted?: boolean;
+    }
   | { status: "cancelled" }
 );
 
