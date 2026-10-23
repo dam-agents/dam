@@ -36,13 +36,40 @@ describe("agent store fence", () => {
         { [AGENT_STORE_MARKER_KEY]: "postgres" },
         true,
       ],
-      ["postgres, absorbed", "postgres", ABSORBED, false],
+      ["postgres, absorbed", "postgres", ABSORBED, true],
     ];
 
     for (const [name, mode, marker, refused] of cases) {
       const refusal = agentStoreRefusal(mode, marker);
       expect(refusal === null, name).toBe(!refused);
     }
+  });
+
+  // TEST_SCENARIO: Configuration says what an operator wants; the capability says what the binary can do. A rollback that restores images while the chart keeps the switch's values must be refused by the image, so a build with no Postgres reader refuses that mode whatever the marker holds.
+  it("refuses the Postgres mode in a build that cannot read it", () => {
+    for (const marker of [
+      null,
+      { [AGENT_STORE_MARKER_KEY]: "postgres" },
+      ABSORBED,
+    ])
+      expect(
+        agentStoreRefusal("postgres", marker)?.includes("no Postgres reader"),
+      ).toBe(true);
+  });
+
+  // TEST_SCENARIO: The release that reads Postgres flip the capability, and then the same pairs decide on the marker alone.
+  it("lets a build with a Postgres reader serve only an absorbed store", () => {
+    const readsPostgres = { readsPostgres: true };
+    expect(agentStoreRefusal("postgres", ABSORBED, readsPostgres)).toBeNull();
+    expect(agentStoreRefusal("postgres", null, readsPostgres)).toBeTruthy();
+    expect(
+      agentStoreRefusal(
+        "postgres",
+        { [AGENT_STORE_MARKER_KEY]: "postgres" },
+        readsPostgres,
+      ),
+    ).toBeTruthy();
+    expect(agentStoreRefusal("crd", ABSORBED, readsPostgres)).toBeTruthy();
   });
 
   // TEST_SCENARIO: The marker lives in the agent namespace under the release's own name, and a read that fails for any reason other than absence must stop the start: a fence that cannot read its fact has not passed.

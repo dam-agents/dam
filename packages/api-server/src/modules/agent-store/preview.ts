@@ -12,6 +12,11 @@ import {
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
   ANN_LIFETIME_MS,
+  ANN_MACHINE_DOWN,
+  ANN_MACHINE_UP,
+  ANN_MEMORY_WAIT_UNTIL,
+  ANN_RUNNER_OOM_KILL,
+  ANN_RUNNER_OOM_RECOVERED,
   ANN_ROLL_REV,
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_DEFAULT_MODEL,
@@ -46,7 +51,12 @@ const KNOWN_ANNOTATIONS = new Set([
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
   ANN_LIFETIME_MS,
+  ANN_MACHINE_DOWN,
+  ANN_MACHINE_UP,
+  ANN_MEMORY_WAIT_UNTIL,
   ANN_ROLL_REV,
+  ANN_RUNNER_OOM_KILL,
+  ANN_RUNNER_OOM_RECOVERED,
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_DEFAULT_MODEL,
   ANN_STARTER_KIT_ONBOARDED,
@@ -59,28 +69,32 @@ const KNOWN_ANNOTATIONS = new Set([
   STOP_REQUESTED_KEY,
 ]);
 
+const NANO = 10n ** 9n;
+
 const MULTIPLIERS = new Map<string, bigint>([
   ["n", 1n],
   ["u", 10n ** 3n],
   ["m", 10n ** 6n],
-  ["k", 10n ** 9n],
-  ["M", 10n ** 12n],
-  ["G", 10n ** 15n],
-  ["T", 10n ** 18n],
-  ["P", 10n ** 21n],
-  ["E", 10n ** 24n],
-  ["Ki", 2n ** 10n],
-  ["Mi", 2n ** 20n],
-  ["Gi", 2n ** 30n],
-  ["Ti", 2n ** 40n],
-  ["Pi", 2n ** 50n],
-  ["Ei", 2n ** 60n],
+  ["", NANO],
+  ["k", 10n ** 12n],
+  ["M", 10n ** 15n],
+  ["G", 10n ** 18n],
+  ["T", 10n ** 21n],
+  ["P", 10n ** 24n],
+  ["E", 10n ** 27n],
+  ["Ki", 1024n * NANO],
+  ["Mi", 1024n ** 2n * NANO],
+  ["Gi", 1024n ** 3n * NANO],
+  ["Ti", 1024n ** 4n * NANO],
+  ["Pi", 1024n ** 5n * NANO],
+  ["Ei", 1024n ** 6n * NANO],
 ]);
 
 const comparables = (quantity: string): bigint | null => {
   const match = COMPARABLE.exec(quantity);
   if (!match?.[1]) return null;
-  const multiplier = MULTIPLIERS.get(match[2] ?? "") ?? 1n;
+  const multiplier = MULTIPLIERS.get(match[2] ?? "");
+  if (multiplier === undefined) return null;
   const [whole = "0", fraction = ""] = match[1].split(".");
   return (
     (BigInt(whole + fraction) * multiplier) / 10n ** BigInt(fraction.length)
@@ -93,6 +107,7 @@ export interface MappedAgent {
   id: string;
   rows: Record<string, unknown> | undefined;
   dropped: string[];
+  normalized: string[];
   refusal?: string;
 }
 
@@ -100,6 +115,7 @@ export interface MappedBudget {
   ownerSub: string;
   row: Record<string, unknown> | undefined;
   dropped: string[];
+  normalized: string[];
   refusal?: string;
 }
 
@@ -109,12 +125,14 @@ export interface AbsorbPreview {
     importable: number;
     refused: Refusal[];
     dropped: Record<string, number>;
+    normalized: Record<string, number>;
   };
   budgets: {
     seen: number;
     importable: number;
     refused: Refusal[];
     dropped: Record<string, number>;
+    normalized: Record<string, number>;
   };
   connectionGrants: { onlyInResource: Refusal[]; onlyInDatabase: Refusal[] };
 }
@@ -175,12 +193,14 @@ export function mapAgent(
   const spec = (cr.spec ?? {}) as Spec;
   const annotations = (metadata.annotations ?? {}) as Annotations;
   const dropped: string[] = [];
+  const normalized: string[] = [];
   const id = metadata.name ?? "";
 
   const refuse = (reason: string): MappedAgent => ({
     id,
     rows: undefined,
     dropped,
+    normalized,
     refusal: reason,
   });
 
@@ -212,16 +232,21 @@ export function mapAgent(
   const storageSize = text(spec.storageSize);
   if (storageSize && !QUANTITY.test(storageSize))
     return refuse(`storageSize ${storageSize} is not a quantity`);
-  const mountSize = mountList(spec)
+  const mountSizes = mountList(spec)
     .filter((mount) => mount.persist === true)
     .map((mount) => text(mount.size))
-    .filter((size): size is string => size !== undefined && QUANTITY.test(size))
-    .reduce<string | undefined>((winner, size) => {
-      const value = comparables(size);
-      const best = winner === undefined ? null : comparables(winner);
-      if (value === null) return winner;
-      return best === null || value > best ? size : winner;
-    }, undefined);
+    .filter((size): size is string => size !== undefined);
+  const badMountSize = mountSizes.find((size) => comparables(size) === null);
+  if (badMountSize !== undefined)
+    return refuse(
+      `a persisted mount's size ${badMountSize} is not a quantity the renderer can size`,
+    );
+  const mountSize = mountSizes.reduce<string | undefined>((winner, size) => {
+    const value = comparables(size);
+    const best = winner === undefined ? null : comparables(winner);
+    if (value === null) return winner;
+    return best === null || value > best ? size : winner;
+  }, undefined);
   const storageValue =
     storageSize === undefined ? null : comparables(storageSize);
   const mountValue = mountSize === undefined ? null : comparables(mountSize);
@@ -247,28 +272,35 @@ export function mapAgent(
       ? spec.hibernationTimeout
       : (spec.hibernationTimeout as { duration?: string } | undefined)
           ?.duration;
-  const timeoutNs =
+  const parsedTimeout =
     timeoutRaw === undefined ? null : parseGoDurationNs(timeoutRaw);
-  if (timeoutRaw !== undefined && timeoutNs === null)
+  if (timeoutRaw !== undefined && parsedTimeout === null)
     return refuse(`hibernationTimeout ${timeoutRaw} is not a duration`);
+  if (parsedTimeout !== null && parsedTimeout < 0n)
+    normalized.push("hibernationTimeout.negative");
+  const timeoutNs =
+    parsedTimeout !== null && parsedTimeout < 0n ? 0n : parsedTimeout;
 
   const lifetimeRaw = annotations[ANN_LIFETIME_MS];
   const lifetimeMs = lifetimeRaw === undefined ? null : Number(lifetimeRaw);
   if (lifetimeMs !== null && !Number.isFinite(lifetimeMs))
     return refuse(`the lifetime annotation is not a number of milliseconds`);
 
-  const hosts = Array.isArray(spec.l7Hosts)
+  const listedHosts = Array.isArray(spec.l7Hosts)
     ? (spec.l7Hosts as unknown[]).filter(
         (host): host is string => typeof host === "string",
       )
     : [];
-  const badHost = hosts.find((host) => !L7_HOST.test(host));
+  const badHost = listedHosts.find((host) => !L7_HOST.test(host));
   if (badHost !== undefined)
     return refuse(`L7 host ${badHost} is not a hostname`);
-  if (hosts.length > L7_HOST_CAP)
+  if (listedHosts.length > L7_HOST_CAP)
     return refuse(
-      `the spec carries ${hosts.length} L7 hosts, over the cap of ${L7_HOST_CAP}`,
+      `the spec carries ${listedHosts.length} L7 hosts, over the cap of ${L7_HOST_CAP}`,
     );
+  const hosts = [...new Set(listedHosts)];
+  if (hosts.length !== listedHosts.length)
+    normalized.push("l7Hosts.duplicates");
 
   if (Array.isArray(spec.env) && (spec.env as unknown[]).length > 0)
     dropped.push("spec.env");
@@ -297,17 +329,32 @@ export function mapAgent(
   const pending = parseJson<{ targetCommit?: string; startedAt?: string }>(
     annotations[ANN_KIT_UPDATE_PENDING],
   );
+  const commit = (value: string | undefined): string | null => {
+    const lowered = value?.toLowerCase() ?? null;
+    if (lowered !== null && lowered !== value)
+      normalized.push("kitState.commitCase");
+    return lowered;
+  };
+  const seedComplete =
+    nullable(seed?.url) !== null && nullable(seed?.commit) !== null;
+  const pendingComplete =
+    nullable(pending?.targetCommit) !== null &&
+    nullable(pending?.startedAt) !== null;
+  if (annotations[ANN_STARTER_KIT_SEED] !== undefined && !seedComplete)
+    normalized.push("kitState.droppedSeed");
+  if (annotations[ANN_KIT_UPDATE_PENDING] !== undefined && !pendingComplete)
+    normalized.push("kitState.droppedPending");
   const kitState = {
     agentId: id,
     starterKit: nullable(annotations[ANN_STARTER_KIT]),
     onboardedAt: nullable(annotations[ANN_STARTER_KIT_ONBOARDED]),
-    seedUrl: nullable(seed?.url),
-    seedBranch: nullable(seed?.branch),
-    seedCommit: nullable(seed?.commit),
+    seedUrl: seedComplete ? nullable(seed?.url) : null,
+    seedBranch: seedComplete ? nullable(seed?.branch) : null,
+    seedCommit: seedComplete ? commit(seed?.commit) : null,
     defaultModel: nullable(annotations[ANN_STARTER_KIT_DEFAULT_MODEL]),
-    pendingCommit: nullable(pending?.targetCommit),
-    pendingStartedAt: nullable(pending?.startedAt),
-    skippedCommit: nullable(annotations[ANN_KIT_UPDATE_SKIPPED]),
+    pendingCommit: pendingComplete ? commit(pending?.targetCommit) : null,
+    pendingStartedAt: pendingComplete ? nullable(pending?.startedAt) : null,
+    skippedCommit: commit(annotations[ANN_KIT_UPDATE_SKIPPED]),
     updatedAt: switchedAt,
   };
   const kitPresent = Object.entries(kitState).some(
@@ -347,6 +394,7 @@ export function mapAgent(
   return {
     id,
     dropped,
+    normalized,
     rows: {
       agent: {
         id,
@@ -402,6 +450,11 @@ export function mapAgent(
         observedGeneration: Number(status?.observedGeneration ?? 0),
         machineRestarts: Number(status?.agentPodRestarts ?? 0),
         machineRestartReason: nullable(status?.agentPodRestartReason),
+        machineUpAt: nullable(annotations[ANN_MACHINE_UP]),
+        machineDownAt: nullable(annotations[ANN_MACHINE_DOWN]),
+        memoryWaitUntil: nullable(annotations[ANN_MEMORY_WAIT_UNTIL]),
+        runnerOomKillId: nullable(annotations[ANN_RUNNER_OOM_KILL]),
+        runnerOomRecoveredId: nullable(annotations[ANN_RUNNER_OOM_RECOVERED]),
       },
       conditions,
       hosts: hosts.map((host) => ({ agentId: id, host })),
@@ -415,10 +468,12 @@ export function mapBudget(cr: KubeObject): MappedBudget {
   const ownerSub =
     text(spec.owner) ?? (metadata.name ?? "").replace(/^budget-/u, "");
   const dropped: string[] = [];
+  const normalized: string[] = [];
   const refuse = (reason: string): MappedBudget => ({
     ownerSub,
     row: undefined,
     dropped,
+    normalized,
     refusal: reason,
   });
 
@@ -447,13 +502,14 @@ export function mapBudget(cr: KubeObject): MappedBudget {
   return {
     ownerSub,
     dropped,
+    normalized,
     row: {
       ownerSub,
       cpu,
       memory,
       storage,
       setBySub: null,
-      operatorUpdatedAt: metadata.creationTimestamp ?? null,
+      operatorUpdatedAt: null,
       createdAt: metadata.creationTimestamp,
       updatedAt: metadata.creationTimestamp,
     },
@@ -515,9 +571,12 @@ export function previewAgentStore(input: {
       });
   }
 
-  const dropped = (maps: Array<{ dropped: string[] }>) => {
+  const counted = (
+    maps: Array<{ dropped: string[]; normalized: string[] }>,
+    pick: "dropped" | "normalized",
+  ) => {
     const into: Record<string, number> = {};
-    for (const one of maps) tally(one.dropped, into);
+    for (const one of maps) tally(one[pick], into);
     return into;
   };
 
@@ -532,7 +591,8 @@ export function previewAgentStore(input: {
             one.refusal !== undefined,
         )
         .map((one) => ({ id: one.id, reason: one.refusal })),
-      dropped: dropped(mappedAgents),
+      dropped: counted(mappedAgents, "dropped"),
+      normalized: counted(mappedAgents, "normalized"),
     },
     budgets: {
       seen: mappedBudgets.length,
@@ -544,7 +604,8 @@ export function previewAgentStore(input: {
             one.refusal !== undefined,
         )
         .map((one) => ({ id: one.ownerSub, reason: one.refusal })),
-      dropped: dropped(mappedBudgets),
+      dropped: counted(mappedBudgets, "dropped"),
+      normalized: counted(mappedBudgets, "normalized"),
     },
     connectionGrants: { onlyInResource, onlyInDatabase },
   };

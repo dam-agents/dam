@@ -580,6 +580,16 @@ never happens — or, worse, a later one without the operator's timing.
 {{- if $cutover.acknowledged -}}
 {{- fail "agentStore.cutover.acknowledged is set, but no release in this chart performs the cutover: the switch release that does refuses to render without it, and sets this value's meaning itself. Unset it." -}}
 {{- end -}}
+{{- /* The api-server grants the controller's privileges to one fixed login
+       name, so a chart that let the identity be configured separately would
+       render a controller that owns nothing and can read nothing. */ -}}
+{{- $granted := "platform_controller" -}}
+{{- $declared := list .Values.postgres.controllerUser (dig "db" "user" $granted (.Values.controller | default dict)) -}}
+{{- range $declared -}}
+{{- if ne . $granted -}}
+{{- fail (printf "postgres.controllerUser and controller.db.user must both be %s: the api-server grants the controller's privileges to that login, so another name would render a controller with none. Got %q." $granted .) -}}
+{{- end -}}
+{{- end -}}
 {{- $contract := $store.contract | default dict -}}
 {{- if $contract.backupSha256 -}}
 {{- fail "agentStore.contract.backupSha256 is set, but no release in this chart deletes custom resources yet: the contract release checks it against the archive it must not delete without." -}}

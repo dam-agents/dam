@@ -14,6 +14,8 @@ const (
 	ModePostgres = "postgres"
 )
 
+const ReadsPostgres = false
+
 const (
 	MarkerKey   = "store"
 	KeyAbsorbed = "absorbed-at"
@@ -24,6 +26,10 @@ func MarkerName(releaseName string) string {
 }
 
 func Refusal(mode string, marker map[string]string) string {
+	return RefusalFor(mode, marker, ReadsPostgres)
+}
+
+func RefusalFor(mode string, marker map[string]string, readsPostgres bool) string {
 	switched := marker[MarkerKey] == ModePostgres
 
 	switch mode {
@@ -33,6 +39,9 @@ func Refusal(mode string, marker map[string]string) string {
 		}
 		return ""
 	case ModePostgres:
+		if !readsPostgres {
+			return "this build reconciles the custom resources and carries no Postgres reader, so it refuses the Agent store's Postgres mode whatever the cluster's marker says. Deploy the release that reads Postgres."
+		}
 		if !switched {
 			return "the Agent store is configured as Postgres but the custom resources have not been absorbed into it, so there is nothing to reconcile. Deploy the release that absorbs them first."
 		}

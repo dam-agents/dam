@@ -115,9 +115,16 @@ CREATE TRIGGER connection_grants_bump_generation
 --> statement-breakpoint
 
 -- The change feed the controller listens on: one channel, a payload naming the
--- table that changed and the Agent it changed for, and nothing an Agent's
--- configuration could leak through a notification the whole database receives.
--- A subscriber refetches the row; the payload is a wake-up, not a source.
+-- table that changed and the Agent it changed for. A subscriber refetches the
+-- row; the payload is a wake-up, not a source.
+--
+-- Nothing else goes in it. Every login that can connect to this database can
+-- LISTEN on this channel, and a channel has no grants, so the payload must leak
+-- no more than a grant could: the owner's subject is left out, because the
+-- usage mirror beside this schema deliberately carries it hashed (see the
+-- usage source passthrough views) and a plaintext subject on a channel would
+-- undo that. A budget's row is keyed by that subject, so its notification names
+-- no record at all and means "re-read the budgets" — they are small and few.
 --
 -- `hot` marks the notifications that only carry a browser live-event hint —
 -- an activity bump and nothing else. It filters refetch noise in the UI; the
@@ -127,7 +134,6 @@ CREATE FUNCTION control.notify_agent_change() RETURNS trigger LANGUAGE plpgsql A
 DECLARE
   row_data jsonb;
   agent_id text;
-  owner_sub text;
   payload jsonb;
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -136,14 +142,12 @@ BEGIN
     row_data := to_jsonb(NEW);
   END IF;
 
-  agent_id := COALESCE(row_data->>'agent_id', row_data->>'id');
-  owner_sub := row_data->>'owner_sub';
-  payload := jsonb_build_object(
-    't', TG_TABLE_NAME,
-    'op', left(TG_OP, 1),
-    'id', agent_id,
-    'owner', owner_sub
-  );
+  IF TG_TABLE_NAME = 'user_budgets' THEN
+    payload := jsonb_build_object('t', TG_TABLE_NAME, 'op', left(TG_OP, 1));
+  ELSE
+    agent_id := COALESCE(row_data->>'agent_id', row_data->>'id');
+    payload := jsonb_build_object('t', TG_TABLE_NAME, 'op', left(TG_OP, 1), 'id', agent_id);
+  END IF;
 
   IF TG_TABLE_NAME = 'agent_signals' AND TG_OP = 'UPDATE' THEN
     IF (to_jsonb(NEW) - 'last_activity_at' - 'last_activity_token' - 'version' - 'updated_at')

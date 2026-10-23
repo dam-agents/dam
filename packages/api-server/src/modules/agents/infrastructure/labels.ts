@@ -38,6 +38,11 @@ export const ANN_KIT_UPDATE_PENDING = "agent-platform.ai/kit-update-pending";
 export const ANN_KIT_UPDATE_SKIPPED = "agent-platform.ai/kit-update-skipped";
 
 export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
+export const ANN_MACHINE_UP = "agent-platform.ai/machine-up-at";
+export const ANN_MACHINE_DOWN = "agent-platform.ai/machine-down-at";
+export const ANN_MEMORY_WAIT_UNTIL = "agent-platform.ai/memory-wait-until";
+export const ANN_RUNNER_OOM_KILL = "agent-platform.ai/runner-oom-kill";
+export const ANN_RUNNER_OOM_RECOVERED = "agent-platform.ai/runner-oom-over";
 export const ANN_IMAGE_UPDATE_FROM = "agent-platform.ai/image-update-from";
 export const ANN_IMAGE_UPDATE_REFUSED =
   "agent-platform.ai/image-update-refused";

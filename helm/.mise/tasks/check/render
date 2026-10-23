@@ -555,10 +555,13 @@ grep -Fq "POSTGRES_CONTROLLER_USER" <<<"$roles" &&
   { echo "the Postgres init SQL neither creates the controller's role nor guards it from being a superuser" >&2; exit 1; }
 # Each value that only a later release gives its meaning fails the render now,
 # so a premature acknowledgement cannot silently mark a switch that never
-# happens.
+# happens — and so does a controller login name the api-server does not grant
+# to, since that controller would own nothing.
 for refused in 'agentStore.authority=sqlite' \
   'agentStore.cutover.acknowledged=true' \
-  'agentStore.contract.backupSha256=0000'; do
+  'agentStore.contract.backupSha256=0000' \
+  'postgres.controllerUser=someone-else' \
+  'controller.db.user=someone-else'; do
   if helm template platform . "${COMMON[@]}" --set "$refused" >/dev/null 2>&1; then
     echo "a render setting $refused succeeded, but no release in this chart reads it that way" >&2
     exit 1

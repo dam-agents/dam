@@ -334,3 +334,134 @@ describe("absorb preview", () => {
     expect(preview.agents.dropped).toEqual({});
   });
 });
+
+describe("preview against what the rows accept", () => {
+  // TEST_SCENARIO: A negative timeout is admitted by the custom resource and the controller reads it as never hibernating, so the row carries zero — the same behaviour — and the report says it normalized rather than calling a running Agent invalid.
+  it("normalizes a negative timeout to never rather than refusing it", () => {
+    const mapped = mapAgent(
+      agent({ spec: { image: "agent:1", hibernationTimeout: "-1s" } }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(mapped.refusal).toBeUndefined();
+    expect(
+      (mapped.rows as { agent: Record<string, unknown> }).agent
+        .hibernationTimeoutNs,
+    ).toBe(0);
+    expect(mapped.normalized).toContain("hibernationTimeout.negative");
+  });
+
+  // TEST_SCENARIO: The custom resource admits duplicate L7 hosts and the row's key cannot, so the mapper dedupes — the gateway renders a set either way — and counts it.
+  it("dedupes the L7 hosts the row cannot repeat", () => {
+    const mapped = mapAgent(
+      agent({
+        spec: { image: "agent:1", l7Hosts: ["a.test", "a.test", "b.test"] },
+      }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(mapped.normalized).toContain("l7Hosts.duplicates");
+    expect((mapped.rows as { hosts: unknown[] }).hosts).toHaveLength(2);
+  });
+
+  // TEST_SCENARIO: The kit's commit checks accept uppercase and the columns accept lowercase; a half-written seed or pending update cannot be a row at all, so it is dropped and counted rather than failing the import.
+  it("lowercases kit commits and drops an incomplete pair", () => {
+    const mapped = mapAgent(
+      agent({
+        annotations: {
+          "agent-platform.ai/starter-kit": "kit",
+          "agent-platform.ai/starter-kit-seed": JSON.stringify({
+            url: "https://github.com/acme/x",
+            commit: "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+          }),
+          "agent-platform.ai/kit-update-pending": JSON.stringify({
+            startedAt: "2026-10-20T00:00:00Z",
+          }),
+        },
+      }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    const kit = (mapped.rows as { kit: Record<string, unknown> }).kit;
+    expect(kit.seedCommit).toBe("abcdef0123456789abcdef0123456789abcdef01");
+    expect(kit.pendingCommit).toBeNull();
+    expect(mapped.normalized).toEqual(
+      expect.arrayContaining([
+        "kitState.commitCase",
+        "kitState.droppedPending",
+      ]),
+    );
+  });
+
+  // TEST_SCENARIO: The controller compares quantities as Kubernetes does, so a decimal gigabyte is smaller than a binary one; a comparison that mixed the two scales would report the wrong disk and size a machine differently. A persisted mount size the renderer cannot parse is a refusal, not a silent skip.
+  it("compares quantities on one scale", () => {
+    const decimal = mapAgent(
+      agent({
+        spec: {
+          image: "agent:1",
+          storageSize: "1G",
+          mounts: [{ path: "/home/agent/data", persist: true, size: "2Gi" }],
+        },
+      }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(
+      (decimal.rows as { agent: Record<string, unknown> }).agent.diskSize,
+    ).toBe("2Gi");
+
+    const unparseable = mapAgent(
+      agent({
+        spec: {
+          image: "agent:1",
+          mounts: [{ path: "/home/agent/data", persist: true, size: "lots" }],
+        },
+      }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(unparseable.refusal).toBeTruthy();
+  });
+
+  // TEST_SCENARIO: The controller keeps its machine bookkeeping on annotations — when a machine came up or went down, an outstanding memory wait, and the OOM kill it recovered from. Those are not dead operator keys: losing them would let a controller reattribute an old kill or read a waiting start as refused.
+  it("carries the controller's own bookkeeping into the status row", () => {
+    const mapped = mapAgent(
+      agent({
+        annotations: {
+          "agent-platform.ai/machine-up-at": "2026-10-24T08:00:00Z",
+          "agent-platform.ai/machine-down-at": "2026-10-24T09:00:00Z",
+          "agent-platform.ai/memory-wait-until": "2026-10-24T09:30:00Z",
+          "agent-platform.ai/runner-oom-kill": "runner-1",
+          "agent-platform.ai/runner-oom-over": "runner-1",
+        },
+      }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    const status = (mapped.rows as { status: Record<string, unknown> }).status;
+    expect(status).toMatchObject({
+      machineUpAt: "2026-10-24T08:00:00Z",
+      machineDownAt: "2026-10-24T09:00:00Z",
+      memoryWaitUntil: "2026-10-24T09:30:00Z",
+      runnerOomKillId: "runner-1",
+      runnerOomRecoveredId: "runner-1",
+    });
+    expect(mapped.normalized).toEqual([]);
+    expect(mapped.dropped).toEqual([]);
+  });
+
+  // TEST_SCENARIO: A budget written outside the platform records no operator and no time, so the row carries neither; inventing the creation timestamp would tell an auditor that an operator changed it then.
+  it("invents no operator-update time for an absorbed budget", () => {
+    const mapped = mapBudget({
+      metadata: {
+        name: "budget-sub-1",
+        creationTimestamp: "2026-10-01T00:00:00Z",
+      },
+      spec: { owner: "sub-1", cpu: "2" },
+    } as unknown as KubeObject);
+    expect(mapped.row).toMatchObject({
+      setBySub: null,
+      operatorUpdatedAt: null,
+    });
+  });
+});

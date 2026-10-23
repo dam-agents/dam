@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 // TEST_OVERVIEW: the api-server owns the control tables, so nothing structural stops it from writing the ones the controller owns — only this guard does. It fails when api-server code imports the observation tables, so a status write has to arrive as a deliberate edit here rather than as a line in a diff nobody looked at twice.
 
@@ -10,6 +10,9 @@ const CONTROLLER_OWNED = ["controlAgentStatus", "controlAgentConditions"];
 
 const READ_ONLY_MODULE = /^control-read(-[a-z]+)*\.ts$/u;
 
+const RAW_SQL =
+  /\b(insert\s+into|update|delete\s+from|drop\s+table|truncate)\s+control\.(agent_status|agent_conditions)\b/iu;
+
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
@@ -18,13 +21,16 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("api-server writes to controller-owned tables", () => {
-  // TEST_SCENARIO: The observation tables belong to the controller, and the api-server reaches them — if at all — only through the read-only adapter named here. Any other file naming them is either a write or a second read path that skipped review.
+  // TEST_SCENARIO: The observation tables belong to the controller, and the api-server reaches them — if at all — only through the read-only adapter named here. Any other file naming them is either a write or a second read path that skipped review. Raw SQL counts: a query string names the table without the schema's identifier, so matching the identifiers alone would let a write through.
   it("is confined to the read-only adapter", () => {
     const offenders = sourceFiles(SOURCE_ROOT).flatMap((path) => {
       const source = readFileSync(path, "utf8");
-      const named = CONTROLLER_OWNED.filter((table) => source.includes(table));
+      const named = [
+        ...CONTROLLER_OWNED.filter((table) => source.includes(table)),
+        ...(RAW_SQL.test(source) ? ["raw SQL on an observation table"] : []),
+      ];
       if (named.length === 0) return [];
-      if (READ_ONLY_MODULE.test(path)) return [];
+      if (READ_ONLY_MODULE.test(basename(path))) return [];
       return [`${path.replace(SOURCE_ROOT, "")} names ${named.join(", ")}`];
     });
 
