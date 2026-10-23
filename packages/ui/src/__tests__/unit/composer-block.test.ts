@@ -30,9 +30,19 @@ describe("the composer block", () => {
     expect(
       composerBlock({
         ...settled,
-        providers: { loaded: true, failed: true },
+        providers: { loaded: false, failed: true },
       })?.kind,
     ).toBe("providers-failed");
+  });
+
+  // TEST_SCENARIO: a refetch that fails over lists already read keeps them, so the send plans on those and the composer stays open.
+  it("stays open when a refetch fails over read lists", () => {
+    expect(
+      composerBlock({
+        ...settled,
+        providers: { loaded: true, failed: true },
+      }),
+    ).toBeNull();
   });
 
   // TEST_SCENARIO: with no agent selected nothing reads the lists, so the composer shows no loading block.

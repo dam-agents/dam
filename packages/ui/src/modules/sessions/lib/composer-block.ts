@@ -11,7 +11,8 @@ export type ComposerBlock =
  * UNIT_BOUNDARY_DESCRIPTION: why the composer holds a prompt, if it does. A
  * send plans its provider and model from the agent's provider lists, so it
  * waits until both lists are read: a send planned on lists still loading, or
- * failed, finds nothing to attach and would go out with no provider.
+ * failed, finds nothing to attach and would go out with no provider. A failed
+ * refetch over lists already read leaves the send on those lists.
  */
 export function composerBlock(input: {
   agentId: string | null;
@@ -21,13 +22,14 @@ export function composerBlock(input: {
   sharedCurveBender: boolean;
   formLocked: boolean;
 }): ComposerBlock | null {
-  if (input.agentId && input.providers.failed)
-    return {
-      kind: "providers-failed",
-      reason: "Couldn't load the model providers. Reload the page to retry.",
-    };
   if (input.agentId && !input.providers.loaded)
-    return { kind: "providers-loading", reason: "Loading model providers…" };
+    return input.providers.failed
+      ? {
+          kind: "providers-failed",
+          reason:
+            "Couldn't load the model providers. Reload the page to retry.",
+        }
+      : { kind: "providers-loading", reason: "Loading model providers…" };
   if (input.noGrantedProvider && !input.sharedCurveBender)
     return input.noProviders
       ? { kind: "connect", reason: "Connect an LLM provider to start." }
