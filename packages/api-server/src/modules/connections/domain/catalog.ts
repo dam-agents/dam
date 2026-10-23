@@ -440,6 +440,35 @@ const MODAL: HeaderConnectionTemplate = {
   ],
 };
 
+const GH_TOKEN_ENV: Contribution = {
+  kind: "env",
+  name: "GH_TOKEN",
+  placeholder: "dummy-placeholder",
+};
+
+const GITHUB_CONTRIBUTIONS: readonly Contribution[] = [
+  GH_TOKEN_ENV,
+  {
+    kind: "egress-inject",
+    host: "api.github.com",
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+  },
+  {
+    kind: "egress-inject",
+    host: "github.com",
+    headerName: "Authorization",
+    valueFormat: "Basic {value}",
+    encoding: "basic-x-access-token",
+  },
+  {
+    kind: "egress-inject",
+    host: "raw.githubusercontent.com",
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+  },
+];
+
 function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   return {
     id: "github",
@@ -458,28 +487,7 @@ function github(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     tokenUrl: "https://github.com/login/oauth/access_token",
     scopes: ["repo", "read:user", "user:email"],
     tokenEndpointAcceptJson: true,
-    contributions: [
-      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-      {
-        kind: "egress-inject",
-        host: "api.github.com",
-        headerName: "Authorization",
-        valueFormat: "Bearer {value}",
-      },
-      {
-        kind: "egress-inject",
-        host: "github.com",
-        headerName: "Authorization",
-        valueFormat: "Basic {value}",
-        encoding: "basic-x-access-token",
-      },
-      {
-        kind: "egress-inject",
-        host: "raw.githubusercontent.com",
-        headerName: "Authorization",
-        valueFormat: "Bearer {value}",
-      },
-    ],
+    contributions: [...GITHUB_CONTRIBUTIONS],
   };
 }
 
@@ -504,9 +512,7 @@ function githubEnterprise(
     tokenUrl: "https://{host}/login/oauth/access_token",
     scopes: ["repo", "read:user", "user:email"],
     tokenEndpointAcceptJson: true,
-    contributions: [
-      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-    ],
+    contributions: [GH_TOKEN_ENV],
   };
 }
 
@@ -834,28 +840,7 @@ const GITHUB_PAT: HeaderConnectionTemplate = {
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
   credentialCheck: "github-user",
-  contributions: [
-    { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-    {
-      kind: "egress-inject",
-      host: "api.github.com",
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    },
-    {
-      kind: "egress-inject",
-      host: "github.com",
-      headerName: "Authorization",
-      valueFormat: "Basic {value}",
-      encoding: "basic-x-access-token",
-    },
-    {
-      kind: "egress-inject",
-      host: "raw.githubusercontent.com",
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    },
-  ],
+  contributions: [...GITHUB_CONTRIBUTIONS],
 };
 
 const GITHUB_APP: GitHubAppConnectionTemplate = {
@@ -870,28 +855,7 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
   authKind: "github-app",
   host: "github.com",
   apiBaseUrl: "https://api.github.com",
-  contributions: [
-    { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-    {
-      kind: "egress-inject",
-      host: "api.github.com",
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    },
-    {
-      kind: "egress-inject",
-      host: "github.com",
-      headerName: "Authorization",
-      valueFormat: "Basic {value}",
-      encoding: "basic-x-access-token",
-    },
-    {
-      kind: "egress-inject",
-      host: "raw.githubusercontent.com",
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-    },
-  ],
+  contributions: [...GITHUB_CONTRIBUTIONS],
 };
 
 function githubEnterprisePat(
@@ -911,9 +875,7 @@ function githubEnterprisePat(
     headerName: "Authorization",
     valueFormat: "Bearer {value}",
     credentialCheck: "github-user",
-    contributions: [
-      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-    ],
+    contributions: [GH_TOKEN_ENV],
   };
 }
 
@@ -932,9 +894,7 @@ function githubEnterpriseApp(
     authKind: "github-app",
     ...(creds?.host ? { host: creds.host } : {}),
     apiBaseUrl: "https://api.{host}",
-    contributions: [
-      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
-    ],
+    contributions: [GH_TOKEN_ENV],
   };
 }
 

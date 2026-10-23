@@ -36,6 +36,8 @@ function makeRepoFake() {
       const c = rows.get(id);
       return c && c.ownerId === ownerId ? c : null;
     },
+    getById: async (id) => rows.get(id) ?? null,
+    listDue: async () => [],
     updateAuth: async (id, auth) => {
       const c = rows.get(id);
       if (c) rows.set(id, { ...c, auth });
@@ -153,7 +155,16 @@ function makeService(
     },
     resolveKbShare: async () => null,
   });
-  return { svc, rows, stored, deleted, tokenCalls, tokenBodies, lockKeys };
+  return {
+    svc,
+    repo,
+    rows,
+    stored,
+    deleted,
+    tokenCalls,
+    tokenBodies,
+    lockKeys,
+  };
 }
 
 function createInput(overrides: Record<string, string> = {}) {
@@ -341,14 +352,38 @@ describe("github-app connection create", () => {
     expect((await svc.getConnection(id))?.status).toBe("active");
   });
 
+  it("stores the new private key even when a re-mint went first", async () => {
+    const { svc, repo, stored } = makeService();
+    const id = await svc.createFromTemplate(createInput());
+    const readRow = repo.getById.bind(repo);
+    repo.getById = async (connectionId) => {
+      const fresh = await readRow(connectionId);
+      if (!fresh || fresh.auth.kind !== "github-app") return fresh;
+      return {
+        ...fresh,
+        auth: { ...fresh.auth, expiresAt: (fresh.auth.expiresAt ?? 0) + 60 },
+      };
+    };
+
+    const { privateKey: rotatedPem } = crypto.generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+    });
+    await svc.update(id, { value: rotatedPem });
+
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());
+  });
+
   it("leaves the connection untouched when the new key is unusable", async () => {
     const { svc, rows, stored } = makeService();
     const id = await svc.createFromTemplate(createInput());
     const authBefore = rows.get(id)!.auth;
 
-    await expect(svc.update(id, { value: "not-a-key" })).rejects.toThrow(
-      /PEM-encoded/,
-    );
+    await expect(svc.update(id, { value: "not-a-key" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: /PEM-encoded/,
+    });
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
     expect(rows.get(id)!.auth).toEqual(authBefore);

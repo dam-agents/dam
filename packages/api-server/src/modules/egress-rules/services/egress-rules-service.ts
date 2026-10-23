@@ -12,6 +12,7 @@ import type { EgressRuleRow } from "../domain/types.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
 import { reconvergeAgentL7Hosts } from "./l7-promotion-reconcile.js";
+import { createEgressRuleWriter } from "./egress-rule-writer.js";
 import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateEgressRulesServiceDeps {
@@ -41,6 +42,11 @@ function toView(row: EgressRuleRow): EgressRuleView {
 export function createEgressRulesService(
   deps: CreateEgressRulesServiceDeps,
 ): EgressRulesService {
+  const writer = createEgressRuleWriter({
+    repo: deps.repo,
+    l7Hosts: deps.l7Hosts,
+  });
+
   function logNotOwner(agentId: string, detail: Record<string, unknown>) {
     securityLog("warn", "authz.owner_mismatch", {
       category: "authz",
@@ -88,7 +94,7 @@ export function createEgressRulesService(
         logNotOwner(input.agentId, { surface: "egress-rule.create" });
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
-      let row = await deps.repo.insert({
+      const outcome = await writer.insert({
         id: randomUUID(),
         agentId: input.agentId,
         host: input.host,
@@ -99,28 +105,18 @@ export function createEgressRulesService(
         decidedBy: deps.ownerSub,
         source: "manual",
       });
-      if (row.verdict !== input.verdict) {
+      if (outcome.kind === "verdict-clash") {
         throw new TRPCError({
           code: "CONFLICT",
-          message: `an equivalent rule already exists with verdict '${row.verdict}' — edit the existing rule instead`,
+          message: `an equivalent rule already exists with verdict '${outcome.existing.verdict}' — edit the existing rule instead`,
         });
       }
+      const row = outcome.row;
       if ((row.port ?? null) !== (input.port ?? null)) {
         throw new TRPCError({
           code: "CONFLICT",
           message: `an equivalent rule already exists ${row.port ? `for port ${row.port}` : "without a port"} — revoke it and create the rule again`,
         });
-      }
-      if (row.source !== "manual" && row.source !== "inbox") {
-        row =
-          (await deps.repo.updateTakeOwnership({
-            id: row.id,
-            method: row.method,
-            pathPattern: row.pathPattern,
-            verdict: row.verdict,
-            decidedBy: deps.ownerSub,
-            source: "manual",
-          })) ?? row;
       }
       securityLog("info", "egress_rule.create", {
         category: "authz-list",
@@ -141,7 +137,6 @@ export function createEgressRulesService(
             : {}),
         },
       });
-      await reconvergeAgentL7Hosts(deps, input.agentId);
       return toView(row);
     },
 

@@ -34,6 +34,31 @@ export async function resolveOAuthClientSecret(opts: {
   return clientSecret;
 }
 
+export async function oauthProviderFor(opts: {
+  conn: Connection;
+  auth: OAuthAuth;
+  templates: ConnectionTemplateRegistry;
+  secretStore: SecretStore;
+}): Promise<OAuthProvider> {
+  const { conn, auth } = opts;
+  const template = opts.templates.get(conn.templateId);
+  const templateScopes =
+    template?.authKind === "oauth" && template.scopes?.length
+      ? template.scopes
+      : undefined;
+  const clientSecret = await resolveOAuthClientSecret(opts);
+  return {
+    id: `connection:${conn.id}:${conn.templateId}`,
+    authorizationUrl: auth.authorizationUrl,
+    tokenEndpoint: auth.tokenUrl,
+    clientId: auth.clientId,
+    ...(clientSecret ? { clientSecret } : {}),
+    scopes: templateScopes ?? auth.scopes,
+    ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
+    ...(auth.extraAuthParams ? { extraAuthParams: auth.extraAuthParams } : {}),
+  };
+}
+
 export async function refreshOAuthAccessToken(opts: {
   conn: Connection;
   auth: OAuthAuth;
@@ -44,7 +69,8 @@ export async function refreshOAuthAccessToken(opts: {
 }): Promise<{ expiresAt: number | undefined }> {
   const { conn, auth, secretStore } = opts;
   const connectionRef = `connection:${conn.id}:${conn.templateId}`;
-  const clientSecret = await resolveOAuthClientSecret(opts);
+  const provider = await oauthProviderFor(opts);
+  const clientSecret = provider.clientSecret;
   const scope = auth.githubUserTokenScope;
 
   const refreshToken = auth.refreshTokenRef
@@ -66,16 +92,6 @@ export async function refreshOAuthAccessToken(opts: {
   if (!refreshToken) {
     throw new Error(`refresh token missing at ${auth.refreshTokenRef.path}`);
   }
-
-  const provider: OAuthProvider = {
-    id: connectionRef,
-    authorizationUrl: auth.authorizationUrl,
-    tokenEndpoint: auth.tokenUrl,
-    clientId: auth.clientId,
-    ...(clientSecret ? { clientSecret } : {}),
-    scopes: auth.scopes,
-    ...(auth.tokenEndpointAcceptJson ? { tokenEndpointAcceptJson: true } : {}),
-  };
 
   const next = await opts.engine.refresh({ provider, refreshToken });
 

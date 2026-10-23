@@ -109,6 +109,13 @@ import {
 } from "./oauth-token.js";
 import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
+import {
+  mintUnderLock,
+  renewedAuth,
+  writeToken,
+  type CredentialWriterDeps,
+  type TokenAuth,
+} from "./credential-writer.js";
 import { recordAccountLabel } from "./account-label.js";
 import { accountLabelOf } from "../domain/account-label.js";
 import {
@@ -209,6 +216,15 @@ export function createConnectionsService(deps: {
 }): ConnectionsService & ManagedProviderConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
+
+  function writerDeps(lockKey: string): CredentialWriterDeps {
+    return {
+      repo: deps.repo,
+      secretStore: deps.secretStore,
+      connectionLock: deps.connectionLock,
+      lockKey,
+    };
+  }
 
   function providerView(templateId: string): ConnectionProviderView | null {
     const type = providerTypeForTemplateId(templateId);
@@ -484,26 +500,33 @@ export function createConnectionsService(deps: {
     auth: Extract<Connection["auth"], { kind: "client-credentials" }>,
     clientSecret: string,
   ): Promise<void> {
-    const minted = await rejectIfInvalid(() =>
-      mintClientCredentialsToken(deps.oauthEngine, {
-        connectionRef: `connection:${conn.id}:${conn.templateId}`,
-        auth,
-        clientSecret,
-      }),
+    await mintUnderLock(
+      conn,
+      auth,
+      {
+        ...writerDeps(connectionRefreshLockKey(conn.id)),
+        standDownOnKindChangeOnly: true,
+      },
+      async (fresh, freshAuth) => {
+        const minted = await rejectIfInvalid(() =>
+          mintClientCredentialsToken(deps.oauthEngine, {
+            connectionRef: `connection:${conn.id}:${conn.templateId}`,
+            auth: freshAuth,
+            clientSecret,
+          }),
+        );
+        await writeToken(
+          deps.secretStore,
+          fresh,
+          freshAuth,
+          minted.accessToken,
+          {
+            [freshAuth.clientSecretRef.field]: clientSecret,
+          },
+        );
+        return renewedAuth(freshAuth, minted.expiresAt);
+      },
     );
-    await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
-      const fresh = await deps.repo.get(conn.id, deps.ownerId);
-      if (!fresh || fresh.auth.kind !== "client-credentials") return;
-      await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
-        [fresh.auth.clientSecretRef.field]: clientSecret,
-        access_token: minted.accessToken,
-        ...buildConnectionSdsFields(fresh.contributions, minted.accessToken),
-      });
-      await deps.repo.updateAuth(conn.id, {
-        ...withoutRefreshFailureMarker(fresh.auth),
-        expiresAt: minted.expiresAt,
-      });
-    });
   }
 
   async function rotatePrivateKey(
@@ -511,31 +534,37 @@ export function createConnectionsService(deps: {
     auth: Extract<Connection["auth"], { kind: "github-app" }>,
     rawPrivateKey: string,
   ): Promise<void> {
-    const rotated = await rejectIfInvalid(async () => {
-      const privateKeyPem = normalizePrivateKeyPem(rawPrivateKey);
-      const minted = await mintGitHubAppToken(deps.githubAppEngine, {
-        connectionRef: `connection:${conn.id}:${conn.templateId}`,
-        auth,
-        privateKeyPem,
-      });
-      return { privateKeyPem, minted };
-    });
-    await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
-      const fresh = await deps.repo.get(conn.id, deps.ownerId);
-      if (!fresh || fresh.auth.kind !== "github-app") return;
-      await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
-        [fresh.auth.privateKeyRef.field]: rotated.privateKeyPem,
-        access_token: rotated.minted.accessToken,
-        ...buildConnectionSdsFields(
-          fresh.contributions,
-          rotated.minted.accessToken,
-        ),
-      });
-      await deps.repo.updateAuth(conn.id, {
-        ...withoutRefreshFailureMarker(fresh.auth),
-        expiresAt: rotated.minted.expiresAt,
-      });
-    });
+    await mintUnderLock(
+      conn,
+      auth,
+      {
+        ...writerDeps(gitHubAppMintLockKey(conn.id)),
+        standDownOnKindChangeOnly: true,
+      },
+      async (fresh, freshAuth) => {
+        const { privateKeyPem, minted } = await rejectIfInvalid(async () => {
+          const pem = normalizePrivateKeyPem(rawPrivateKey);
+          return {
+            privateKeyPem: pem,
+            minted: await mintGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${conn.id}:${conn.templateId}`,
+              auth: freshAuth,
+              privateKeyPem: pem,
+            }),
+          };
+        });
+        await writeToken(
+          deps.secretStore,
+          fresh,
+          freshAuth,
+          minted.accessToken,
+          {
+            [freshAuth.privateKeyRef.field]: privateKeyPem,
+          },
+        );
+        return renewedAuth(freshAuth, minted.expiresAt);
+      },
+    );
   }
 
   async function rotateOAuthClientSecret(
@@ -1272,34 +1301,8 @@ export function createConnectionsService(deps: {
 
       const affectedAgents = await deps.repo.listAgentsForConnection(id);
 
-      const paths = new Set<string>();
-      switch (conn.auth.kind) {
-        case "oauth":
-          paths.add(conn.auth.accessTokenRef.path);
-          if (conn.auth.refreshTokenRef) {
-            paths.add(conn.auth.refreshTokenRef.path);
-          }
-          break;
-        case "client-credentials":
-          paths.add(conn.auth.accessTokenRef.path);
-          paths.add(conn.auth.clientSecretRef.path);
-          break;
-        case "github-app":
-          paths.add(conn.auth.accessTokenRef.path);
-          paths.add(conn.auth.privateKeyRef.path);
-          break;
-        case "header":
-          paths.add(conn.auth.valueRef.path);
-          break;
-        case "sigv4":
-          paths.add(conn.auth.accessKeyIdRef.path);
-          break;
-        case "none":
-          break;
-      }
-      for (const path of paths) {
-        await deps.secretStore.delete({ path });
-      }
+      const secretPath = connectionSecretPath(conn.auth);
+      if (secretPath) await deps.secretStore.delete({ path: secretPath });
 
       await deps.repo.delete(id, deps.ownerId);
 
@@ -1327,7 +1330,7 @@ export function createConnectionsService(deps: {
         detail: {
           templateId: conn.templateId,
           authKind: conn.auth.kind,
-          secretsDeleted: paths.size,
+          secretsDeleted: secretPath ? 1 : 0,
           affectedAgents: affectedAgents.length,
         },
       });
@@ -1495,21 +1498,29 @@ export function createConnectionsService(deps: {
       const secretPath = connectionSecretPath(built.auth);
 
       let auth = built.auth;
-      if (auth.kind === "client-credentials" && secretPath) {
-        const clientSecret = built.secrets.get(secretPath)?.["client_secret"];
-        if (!clientSecret) {
+      const mintFirstToken = async (
+        current: TokenAuth,
+        credential: {
+          field: "client_secret" | "private_key";
+          missing: string;
+          grant: string;
+        },
+        mint: (
+          secret: string,
+        ) => Promise<{ accessToken: string; expiresAt?: number }>,
+      ): Promise<TokenAuth> => {
+        const secret = secretPath
+          ? built.secrets.get(secretPath)?.[credential.field]
+          : undefined;
+        if (!secretPath || !secret) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `template ${template.id}: missing clientSecret`,
+            message: `template ${template.id}: missing ${credential.missing}`,
           });
         }
-        const minted = await mintClientCredentialsToken(deps.oauthEngine, {
-          connectionRef: `connection:${id}:${template.id}`,
-          auth,
-          clientSecret,
-        });
-        auth = {
-          ...auth,
+        const minted = await rejectIfInvalid(() => mint(secret));
+        const next: TokenAuth = {
+          ...current,
           connectedAt: Math.floor(Date.now() / 1000),
           expiresAt: minted.expiresAt,
         };
@@ -1524,47 +1535,45 @@ export function createConnectionsService(deps: {
           actorKind: "user",
           target: id,
           result: "success",
-          detail: { templateId: template.id, grant: "client_credentials" },
+          detail: { templateId: template.id, grant: credential.grant },
         });
+        return next;
+      };
+
+      if (auth.kind === "client-credentials") {
+        const credentialsAuth = auth;
+        auth = await mintFirstToken(
+          credentialsAuth,
+          {
+            field: "client_secret",
+            missing: "clientSecret",
+            grant: "client_credentials",
+          },
+          (clientSecret) =>
+            mintClientCredentialsToken(deps.oauthEngine, {
+              connectionRef: `connection:${id}:${template.id}`,
+              auth: credentialsAuth,
+              clientSecret,
+            }),
+        );
       }
 
-      if (auth.kind === "github-app" && secretPath) {
-        const privateKeyPem = built.secrets.get(secretPath)?.["private_key"];
-        if (!privateKeyPem) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `template ${template.id}: missing privateKey`,
-          });
-        }
+      if (auth.kind === "github-app") {
         const appAuth = auth;
-        const minted = await rejectIfInvalid(() =>
-          mintGitHubAppToken(deps.githubAppEngine, {
-            connectionRef: `connection:${id}:${template.id}`,
-            auth: appAuth,
-            privateKeyPem,
-          }),
-        );
-        auth = {
-          ...auth,
-          connectedAt: Math.floor(Date.now() / 1000),
-          expiresAt: minted.expiresAt,
-        };
-        built.secrets.set(secretPath, {
-          ...(built.secrets.get(secretPath) ?? {}),
-          access_token: minted.accessToken,
-          ...buildConnectionSdsFields(contributions, minted.accessToken),
-        });
-        securityLog("info", "oauth.token_mint", {
-          category: "credential",
-          actor: deps.ownerId,
-          actorKind: "user",
-          target: id,
-          result: "success",
-          detail: {
-            templateId: template.id,
+        auth = await mintFirstToken(
+          appAuth,
+          {
+            field: "private_key",
+            missing: "privateKey",
             grant: "github_app_installation",
           },
-        });
+          (privateKeyPem) =>
+            mintGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${id}:${template.id}`,
+              auth: appAuth,
+              privateKeyPem,
+            }),
+        );
       }
 
       if (effectiveInput.authKind === "sigv4" && auth.kind === "sigv4") {
@@ -1730,42 +1739,33 @@ export function createConnectionsService(deps: {
       const privateKeyPem = await readPrivateKey(auth);
 
       const scope = parseGitHubAppScope(input);
-      const nextAuth: Connection["auth"] = {
-        kind: "github-app",
-        appId: auth.appId,
-        installationId: auth.installationId,
-        privateKeyRef: auth.privateKeyRef,
-        accessTokenRef: auth.accessTokenRef,
-        apiBaseUrl: auth.apiBaseUrl,
-        ...(auth.connectedAt ? { connectedAt: auth.connectedAt } : {}),
-        ...(auth.host ? { host: auth.host } : {}),
-        ...(scope.repositories ? { repositories: scope.repositories } : {}),
-        ...(scope.repositoryIds ? { repositoryIds: scope.repositoryIds } : {}),
-        ...(scope.permissions ? { permissions: scope.permissions } : {}),
-      };
-
-      await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
-        const token = await rejectIfInvalid(() =>
-          mintGitHubAppToken(deps.githubAppEngine, {
-            connectionRef: `connection:${conn.id}:${conn.templateId}`,
-            auth: nextAuth as Extract<
-              Connection["auth"],
-              { kind: "github-app" }
-            >,
-            privateKeyPem,
-          }),
-        );
-
-        await deps.secretStore.putFields(auth.accessTokenRef, {
-          access_token: token.accessToken,
-          ...buildConnectionSdsFields(conn.contributions, token.accessToken),
-        });
-        await deps.repo.updateAuth(conn.id, {
-          ...nextAuth,
-          expiresAt: token.expiresAt,
-        });
-        return token;
-      });
+      await mintUnderLock(
+        conn,
+        auth,
+        {
+          ...writerDeps(gitHubAppMintLockKey(conn.id)),
+          standDownOnKindChangeOnly: true,
+        },
+        async (fresh, freshAuth) => {
+          const { repositories, repositoryIds, permissions, ...rest } =
+            freshAuth;
+          const next = { ...rest, ...scope };
+          const token = await rejectIfInvalid(() =>
+            mintGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${conn.id}:${conn.templateId}`,
+              auth: next,
+              privateKeyPem,
+            }),
+          );
+          await writeToken(
+            deps.secretStore,
+            fresh,
+            freshAuth,
+            token.accessToken,
+          );
+          return renewedAuth(next, token.expiresAt);
+        },
+      );
 
       securityLog("info", "connection.scope_update", {
         category: "credential",

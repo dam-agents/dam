@@ -419,6 +419,44 @@ async function buildClientCredentials(
   };
 }
 
+function appendHostTarget(
+  contributions: Contribution[],
+  target: {
+    host: string;
+    port?: number;
+    headerName: string;
+    valueFormat: string;
+    envName?: string;
+    upstreamCa?: boolean;
+  },
+): void {
+  const { host, port, headerName, valueFormat, envName, upstreamCa } = target;
+  const hostAlreadySpokenFor = contributions.some(
+    (c) =>
+      (c.kind === "egress-allow" ||
+        c.kind === "egress-inject" ||
+        c.kind === "egress-sign") &&
+      c.host === host,
+  );
+  if (!hostAlreadySpokenFor) {
+    contributions.push({
+      kind: "egress-inject",
+      host,
+      ...(port ? { port } : {}),
+      headerName,
+      valueFormat,
+      ...(upstreamCa ? { upstreamCa: true } : {}),
+    });
+  }
+  if (envName) {
+    contributions.push({
+      kind: "env",
+      name: envName,
+      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
+    });
+  }
+}
+
 export function clientCredentialsTarget(
   template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
   input: Pick<
@@ -440,30 +478,13 @@ export function clientCredentialsTarget(
     input.valueFormat ?? template.valueFormat ?? "Bearer {value}";
   const contributions: Contribution[] = [...template.contributions];
 
-  const hasHostContrib = contributions.some(
-    (c) =>
-      (c.kind === "egress-allow" ||
-        c.kind === "egress-inject" ||
-        c.kind === "egress-sign") &&
-      c.host === host,
-  );
-  if (!hasHostContrib) {
-    contributions.push({
-      kind: "egress-inject",
-      host,
-      ...(port ? { port } : {}),
-      headerName,
-      valueFormat,
-    });
-  }
-
-  if (input.envName) {
-    contributions.push({
-      kind: "env",
-      name: input.envName,
-      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
-    });
-  }
+  appendHostTarget(contributions, {
+    host,
+    port,
+    headerName,
+    valueFormat,
+    envName: input.envName,
+  });
   return {
     host,
     ...(port ? { port } : {}),
@@ -701,31 +722,14 @@ export function headerTarget(
     );
   }
 
-  const hasHostContrib = contributions.some(
-    (c) =>
-      (c.kind === "egress-allow" ||
-        c.kind === "egress-inject" ||
-        c.kind === "egress-sign") &&
-      c.host === host,
-  );
-  if (!hasHostContrib) {
-    contributions.push({
-      kind: "egress-inject",
-      host,
-      ...(port ? { port } : {}),
-      headerName,
-      valueFormat,
-      ...(caPem ? { upstreamCa: true } : {}),
-    });
-  }
-
-  if (input.envName) {
-    contributions.push({
-      kind: "env",
-      name: input.envName,
-      placeholder: CONNECTION_TOKEN_PLACEHOLDER,
-    });
-  }
+  appendHostTarget(contributions, {
+    host,
+    port,
+    headerName,
+    valueFormat,
+    envName: input.envName,
+    upstreamCa: !!caPem,
+  });
 
   contributions.push(
     ...configInputContributions(

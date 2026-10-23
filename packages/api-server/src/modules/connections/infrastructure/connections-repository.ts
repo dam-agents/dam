@@ -32,6 +32,8 @@ export interface ConnectionsRepository {
   listByOwnerOldestFirst(ownerId: string): Promise<Connection[]>;
 
   get(id: string, ownerId: string): Promise<Connection | null>;
+  getById(id: string): Promise<Connection | null>;
+  listDue(skewSec: number): Promise<Connection[]>;
 
   updateAuth(id: string, auth: ConnectionAuthConfig): Promise<void>;
 
@@ -60,7 +62,7 @@ export interface ConnectionsRepository {
   listOwnersOfTemplate(templateId: string): Promise<string[]>;
 }
 
-interface InternalConnectionRow {
+interface ConnectionRow {
   id: string;
   owner: string;
   templateId: string;
@@ -72,23 +74,33 @@ interface InternalConnectionRow {
   updatedAt: Date;
 }
 
-function rowToConnection(row: InternalConnectionRow): Connection {
-  const auth = authConfigSchema.parse(row.auth);
-  const contributions = Array.isArray(row.contributions)
-    ? row.contributions
-        .map((c) => contributionSchema.safeParse(c))
-        .filter((r): r is { success: true; data: Contribution } => r.success)
-        .map((r) => r.data)
-    : [];
+export function toConnection(row: ConnectionRow): Connection | null {
+  const auth = authConfigSchema.safeParse(row.auth);
+  if (!auth.success) return null;
   return {
     id: row.id,
     ownerId: row.owner,
     templateId: row.templateId,
     name: row.name,
     inputs: (row.inputs as Record<string, unknown>) ?? {},
-    auth,
-    contributions,
+    auth: auth.data,
+    contributions: contributionsOf(row.contributions),
   };
+}
+
+function contributionsOf(raw: unknown): Contribution[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((c) => {
+    const parsed = contributionSchema.safeParse(c);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+function connectionsOf(rows: readonly ConnectionRow[]): Connection[] {
+  return rows.flatMap((row) => {
+    const conn = toConnection(row);
+    return conn ? [conn] : [];
+  });
 }
 
 export function createConnectionsRepository(db: Db): ConnectionsRepository {
@@ -110,8 +122,8 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .select()
         .from(connectionsTable)
         .where(eq(connectionsTable.owner, ownerId))
-        .orderBy(asc(connectionsTable.name))) as InternalConnectionRow[];
-      return rows.map(rowToConnection);
+        .orderBy(asc(connectionsTable.name))) as ConnectionRow[];
+      return connectionsOf(rows);
     },
 
     async listByOwnerOldestFirst(ownerId): Promise<Connection[]> {
@@ -122,8 +134,8 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .orderBy(
           asc(connectionsTable.createdAt),
           asc(connectionsTable.id),
-        )) as InternalConnectionRow[];
-      return rows.map(rowToConnection);
+        )) as ConnectionRow[];
+      return connectionsOf(rows);
     },
 
     async get(id, ownerId): Promise<Connection | null> {
@@ -132,8 +144,37 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .from(connectionsTable)
         .where(
           and(eq(connectionsTable.id, id), eq(connectionsTable.owner, ownerId)),
-        )) as InternalConnectionRow[];
-      return rows[0] ? rowToConnection(rows[0]) : null;
+        )) as ConnectionRow[];
+      return rows[0] ? toConnection(rows[0]) : null;
+    },
+
+    async getById(id): Promise<Connection | null> {
+      const rows = (await db
+        .select()
+        .from(connectionsTable)
+        .where(eq(connectionsTable.id, id))) as ConnectionRow[];
+      return rows[0] ? toConnection(rows[0]) : null;
+    },
+
+    async listDue(skewSec): Promise<Connection[]> {
+      const rows = (await db
+        .select()
+        .from(connectionsTable)
+        .where(
+          and(
+            inArray(sql`${connectionsTable.auth} ->> 'kind'`, [
+              "oauth",
+              "client-credentials",
+              "github-app",
+            ]),
+            sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
+            sql`
+              (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
+              AND ((${connectionsTable.auth} ->> 'expiresAt')::int - extract(epoch from now())::int) <= ${skewSec}
+            `,
+          ),
+        )) as ConnectionRow[];
+      return connectionsOf(rows);
     },
 
     async updateAuth(id, auth): Promise<void> {
@@ -255,8 +296,8 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
             connectionsTable.id,
             grants.map((g) => g.connectionId),
           ),
-        )) as InternalConnectionRow[];
-      return rows.map(rowToConnection);
+        )) as ConnectionRow[];
+      return connectionsOf(rows);
     },
 
     async listAgentsForConnection(connectionId): Promise<string[]> {

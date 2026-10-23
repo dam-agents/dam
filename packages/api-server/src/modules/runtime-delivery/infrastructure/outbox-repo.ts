@@ -130,26 +130,13 @@ export interface OutboxRepo {
   ): Promise<void>;
 }
 
-interface InternalRow {
-  agentId: string;
-  version: number;
-  lastEnqueuedAt: Date;
-  lastSettledVersion: number;
-  lastAppliedVersion: number;
-  lastAppliedHash: string | null;
-  lastAppliedAt: Date | null;
-  applyFailures: DriverFailure[];
-  applyAttempts: number;
-  droppedContributionKinds: ContributionKind[];
-}
-
 export function createOutboxRepo(db: Db): OutboxRepo {
   return {
     async getRow(agentId, tx = db): Promise<OutboxRow | null> {
       const rows = (await tx
         .select()
         .from(runtimeStateOutbox)
-        .where(eq(runtimeStateOutbox.agentId, agentId))) as InternalRow[];
+        .where(eq(runtimeStateOutbox.agentId, agentId))) as OutboxRow[];
       return rows[0] ?? null;
     },
 
@@ -174,7 +161,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       const rows = (await db
         .select()
         .from(runtimeStateOutbox)
-        .where(inArray(runtimeStateOutbox.agentId, agentIds))) as InternalRow[];
+        .where(inArray(runtimeStateOutbox.agentId, agentIds))) as OutboxRow[];
       return rows;
     },
 
@@ -258,7 +245,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           .select()
           .from(runtimeStateOutbox)
           .where(eq(runtimeStateOutbox.agentId, agentId))
-          .for("update")) as InternalRow[];
+          .for("update")) as OutboxRow[];
         const prev = locked[0];
         if (!prev) {
           return {
@@ -433,7 +420,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
                 AND re.expires_at > now()
             )`,
           ),
-        )) as InternalRow[];
+        )) as OutboxRow[];
       return rows;
     },
 

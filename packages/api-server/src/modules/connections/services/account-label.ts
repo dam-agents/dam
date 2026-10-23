@@ -18,10 +18,12 @@ import {
   lookupSlackAccount,
   type AccountLookup,
 } from "../infrastructure/account-lookups.js";
-import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
+import {
+  toConnection,
+  type ConnectionsRepository,
+} from "../infrastructure/connections-repository.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { securityLog } from "../../../core/security-log.js";
-import { parseConnectionRow } from "./oauth-refresh.js";
 
 export function accountLookupFor(
   template: ConnectionTemplate | null | undefined,
@@ -136,7 +138,7 @@ export function createAccountLabelBackfill(deps: {
         ),
       );
     return rows
-      .map((r) => parseConnectionRow(r))
+      .map(toConnection)
       .filter((c): c is Connection => c !== null && !attempted.has(c.id));
   }
 

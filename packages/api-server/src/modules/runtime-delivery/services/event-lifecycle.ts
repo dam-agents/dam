@@ -28,3 +28,17 @@ export function createEventLifecycleNotifier(
     }
   };
 }
+
+export async function ownerForEvent(
+  agentId: string,
+  resolveOwner: (agentId: string) => Promise<string | null>,
+  log: (msg: string) => void,
+  failure: string,
+): Promise<string | null> {
+  try {
+    return await resolveOwner(agentId);
+  } catch (err) {
+    log(`${failure}: ${(err as Error).message}`);
+    return null;
+  }
+}
