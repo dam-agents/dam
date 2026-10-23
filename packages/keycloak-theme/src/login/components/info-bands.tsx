@@ -440,7 +440,6 @@ function DottedCircle({
 export function BandIntegrations() {
   return (
     <section className="relative min-h-[100dvh] snap-start overflow-hidden">
-      <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-muted/30 lg:block" />
       <div className="relative flex min-h-[100dvh] items-center">
         <div className="mx-auto w-full max-w-[1120px] px-6">
           <div className="flex flex-col items-center gap-16 lg:flex-row lg:gap-20">
@@ -459,11 +458,11 @@ export function BandIntegrations() {
 
             {/* Right — stacked app windows */}
             <div className="hidden flex-1 items-center justify-center lg:flex">
-              <div className="relative" style={{ width: 480, height: 540 }}>
-                <DottedCircle size={440} style={{ top: 50, left: 40 }} />
+              <div className="relative" style={{ width: 490, height: 580 }}>
+                <DottedCircle size={440} style={{ top: 70, left: 25 }} />
 
                 {/* Row 1 — Slack (wide) + Web chat (narrow) */}
-                <div className={`${CARD} absolute left-[20px] top-[0px] w-[300px] overflow-hidden`}>
+                <div className={`${CARD} absolute left-[30px] top-[0px] w-[280px] overflow-hidden`}>
                   <div className="flex items-center gap-1.5 border-b border-input bg-muted/40 px-3 py-1.5">
                     <svg width="12" height="12" viewBox="0 0 128 128" aria-hidden>
                       <path d="M27.255 80.719c0 7.33-5.978 13.317-13.309 13.317C6.616 94.036.63 88.049.63 80.719s5.987-13.317 13.317-13.317h13.309zm6.709 0c0-7.33 5.987-13.317 13.317-13.317s13.317 5.986 13.317 13.317v33.335c0 7.33-5.986 13.317-13.317 13.317-7.33 0-13.317-5.987-13.317-13.317z" fill="#E01E5A"/>
@@ -478,7 +477,7 @@ export function BandIntegrations() {
                   <MiniSlack className="h-[150px]" />
                 </div>
 
-                <div className={`${CARD} absolute right-[0px] top-[20px] w-[200px] overflow-hidden`}>
+                <div className={`${CARD} absolute right-[5px] top-[10px] w-[200px] overflow-hidden`}>
                   <div className="flex items-center gap-1.5 border-b border-input bg-muted/40 px-3 py-1.5">
                     <span className="text-[10px] font-semibold text-muted-foreground">
                       DAM Web UI
@@ -488,7 +487,7 @@ export function BandIntegrations() {
                 </div>
 
                 {/* Row 2 — GitHub (wide, overlapping) */}
-                <div className={`${CARD} absolute left-[60px] top-[165px] w-[320px] overflow-hidden`}>
+                <div className={`${CARD} absolute left-[55px] top-[180px] w-[310px] overflow-hidden`}>
                   <div className="flex items-center gap-1.5 border-b border-input bg-muted/40 px-3 py-1.5">
                     <svg width="12" height="12" viewBox="0 0 98 96" aria-hidden>
                       <path fillRule="evenodd" clipRule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0112.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" className="fill-foreground"/>
@@ -501,7 +500,7 @@ export function BandIntegrations() {
                 </div>
 
                 {/* Row 3 — Terminal (dark, wide) */}
-                <div className="absolute left-[10px] top-[320px] w-[330px] overflow-hidden rounded-xl border border-[#333] shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
+                <div className="absolute left-[15px] top-[345px] w-[310px] overflow-hidden rounded-xl border border-[#333] shadow-[0_8px_32px_rgba(0,0,0,0.15)]">
                   <div className="flex items-center gap-1.5 border-b border-[#333] bg-[#252526] px-3 py-1.5">
                     <div className="size-[7px] rounded-full bg-[#ff5f57]" />
                     <div className="size-[7px] rounded-full bg-[#febc2e]" />
@@ -514,10 +513,10 @@ export function BandIntegrations() {
                 </div>
 
                 {/* Row 3 — VS Code (overlapping terminal, right) */}
-                <div className={`${CARD} absolute right-[10px] top-[370px] w-[230px] overflow-hidden`}>
+                <div className={`${CARD} absolute right-[5px] top-[395px] w-[230px] overflow-hidden`}>
                   <div className="flex items-center gap-1.5 border-b border-input bg-muted/40 px-3 py-1.5">
-                    <svg width="12" height="12" viewBox="0 0 256 256" aria-hidden>
-                      <path d="M180.828 252.605a15.872 15.872 0 0012.65-.486l52.501-25.262a15.94 15.94 0 009.025-14.384V43.527a15.94 15.94 0 00-9.025-14.384l-52.5-25.263a15.877 15.877 0 00-18.115 3.084L74.857 96.35l-40.833-30.96a10.614 10.614 0 00-13.569.603L3.476 80.49a10.63 10.63 0 00-.005 15.04l35.417 32.483-35.417 32.483a10.63 10.63 0 00.005 15.04l16.979 14.497a10.614 10.614 0 0013.569.604l40.833-30.961 100.507 89.386a15.852 15.852 0 005.464 3.543zM192.898 80.762l-75.916 47.243 75.916 47.244z" fill="#007ACC"/>
+                    <svg width="14" height="14" viewBox="0 0 100 100" aria-hidden>
+                      <path d="M97.1 11.3l-23-9.7c-2-.8-4.3-.3-5.8 1.2L26.8 41.8 11.1 30c-1.6-1.2-3.9-1.1-5.4.2l-4.2 3.8c-1.7 1.5-1.7 4.2 0 5.7L14.1 50 1.5 60.3c-1.7 1.5-1.7 4.2 0 5.7l4.2 3.8c1.5 1.3 3.8 1.4 5.4.2l15.7-11.8 41.5 39c1.5 1.5 3.8 2 5.8 1.2l23-9.7c1.8-.8 3-2.5 3-4.5V15.8c0-2-1.2-3.7-3-4.5zM75.5 73.4L41.3 50l34.2-23.4v46.8z" fill="#007ACC"/>
                     </svg>
                     <span className="text-[10px] font-semibold text-muted-foreground">
                       VS Code
@@ -535,59 +534,71 @@ export function BandIntegrations() {
 }
 /* ═══════ Band 2: Everything it needs to work like a teammate ═════════ */
 
-export function BandCapabilities() {
+export function BandCapabilities({ brandName }: { brandName: string }) {
   useStackGestureStyles();
   return (
-    <section className="flex min-h-[100dvh] snap-start items-center overflow-x-clip bg-muted/30 py-24 lg:py-32">
-      <div className="mx-auto w-full max-w-[1120px] px-6">
-        <div className="flex flex-col items-center gap-16 lg:flex-row lg:gap-16">
-          {/* Left — text */}
-          <div className="lg:w-[340px] lg:shrink-0">
-            <SectionLabel>What can my agent do?</SectionLabel>
-            <SectionTitle>
-              Everything it needs to work like a teammate
-            </SectionTitle>
-            <p className="mt-5 text-[16px] leading-relaxed text-muted-foreground">
-              Every agent is assembled from reusable building blocks. Compose
-              them however your team needs.
-            </p>
-          </div>
+    <section className="relative min-h-[100dvh] snap-start overflow-x-clip bg-muted/30">
+      <div className="flex min-h-[100dvh] items-center">
+        <div className="mx-auto w-full max-w-[1120px] px-6">
+          <div className="grid items-center gap-12 lg:grid-cols-2">
+            {/* Left — text */}
+            <div>
+              <SectionLabel>What is {brandName}?</SectionLabel>
+              <SectionTitle>
+                Agents that work like teammates
+              </SectionTitle>
+              <p className="mt-5 max-w-md text-[16px] leading-relaxed text-muted-foreground">
+                Each agent runs in its own sandbox, keeps its files, and keeps
+                working after you log off. Build it from reusable blocks,
+                connect the tools you already use, and hand off the work.{" "}
+                <a
+                  href={LOGIN_DOCS_URL}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-accent hover:underline"
+                >
+                  Read the docs
+                </a>
+              </p>
+            </div>
 
-          {/* Right — agent with floating scene cards */}
-          <div className="flex flex-1 items-center justify-center">
-            <div className="relative" style={{ width: 560, height: 640 }}>
-              {/* Agent character — centered, uses storybook gesture */}
-              <div className="group absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer">
-                <div className="bee-avatar bee-char bee-awake" data-icon="stack">
-                  <svg viewBox="850 350 1800 2800" fill="none" className="h-[200px] w-auto" aria-hidden="true">
-                    <g className="bee-eyes-wake">
-                      <path fillRule="evenodd" clipRule="evenodd" d="M1391.43 447C1253.67 447 1142 558.7 1142 696.5C1142 834.3 1253.67 946 1391.43 946C1529.18 946 1640.84 834.3 1640.84 696.5C1640.84 558.7 1529.18 447 1391.43 447Z" fill="#E89DA8" />
-                      <path fillRule="evenodd" clipRule="evenodd" d="M2094.25 447C1956.52 447 1844.84 558.7 1844.84 696.5C1844.84 834.3 1956.52 946 2094.25 946C2232 946 2343.67 834.3 2343.67 696.5C2343.67 558.7 2232 447 2094.25 447Z" fill="#E89DA8" />
-                    </g>
-                    <rect x="935" y="1125" width="1616" height="489.42" fill="#5B76D2" />
-                    <rect x="935" y="1837.52" width="1616" height="489.41" fill="#5B76D2" />
-                    <rect x="935" y="2550.04" width="1616" height="489.41" fill="#5B76D2" />
-                  </svg>
+            {/* Right — agent with floating scene cards */}
+            <div className="relative hidden min-h-[660px] lg:block">
+              {/* Everything positioned from the center of this container */}
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%)" }}>
+                {/* Agent — center focal point */}
+                <div className="group relative z-10 cursor-pointer overflow-visible">
+                  <div className="bee-avatar bee-char bee-awake overflow-visible" data-icon="stack">
+                    <svg viewBox="850 350 1800 2800" fill="none" className="h-[150px] w-auto overflow-visible" aria-hidden="true">
+                      <g className="bee-eyes-wake">
+                        <path fillRule="evenodd" clipRule="evenodd" d="M1391.43 447C1253.67 447 1142 558.7 1142 696.5C1142 834.3 1253.67 946 1391.43 946C1529.18 946 1640.84 834.3 1640.84 696.5C1640.84 558.7 1529.18 447 1391.43 447Z" fill="#E89DA8" />
+                        <path fillRule="evenodd" clipRule="evenodd" d="M2094.25 447C1956.52 447 1844.84 558.7 1844.84 696.5C1844.84 834.3 1956.52 946 2094.25 946C2232 946 2343.67 834.3 2343.67 696.5C2343.67 558.7 2232 447 2094.25 447Z" fill="#E89DA8" />
+                      </g>
+                      <rect x="935" y="1125" width="1616" height="489.42" fill="#5B76D2" />
+                      <rect x="935" y="1837.52" width="1616" height="489.41" fill="#5B76D2" />
+                      <rect x="935" y="2550.04" width="1616" height="489.41" fill="#5B76D2" />
+                    </svg>
+                  </div>
                 </div>
               </div>
 
-              {/* Floating scene cards around the agent */}
-              <div className="absolute" style={{ left: 0, top: 0, transform: "scale(0.78)", transformOrigin: "top left" }}>
+              {/* Cards orbiting the agent — offsets from center */}
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-180px, -190px) scale(0.73) rotate(-2deg)" }}>
                 <SchedulesScene />
               </div>
-              <div className="absolute" style={{ right: 0, top: 0, transform: "scale(0.78)", transformOrigin: "top right" }}>
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(65px, -195px) scale(0.75) rotate(1.5deg)" }}>
                 <FilesScene />
               </div>
-              <div className="absolute" style={{ left: 0, top: 220, transform: "scale(0.78)", transformOrigin: "top left" }}>
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-305px, -10px) scale(0.71) rotate(1deg)" }}>
                 <ConnectionsScene />
               </div>
-              <div className="absolute" style={{ right: 0, top: 210, transform: "scale(0.78)", transformOrigin: "top right" }}>
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(140px, 10px) scale(0.74) rotate(-1.5deg)" }}>
                 <SkillsScene />
               </div>
-              <div className="absolute" style={{ left: 20, bottom: 0, transform: "scale(0.78)", transformOrigin: "bottom left" }}>
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(-200px, 180px) scale(0.72) rotate(2deg)" }}>
                 <KnowledgeScene />
               </div>
-              <div className="absolute" style={{ right: 10, bottom: 0, transform: "scale(0.78)", transformOrigin: "bottom right" }}>
+              <div className="absolute left-1/2 top-1/2" style={{ transform: "translate(-50%, -50%) translate(90px, 190px) scale(0.73) rotate(-1deg)" }}>
                 <ArtifactsScene />
               </div>
             </div>
@@ -851,12 +862,12 @@ function ArtifactsScene() {
 export function BandChannels() {
   return (
     <section className="relative min-h-[100dvh] snap-start overflow-hidden">
-      {/* Right half — single big green wing behind the illustration */}
+      {/* Right half — green wing peeks from the right of the Slack illustration */}
       <div className="absolute inset-y-0 right-0 z-10 hidden w-1/2 items-center lg:flex">
         <svg
-          className="absolute left-[2%] top-1/2 -translate-y-1/2"
-          width="325"
-          height="550"
+          className="absolute right-[5%] top-[38%] -translate-y-1/2"
+          width="300"
+          height="500"
           viewBox="83 14 26 44"
           fill="none"
           aria-hidden
@@ -955,7 +966,7 @@ function FeatureBullet({ children }: { children: React.ReactNode }) {
 
 function SandboxListCard() {
   return (
-    <div className="relative z-10 w-full max-w-[440px]">
+    <div className="relative z-10 w-[440px]">
       <div className={`${CARD} overflow-hidden`}>
         <div className="px-5 pb-2 pt-4">
           <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
@@ -1004,11 +1015,12 @@ function SandboxRow({
         )}
       </div>
       <span
-        className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs tracking-[0.338px] ${
+        className="inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs tracking-[0.338px]"
+        style={
           status === "running"
-            ? "bg-emerald-500/15 text-green-700 dark:text-emerald-400"
-            : "bg-sky-500/15 text-sky-700 dark:text-sky-400"
-        }`}
+            ? { backgroundColor: "#defbe6", color: "#15803d" }
+            : { backgroundColor: "#edf5ff", color: "#0f62fe" }
+        }
       >
         {status === "running" ? "Working" : "Idle"}
       </span>
@@ -1186,7 +1198,7 @@ function useTestimonialCarousel() {
         setIdx((prev) => (prev + 1) % TESTIMONIALS.length);
         setFade(true);
       }, 400);
-    }, 5000);
+    }, 12000);
     return () => clearInterval(id);
   }, []);
 
@@ -1222,195 +1234,56 @@ function CarouselDots({ idx, onSelect }: { idx: number; onSelect: (i: number) =>
 
 /* — Layout A: Centered (original) — quote centered with dots below — */
 
-function TestimonialLayoutA() {
+export function BandTestimonials({ brandName }: { brandName: string }) {
   const { idx, fade, goTo, t } = useTestimonialCarousel();
-
-  return (
-    <div className="flex flex-col items-center">
-      <div
-        className="max-w-[600px] text-center transition-opacity duration-400"
-        style={{ opacity: fade ? 1 : 0 }}
-      >
-        <svg
-          className="mx-auto mb-6 size-8 text-foreground opacity-10"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"
-            fill="currentColor"
-          />
-        </svg>
-        <p className="text-[20px] leading-[1.7] text-foreground md:text-[22px]">
-          {t.quote}
-        </p>
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <span className="text-[13px] font-medium text-muted-foreground">
-            {t.role}
-          </span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-[13px] font-medium text-muted-foreground">
-            {t.tag}
-          </span>
-        </div>
-      </div>
-
-      <CarouselDots idx={idx} onSelect={goTo} />
-    </div>
-  );
-}
-
-/* — Layout B: Left-aligned — header left, quote right — */
-
-function TestimonialLayoutB() {
-  const { idx, fade, goTo, t } = useTestimonialCarousel();
-
-  return (
-    <div className="grid items-center gap-12 lg:grid-cols-2">
-      <div>
-        <SectionLabel>From the community</SectionLabel>
-        <SectionTitle>
-          Teams are already shipping
-          <br />
-          with agents.
-        </SectionTitle>
-        <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted-foreground">
-          Real stories from teams running agents in production.
-        </p>
-        <CarouselDots idx={idx} onSelect={goTo} />
-      </div>
-
-      <div
-        className="transition-opacity duration-400"
-        style={{ opacity: fade ? 1 : 0 }}
-      >
-        <svg
-          className="mb-5 size-8 text-foreground opacity-10"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"
-            fill="currentColor"
-          />
-        </svg>
-        <p className="text-[22px] font-light leading-[1.7] text-foreground md:text-[26px]">
-          {t.quote}
-        </p>
-        <div className="mt-6 flex items-center gap-3">
-          <span className="text-[13px] font-medium text-muted-foreground">
-            {t.role}
-          </span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-[13px] font-medium text-muted-foreground">
-            {t.tag}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* — Layout C: Stacked — large quote above, meta + dots below — */
-
-function TestimonialLayoutC() {
-  const { idx, fade, goTo, t } = useTestimonialCarousel();
-
-  return (
-    <div className="flex flex-col items-center">
-      <div
-        className="w-full max-w-[800px] transition-opacity duration-400"
-        style={{ opacity: fade ? 1 : 0 }}
-      >
-        <svg
-          className="mx-auto mb-8 size-10 text-foreground opacity-10"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"
-            fill="currentColor"
-          />
-        </svg>
-        <p className="text-center text-[26px] font-light leading-[1.6] text-foreground md:text-[32px]">
-          {t.quote}
-        </p>
-      </div>
-
-      <div
-        className="mt-8 flex items-center gap-4 transition-opacity duration-400"
-        style={{ opacity: fade ? 1 : 0 }}
-      >
-        <div className="h-px w-8 bg-foreground/20" />
-        <span className="text-[14px] font-medium text-muted-foreground">
-          {t.role}
-        </span>
-        <span className="text-muted-foreground/40">·</span>
-        <span className="text-[14px] font-medium text-muted-foreground">
-          {t.tag}
-        </span>
-        <div className="h-px w-8 bg-foreground/20" />
-      </div>
-
-      <CarouselDots idx={idx} onSelect={goTo} />
-    </div>
-  );
-}
-
-/* — Testimonials section with dev layout switcher — */
-
-const LAYOUT_OPTIONS = [
-  "A: Centered",
-  "B: Split",
-  "C: Full-width",
-] as const;
-
-export function BandTestimonials() {
-  const [layout, setLayout] = useState(0);
 
   return (
     <section className="flex min-h-[100dvh] snap-start flex-col justify-center overflow-hidden py-24 lg:py-32">
       <div className="mx-auto w-full max-w-[1120px] px-6">
-        <div className="mb-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-orange-300 bg-orange-50 px-4 py-2 dark:border-orange-700 dark:bg-orange-950/30">
-          <span className="text-[11px] font-semibold uppercase tracking-widest text-orange-600 dark:text-orange-400">
-            Layout:
-          </span>
-          {LAYOUT_OPTIONS.map((label, i) => (
-            <button
-              key={i}
-              onClick={() => setLayout(i)}
-              className={`rounded-md px-3 py-1 text-[12px] font-medium transition-colors ${
-                layout === i
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:bg-foreground/10"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {layout !== 1 && (
-          <div className="text-center">
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          <div>
             <SectionLabel>From the community</SectionLabel>
             <SectionTitle>
-              Teams are already shipping
+              See how your colleagues
               <br />
-              with agents.
+              are using {brandName}.
             </SectionTitle>
-            <p className="mx-auto mt-4 max-w-md text-[16px] leading-relaxed text-muted-foreground">
-              Real stories from teams running agents in production.
+            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted-foreground">
+              Real stories from teams running agents every day.
             </p>
           </div>
-        )}
 
-        <div className="mt-16">
-          {layout === 0 && <TestimonialLayoutA />}
-          {layout === 1 && <TestimonialLayoutB />}
-          {layout === 2 && <TestimonialLayoutC />}
+          <div className="flex flex-col items-center justify-center">
+            <div
+              className="w-full transition-opacity duration-400"
+              style={{ opacity: fade ? 1 : 0 }}
+            >
+              <svg
+                className="mb-6 size-10 text-foreground opacity-10"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"
+                  fill="currentColor"
+                />
+              </svg>
+              <p className="text-[32px] font-normal leading-[1.5] text-foreground md:text-[42px]">
+                {t.quote}
+              </p>
+              <div className="mt-6 flex items-center gap-3">
+                <span className="text-[13px] font-medium text-muted-foreground">
+                  {t.role}
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <span className="text-[13px] font-medium text-muted-foreground">
+                  {t.tag}
+                </span>
+              </div>
+            </div>
+            <CarouselDots idx={idx} onSelect={goTo} />
+          </div>
         </div>
       </div>
     </section>

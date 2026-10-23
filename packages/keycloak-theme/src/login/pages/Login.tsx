@@ -326,12 +326,12 @@ function ScrollPage({
       </section>
 
       <div id="info-bands">
-        <BandCapabilities />
+        <BandCapabilities brandName={kcContext.realm.displayName || "Platform"} />
         <BandChannels />
         <BandSandbox />
         <BandDevOps />
         <BandIntegrations />
-        <BandTestimonials />
+        <BandTestimonials brandName={kcContext.realm.displayName || "Platform"} />
         <BandAccess
           formEl={bottomFormEl}
           characters={<InteractiveCharacterWidget />}
@@ -357,20 +357,6 @@ function HeroLeft({
       <div className="max-w-sm space-y-6">
         <p className="text-7xl font-light leading-[0.95] -tracking-[0.04em] text-foreground">
           Deploy Agents Massively
-        </p>
-        <p className="text-[15px] leading-relaxed text-pretty text-muted-foreground">
-          Each agent runs in its own sandbox, keeps its files, and keeps working
-          after you log off. Connect the tools you already use, and hand off the
-          work.{" "}
-          <a
-            href={LOGIN_DOCS_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-accent hover:underline"
-          >
-            Read the docs
-          </a>
-          .
         </p>
         {message}
         {heroFormEl}
