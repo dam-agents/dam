@@ -97,7 +97,7 @@ func TestARunnerChangeWakesOnlyItsOwnersVMAgents(t *testing.T) {
 	add("vm-other", "someone-else")
 	r.WithAgentCache(cache.NewGenericLister(indexer, schema.GroupResource{Group: AgentsGVR.Group, Resource: AgentsGVR.Resource}))
 
-	assert.Equal(t, []string{"vm-one", "vm-two"}, r.OwnerVMAgents(testOwner))
+	assert.ElementsMatch(t, []string{"vm-one", "vm-two"}, r.OwnerVMAgents(testOwner))
 	assert.Empty(t, r.OwnerVMAgents(""))
 }
 
