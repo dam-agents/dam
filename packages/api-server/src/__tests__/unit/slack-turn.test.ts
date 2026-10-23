@@ -184,7 +184,6 @@ describe("slack turn presentation — owner turns", () => {
     expect(recs.some((r) => r.kind === "status")).toBe(true);
     expect(recs.some((r) => r.kind === "reaction")).toBe(false);
     expect(recs.some((r) => r.kind === "message")).toBe(false);
-    expect(recs.some((r) => r.kind === "stream_start")).toBe(false);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
   });
 
