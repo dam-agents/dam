@@ -1,3 +1,7 @@
+export function oauthCallbackUrl(uiBaseUrl: string): string {
+  return `${uiBaseUrl}/api/oauth/callback`;
+}
+
 export function applyCallbackAlias(
   callbackUrl: string,
   localhostCallbackAlias?: string,
