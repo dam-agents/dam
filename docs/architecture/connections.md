@@ -103,6 +103,10 @@ The page holds a token that does not pass, and one that passes but expires withi
 Saved through any path, the token keeps the result and its time on the Connection, which every listing carries, so a token saved after a failed check does not read like a healthy one; the owner can check one stored credential again, which replaces the result, and a provider key is checked again with its provider check.
 The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
 The page covers the static and minting kinds; OAuth needs no secret here.
+An Agent can ask for the same page through its platform MCP server (the `connection_secret` tool), as its owner: the link is the owner's, and the page names the Agent that asked.
+An Agent's request is narrower than the CLI's, because the Agent, not the person, chose its inputs: a new Connection must send the secret only to the hosts its template presets without config inputs, so a custom template, an S3 endpoint or a host of the Agent's choosing is refused, and a rotation names only a Connection granted to that Agent.
+The Connection the page creates is granted to the Agent that asked, and the status that Agent polls says whether the grant took; it reads only its own requests.
+OAuth stays a person's step: an Agent does not start a sign-in.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
 A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it.
 A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action.

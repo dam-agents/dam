@@ -7,6 +7,7 @@ import {
   Misuse,
 } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
+import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import { continueLabel } from "../../spend/lib/copy.js";
@@ -36,6 +37,7 @@ export interface ApprovalAction {
 
 interface ApprovalActions {
   actions: readonly ApprovalAction[];
+  primary: ApprovalActionId;
   inflight: boolean;
   hostLabel: string | null;
   expiredNote: string | null;
@@ -63,7 +65,10 @@ export function useApprovalActions(
 
   const live =
     row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now();
-  const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
+  const hostLabel =
+    row.payload.kind === "ext_authz" || row.payload.kind === "egress_proposal"
+      ? row.payload.host
+      : null;
   const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
 
   const confirmed = async (
@@ -194,10 +199,42 @@ export function useApprovalActions(
     },
   ];
 
-  const spendLimit = row.type === "spend_limit";
+  const hostWideAction = egressActions.find((a) => a.id === "allow-host");
+  const proposalActions: ApprovalAction[] = [
+    {
+      id: "allow-permanent",
+      label: "Allow",
+      icon: CheckmarkFilled,
+      danger: false,
+      disabled: inflight,
+      tooltip: "Writes the rule the agent proposed",
+      resolvedLabel: "Allowed",
+      run: () =>
+        confirmed(restart.confirmNarrow, "Allow & restart", () =>
+          each(approvePermanent.mutateAsync),
+        ),
+    },
+    ...(hostWideAction ? [hostWideAction] : []),
+    {
+      id: "dismiss",
+      label: "Decline",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      tooltip: "Write no rule; the agent is told you declined",
+      resolvedLabel: "Declined",
+      run: () => direct(() => each(dismiss.mutateAsync)),
+    },
+  ];
+
+  const actions = match(row.type)
+    .with("spend_limit", () => spendLimitActions)
+    .with("egress_proposal", () => proposalActions)
+    .otherwise(() => egressActions);
 
   return {
-    actions: spendLimit ? spendLimitActions : egressActions,
+    actions,
+    primary: row.type === "egress_proposal" ? "allow-permanent" : "allow-once",
     inflight,
     hostLabel,
     expiredNote:

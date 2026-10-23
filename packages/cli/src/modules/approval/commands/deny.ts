@@ -25,7 +25,7 @@ export function buildDenyCommand(deps: {
     .option("--json", "emit the raw action outcome as JSON")
     .addHelpText(
       "after",
-      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. On a spend-limit question (spend_limit),\ndeny stops the Agent for today and writes no rule.\n",
+      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. On a spend-limit question (spend_limit),\ndeny stops the Agent for today and writes no rule. On a rule an agent proposed\n(egress_proposal), every form of deny declines it and writes no rule.\n",
     )
     .action(
       async (

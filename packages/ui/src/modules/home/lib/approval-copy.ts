@@ -18,6 +18,7 @@ export function approvalHeadline(approval: ApprovalView): string {
     .with({ kind: "ext_authz" }, () => "Wants to access network")
     .with({ kind: "acp_native" }, () => "Wants to run a command")
     .with({ kind: "spend_limit" }, () => "Reached its spend limit")
+    .with({ kind: "egress_proposal" }, () => "Proposes a network rule")
     .exhaustive();
 }
 
@@ -65,22 +66,41 @@ export function approvalDetail(
   const payload = approval.payload;
   if (payload.kind === "spend_limit")
     return spendLimitDetail(payload, connectionName);
-  if (payload.kind !== "ext_authz") return payload.toolName;
+  if (payload.kind === "acp_native") return payload.toolName;
   const target =
     payload.path === "*"
       ? `${payload.host} (any path)`
       : `${payload.host}${payload.path}`;
   const request =
     payload.method === "*" ? target : `${payload.method} ${target}`;
+  if (payload.kind === "egress_proposal") return request;
   return payload.viaEnvironment
     ? `${request}, from its Environment ${payload.viaEnvironment}`
     : request;
 }
 
+export function approvalReason(approval: ApprovalView): string | null {
+  return approval.payload.kind === "egress_proposal"
+    ? approval.payload.reason
+    : null;
+}
+
 export function approvalHideHint(approval: ApprovalView): string {
-  return approval.payload.kind === "spend_limit"
-    ? `Hides this from Home. The question stays open until ${localResetTime(approval.expiresAt)} your time.`
-    : "Hides this from Home. The request stays pending — resolve it in the session.";
+  return match(approval.payload.kind)
+    .with(
+      "spend_limit",
+      () =>
+        `Hides this from Home. The question stays open until ${localResetTime(approval.expiresAt)} your time.`,
+    )
+    .with(
+      "egress_proposal",
+      () =>
+        "Hides this from Home. The proposal stays open in the agent's chat.",
+    )
+    .otherwise(
+      () =>
+        "Hides this from Home. The request stays pending — resolve it in the session.",
+    );
 }
 
 export function approvalsBannerCopy(

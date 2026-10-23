@@ -11,6 +11,7 @@ import {
   approvalDetail,
   approvalHeadline,
   approvalHideHint,
+  approvalReason,
 } from "../lib/approval-copy.js";
 
 interface Props {
@@ -36,8 +37,9 @@ export function FeedApprovalCard({
   resolvedLabel = null,
   onResolved,
 }: Props) {
-  const { actions, inflight, hostLabel, expiredNote, openSettings } =
+  const { actions, primary, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval, ids);
+  const reason = approvalReason(approval);
   const { data: connections } = useAppConnections();
   const connectionName = (id: string) =>
     connections?.find((connection) => connection.id === id)?.name;
@@ -96,6 +98,15 @@ export function FeedApprovalCard({
         )}
       </div>
 
+      {reason && (
+        <p
+          data-testid="feed-approval-reason"
+          className="mt-2 text-sm text-muted-foreground break-words"
+        >
+          {reason}
+        </p>
+      )}
+
       {expiredNote && (
         <p className="mt-2 text-sm text-muted-foreground">{expiredNote}</p>
       )}
@@ -106,7 +117,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              /^(Denied|Always denied|Stopped)/.test(resolved)
+              /^(Denied|Always denied|Stopped|Declined)/.test(resolved)
                 ? "text-danger"
                 : "text-success",
             )}
@@ -117,6 +128,7 @@ export function FeedApprovalCard({
           <div className="flex items-center gap-2">
             <ApprovalActionsMenu
               actions={actions}
+              inline={[primary]}
               inflight={inflight}
               hostLabel={hostLabel}
               openSettings={openSettings}

@@ -231,6 +231,22 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
 When a run fails because the session has no model, the agent has no default model: run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
 When it fails because no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
+### Name and avatar
+
+```sh
+dam agent avatars
+dam agent update my-agent --name "Release helper"
+dam agent update my-agent --avatar compass
+dam agent update my-agent --avatar-file ./logo.png
+dam agent update my-agent --avatar-default
+```
+
+- `dam agent avatars` lists the built-in characters and which ones the user unlocked; a character unlocks when the user finishes a Getting Started task in the web app.
+  `--avatar` takes an unlocked character, or one emoji.
+- An emoji (`--avatar 🦊`) and an image (`--avatar-file`, a JPG or PNG of at most 2 MB) need custom avatars, which `dam agent avatars` shows as on or off; the user turns them on under Features in the web app's settings.
+- `--avatar-default` goes back to the character picked from the user and the agent's name.
+- `dam agent create` takes the same avatar flags, and `dam agent get` shows the avatar.
+
 ### Files
 
 ```sh
@@ -319,6 +335,7 @@ dam approval list --json
 `dam approval approve <id>` and `dam approval deny <id>` answer a pending request.
 For a network request they write a permanent rule for its host, method and path unless you pass `--once`, which answers only this one request.
 A request to go past a spend limit is an approval too: approving it allows one more limit amount of spend today.
+A rule a DAM agent proposed ahead of need is one too: approving it writes that rule, denying it writes none.
 Show the user what the request is and act only on their answer (hard rule 4).
 
 ### Channels

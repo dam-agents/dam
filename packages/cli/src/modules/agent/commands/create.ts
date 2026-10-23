@@ -24,6 +24,12 @@ import {
   validateAgentName,
 } from "./create-helpers.js";
 import { waitForRunningOrExit } from "./wait-or-exit.js";
+import type { AvatarUploader } from "../infrastructure/avatar-upload-client.js";
+import {
+  addAvatarOptions,
+  avatarFromFlagsOrExit,
+  type AvatarOpts,
+} from "./avatar-flags.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -32,14 +38,26 @@ import {
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
 
+interface CreateOpts extends AvatarOpts {
+  server?: string;
+  template?: string;
+  provider?: string;
+  description?: string;
+  env?: string[];
+  wait?: boolean;
+  timeout?: string;
+  json?: boolean;
+}
+
 export function buildCreateCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
   createTemplateService: (host: string) => TemplateService;
   createTrpcClient: (host: string) => TrpcClient;
+  createAvatarUploader: (host: string) => AvatarUploader;
 }): Command {
-  return new Command("create")
+  const cmd = new Command("create")
     .description("Create a new Agent from a template on the active host")
     .argument(
       "<name>",
@@ -53,7 +71,8 @@ export function buildCreateCommand(deps: {
       "--template <id>",
       "template id (default: the install's default template; see `dam template list`)",
     )
-    .option("--description <text>", "free-form description")
+    .option("--description <text>", "free-form description");
+  return addAvatarOptions(cmd, "start with")
     .option(
       "--provider <id-or-name>",
       "model-provider connection id or unique name (default: your preferred provider; see `dam connection list`)",
@@ -81,42 +100,20 @@ export function buildCreateCommand(deps: {
         "  dam agent create my-agent",
         '  dam agent create my-agent --provider "My provider" --wait',
         '  dam agent create my-agent --template default --provider conn-123 --description "Coding helper"',
+        "  dam agent create my-agent --avatar spark",
         "",
       ].join("\n"),
     )
-    .action(
-      async (
-        name: string,
-        opts: {
-          server?: string;
-          template?: string;
-          provider?: string;
-          description?: string;
-          env?: string[];
-          wait?: boolean;
-          timeout?: string;
-          json?: boolean;
-        },
-      ) => {
-        await runCreate(name, opts, deps);
-      },
-    );
+    .action(async (name: string, opts: CreateOpts) => {
+      await runCreate(name, opts, deps);
+    });
 }
 
 type CreateDeps = Parameters<typeof buildCreateCommand>[0];
 
 async function runCreate(
   name: string,
-  opts: {
-    server?: string;
-    template?: string;
-    provider?: string;
-    description?: string;
-    env?: string[];
-    wait?: boolean;
-    timeout?: string;
-    json?: boolean;
-  },
+  opts: CreateOpts,
   deps: CreateDeps,
 ): Promise<void> {
   const nameCheck = validateAgentName(name);
@@ -204,6 +201,11 @@ async function runCreate(
     }
     providerConnectionId = matches[0]!.id;
   }
+  const avatar = await avatarFromFlagsOrExit(opts, {
+    agentService: deps.createAgentService(host),
+    uploader: deps.createAvatarUploader(host),
+    host,
+  });
   const createInput = await parseOrExit(agentCreateInputSchema, {
     name,
     ...(template !== undefined && { templateId: template }),
@@ -212,6 +214,7 @@ async function runCreate(
       providerConnectionId,
     }),
     description: opts.description,
+    ...(avatar != null && { avatar }),
     env: env.length > 0 ? env : undefined,
   });
   let agent: AgentView;

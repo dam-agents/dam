@@ -114,7 +114,7 @@ The CLI is at parity with the web UI across these groups.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
-- **`agent`** — list, get, create, interactive create, update, models, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, update, models, avatars, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
 - **`metrics`** — an agent's measured spend by model and by session, and its recent calls ([Metrics](metrics.md), [Spend limits](spend-limits.md#ledger)).
@@ -204,6 +204,8 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Providers, harnesses and defaults** are the agent's Providers page: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying and the three Session Pair defaults ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections and saves or clears a default through the same procedures the page calls, so the server keeps every rule about which pair is valid; `models` lists a harness's model catalog from the agent-runtime.
   An `update` flag changes only what it names: a new model keeps the default's harness and settings, a new harness drops the settings, since they belong to one harness.
   A part `get` may not read, such as the providers for a key without credential-read permission, shows as unknown and leaves the rest.
+- **Name and avatar** are the identity the web app edits in place: `update --name` renames through the same procedure, with the server's name rules, and `--avatar`, `--avatar-file` and `--avatar-default` pick a character or an emoji, upload an image through the same endpoint and limits as the picker, or go back to the default ([agent avatars](agent-avatars.md)); `create` takes the avatar flags too.
+  The CLI keeps the picker's rules: a character only once it is unlocked, an emoji or an image only with custom avatars on; `avatars` lists the characters, which are unlocked, and whether custom avatars are on.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.
   A refused start — the agent parked because its owner's pool is full ([budgets](budgets.md)) — also ends the wait: it names the refusal, says how to free room, and exits non-zero, leaving the agent parked.
   A refusal already standing before a restart counts only once the wait saw another state or a short grace passed, because the first poll can still read the previous attempt's denial.

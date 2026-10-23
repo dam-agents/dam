@@ -35,7 +35,7 @@ gh_user() {  # <account id> <its line prefix, E2E_SANDBOX_<ID>_>
     case "$(gh_code "$tok" "$m" "$path" "$body")" in
       (404|422) ok "$id the token may write $repo's $what";;
       (403) bad "$id the token may not write $repo's $what — give it $name: Read and write";;
-      (*) bad "$id no answer from $m api.github.com/repos/$repo/$path (its egress rule is added by hand)";;
+      (*) bad "$id no answer from $m api.github.com/repos/$repo/$path (propose its egress rule with the egress_proposal tool, or add it by hand)";;
     esac
   done
   # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32.
@@ -64,7 +64,7 @@ e="$(curl -s --max-time 20 -X POST -H 'Accept: application/json' \
 case "$e" in
   (bad_verification_code) ok "github the OAuth App answers its client id and secret";;
   (incorrect_client_credentials) bad "github the OAuth App refuses E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID / _SECRET";;
-  (*) bad "github no answer from POST github.com/login/oauth/access_token (its egress rule is added by hand)";;
+  (*) bad "github no answer from POST github.com/login/oauth/access_token (propose its egress rule with the egress_proposal tool, or add it by hand)";;
 esac
 
 # Slack: the bot, the app-level token and the two people, each in the channel, all in one workspace,
