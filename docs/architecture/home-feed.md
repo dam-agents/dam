@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -134,7 +134,7 @@ With it off, the right edge keeps the classic icon column, a 49 px bar of 48 px 
 With it on, the bar is 56 px wide and draws one column of 40 px tiles 8 px from the top, spaced 14 px apart, with the same muted fill and hairline for the item the user is on, the same hover shade, the same 8 px squircles and the same accent focus outline as the sidebar rail.
 Its tiles carry no tooltips: the accessible name stays on the button and the open panel's header names the tab.
 A count badge keeps its place on the icon's top-right corner.
-The panel's top bar becomes a 40 px row 8 px below the top of the panel, with its rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the panel's other controls keep their size.
+The panel's top bar becomes a 40 px row 8 px below the top of the panel, with its rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the tile sits centered in a square cell in the top bar's top-right corner, from the panel's top down to the bar's rule and from the cell's border to the panel's edge, in a docked item's top bar too, and the panel's other controls keep their size.
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
 The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
 The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.

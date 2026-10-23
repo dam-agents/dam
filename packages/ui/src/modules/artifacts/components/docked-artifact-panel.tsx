@@ -191,7 +191,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
             )}
           </>
         )}
-        <SidePanelCloseButton />
+        <SidePanelCloseButton corner="-mr-4" />
       </div>
 
       <div className="min-h-0 flex-1">

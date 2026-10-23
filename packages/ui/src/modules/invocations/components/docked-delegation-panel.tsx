@@ -65,7 +65,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <SidePanelCloseButton onClose={() => setDock(null)} />
+        <SidePanelCloseButton corner="-mr-4" onClose={() => setDock(null)} />
       </div>
       {node ? (
         <PanelBody

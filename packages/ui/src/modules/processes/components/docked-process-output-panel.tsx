@@ -62,7 +62,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
             {listed.status}
           </span>
         )}
-        <SidePanelCloseButton />
+        <SidePanelCloseButton corner="-mr-4" />
       </div>
       {listed ? (
         <OutputBody
