@@ -299,6 +299,41 @@ for removed in 'virtualization.imageCache.preload.enabled=false' \
     exit 1
   fi
 done
+# The Templates were renamed from `agentTemplates` with no alias. An install
+# that kept the old key renders no Template it declares and no pull Secret one
+# of them brings, and the Agents created from those Templates still name that
+# Secret — so the render fails, naming the key, rather than leave the install
+# with silently fewer Templates than its values declare.
+if out=$(helm template platform . "${COMMON[@]}" --set agentTemplates.default.enabled=true 2>&1 >/dev/null); then
+  echo "a render setting agentTemplates succeeded, but the chart reads only harnessTemplates" >&2
+  exit 1
+fi
+case "$out" in
+  *'agentTemplates is no longer read'*) ;;
+  *) echo "a render setting agentTemplates failed for another reason: $out" >&2; exit 1 ;;
+esac
+# A Template for a private registry brings its own pull Secret, and every Agent
+# created from it names that Secret: the chart renders it, in the agent
+# namespace, under the very name the Template stamps on the Agent. A machine
+# then fetches its image with it, so a render that drops it strands every vm
+# Agent on that image.
+private=(--set agentNamespace=platform-agents
+  --set harnessTemplates.private.enabled=true
+  --set harnessTemplates.private.image.repository=registry.example.com/agent
+  --set harnessTemplates.private.imagePullSecret.server=registry.example.com
+  --set harnessTemplates.private.imagePullSecret.username=user
+  --set harnessTemplates.private.imagePullSecret.password=pass)
+ref=$(helm template platform . "${COMMON[@]}" "${private[@]}" \
+  --show-only templates/harness-templates.yaml |
+  yq -r '.data["private.yaml"] | from_yaml | .imagePullSecretRef')
+secret=$(helm template platform . "${COMMON[@]}" "${private[@]}" \
+  --show-only templates/harness-template-pull-secrets.yaml | yq -o=json 'select(.kind == "Secret")')
+jq -e --arg ref "$ref" '
+  .metadata.name == $ref and .metadata.namespace == "platform-agents"
+  and .type == "kubernetes.io/dockerconfigjson"
+  and (.stringData[".dockerconfigjson"] | fromjson | .auths["registry.example.com"].auth | @base64d) == "user:pass"' \
+  <<<"$secret" >/dev/null ||
+  { echo "a Template's imagePullSecret did not render as the Secret its Agents name, in the agent namespace: $secret" >&2; exit 1; }
 # istio.enforce=false is local-only. An offline render finds no local no-mesh
 # marker, so it must fail, and fail for that reason rather than another one; a
 # value that is not a boolean must not slip through as truthy either.

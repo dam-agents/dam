@@ -212,6 +212,9 @@ It does not ride the Envoy path at all:
 - **Scope is the Agent, not the owner.** Egress credentials are owner-scoped and reusable across every Agent that owner runs; a pull credential is agent-scoped — one Secret per Agent (still carrying the creator's `agent-platform.ai/owner` for tenancy), created with the Agent and torn down with it.
 - **Per-agent precedence over the install-wide default.** An operator may configure a default pull secret for every agent.
   An Agent's own pull-secret ref is listed *first*, ahead of that default, which is kept as a fallback — override, not replace.
+- **A Template may carry one of its own.** An install whose Template image sits in a private registry declares that registry's credential on the Template, and the install writes it as a Secret in the agent namespace, which every Agent created from that Template names ahead of the install-wide default; a registry credential the user brings at create replaces it.
+  The name is stamped on the Agent at create and does not follow the Template afterwards: a Template that stops declaring the credential, or stops being rendered at all, leaves its Agents naming a Secret nothing writes any more, and their machines fetch without it and fail.
+  A Template's pull Secret therefore outlives the Template, for as long as an Agent it created still runs.
 
 The api-server builds the Secret from structured registry input and writes it before the Agent record, rolling it back if that create fails; its teardown lives on [persistence](persistence.md).
 The credential is validated only at pull time — a bad credential surfaces as an image-pull failure (a vm Agent's image reads unavailable), not a create-time error.
