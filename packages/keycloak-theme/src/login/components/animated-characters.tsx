@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 
 const PINK = "#E89DA8";
 const BLUE = "#5B76D2";
@@ -1190,6 +1190,444 @@ export function StackedCharacters() {
           <CompassBody />
         </svg>
       </DraggableChar>
+    </div>
+  );
+}
+
+/* ── Interactive compass avatar ──────────────────────────────────── */
+
+type Spring = { x: number; y: number; vx: number; vy: number };
+
+const EYE_RIGHT: [number, number] = [75.74, 62.52];
+const EYE_LEFT: [number, number] = [49.25, 62.52];
+const EYE_RADIUS = 12;
+
+const PIECE_CENTERS: [number, number][] = [
+  [96, 36],
+  [29, 36],
+  [29, 89],
+  [96, 89],
+  [75.74, 62.52],
+  [49.25, 62.52],
+];
+
+const FLUTTER_WINGS: { origin: string; anim: string; delay: string }[] = [
+  { origin: "108.75px 57.125px", anim: "compass-flutter-l", delay: "0.12s" },
+  { origin: "16px 57.125px", anim: "compass-flutter-r", delay: "0.06s" },
+  { origin: "16px 67.875px", anim: "compass-flutter-l", delay: "0s" },
+  { origin: "108.75px 67.875px", anim: "compass-flutter-r", delay: "0.18s" },
+];
+
+let flutterInjected = false;
+function injectFlutterStyles() {
+  if (flutterInjected) return;
+  flutterInjected = true;
+  const style = document.createElement("style");
+  style.textContent = `
+    @keyframes compass-flutter-l {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(8deg); }
+      55% { transform: rotate(-5deg); }
+      80% { transform: rotate(3deg); }
+    }
+    @keyframes compass-flutter-r {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(-8deg); }
+      55% { transform: rotate(5deg); }
+      80% { transform: rotate(-3deg); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+export function InteractiveCompass() {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const gRefs = useRef<(SVGGElement | null)[]>([]);
+  const springs = useRef<Spring[]>(
+    Array.from({ length: 6 }, () => ({ x: 0, y: 0, vx: 0, vy: 0 })),
+  );
+  const running = useRef(false);
+  const dragRef = useRef<{
+    idx: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const fluttering = useRef(false);
+  const blink = useBlinkCycle(2200, 4800);
+  const [pokedEye, setPokedEye] = useState<"left" | "right" | null>(null);
+  const pokeTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    injectFlutterStyles();
+  }, []);
+
+  function applyTransforms() {
+    springs.current.forEach((s, i) => {
+      const g = gRefs.current[i];
+      if (g)
+        g.setAttribute(
+          "transform",
+          `translate(${s.x.toFixed(2)}, ${s.y.toFixed(2)})`,
+        );
+    });
+  }
+
+  function startLoop() {
+    if (running.current) return;
+    running.current = true;
+
+    function tick() {
+      const K = 0.14;
+      const D = 0.78;
+      let active = false;
+
+      springs.current.forEach((s, i) => {
+        if (dragRef.current?.idx === i) {
+          active = true;
+          return;
+        }
+        s.vx = (s.vx + -s.x * K) * D;
+        s.vy = (s.vy + -s.y * K) * D;
+        s.x += s.vx;
+        s.y += s.vy;
+        if (
+          Math.abs(s.x) > 0.04 ||
+          Math.abs(s.y) > 0.04 ||
+          Math.abs(s.vx) > 0.04 ||
+          Math.abs(s.vy) > 0.04
+        ) {
+          active = true;
+        } else {
+          s.x = s.y = s.vx = s.vy = 0;
+        }
+      });
+
+      applyTransforms();
+      if (active) {
+        requestAnimationFrame(tick);
+      } else {
+        running.current = false;
+      }
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  function toSvg(e: { clientX: number; clientY: number }): [number, number] | null {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return [
+      ((e.clientX - rect.left) / rect.width) * 125,
+      ((e.clientY - rect.top) / rect.height) * 125,
+    ];
+  }
+
+  function hitEye(cx: number, cy: number): "left" | "right" | null {
+    const dr = Math.sqrt((cx - EYE_RIGHT[0]) ** 2 + (cy - EYE_RIGHT[1]) ** 2);
+    const dl = Math.sqrt((cx - EYE_LEFT[0]) ** 2 + (cy - EYE_LEFT[1]) ** 2);
+    if (dr < EYE_RADIUS) return "right";
+    if (dl < EYE_RADIUS) return "left";
+    return null;
+  }
+
+  function onPoke(e: React.MouseEvent) {
+    if (dragRef.current) return;
+    const pt = toSvg(e);
+    if (!pt) return;
+    const [cx, cy] = pt;
+
+    const eye = hitEye(cx, cy);
+    if (eye) {
+      clearTimeout(pokeTimer.current);
+      setPokedEye(eye);
+      pokeTimer.current = setTimeout(() => setPokedEye(null), 700);
+    }
+
+    springs.current.forEach((s, i) => {
+      const dx = PIECE_CENTERS[i][0] - cx;
+      const dy = PIECE_CENTERS[i][1] - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = Math.min(5, 65 / dist);
+      s.vx += (dx / dist) * force;
+      s.vy += (dy / dist) * force;
+    });
+    startLoop();
+  }
+
+  function onHover() {
+    if (fluttering.current) return;
+    fluttering.current = true;
+
+    FLUTTER_WINGS.forEach((cfg, i) => {
+      const g = gRefs.current[i];
+      if (!g) return;
+      g.removeAttribute("transform");
+      g.style.transformOrigin = cfg.origin;
+      g.style.animation = `${cfg.anim} 0.5s ease-in-out ${cfg.delay}`;
+    });
+
+    setTimeout(() => {
+      FLUTTER_WINGS.forEach((_, i) => {
+        const g = gRefs.current[i];
+        if (!g) return;
+        g.style.animation = "";
+        g.style.transformOrigin = "";
+      });
+      fluttering.current = false;
+    }, 700);
+  }
+
+  function onPieceDown(idx: number, e: React.MouseEvent | React.TouchEvent) {
+    e.stopPropagation();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    dragRef.current = { idx, startX: clientX, startY: clientY };
+
+    function onMove(ev: MouseEvent | TouchEvent) {
+      if (!dragRef.current) return;
+      const mx = "touches" in ev ? ev.touches[0].clientX : ev.clientX;
+      const my = "touches" in ev ? ev.touches[0].clientY : ev.clientY;
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const scale = 125 / rect.width;
+      let dx = (mx - dragRef.current.startX) * scale;
+      let dy = (my - dragRef.current.startY) * scale;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDrag = 18;
+      if (dist > maxDrag) {
+        const c = maxDrag / dist;
+        dx *= c;
+        dy *= c;
+      }
+
+      const s = springs.current[dragRef.current.idx];
+      s.x = dx;
+      s.y = dy;
+      s.vx = 0;
+      s.vy = 0;
+
+      springs.current.forEach((other, i) => {
+        if (i === dragRef.current!.idx) return;
+        other.x = dx * 0.12;
+        other.y = dy * 0.12;
+      });
+
+      applyTransforms();
+    }
+
+    function onUp() {
+      dragRef.current = null;
+      startLoop();
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onUp);
+  }
+
+  const wingDown = (idx: number) => ({
+    onMouseDown: (e: React.MouseEvent) => onPieceDown(idx, e),
+    onTouchStart: (e: React.TouchEvent) => onPieceDown(idx, e),
+    style: { cursor: "grab" as const },
+  });
+
+  const rightEyeClosed = blink || pokedEye === "right";
+  const leftEyeClosed = blink || pokedEye === "left";
+
+  return (
+    <div
+      className="relative hidden flex-1 lg:flex lg:items-center lg:justify-center"
+      onMouseEnter={onHover}
+    >
+      <svg
+        ref={svgRef}
+        viewBox="0 0 125 125"
+        fill="none"
+        aria-hidden="true"
+        className="w-full max-w-[440px]"
+        style={{
+          cursor: "pointer",
+          filter: "drop-shadow(0 8px 24px rgba(63,108,69,0.18))",
+        }}
+        onClick={onPoke}
+      >
+        <g ref={(el) => (gRefs.current[0] = el)} {...wingDown(0)}>
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M88.32 39.20L108.71 57.14L108.72 29.25C108.63 24.26 106.21 18.62 99.75 16.58C93.04 14.47 85.81 18.22 83.69 24.93C81.90 30.62 84.20 35.53 88.32 39.20Z"
+            fill={GREEN}
+          />
+        </g>
+        <g ref={(el) => (gRefs.current[1] = el)} {...wingDown(1)}>
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M36.43 39.20L16.04 57.14L16.03 29.25C16.12 24.26 18.54 18.62 24.99 16.58C31.71 14.47 38.94 18.22 41.06 24.93C42.85 30.62 40.55 35.53 36.43 39.20Z"
+            fill={GREEN}
+          />
+        </g>
+        <g ref={(el) => (gRefs.current[2] = el)} {...wingDown(2)}>
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M36.43 85.79L16.04 67.84L16.03 95.73C16.12 100.73 18.54 106.37 24.99 108.40C31.71 110.52 38.94 106.77 41.06 100.05C42.85 94.36 40.55 89.45 36.43 85.79Z"
+            fill={GREEN}
+          />
+        </g>
+        <g ref={(el) => (gRefs.current[3] = el)} {...wingDown(3)}>
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M88.32 85.79L108.71 67.84L108.72 95.73C108.63 100.73 106.21 106.37 99.75 108.40C93.04 110.52 85.81 106.77 83.69 100.05C81.90 94.36 84.20 89.45 88.32 85.79Z"
+            fill={GREEN}
+          />
+        </g>
+        {/* Right eye */}
+        <g ref={(el) => (gRefs.current[4] = el)} {...wingDown(4)}>
+          {rightEyeClosed ? (
+            <path
+              d="M66.80,62.52 A8.94,8.94 0 0 0 84.68,62.52"
+              fill="none"
+              stroke={PINK}
+              strokeWidth="5.74"
+            />
+          ) : (
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M75.74 53.57C70.80 53.57 66.80 57.58 66.80 62.52C66.80 67.46 70.80 71.46 75.74 71.46C80.68 71.46 84.68 67.46 84.68 62.52C84.68 57.58 80.68 53.57 75.74 53.57Z"
+              fill={PINK}
+            />
+          )}
+        </g>
+        {/* Left eye */}
+        <g ref={(el) => (gRefs.current[5] = el)} {...wingDown(5)}>
+          {leftEyeClosed ? (
+            <path
+              d="M40.30,62.52 A8.94,8.94 0 0 0 58.19,62.52"
+              fill="none"
+              stroke={PINK}
+              strokeWidth="5.74"
+            />
+          ) : (
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M49.25 53.57C44.31 53.57 40.30 57.58 40.30 62.52C40.30 67.46 44.31 71.46 49.25 71.46C54.19 71.46 58.19 67.46 58.19 62.52C58.19 57.58 54.19 53.57 49.25 53.57Z"
+              fill={PINK}
+            />
+          )}
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+/* ── Interactive character widget (all 8 characters) ───────────────── */
+
+const CHARACTER_BODY_COLOR: Record<CharacterName, string> = {
+  compass: GREEN,
+  spark: ORANGE,
+  roller: TERRACOTTA,
+  wave: BLUE,
+  shield: BLUE,
+  stack: BLUE,
+  tower: GREEN,
+  lens: TERRACOTTA,
+};
+
+function SpringCharacter({ name }: { name: CharacterName }) {
+  const blink = useBlinkCycle(
+    2000 + Math.floor(Math.random() * 1000),
+    4000 + Math.floor(Math.random() * 1500),
+  );
+  const containerRef = useRef<HTMLDivElement>(null);
+  const charRef = useRef<HTMLDivElement>(null);
+  const spring = useRef<Spring>({ x: 0, y: 0, vx: 0, vy: 0 });
+  const running = useRef(false);
+
+  const startLoop = useCallback(() => {
+    if (running.current) return;
+    running.current = true;
+
+    function tick() {
+      const K = 0.14;
+      const D = 0.78;
+      const s = spring.current;
+      s.vx = (s.vx + -s.x * K) * D;
+      s.vy = (s.vy + -s.y * K) * D;
+      s.x += s.vx;
+      s.y += s.vy;
+      if (charRef.current) {
+        charRef.current.style.transform = `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(2)}px)`;
+      }
+
+      if (
+        Math.abs(s.x) > 0.04 ||
+        Math.abs(s.y) > 0.04 ||
+        Math.abs(s.vx) > 0.04 ||
+        Math.abs(s.vy) > 0.04
+      ) {
+        requestAnimationFrame(tick);
+      } else {
+        s.x = s.y = s.vx = s.vy = 0;
+        if (charRef.current) {
+          charRef.current.style.transform = "translate(0px, 0px)";
+        }
+        running.current = false;
+      }
+    }
+
+    requestAnimationFrame(tick);
+  }, []);
+
+  function onClick(e: React.MouseEvent) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const cx = e.clientX - (rect.left + rect.width / 2);
+    const cy = e.clientY - (rect.top + rect.height / 2);
+    const dist = Math.sqrt(cx * cx + cy * cy) || 1;
+    const force = Math.min(10, 150 / dist);
+    spring.current.vx += (-cx / dist) * force;
+    spring.current.vy += (-cy / dist) * force;
+    startLoop();
+  }
+
+  const bodyColor = CHARACTER_BODY_COLOR[name];
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex items-center justify-center"
+      style={{ cursor: "pointer", width: 100, height: 100 }}
+      onClick={onClick}
+    >
+      <div
+        ref={charRef}
+        className="size-full"
+        style={{ filter: `drop-shadow(0 4px 12px ${bodyColor}25)` }}
+      >
+        <CharacterSvg name={name} blink={blink} />
+      </div>
+    </div>
+  );
+}
+
+export function InteractiveCharacterWidget() {
+  return (
+    <div className="relative hidden flex-1 lg:flex lg:items-center lg:justify-center">
+      <div className="grid grid-cols-4 gap-x-4 gap-y-6" style={{ maxWidth: 480 }}>
+        {CHARACTER_NAMES.map((name) => (
+          <SpringCharacter key={name} name={name} />
+        ))}
+      </div>
     </div>
   );
 }

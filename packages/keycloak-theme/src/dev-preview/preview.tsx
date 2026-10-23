@@ -1,15 +1,11 @@
 import "../index.css";
 
-import { Component, StrictMode, useState } from "react";
+import { Component, StrictMode } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { KcPage } from "../kc.gen.js";
-import { SlackDmIllustration } from "../login/components/slack-dm-illustration.js";
-import { SlackTeamIllustration } from "../login/components/slack-team-illustration.js";
 import { SIGN_IN } from "./scenarios.js";
-
-type Page = "login" | "illustrations";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -36,78 +32,10 @@ class ErrorBoundary extends Component<
   }
 }
 
-function IllustrationsStorage() {
-  return (
-    <div style={{ padding: 40, display: "flex", flexDirection: "column", gap: 48 }}>
-      <div>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
-          DM Illustration (hero)
-        </h2>
-        <div style={{ maxWidth: 900 }}>
-          <SlackDmIllustration />
-        </div>
-      </div>
-      <div>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
-          Team Illustration (channels band)
-        </h2>
-        <div style={{ maxWidth: 900 }}>
-          <SlackTeamIllustration />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Preview() {
-  const [page, setPage] = useState<Page>("login");
-
-  return (
-    <>
-      <div
-        style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          zIndex: 9999,
-          padding: "6px 12px",
-          background: "#1a1a1a",
-          borderRadius: "0 0 0 6px",
-          fontSize: 12,
-          fontFamily: "monospace",
-          display: "flex",
-          gap: 6,
-          alignItems: "center",
-        }}
-      >
-        <button
-          onClick={() => setPage(page === "login" ? "illustrations" : "login")}
-          style={{
-            padding: "3px 8px",
-            borderRadius: 4,
-            border: "none",
-            background: page === "illustrations" ? "#0f62fe" : "#333",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
-          {page === "login" ? "illustrations" : "← login"}
-        </button>
-      </div>
-      <ErrorBoundary>
-        {page === "login" ? (
-          <KcPage kcContext={SIGN_IN} />
-        ) : (
-          <IllustrationsStorage />
-        )}
-      </ErrorBoundary>
-    </>
-  );
-}
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Preview />
+    <ErrorBoundary>
+      <KcPage kcContext={SIGN_IN} />
+    </ErrorBoundary>
   </StrictMode>,
 );

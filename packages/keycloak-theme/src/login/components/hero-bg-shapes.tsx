@@ -3,6 +3,14 @@ const PIECES: Record<string, { d: string; viewBox: string }> = {
     d: "M88.32 85.79L108.71 67.84L108.72 95.73C108.63 100.73 106.21 106.37 99.75 108.40C93.04 110.52 85.81 106.77 83.69 100.05C81.90 94.36 84.20 89.45 88.32 85.79Z",
     viewBox: "81.5 67.5 27.5 43.5",
   },
+  singleWing: {
+    d: "M88.32 39.20L108.71 57.14L108.72 29.25C108.63 24.26 106.21 18.62 99.75 16.58C93.04 14.47 85.81 18.22 83.69 24.93C81.90 30.62 84.20 35.53 88.32 39.20Z",
+    viewBox: "83 14 26 44",
+  },
+  compassWings: {
+    d: "M88.32 39.20L108.71 57.14L108.72 29.25C108.63 24.26 106.21 18.62 99.75 16.58C93.04 14.47 85.81 18.22 83.69 24.93C81.90 30.62 84.20 35.53 88.32 39.20Z M88.32 85.79L108.71 67.84L108.72 95.73C108.63 100.73 106.21 106.37 99.75 108.40C93.04 110.52 85.81 106.77 83.69 100.05C81.90 94.36 84.20 89.45 88.32 85.79Z M36.43 39.20L16.04 57.14L16.03 29.25C16.12 24.26 18.54 18.62 24.99 16.58C31.71 14.47 38.94 18.22 41.06 24.93C42.85 30.62 40.55 35.53 36.43 39.20Z M36.43 85.79L16.04 67.84L16.03 95.73C16.12 100.73 18.54 106.37 24.99 108.40C31.71 110.52 38.94 106.77 41.06 100.05C42.85 94.36 40.55 89.45 36.43 85.79Z",
+    viewBox: "16 16 93 93",
+  },
   dWing: {
     d: "M966 2551C661.827 2408.46 450 2099.72 450 1742.07C450 1384.17 661.492 1077.41 966 935L966 2551Z",
     viewBox: "450 935 516 1616",
@@ -40,15 +48,14 @@ interface ShapeConfig {
 }
 
 const SHAPES: ShapeConfig[] = [
-  { piece: "dWing", color: GREEN, right: 0, y: 0, size: 550 },
+  { piece: "singleWing", color: GREEN, right: 0, y: 0, size: 550, flip: true },
   { piece: "eye", color: PINK, right: 200, y: 30, size: 180 },
   { piece: "bar", color: BLUE, right: 0, y: 560, size: 460 },
   { piece: "halfDisc", color: GOLD, right: 0, y: 710, size: 460 },
   { piece: "crescent", color: RUST, right: 400, y: 0, size: 440 },
-  { piece: "eye", color: BLUE, right: 450, y: 185, size: 200 },
   { piece: "shortBar", color: GOLD, right: 400, y: 400, size: 360 },
   { piece: "bar", color: BLUE, right: 620, y: 255, size: 340 },
-  { piece: "dWing", color: GREEN, right: 700, y: 370, size: 400, flip: true },
+  { piece: "singleWing", color: GREEN, right: 700, y: 370, size: 400, flip: true },
 ];
 
 function Shape({

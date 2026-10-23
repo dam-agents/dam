@@ -1,52 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-/* ── Compass character (static copy — the team's DAM agent avatar) ── */
+/* ── Palette constant for the DAM agent's reply-stack avatar ────── */
 
-const CHAR_PINK = "#E89DA8";
 const CHAR_GREEN = "#3F6C45";
-
-function AgentCharSvg() {
-  return (
-    <svg viewBox="0 0 125 125" fill="none">
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M75.74 53.57C70.80 53.57 66.80 57.58 66.80 62.52C66.80 67.46 70.80 71.46 75.74 71.46C80.68 71.46 84.68 67.46 84.68 62.52C84.68 57.58 80.68 53.57 75.74 53.57Z"
-        fill={CHAR_PINK}
-      />
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M49.25 53.57C44.31 53.57 40.30 57.58 40.30 62.52C40.30 67.46 44.31 71.46 49.25 71.46C54.19 71.46 58.19 67.46 58.19 62.52C58.19 57.58 54.19 53.57 49.25 53.57Z"
-        fill={CHAR_PINK}
-      />
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M88.32 85.79L108.71 67.84L108.72 95.73C108.63 100.73 106.21 106.37 99.75 108.40C93.04 110.52 85.81 106.77 83.69 100.05C81.90 94.36 84.20 89.45 88.32 85.79Z"
-        fill={CHAR_GREEN}
-      />
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M88.32 39.20L108.71 57.14L108.72 29.25C108.63 24.26 106.21 18.62 99.75 16.58C93.04 14.47 85.81 18.22 83.69 24.93C81.90 30.62 84.20 35.53 88.32 39.20Z"
-        fill={CHAR_GREEN}
-      />
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M36.43 39.20L16.04 57.14L16.03 29.25C16.12 24.26 18.54 18.62 24.99 16.58C31.71 14.47 38.94 18.22 41.06 24.93C42.85 30.62 40.55 35.53 36.43 39.20Z"
-        fill={CHAR_GREEN}
-      />
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M36.43 85.79L16.04 67.84L16.03 95.73C16.12 100.73 18.54 106.37 24.99 108.40C31.71 110.52 38.94 106.77 41.06 100.05C42.85 94.36 40.55 89.45 36.43 85.79Z"
-        fill={CHAR_GREEN}
-      />
-    </svg>
-  );
-}
 
 /* ── Animation timing (plays once, holds at final state) ─────────── */
 
@@ -54,14 +10,14 @@ const BEATS = [0, 1800, 3400, 5000, 6600, 8400, 10600, 12600] as const;
 
 /* Step → what appears:
    -1  blank
-    0  Sarah's message in channel + thread opens
-    1  Samantha reply + file chip
-    2  Jamie reply + image chip
-    3  Jenna "@DAM draft a ticket from this thread"
-    4  👀 reaction on Jenna's msg + typing dots
-    5  Damitha draft card (typing dots gone)
-    6  Jenna "Looks good. File it and assign Jamie."
-    7  Damitha filed card + 🙌 + ✅ reactions                       */
+    0  Sofia's message in channel + thread slides open
+    1  Sasha reply + screenshot chip
+    2  Jordan reply
+    3  Jules "@DAM make a ticket from this thread"
+    4  👀 reaction on Jules' msg + typing dots
+    5  DAM draft card (typing dots gone)
+    6  Jules "Looks good. File it and assign Jordan."
+    7  DAM filed card + 🙌 + ✅ reactions                            */
 
 /* ── Hooks ────────────────────────────────────────────────────────── */
 
@@ -101,8 +57,7 @@ function useAnimationStep(paused: boolean, reduceMotion: boolean) {
       setStep(7);
       return;
     }
-    if (paused) return;
-    if (hasPlayed.current) return;
+    if (paused || hasPlayed.current) return;
 
     hasPlayed.current = true;
     let cancelled = false;
@@ -140,6 +95,10 @@ function injectStyles() {
     @keyframes slkDots {
       0%, 60%, 100% { transform: translateY(0); }
       30% { transform: translateY(-3px); }
+    }
+    @keyframes slkFadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   `;
   document.head.appendChild(s);
@@ -199,10 +158,15 @@ function SmallAvatar({ color }: { color: string }) {
 
 function AgentAvatar() {
   return (
-    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#e8f5e9]">
-      <div className="size-6">
-        <AgentCharSvg />
-      </div>
+    <div
+      className="flex size-9 shrink-0 items-center justify-center rounded-lg"
+      style={{
+        background: "linear-gradient(135deg, #dbeafe 0%, #f3e8ff 50%, #fce7f3 100%)",
+      }}
+    >
+      <span className="text-[14px] font-semibold leading-none text-foreground">
+        DAM
+      </span>
     </div>
   );
 }
@@ -315,8 +279,7 @@ function ChannelPane({ step }: { step: number }) {
                   </span>
                 </div>
                 <p className="mt-0.5 text-[14px] leading-snug text-foreground">
-                  CI is red on main — auth service timing out after the last
-                  deploy.
+                  The Save button on the settings page doesn't do anything.
                 </p>
 
                 {step >= 1 && (
@@ -357,7 +320,7 @@ function ThreadPanel({ step }: { step: number }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (step < 5) return;
+    if (step < 1) return;
     const el = scrollRef.current;
     if (!el) return;
     requestAnimationFrame(() => {
@@ -366,13 +329,7 @@ function ThreadPanel({ step }: { step: number }) {
   }, [step]);
 
   return (
-    <div
-      className="flex w-[340px] shrink-0 flex-col border-l border-input bg-background xl:w-[380px]"
-      style={{
-        opacity: step >= 0 ? 1 : 0,
-        transition: "opacity 300ms ease-out",
-      }}
-    >
+    <div className="flex h-full w-[340px] shrink-0 flex-col border-l border-input bg-background">
       <div className="flex items-center justify-between border-b border-input px-4 py-2">
         <div>
           <span className="text-[15px] font-bold text-foreground">
@@ -385,97 +342,120 @@ function ThreadPanel({ step }: { step: number }) {
         <CloseIcon />
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {/* Parent message — Sarah */}
-        <ThreadMsg
-          initials={CAST.sarah.initials}
-          color={CAST.sarah.color}
-          name={CAST.sarah.name}
-          time="10:12 AM"
-          visible={step >= 0}
-        >
-          CI is red on main — auth service timing out after the last deploy.
-        </ThreadMsg>
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        {step >= 0 && (
+          <FadeIn>
+            <ThreadMsg
+              initials={CAST.sarah.initials}
+              color={CAST.sarah.color}
+              name={CAST.sarah.name}
+              time="10:12 AM"
+              visible
+            >
+              The Save button on the settings page doesn't do anything.
+            </ThreadMsg>
+          </FadeIn>
+        )}
 
-        <ReplySeparator
-          count={step >= 7 ? 5 : step >= 6 ? 4 : step >= 5 ? 3 : step >= 3 ? 2 : 1}
-          visible={step >= 1}
-        />
+        {step >= 1 && (
+          <ReplySeparator
+            count={step >= 7 ? 5 : step >= 6 ? 4 : step >= 5 ? 3 : step >= 3 ? 2 : 1}
+            visible
+          />
+        )}
 
-        {/* Beat 1 — Samantha + file chip */}
-        <ThreadMsg
-          initials={CAST.samantha.initials}
-          color={CAST.samantha.color}
-          name={CAST.samantha.name}
-          time="10:14 AM"
-          visible={step >= 1}
-        >
-          Grabbed the deploy log. Timeout started right after the rollout.
-          <FileChip name="deploy-log-oct7.txt" icon="doc" />
-        </ThreadMsg>
+        {step >= 1 && (
+          <FadeIn>
+            <ThreadMsg
+              initials={CAST.samantha.initials}
+              color={CAST.samantha.color}
+              name={CAST.samantha.name}
+              time="10:14 AM"
+              visible
+            >
+              Same for me. Here's what I see.
+              <FileChip name="save-button.png" icon="img" />
+            </ThreadMsg>
+          </FadeIn>
+        )}
 
-        {/* Beat 2 — Jamie + image chip */}
-        <ThreadMsg
-          initials={CAST.jamie.initials}
-          color={CAST.jamie.color}
-          name={CAST.jamie.name}
-          time="10:18 AM"
-          visible={step >= 2}
-        >
-          Auth service error on the health check — screenshot from Grafana.
-          <FileChip name="grafana-auth-timeout.png" icon="img" />
-        </ThreadMsg>
+        {step >= 2 && (
+          <FadeIn>
+            <ThreadMsg
+              initials={CAST.jamie.initials}
+              color={CAST.jamie.color}
+              name={CAST.jamie.name}
+              time="10:18 AM"
+              visible
+            >
+              It works in Chrome. Only broken in Safari for me.
+            </ThreadMsg>
+          </FadeIn>
+        )}
 
-        {/* Beat 3 — Jenna asks the agent */}
-        <ThreadMsg
-          initials={CAST.jenna.initials}
-          color={CAST.jenna.color}
-          name={CAST.jenna.name}
-          time="10:22 AM"
-          visible={step >= 3}
-        >
-          <span
-            className="rounded-sm px-0.5 font-medium"
-            style={{
-              color: THREAD_BLUE,
-              background: "rgba(18,100,163,0.1)",
-            }}
-          >
-            @DAM
-          </span>{" "}
-          summarize this thread into an issue
-          <div className="mt-1">
-            <ReactionPill emoji="👀" count={1} visible={step >= 4} />
-          </div>
-        </ThreadMsg>
+        {step >= 3 && (
+          <FadeIn>
+            <ThreadMsg
+              initials={CAST.jenna.initials}
+              color={CAST.jenna.color}
+              name={CAST.jenna.name}
+              time="10:22 AM"
+              visible
+            >
+              <span
+                className="rounded-sm px-0.5 font-medium"
+                style={{
+                  color: THREAD_BLUE,
+                  background: "rgba(18,100,163,0.1)",
+                }}
+              >
+                @DAM
+              </span>{" "}
+              make a ticket from this thread
+              {step >= 4 && (
+                <div className="mt-1">
+                  <ReactionPill emoji="👀" count={1} visible />
+                </div>
+              )}
+            </ThreadMsg>
+          </FadeIn>
+        )}
 
-        {/* Beat 4 — Typing dots */}
-        <TypingDots visible={step === 4} />
+        {step === 4 && <TypingDots visible />}
 
-        {/* Beat 5 — Damitha draft card */}
-        <AgentMsg time="10:23 AM" visible={step >= 5}>
-          <DraftCard visible={step === 5 || step === 6} />
-        </AgentMsg>
+        {step >= 5 && (
+          <FadeIn>
+            <AgentMsg time="10:23 AM" visible>
+              <DraftCard visible={step === 5 || step === 6} />
+            </AgentMsg>
+          </FadeIn>
+        )}
 
-        {/* Beat 6 — Jenna approves */}
-        <ThreadMsg
-          initials={CAST.jenna.initials}
-          color={CAST.jenna.color}
-          name={CAST.jenna.name}
-          time="10:24 AM"
-          visible={step >= 6}
-        >
-          Looks good. File it and assign Jordan.
-        </ThreadMsg>
+        {step >= 6 && (
+          <FadeIn>
+            <ThreadMsg
+              initials={CAST.jenna.initials}
+              color={CAST.jenna.color}
+              name={CAST.jenna.name}
+              time="10:24 AM"
+              visible
+            >
+              Looks good. File it and assign Jordan.
+            </ThreadMsg>
+          </FadeIn>
+        )}
 
-        {/* Beat 7 — Damitha filed card + reactions */}
-        <AgentMsg time="10:24 AM" visible={step >= 7}>
-          <FiledCard />
-          <div className="mt-1 flex items-center gap-1.5">
-            <ReactionPill emoji="🙌" count={1} visible={step >= 7} />
-            <ReactionPill emoji="✅" count={1} visible={step >= 7} />
-          </div>
-        </AgentMsg>
+        {step >= 7 && (
+          <FadeIn>
+            <AgentMsg time="10:24 AM" visible>
+              <FiledCard />
+              <div className="mt-1 flex items-center gap-1.5">
+                <ReactionPill emoji="🙌" count={1} visible />
+                <ReactionPill emoji="✅" count={1} visible />
+              </div>
+            </AgentMsg>
+          </FadeIn>
+        )}
       </div>
 
       <Composer placeholder="Reply…" compact />
@@ -568,10 +548,10 @@ function DraftCard({ visible }: { visible: boolean }) {
           Draft
         </span>
         <p className="mt-1 text-[13px] font-semibold leading-snug text-foreground">
-          CI red on main: auth service timeout after deploy
+          Save button does nothing in Safari
         </p>
         <p className="mt-0.5 text-[12px] text-muted-foreground">
-          From Sofia, Sasha and Jordan · 2 files
+          From Sofia, Sasha and Jordan · 1 screenshot
         </p>
         <div className="mt-2 flex items-center gap-2">
           <span
@@ -602,7 +582,7 @@ function FiledCard() {
           </span>
         </div>
         <p className="mt-1 text-[13px] font-semibold leading-snug text-foreground">
-          CI red on main: auth service timeout after deploy
+          Save button does nothing in Safari
         </p>
         <p className="mt-0.5 text-[12px] text-muted-foreground">
           Assigned to Jordan Jacobs
@@ -752,6 +732,12 @@ function Reveal({
   );
 }
 
+function FadeIn({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ animation: "slkFadeIn 250ms ease-out" }}>{children}</div>
+  );
+}
+
 function ReplySeparator({
   count,
   visible,
@@ -834,7 +820,7 @@ function Composer({
             className="flex size-6 items-center justify-center rounded-md"
             style={{ background: SEND_GREEN }}
           >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
               <path
                 d="M4.156 7L9.844 4.156L7 9.844L6.344 7.656L4.156 7Z"
                 fill="white"
@@ -918,7 +904,7 @@ export function SlackTeamIllustration() {
     <div
       ref={containerRef}
       role="img"
-      aria-label="Illustration: a team in Slack builds a ticket together with their DAM agent."
+      aria-label="Illustration: a team in Slack files a bug report together with their DAM agent."
     >
       <div
         aria-hidden="true"
@@ -928,7 +914,12 @@ export function SlackTeamIllustration() {
         <div className="flex h-[520px]">
           <Sidebar />
           <ChannelPane step={step} />
-          <ThreadPanel step={step} />
+          <div
+            className="h-full shrink-0 overflow-hidden bg-background transition-[width] duration-[350ms] ease-out"
+            style={{ width: step >= 0 ? 340 : 0 }}
+          >
+            <ThreadPanel step={step} />
+          </div>
         </div>
       </div>
     </div>

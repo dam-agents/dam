@@ -11,43 +11,28 @@ interface FaqItem {
 
 const FAQ_ITEMS: FaqItem[] = [
   {
-    question: "What is an agent?",
+    question: "Which coding agents can I use?",
     answer:
-      "An AI assistant with its own sandbox, files and tools. Give it a job, and it works on it, even while you’re away.",
-    linkUrl: "https://ibm.biz/dam-docs",
-    linkLabel: "Read the docs",
+      "DAM works with Claude Code, Codex, IBM Bob and Pi. You choose one when you create an agent, and each of your agents can use a different one. You can also bring your own coding agent in a custom image.",
+    linkUrl:
+      "https://pages.github.ibm.com/dam-agents/docs/core-concepts/agents/#available-harnesses",
+    linkLabel: "See available coding agents",
   },
   {
-    question: "Can I use Claude Code?",
+    question: "Which model does my agent use?",
     answer:
-      "Yes. Pick Claude Code, Codex or IBM Bob when you create an agent. DAM adds what your laptop can’t: it keeps running, on a schedule, and in Slack.",
+      "You choose the model provider when you create an agent. Options include IBM’s LiteLLM proxy, Anthropic, OpenAI, AWS Bedrock and IBM Bob.",
+    linkUrl:
+      "https://pages.github.ibm.com/dam-agents/docs/reference/litellm-key/",
+    linkLabel: "Get an IBM LiteLLM key",
   },
   {
-    question: "Where does it run?",
+    question: "Can I install my own tools?",
     answer:
-      "On IBM Research infrastructure, in its own isolated sandbox. Its files and keys stay inside it.",
-  },
-  {
-    question: "Does it keep running when I close the tab?",
-    answer:
-      "Yes. Schedules and long jobs keep going when you’re offline. Results come back in Slack, or in DAM next time you open it.",
-  },
-  {
-    question: "Can my team share an agent?",
-    answer:
-      "Yes. Add it to a Slack channel and anyone in the channel can use it. It works with your agent’s access, not theirs, so only share it where you’d share that access.",
-  },
-  {
-    question: "Does the model see my data?",
-    answer:
-      "It sees what your agent reads, through the model provider you connect. It never sees your keys.",
-  },
-  {
-    question: "What does it cost?",
-    answer:
-      "DAM itself is free to use. Model use is billed to the model key you connect.",
-    linkUrl: "https://ibm.biz/dam-docs",
-    linkLabel: "See the docs for details",
+      "Yes. Your agent can install what it needs while it works. Tools installed in its home folder stay. System packages go away when the agent goes to sleep, so build anything permanent into your own container image.",
+    linkUrl:
+      "https://pages.github.ibm.com/dam-agents/docs/core-concepts/agents/#what-survives-hibernation",
+    linkLabel: "What your agent keeps",
   },
 ];
 
