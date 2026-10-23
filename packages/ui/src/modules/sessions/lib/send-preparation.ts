@@ -37,7 +37,7 @@ export function sendPreparation(input: {
   granted: readonly ProviderConnectionRef[];
   owned: readonly ProviderConnectionRef[];
   catalog: HarnessCatalogView | undefined;
-}): SendPreparation | null {
+}): SendPreparation {
   if (input.session) {
     if (input.session.model !== null)
       return { attach: null, pair: null, model: null };
@@ -48,7 +48,6 @@ export function sendPreparation(input: {
     input.granted.length === 0
       ? (sharedCurveBender(input.owned) ?? null)
       : null;
-  if (input.granted.length === 0 && attach === null) return null;
   const granted = attach ? [...input.granted, attach] : input.granted;
   if (input.pair?.model)
     return { attach: attach?.id ?? null, pair: null, model: null };
