@@ -1113,6 +1113,34 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
+function reply(res: http.ServerResponse, status: number, body: unknown): void {
+  res
+    .writeHead(status, { "Content-Type": "application/json", ...CORS })
+    .end(JSON.stringify(body));
+}
+
+function jsonPost<T>(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  pattern: RegExp,
+  schema: z.ZodType<T>,
+  run: (id: string, body: T) => Promise<[number, unknown] | void>,
+): boolean {
+  const match = req.method === "POST" ? req.url?.match(pattern) : null;
+  if (!match) return false;
+  void readJsonBody(req)
+    .then(async (body) => {
+      const outcome = await run(
+        decodeURIComponent(match[1] ?? ""),
+        schema.parse(body),
+      );
+      if (outcome === undefined) res.writeHead(204, CORS).end();
+      else reply(res, outcome[0], outcome[1]);
+    })
+    .catch((err: unknown) => reply(res, 400, { error: String(err) }));
+  return true;
+}
+
 const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS).end();
@@ -1134,9 +1162,7 @@ const server = http.createServer((req, res) => {
       keptProcesses: acp.keptProcesses,
       openLinks: acp.openLinks,
     };
-    res
-      .writeHead(200, { "Content-Type": "application/json", ...CORS })
-      .end(JSON.stringify(status));
+    reply(res, 200, status);
     return;
   }
 
@@ -1145,96 +1171,60 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const sessionResetMatch =
-    req.method === "POST" &&
-    req.url?.match(/^\/api\/sessions\/([^/]+)\/reset$/);
-  if (sessionResetMatch) {
-    acpRuntime.resetSession(decodeURIComponent(sessionResetMatch[1]!));
-    res.writeHead(204, CORS).end();
-    return;
-  }
-
-  const terminalSessionMatch =
-    req.method === "POST" &&
-    req.url?.match(/^\/api\/terminals\/([^/]+)\/session$/);
-  if (terminalSessionMatch) {
-    void readJsonBody(req)
-      .then((body) => {
-        const { sessionId } = z.object({ sessionId: z.uuid() }).parse(body);
-        const slot = moveTerminalSlot(
-          ptySlots,
-          decodeURIComponent(terminalSessionMatch[1]!),
-          sessionId,
-        );
+  if (
+    jsonPost(
+      req,
+      res,
+      /^\/api\/terminals\/([^/]+)\/session$/,
+      z.object({ sessionId: z.uuid() }),
+      async (terminalId, { sessionId }) => {
+        const slot = moveTerminalSlot(ptySlots, terminalId, sessionId);
         if (slot) {
           ptyLog(sessionId, "harness moved its PTY here");
           markTerminalSeen(sessionId);
           if (slot.client?.readyState === 1)
             slot.client.send(encodeDataFrame(OP_SESSION, sessionId));
         }
-        res.writeHead(204, CORS).end();
-      })
-      .catch((err: unknown) => {
-        res
-          .writeHead(400, { "Content-Type": "application/json", ...CORS })
-          .end(JSON.stringify({ error: String(err) }));
-      });
+      },
+    )
+  )
     return;
-  }
 
-  const backgroundWorkMatch =
-    req.method === "POST" &&
-    req.url?.match(/^\/api\/sessions\/([^/]+)\/background-work$/);
-  if (backgroundWorkMatch) {
-    void readJsonBody(req)
-      .then((body) => {
-        const parsed = backgroundWorkReportSchema.safeParse(body);
-        if (!parsed.success) {
-          res
-            .writeHead(400, { "Content-Type": "application/json", ...CORS })
-            .end(JSON.stringify({ error: parsed.error.message }));
-          return;
-        }
-        backgroundWork.report(
-          decodeURIComponent(backgroundWorkMatch[1]!),
-          parsed.data.items,
-        );
-        res.writeHead(204, CORS).end();
-      })
-      .catch((err: unknown) => {
-        res
-          .writeHead(400, { "Content-Type": "application/json", ...CORS })
-          .end(JSON.stringify({ error: String(err) }));
-      });
+  if (
+    jsonPost(
+      req,
+      res,
+      /^\/api\/sessions\/([^/]+)\/background-work$/,
+      backgroundWorkReportSchema,
+      async (sessionId, report) => {
+        backgroundWork.report(sessionId, report.items);
+      },
+    )
+  )
     return;
-  }
 
   if (req.method === "POST" && req.url === "/api/keep-marks") {
-    const reply = (status: number, body: unknown) =>
-      res
-        .writeHead(status, { "Content-Type": "application/json", ...CORS })
-        .end(JSON.stringify(body));
     if (!isLoopback(req.socket.remoteAddress)) {
-      reply(403, { error: "keep marks are taken from inside the agent only" });
+      reply(res, 403, {
+        error: "keep marks are taken from inside the agent only",
+      });
       return;
     }
-    void readJsonBody(req)
-      .then(async (body) => {
-        const parsed = keepMarkRequestSchema.safeParse(body);
-        if (!parsed.success) {
-          reply(400, { error: parsed.error.message });
-          return;
-        }
-        const result = await keepMarks.mark(parsed.data);
-        if (result.ok) reply(200, result.value);
-        else
-          reply(result.error.kind === "NotFound" ? 404 : 409, {
-            error: result.error.message,
-          });
-      })
-      .catch((err: unknown) => {
-        reply(400, { error: String(err) });
-      });
+    jsonPost(
+      req,
+      res,
+      /^\/api\/keep-marks$/,
+      keepMarkRequestSchema,
+      async (_id, mark) => {
+        const result = await keepMarks.mark(mark);
+        return result.ok
+          ? [200, result.value]
+          : [
+              result.error.kind === "NotFound" ? 404 : 409,
+              { error: result.error.message },
+            ];
+      },
+    );
     return;
   }
 
