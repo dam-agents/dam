@@ -69,7 +69,7 @@ export function SidebarSection({
           </h2>
         )}
         {headerRight}
-        <SidePanelCloseButton squareCell={tiles} />
+        <SidePanelCloseButton corner="-mt-2 -mr-2" />
       </div>
       {}
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">

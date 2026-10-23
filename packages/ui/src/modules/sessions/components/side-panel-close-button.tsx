@@ -42,34 +42,32 @@ function ShownWhereItCloses({
  * bar's open tab, or to the main region; a phone hides it, because the
  * full-screen panel there has its own back button, unless the panel keeps a
  * top bar of its own instead. Under the Unified right toolbar experiment it
- * is a 40 px tile of the rail's size rather than the small ghost button.
- * SidebarSection's tiled header starts 8 px below the panel's top, so there
- * the tile sits in a square cell that runs those 8 px plus the row's 40 px
- * down to the panel's rule; a docked panel's header starts at the top, and
- * its X keeps the cell that stretches over the header alone.
+ * is a 40 px tile of the rail's size rather than the small ghost button,
+ * centered in a square cell in the header's top-right corner: from the
+ * panel's top down to the header's rule, and from its own border to the
+ * panel's edge. Each header pads its row differently, so it passes `corner`,
+ * the margins that cancel its padding and put the cell in that corner.
  */
 export function SidePanelCloseButton({
   onClose,
-  squareCell = false,
+  corner,
 }: {
   onClose?: () => void;
-  squareCell?: boolean;
+  corner: string;
 }) {
   const tiles = useContext(RightToolbarTiles);
-  return (
-    <PanelCloseButton onClose={onClose} tiles={tiles} squareCell={squareCell} />
-  );
+  return <PanelCloseButton onClose={onClose} tiles={tiles} corner={corner} />;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the X's chrome and close behavior, told which variant the panel's shell draws so an open panel updates with the Unified right toolbar experiment instead of reading a marker off the root.
 export function PanelCloseButton({
   onClose,
   tiles,
-  squareCell = false,
+  corner = "",
 }: {
   onClose?: () => void;
   tiles: boolean;
-  squareCell?: boolean;
+  corner?: string;
 }) {
   // UNIT_BOUNDARY_DESCRIPTION: JanUI, and any shell whose panel keeps a top bar of its own under the Unified right toolbar experiment, draw no back button over a narrow panel, so those panels keep the X; the layout is read off the root, which does not change without a reload.
   const newLayout =
@@ -93,8 +91,9 @@ export function PanelCloseButton({
     <ShownWhereItCloses ownClose={onClose !== undefined}>
       <div
         className={cn(
-          "flex shrink-0 items-center justify-center self-stretch border-l border-border",
-          squareCell ? "-mt-2 -mr-2 size-12 pt-2" : "pl-2",
+          "flex shrink-0 items-center justify-center border-l border-border",
+          // UNIT_BOUNDARY_DESCRIPTION: 48 wide with its 1 px border and 47 high above a header's 1 px rule, so the area between the border, the rule and the panel's edge is a 47 px square and the 40 px tile sits 3.5 px from each side.
+          tiles ? cn("h-[47px] w-12 self-start", corner) : "self-stretch pl-2",
           !newLayout && !tiles && "max-md:hidden",
         )}
       >

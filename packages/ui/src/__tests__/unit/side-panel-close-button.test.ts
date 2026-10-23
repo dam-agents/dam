@@ -60,7 +60,15 @@ function closeButton(node: ReactNode): { onClick: Click } {
   throw new Error("no close button");
 }
 
-// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with its rule under it and none above, the X sits in a square 48 cell whose border reaches the panel's top, and the X is a 40 square that closes and hands the keyboard back like the small button, without JanUI being on.
+function closeCellClasses(html: string): string[] {
+  const cell = html.match(
+    /<div class="([^"]*)"><button[^>]*data-testid="side-panel-close"/,
+  )?.[1];
+  if (cell === undefined) throw new Error("no close cell");
+  return cell.split(" ");
+}
+
+// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with its rule under it and none above; the X's cell reaches up through those 8 px and out through the header's 8 px of right padding, 48 wide with its border and 47 high above the rule, so the 40 square X closes and hands the keyboard back like the small button, centered in a 47 px square, without JanUI being on.
 it("draws the unified right toolbar's header on the rail's row with a tile X", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -86,31 +94,53 @@ it("draws the unified right toolbar's header on the rail's row with a tile X", (
     html.match(/<button[^>]*data-testid="side-panel-close"[^>]*>/)?.[0] ?? "";
   expect(closeTag).toContain("size-10");
   expect(closeTag).toContain("[corner-shape:squircle]");
-  const cell =
-    html.match(/class="([^"]*self-stretch border-l[^"]*)"/)?.[1] ?? "";
-  expect(cell.split(" ")).toEqual(
-    expect.arrayContaining(["size-12", "-mt-2", "-mr-2"]),
+  const cell = closeCellClasses(html);
+  expect(cell).toEqual(
+    expect.arrayContaining([
+      "-mt-2",
+      "-mr-2",
+      "w-12",
+      "h-[47px]",
+      "items-center",
+      "justify-center",
+    ]),
   );
-  expect(html).toMatch(
-    /class="[^"]*size-12[^"]*"><button[^>]*data-testid="side-panel-close"/,
-  );
+  expect(cell).not.toContain("pt-2");
   store.current.getState().setSidePanelTab("approvals");
   closeButton(PanelCloseButton({ tiles: true })).onClick(outsidePanel);
   expect(store.current.getState().sidePanelTab).toBeNull();
 });
 
-// TEST_SCENARIO: A docked panel's header starts at the panel's top and is 48 high, so its X keeps the cell that stretches over the header alone from the 8 px of padding it has always had.
-it("keeps the stretched cell in a docked panel's header", () => {
-  const html = renderToStaticMarkup(
-    createElement(TooltipProvider, null, PanelCloseButton({ tiles: true })),
-  );
-  const cell =
-    html.match(/class="([^"]*self-stretch border-l[^"]*)"/)?.[1] ?? "";
-  expect(cell.split(" ")).toContain("pl-2");
-  expect(cell).not.toContain("size-12");
-  expect(cell).not.toContain("-mt-2");
-  expect(cell).not.toContain("-mr-2");
-});
+// TEST_SCENARIO: A docked panel's header starts at the panel's top and pads its row on the right, so its X's cell takes the same 47 px square from the corner its header names, and the classic X ignores that corner and keeps its 8 px of padding.
+it.each([
+  [
+    "the tiled X",
+    true,
+    ["-mr-4", "w-12", "h-[47px]", "self-start"],
+    ["pl-2", "-mt-2"],
+  ],
+  [
+    "the classic X",
+    false,
+    ["pl-2", "self-stretch"],
+    ["-mr-4", "w-12", "h-[47px]"],
+  ],
+])(
+  "in a docked panel's header, %s takes its cell from the header's corner",
+  (_, tiles, has, lacks) => {
+    const cell = closeCellClasses(
+      renderToStaticMarkup(
+        createElement(
+          TooltipProvider,
+          null,
+          PanelCloseButton({ tiles, corner: "-mr-4" }),
+        ),
+      ),
+    );
+    expect(cell).toEqual(expect.arrayContaining(has));
+    for (const c of lacks) expect(cell).not.toContain(c);
+  },
+);
 
 // TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them; a panel outside the shell's provider, such as the classic chat's column, keeps the classic 48 px header and its rule.
 it("ends the panel's top bar with the X, behind a border", () => {
@@ -141,11 +171,7 @@ it.each([
   const html = renderToStaticMarkup(
     createElement(TooltipProvider, null, PanelCloseButton({ tiles })),
   );
-  const container =
-    html.match(
-      /class="([^"]*self-stretch border-l border-border[^"]*)"/,
-    )?.[1] ?? "";
-  expect(container.split(" ").includes("max-md:hidden")).toBe(hidden);
+  expect(closeCellClasses(html).includes("max-md:hidden")).toBe(hidden);
 });
 
 // TEST_SCENARIO: Clicking the X closes the open panel.
@@ -208,7 +234,7 @@ it.each([
       createElement(
         SidePanelCloseScope,
         { value: false },
-        createElement(SidePanelCloseButton, props),
+        createElement(SidePanelCloseButton, { corner: "-mr-4", ...props }),
       ),
     ),
   );
