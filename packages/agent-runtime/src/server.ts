@@ -1,6 +1,5 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
-import { monitorEventLoopDelay } from "node:perf_hooks";
 import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -33,7 +32,7 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
-import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
+import { startMemReaper, startRuntimeMetrics } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
 import { composeArtifactApi } from "./modules/artifact-api/compose.js";
@@ -52,22 +51,11 @@ import {
   routerEnvFor,
   createModelCallExporter,
 } from "./modules/model-router/index.js";
-import { composeSsh, spawnSshd, type PreparedSshd } from "./modules/ssh.js";
+import { composeSsh, createSshUpgrade } from "./modules/ssh.js";
 import { terminalBusy } from "./modules/terminal-busy.js";
 import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
-import {
-  agentBrowserCommand,
-  createBrowserPreview,
-  DISPLAY_COMMAND,
-  missingDisplayTools,
-  fileLog,
-  LAUNCH_MODE_FILE,
-} from "./modules/browser-preview.js";
-import {
-  startDisplaySupervisor,
-  type DisplaySupervisor,
-} from "./modules/browser-display.js";
+import { composeBrowser } from "./modules/browser-preview.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
@@ -199,6 +187,7 @@ const seedRoots = skillRefPaths(
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 const envStore = createEnvStateStore(homeDir, defaultHarness);
+const browser = composeBrowser({ homeDir, envReader: envStore });
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
@@ -250,6 +239,12 @@ const { service: sshService, prepare: prepareSsh } = composeSsh(
   existsSync(VM_SHARE_DIR),
   homeDir,
 );
+const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
+const sshUpgrade = createSshUpgrade({
+  prepare: prepareSsh,
+  envReader: envStore,
+  log: sshLog,
+});
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -571,7 +566,7 @@ const {
     invocationWatch.turnOutcome(sessionId, end),
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
-  onPrompt: startDisplay,
+  onPrompt: browser.start,
   beforeSpawn: async () => {
     await Promise.race([
       modelCatalog.listed(),
@@ -704,9 +699,6 @@ const runtimeChannel = await composeRuntimeChannel({
   ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
 });
 
-const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
-let preparedSshd: Promise<PreparedSshd | null> | undefined;
-
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -717,7 +709,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   artifactApi,
-  browser: browserPreview,
+  browser: browser.preview,
   changes,
   files: filesService,
   kbPublish: kbPublish.service,
@@ -987,7 +979,7 @@ function attachPty(
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
       const terminalId = randomUUID();
-      startDisplay();
+      browser.start();
       const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
         name: "xterm-256color",
         cols,
@@ -1258,48 +1250,8 @@ const server = http.createServer((req, res) => {
 
 const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
-const sshWss = new WebSocketServer({ noServer: true });
 const trpcWss = new WebSocketServer({ noServer: true });
 const browserWss = new WebSocketServer({ noServer: true });
-const browserLogFile = fileLog(
-  join(homeDir, ".local/share/platform/browser.log"),
-);
-const browserLog = (source: string) => (msg: string) => {
-  process.stderr.write(`[${source}] ${msg}\n`);
-  browserLogFile(`${source}: ${msg}`);
-};
-const DISPLAY_IDLE_START_MS = 10_000;
-let browserDisplay: DisplaySupervisor | null = null;
-let loggedMissingDisplay = "";
-function startDisplay(): void {
-  if (browserDisplay) return;
-  const missing = missingDisplayTools().join(", ");
-  if (missing) {
-    if (missing !== loggedMissingDisplay)
-      browserLog("browser-display")(`not started, missing ${missing}`);
-    loggedMissingDisplay = missing;
-    return;
-  }
-  browserDisplay = startDisplaySupervisor({
-    command: DISPLAY_COMMAND,
-    envReader: envStore,
-    log: browserLog("browser-display"),
-  });
-}
-const runAgentBrowser = agentBrowserCommand(envStore);
-const browserPreview = createBrowserPreview({
-  run: (args) => {
-    startDisplay();
-    return runAgentBrowser(args);
-  },
-  profileDir:
-    process.env.AGENT_BROWSER_PROFILE ??
-    join(homeDir, ".local/share/platform/browser"),
-  socketDir:
-    process.env.AGENT_BROWSER_SOCKET_DIR ?? join(homeDir, ".agent-browser"),
-  launchModeFile: join(homeDir, LAUNCH_MODE_FILE),
-  log: browserLog("browser-preview"),
-});
 
 applyWSSHandler({
   wss: trpcWss,
@@ -1344,31 +1296,17 @@ server.on("upgrade", (req, socket, head) => {
       attachPty(sessionId, ws, { reset, lease }),
     );
   } else if (url.pathname === "/api/browser/display") {
-    startDisplay();
+    browser.start();
     browserWss.handleUpgrade(req, socket, head, (ws) =>
-      browserPreview.attachDisplay(ws),
+      browser.preview.attachDisplay(ws),
     );
   } else if (url.pathname === "/api/trpc-ws") {
     trpcWss.handleUpgrade(req, socket, head, (ws) =>
       trpcWss.emit("connection", ws, req),
     );
   } else if (url.pathname === "/api/ssh") {
-    startDisplay();
-    preparedSshd ??= prepareSsh(sshLog).catch((err: Error) => {
-      sshLog(`could not prepare sshd: ${err.message}`);
-      preparedSshd = undefined;
-      return null;
-    });
-    socket.on("error", () => socket.destroy());
-    void preparedSshd.then((prepared) => {
-      if (!prepared) {
-        socket.destroy();
-        return;
-      }
-      sshWss.handleUpgrade(req, socket, head, (ws) =>
-        spawnSshd(ws, prepared, envStore, sshLog),
-      );
-    });
+    browser.start();
+    sshUpgrade.upgrade(req, socket, head);
   } else {
     socket.destroy();
   }
@@ -1411,8 +1349,6 @@ server.listen(config.PORT, () => {
     }
   }
 
-  setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
-
   if (environmentOf === "") warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
@@ -1439,50 +1375,7 @@ if (config.MEM_REAPER && !config.PLATFORM_DEV) {
   });
 }
 
-const mib = (n: number) => Math.round(n / 1_048_576);
-const cgMax = readCgroupBytes(
-  "/sys/fs/cgroup/memory.max",
-  "/sys/fs/cgroup/memory/memory.limit_in_bytes",
-);
-const haveLimit = cgMax !== null && Number.isFinite(cgMax) && cgMax < 1e15;
-const eld = monitorEventLoopDelay({ resolution: 20 });
-eld.enable();
-let prevCpu = process.cpuUsage();
-let prevAt = Date.now();
-setInterval(() => {
-  try {
-    const maxMs = eld.max / 1e6;
-    const p99Ms = eld.percentile(99) / 1e6;
-    eld.reset();
-    const cpu = process.cpuUsage(prevCpu);
-    prevCpu = process.cpuUsage();
-    const now = Date.now();
-    const wallMs = Math.max(1, now - prevAt);
-    prevAt = now;
-    const cpuPct = Math.round(((cpu.user + cpu.system) / 1000 / wallMs) * 100);
-    const mu = process.memoryUsage();
-    const cgCur = readCgroupBytes(
-      "/sys/fs/cgroup/memory.current",
-      "/sys/fs/cgroup/memory/memory.usage_in_bytes",
-    );
-    const cgStr =
-      cgCur !== null
-        ? ` cgroup=${mib(cgCur)}${haveLimit ? "/" + mib(cgMax as number) : ""}MB`
-        : "";
-    const memStr = `rss=${mib(mu.rss)}MB heap=${mib(mu.heapUsed)}/${mib(mu.heapTotal)}MB cpu=${cpuPct}%${cgStr}`;
-    if (maxMs >= 1_000) {
-      process.stderr.write(
-        `[eventloop] blocked up to ${Math.round(maxMs)}ms (p99 ${Math.round(p99Ms)}ms) in last 10s — ${memStr}\n`,
-      );
-    } else if (
-      haveLimit &&
-      cgCur !== null &&
-      cgCur / (cgMax as number) >= 0.85
-    ) {
-      process.stderr.write(`[mem] high cgroup usage — ${memStr}\n`);
-    }
-  } catch {}
-}, 10_000).unref();
+startRuntimeMetrics();
 
 let shuttingDown = false;
 function gracefulShutdown(signal: string): void {
@@ -1491,8 +1384,7 @@ function gracefulShutdown(signal: string): void {
   process.stderr.write(`[shutdown] ${signal} received, closing\n`);
   server.close();
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
-  browserPreview.close();
-  browserDisplay?.stop();
+  browser.close();
   activeTurns.markStopped();
   acpRuntime.shutdown();
   void modelCallExporter.stop();

@@ -37,6 +37,10 @@ import {
   type WatchPages,
   watchPages,
 } from "./browser-cdp.js";
+import {
+  startDisplaySupervisor,
+  type DisplaySupervisor,
+} from "./browser-display.js";
 
 export const BROWSER_SESSION = "default";
 
@@ -765,6 +769,75 @@ export function createBrowserPreview(deps: {
       stopTimers();
       page?.close();
       notify();
+    },
+  };
+}
+
+const DISPLAY_IDLE_START_MS = 10_000;
+
+export interface ComposedBrowser {
+  preview: BrowserPreview;
+  start(): void;
+  close(): void;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The browser half of the runtime, wired from the
+ * agent's home and env alone: the agent-browser command, the preview it drives,
+ * and the one display process whose start is idempotent because four surfaces
+ * ask for it — the first browser tool call, the display WebSocket, the SSH
+ * attach and a timer that starts it on an idle agent.
+ */
+export function composeBrowser(deps: {
+  homeDir: string;
+  envReader: RuntimeEnvReader;
+}): ComposedBrowser {
+  const logFile = fileLog(
+    join(deps.homeDir, ".local/share/platform/browser.log"),
+  );
+  const log = (source: string) => (msg: string) => {
+    process.stderr.write(`[${source}] ${msg}\n`);
+    logFile(`${source}: ${msg}`);
+  };
+  let display: DisplaySupervisor | null = null;
+  let loggedMissingDisplay = "";
+  const start = (): void => {
+    if (display) return;
+    const missing = missingDisplayTools().join(", ");
+    if (missing) {
+      if (missing !== loggedMissingDisplay)
+        log("browser-display")(`not started, missing ${missing}`);
+      loggedMissingDisplay = missing;
+      return;
+    }
+    display = startDisplaySupervisor({
+      command: DISPLAY_COMMAND,
+      envReader: deps.envReader,
+      log: log("browser-display"),
+    });
+  };
+  const runAgentBrowser = agentBrowserCommand(deps.envReader);
+  const preview = createBrowserPreview({
+    run: (args) => {
+      start();
+      return runAgentBrowser(args);
+    },
+    profileDir:
+      process.env.AGENT_BROWSER_PROFILE ??
+      join(deps.homeDir, ".local/share/platform/browser"),
+    socketDir:
+      process.env.AGENT_BROWSER_SOCKET_DIR ??
+      join(deps.homeDir, ".agent-browser"),
+    launchModeFile: join(deps.homeDir, LAUNCH_MODE_FILE),
+    log: log("browser-preview"),
+  });
+  setTimeout(start, DISPLAY_IDLE_START_MS).unref();
+  return {
+    preview,
+    start,
+    close: () => {
+      preview.close();
+      display?.stop();
     },
   };
 }

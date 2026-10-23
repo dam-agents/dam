@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { WebSocket as WsWebSocket } from "ws";
+import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import type { SshService } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
@@ -219,6 +221,45 @@ export function spawnSshd(
   };
   ws.on("close", killChild);
   ws.on("error", killChild);
+}
+
+export interface SshUpgrade {
+  upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The `/api/ssh` WebSocket upgrade, from the first
+ * byte to the sshd process behind it. It keeps the prepared-sshd promise so
+ * that concurrent upgrades share one key and one config file, and forgets it
+ * on failure so the next attempt retries rather than closing every socket
+ * forever.
+ */
+export function createSshUpgrade(opts: {
+  prepare: (log: (msg: string) => void) => Promise<PreparedSshd | null>;
+  envReader: RuntimeEnvReader;
+  log: (msg: string) => void;
+}): SshUpgrade {
+  const wss = new WebSocketServer({ noServer: true });
+  let preparedSshd: Promise<PreparedSshd | null> | undefined;
+  return {
+    upgrade(req, socket, head) {
+      preparedSshd ??= opts.prepare(opts.log).catch((err: Error) => {
+        opts.log(`could not prepare sshd: ${err.message}`);
+        preparedSshd = undefined;
+        return null;
+      });
+      socket.on("error", () => socket.destroy());
+      void preparedSshd.then((prepared) => {
+        if (!prepared) {
+          socket.destroy();
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) =>
+          spawnSshd(ws, prepared, opts.envReader, opts.log),
+        );
+      });
+    },
+  };
 }
 
 const PUBKEY_RE = /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-\S+)\s+\S+/;
