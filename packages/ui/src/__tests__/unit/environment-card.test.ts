@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: One Environment's card in an agent's Environments list, at any width: each item of its status line stays whole, so the line wraps only between items; the name and the status get their own row when the card is narrow, with the controls on the next; a long name and a long address truncate at the end and show in full on hover.
+// TEST_OVERVIEW: One Environment's card in an agent's Environments list, at any width: it brings its own padding; each item of its status line stays whole, so the line wraps only between items; its controls are one menu on the name row; each endpoint's name, port and address are cells of their own; a long name and a long address truncate at the end and show in full on hover.
 import type { EnvironmentView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -70,7 +70,7 @@ describe("an Environment's card", () => {
       expect(item.className).toContain("whitespace-nowrap");
   });
 
-  // TEST_SCENARIO: a long name and a long address truncate at the end and carry their full text on hover; the address takes the width the endpoint label leaves.
+  // TEST_SCENARIO: a long name and a long address truncate at the end and carry their full text on hover; the address takes the width the endpoint's name and port leave.
   it("truncates a long name and address, with each in full on hover", () => {
     const doc = render(null);
 
@@ -89,17 +89,62 @@ describe("an Environment's card", () => {
     expect(endpoints?.className).toContain("minmax(0,1fr)");
   });
 
-  // TEST_SCENARIO: on a narrow card the controls sit under the name and status, not beside them; only a wide card puts them side by side.
-  it("puts the controls on their own row unless the card is wide", () => {
+  // TEST_SCENARIO: the card brings its own padding, so it looks the same in the settings page's separated list and in the side panel; its controls are one menu on the name row, at any width.
+  it("pads itself and keeps its controls in one menu on the name row", () => {
     const doc = render(null);
 
     const card = doc.querySelector('[data-testid="environment-card"]');
-    expect(card?.className).toContain("@container");
-    const header = card?.firstElementChild;
-    expect(header?.className.split(" ")).toEqual(
-      expect.arrayContaining(["flex-col", "@lg:flex-row"]),
+    expect(card?.className.split(" ")).toEqual(
+      expect.arrayContaining(["px-4", "py-3"]),
     );
-    expect(header?.className.split(" ")).not.toContain("flex-row");
-    expect(header?.querySelector('[aria-label^="Extend"]')).not.toBeNull();
+    const header = card?.firstElementChild;
+    expect(header?.className.split(" ")).toContain("flex");
+    expect(header?.className.split(" ")).not.toContain("flex-col");
+    const actions = header?.querySelector(
+      '[data-testid="environment-actions"]',
+    );
+    expect(actions?.getAttribute("aria-label")).toBe(`Actions for ${longName}`);
+    expect(header?.lastElementChild).toBe(actions);
+    expect(doc.querySelector("select")).toBeNull();
+  });
+
+  // TEST_SCENARIO: each endpoint row has its name, its port and its address in cells of their own: the port right-aligned with tabular digits, the name column at a shared minimum width, so ports line up in a card and the addresses start at one x.
+  it("puts an endpoint's name, port and address in their own cells", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(EnvironmentCard, {
+          environment: {
+            ...environment,
+            endpoints: [
+              { name: "ui", port: 4444, url: "https://ui.example.com" },
+              { name: "keycloak", port: 4445, url: "https://kc.example.com" },
+            ],
+          },
+        }),
+      ),
+    );
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    const endpoints = doc.querySelector(
+      '[data-testid="environment-endpoints"]',
+    );
+    expect(endpoints?.className).toContain(
+      "grid-cols-[auto_auto_minmax(0,1fr)]",
+    );
+    const rows = [...(endpoints?.children ?? [])];
+    expect(rows.map((r) => [...r.children].map((c) => c.textContent))).toEqual([
+      ["ui", "4444", "https://ui.example.com"],
+      ["keycloak", "4445", "https://kc.example.com"],
+    ]);
+    for (const row of rows) {
+      expect(row.className).toContain("grid-cols-subgrid");
+      const [name, port] = [...row.children];
+      expect(name?.className).toContain("min-w-[8ch]");
+      expect(port?.className.split(" ")).toEqual(
+        expect.arrayContaining(["text-right", "tabular-nums"]),
+      );
+    }
   });
 });
