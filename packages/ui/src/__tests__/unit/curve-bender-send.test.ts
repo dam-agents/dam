@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The chat no longer holds a prompt for a missing provider or model. Before it sends, it takes the model the platform's preferred list names on the agent's attached providers, else the first model they list, and it attaches the install's shared CurveBender when the agent holds no provider at all. An install without that shared provider keeps the block.
+// TEST_OVERVIEW: The chat no longer holds a prompt for a missing provider or model. Before it sends, it takes the model the platform's preferred list names on the agent's attached providers, else the first model they list, and it attaches the install's shared CurveBender when the agent holds no provider at all. An install without that shared provider sends the prompt as it is, and leaves holding it to the composer's block.
 import type { HarnessCatalogView } from "agent-runtime-api";
 import {
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
@@ -165,10 +165,23 @@ describe("the pair a send prepares", () => {
     });
   });
 
-  // TEST_SCENARIO: an install without the shared provider has nothing to attach, so the composer keeps its block.
-  it("blocks when there is nothing to attach", () => {
-    expect(sendPreparation({ ...base, owned: [openai] })).toBeNull();
-    expect(sendPreparation({ ...base, owned: [] })).toBeNull();
+  // TEST_SCENARIO: an install without the shared provider has nothing to attach, so the prompt goes out as it is, and the composer's own block is what holds a send that needs a provider.
+  it("sends as it is when there is nothing to attach", () => {
+    const asIs = { attach: null, pair: null, model: null };
+    expect(sendPreparation({ ...base, owned: [openai] })).toEqual(asIs);
+    expect(sendPreparation({ ...base, owned: [] })).toEqual(asIs);
+  });
+
+  // TEST_SCENARIO: an agent whose harness brings its own model, as the mock harness does, holds no provider and lists nothing; its prompt still goes out rather than back into the composer.
+  it("sends to an agent with no provider and no listing", () => {
+    expect(
+      sendPreparation({
+        ...base,
+        harness: "mock",
+        owned: [],
+        catalog: undefined,
+      }),
+    ).toEqual({ attach: null, pair: null, model: null });
   });
 
   // TEST_SCENARIO: an agent that already holds a provider keeps it, and the send takes the preferred model on it.

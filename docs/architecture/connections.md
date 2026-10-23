@@ -322,6 +322,7 @@ It is not behind a feature flag: where the key is set, every user has it, and a 
 Such an install shows a CurveBender notice above every chat's composer, for every user: the coloured logo on a white tile, the page's own surface colours, a link to the documentation, and a close kept in this browser alone.
 Its **Try now** button attaches the shared Connection and selects its work model — a fresh chat also moves to Pi, an open session keeps its harness — then thanks the person and links the community channel.
 The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
+With nothing to attach, a prompt the composer lets through goes out as it is, as to an agent whose harness brings its own model; it never returns to the composer.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.

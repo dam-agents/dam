@@ -530,10 +530,10 @@ export function ChatView() {
         catalog: sendCatalog.data,
       });
       const attached =
-        plan?.attach === null || plan?.attach === undefined
+        plan.attach === null
           ? true
           : await attachProviderQuietly(agentId, plan.attach);
-      if (!plan || !attached) {
+      if (!attached) {
         setDraft(draftKey(agentId, sessionId), {
           text,
           attachments: attachments ?? [],
