@@ -1,10 +1,8 @@
 import type { SatelliteView } from "api-server-api";
 
-import { Callout } from "@/components/ui/callout";
-import { SectionLabel } from "@/components/ui/section-label";
-
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { AffectedAgents } from "../../agents/components/affected-agents.js";
 import { useRemoveSatellite } from "../api/mutations.js";
 
 export function useRemoveSatelliteWithConfirm() {
@@ -23,16 +21,7 @@ export function useRemoveSatelliteWithConfirm() {
           already running on the machine are not stopped. A worker still serving
           it stops; start it again to register it anew.
         </p>
-        {affected.length > 0 && (
-          <Callout tone="muted" className="mt-4">
-            <SectionLabel>Affected agents</SectionLabel>
-            <ul className="mt-2 list-disc pl-5 text-sm text-foreground/90">
-              {affected.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          </Callout>
-        )}
+        {affected.length > 0 && <AffectedAgents names={affected} />}
       </>,
       `Remove ${satellite.name}?`,
       { kind: "destructive", confirmLabel: "Remove satellite" },

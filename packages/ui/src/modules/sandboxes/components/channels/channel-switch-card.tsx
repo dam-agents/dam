@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Switch } from "@/components/ui/switch";
+import { ToggleRow } from "@/components/ui/toggle-row";
 
 interface Props {
   label: string;
@@ -18,18 +19,19 @@ export function ChannelSwitchCard({
   children,
 }: Props) {
   return (
-    <div className="flex w-full items-start justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
-      <span className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        <span className="text-sm text-muted-foreground">{children}</span>
-      </span>
-      <Switch
-        className="mt-0.5"
-        disabled={disabled}
-        checked={checked}
-        onCheckedChange={onChange}
-        label={label}
-      />
-    </div>
+    <ToggleRow
+      className="w-full gap-3 rounded-md border border-border bg-background px-3 py-2.5"
+      title={label}
+      description={children}
+      control={
+        <Switch
+          className="mt-0.5"
+          disabled={disabled}
+          checked={checked}
+          onCheckedChange={onChange}
+          label={label}
+        />
+      }
+    />
   );
 }

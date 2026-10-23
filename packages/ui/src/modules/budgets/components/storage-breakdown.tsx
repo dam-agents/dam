@@ -1,5 +1,6 @@
+import { formatBytes } from "../../../lib/format-size.js";
 import { useStore } from "../../../store.js";
-import { formatBytes, STORAGE_PARTS, type StorageRow } from "../lib/pools.js";
+import { STORAGE_PARTS, type StorageRow } from "../lib/pools.js";
 
 const PART_HINT: Record<string, string> = {
   [STORAGE_PARTS.seeds]:
