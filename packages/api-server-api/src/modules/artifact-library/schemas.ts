@@ -18,7 +18,7 @@ export const artifactVisibilitySchema = z.enum([
 
 const artifactCreateVisibilitySchema = z.enum(["private", "public"]);
 
-export const VIEWER_ALLOWLIST_MAX = 50;
+export const VIEWER_ALLOWLIST_MAX = 100;
 
 export const viewerEmailSchema = z
   .string()
