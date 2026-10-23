@@ -11,7 +11,6 @@ import (
 // There is no desiredState field: running-vs-hibernated is not stored intent
 // but observed status the controller derives from activity. Security context
 // and scheduling are chart-only (config.AgentBase, config.VM).
-// +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
 // +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
 type AgentSpec struct {
 	// Image is the agent container image.

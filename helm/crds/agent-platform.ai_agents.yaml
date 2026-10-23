@@ -274,9 +274,6 @@ spec:
             - image
             type: object
             x-kubernetes-validations:
-            - message: an Environment runs on the vm backend
-              rule: '!has(self.environmentOf) || (has(self.backend) && self.backend.type
-                == ''vm'')'
             - message: environmentOf is set at create and never added or removed
               rule: has(self.environmentOf) == has(oldSelf.environmentOf)
           status:
