@@ -47,7 +47,7 @@ The link is one-way: only the Owning Agent's machine can open it, the runner joi
   `scp`, `ssh -L` and streaming an image in, `docker save IMAGE | ssh env-<name> k3s ctr images import -`, work as with any host.
 - **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it until it next boots; only the Owning Agent reaches the link, so the link itself is the authorization.
 - **On the Environment**, an openrc service of the image, `platform-env`, runs `socat` on the vsock port, which hands each connection to a short script that trusts the key and runs `sshd -i`; it starts only on a machine that is an Environment.
-  A shell gets what an openrc service gets of the machine's environment: the image's tool `PATH`, the gateway and CA settings, so `docker` and `k3s` pull as they do at boot, and the image's `XDG_RUNTIME_DIR`, where `rc-service --user` finds the agent's own services.
+  A shell gets what an openrc service gets of the machine's environment: the image's tool `PATH`, the gateway and CA settings, so `docker` and `k3s` pull as they do at boot, the image's `XDG_RUNTIME_DIR`, where `rc-service --user` finds the agent's own services, and `MISE_SYSTEM_DATA_DIR`, where a login shell's mise finds the image's tools.
 - **An open link keeps both machines awake.** The proxy on the agent and the script `socat` starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
 
 The agent's side is a small Python helper, since Node has no vsock, and both sides carry the bytes with `socat`.
