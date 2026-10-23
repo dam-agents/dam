@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -249,17 +249,17 @@ flowchart TD
 
 ### Nothing happens
 
-| Situation                                                  | Why                                                                         |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Untagged reply in the agent's thread (normal binding)      | Dropped; the writer sees a note once per thread                             |
-| Untagged message in a group DM                             | Dropped                                                                     |
-| Edited a message to add the tag                            | Edits are ignored                                                           |
-| A bot or workflow wrote to the agent without tagging it    | Plain posts reach readers only; a mention-only Agent needs a tag            |
-| An app's posts reach no Agent in one channel               | The channel ignores that app (`/dam ignore` lists them)                     |
-| Agents or apps went quiet after a few posts back and forth | Three bot posts in a row per thread is the limit; a person's post resets it |
-| Mentioned a name two connected Agents share                | Went to the default; sender not told                                        |
-| An ambient agent went quiet                                | Every failure on ambient turns is invisible                                 |
-| The agent did less than asked                              | A tool call was auto-refused or a host blocked; only the agent can explain  |
+| Situation                                                  | Why                                                                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Untagged reply in the agent's thread (normal binding)      | Dropped; the writer sees a note once per thread                                                                                |
+| Untagged message in a group DM                             | Dropped                                                                                                                        |
+| Edited a message to add the tag                            | Edits are ignored                                                                                                              |
+| A bot or workflow wrote to the agent without tagging it    | Plain posts reach readers only; a mention-only Agent needs a tag                                                               |
+| An app's posts reach no Agent in one channel               | The channel ignores that app (`/dam ignore` lists them)                                                                        |
+| Agents or apps went quiet after a few posts back and forth | Three bot posts in a row per thread is the limit; a person's post resets it; the Agent's Channels page shows the dropped posts |
+| Mentioned a name two connected Agents share                | Went to the default; sender not told                                                                                           |
+| An ambient agent went quiet                                | Every failure on ambient turns is invisible                                                                                    |
+| The agent did less than asked                              | A tool call was auto-refused or a host blocked; only the agent can explain                                                     |
 
 A revoked bot token or uninstalled app silences every conversation, and nothing in Slack says why.
 

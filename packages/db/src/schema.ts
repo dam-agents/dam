@@ -107,6 +107,19 @@ export const slackIgnoredApps = pgTable(
   (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
 );
 
+export const slackLoopGuardDrops = pgTable("slack_loop_guard_drops", {
+  channelId: text("channel_id").primaryKey(),
+  dropped: integer("dropped").notNull(),
+  lastDroppedAt: timestamp("last_dropped_at", {
+    withTimezone: true,
+  }).notNull(),
+  recent: jsonb("recent")
+    .$type<
+      { at: string; thread: boolean; sender: "agent" | "app"; name: string }[]
+    >()
+    .notNull(),
+});
+
 export const publicImageUrls = pgTable("public_image_urls", {
   sha256: text("sha256").primaryKey(),
   url: text("url").notNull(),

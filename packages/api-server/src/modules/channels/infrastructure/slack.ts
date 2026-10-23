@@ -190,6 +190,7 @@ import type {
   SlackIgnoredApp,
   SlackIgnoredApps,
 } from "./slack-ignored-apps-repository.js";
+import type { SlackLoopGuardDropsRepository } from "./slack-loop-guard-drops-repository.js";
 import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
 import {
   createThreadSupersede,
@@ -1303,6 +1304,7 @@ export type SlackWorkerDeps = {
   ) => Promise<void>;
   agentsFor: (owner: string) => AgentsService;
   ignoredApps: SlackIgnoredApps;
+  loopGuardDrops?: Pick<SlackLoopGuardDropsRepository, "record">;
   setSlackDefault: (
     agentId: string,
     slackChannelId: string,
@@ -1335,6 +1337,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     setSlackChannelAmbient,
     agentsFor,
     ignoredApps,
+    loopGuardDrops,
     setSlackDefault,
     brand,
     isTermsAccepted,
@@ -1553,16 +1556,43 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   function admitBotPost(
     sender: SlackSender,
-    conversation: string,
     channelId: string,
+    threadTs: string | undefined,
   ): boolean {
     if (sender.kind === "person") return true;
-    if (botPosts.admitBotPost(conversation)) return true;
+    if (botPosts.admitBotPost(botPostConversation(channelId, threadTs)))
+      return true;
     getLogger().info(
       { channelId, sender: sender.kind },
       "slack.bot_post.loop_bound",
     );
+    void recordLoopGuardDrop(sender, channelId, !!threadTs);
     return false;
+  }
+
+  async function recordLoopGuardDrop(
+    sender: Exclude<SlackSender, { kind: "person" }>,
+    channelId: string,
+    thread: boolean,
+  ): Promise<void> {
+    if (!loopGuardDrops) return;
+    try {
+      const name =
+        sender.kind === "agent"
+          ? (await resolveAgentName(sender.agentId)) || sender.agentId
+          : sender.name || sender.botId;
+      await loopGuardDrops.record(channelId, {
+        at: new Date().toISOString(),
+        thread,
+        sender: sender.kind,
+        name,
+      });
+    } catch (err) {
+      getLogger().warn(
+        { channelId, error: formatError(err) },
+        "slack.bot_post.loop_bound_unrecorded",
+      );
+    }
   }
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
@@ -4917,7 +4947,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const binding = routed.target;
     if (!senderReaches(sender, binding)) return;
-    if (!admitBotPost(sender, conversation, event.channel)) return;
+    if (!admitBotPost(sender, event.channel, event.threadTs)) return;
 
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
@@ -5817,7 +5847,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await noticeUntaggedReply(event, sender.user, event.threadTs, bindings);
       return;
     }
-    if (!admitBotPost(sender, conversation, event.channel)) return;
+    if (!admitBotPost(sender, event.channel, event.threadTs)) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,

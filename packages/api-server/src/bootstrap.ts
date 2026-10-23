@@ -86,6 +86,7 @@ import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js"
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
+import { createSlackLoopGuardDropsRepository } from "./modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
   createFakeSlackGateway,
   FAKE_WORKSPACE,
@@ -1086,8 +1087,10 @@ export async function bootstrap() {
     onLost: () => sessionWatcher.stop(),
   };
 
+  const loopGuardDrops = createSlackLoopGuardDropsRepository(db);
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
+    readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
     install: agentsInstallSettings(config),
     api,
     resolveSlackWorkspace: (slackChannelId) =>
@@ -1407,6 +1410,7 @@ export async function bootstrap() {
         setSlackChannelAmbient: setSlackChannelAmbient(db),
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
+        loopGuardDrops,
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
@@ -1929,6 +1933,7 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
+      readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
       storageGate: composeStorageGate({
         k8s: k8sClient,
         owner,

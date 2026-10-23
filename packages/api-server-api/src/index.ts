@@ -104,6 +104,8 @@ export type {
   UnbindTelegramChatResult,
   SlackChannel,
   SlackConversationLabel,
+  SlackLoopGuardDrop,
+  SlackLoopGuardDrops,
   ChannelConfig,
   RuntimeFleet,
   RuntimeFleetAgent,
