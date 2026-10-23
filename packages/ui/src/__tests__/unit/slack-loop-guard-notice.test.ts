@@ -2,11 +2,14 @@
 import type { SlackLoopGuardDrops } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
+import { clockLabel, formatDate } from "../../lib/format-time.js";
 import { loopGuardNoticeCopy } from "../../modules/sandboxes/lib/slack-loop-guard.js";
 
 const NOW = new Date(2026, 9, 22, 18, 0);
 const at = (day: number, hour: number) =>
   new Date(2026, 9, day, hour, 0).toISOString();
+const dated = (iso: string) =>
+  `${formatDate(iso, { month: "short", day: "numeric" })}, ${clockLabel(iso)}`;
 
 function drops(
   overrides: Partial<SlackLoopGuardDrops> = {},
@@ -24,8 +27,8 @@ describe("the loop guard notice", () => {
   // TEST_SCENARIO: one drop today reads in the singular with the time alone, and the rule names the limit the server sent.
   it("names one drop today and the server's limit", () => {
     const copy = loopGuardNoticeCopy(drops({ limit: 5 }), NOW);
-    expect(copy.title).toMatch(
-      /^1 bot or app post dropped by the loop guard, last [^,]*\.$/,
+    expect(copy.title).toBe(
+      `1 bot or app post dropped by the loop guard, last ${clockLabel(at(22, 17))}.`,
     );
     expect(copy.rule).toContain("Once 5 bot or app posts in a row");
     expect(copy.latest).toBeNull();
@@ -44,11 +47,11 @@ describe("the loop guard notice", () => {
       }),
       NOW,
     );
-    expect(copy.title).toMatch(
-      /^4 bot or app posts dropped by the loop guard, last Oct 21, /,
+    expect(copy.title).toBe(
+      `4 bot or app posts dropped by the loop guard, last ${dated(at(21, 23))}.`,
     );
-    expect(copy.latest).toMatch(
-      /^FluxCD \(app, in a thread, Oct 21, .*\); Alpha \(agent, top level, Oct 21, .*\)$/,
+    expect(copy.latest).toBe(
+      `FluxCD (app, in a thread, ${dated(at(21, 23))}); Alpha (agent, top level, ${dated(at(21, 22))})`,
     );
   });
 });
