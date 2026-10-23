@@ -5,12 +5,13 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Card, CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
+import { Spinner } from "@/components/ui/spinner";
+import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 import { providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
-import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
@@ -42,15 +43,7 @@ export function ProviderRow({
   footer,
 }: Props) {
   const name = givenName ?? providerName(type);
-  const refused = connected && keyCheck?.result === "refused";
-  const keyStatus =
-    connected && keyCheck !== undefined ? (
-      <ProviderKeyStatus check={keyCheck} checking={checking} />
-    ) : null;
-  const keyStatusBesideHarnesses =
-    connected &&
-    keyCheck !== undefined &&
-    (checking || keyCheck?.result !== "unverified");
+  const rejected = connected && keyCheck?.result === "refused";
   const body = (
     <>
       <CardIcon provider={type} templateId={templateId} />
@@ -65,7 +58,8 @@ export function ProviderRow({
           <ConnectionBadge
             connected={connected}
             degraded={degraded}
-            refused={refused}
+            keyCheck={keyCheck}
+            checking={!!checking}
           />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
@@ -84,20 +78,14 @@ export function ProviderRow({
               </span>
             )}
           </div>
-          <div className="flex min-w-0 items-center justify-end gap-3 text-right">
-            {keyStatusBesideHarnesses && keyStatus}
-            {balance}
-          </div>
+          <div className="min-w-0 text-right">{balance}</div>
         </div>
-        {keyStatus && !keyStatusBesideHarnesses && (
-          <div className="mt-2">{keyStatus}</div>
-        )}
       </div>
     </>
   );
   const layout = "flex w-full items-start gap-3 p-4";
   const label = connected
-    ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
+    ? `${connectedAction} ${name}${rejected ? ", key rejected" : ""}`
     : `Connect ${name}`;
 
   if (footer) {
@@ -130,38 +118,71 @@ export function ProviderRow({
 
 const ROW_HEAD_BUTTON = `text-left ${CARD_HOVER} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one pill that says where a provider row
+ * stands: whether it is configured, and, once it is, whether its key is being
+ * verified, rejected by the provider, or working. A provider that could not
+ * answer or whose template is having an outage keeps a yellow pill, with the
+ * reason in its tooltip, since neither says the key is bad.
+ */
 function ConnectionBadge({
   connected,
   degraded,
-  refused,
+  keyCheck,
+  checking,
 }: {
   connected: boolean;
   degraded: boolean;
-  refused: boolean;
+  keyCheck: ProviderKeyCheck | null | undefined;
+  checking: boolean;
 }) {
+  const pill = "ml-auto shrink-0 gap-1.5";
   if (!connected)
     return (
-      <Badge variant="muted" className="ml-auto shrink-0">
-        Not connected
+      <Badge variant="muted" className={pill}>
+        Not configured
       </Badge>
     );
-  if (refused)
+  if (checking)
     return (
-      <Badge variant="danger" className="ml-auto shrink-0">
-        Key refused
+      <Badge variant="warning" className={pill}>
+        <Spinner size={12} className="shrink-0" />
+        Configured · Verifying
       </Badge>
     );
-  return degraded ? (
-    <Badge
-      variant="warning"
-      className="ml-auto shrink-0"
-      data-testid="provider-degraded-badge"
-    >
-      Degraded
-    </Badge>
-  ) : (
-    <Badge variant="success" className="ml-auto shrink-0">
-      Connected
+  if (keyCheck?.result === "refused")
+    return (
+      <Badge
+        variant="danger"
+        className={pill}
+        title={`Key rejected on ${formatTimestamp(keyCheck.checkedAt)} (${keyCheck.detail})`}
+      >
+        Configured · Key rejected
+      </Badge>
+    );
+  if (degraded)
+    return (
+      <Badge
+        variant="warning"
+        className={pill}
+        data-testid="provider-degraded-badge"
+      >
+        Configured · Degraded
+      </Badge>
+    );
+  if (keyCheck?.result === "unverified")
+    return (
+      <Badge
+        variant="warning"
+        className={pill}
+        title={`Could not verify the key on ${formatTimestamp(keyCheck.checkedAt)}: ${keyCheck.detail}`}
+      >
+        Configured · Unverified
+      </Badge>
+    );
+  return (
+    <Badge variant="success" className={pill}>
+      Configured · Connected
     </Badge>
   );
 }
