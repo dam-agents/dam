@@ -28,6 +28,10 @@ const fake = vi.hoisted(() => ({
   },
 }));
 
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select(fake.store),
 }));

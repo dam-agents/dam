@@ -845,6 +845,7 @@ export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
 export { linksSchema } from "./modules/links/types.js";
+export type { Links } from "./modules/links/types.js";
 
 export { publicAgentResponseSchema } from "./modules/agents/public-agent.js";
 export type {

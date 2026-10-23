@@ -138,6 +138,7 @@ The panel's top bar becomes a 40 px row 8 px below the top of the panel, with it
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
 The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
 The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.
+Both Documentation places open the install's documentation site, the chart's `links.docs` value, and an install that sets it empty shows neither.
 The rest of the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.
 The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
