@@ -47,6 +47,7 @@ async function startAuth(): Promise<User | null> {
     scope: "openid profile",
     userStore: new WebStorageStateStore({ store: sessionStorage }),
     automaticSilentRenew: true,
+    fetchRequestCredentials: "include",
   });
 
   if (window.location.pathname === "/auth/callback") {

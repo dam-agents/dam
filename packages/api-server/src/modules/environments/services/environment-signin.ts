@@ -17,6 +17,15 @@ interface Handoff extends Visitor {
   address: string;
   next: string;
   binding: string;
+  then: string | null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the rest of one sign-in, for an Environment with more than one endpoint: whose it is, the endpoints still to get a session, and where the visitor returns once they all have one.
+interface Chain {
+  sub: string;
+  shareSession: string;
+  remaining: string[];
+  returnTo: string;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the share host's sessions, as an address's session depends on them: whether one still holds, and ending one.
@@ -31,7 +40,18 @@ export interface EnvironmentSignIn {
     address: string,
     next: string | undefined,
     binding: string,
+    then?: string,
   ): Promise<string>;
+  startChain(
+    visitor: Visitor,
+    others: string[],
+    returnTo: string,
+  ): Promise<string | null>;
+  continueChain(
+    chainId: string,
+    visitor: Visitor,
+    address: string,
+  ): Promise<string | null>;
   redeemHandoff(
     code: string,
     address: string,
@@ -55,20 +75,31 @@ export interface EnvironmentSignIn {
  * leaks, through a log, the history or a referrer, opens nothing in another
  * browser, and no session of one address is ever usable on another. The
  * session lasts only while the share host's session it came from does, and
- * signing out of it ends both.
+ * signing out of it ends both. An Environment with several endpoints is one
+ * sign-in: once the first address has its session, the visitor's browser
+ * passes through each other endpoint in turn, which gets a session of its own
+ * the same way, bound to a secret of its own, and then returns where it began.
+ * So an app whose pages call another of its endpoints, such as its own login
+ * server, finds a session there.
  */
 export function createEnvironmentSignIn(deps: {
   handoffs: TtlStore<Handoff>;
   sessions: TtlStore<EnvironmentSession>;
+  chains: TtlStore<Chain>;
   share: ShareSessions;
   addressUrl: (address: string) => string;
   now: () => number;
 }): EnvironmentSignIn {
   const random = (bytes: number) =>
     crypto.randomBytes(bytes).toString("base64url");
+  const chainHop = (address: string, chainId: string) => {
+    const url = new URL("/.platform/signin", deps.addressUrl(address));
+    url.searchParams.set("chain", chainId);
+    return url.href;
+  };
 
   return {
-    async handoff(visitor, address, next, binding) {
+    async handoff(visitor, address, next, binding, then) {
       const code = random(32);
       await deps.handoffs.set(code, {
         sub: visitor.sub,
@@ -77,6 +108,7 @@ export function createEnvironmentSignIn(deps: {
         address,
         next: safeNext(next),
         binding,
+        then: then ?? null,
       });
       const url = new URL("/.platform/session", deps.addressUrl(address));
       url.searchParams.set("code", code);
@@ -100,7 +132,37 @@ export function createEnvironmentSignIn(deps: {
         createdAt: deps.now(),
       };
       await deps.sessions.set(sessionId, session);
-      return { sessionId, session, next: handoff.next };
+      return { sessionId, session, next: handoff.then ?? handoff.next };
+    },
+
+    async startChain(visitor, others, returnTo) {
+      if (others.length === 0) return null;
+      const chainId = random(32);
+      await deps.chains.set(chainId, {
+        sub: visitor.sub,
+        shareSession: visitor.shareSession,
+        remaining: others,
+        returnTo,
+      });
+      return chainHop(others[0]!, chainId);
+    },
+
+    async continueChain(chainId, visitor, address) {
+      const chain = await deps.chains.peek(chainId);
+      if (
+        !chain ||
+        chain.sub !== visitor.sub ||
+        chain.shareSession !== visitor.shareSession ||
+        chain.remaining[0] !== address
+      )
+        return null;
+      const rest = chain.remaining.slice(1);
+      if (rest.length === 0) {
+        await deps.chains.delete(chainId);
+        return chain.returnTo;
+      }
+      await deps.chains.set(chainId, { ...chain, remaining: rest });
+      return chainHop(rest[0]!, chainId);
     },
 
     async session(sessionId) {

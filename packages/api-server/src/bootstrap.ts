@@ -208,6 +208,7 @@ import { createSessionPresence } from "./apps/api-server/agent-proxies/session-p
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
+  isApiKeyToken,
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
@@ -578,6 +579,13 @@ export async function bootstrap() {
         loginPath: (next) => loginPath(next),
         logoutPath: "/auth/logout",
         logoutUrl: (next) => shareAuth.logoutUrl(next),
+      },
+      platform: {
+        issuers: [
+          `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+          `${config.keycloakUrl}/realms/${config.keycloakRealm}`,
+        ],
+        isApiKey: isApiKeyToken,
       },
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       stampActivity: (agentId) =>

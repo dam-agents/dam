@@ -3,6 +3,7 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   decideAccess,
   effectiveAccess,
+  endpointAddresses,
   isSignInToken,
   parseAddress,
   safeNext,
@@ -29,7 +30,7 @@ export interface FrontDoorDeps {
   addressUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
   ownerList: (owningAgentId: string) => Promise<string[]>;
-  signIn: Pick<EnvironmentSignIn, "handoff">;
+  signIn: Pick<EnvironmentSignIn, "handoff" | "startChain" | "continueChain">;
   share: ShareSignIn;
   brandName: string;
 }
@@ -52,7 +53,11 @@ const GATE_HEADERS: Record<string, string> = {
  * refused, they see who they are signed in as, whom to ask, and a switch of
  * account. A visit with no hash, as after signing in again, goes to the
  * address, which starts over with a secret of its own. The address checks
- * again on every request; this only decides who gets a session there.
+ * again on every request; this only decides who gets a session there. An
+ * Environment with several endpoints is signed in to as one: the code for the
+ * first address sends the visitor on through each other endpoint, which comes
+ * back here with a chain of the same sign-in and its own secret's hash, and
+ * the last returns them to the page they asked for.
  */
 export function createEnvironmentFrontDoor(deps: FrontDoorDeps): Hono {
   const app = new Hono();
@@ -80,9 +85,11 @@ export function createEnvironmentFrontDoor(deps: FrontDoorDeps): Hono {
     const address = c.req.param("address");
     const next = c.req.query("next");
     const binding = c.req.query("b");
+    const chainId = c.req.query("chain");
     const query = new URLSearchParams();
     if (next !== undefined) query.set("next", next);
     if (binding !== undefined) query.set("b", binding);
+    if (chainId !== undefined) query.set("chain", chainId);
     const here = `/e/${address}${query.size > 0 ? `?${query}` : ""}`;
     const parsed = parseAddress(`${address}.${deps.domain}`, deps.domain);
     const record = parsed ? await deps.repo.getByHost(parsed.host) : null;
@@ -140,8 +147,23 @@ export function createEnvironmentFrontDoor(deps: FrontDoorDeps): Hono {
         { action: deps.share.logoutPath, next: here },
       );
     }
+    const origin = new URL(deps.addressUrl(parsed.address)).origin;
+    const back = new URL(safeNext(next), origin);
+    const then = isSignInToken(chainId)
+      ? await deps.signIn.continueChain(chainId, visitor, parsed.address)
+      : await deps.signIn.startChain(
+          visitor,
+          endpointAddresses(record).filter((a) => a !== parsed.address),
+          back.origin === origin ? back.href : `${origin}/`,
+        );
     return c.redirect(
-      await deps.signIn.handoff(visitor, parsed.address, next, binding),
+      await deps.signIn.handoff(
+        visitor,
+        parsed.address,
+        next,
+        binding,
+        then ?? undefined,
+      ),
       302,
     );
   });

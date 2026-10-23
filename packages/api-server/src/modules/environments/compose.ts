@@ -1,7 +1,11 @@
 import type { Redis } from "ioredis";
 import type { Hono } from "hono";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
-import { domainOf, SESSION_TTL_MS } from "./domain/gate.js";
+import {
+  domainOf,
+  SESSION_TTL_MS,
+  type PlatformCredentials,
+} from "./domain/gate.js";
 import {
   createEnvironmentGate,
   noEnvironmentGate,
@@ -191,6 +195,7 @@ export function composeEnvironmentsOver(
 }
 
 const HANDOFF_TTL_MS = 60_000;
+const CHAIN_TTL_MS = 5 * 60_000;
 
 // UNIT_BOUNDARY_DESCRIPTION: the path of an Environment's front door on the share host.
 export const FRONT_DOOR_PREFIX = "/e/";
@@ -201,6 +206,7 @@ export interface ComposeEnvironmentGateDeps {
   urlTemplate: string | null;
   shareBaseUrl: string;
   share: ShareSignIn;
+  platform: PlatformCredentials;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   namespace: string;
@@ -219,7 +225,8 @@ export interface EnvironmentGateComposition {
  * serves no Environments (no environments domain). Visitors sign in with the
  * share host's own session and identity provider client, and an address's
  * session lasts while that share session does; signing out of an address
- * ends both and the identity provider's session. The hand-off codes and the
+ * ends both and the identity provider's session. One sign-in covers every
+ * endpoint of an Environment. The hand-off codes, the sign-in chains and the
  * addresses' sessions live in Redis, so any api-server replica serves any
  * step.
  */
@@ -239,6 +246,7 @@ export function composeEnvironmentGate(
   const signIn: EnvironmentSignIn = createEnvironmentSignIn({
     handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
     sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
+    chains: createRedisTtlStore(deps.redis, "env:signin-chain", CHAIN_TTL_MS),
     share: deps.share,
     addressUrl,
     now: () => Date.now(),
@@ -246,10 +254,11 @@ export function composeEnvironmentGate(
   const gate = createEnvironmentGate({
     domain,
     scheme: template.startsWith("https:") ? "https" : "http",
-    frontDoorUrl: (address, next, binding) => {
+    frontDoorUrl: (address, next, binding, chain) => {
       const url = new URL(`${shareBase}${FRONT_DOOR_PREFIX}${address}`);
       url.searchParams.set("next", next);
       url.searchParams.set("b", binding);
+      if (chain !== undefined) url.searchParams.set("chain", chain);
       return url.href;
     },
     signOutUrl: (address) =>
@@ -257,6 +266,7 @@ export function composeEnvironmentGate(
     repo,
     ownerList,
     signIn,
+    platform: deps.platform,
     ensureReady: deps.ensureReady,
     stampActivity: deps.stampActivity,
     upstream: (agentId) => {
