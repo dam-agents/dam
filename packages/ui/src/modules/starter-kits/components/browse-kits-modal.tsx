@@ -16,8 +16,8 @@ import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
 import { KitLinkForm } from "./kit-link-form.js";
 
 const DEFAULT_KIT = {
-  name: "Generalist",
-  text: "The vanilla option: only a harness without any preset. Use it directly, or as a foundation for a specialized agent.",
+  name: "The Generalist",
+  text: "One click, no setup. Use it as-is or customize it later by adding connections, channels, schedules, and more.",
 };
 
 export function BrowseKitsModal() {

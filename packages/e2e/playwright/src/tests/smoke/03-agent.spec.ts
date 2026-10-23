@@ -16,7 +16,7 @@ import {
   mockDefaultReply,
 } from "../../lib/fixtures.js";
 
-test("one-click create from the Generalist kit, then the mock agent with the connection and default provider", async ({
+test("one-click create from the Generalist card, then the mock agent with the connection and default provider", async ({
   page,
 }) => {
   test.setTimeout(300_000);
@@ -59,7 +59,7 @@ test("one-click create from the Generalist kit, then the mock agent with the con
   });
 
   let oneClickId: string | undefined;
-  await test.step("create an agent in one click from the Generalist kit", async () => {
+  await test.step("create an agent in one click from the Generalist card", async () => {
     const before = new Set((await api.agents.list.query()).map((a) => a.id));
     await page
       .getByTestId("app-sidebar")
