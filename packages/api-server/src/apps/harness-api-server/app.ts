@@ -215,6 +215,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const mcpArtifactLibraryFor = (owner: string) =>
     artifactLibraryFor(owner, "mcp");
 
+  const featureFlagsFor = (owner: string) =>
+    composeFeaturesForOwner({
+      db,
+      owner,
+      surface: "mcp",
+      modes: config.featureModes,
+    }).features.flags();
+
   const kbShareOpsFor = (owner: string) =>
     composeKbShareAgentOps({
       owner,
@@ -295,24 +303,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     chatFormPreferences: (owner, agentId) =>
       readChatFormPreferences(
         agentId,
-        async () =>
-          (
-            await composeFeaturesForOwner({
-              db,
-              owner,
-              surface: "mcp",
-              modes: config.featureModes,
-            }).features.flags()
-          )["chat-forms"],
+        async () => (await featureFlagsFor(owner))["chat-forms"],
       ),
     agentImage: createAgentImageReader(k8sClient),
     environments: async (owner, agentId) => {
-      const flags = await composeFeaturesForOwner({
-        db,
-        owner,
-        surface: "mcp",
-        modes: config.featureModes,
-      }).features.flags();
+      const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
       const agent = await agentsRepo.get(agentId, owner);
       if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
