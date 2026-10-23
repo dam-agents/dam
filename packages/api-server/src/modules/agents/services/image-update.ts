@@ -21,7 +21,7 @@ const READY_HOLD_MS = 5 * 60_000;
 
 export type ImageMove = "now" | "if-pod-idle";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether and when the platform moves an Agent to its Template's current image without its owner. The caller passes that image only for an Agent created from a Template, so an Agent created on an image of its own, a starter kit's included, is never moved. An image this Agent already failed to start on is not tried again. A down Agent, hibernated or over budget, moves now: the image change restarts nothing. A running Agent waits for the idle checker to hibernate it, except an always-on Agent, which never hibernates: it moves once no connection is open, no Invocation pins it, its last activity is older than ALWAYS_ON_QUIET_MS, and its pod reports idle, the same signals the idle checker reads. An Agent with a storage migration under way is left to finish it first.
+// UNIT_BOUNDARY_DESCRIPTION: whether and when the platform moves an Agent to its Template's current image without its owner. The caller passes that image only for an Agent created from a Template, so an Agent created on an image of its own, a starter kit's included, is never moved. An image this Agent already failed to start on is not tried again. A down Agent, hibernated or over budget, moves now: the image change restarts nothing. A running Agent waits for the idle checker to hibernate it, except an always-on Agent, which never hibernates: it moves once no connection is open, no Invocation pins it, its last activity is older than ALWAYS_ON_QUIET_MS, and its pod reports idle, the same signals the idle checker reads.
 export function imageMove(
   agent: InfraAgent,
   templateImage: string,
@@ -29,7 +29,6 @@ export function imageMove(
   now: Date,
 ): ImageMove | null {
   if (
-    agent.storageMigrating ||
     !agent.spec.image ||
     agent.spec.image === templateImage ||
     agent.imageUpdateRefused === templateImage

@@ -228,10 +228,6 @@ describe("imageMove", () => {
       move(alwaysOn(quietSince ? { quietSince } : { quietSince: undefined })),
     ).toBeNull();
   });
-
-  it("leaves an agent with a storage migration under way alone", () => {
-    expect(move(agent({ storageMigrating: true }))).toBeNull();
-  });
 });
 
 describe("image update tick", () => {

@@ -19,7 +19,6 @@ export const INVOCATIONS_ACTIVE_KEY = "agent-platform.ai/invocations-active";
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
 export const DISABLED_KEY = "agent-platform.ai/disabled";
 export const RECLAIMED_AT_KEY = "agent-platform.ai/reclaimed-at";
-export const STORAGE_MIGRATION_KEY = "agent-platform.ai/storage-migration";
 
 export const ANN_SWEEPABLE = "agent-platform.ai/sweepable";
 export const ANN_LIFETIME_MS = "agent-platform.ai/lifetime-ms";

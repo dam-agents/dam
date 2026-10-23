@@ -48,7 +48,6 @@ import {
   READY_REASON_OVER_BUDGET,
   DISABLED_KEY,
   STOP_REQUESTED_KEY,
-  STORAGE_MIGRATION_KEY,
   VERSION,
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
@@ -125,7 +124,6 @@ export interface InfraAgent {
   hibernated: boolean;
   stopRequested: boolean;
   disabled: boolean;
-  storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   error?: string;
@@ -334,7 +332,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
     disabled: !!annotations[DISABLED_KEY],
-    storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
     overBudgetMessage:

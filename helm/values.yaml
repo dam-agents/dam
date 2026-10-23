@@ -136,7 +136,7 @@ urls:
   # routed to the api-server, which host-gates it onto the share-host app.
   # This host is browser-facing only — consumer agents read shared knowledge
   # bases over the in-cluster harness channel, never by dialing this host, so
-  # it does not need to be resolvable from agent pods.
+  # it does not need to be resolvable from a machine.
   share: "" # default: {scheme}://share.{domain}{:port}
   # Content host that serves only artifact documents and raw bytes, framed by
   # the share host. A second origin so artifact code can never act on the
@@ -149,7 +149,7 @@ urls:
   environments: "" # default: {scheme}://{host}.{environments.domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
-# Agent pods (managed by the controller) also inherit these secrets.
+# The node image cache and every machine inherit these secrets too.
 # Example:
 #   imagePullSecrets:
 #     - name: my-registry-secret
@@ -327,11 +327,11 @@ virtualization:
     # already exists. The rendered class stays even then, because a runner
     # Deployment keeps the class it was rolled with until its pod rolls again. A
     # runner holds every machine of one owner, so that one pod going down costs
-    # the owner every agent they have: a node under memory pressure evicts the
-    # agent pods, which carry no class (0), before it. `preemptionPolicy: Never`
+    # the owner every agent they have: a node under memory pressure takes the
+    # pods with no class (0) before it. `preemptionPolicy: Never`
     # keeps it the other way round too — a runner never preempts anything to be
-    # placed, so a full node waits for room rather than evicting a gateway, an
-    # agent pod or the platform's own control plane. The chart gives that
+    # placed, so a full node waits for room rather than evicting a gateway or
+    # the platform's own control plane. The chart gives that
     # control plane no class of its own, which leaves it below this value; an
     # install that wants it above gives it a class above this one.
     priorityClassName: ""
