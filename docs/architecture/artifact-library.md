@@ -60,7 +60,7 @@ The host validates both the message payload and the sending window against its p
 The page still never holds a credential for either call.
 The frame is sandboxed without modals, so browser dialogs are blocked.
 
-Callbacks are available in the docked preview inside the publishing Agent's chat, including fullscreen, and work in a newly started conversation without reloading the page.
+Callbacks are available in the docked preview inside the publishing Agent's chat, including maximized and full page, and work in a newly started conversation without reloading the page.
 The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 There is no permanent Session binding: the currently open conversation is the destination.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
@@ -214,8 +214,12 @@ flowchart LR
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
-  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then the side panel's close X, which the docked preview in a chat with both experiments off does not show — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
+  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then Full page, which stays in the bar while editing, then the side panel's close X, which the docked preview in a chat with both experiments off does not show — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
   It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does.
+  **Full page** lays the same preview over the whole browser window, above the app's navigation and below its dialogs, and works for a private artifact, which has no link to open in a new tab.
+  The preview's frame stays where it is in the page, so the content does not reload and an interactive page keeps its bridge; while it is on, the page columns around the preview move up to the overlay layer with it.
+  The keyboard stays inside the preview, and a change of side panel tab or of the docked item ends full page.
+  The button or Escape takes it back; Escape while a dialog, menu or tooltip is open closes only that, and the Escape that leaves full page closes nothing else.
   Deleting the artifact a preview is showing closes that preview.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.

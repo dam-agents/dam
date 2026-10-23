@@ -8,9 +8,11 @@ export interface SidePanelSlice {
   sidePanelTab: SidePanelTab | null;
   sidePanelMaximized: string | null;
   dock: Dock | null;
+  artifactFullPage: boolean;
   setSidePanelTab: (tab: SidePanelTab | null) => void;
   setSidePanelMaximized: (view: string | null) => void;
   setDock: (dock: Dock | null, opts?: { edit?: boolean }) => void;
+  setArtifactFullPage: (on: boolean) => void;
 }
 
 export const createSidePanelSlice: StateCreator<
@@ -22,11 +24,16 @@ export const createSidePanelSlice: StateCreator<
   sidePanelTab: null,
   sidePanelMaximized: null,
   dock: null,
+  artifactFullPage: false,
   setSidePanelTab: (tab) =>
     set(
       tab === null
-        ? { sidePanelTab: null, sidePanelMaximized: null }
-        : { sidePanelTab: tab },
+        ? {
+            sidePanelTab: null,
+            sidePanelMaximized: null,
+            artifactFullPage: false,
+          }
+        : { sidePanelTab: tab, artifactFullPage: false },
     ),
   setSidePanelMaximized: (view) => set({ sidePanelMaximized: view }),
   setDock: (dock, opts) =>
@@ -35,6 +42,7 @@ export const createSidePanelSlice: StateCreator<
       sidePanelTab: dock ? dockTab[dock.kind] : state.sidePanelTab,
       sidePanelMaximized:
         dockKey(dock) === dockKey(state.dock) ? state.sidePanelMaximized : null,
+      artifactFullPage: false,
       openFileDirty: false,
       openFileEdit: dock?.kind === "file" ? (opts?.edit ?? false) : false,
       openArtifactDirty:
@@ -46,4 +54,5 @@ export const createSidePanelSlice: StateCreator<
       openArtifactEdit:
         dock?.kind === "artifact" ? (opts?.edit ?? false) : false,
     })),
+  setArtifactFullPage: (on) => set({ artifactFullPage: on }),
 });

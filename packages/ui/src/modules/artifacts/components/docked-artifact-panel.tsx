@@ -1,8 +1,9 @@
 import { ArrowLeft, Close, Save } from "@carbon/icons-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { LoadFailed, PanelMessage } from "@/components/ui/empty-state";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -14,6 +15,7 @@ import {
   useArtifactVersions,
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
+import { useFullPage } from "../hooks/use-full-page.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
@@ -22,6 +24,7 @@ import { ArtifactVisibilityButton } from "./artifact-badges.js";
 import { ArtifactBarActions } from "./artifact-bar-actions.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
+import { FullPageButton } from "./full-page-button.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
@@ -53,6 +56,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [shareOpen, setShareOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { fullPage, toggleFullPage } = useFullPage(rootRef);
 
   const { data: versions } = useArtifactVersions(openArtifactId);
   const latest = artifact?.version;
@@ -121,7 +126,14 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
   if (!openArtifactId) return null;
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      ref={rootRef}
+      data-full-page={fullPage || undefined}
+      className={cn(
+        "flex h-full flex-col",
+        fullPage && "fixed inset-0 z-overlay bg-background",
+      )}
+    >
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pl-2 pr-4">
         <Button
           variant="ghost"
@@ -191,6 +203,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
             )}
           </>
         )}
+        <FullPageButton fullPage={fullPage} onToggle={toggleFullPage} />
         <SidePanelCloseButton corner="-mr-4" />
       </div>
 
