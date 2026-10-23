@@ -63,12 +63,13 @@ export async function readAgentStoreMarker(
     });
     return (marker.data ?? {}) as Record<string, string>;
   } catch (cause) {
-    if (
-      cause instanceof Error &&
-      "code" in cause &&
-      (cause as { code: number }).code === 404
-    )
-      return null;
-    throw cause;
+    const code = (cause as { code?: number } | null)?.code;
+    if (code === 404) return null;
+    const name = agentStoreMarkerName(releaseName);
+    throw new Error(
+      `cannot read the Agent store marker ConfigMap ${namespace}/${name}: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }. The marker decides whether this build may serve, so a fence that cannot read it has not passed. Its Role must allow configmaps get in the agent namespace.`,
+    );
   }
 }
