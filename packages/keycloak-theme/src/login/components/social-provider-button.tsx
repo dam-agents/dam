@@ -18,7 +18,8 @@ interface Props {
 function isIbmProvider({ alias, iconClasses }: SocialProvider) {
   return IBM_SSO_ALIASES.some(
     (ibmAlias) =>
-      alias.toLowerCase() === ibmAlias || iconClasses?.includes(ibmAlias),
+      alias.toLowerCase() === ibmAlias ||
+      iconClasses?.toLowerCase().includes(ibmAlias),
   );
 }
 
