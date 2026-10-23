@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { DeviceFlowError } from "../domain/errors.js";
-import { errorMessage } from "../../shared/error-message.js";
+import { errorMessage, zodIssuesMessage } from "../../shared/error-message.js";
 
 const DEVICE_FLOW_SCOPE = "openid profile email offline_access";
 
@@ -84,9 +84,7 @@ export function createDeviceFlowClient(): DeviceFlowClient {
         return err({
           kind: "device-flow",
           code: "malformed-response",
-          message: parsed.error.issues
-            .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-            .join("; "),
+          message: zodIssuesMessage(parsed.error),
         });
       }
 

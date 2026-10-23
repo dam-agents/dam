@@ -1,11 +1,8 @@
 import { Command } from "commander";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SCHEDULE_NOT_FOUND,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type { ScheduleService } from "../services/schedule-service.js";
 
@@ -33,14 +30,7 @@ export function buildToggleCommand(deps: ToggleDeps, enable: boolean): Command {
       const svc = deps.createScheduleService(host);
 
       const current = await svc.get(id);
-      if (!current.ok) {
-        if (current.error.kind === "schedule-not-found") {
-          process.stderr.write(`error: schedule not found: ${id}\n`);
-          process.exit(EXIT_SCHEDULE_NOT_FOUND);
-        }
-        printServiceError(current.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(current, host, describeScheduleError);
 
       if (current.value.enabled === enable) {
         if (opts.json) {
@@ -52,14 +42,7 @@ export function buildToggleCommand(deps: ToggleDeps, enable: boolean): Command {
       }
 
       const result = await svc.toggle(id, enable);
-      if (!result.ok) {
-        if (result.error.kind === "schedule-not-found") {
-          process.stderr.write(`error: schedule not found: ${id}\n`);
-          process.exit(EXIT_SCHEDULE_NOT_FOUND);
-        }
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host, describeScheduleError);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);

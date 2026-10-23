@@ -5,6 +5,11 @@ import type { AuthRequiredError, TransportError } from "../errors.js";
 import { formatAuthRejection } from "../auth-message.js";
 import { classifyTrpcError, trpcErrorCode } from "./classify.js";
 
+export interface ErrorDescription {
+  stderr: string;
+  exitCode: number;
+}
+
 export function formatTransportError(reason: string, host: string): string {
   return `cannot reach server \`${host}\`: ${reason}`;
 }
@@ -15,28 +20,58 @@ export function serverDetail(e: unknown): string {
   return e.message && e.message !== code ? e.message : "";
 }
 
+export function serviceErrorDescription(
+  error: TransportError | AuthRequiredError,
+  host: string,
+): ErrorDescription {
+  if (error.kind === "auth-required") {
+    return {
+      stderr: formatAuthRejection(error.reason),
+      exitCode: EXIT_RUNTIME_FAILURE,
+    };
+  }
+  if (error.serverCode) {
+    return {
+      stderr: `error: ${error.reason}\n`,
+      exitCode: EXIT_RUNTIME_FAILURE,
+    };
+  }
+  return {
+    stderr: `error: ${formatTransportError(error.reason, host)}\n`,
+    exitCode: EXIT_RUNTIME_FAILURE,
+  };
+}
+
 export function printServiceError(
   error: TransportError | AuthRequiredError,
   host: string,
 ): void {
-  if (error.kind === "auth-required") {
-    process.stderr.write(formatAuthRejection(error.reason));
-    return;
-  }
-  if (error.serverCode) {
-    process.stderr.write(`error: ${error.reason}\n`);
-    return;
-  }
-  process.stderr.write(`error: ${formatTransportError(error.reason, host)}\n`);
+  process.stderr.write(serviceErrorDescription(error, host).stderr);
 }
 
 export function exitOnServiceError<T>(
   result: Result<T, TransportError | AuthRequiredError>,
   host: string,
+): asserts result is { ok: true; value: T };
+export function exitOnServiceError<T, E>(
+  result: Result<T, E>,
+  host: string,
+  describe: (error: E, host: string) => ErrorDescription,
+): asserts result is { ok: true; value: T };
+export function exitOnServiceError<T, E>(
+  result: Result<T, E>,
+  host: string,
+  describe?: (error: E, host: string) => ErrorDescription,
 ): asserts result is { ok: true; value: T } {
   if (result.ok) return;
-  printServiceError(result.error, host);
-  process.exit(EXIT_RUNTIME_FAILURE);
+  const { stderr, exitCode } = describe
+    ? describe(result.error, host)
+    : serviceErrorDescription(
+        result.error as TransportError | AuthRequiredError,
+        host,
+      );
+  process.stderr.write(stderr);
+  process.exit(exitCode);
 }
 
 export function printTrpcError(e: unknown, host: string): void {

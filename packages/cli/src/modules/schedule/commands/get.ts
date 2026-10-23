@@ -1,13 +1,10 @@
 import { Command } from "commander";
 import { onceState, rruleToText } from "api-server-api";
 import { localTimeIn } from "../domain/once-flags.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { describeScheduleError } from "../domain/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SCHEDULE_NOT_FOUND,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import type {
   ScheduleService,
@@ -92,14 +89,7 @@ export function buildGetCommand(deps: {
       const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createScheduleService(host).get(id);
-      if (!result.ok) {
-        if (result.error.kind === "schedule-not-found") {
-          process.stderr.write(`error: schedule not found: ${id}\n`);
-          process.exit(EXIT_SCHEDULE_NOT_FOUND);
-        }
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host, describeScheduleError);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);

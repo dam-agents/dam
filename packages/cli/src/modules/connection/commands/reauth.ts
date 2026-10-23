@@ -7,6 +7,7 @@ import {
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
 } from "../../shared/exit-codes.js";
+import { pollUntil } from "../../shared/poll.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
@@ -109,12 +110,14 @@ export function buildReauthCommand(deps: {
         }
         process.stderr.write("Waiting for authorization…\n");
 
-        const landed = await pollUntilReconnected(
-          svc,
-          match.id,
-          connectedAtBefore,
+        const landed = await pollUntil(() => svc.getConnection(match.id), {
           timeoutSeconds,
-        );
+          intervalMs: POLL_INTERVAL_MS,
+          until: (res) =>
+            res.ok && res.value
+              ? res.value.connectedAt !== connectedAtBefore
+              : false,
+        });
         if (!landed) {
           process.stderr.write(
             `error: couldn't confirm the re-authentication finished within ${timeoutSeconds}s; ` +
@@ -137,29 +140,8 @@ export function buildReauthCommand(deps: {
     );
 }
 
-async function pollUntilReconnected(
-  svc: ConnectionService,
-  id: string,
-  connectedAtBefore: string | undefined,
-  timeoutSeconds: number,
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutSeconds * 1000;
-  while (true) {
-    const res = await svc.getConnection(id);
-    if (res.ok && res.value && res.value.connectedAt !== connectedAtBefore) {
-      return true;
-    }
-    if (Date.now() + POLL_INTERVAL_MS >= deadline) return false;
-    await sleep(POLL_INTERVAL_MS);
-  }
-}
-
 function parseTimeout(raw: string | undefined): number | null {
   if (raw === undefined) return DEFAULT_TIMEOUT_SECONDS;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

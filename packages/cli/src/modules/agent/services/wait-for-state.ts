@@ -1,4 +1,5 @@
 import type { AgentView } from "../domain/agent-view.js";
+import { sleep } from "../../shared/poll.js";
 import type { AgentService } from "./agent-service.js";
 
 export interface WaitOptions {
@@ -49,8 +50,4 @@ export async function waitForRunning(
     if (Date.now() >= deadline) return { kind: "timeout", agent };
     await sleep(POLL_INTERVAL_MS);
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }

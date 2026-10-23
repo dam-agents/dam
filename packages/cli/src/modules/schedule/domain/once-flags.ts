@@ -1,3 +1,5 @@
+import { localDateTimeIn } from "api-server-api";
+
 const AT_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T]([01]\d|2[0-3]):([0-5]\d)$/;
 
 export function parseAtFlag(value: string): string {
@@ -7,17 +9,8 @@ export function parseAtFlag(value: string): string {
 }
 
 export function localTimeIn(iso: string, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
-  const f = Object.fromEntries(parts.map((p) => [p.type, p.value]));
-  return `${f.year}-${f.month}-${f.day} ${f.hour}:${f.minute}`;
+  const { date, time } = localDateTimeIn(new Date(iso), timeZone);
+  return `${date} ${time}`;
 }
 
 export function recurringFlagsGiven(opts: {
