@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -134,6 +134,7 @@ Two dedicated by-link hosts (separate subdomains, both mandatory, wired through 
 
 The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` and the [Environments](environments.md#addresses) front door under `/e` — requests for the content host go to the content app, and everything else falls through to the platform surface.
 The app origin shares nothing with either by-link origin — no cookie, no token — so a malicious artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies, because none of them exist on its origin.
+An install inside an Environment can have a second share and content host, each pair with its own apps, sign-in and session ([environments](environments.md#an-install-inside-an-environment)).
 
 **Share session.** A restricted artifact needs a viewer identity on the share host, and that identity is deliberately not the app's.
 The share host signs the visitor in through a dedicated public Keycloak client (authorization code with PKCE, asking for OpenID identity and email, see [identity](security-and-credentials.md#identity)).

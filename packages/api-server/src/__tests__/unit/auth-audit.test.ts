@@ -44,7 +44,7 @@ function fakeCtx(headers: Record<string, string>, path = "/api/trpc/x") {
 }
 
 const auth = createAuth({
-  issuerUrl: "http://kc/realms/platform",
+  issuers: ["http://kc/realms/platform"],
   jwksUrl: "http://kc/jwks",
   audience: "platform-api",
   requiredRole: "platform-access",
@@ -170,7 +170,7 @@ describe("auth middleware audit", () => {
     const cap = capture();
     const apiKeyAuth = createAuth(
       {
-        issuerUrl: "http://kc/realms/platform",
+        issuers: ["http://kc/realms/platform"],
         jwksUrl: "http://kc/jwks",
       },
       { verifyApiKey: async () => ({ ok: false, error: "revoked" }) },

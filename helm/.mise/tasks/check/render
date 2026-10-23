@@ -498,3 +498,58 @@ for refused in '"https://{host}.env.example.com"' '"https://{host}.other.example
     exit 1
   fi
 done
+# The backchannel: off, the default, the chart renders no backchannel env, no
+# extra host and a fixed Keycloak hostname. On, the install also routes the
+# backchannel's four hosts, Keycloak takes its address from each request, the
+# realm's UI and share clients also allow the backchannel's redirect URIs and
+# origins, and the api-server gets the four addresses. A backchannel domain
+# that gives a public host name fails the render.
+BACK=(--set domain=example.com --set scheme=https --set port= --set backchannel.enabled=true)
+backchannel_env() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/apiserver/app.yaml |
+    yq -o=json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env' | jq -s 'add' |
+    jq -c 'map(select(.name | test("^BACKCHANNEL_")) | {key: .name, value}) | from_entries'
+}
+[ "$(backchannel_env)" = "{}" ] ||
+  { echo "an install without a backchannel gave the api-server backchannel addresses" >&2; exit 1; }
+jq -e '. == {"BACKCHANNEL_UI_BASE_URL": "http://localhost:4444",
+  "BACKCHANNEL_KEYCLOAK_URL": "http://keycloak.localhost:4444",
+  "BACKCHANNEL_SHARE_BASE_URL": "http://share.localhost:4444",
+  "BACKCHANNEL_CONTENT_BASE_URL": "http://content.localhost:4444"}' <<<"$(backchannel_env "${BACK[@]}")" >/dev/null ||
+  { echo "the backchannel addresses did not reach the api-server: $(backchannel_env "${BACK[@]}")" >&2; exit 1; }
+[ "$(backchannel_env "${BACK[@]}" --set backchannel.port= --set backchannel.domain=env.test | jq -r .BACKCHANNEL_SHARE_BASE_URL)" = "http://share.env.test" ] ||
+  { echo "a backchannel without a port did not leave the port out of its addresses" >&2; exit 1; }
+hosts() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/ingress.yaml | yq -r '.spec.rules[].host // ""' | sort
+}
+on_hosts=$(hosts "${BACK[@]}")
+for h in localhost keycloak.localhost share.localhost content.localhost; do
+  grep -qx "$h" <<<"$on_hosts" ||
+    { echo "the Ingress does not route the backchannel host $h: $on_hosts" >&2; exit 1; }
+done
+! grep -q 'localhost$' <<<"$(hosts --set domain=example.com --set 'ingress.aliasDomains=null')" ||
+  { echo "an install without a backchannel routes a localhost host" >&2; exit 1; }
+kc_hostname() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/keycloak/app.yaml |
+    yq -o=json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env' |
+    jq -c 'map(select(.name | test("^KC_HOSTNAME")) | {key: .name, value}) | from_entries'
+}
+jq -e '. == {"KC_HOSTNAME": "https://keycloak.example.com", "KC_HOSTNAME_STRICT": "false", "KC_HOSTNAME_BACKCHANNEL_DYNAMIC": "true"}' \
+  <<<"$(kc_hostname --set domain=example.com --set scheme=https --set port=)" >/dev/null ||
+  { echo "Keycloak without a backchannel lost its fixed hostname: $(kc_hostname --set domain=example.com)" >&2; exit 1; }
+jq -e '. == {"KC_HOSTNAME_STRICT": "false", "KC_HOSTNAME_BACKCHANNEL_DYNAMIC": "false"}' <<<"$(kc_hostname "${BACK[@]}")" >/dev/null ||
+  { echo "Keycloak with a backchannel does not take its hostname from each request: $(kc_hostname "${BACK[@]}")" >&2; exit 1; }
+realm_clients=$(helm template platform . "${COMMON[@]}" "${BACK[@]}" --show-only templates/keycloak/realm-configmap.yaml |
+  yq -r '.data["platform-realm.json"]' | jq '[.clients[] | select(.clientId == "platform-ui" or .clientId == "platform-share")]')
+jq -e '(.[] | select(.clientId == "platform-ui")) as $ui | (.[] | select(.clientId == "platform-share")) as $share
+  | ($ui.redirectUris | index("https://example.com/*") and index("http://localhost:4444/*"))
+  and ($ui.webOrigins | index("http://localhost:4444"))
+  and $share.redirectUris == ["https://share.example.com/auth/callback", "http://share.localhost:4444/auth/callback"]
+  and $share.webOrigins == ["https://share.example.com", "http://share.localhost:4444"]
+  and $share.attributes["post.logout.redirect.uris"] == "https://share.example.com/auth/login*##http://share.localhost:4444/auth/login*"' \
+  <<<"$realm_clients" >/dev/null ||
+  { echo "the realm's UI and share clients do not allow the backchannel's addresses: $realm_clients" >&2; exit 1; }
+if helm template platform . "${COMMON[@]}" --set backchannel.enabled=true >/dev/null 2>&1; then
+  echo "a backchannel on the public domain rendered, but the api-server could not tell its requests from the public ones" >&2
+  exit 1
+fi

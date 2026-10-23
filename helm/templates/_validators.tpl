@@ -28,6 +28,27 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.featureModes" . -}}
 {{- include "platform.validate.monitoringNeedsTheCollector" . -}}
 {{- include "platform.validate.environmentsUrlNamesTheDomain" . -}}
+{{- include "platform.validate.backchannelHostsAreItsOwn" . -}}
+{{- end -}}
+
+{{/*
+The api-server serves a request on the address set its host name names, so a
+backchannel host that is also a public one would be served on either set. The
+api-server would refuse to start; the render fails first.
+*/}}
+{{- define "platform.validate.backchannelHostsAreItsOwn" -}}
+{{- if .Values.backchannel.enabled -}}
+{{- $public := list -}}
+{{- range $u := list (include "platform.url.ui" $) (include "platform.url.keycloak" $) (include "platform.url.share" $) (include "platform.url.content" $) -}}
+{{- $public = append $public (include "platform.url.host" $u | lower) -}}
+{{- end -}}
+{{- range $sub := list "" "keycloak" "share" "content" -}}
+{{- $host := include "platform.url.host" (include "platform.backchannel.url" (dict "root" $ "sub" $sub)) | lower -}}
+{{- if has $host $public -}}
+{{- fail (printf "backchannel.domain gives the host %s, which the public addresses use too; give the backchannel a domain of its own." $host) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

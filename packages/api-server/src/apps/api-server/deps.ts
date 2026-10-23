@@ -70,6 +70,7 @@ import type { startJwksWarmup } from "./admission/jwks-warmup.js";
 import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
+import type { AddressSets } from "../../core/address-sets.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
@@ -146,6 +147,7 @@ export interface ApiServerDeps {
   jwksWarmup: ReturnType<typeof startJwksWarmup>;
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
+  addresses: AddressSets;
   shareHostGate: MiddlewareHandler;
   environmentGate: EnvironmentGate;
   publicAgentPageService: PublicAgentPageService;

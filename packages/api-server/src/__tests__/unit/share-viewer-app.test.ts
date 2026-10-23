@@ -403,10 +403,12 @@ describe("by-link host gate", () => {
     ["https://SHARE.example.com", "http://share.example.com:8080"],
   ])("rejects colliding hostnames %s and %s", (shareUrl, contentUrl) => {
     expect(() =>
-      createByLinkHostGate({
-        share: { baseUrl: shareUrl, app: new Hono() },
-        content: { baseUrl: contentUrl, app: new Hono() },
-      }),
+      createByLinkHostGate([
+        {
+          share: { baseUrl: shareUrl, app: new Hono() },
+          content: { baseUrl: contentUrl, app: new Hono() },
+        },
+      ]),
     ).toThrow("different hostnames");
   });
 
@@ -415,13 +417,29 @@ describe("by-link host gate", () => {
     viewer.get("/a/:slug", (c) => c.text("viewer"));
     const content = new Hono();
     content.get("/a/:slug", (c) => c.text("content"));
+    const backViewer = new Hono();
+    backViewer.get("/a/:slug", (c) => c.text("backchannel viewer"));
+    const backContent = new Hono();
+    backContent.get("/a/:slug", (c) => c.text("backchannel content"));
     const app = new Hono();
     app.use(
       "*",
-      createByLinkHostGate({
-        share: { baseUrl: "https://share.example.com", app: viewer },
-        content: { baseUrl: "https://content.example.com:4444", app: content },
-      }),
+      createByLinkHostGate([
+        {
+          share: { baseUrl: "https://share.example.com", app: viewer },
+          content: {
+            baseUrl: "https://content.example.com:4444",
+            app: content,
+          },
+        },
+        {
+          share: { baseUrl: "http://share.localhost:4444", app: backViewer },
+          content: {
+            baseUrl: "http://content.localhost:4444",
+            app: backContent,
+          },
+        },
+      ]),
     );
     app.get("/api/secret", (c) => c.text("app-route"));
     return app;
@@ -449,6 +467,43 @@ describe("by-link host gate", () => {
       const res = await app.request("/a/slug", { headers: { host } });
       expect(await res.text()).toBe("viewer");
     }
+  });
+
+  /**
+   * TEST_SCENARIO: An install with a backchannel serves its share and content
+   * hosts too, each on the apps built for that address set, so a page loaded
+   * through the Environment Link frames content from the backchannel content
+   * host and signs in there; a host name of one set never reaches the other's.
+   */
+  it("dispatches the backchannel share and content hosts to their own apps", async () => {
+    const app = gatedApp();
+    const share = await app.request("/a/slug", {
+      headers: { host: "share.localhost:4444" },
+    });
+    expect(await share.text()).toBe("backchannel viewer");
+    const content = await app.request("/a/slug", {
+      headers: { host: "content.localhost:4444" },
+    });
+    expect(await content.text()).toBe("backchannel content");
+    const publicShare = await app.request("/a/slug", {
+      headers: { host: "share.example.com" },
+    });
+    expect(await publicShare.text()).toBe("viewer");
+  });
+
+  it("rejects a backchannel that reuses a public share or content host name", () => {
+    expect(() =>
+      createByLinkHostGate([
+        {
+          share: { baseUrl: "https://share.example.com", app: new Hono() },
+          content: { baseUrl: "https://content.example.com", app: new Hono() },
+        },
+        {
+          share: { baseUrl: "http://share.example.com:4444", app: new Hono() },
+          content: { baseUrl: "http://content.localhost", app: new Hono() },
+        },
+      ]),
+    ).toThrow("different hostnames");
   });
 
   it("share-host requests can never reach app routes", async () => {

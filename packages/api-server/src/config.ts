@@ -174,6 +174,27 @@ const spendPriceOverridesSchema = z
 const curveBenderDeploymentSchema = z
   .object({ apiKey: z.string().default("") })
   .transform(({ apiKey }) => (apiKey === "" ? null : { apiKey }));
+// UNIT_BOUNDARY_DESCRIPTION: the install's second address set, reached through the Environment Link by the agent that installed it: its app, Keycloak, share and content URLs, all four or none. None is an install with its public addresses alone.
+const backchannelSchema = z
+  .object({
+    uiBaseUrl: z.url().optional(),
+    keycloakExternalUrl: z.url().optional(),
+    shareBaseUrl: z.url().optional(),
+    contentBaseUrl: z.url().optional(),
+  })
+  .transform((b, ctx) => {
+    const set = Object.values(b).filter((u) => u !== undefined).length;
+    if (set === 0) return null;
+    if (set < 4) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "BACKCHANNEL_UI_BASE_URL, BACKCHANNEL_KEYCLOAK_URL, BACKCHANNEL_SHARE_BASE_URL and BACKCHANNEL_CONTENT_BASE_URL must be set together",
+      });
+      return z.NEVER;
+    }
+    return b as Required<typeof b>;
+  });
 const configSchema = z.object({
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
@@ -309,6 +330,7 @@ const configSchema = z.object({
   objectStorageForcePathStyle: z.stringbool().default(true),
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
   contentBaseUrl: z.url({ error: "CONTENT_BASE_URL must be a valid URL" }),
+  backchannel: backchannelSchema,
   kbSharePerFileMaxBytes: z.coerce
     .number()
     .int()
@@ -512,6 +534,12 @@ export function loadConfig(): Config {
     objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     shareBaseUrl: process.env.SHARE_BASE_URL,
     contentBaseUrl: process.env.CONTENT_BASE_URL,
+    backchannel: {
+      uiBaseUrl: process.env.BACKCHANNEL_UI_BASE_URL || undefined,
+      keycloakExternalUrl: process.env.BACKCHANNEL_KEYCLOAK_URL || undefined,
+      shareBaseUrl: process.env.BACKCHANNEL_SHARE_BASE_URL || undefined,
+      contentBaseUrl: process.env.BACKCHANNEL_CONTENT_BASE_URL || undefined,
+    },
     kbSharePerFileMaxBytes: process.env.KB_SHARE_PER_FILE_MAX_BYTES,
     kbShareTotalMaxBytes: process.env.KB_SHARE_TOTAL_MAX_BYTES,
     kbShareMaxFiles: process.env.KB_SHARE_MAX_FILES,

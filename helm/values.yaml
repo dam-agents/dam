@@ -148,6 +148,26 @@ urls:
   # whose host it must name: `{host}.<environments.domain>`.
   environments: "" # default: {scheme}://{host}.{environments.domain}{:port}
 
+# -- A second address set, for an install inside an Environment: the agent
+# that installed it reaches it only through the Environment Link, at addresses
+# on its own machine, while reviewers use the public ones above. On, the
+# install also answers on `<domain>`, `keycloak.<domain>`, `share.<domain>`
+# and `content.<domain>`, with `scheme` and `port` here; sign-in, the API and
+# share pages work on either set, and each request is served on the set its
+# host names. Keycloak then takes its address from each request instead of
+# `urls.keycloak`, so whatever routes to it must pass the browser's host and
+# scheme (`Host`, or `X-Forwarded-Host` and `X-Forwarded-Proto`). Links the
+# platform writes into messages stay on the public addresses. The host names
+# must differ from the public ones.
+backchannel:
+  enabled: false
+  scheme: http
+  domain: localhost
+  # -- The port the agent's browser uses, which the forward listens on. It is
+  # part of every address the browser sends, so the issuer, the redirect URIs
+  # and the cookies follow it. Empty for 80/443.
+  port: "4444"
+
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.
 # Example:

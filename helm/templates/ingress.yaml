@@ -79,6 +79,39 @@ spec:
                 port:
                   name: http
     {{- end }}
+    {{- /* The backchannel's hosts: the app, Keycloak, and the share and
+           content hosts, whose requests the api-server host-gates onto the
+           apps built for the backchannel. */}}
+    {{- if .Values.backchannel.enabled }}
+    {{- range $host := list (include "platform.backchannel.url" (dict "root" $ "sub" "share")) (include "platform.backchannel.url" (dict "root" $ "sub" "content")) }}
+    - host: {{ include "platform.url.host" $host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $apiSvc }}
+                port:
+                  name: http
+    {{- end }}
+    - host: {{ include "platform.url.host" (include "platform.backchannel.url" (dict "root" $)) }}
+      http:
+        paths:
+          {{- include "platform.ingress.appPaths" (dict "uiSvc" $uiSvc "apiSvc" $apiSvc) | nindent 10 }}
+    {{- if .Values.keycloak.enabled }}
+    - host: {{ include "platform.url.host" (include "platform.backchannel.url" (dict "root" $ "sub" "keycloak")) }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "platform.keycloak.fullname" . }}
+                port:
+                  name: http
+    {{- end }}
+    {{- end }}
     {{- /* Catch-all app rule (host-less). Matches any Host header that no
            other rule claims, so requests to IP literals (e.g. `127.0.0.1`) or
            ad-hoc aliases reach the UI + API. Skipped when an explicit

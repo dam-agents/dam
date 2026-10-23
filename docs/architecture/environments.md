@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -102,6 +102,24 @@ The api-server names the declared ports on every request, so a port the Environm
 - **Wake.** A request to a sleeping Environment wakes it and waits until its runtime answers, not until the app does: a request that comes before the app listens gets the gate's "not answering" page, and the visitor tries again.
   Requests refresh its activity at most once a minute, and no open connection holds it awake, so a forgotten tab lets it sleep.
 - **Every response is uncacheable**, and the security log records each new session and each refusal.
+
+## An install inside an Environment
+
+An agent can install the platform itself in an Environment, so a reviewer tries a change of the platform at the Environment's addresses.
+The agent that installed it has no browser sign-in there and reaches it only through the [Environment Link](#the-environment-link), at `localhost` addresses on its own machine.
+So such an install can answer on a second address set, the **backchannel** (`backchannel.*` in the chart values, off by default): `<domain>`, `keycloak.<domain>`, `share.<domain>` and `content.<domain>` with its own scheme and port, `http://localhost:4444` by default, beside its public addresses.
+Only whoever reaches the Environment's own ports can open it: the Owning Agent, through a forward over the link; the gate never sends a visitor there.
+Its host names differ from the public ones, which the chart and the api-server both check.
+
+- **The chart** routes the four backchannel hosts too, and the realm's UI and share clients also allow their redirect URIs and web origins.
+- **Keycloak** takes its address from each request instead of one fixed address, so a token names the address its sign-in started on; a code exchanged at the internal address still names that one.
+  A refresh token is checked against the address of the request that uses it, so a server-side refresh would have to send the matching `X-Forwarded-Host`.
+  Whatever routes to Keycloak must pass the browser's host and scheme.
+- **The api-server** serves each request on the set its host name names, and on the public one for any other host.
+  It accepts a token from either set's Keycloak address, and tells the UI the issuer of the set it was loaded from.
+  Each set has its own share host app: its own sign-in callback, a session store and cookie of its own, so a share session from one set is never read on the other, and its own content host framed by its own share host.
+  The Environments front door is on the public share host alone.
+  Links the platform writes into messages and tool results stay on the public addresses.
 
 ## Surfaces
 

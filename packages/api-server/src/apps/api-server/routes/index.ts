@@ -8,6 +8,7 @@ import {
 } from "../../../modules/channels/infrastructure/slack-install-routes.js";
 import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastructure/telegram-oauth.js";
 import type { ApiServerDeps, ApiVariables } from "../deps.js";
+import { keycloakRealmUrl } from "../../../core/address-sets.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
 import {
   createAgentDiscoveryRoutes,
@@ -47,7 +48,10 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   );
   app.get("/api/auth/config", (c) =>
     c.json({
-      issuer: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+      issuer: keycloakRealmUrl(
+        boot.addresses.forHost(c.req.header("host")),
+        config.keycloakRealm,
+      ),
       clientId: config.keycloakClientId,
       cliClientId: config.keycloakCliClientId,
       inspectorRole: config.keycloakInspectorRole ?? "",
