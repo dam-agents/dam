@@ -320,7 +320,7 @@ await main()
     failures.push(`the run stopped: ${reasonOf(cause)}`);
   })
   .then(async () => {
-    await dropRole();
+    await dropRole().catch(() => {});
     process.stdout.write(
       `\n${checked - failures.length}/${checked} checks passed\n`,
     );
