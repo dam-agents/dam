@@ -164,7 +164,7 @@ describe("A2UI v1.0", () => {
     expect(surface && renderedNodeCount(surface, {}, 100)).toBe(101);
   });
 
-  // TEST_SCENARIO: a valid form that asks for the lock locks the composer only while it is the newest reply and the agent's settings allow it; an invalid one never does, so the user can still answer.
+  // TEST_SCENARIO: a valid form that asks for the lock locks the composer only while it is the newest reply and the agent's settings allow it; an invalid one never does, so the user can still answer, and a later reply that turns the form into a card without a button ends the lock instead of failing.
   test("locks the composer only for a valid surface in the newest reply", () => {
     const form = (components: unknown[]) =>
       JSON.stringify({
@@ -178,22 +178,21 @@ describe("A2UI v1.0", () => {
           components,
         },
       });
-    const valid = buildConversation([
-      {
-        key: "a",
-        messageId: "m1",
-        closed: true,
-        source: form([
-          {
-            id: "root",
-            component: "Button",
-            child: "label",
-            action: { event: { name: "go" } },
-          },
-          { id: "label", component: "Text", text: "Go" },
-        ]),
-      },
-    ]);
+    const asked = {
+      key: "a",
+      messageId: "m1",
+      closed: true,
+      source: form([
+        {
+          id: "root",
+          component: "Button",
+          child: "label",
+          action: { event: { name: "go" } },
+        },
+        { id: "label", component: "Text", text: "Go" },
+      ]),
+    };
+    const valid = buildConversation([asked]);
     expect(composerLocked(valid, "m1")).toBe(true);
     expect(composerLocked(valid, null)).toBe(false);
     expect(
@@ -211,5 +210,22 @@ describe("A2UI v1.0", () => {
       },
     ]);
     expect(composerLocked(invalid, "m1")).toBe(false);
+    const answered = buildConversation([
+      asked,
+      {
+        key: "b",
+        messageId: "m2",
+        closed: true,
+        source: JSON.stringify({
+          version: "v1.0",
+          updateComponents: {
+            surfaceId: "ask",
+            components: [{ id: "root", component: "Text", text: "Done" }],
+          },
+        }),
+      },
+    ]);
+    expect(answered.blocks.get("b")?.errors).toEqual([]);
+    expect(composerLocked(answered, "m2")).toBe(false);
   });
 });

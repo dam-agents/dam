@@ -629,6 +629,12 @@ export function buildConversation(
   for (const block of blocks) builder.addBlock(block);
   for (const surface of builder.surfaces.values()) {
     if (surface.deleted || surface.streaming) continue;
+    if (
+      surface.lockComposer &&
+      surface.ownerKey !== surface.lastTouchKey &&
+      !rendersEventButton(surface)
+    )
+      surface.lockComposer = false;
     builder.blocks
       .get(surface.lastTouchKey)
       ?.errors.push(...surfaceErrors(surface));
