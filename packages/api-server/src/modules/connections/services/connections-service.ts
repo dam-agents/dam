@@ -20,7 +20,6 @@ import {
   type Contribution,
   type CredentialCheck,
   type CredentialCheckPolicy,
-  githubHostOf,
   type ProviderBalance,
   type ProviderKeyCheck,
   type ProviderKeyRecheck,
@@ -125,6 +124,7 @@ import {
   CREDENTIAL_CHECK_INPUT_KEY,
   CredentialCheckNotPassed,
   credentialCheckOf,
+  credentialProbeTarget,
   fromKeyCheck,
   type CredentialProbe,
 } from "../domain/credential-check.js";
@@ -856,11 +856,23 @@ export function createConnectionsService(deps: {
     return check;
   }
 
+  async function storedUpstreamCa(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "header" }>,
+  ): Promise<string | undefined> {
+    if (!conn.contributions.some((c) => c.kind === "egress-inject" && c.upstreamCa)) {
+      return undefined;
+    }
+    const stored = await deps.secretStore.get(auth.valueRef);
+    return stored?.[UPSTREAM_CA_SECRET_FIELD];
+  }
+
   async function checkHeaderCredential(
     templateId: string,
     value: string,
     connectionId: string,
     contributions: readonly Contribution[],
+    caPem: string | undefined,
   ): Promise<CredentialCheck | null> {
     const template = deps.templates.get(templateId);
     if (template?.authKind !== "header" || !template.credentialCheck) {
@@ -868,7 +880,7 @@ export function createConnectionsService(deps: {
     }
     const outcome = await deps.credentialProbe.probe(
       template.credentialCheck,
-      githubHostOf(contributions) ?? "github.com",
+      credentialProbeTarget(template.credentialCheck, contributions, caPem),
       value,
     );
     const check: CredentialCheck = {
@@ -1179,15 +1191,18 @@ export function createConnectionsService(deps: {
       if (template?.authKind !== "header" || !template.credentialCheck) {
         return null;
       }
-      const value = await deps.secretStore
-        .getField(conn.auth.valueRef)
-        .catch(() => null);
-      const check: CredentialCheck | null = value
+      const auth = conn.auth;
+      const stored = await Promise.all([
+        deps.secretStore.getField(auth.valueRef),
+        storedUpstreamCa(conn, auth),
+      ]).catch(() => null);
+      const check: CredentialCheck | null = stored?.[0]
         ? await checkHeaderCredential(
             conn.templateId,
-            value,
+            stored[0],
             conn.id,
             conn.contributions,
+            stored[1],
           )
         : {
             status: "unchecked",
@@ -1247,6 +1262,7 @@ export function createConnectionsService(deps: {
               value,
               conn.id,
               conn.contributions,
+              await storedUpstreamCa(conn, conn.auth),
             );
             holdUnlessPassed(credentialCheck, policy);
             await rotateHeaderValue(conn, conn.auth, value);
@@ -1596,10 +1612,11 @@ export function createConnectionsService(deps: {
         );
       }
 
-      const headerValue =
+      const headerSecret =
         auth.kind === "header" && secretPath
-          ? built.secrets.get(secretPath)?.["value"]
+          ? built.secrets.get(secretPath)
           : undefined;
+      const headerValue = headerSecret?.["value"];
       const keyCheck = headerValue
         ? await assertProviderKeyAccepted(
             template.id,
@@ -1614,6 +1631,7 @@ export function createConnectionsService(deps: {
             headerValue,
             id,
             contributions,
+            headerSecret?.[UPSTREAM_CA_SECRET_FIELD],
           )
         : null;
       holdUnlessPassed(credentialCheck, policy);

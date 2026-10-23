@@ -6,11 +6,13 @@ import { createConnectionTemplateRegistry } from "../../modules/connections/doma
 import {
   CredentialCheckNotPassed,
   type CredentialProbeOutcome,
+  type CredentialProbeTarget,
 } from "../../modules/connections/domain/credential-check.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import { configureLogger } from "../../core/logger.js";
+import { TEST_CLUSTER_CERT as CA_PEM } from "../helpers/test-cluster-cert.js";
 
 /**
  * TEST_OVERVIEW: a GitHub personal access token is checked when it is saved,
@@ -24,6 +26,7 @@ import { configureLogger } from "../../core/logger.js";
 
 configureLogger({ level: "error", write: () => {} });
 
+
 function unused<T extends object>(fields: Partial<T> = {}): T {
   return new Proxy(fields, {
     get(target, key) {
@@ -36,7 +39,7 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
 function makeService(initial: CredentialProbeOutcome) {
   const rows = new Map<string, Connection>();
   const secrets = new Map<string, Record<string, string>>();
-  const probed: { host: string; value: string }[] = [];
+  const probed: (CredentialProbeTarget & { value: string })[] = [];
   const answer = { outcome: initial };
   const svc = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
@@ -58,7 +61,9 @@ function makeService(initial: CredentialProbeOutcome) {
       storeId: "test",
       mintRef: (meta) => ({ storeId: "test", path: meta.purpose, field: "" }),
       put: async (ref, fields) => void secrets.set(ref.path, fields),
-      putFields: async (ref, fields) => void secrets.set(ref.path, fields),
+      putFields: async (ref, fields) =>
+        void secrets.set(ref.path, { ...secrets.get(ref.path), ...fields }),
+      get: async (ref) => secrets.get(ref.path) ?? null,
       getField: async (ref) => secrets.get(ref.path)?.["value"] ?? null,
     }),
     fanOut: unused(),
@@ -72,8 +77,8 @@ function makeService(initial: CredentialProbeOutcome) {
         templateId === "openai" ? { ok: true } : { ok: true, unchecked: true },
     },
     credentialProbe: {
-      probe: async (_kind, host, value) => {
-        probed.push({ host, value });
+      probe: async (_kind, target, value) => {
+        probed.push({ ...target, value });
         return answer.outcome;
       },
     },
@@ -192,6 +197,61 @@ describe("credential check on save", () => {
     const [view] = await svc.listConnections();
     expect(probed).toEqual([]);
     expect(view?.check).toBeUndefined();
+  });
+});
+
+describe("Kubernetes token check", () => {
+  const kubernetes = (caData?: string) =>
+    ({
+      templateId: "kubernetes",
+      name: "prod",
+      authKind: "header",
+      host: "https://api.prod.example:6443",
+      value: "sa-token",
+      ...(caData ? { caData } : {}),
+    }) as const;
+
+  // TEST_SCENARIO: a service-account token is checked on the API server the connection names, port included, and with the CA the user gave, so a wrong CA fails the way kubectl would; the check names the identity the token acts as.
+  it("checks the token on its cluster with the given CA", async () => {
+    const { svc, probed } = makeService({
+      status: "passed",
+      account: "system:serviceaccount:ops:deployer",
+    });
+    await svc.createFromTemplate(kubernetes(CA_PEM));
+    const [view] = await svc.listConnections();
+    expect(probed).toEqual([
+      {
+        host: "api.prod.example",
+        port: 6443,
+        caPem: CA_PEM.trim(),
+        value: "sa-token",
+      },
+    ]);
+    expect(view?.check).toMatchObject({
+      status: "passed",
+      account: "system:serviceaccount:ops:deployer",
+    });
+  });
+
+  // TEST_SCENARIO: a cluster with a publicly trusted certificate has no CA, and the check trusts the public roots alone.
+  it("checks a publicly trusted cluster without a CA", async () => {
+    const { svc, probed } = makeService({ status: "passed" });
+    await svc.createFromTemplate(kubernetes());
+    expect(probed).toEqual([
+      { host: "api.prod.example", port: 6443, value: "sa-token" },
+    ]);
+  });
+
+  // TEST_SCENARIO: a rotated token and a check on demand both reuse the CA stored at create, since neither is given it again.
+  it("keeps the stored CA for a rotation and a check on demand", async () => {
+    const w = makeService({ status: "passed" });
+    const id = await w.svc.createFromTemplate(kubernetes(CA_PEM));
+    await w.svc.update(id, { value: "sa-token-2" });
+    await w.svc.checkCredential(id);
+    expect(w.probed.slice(1)).toEqual([
+      expect.objectContaining({ caPem: CA_PEM.trim(), value: "sa-token-2" }),
+      expect.objectContaining({ caPem: CA_PEM.trim(), value: "sa-token-2" }),
+    ]);
   });
 });
 

@@ -105,6 +105,7 @@ const KUBERNETES: HeaderConnectionTemplate = {
   authKind: "header",
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
+  credentialCheck: "kubernetes-token",
   contributions: [],
 };
 
