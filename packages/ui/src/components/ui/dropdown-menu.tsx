@@ -14,18 +14,44 @@ const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
-const fadeClassName =
-  "pointer-events-none sticky z-10 -mx-1 h-6 from-foreground/20 to-transparent";
+const MENU_ITEM = '[role^="menuitem"]';
 
-export function overflowEdges({
-  scrollTop,
-  clientHeight,
-  scrollHeight,
-}: Pick<Element, "scrollTop" | "clientHeight" | "scrollHeight">) {
-  return {
-    above: scrollTop > 0,
-    below: scrollTop + clientHeight < scrollHeight - 1,
-  };
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the visible height of a menu that overflows, taken
+ * as the start of the row the space Radix reports cuts plus half that row, so the
+ * cut row itself is the cue that the list continues. A menu whose rows all fit
+ * keeps its full height, and a menu with no cut row gets no cap.
+ * The rows come in with their own heights because they differ: a Mode row has
+ * two lines, a plain row one.
+ */
+export function halfRowHeight(
+  content: { available: number; height: number },
+  rows: readonly { top: number; height: number }[],
+): number | null {
+  if (content.height <= content.available) return null;
+  if (!rows.some((row) => row.top + row.height > content.available))
+    return null;
+  const cut = rows
+    .filter((row) => row.top + row.height / 2 <= content.available)
+    .pop();
+  return cut ? Math.round(cut.top + cut.height / 2) : null;
+}
+
+function availableHeight(el: HTMLElement): number {
+  const reported = Number.parseFloat(
+    getComputedStyle(el).getPropertyValue(
+      "--radix-dropdown-menu-content-available-height",
+    ),
+  );
+  return Number.isFinite(reported) ? reported : el.clientHeight;
+}
+
+function rowsOf(el: HTMLElement) {
+  const box = el.getBoundingClientRect();
+  return [...el.querySelectorAll<HTMLElement>(MENU_ITEM)].map((row) => {
+    const rect = row.getBoundingClientRect();
+    return { top: rect.top - box.top + el.scrollTop, height: rect.height };
+  });
 }
 
 function DropdownMenuContent({
@@ -33,11 +59,12 @@ function DropdownMenuContent({
   align = "end",
   sideOffset = 4,
   children,
+  style,
   ref,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   const [el, setEl] = React.useState<HTMLDivElement | null>(null);
-  const [edges, setEdges] = React.useState({ above: false, below: false });
+  const [maxHeight, setMaxHeight] = React.useState<number | null>(null);
   const setNode = React.useCallback(
     (node: HTMLDivElement | null) => {
       setEl(node);
@@ -49,22 +76,23 @@ function DropdownMenuContent({
 
   React.useEffect(() => {
     if (!el) return;
-    const sync = () => {
-      const next = overflowEdges(el);
-      setEdges((shown) =>
-        next.above === shown.above && next.below === shown.below ? shown : next,
+    const sync = () =>
+      setMaxHeight(
+        halfRowHeight(
+          { available: availableHeight(el), height: el.scrollHeight },
+          rowsOf(el),
+        ),
       );
-    };
     sync();
     const resize = new ResizeObserver(sync);
     resize.observe(el);
     const added = new MutationObserver(sync);
     added.observe(el, { childList: true, subtree: true });
-    el.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("resize", sync);
     return () => {
       resize.disconnect();
       added.disconnect();
-      el.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
     };
   }, [el]);
 
@@ -75,26 +103,20 @@ function DropdownMenuContent({
         align={align}
         sideOffset={sideOffset}
         collisionPadding={8}
+        style={{
+          ...style,
+          ...(maxHeight !== null && {
+            maxHeight: `min(${maxHeight}px, var(--radix-dropdown-menu-content-available-height))`,
+          }),
+        }}
         className={cn(
           menuContentClassName,
-          "max-h-[var(--radix-dropdown-menu-content-available-height)] scroll-py-6 overflow-y-auto overflow-x-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+          "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
           className,
         )}
         {...props}
       >
-        {edges.above && (
-          <div
-            aria-hidden
-            className={cn(fadeClassName, "top-0 -mb-6 bg-gradient-to-b")}
-          />
-        )}
         {children}
-        {edges.below && (
-          <div
-            aria-hidden
-            className={cn(fadeClassName, "bottom-0 -mt-6 bg-gradient-to-t")}
-          />
-        )}
       </DropdownMenuPrimitive.Content>
     </DropdownMenuPrimitive.Portal>
   );

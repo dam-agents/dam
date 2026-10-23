@@ -1,50 +1,60 @@
 import { describe, expect, it } from "vitest";
 
-import { overflowEdges } from "../../components/ui/dropdown-menu.js";
+import { halfRowHeight } from "../../components/ui/dropdown-menu.js";
 
-const box = (
-  scrollTop: number,
-  clientHeight: number,
-  scrollHeight: number,
-) => ({
-  scrollTop,
-  clientHeight,
-  scrollHeight,
-});
+const rows = (tops: number[], height: number) =>
+  tops.map((top) => ({ top, height }));
 
-describe("overflowEdges", () => {
-  it("reports a fade only at the bottom while the list starts at the top", () => {
-    expect(overflowEdges(box(0, 288, 414))).toEqual({
-      above: false,
-      below: true,
-    });
+describe("halfRowHeight", () => {
+  it("cuts the row after the last whole one in half", () => {
+    expect(
+      halfRowHeight(
+        { available: 400, height: 424 },
+        rows([4, 64, 124, 184, 244, 304, 364], 60),
+      ),
+    ).toBe(394);
   });
 
-  it("reports both edges in the middle of a scroll", () => {
-    expect(overflowEdges(box(60, 288, 414))).toEqual({
-      above: true,
-      below: true,
-    });
+  it("caps a menu whose rows all fit at nothing", () => {
+    expect(
+      halfRowHeight(
+        { available: 500, height: 424 },
+        rows([4, 64, 124, 184, 244, 304, 364], 60),
+      ),
+    ).toBeNull();
   });
 
-  it("reports no fade at the end of the list", () => {
-    expect(overflowEdges(box(126, 288, 414))).toEqual({
-      above: true,
-      below: false,
-    });
+  it("uses each row's own height", () => {
+    expect(
+      halfRowHeight({ available: 250, height: 302 }, [
+        { top: 4, height: 74 },
+        { top: 78, height: 74 },
+        { top: 152, height: 74 },
+        { top: 226, height: 36 },
+        { top: 262, height: 36 },
+      ]),
+    ).toBe(244);
   });
 
-  it("reports no fade for a list that fits", () => {
-    expect(overflowEdges(box(0, 288, 288))).toEqual({
-      above: false,
-      below: false,
-    });
+  it("caps nothing when no row is cut", () => {
+    expect(
+      halfRowHeight({ available: 300, height: 302 }, [
+        { top: 4, height: 74 },
+        { top: 78, height: 74 },
+        { top: 152, height: 74 },
+        { top: 226, height: 36 },
+        { top: 262, height: 36 },
+      ]),
+    ).toBeNull();
   });
 
-  it("ignores the sub-pixel slack a scroll position can leave", () => {
-    expect(overflowEdges(box(0, 288, 289))).toEqual({
-      above: false,
-      below: false,
-    });
+  it("caps nothing in a menu without rows", () => {
+    expect(halfRowHeight({ available: 100, height: 200 }, [])).toBeNull();
+  });
+
+  it("cuts the first row in half when no whole row fits", () => {
+    expect(
+      halfRowHeight({ available: 50, height: 400 }, rows([4, 64, 124], 60)),
+    ).toBe(34);
   });
 });
