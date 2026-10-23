@@ -106,6 +106,26 @@ zizmor = "1.30.1"
 command = "mbx"
 env = { MBX_CARGO_SHIM_MODE = "1" }
 
+# The Mend SCA CLI, which only security.yml's mend-sca job runs. lazy keeps it
+# out of every `mise install`: a full install skips it, and the job installs it
+# where it runs the scan, with `mise x http:mend`, at mise.lock's checksum. A
+# versioned build, not downloads.mend.io/cli/, which serves the latest: the
+# 26.9.3-hf1 release changed that file, so the job's pinned hash stopped
+# matching and every main run failed (#5765). `build` of a release in
+# https://downloads.mend.io/matrix.json names it, and Mend publishes the hash
+# beside it, so checksum_url locks every platform's hash without a download.
+# matrix.json's timestamps are not publish dates, so `/up` applies the 7-day
+# rule by hand. Mend builds no macos-x64 CLI.
+[tools."http:mend"]
+version = "26.9.2.4" # 26.9.2-hf1
+lazy = true
+lazy_bins = "mend"
+
+[tools."http:mend".platforms]
+linux-x64 = { url = "https://downloads.mend.io/production/unified/{{ version }}/linux_amd64/mend", checksum_url = "https://downloads.mend.io/production/unified/{{ version }}/linux_amd64/mend.sha256" }
+linux-arm64 = { url = "https://downloads.mend.io/production/unified/{{ version }}/linux_arm64/mend", checksum_url = "https://downloads.mend.io/production/unified/{{ version }}/linux_arm64/mend.sha256" }
+macos-arm64 = { url = "https://downloads.mend.io/production/unified/{{ version }}/darwin_arm64/mend", checksum_url = "https://downloads.mend.io/production/unified/{{ version }}/darwin_arm64/mend.sha256" }
+
 [settings]
 npm.package_manager = "aube"
 experimental = true

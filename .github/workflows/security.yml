@@ -229,22 +229,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Mend CLI
-        env:
-          # downloads.mend.io serves the latest release under a fixed URL, so a
-          # Mend release fails this check: `curl -fsSL <the url> | sha256sum`
-          # gives the hash to paste here.
-          MEND_CLI_SHA256: b8400fc4e7cffa596144e73b39e694156fea78b7e4fe2ee365add00b01395bd0
-        run: |
-          curl -fsSL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend
-          echo "$MEND_CLI_SHA256  /usr/local/bin/mend" | sha256sum -c -
-          chmod +x /usr/local/bin/mend
+      # The CLI is `http:mend`, a lazy tool: `mise install` skips it, and the
+      # scan step installs it from mise.lock at the lock's checksum. An empty
+      # `install_args` would install every tool, so this names the one the job
+      # also runs: jq, from the repository's pin rather than the runner's.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: jq
 
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
 
-          results=$(mend dep --dir . \
+          # --no-deps: the scan reads the sources, not the pnpm workspace.
+          results=$(mise x --no-deps http:mend -- mend dep --dir . \
             --scope "${MEND_ORGNAME}//${MEND_PRODUCTNAME}//${MEND_PROJECTNAME}" \
             --update --format json --non-interactive)
 
