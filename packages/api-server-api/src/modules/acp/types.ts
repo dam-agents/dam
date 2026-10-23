@@ -4,8 +4,9 @@ export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
 
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
-export const AUTH_ERROR_HINT =
-  "The provider rejected the key this agent uses — it may be wrong, revoked or expired. In Settings › Providers, replace the key or recheck it with Recheck keys if shown, then send the message again.";
+export const AUTH_ERROR_HINT_LINK_TEXT = "Settings › Providers";
+
+export const AUTH_ERROR_HINT = `The provider rejected the key this agent uses — it may be wrong, revoked or expired. In ${AUTH_ERROR_HINT_LINK_TEXT}, replace the key or recheck it with Recheck keys if shown, then send the message again.`;
 
 export const PROMPT_NOT_QUEUED_CODE = "PROMPT_NOT_QUEUED";
 
