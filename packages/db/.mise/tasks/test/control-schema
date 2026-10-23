@@ -48,9 +48,15 @@ INSERT INTO control.agent_status (agent_id) VALUES ('agent-abc');
 UPDATE control.agent_status SET machine_restarts = 3 WHERE agent_id = 'agent-abc';
 DO $$ BEGIN ASSERT (SELECT version = 1 FROM control.agent_status WHERE agent_id = 'agent-abc'), 'status version did not rotate'; END $$;
 
--- the change feed runs, and marks an activity-only bump as a UI hint
+-- every trigger the change feed hangs on fires: a payload it cannot build fails
+-- here. The notification itself is delivered at commit, which this transaction
+-- never reaches, so delivery is the switch's own check.
 UPDATE control.agent_signals SET last_activity_at = now() WHERE agent_id = 'agent-abc';
 UPDATE control.agents SET name = 'renamed again' WHERE id = 'agent-abc';
+DELETE FROM control.agent_l7_hosts WHERE agent_id = 'agent-abc';
+INSERT INTO control.agent_conditions (agent_id, type, status, reason, observed_generation, last_transition_at)
+VALUES ('agent-abc', 'Ready', 'True', 'Reconciled', 5, now());
+DELETE FROM control.agent_conditions WHERE agent_id = 'agent-abc';
 
 -- identity is immutable
 DO $$ BEGIN
