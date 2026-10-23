@@ -5,12 +5,13 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Card, CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
+import { Spinner } from "@/components/ui/spinner";
+import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 import { providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
-import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
@@ -42,7 +43,15 @@ export function ProviderRow({
   footer,
 }: Props) {
   const name = givenName ?? providerName(type);
-  const refused = connected && keyCheck?.result === "refused";
+  const problem =
+    connected && keyCheck && keyCheck.result !== "ok" ? keyCheck : null;
+  const problemText = problem
+    ? `${
+        problem.result === "refused"
+          ? "Key rejected"
+          : "Could not verify the key"
+      } on ${formatTimestamp(problem.checkedAt)} (${problem.detail})`
+    : null;
   const body = (
     <>
       <CardIcon provider={type} templateId={templateId} />
@@ -57,12 +66,14 @@ export function ProviderRow({
           <ConnectionBadge
             connected={connected}
             degraded={degraded}
-            refused={refused}
+            keyCheck={keyCheck}
+            checking={!!checking}
+            reason={problemText}
           />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-muted-foreground">supports:</span>
+            <span className="text-xs text-muted-foreground">Supports:</span>
             {harnesses?.length ? (
               <HarnessIcons
                 harnesses={harnesses}
@@ -78,17 +89,12 @@ export function ProviderRow({
           </div>
           <div className="min-w-0 text-right">{balance}</div>
         </div>
-        {connected && keyCheck !== undefined && (
-          <div className="mt-2">
-            <ProviderKeyStatus check={keyCheck} checking={checking} />
-          </div>
-        )}
       </div>
     </>
   );
   const layout = "flex w-full items-start gap-3 p-4";
   const label = connected
-    ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
+    ? `${connectedAction} ${name}${problemText ? `, ${problemText}` : ""}`
     : `Connect ${name}`;
 
   if (footer) {
@@ -121,38 +127,65 @@ export function ProviderRow({
 
 const ROW_HEAD_BUTTON = `text-left ${CARD_HOVER} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one pill that says where a provider row
+ * stands: whether it is configured, and, once it is, whether its key is being
+ * verified, rejected by the provider, or working. A provider that could not
+ * answer or whose template is having an outage keeps a yellow pill, with the
+ * reason in its tooltip, since neither says the key is bad.
+ */
 function ConnectionBadge({
   connected,
   degraded,
-  refused,
+  keyCheck,
+  checking,
+  reason,
 }: {
   connected: boolean;
   degraded: boolean;
-  refused: boolean;
+  keyCheck: ProviderKeyCheck | null | undefined;
+  checking: boolean;
+  reason: string | null;
 }) {
+  const pill = "ml-auto shrink-0 gap-1.5";
   if (!connected)
     return (
-      <Badge variant="muted" className="ml-auto shrink-0">
-        Not connected
+      <Badge variant="muted" className={pill}>
+        Not configured
       </Badge>
     );
-  if (refused)
+  if (checking)
     return (
-      <Badge variant="danger" className="ml-auto shrink-0">
-        Key refused
+      <Badge variant="warning" className={pill}>
+        <Spinner size={12} className="shrink-0" />
+        Configured · Verifying
       </Badge>
     );
-  return degraded ? (
-    <Badge
-      variant="warning"
-      className="ml-auto shrink-0"
-      data-testid="provider-degraded-badge"
-    >
-      Degraded
-    </Badge>
-  ) : (
-    <Badge variant="success" className="ml-auto shrink-0">
-      Connected
+  if (keyCheck?.result === "refused")
+    return (
+      <Badge variant="danger" className={pill} title={reason ?? undefined}>
+        Configured · Key rejected
+      </Badge>
+    );
+  if (degraded)
+    return (
+      <Badge
+        variant="warning"
+        className={pill}
+        data-testid="provider-degraded-badge"
+      >
+        Configured · Degraded
+      </Badge>
+    );
+  if (keyCheck?.result === "unverified")
+    return (
+      <Badge variant="warning" className={pill} title={reason ?? undefined}>
+        Configured · Unverified
+      </Badge>
+    );
+  return (
+    <Badge variant="success" className={pill}>
+      Configured · Connected
     </Badge>
   );
 }

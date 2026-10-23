@@ -161,15 +161,15 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).toContain("supports:");
+      expect(html).toContain("Supports:");
       expect(html).toContain("size-5");
       expect(html).not.toContain("Chat and Responses APIs");
       if (connected) {
         expect(html).toContain("$12.00 of $100.00 used");
-        expect(html).toContain(">Connected<");
+        expect(html).toContain(">Configured · Connected<");
       } else {
         expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
-        expect(html).toContain(">Not connected<");
+        expect(html).toContain(">Not configured<");
       }
       for (const name of ["Bob", "Claude", "Codex", "Pi"])
         expect(html).toContain(`role="img" aria-label="${name}"`);

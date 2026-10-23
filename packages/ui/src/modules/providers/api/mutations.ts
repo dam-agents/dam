@@ -2,12 +2,14 @@ import { useMutation } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-export function useRecheckProviderKeys() {
+export function useRecheckProviderKeys(opts: { silent?: boolean } = {}) {
   return useMutation({
     ...trpc.connections.recheckProviderKeys.mutationOptions(),
     meta: {
       invalidates: [trpc.connections.list.queryKey()],
-      errorToast: "Couldn't recheck the provider keys",
+      ...(opts.silent
+        ? { suppressErrorToast: true }
+        : { errorToast: "Couldn't recheck the provider keys" }),
     },
   });
 }

@@ -48,6 +48,7 @@ const state = vi.hoisted(() => ({
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
   noProviders: false,
+  ungranted: false,
   chosen: null as {
     harness: string;
     provider: string | null;
@@ -183,10 +184,12 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       ? { granted: [], owned: [], loaded: true }
       : {
           loaded: true,
-          granted: [
-            { id: "ibm", name: "IBM", type: "ibm-litellm" },
-            { id: "curve", name: "Curve", type: "curve-bender" },
-          ],
+          granted: state.ungranted
+            ? []
+            : [
+                { id: "ibm", name: "IBM", type: "ibm-litellm" },
+                { id: "curve", name: "Curve", type: "curve-bender" },
+              ],
           owned: [
             { id: "ibm", name: "IBM", type: "ibm-litellm" },
             { id: "curve", name: "Curve", type: "curve-bender" },
@@ -242,6 +245,7 @@ describe("session pair model choices", () => {
     state.providersAsked = [];
     state.owned = [];
     state.noProviders = false;
+    state.ungranted = false;
     state.configured = undefined;
     state.chosen = null;
     state.catalogLoaded = true;
@@ -318,6 +322,21 @@ describe("session pair model choices", () => {
     const html = renderPicker();
     expect(html).toContain("Connect an LLM provider</span> first.");
     expect(html).not.toContain('data-testid="session-pair-picker"');
+  });
+
+  // TEST_SCENARIO: A provider the owner holds but this agent was not granted yet is attached in the picker, not connected again, so the agent that has not reported its harnesses waits on them instead of asking for a provider.
+  it("waits for the agent rather than asking for a provider the owner holds", () => {
+    state.ungranted = true;
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        agentHarness: "pi",
+        pending: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("Loading models…");
+    expect(html).not.toContain("Connect an LLM provider");
   });
 
   it("lists unattached providers in place with an attach action", () => {
@@ -568,6 +587,7 @@ describe("one model list on a runtime that routes by model name", () => {
     state.operable = true;
     state.owned = [];
     state.noProviders = false;
+    state.ungranted = false;
     state.configured = undefined;
     state.chosen = null;
     state.catalog = routedCatalog;
@@ -726,6 +746,7 @@ describe("JanUI's picker and the default's editor", () => {
     state.operable = true;
     state.owned = [{ id: "other", name: "Other", type: "curve-bender" }];
     state.noProviders = false;
+    state.ungranted = false;
     state.configured = undefined;
     state.chosen = null;
     state.catalog = routedCatalog;

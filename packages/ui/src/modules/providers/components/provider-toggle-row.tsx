@@ -32,7 +32,7 @@ export function ProviderToggleRow({
             {provider.name}
           </span>
           <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            supports:
+            Supports:
             {harnesses?.length ? (
               <HarnessIcons
                 harnesses={harnesses}

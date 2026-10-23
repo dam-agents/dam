@@ -1030,7 +1030,9 @@ export function ChatView() {
             onTakeBack={takeBack}
             blockedReason={
               noGrantedProvider
-                ? "No LLM provider connected to this agent."
+                ? noProviders
+                  ? "Connect an LLM provider to start."
+                  : "Attach an LLM provider to this agent to start."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
                   : needsModel

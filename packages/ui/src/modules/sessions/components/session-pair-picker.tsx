@@ -206,8 +206,7 @@ export function SessionPairPicker(props: Props) {
     ).then((ok) => ok && revoke(id));
   };
 
-  const connections = props.pending ? providers.granted : providers.owned;
-  if (providers.loaded && connections.length === 0)
+  if (providers.loaded && providers.owned.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
 
   if (props.pending)
