@@ -33,6 +33,22 @@ spec:
           env:
             - name: LOG_LEVEL
               value: {{ .Values.controller.logLevel | default "info" | quote }}
+            # Which store is authoritative for Agents and budgets. The binary
+            # refuses to run the pairing the cluster's marker contradicts.
+            - name: PLATFORM_AGENT_STORE
+              value: {{ .Values.agentStore.authority | quote }}
+            {{- if eq .Values.agentStore.authority "postgres" }}
+            # The controller's own login, on the api-server's database: it
+            # reads definitions and writes observations, and nothing else. The
+            # credential is rendered only by a release that reads Postgres.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.controller.db.password.secretName" . }}
+                  key: POSTGRES_CONTROLLER_PASSWORD
+            - name: PLATFORM_DATABASE_URL
+              value: {{ include "platform.controller.postgres.dsn" . | quote }}
+            {{- end }}
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
             # Value of `app.kubernetes.io/instance` on chart-rendered apiserver

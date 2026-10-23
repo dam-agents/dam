@@ -518,3 +518,49 @@ if helm template platform . "${COMMON[@]}" --set backchannel.enabled=true >/dev/
   echo "a backchannel on the public domain rendered, but the api-server could not tell its requests from the public ones" >&2
   exit 1
 fi
+
+# The Agent store's mode reaches both components, and the controller carries a
+# database credential only in the release that reads Postgres: on the default
+# render its environment has none at all.
+store_env() {
+  helm template platform . "${COMMON[@]}" "$@" \
+    --show-only templates/controller/deployment.yaml \
+    --show-only templates/apiserver/app.yaml |
+    yq -o=json 'select(.kind == "Deployment") | {"component": .metadata.labels."app.kubernetes.io/component", "env": ((.spec.template.spec.containers[0].env // []) | map({"key": .name, "value": (.value // .valueFrom.secretKeyRef.key // null)}) | from_entries)}' |
+    jq -s 'map({(.component): .env}) | add'
+}
+default_store=$(store_env)
+jq -e '.["controller"].PLATFORM_AGENT_STORE == "crd"
+  and .["apiserver"].PLATFORM_AGENT_STORE == "crd"
+  and .["controller"].PLATFORM_DATABASE_URL == null
+  and .["controller"].POSTGRES_PASSWORD == null' <<<"$default_store" >/dev/null ||
+  { echo "the default render does not run on the custom resources, or hands the controller a database credential: $default_store" >&2; exit 1; }
+# A release that reads Postgres points the controller at the database under its
+# own login, and takes the password from the Secret key and not from the
+# environment, so the DSN itself carries no credential.
+postgres_store=$(store_env --set agentStore.authority=postgres)
+jq -e '.["controller"].PLATFORM_AGENT_STORE == "postgres"
+  and (.["controller"].PLATFORM_DATABASE_URL | startswith("postgresql://platform_controller:"))
+  and (.["controller"].PLATFORM_DATABASE_URL | contains("$(POSTGRES_PASSWORD)"))
+  and .["controller"].POSTGRES_PASSWORD == "POSTGRES_CONTROLLER_PASSWORD"
+  and .["apiserver"].PLATFORM_AGENT_STORE == "postgres"' <<<"$postgres_store" >/dev/null ||
+  { echo "the Postgres render does not connect the controller as platform_controller through a secretKeyRef: $postgres_store" >&2; exit 1; }
+# The controller's role is created by the same SQL that creates the app roles,
+# and that SQL refuses to leave any of them a superuser.
+roles=$(helm template platform . "${COMMON[@]}" --show-only templates/postgres.yaml |
+  yq -r '.data["01-roles.sql"]')
+grep -Fq "POSTGRES_CONTROLLER_USER" <<<"$roles" &&
+  grep -Fq "GRANT  CONNECT ON DATABASE platform TO :\"ctrl_user\"" <<<"$roles" &&
+  grep -Fq "current_setting('app.ctrl')" <<<"$roles" ||
+  { echo "the Postgres init SQL neither creates the controller's role nor guards it from being a superuser" >&2; exit 1; }
+# Each value that only a later release gives its meaning fails the render now,
+# so a premature acknowledgement cannot silently mark a switch that never
+# happens.
+for refused in 'agentStore.authority=sqlite' \
+  'agentStore.cutover.acknowledged=true' \
+  'agentStore.contract.backupSha256=0000'; do
+  if helm template platform . "${COMMON[@]}" --set "$refused" >/dev/null 2>&1; then
+    echo "a render setting $refused succeeded, but no release in this chart reads it that way" >&2
+    exit 1
+  fi
+done

@@ -739,6 +739,13 @@ postgres:
   apiserverPassword: null
   keycloakUser: platform_keycloak
   keycloakPassword: null
+  # The controller's own login: NOSUPERUSER, and holding only the privileges
+  # the api-server grants it on the `control` schema — the status observations
+  # it writes and a column list of the definitions it reads. It owns no
+  # database and can reach no other schema. Named here because the api-server
+  # reconciles its grants after every migration run, so the name is fixed.
+  controllerUser: platform_controller
+  controllerPassword: null
   adminUser: platform
   adminPassword: null
 
@@ -1741,6 +1748,41 @@ apiServer:
       cpu: "2"
       memory: 1Gi
 
+# -- Where Agents and user budgets are authoritative.
+#
+# A move out of the Kubernetes API into Postgres, in three releases: this chart
+# carries the tables, the controller's database login and the startup fences;
+# the switch release absorbs the custom resources and both components read
+# Postgres; the contract release stops writing the custom resources.
+#
+# The two components refuse to start rather than serve the wrong store. A build
+# still on the custom resources exits once the switch has marked the store as
+# Postgres, and a build configured for Postgres exits until the switch has
+# absorbed the resources. The marker is a ConfigMap `<release>-agent-store` the
+# switch writes into the agent namespace.
+agentStore:
+  # -- Which store is authoritative: `crd` (the custom resources) or
+  # `postgres`. Every release before the switch must run `crd`.
+  authority: crd
+  # -- Log, at api-server startup, what an absorb would write: which records
+  # would become rows, which would be refused and why, what the move would drop,
+  # and where the recorded connection grants disagree with the database. Writes
+  # nothing. Leave it off outside a cutover: the report is for an operator
+  # reading one install's log once.
+  previewReport: false
+  cutover:
+    # -- Set by the operator to time the switch release. The switch release
+    # refuses to render until this is true, because a production install
+    # auto-upgrades on a semver range and the cutover is an outage of a minute
+    # or two. No release performs a cutover yet, so setting it now fails the
+    # render.
+    acknowledged: false
+  contract:
+    # -- SHA-256 of the operator's encrypted archive of the custom resources,
+    # attested before the contract release may delete them on this install.
+    # Empty until that release exists.
+    backupSha256: ""
+
 # -- Controller (Go reconciler + scheduler)
 controller:
   # -- Extra annotations for the controller Deployment object / its pod
@@ -1756,6 +1798,19 @@ controller:
 
   # -- slog level for the controller: debug | info | warn | error.
   logLevel: info
+
+  db:
+    # The controller's own login on the platform database, which it reads
+    # definitions from and writes observations to once `agentStore.authority` is
+    # `postgres`. It connects to the same database as the api-server — one
+    # platform database per install — so host, port and TLS come from
+    # `apiServer.db`; only the identity is its own.
+    user: platform_controller
+    # -- Password for an external database. Left null, the bundled database's
+    # chart-generated credential is used; set it, and the chart puts it in the
+    # api-server's credentials Secret, which the deployment reads through a
+    # secretKeyRef.
+    password: null
 
   # -- Agent configuration. Three layers, applied at reconcile time:
   #   1. `base`             — chart-only policy, never overridable by an agent.

@@ -29,6 +29,8 @@ data:
     \getenv api_pwd    POSTGRES_APISERVER_PASSWORD
     \getenv kc_user    POSTGRES_KEYCLOAK_USER
     \getenv kc_pwd     POSTGRES_KEYCLOAK_PASSWORD
+    \getenv ctrl_user  POSTGRES_CONTROLLER_USER
+    \getenv ctrl_pwd   POSTGRES_CONTROLLER_PASSWORD
 
     -- Application roles: LOGIN, explicit NOSUPERUSER. CREATE only when
     -- absent; ALTER unconditionally so an existing role converges to the
@@ -41,6 +43,14 @@ data:
     WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'kc_user')
     \gexec
     ALTER ROLE :"kc_user" WITH LOGIN NOSUPERUSER PASSWORD :'kc_pwd';
+    -- The controller's login. It owns nothing and is granted exactly what it
+    -- reconciles, by the api-server after each migration run (which is also why
+    -- this role may exist before or after those tables do). Creating roles
+    -- stays out of the application for the reason `usage_readers` records.
+    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'ctrl_user', :'ctrl_pwd')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'ctrl_user')
+    \gexec
+    ALTER ROLE :"ctrl_user" WITH LOGIN NOSUPERUSER PASSWORD :'ctrl_pwd';
 
     -- Optional read-only consumer of the usage_src_* source passthrough
     -- views. NOLOGIN and password-less: the role is a group, it holds no
@@ -85,6 +95,9 @@ data:
     REVOKE CONNECT ON DATABASE platform FROM PUBLIC;
     REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC;
     GRANT  CONNECT ON DATABASE platform TO :"api_user";
+    -- The controller reaches one database and nothing else; the grants that
+    -- confine it to the `control` schema are the api-server's to make.
+    GRANT  CONNECT ON DATABASE platform TO :"ctrl_user";
     GRANT  CONNECT ON DATABASE keycloak TO :"kc_user";
     -- The usage-view group needs CONNECT too, or a member login would be
     -- refused at the door and its view grants would be unreachable. It
@@ -148,10 +161,11 @@ data:
     -- fails the hook so the release is marked failed.
     SET app.api = :'api_user';
     SET app.kc = :'kc_user';
+    SET app.ctrl = :'ctrl_user';
     DO $$
     BEGIN
       IF EXISTS (SELECT 1 FROM pg_roles
-                 WHERE rolname IN (current_setting('app.api'), current_setting('app.kc'), 'usage_readers')
+                 WHERE rolname IN (current_setting('app.api'), current_setting('app.kc'), current_setting('app.ctrl'), 'usage_readers')
                    AND rolsuper)
       THEN RAISE EXCEPTION 'application roles must be NOSUPERUSER'; END IF;
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'usage_readers' AND rolcanlogin)
@@ -260,6 +274,15 @@ spec:
                 secretKeyRef:
                   name: {{ include "platform.postgres.secrets.fullname" . }}
                   key: POSTGRES_KEYCLOAK_PASSWORD
+            # The controller's role: a login that owns nothing, granted only
+            # what it reconciles after each api-server migration run.
+            - name: POSTGRES_CONTROLLER_USER
+              value: {{ .Values.postgres.controllerUser | quote }}
+            - name: POSTGRES_CONTROLLER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_CONTROLLER_PASSWORD
             # Maintenance database for the bootstrap (admin) connection.
             - name: POSTGRES_DB
               value: "postgres"

@@ -142,6 +142,21 @@ spec:
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
             - name: DATABASE_POOL_MAX
               value: {{ .Values.apiServer.db.poolMax | quote }}
+            # Which store is authoritative for Agents and budgets, and the
+            # dry-run report that tells an operator what a switch would do.
+            - name: PLATFORM_AGENT_STORE
+              value: {{ .Values.agentStore.authority | quote }}
+            - name: AGENT_STORE_PREVIEW_REPORT
+              value: {{ .Values.agentStore.previewReport | quote }}
+            {{- if .Values.agentStore.previewReport }}
+            # The report sizes an Agent that carries no limit from the same
+            # defaults the controller uses, so what it previews is what an
+            # absorb would write.
+            - name: AGENT_LEGACY_CPU_LIMIT
+              value: {{ .Values.controller.agent.legacyAgentSize.cpu | quote }}
+            - name: AGENT_LEGACY_MEMORY_LIMIT
+              value: {{ .Values.controller.agent.legacyAgentSize.memory | quote }}
+            {{- end }}
             - name: RUNTIME_DELIVERY_CONCURRENCY
               value: {{ .Values.apiServer.runtimeDelivery.concurrency | quote }}
             {{- if .Values.apiServer.db.caCert }}
