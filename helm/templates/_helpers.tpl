@@ -145,35 +145,42 @@ Host:port string for URLs (includes port if non-empty)
         name: http
 {{- end }}
 
-{{- /* Single app URL — UI and API share a host (path-based ingress).
-       `urls.ui` overrides; `urls.api` is honored as a back-compat fallback. */ -}}
-{{- define "platform.url.ui" -}}
-{{- if .Values.urls.ui }}
-{{- .Values.urls.ui }}
-{{- else if .Values.urls.api }}
-{{- .Values.urls.api }}
-{{- else }}
-{{- printf "%s://%s" .Values.scheme (include "platform.hostport" .) }}
+{{- /* The public URL of one host of this deployment: an explicit
+       `urls.<key>` wins, else `{scheme}://{sub.}{hostport}`. No `sub` means
+       the app host, whose override key is `ui`, with `urls.api` as a
+       back-compat fallback. The override key is the subdomain, so a new public
+       host costs one call, not one template.
+       Pass `dict "root" $ "sub" "share"`. */ -}}
+{{- define "platform.url.derived" -}}
+{{- $key := ternary "ui" .sub (empty .sub) -}}
+{{- $urls := .root.Values.urls -}}
+{{- $url := index $urls $key -}}
+{{- if and (empty $url) (eq $key "ui") -}}
+{{- $url = $urls.api -}}
+{{- end -}}
+{{- if $url -}}
+{{- $url -}}
+{{- else -}}
+{{- $hostport := include "platform.hostport" .root -}}
+{{- $host := ternary (printf "%s.%s" .sub $hostport) $hostport (not (empty .sub)) -}}
+{{- printf "%s://%s" .root.Values.scheme $host -}}
+{{- end -}}
 {{- end }}
+
+{{- /* Single app URL (path-based ingress): UI and API share a host. */ -}}
+{{- define "platform.url.ui" -}}
+{{- include "platform.url.derived" (dict "root" .) -}}
 {{- end }}
 
 {{- define "platform.url.keycloak" -}}
-{{- if .Values.urls.keycloak }}
-{{- .Values.urls.keycloak }}
-{{- else }}
-{{- printf "%s://keycloak.%s" .Values.scheme (include "platform.hostport" .) }}
-{{- end }}
+{{- include "platform.url.derived" (dict "root" . "sub" "keycloak") -}}
 {{- end }}
 
 {{- /* Public share host serving artifact-library content. A dedicated origin
        by design: user-generated content must never share the app origin's
        cookies/tokens. Routed to the api-server (host-gated there). */ -}}
 {{- define "platform.url.share" -}}
-{{- if .Values.urls.share }}
-{{- .Values.urls.share }}
-{{- else }}
-{{- printf "%s://share.%s" .Values.scheme (include "platform.hostport" .) }}
-{{- end }}
+{{- include "platform.url.derived" (dict "root" . "sub" "share") -}}
 {{- end }}
 
 {{- /* Content host framed by the share host: artifact documents and raw
@@ -181,11 +188,7 @@ Host:port string for URLs (includes port if non-empty)
        the browser keeps artifact code away from the share host. Routed to
        the api-server (host-gated there). */ -}}
 {{- define "platform.url.content" -}}
-{{- if .Values.urls.content }}
-{{- .Values.urls.content }}
-{{- else }}
-{{- printf "%s://content.%s" .Values.scheme (include "platform.hostport" .) }}
-{{- end }}
+{{- include "platform.url.derived" (dict "root" . "sub" "content") -}}
 {{- end }}
 
 {{/*
@@ -746,6 +749,88 @@ subjects:
   - kind: ServiceAccount
     name: {{ .name }}
     namespace: {{ $ns }}
+{{- end }}
+
+{{/*
+A custom SCC tightening restricted-v2 as far as it goes: drop ALL, no
+privilege escalation, runtime/default seccomp, no host namespaces or host
+volumes, RunAsAny only for the ids a pod brings. The two parameters are the
+whole difference between the chart's SCCs — the capabilities a pod opts into,
+and the volume types the workload mounts.
+Args: dict "root" $ "name" <scc> "capabilities" (list …) "volumes" (list …).
+*/}}
+{{- define "platform.scc" -}}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "platform.labels" .root | nindent 4 }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+allowedCapabilities:
+{{- toYaml .capabilities | nindent 2 }}
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+priority: null
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+  - ALL
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+  - runtime/default
+supplementalGroups:
+  type: RunAsAny
+users: []
+volumes:
+{{- toYaml .volumes | nindent 2 }}
+{{- end }}
+
+{{/*
+Grant `use` on a custom SCC. OpenShift auto-generates
+`system:openshift:scc:<name>` ClusterRoles for the built-in SCCs only, so a
+custom SCC needs a ClusterRole of its own — the SCC is cluster-scoped, so a
+namespaced Role could not reference it. The RoleBinding stays in the agent
+namespace, which keeps the grant to that namespace's subjects.
+Args: dict "root" $ "name" <clusterrole> "scc" <scc> "binding" <rolebinding>
+"subjects" (list of subject dicts).
+*/}}
+{{- define "platform.sccUse" -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "platform.labels" .root | nindent 4 }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["{{ .scc }}"]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .binding }}
+  namespace: {{ .root.Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" .root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .name }}
+subjects:
+{{- toYaml .subjects | nindent 2 }}
 {{- end }}
 
 {{/*

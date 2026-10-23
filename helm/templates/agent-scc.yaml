@@ -1,4 +1,5 @@
 {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+{{- $name := printf "%s-anyuid-cap-net" (include "platform.fullname" .) }}
 {{/*
 Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Tightens
 anyuid as far as it goes while admitting the `iptablesInit` init
@@ -20,83 +21,19 @@ SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
 adds — NET_ADMIN for an agent's iptables init.
 */}}
-apiVersion: security.openshift.io/v1
-kind: SecurityContextConstraints
-metadata:
-  name: {{ include "platform.fullname" . }}-anyuid-cap-net
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-allowHostDirVolumePlugin: false
-allowHostIPC: false
-allowHostNetwork: false
-allowHostPID: false
-allowHostPorts: false
-allowPrivilegeEscalation: false
-allowPrivilegedContainer: false
-allowedCapabilities:
-  - NET_ADMIN
-  - NET_RAW
-defaultAddCapabilities: null
-fsGroup:
-  type: RunAsAny
-groups: []
-priority: null
-readOnlyRootFilesystem: false
-requiredDropCapabilities:
-  - ALL
-runAsUser:
-  type: RunAsAny
-seLinuxContext:
-  type: MustRunAs
-seccompProfiles:
-  - runtime/default
-supplementalGroups:
-  type: RunAsAny
-users: []
-volumes:
-  - configMap
-  - csi
-  - downwardAPI
-  - emptyDir
-  - ephemeral
-  - persistentVolumeClaim
-  - projected
-  - secret
+{{- include "platform.scc" (dict
+  "root" $
+  "name" $name
+  "capabilities" (list "NET_ADMIN" "NET_RAW")
+  "volumes" (list "configMap" "csi" "downwardAPI" "emptyDir" "ephemeral" "persistentVolumeClaim" "projected" "secret")) }}
 ---
-{{/*
-Grant `use` on the custom SCC. OpenShift auto-generates
-`system:openshift:scc:<name>` ClusterRoles only for built-in SCCs
-(restricted-v2, nonroot-v2, anyuid, …); for custom SCCs no ClusterRole
-is created, so we render one ourselves. SCC is cluster-scoped, so the
-rule must live in a ClusterRole (Role can only reference namespaced
-resources). The RoleBinding below stays namespace-scoped so the grant
-is limited to `agentNamespace`.
-*/}}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-rules:
-  - apiGroups: ["security.openshift.io"]
-    resources: ["securitycontextconstraints"]
-    resourceNames: ["{{ include "platform.fullname" . }}-anyuid-cap-net"]
-    verbs: ["use"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ include "platform.fullname" . }}-agent-anyuid-cap-net
-  namespace: {{ .Values.agentNamespace }}
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
-subjects:
-  - kind: Group
-    apiGroup: rbac.authorization.k8s.io
-    name: system:serviceaccounts:{{ .Values.agentNamespace }}
+{{- include "platform.sccUse" (dict
+  "root" $
+  "name" (printf "%s-use" $name)
+  "scc" $name
+  "binding" (printf "%s-agent-anyuid-cap-net" (include "platform.fullname" .))
+  "subjects" (list (dict
+    "kind" "Group"
+    "apiGroup" "rbac.authorization.k8s.io"
+    "name" (printf "system:serviceaccounts:%s" .Values.agentNamespace)))) }}
 {{- end }}

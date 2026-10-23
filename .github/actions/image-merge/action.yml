@@ -1,0 +1,49 @@
+name: merge one family's images
+description: >-
+  The steps every merge job runs: the per-arch digests its build jobs uploaded,
+  crane, and image:ci-merge, which publishes the multi-arch manifests. Needs a
+  checkout first, and the workflow's IMAGE_PREFIX.
+
+inputs:
+  components:
+    description: Space-separated components to merge, as image:ci-merge takes them.
+    required: true
+  artifact:
+    description: The digests artifact prefix its build jobs uploaded, e.g. digests-agents.
+    required: true
+  composite:
+    description: The version the merged manifest lists are tagged with.
+    required: true
+  source-shas:
+    description: Every component's source sha, so each merged image keeps its per-sha tag.
+    required: true
+  quay-username:
+    description: quay.io user; empty skips the login.
+    default: ""
+  quay-password:
+    description: quay.io password or robot token.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: ${{ inputs.artifact }}-*
+        path: ${{ runner.temp }}/digests
+        merge-multiple: true
+    - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      with:
+        install_args: crane usage
+        quay-username: ${{ inputs.quay-username }}
+        quay-password: ${{ inputs.quay-password }}
+    - name: Create manifest lists and push
+      shell: bash
+      env:
+        COMPONENTS: ${{ inputs.components }}
+        COMPOSITE: ${{ inputs.composite }}
+        SOURCE_SHAS: ${{ inputs.source-shas }}
+      run: |
+        set -euo pipefail
+        read -r -a components <<< "$COMPONENTS"
+        SOURCE_SHA_TAGGED="$COMPONENTS" .mise/tasks/image/ci-merge "$RUNNER_TEMP/digests" "${components[@]}"

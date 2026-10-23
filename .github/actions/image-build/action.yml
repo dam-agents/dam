@@ -1,0 +1,86 @@
+name: build one arch's images
+description: >-
+  The steps every image build job runs: the tools, the agent tool cache, the
+  build itself, the apt base a main build of the agents writes back, and the
+  digests artifact the merge jobs read. A job that needs only some of these
+  turns them off by input. Needs a checkout first, and the workflow's
+  IMAGE_PREFIX.
+
+inputs:
+  arch:
+    description: The arch this runner builds for; image:ci-build refuses another.
+    required: true
+  components:
+    description: >-
+      Space-separated image:ci-build components, each optionally with an output
+      suffix (`:source`, `:cacheonly`, `:load`, …).
+    required: true
+  cacheonly:
+    description: >-
+      "true" on a PR or a merge group: every component builds without pushing,
+      which proves it builds.
+    default: "false"
+  apt-base-cache:
+    description: >-
+      "true" for the agent images: save the apt base this build made into the
+      tool cache, on main alone.
+    default: "false"
+  artifact:
+    description: >-
+      The digests upload as <artifact>-<arch>, which a merge job reads. Empty
+      uploads nothing: the mock pushes by source tag alone, and no merge reads
+      it.
+    default: ""
+  upload:
+    description: '"false" when nothing consumes the digests, as on a PR.'
+    default: "true"
+  quay-username:
+    description: quay.io user; empty skips the login.
+    default: ""
+  quay-password:
+    description: quay.io password or robot token.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      with:
+        install_args: nodejs pnpm crane usage uv conda:pigz
+        quay-username: ${{ inputs.quay-username }}
+        quay-password: ${{ inputs.quay-password }}
+    - id: agent-tools
+      uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+    - name: Build
+      shell: bash
+      env:
+        ARCH: ${{ inputs.arch }}
+        COMPONENTS: ${{ inputs.components }}
+        CACHEONLY: ${{ inputs.cacheonly }}
+        # A tool that the agent-tools cache lacks installs in this step, and
+        # mise reads the token from MISE_GITHUB_TOKEN.
+        MISE_GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        # A PR or a merge group only proves its images build.
+        read -r -a components <<< "$COMPONENTS"
+        [ "$CACHEONLY" != true ] || components=("${components[@]/%/:cacheonly}")
+        .mise/tasks/image/ci-build --serial "$ARCH" "${components[@]}"
+    # The images' apt base is made by the build above, not by agent-tools, so
+    # main writes it here: the day it is dated by keeps a rebuild daily, and
+    # every job that builds an agent image restores it from this entry. An
+    # older day's entry is left to the repo's 10 GB budget, which retires it.
+    - if: inputs.apt-base-cache == 'true' && github.ref == 'refs/heads/main' && steps.agent-tools.outputs.apt-base-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/platform-agent-oci/apt-base
+          ~/.cache/platform-agent-oci/apt-base.key
+        key: ${{ steps.agent-tools.outputs.apt-base-key }}
+    - if: inputs.upload == 'true' && inputs.artifact != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact }}-${{ inputs.arch }}
+        path: ${{ runner.temp }}/digests
+        retention-days: 1
+        if-no-files-found: error

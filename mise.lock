@@ -591,12 +591,6 @@ aube = { path = ".mise/locks/npm-json-schema-to-typescript/16.0.0", digest = "sh
 backend = "npm:json-schema-to-typescript"
 specifiers = ["latest"]
 
-[[tools."npm:knip"]]
-version = "6.41.0"
-aube = { path = ".mise/locks/npm-knip/6.41.0", digest = "sha256:9399e9ec005b9e5f9fea2dcb528798383b48d93d442fae22bc6528c5fdf43cea" }
-backend = "npm:knip"
-specifiers = ["latest"]
-
 [[tools.pinact]]
 version = "5.0.0"
 backend = "aqua:suzuki-shunsuke/pinact"

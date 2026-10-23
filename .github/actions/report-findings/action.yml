@@ -1,0 +1,24 @@
+name: report findings
+description: >-
+  Upload the findings.json the scan step before wrote, for
+  manage-security-issues: one artifact per scanner, named as that job
+  downloads it, kept for the day the run's summary issue reads it. A scan that
+  found nothing uploads an empty list, and a scan that never ran uploads
+  nothing, which the summary job reads as a scanner that did not finish.
+
+inputs:
+  name:
+    description: The artifact name; manage-security-issues downloads findings-*.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # always(): a scan whose own step failed still uploads what it collected.
+    - if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.name }}
+        path: findings.json
+        if-no-files-found: ignore
+        retention-days: 1

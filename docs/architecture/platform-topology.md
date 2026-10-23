@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -59,6 +59,7 @@ It runs two listeners:
   Failures leave the router as tRPC error codes: what the caller caused (a malformed identifier, a duplicate, a resource it does not own) is a client error with its message intact, except the media-type rejection, whose message would echo the request header; everything else is an internal error whose message and stack are redacted on the wire and logged server-side with the cause.
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls.
   Not exposed outside the cluster and carries no user authentication.
+  A failure the caller caused leaves it as a client error code, as on the public port: a Postgres rejection of a malformed identifier or of a duplicate row becomes a bad request or a conflict rather than an internal error.
 
 Channel-relayed turns (Slack, Telegram) are watched for **liveness, not duration** — a turn is never failed for taking long, and on Slack's addressed turns an answer the relay lost is recovered after the fact ([channel-turns](channel-turns.md)).
 

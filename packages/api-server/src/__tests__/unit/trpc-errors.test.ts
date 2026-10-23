@@ -1,10 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { getErrorShape } from "@trpc/server/unstable-core-do-not-import";
-import type { ApiContext } from "api-server-api";
+import type { ApiContext, HarnessContext } from "api-server-api";
+import { harnessRouter } from "api-server-api/harness-router";
 import { markTermsProven, t } from "api-server-api/trpc";
 import { describe, expect, it } from "vitest";
 
-/* TEST_OVERVIEW: The tRPC layer must not hand internal failures to clients as they are: a Postgres error from a malformed id or a duplicate row becomes a client error code, and whatever stays a 500 loses its message and stack. */
+/* TEST_OVERVIEW: A Postgres error from a malformed id or a duplicate row is a client error code, not a 500, on the user API and on the harness API alike. The user API also redacts a failure that stays a 500: its message and stack never reach the client. */
 
 function pgError(code: string): Error {
   return new Error("Failed query: insert into ...", {
@@ -107,5 +108,47 @@ describe("tRPC error mapping", () => {
     });
     expect(shape.message).toBe("unknown template");
     expect(shape.data.stack).toBeUndefined();
+  });
+});
+
+describe("harness tRPC error mapping", () => {
+  function harnessCaller(sessionDirectory: HarnessContext["sessionDirectory"]) {
+    return harnessRouter.createCaller({
+      agentId: "agent-1",
+      sessionDirectory,
+    } as HarnessContext);
+  }
+
+  /* TEST_SCENARIO: An agent pod reports its sessions over the harness API, and the same duplicate row meets that path; the runtime must see CONFLICT, not a 500. */
+  it("maps a unique violation to CONFLICT", async () => {
+    await expect(
+      harnessCaller({
+        record: async () => {
+          throw pgError("23505");
+        },
+      }).sessionDirectory.v1.report({ protocolVersion: "v1", sessions: [] }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  /* TEST_SCENARIO: An id that is not a UUID makes Postgres reject the cast (SQLSTATE 22P02) inside a harness procedure; the runtime must see BAD_REQUEST. */
+  it("maps invalid text representation to BAD_REQUEST", async () => {
+    await expect(
+      harnessCaller({
+        record: async () => {
+          throw pgError("22P02");
+        },
+      }).sessionDirectory.v1.report({ protocolVersion: "v1", sessions: [] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  /* TEST_SCENARIO: A failure Postgres does not classify stays a 500, so an unexpected database error is still visible as one to the runtime. */
+  it("leaves an unmapped error as INTERNAL_SERVER_ERROR", async () => {
+    await expect(
+      harnessCaller({
+        record: async () => {
+          throw pgError("XX000");
+        },
+      }).sessionDirectory.v1.report({ protocolVersion: "v1", sessions: [] }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
   });
 });

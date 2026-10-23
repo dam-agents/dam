@@ -213,7 +213,8 @@ Review every direct dependency, not just this run's bumps, starting with those t
 
 **Unused.** Tools first; their output is candidates, not a verdict:
 
-- npm: `mise x -- knip --dependencies --no-progress` at the repo root covers every workspace.
+- npm: `mise x npm:knip@latest -- knip --dependencies --no-progress` at the repo root covers every workspace.
+  It is not a pinned tool: no task runs it, so this fetches it on demand.
   It also reports unlisted dependencies and binaries: list those or drop the use.
 - Rust: `mise x -- cargo-shear` in `packages/vm-runner`, which needs the smolvm clone.
 - Go: `mise x -- go mod tidy` in `packages/controller`, then `git diff go.mod`.

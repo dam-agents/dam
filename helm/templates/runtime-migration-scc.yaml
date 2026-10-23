@@ -1,4 +1,5 @@
 {{- if and .Values.openshift.scc.anyuidCapNet.enabled .Values.virtualization.enabled }}
+{{- $name := printf "%s-runtime-migration" (include "platform.fullname" .) }}
 {{/*
 SCC for the runtime migration's copy Job on OpenShift, bound to the
 `platform-migration` ServiceAccount alone. The Job reads an agent's old
@@ -20,68 +21,19 @@ capabilities, and admission tries a higher-priority SCC it holds — the
 `anyuid` grant operators bind — before this one, which it would fail
 anyway since this SCC drops ALL.
 */}}
-apiVersion: security.openshift.io/v1
-kind: SecurityContextConstraints
-metadata:
-  name: {{ include "platform.fullname" . }}-runtime-migration
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-allowHostDirVolumePlugin: false
-allowHostIPC: false
-allowHostNetwork: false
-allowHostPID: false
-allowHostPorts: false
-allowPrivilegeEscalation: false
-allowPrivilegedContainer: false
-allowedCapabilities:
-  - DAC_READ_SEARCH
-defaultAddCapabilities: null
-fsGroup:
-  type: RunAsAny
-groups: []
-priority: null
-readOnlyRootFilesystem: false
-requiredDropCapabilities:
-  - ALL
-runAsUser:
-  type: RunAsAny
-seLinuxContext:
-  type: MustRunAs
-seccompProfiles:
-  - runtime/default
-supplementalGroups:
-  type: RunAsAny
-users: []
-volumes:
-  - emptyDir
-  - persistentVolumeClaim
-  - projected
+{{- include "platform.scc" (dict
+  "root" $
+  "name" $name
+  "capabilities" (list "DAC_READ_SEARCH")
+  "volumes" (list "emptyDir" "persistentVolumeClaim" "projected")) }}
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ include "platform.fullname" . }}-runtime-migration-scc-use
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-rules:
-  - apiGroups: ["security.openshift.io"]
-    resources: ["securitycontextconstraints"]
-    resourceNames: ["{{ include "platform.fullname" . }}-runtime-migration"]
-    verbs: ["use"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ include "platform.fullname" . }}-runtime-migration-scc
-  namespace: {{ .Values.agentNamespace }}
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "platform.fullname" . }}-runtime-migration-scc-use
-subjects:
-  - kind: ServiceAccount
-    name: platform-migration
-    namespace: {{ .Values.agentNamespace }}
+{{- include "platform.sccUse" (dict
+  "root" $
+  "name" (printf "%s-scc-use" $name)
+  "scc" $name
+  "binding" (printf "%s-scc" $name)
+  "subjects" (list (dict
+    "kind" "ServiceAccount"
+    "name" "platform-migration"
+    "namespace" .Values.agentNamespace))) }}
 {{- end }}
