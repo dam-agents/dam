@@ -1,5 +1,5 @@
 import type { LibraryArtifact } from "api-server-api";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -27,14 +27,6 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
   const [chosen, setChosen] = useState<string | null>(null);
   const update = useUpdateArtifact();
   const pending = update.isPending;
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !pending) onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [pending, onClose]);
 
   const currentFolderId = artifact.folderId ?? NO_FOLDER;
   const selected = chosen ?? currentFolderId;

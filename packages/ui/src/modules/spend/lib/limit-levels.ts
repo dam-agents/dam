@@ -81,7 +81,7 @@ function fromCeiling(
   };
 }
 
-function spentOn(
+export function spentOn(
   totals: SpendStatus["spentByConnection"],
   connectionId: string,
   unit: SpendUnit,
@@ -95,6 +95,20 @@ function spentOn(
 
 function paidSpend(status: SpendStatus): number {
   return status.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the limits every dollar counts against, above one Connection or one agent: the owner's total and the daily ceiling. A subscription or Bob Connection is counted by neither, so it lists only its own limit.
+function totalsAbove(
+  status: SpendStatus,
+  mineMicros: number | null,
+  unit: SpendUnit,
+): Level[] {
+  if (unit !== "usd") return [];
+  const levels: Level[] = [];
+  const owner = findLimit(status, (view) => view.scope.kind === "owner");
+  if (owner) levels.push(fromLimit(owner, "total", null, mineMicros));
+  if (status.ceiling) levels.push(fromCeiling(status.ceiling, mineMicros));
+  return levels;
 }
 
 function findLimit(
@@ -161,12 +175,7 @@ export function allAgentsConnectionLevels(
   const current = limit
     ? fromLimit(limit, "all-connection", connection, null)
     : null;
-  const above: Level[] = [];
-  if (unit === "usd") {
-    const owner = findLimit(status, (view) => view.scope.kind === "owner");
-    if (owner) above.push(fromLimit(owner, "total", null, null));
-    if (status.ceiling) above.push(fromCeiling(status.ceiling, null));
-  }
+  const above = totalsAbove(status, null, unit);
   return {
     current,
     others: markStopsFirst(current, above).map((level) => ({
@@ -218,17 +227,9 @@ export function agentConnectionLevels(
         level: fromLimit(agent, "agent", null, null),
         group: "every",
       });
-    const owner = findLimit(status, (view) => view.scope.kind === "owner");
-    if (owner)
-      above.push({
-        level: fromLimit(owner, "total", null, mineAll),
-        group: "every",
-      });
-    if (status.ceiling)
-      above.push({
-        level: fromCeiling(status.ceiling, mineAll),
-        group: "every",
-      });
+    for (const level of totalsAbove(status, mineAll, unit)) {
+      above.push({ level, group: "every" });
+    }
   }
   return { current, others: regroup(current, above) };
 }
@@ -277,30 +278,12 @@ export function agentLevels(
       });
     }
   }
-  const mineAll = paidSpend(status);
-  const owner = findLimit(status, (view) => view.scope.kind === "owner");
-  if (owner)
-    others.push({
-      level: fromLimit(owner, "total", null, mineAll),
-      group: "every",
-    });
-  if (status.ceiling)
-    others.push({
-      level: fromCeiling(status.ceiling, mineAll),
-      group: "every",
-    });
-  const dollars = others.filter(({ group }) => group === "every");
-  const marked = markStopsFirst(
-    current,
-    dollars.map(({ level }) => level),
-  );
-  return {
-    current,
-    others: others.map((entry) => {
-      const index = dollars.indexOf(entry);
-      return index === -1 ? entry : { ...entry, level: marked[index]! };
-    }),
-  };
+  const every: GroupedLevel[] = totalsAbove(
+    status,
+    paidSpend(status),
+    "usd",
+  ).map((level) => ({ level, group: "every" as const }));
+  return { current, others: [...others, ...regroup(current, every)] };
 }
 
 function regroup(current: Level | null, above: GroupedLevel[]): GroupedLevel[] {

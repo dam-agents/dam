@@ -6,7 +6,11 @@ import { useLevelAgent } from "../hooks/use-level-agent.js";
 import { AGENT_PROVIDER_LIMIT_BUTTON_TIP } from "../lib/copy.js";
 import { NO_LIMIT_REASONS } from "../lib/format.js";
 import { levelName } from "../lib/level-labels.js";
-import { agentConnectionLevels, type LevelsView } from "../lib/limit-levels.js";
+import {
+  agentConnectionLevels,
+  type LevelsView,
+  spentOn,
+} from "../lib/limit-levels.js";
 import { LimitLine } from "./limit-line.js";
 
 interface Props {
@@ -37,12 +41,11 @@ export function ConnectionSpendLimit({
 
   const connection = { id: connectionId, name: connectionName, templateId };
   const view = agentConnectionLevels(status, agentId, connection, rule.unit);
-  const spentMicros = status.spentByConnection
-    .filter(
-      (total) =>
-        total.connectionId === connectionId && total.unit === rule.unit,
-    )
-    .reduce((sum, total) => sum + total.costMicros, 0);
+  const spentMicros = spentOn(
+    status.spentByConnection,
+    connectionId,
+    rule.unit,
+  );
 
   return (
     <div className="border-t border-border pt-3">

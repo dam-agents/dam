@@ -213,7 +213,7 @@ test("switches the chat between the sections and the side panel", async ({
   const agentId = agentIds.get(AGENTS[1])!;
   await openHome(page);
   await page.evaluate(() =>
-    localStorage.setItem("platform-debug:features-menu", "true"),
+    localStorage.setItem("platform-debug:features-menu", "1"),
   );
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
   await waitForAgentRunning(api, AGENTS[1]);
@@ -273,7 +273,7 @@ test("gives the chat the tiled rail without JanUI", async ({ page }) => {
 
   await openHome(page);
   await page.evaluate(() =>
-    localStorage.setItem("platform-debug:features-menu", "true"),
+    localStorage.setItem("platform-debug:features-menu", "1"),
   );
   await page.goto(`${baseUrl}${chatPath}`);
   await waitForAgentRunning(api, AGENTS[1]);

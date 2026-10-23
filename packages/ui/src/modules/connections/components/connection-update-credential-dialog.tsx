@@ -1,4 +1,3 @@
-import { TRPCClientError } from "@trpc/client";
 import type {
   ConnectionCredentialUpdate,
   ConnectionView,
@@ -19,6 +18,7 @@ import {
   labelFor,
 } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
+import { mutationMessage } from "../lib/mutation-message.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
 import { ConnectionEditGithubUserTokenScopeDialog } from "./connection-edit-github-user-token-scope-dialog.js";
 
@@ -174,12 +174,10 @@ function KeyPairCredentialDialog({
 
 function useCredentialUpdate(connection: ConnectionView, onClose: () => void) {
   const update = useUpdateConnection({ silent: true });
-  const fieldError =
-    update.error === null
-      ? undefined
-      : isBadRequest(update.error)
-        ? update.error.message
-        : "Couldn't update the credential. Please try again.";
+  const fieldError = mutationMessage(
+    update.error,
+    "Couldn't update the credential. Please try again.",
+  );
   const submit = async (credential: ConnectionCredentialUpdate) => {
     try {
       await update.mutateAsync({ id: connection.id, ...credential });
@@ -227,8 +225,4 @@ function CredentialDialogFrame({
       />
     </Modal>
   );
-}
-
-function isBadRequest(err: unknown): err is Error {
-  return err instanceof TRPCClientError && err.data?.code === "BAD_REQUEST";
 }

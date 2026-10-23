@@ -1,4 +1,3 @@
-import { TRPCClientError } from "@trpc/client";
 import {
   type SpendCeilingEntry,
   spendCeilingUsdTextSchema,
@@ -6,15 +5,7 @@ import {
 } from "api-server-api";
 import { useState } from "react";
 
-import { FormField } from "@/components/form-field";
-import {
-  DialogActions,
-  DialogBody,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
-import { Input } from "@/components/ui/input";
-
+import { OperatorOverrideDialog } from "../../operator/components/operator-override-dialog.js";
 import { useSetSpendCeiling } from "../api/mutations.js";
 import {
   CEILING_APPLIES_NEXT_CALL,
@@ -39,101 +30,62 @@ export function SpendCeilingDialog({ entry, onClose }: Props) {
     ? spendCeilingUserSchema.safeParse({ ownerSub: entry.ownerSub })
     : spendCeilingUserSchema.safeParse({ email });
   const amount = spendCeilingUsdTextSchema.safeParse(draft);
-  const failure = setCeiling.error;
-  const unknownUser =
-    failure instanceof TRPCClientError && failure.data?.code === "NOT_FOUND";
-  const emailError =
-    unknownUser && !entry
-      ? failure.message
-      : email.trim() !== "" && !user.success
-        ? "Enter an email address."
-        : undefined;
-  const formError = !failure
-    ? undefined
-    : !unknownUser
-      ? CEILING_SAVE_FAILED
-      : entry
-        ? CEILING_REMOVED_MEANWHILE
-        : undefined;
-  const amountError =
-    draft.trim() === "" || amount.success
-      ? undefined
-      : "Enter dollars like 50 or 12.50.";
   const pending = setCeiling.isPending;
   const canSave = user.success && amount.success;
 
+  function save() {
+    if (!user.success || !amount.success) return;
+    setCeiling.mutate(
+      { user: user.data, amountMicros: amount.data },
+      { onSuccess: onClose },
+    );
+  }
+
   return (
-    <Modal size="sm" onClose={pending ? undefined : onClose}>
-      <form
-        className="contents"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!user.success || !amount.success || pending) return;
-          setCeiling.mutate(
-            { user: user.data, amountMicros: amount.data },
-            { onSuccess: onClose },
-          );
-        }}
-      >
-        <DialogHeader
-          title={entry ? "Change spend ceiling" : SET_CEILING}
-          subtitle={
-            entry
-              ? `For ${entry.email ?? entry.ownerSub}. ${CEILING_APPLIES_NEXT_CALL}`
-              : CEILING_APPLIES_NEXT_CALL
-          }
-          onClose={onClose}
-          closeDisabled={pending}
-        />
-        <DialogBody className="flex flex-col gap-4">
-          {!entry && (
-            <FormField label="User's email" error={emailError}>
-              <Input
-                autoFocus
-                type="email"
-                autoComplete="off"
-                placeholder="name@example.com"
-                variant={emailError ? "invalid" : "standard"}
-                aria-invalid={emailError !== undefined}
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                  setCeiling.reset();
-                }}
-              />
-            </FormField>
-          )}
-          <FormField
-            label="Daily spend ceiling"
-            hint="US dollars of paid API spend per UTC day, over all the user's agents."
-            error={amountError}
-          >
-            <Input
-              autoFocus={entry !== null}
-              inputMode="decimal"
-              placeholder="50.00"
-              variant={amountError ? "invalid" : "standard"}
-              className="w-36 font-mono"
-              aria-invalid={amountError !== undefined}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-            />
-          </FormField>
-          {formError && (
-            <p role="alert" className="text-sm text-danger">
-              {formError}
-            </p>
-          )}
-        </DialogBody>
-        <DialogActions
-          onCancel={onClose}
-          cancelDisabled={pending}
-          label="Save"
-          pendingLabel="Saving…"
-          pending={pending}
-          disabled={!canSave}
-        />
-      </form>
-    </Modal>
+    <OperatorOverrideDialog
+      title={entry ? "Change spend ceiling" : SET_CEILING}
+      subtitle={
+        entry
+          ? `For ${entry.email ?? entry.ownerSub}. ${CEILING_APPLIES_NEXT_CALL}`
+          : CEILING_APPLIES_NEXT_CALL
+      }
+      user={
+        entry
+          ? null
+          : {
+              value: email,
+              valid: user.success,
+              onChange: (text) => {
+                setEmail(text);
+                setCeiling.reset();
+              },
+            }
+      }
+      failure={setCeiling.error}
+      errorCopy={{
+        removedMeanwhile: CEILING_REMOVED_MEANWHILE,
+        saveFailed: CEILING_SAVE_FAILED,
+        showServerMessage: false,
+      }}
+      fields={[
+        {
+          label: "Daily spend ceiling",
+          hint: "US dollars of paid API spend per UTC day, over all the user's agents.",
+          placeholder: "50.00",
+          error:
+            draft.trim() === "" || amount.success
+              ? undefined
+              : "Enter dollars like 50 or 12.50.",
+          value: draft,
+          inputMode: "decimal",
+          autoFocus: entry !== null,
+          onChange: setDraft,
+        },
+      ]}
+      pending={pending}
+      canSave={canSave}
+      onSave={save}
+      onClose={onClose}
+    />
   );
 }
