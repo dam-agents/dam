@@ -282,20 +282,30 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toMatchObject([{ channel: "D-UOWNER" }]);
   });
 
-  it("attachments follow the resolved target", async () => {
+  /**
+   * TEST_SCENARIO: A message with a file is one Slack post: the file is shared
+   * with the agent's text and footer on it, into the conversation the message
+   * resolved to. Posting the text and then sharing the file made two posts, so
+   * a reader saw a bare file next to the text it belonged to.
+   */
+  it("attachments follow the resolved target, on the post itself", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     const result = await h.post("report attached", {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
     expect(result).toEqual({ ok: true });
-    expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
+    expect(h.messages()).toEqual([]);
     expect(h.uploads()).toMatchObject([
-      { channelId: "C-ALERTS", filename: "report.md" },
+      {
+        channelId: "C-ALERTS",
+        filename: "report.md",
+        text: signed("report attached", "*"),
+      },
     ]);
   });
 
-  it("a reply's attachment is uploaded into the same thread", async () => {
+  it("a reply's attachment is shared into the same thread, with its text", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     await h.worker.start("agent-1");
     const result = await h.worker.reply("agent-1", {
@@ -304,9 +314,7 @@ describe("slack outbound — cross-workspace reach", () => {
       attachment: { filename: "lorem-ipsum.txt", data: Buffer.from("x") },
     });
     expect(result).toEqual({ ok: true });
-    expect(h.messages()).toMatchObject([
-      { channel: BOUND, threadTs: "1700000000.000100" },
-    ]);
+    expect(h.messages()).toEqual([]);
     expect(h.uploads()).toEqual([
       {
         kind: "upload",
@@ -314,13 +322,61 @@ describe("slack outbound — cross-workspace reach", () => {
         channelId: BOUND,
         filename: "lorem-ipsum.txt",
         threadTs: "1700000000.000100",
+        text: signed("lorem ipsum attached", "*"),
       },
     ]);
   });
 
   /**
-   * TEST_SCENARIO: The text is posted before the file is shared, so a failed
-   * upload leaves a delivered message behind. The send succeeded and only the
+   * TEST_SCENARIO: Slack can refuse a file share that carries the text, for
+   * example for blocks it will not take on a file. The text must still reach
+   * the conversation, so the worker falls back to the two posts: the text
+   * first, with the file's id in its metadata, then the bare file.
+   */
+  it("a file share Slack refuses with the text falls back to the text, then the file", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const share = h.gw.shareFile.bind(h.gw);
+    h.gw.shareFile = async (args) => {
+      if (args.blocks) throw new Error("internal_error");
+      await share(args);
+    };
+    const result = await h.post("report attached", {
+      conversationId: "C-ALERTS",
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    expect(result).toEqual({ ok: true });
+    expect(
+      h.gw
+        .readOutbound()
+        .filter((r) => r.kind === "message" || r.kind === "upload"),
+    ).toMatchObject([
+      { kind: "message", channel: "C-ALERTS", text: signed("report attached") },
+      { kind: "upload", channelId: "C-ALERTS", filename: "report.md" },
+    ]);
+    expect(h.uploads()[0]).not.toHaveProperty("text");
+  });
+
+  /**
+   * TEST_SCENARIO: Slack has no unfurl switch on a file share, so an agent
+   * that turns link previews off gets its text as its own post, where the
+   * switch holds, and the file after it.
+   */
+  it("a message that turns link previews off keeps them off, beside its file", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    await h.post("see https://example.com", {
+      conversationId: "C-ALERTS",
+      unfurlLinks: false,
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    expect(h.messages()).toMatchObject([
+      { channel: "C-ALERTS", unfurlLinks: false },
+    ]);
+    expect(h.uploads()).toMatchObject([{ filename: "report.md" }]);
+  });
+
+  /**
+   * TEST_SCENARIO: When the file share fails both with and without the text,
+   * the text is already posted on its own. The send succeeded and only the
    * attachment is missing, so the result says ok and names the upload failure
    * beside it. Reporting it as a plain failure would read as nothing having
    * been sent, and the agent would send the whole message a second time.

@@ -134,6 +134,7 @@ import {
   renderAssistantBlocks,
   type TurnPresenter,
 } from "./slack-turn-presenter.js";
+import { markdownToSections } from "./slack-mrkdwn.js";
 import {
   agentContextBlock,
   agentFooterLabel,
@@ -1169,6 +1170,8 @@ const CONVERSATION_LABEL_TTL_MS = 5 * 60_000;
 
 const PENDING_POST_DELETE_TTL_MS = 15 * 60_000;
 
+const SLACK_MAX_BLOCKS = 50;
+
 const userLookupSemaphore = createSemaphore(5);
 
 const conversationInfoSemaphore = createSemaphore(5);
@@ -2193,6 +2196,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     };
   }
 
+  function fileShareBlocks(
+    markdown: string,
+    footerBlock: SlackBlock,
+  ): SlackBlock[] | null {
+    const sections = markdownToSections(markdown);
+    return sections.length < SLACK_MAX_BLOCKS
+      ? [...sections, footerBlock]
+      : null;
+  }
+
   async function postWithAttachment(
     gw: SlackGateway,
     target: { id: string; teamId: SlackWorkspace },
@@ -2200,56 +2213,65 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     threadTs: string | undefined,
     persona: Pick<SlackPostMessage, "username" | "iconUrl">,
     post: (fileIds: string[]) => Promise<unknown>,
+    fileBlocks: SlackBlock[] | null,
   ): Promise<string | null> {
-    let reserved: SlackReservedFile | null = null;
-    let uploadError: string | null = null;
-    if (attachment) {
+    if (!attachment) {
+      await post([]);
+      return null;
+    }
+    let reserved: SlackReservedFile;
+    try {
+      reserved = await gw.reserveFile({
+        filename: attachment.filename,
+        length: attachment.data.length,
+        teamId: target.teamId,
+      });
+    } catch (err) {
+      await post([]);
+      return formatError(err);
+    }
+    const bytesSent = gw
+      .sendFileBytes({
+        reserved,
+        file: attachment.data,
+        filename: attachment.filename,
+        teamId: target.teamId,
+      })
+      .then(
+        () => null,
+        (err: unknown) => formatError(err),
+      );
+    const share = (blocks?: SlackBlock[]) =>
+      gw.shareFile({
+        fileId: reserved.fileId,
+        filename: attachment.filename,
+        ...(attachment.title !== undefined ? { title: attachment.title } : {}),
+        ...persona,
+        channelId: target.id,
+        ...(threadTs ? { threadTs } : {}),
+        ...(blocks ? { blocks } : {}),
+        teamId: target.teamId,
+      });
+    if (fileBlocks && (await bytesSent) === null) {
       try {
-        reserved = await gw.reserveFile({
-          filename: attachment.filename,
-          length: attachment.data.length,
-          teamId: target.teamId,
-        });
+        await share(fileBlocks);
+        return null;
       } catch (err) {
-        uploadError = formatError(err);
+        getLogger().warn(
+          { channelId: target.id, err: formatError(err) },
+          "slack.file_post.failed: posting the text and the file apart",
+        );
       }
     }
-    const bytesSent =
-      reserved && attachment
-        ? gw
-            .sendFileBytes({
-              reserved,
-              file: attachment.data,
-              filename: attachment.filename,
-              teamId: target.teamId,
-            })
-            .then(
-              () => null,
-              (err: unknown) => formatError(err),
-            )
-        : null;
-    await post(reserved ? [reserved.fileId] : []);
-    if (reserved && attachment && bytesSent) {
-      uploadError = await bytesSent;
-      if (uploadError === null) {
-        try {
-          await gw.shareFile({
-            fileId: reserved.fileId,
-            filename: attachment.filename,
-            ...(attachment.title !== undefined
-              ? { title: attachment.title }
-              : {}),
-            ...persona,
-            channelId: target.id,
-            ...(threadTs ? { threadTs } : {}),
-            teamId: target.teamId,
-          });
-        } catch (err) {
-          uploadError = formatError(err);
-        }
-      }
+    await post([reserved.fileId]);
+    const uploadError = await bytesSent;
+    if (uploadError !== null) return uploadError;
+    try {
+      await share();
+      return null;
+    } catch (err) {
+      return formatError(err);
     }
-    return uploadError;
   }
 
   type PendingPostDelete = {
@@ -6082,6 +6104,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                 ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
               }),
+            unfurlLinks === false || unfurlMedia === false
+              ? null
+              : fileShareBlocks(sign(text, "**"), contextBlock),
           );
         } else if (attachment) {
           try {
@@ -6418,6 +6443,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 ? { unfurlMedia: args.unfurlMedia }
                 : {}),
             }),
+          args.alsoSendToChannel ||
+            args.unfurlLinks === false ||
+            args.unfurlMedia === false
+            ? null
+            : fileShareBlocks(sign(args.text, "**"), agentContextBlock(footer)),
         );
         noteEngagedTurn(
           instanceName,

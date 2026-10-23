@@ -1,5 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError } from "./slack-gateway.js";
+import { renderSlackPostText } from "./slack-post-text.js";
 import type { SlackSender } from "./slack-sender.js";
 import type {
   SlackViewSubmission,
@@ -334,12 +335,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async sendFileBytes() {},
 
     async shareFile(args) {
+      const text = renderSlackPostText({ blocks: args.blocks });
       outbound.push({
         kind: "upload",
         teamId: args.teamId,
         channelId: args.channelId,
         filename: stagedFiles.get(args.fileId) ?? args.fileId,
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
+        ...(text ? { text } : {}),
       });
     },
 

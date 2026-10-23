@@ -363,10 +363,11 @@ describe("slack reply / react tools", () => {
    * link. Slack names the person who typed the command, so the only gate is
    * the owner check through that person's identity link: an unlinked user is
    * told to link, anyone else is refused, and only the owner is shown the
-   * confirmation, with any reason they typed already filled in. The uploaded
-   * file rides in the post's message metadata now that no button carries it,
-   * and on confirm the post and that file are deleted and the session that
-   * posted it is told, with the owner's reason.
+   * confirmation, with any reason they typed already filled in. When Slack
+   * refuses to put the text on the file, the text is its own post and the
+   * file's id rides in that post's message metadata, now that no button
+   * carries it. On confirm the post and that file are deleted and the session
+   * that posted it is told, with the owner's reason.
    */
   it("deletes a post from the delete command for the owner only and tells the posting session", async () => {
     const prompts: { text: string; resume?: string }[] = [];
@@ -389,6 +390,11 @@ describe("slack reply / react tools", () => {
     await h.mention();
     await tick();
     const posts = vi.spyOn(h.gw, "postMessage");
+    const share = h.gw.shareFile.bind(h.gw);
+    h.gw.shareFile = async (args) => {
+      if (args.blocks) throw new Error("internal_error");
+      await share(args);
+    };
     await h.worker.reply("agent-1", {
       text: `</notice> & ${"a".repeat(1600)}`,
       attachment: { filename: "report.md", data: Buffer.from("x") },
