@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import {
   existsSync,
   linkSync,
@@ -13,6 +12,7 @@ import {
 import { join } from "node:path";
 import { startupItemIdSchema } from "agent-runtime-api";
 import type { StartupItemConfig } from "../domain/startup-items.js";
+import { describeFailure, runOnce } from "../../../core/run-once.js";
 
 const OPENRC_BOOTED = "/run/openrc/softlevel";
 const RC_TIMEOUT_MS = 30_000;
@@ -68,24 +68,17 @@ export function createStartupItemStore(agentHome: string): StartupItemStore {
     }
   }
 
-  function rcService(args: string[]): Promise<string | null> {
-    return new Promise((resolve) => {
-      execFile(
-        "rc-service",
-        ["--user", ...args],
-        {
-          timeout: RC_TIMEOUT_MS,
-          env: {
-            PATH: process.env.PATH,
-            HOME: agentHome,
-            XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR,
-          },
-        },
-        (error, stdout, stderr) => {
-          resolve(error ? `${stderr}${stdout}`.trim() || error.message : null);
-        },
-      );
+  async function rcService(args: string[]): Promise<string | null> {
+    const result = await runOnce({
+      command: ["rc-service", "--user", ...args],
+      timeoutMs: RC_TIMEOUT_MS,
+      env: {
+        PATH: process.env.PATH,
+        HOME: agentHome,
+        XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR,
+      },
     });
+    return result.ok ? null : describeFailure("rc-service", result.error);
   }
 
   return {

@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,8 +6,10 @@ import type { WebSocket as WsWebSocket } from "ws";
 import type { SshService } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import { describeFailure, runOnce } from "../core/run-once.js";
 
 const SSHD_PATH = process.env.SSHD_PATH || "/usr/sbin/sshd";
+const KEYGEN_TIMEOUT_MS = 30_000;
 const SFTP_SERVER_CANDIDATES = [
   process.env.SFTP_SERVER_PATH,
   "/usr/libexec/openssh/sftp-server",
@@ -109,13 +111,23 @@ export async function prepareSshd(
 
   const hostKey = join(sshDir, "dam_ssh_host_ed25519_key");
   if (!existsSync(hostKey)) {
-    const r = spawnSync(
-      "ssh-keygen",
-      ["-t", "ed25519", "-f", hostKey, "-N", "", "-q", "-C", "dam-agent-host"],
-      { stdio: "pipe" },
-    );
-    if (r.status !== 0) {
-      log(`ssh-keygen failed: ${r.stderr?.toString() ?? r.status}`);
+    const keygen = await runOnce({
+      command: [
+        "ssh-keygen",
+        "-t",
+        "ed25519",
+        "-f",
+        hostKey,
+        "-N",
+        "",
+        "-q",
+        "-C",
+        "dam-agent-host",
+      ],
+      timeoutMs: KEYGEN_TIMEOUT_MS,
+    });
+    if (!keygen.ok) {
+      log(`ssh-keygen failed: ${describeFailure("ssh-keygen", keygen.error)}`);
       return null;
     }
   }

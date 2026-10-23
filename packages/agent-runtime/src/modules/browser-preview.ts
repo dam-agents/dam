@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -16,6 +15,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { describeFailure, runOnce } from "../core/run-once.js";
 import {
   type BrowserAction,
   type BrowserDomainError,
@@ -142,33 +142,20 @@ export function commandTimeoutMs(args: string[]): number {
 export function agentBrowserCommand(
   envReader: RuntimeEnvReader,
 ): BrowserCommand {
-  return (args) =>
-    new Promise((resolve, reject) => {
-      const child = spawn("agent-browser", args, {
-        env: mergedSpawnEnv(envReader),
-        detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-      child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
-      const timer = setTimeout(() => {
-        try {
-          process.kill(-child.pid!, "SIGKILL");
-        } catch {}
-        reject(new Error(`${args[0]} timed out`));
-      }, commandTimeoutMs(args));
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        if (code === 0) resolve(stdout);
-        else reject(new Error(stderr.trim() || `${args[0]} exited ${code}`));
-      });
+  return async (args) => {
+    const command = ["agent-browser", ...args];
+    const result = await runOnce({
+      command,
+      timeoutMs: commandTimeoutMs(args),
+      env: mergedSpawnEnv(envReader),
+      detached: true,
     });
+    if (!result.ok)
+      throw new Error(
+        describeFailure(`agent-browser ${args[0] ?? ""}`.trim(), result.error),
+      );
+    return result.value.stdout;
+  };
 }
 
 export function isPreviewProcess(cmdline: string, profileDir: string): boolean {
