@@ -61,9 +61,11 @@ export function Terminal({
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
   const userConnect = useRef(false);
+  const stopped = useRef(false);
   const [pty] = useState(freshPty);
   const socket = useRef<WebSocket | null>(null);
   const retryConnect = useCallback(() => {
+    if (stopped.current) return;
     if (!connectEnabled.current) {
       setState("disconnected");
       return;
@@ -72,11 +74,13 @@ export function Terminal({
   }, []);
   const reconnect = useTerminalReconnect(retryConnect);
   const handleStopReconnect = () => {
+    stopped.current = true;
     reconnect.stop();
     socket.current?.close();
     setState("disconnected");
   };
   const handleReconnect = () => {
+    stopped.current = false;
     connectEnabled.current = true;
     userConnect.current = true;
     setRefusal(null);
@@ -87,7 +91,7 @@ export function Terminal({
   useEffect(() => {
     const wasDisabled = !connectEnabled.current;
     connectEnabled.current = autoConnect;
-    if (autoConnect && wasDisabled) {
+    if (autoConnect && wasDisabled && !stopped.current) {
       setState("connecting");
       setReconnectKey((k) => k + 1);
     }
@@ -102,6 +106,7 @@ export function Terminal({
     if (!container) return;
 
     let cancelled = false;
+    const current = () => !cancelled && !stopped.current;
     let ws: WebSocket | null = null;
     let term: XTerm | null = null;
     let ro: ResizeObserver | null = null;
@@ -132,10 +137,10 @@ export function Terminal({
       if (cancelled) return;
       fitAddon.fit();
 
-      if (!connectEnabled.current) return;
+      if (!connectEnabled.current || stopped.current) return;
 
       const token = await getAccessToken();
-      if (cancelled) return;
+      if (!current()) return;
 
       const lease = fresh ? readNextSessionPair(agentId) : null;
       const wakes = userConnect.current;
@@ -158,7 +163,7 @@ export function Terminal({
       let exited = false;
 
       ws.onopen = () => {
-        if (cancelled || !ws || !term) return;
+        if (!current() || !ws || !term) return;
         setState((s) => (s === "reconnecting" ? s : "live"));
         ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
@@ -172,6 +177,7 @@ export function Terminal({
         } catch {
           return;
         }
+        if (!current()) return;
         if (!live) {
           live = true;
           pty.attached();
