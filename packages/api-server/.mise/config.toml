@@ -22,3 +22,11 @@ set -euo pipefail
 (cd "{{vars.repo_root}}/packages/db" && DATABASE_URL="$HARNESS_CONFIG_DATABASE_URL" pnpm exec drizzle-kit migrate >/dev/null)
 HARNESS_CONFIG_DATABASE_URL="$HARNESS_CONFIG_DATABASE_URL" pnpm exec tsx scripts/harness-config-concurrency.ts
 '''
+
+[tasks."test:control-grants"]
+description = "Check the controller role's privileges against a real PostgreSQL"
+run = '''
+set -euo pipefail
+: "${CONTROL_GRANTS_DATABASE_URL:?point it at a disposable database with the migrations applied, on a server where creating and dropping platform_controller is acceptable}"
+pnpm exec tsx scripts/control-grants-check.ts
+'''

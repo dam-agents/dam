@@ -189,6 +189,8 @@ import { composeTermsModule } from "./modules/terms/index.js";
 import { agentsInstallSettings, loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
+import { reconcileControlGrants } from "./modules/agent-store/infrastructure/control-grants.js";
+import { reportControlGrants } from "./modules/agent-store/infrastructure/control-grants-report.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
 import {
@@ -377,6 +379,7 @@ export async function bootstrap() {
     poolMax: config.databasePoolMax,
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
+  reportControlGrants(getLogger(), await reconcileControlGrants(db));
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
