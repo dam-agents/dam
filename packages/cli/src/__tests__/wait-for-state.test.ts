@@ -12,6 +12,9 @@ function serviceReturning(states: AgentView["state"][]): AgentService {
     deleteAgent: vi.fn(),
     restart: vi.fn(),
     setDisabled: vi.fn(),
+    updateIdentity: vi.fn(),
+    unlockedCharacters: vi.fn(),
+    customAvatarsEnabled: vi.fn(),
     get: vi.fn(async () => {
       const state = states[Math.min(i++, states.length - 1)]!;
       return {

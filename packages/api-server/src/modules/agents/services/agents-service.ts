@@ -1338,6 +1338,7 @@ export function createAgentsService(deps: {
 
     async update(input: AgentUpdateInput) {
       let renamed = false;
+      let keptAvatar: string | undefined;
       if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
@@ -1345,13 +1346,20 @@ export function createAgentsService(deps: {
         if (input.name !== undefined && input.name !== current.name) {
           renamed = true;
           await assertNameFree(input.name, current.owner, input.id);
+          if (input.avatar === undefined && !current.spec.avatar)
+            keptAvatar = avatarCharacter(
+              undefined,
+              current.owner ?? "",
+              current.name,
+            );
         }
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.description !== undefined)
         patch.description = input.description;
-      if (input.avatar !== undefined) patch.avatar = input.avatar;
+      const avatar = input.avatar === undefined ? keptAvatar : input.avatar;
+      if (avatar !== undefined) patch.avatar = avatar;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
       if (input.hibernationTimeoutMin !== undefined)
         patch.hibernationTimeout =
