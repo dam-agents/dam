@@ -79,7 +79,9 @@ Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`]
 - **Web UI proof**: a pull request that changes what the web UI (`packages/ui`) shows or does carries screenshots or a recording of the change in the running app, in its body or its first comment.
   A reviewer cannot see a UI change from the diff.
   Bring the app up on the local cluster ([`cluster-ops`](.agents/skills/cluster-ops/SKILL.md), or [`ccweb`](.agents/skills/ccweb/SKILL.md) in a sandbox) and capture with agent-browser or Playwright.
-  Without a way to upload images, commit them to an orphan branch `screenshots/<branch>` and link `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/<file>`.
+  Upload the files with the GitHub CLI's attachment upload (https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli): `gh pr create|edit|comment --attach <file>`, with `--attach` repeated per file.
+  A Markdown reference to the same local path in the body is replaced with the uploaded URL in place, and a `#alt text` suffix on the path sets the alt text.
+  No `gh` extensions, and never push a branch to host images.
   The app cannot run where you are: open the pull request anyway, and say so in its body with what blocked it.
 - **Upstream skills**: `pr-open` and `review-remediation` are vendored from code-guardian and pinned in `.agents/upstream-skills.json`.
   Never edit them here: change them upstream, then `mise run skills:update`.
