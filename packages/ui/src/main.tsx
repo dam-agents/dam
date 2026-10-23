@@ -42,12 +42,9 @@ async function main() {
     const { agents } = await import("./mock/data/agents.js");
 
     {
-      const { REAL_PACKS } = await import("./modules/packs/data/packs.js");
-      const pack = REAL_PACKS[0];
-      const agentId = agents[0]?.id;
-      if (pack && agentId) {
-        useStore.getState().initOnboarding(agentId, pack);
-      }
+      const { completeQuest } =
+        await import("./modules/agents/lib/character-unlocks.js");
+      completeQuest("first-agent");
     }
 
     // Seed mock changes data so DockedChangesPanel renders
@@ -81,15 +78,46 @@ async function main() {
         );
       }
 
+      const returnSessions = [
+        MOCK_SESSION_IDS.returnPill,
+        MOCK_SESSION_IDS.returnHeader,
+        MOCK_SESSION_IDS.returnJump,
+        MOCK_SESSION_IDS.returnScrollbar,
+        MOCK_SESSION_IDS.returnBadge,
+      ];
+
+      const lists: Record<string, typeof MOCK_CHANGE_SET_LIST> = {
+        [`${toolsAgent}:${toolsSession}`]: MOCK_CHANGE_SET_LIST,
+        [`${toolsAgent}:${emptySession}`]: MOCK_EMPTY_CHANGE_SET_LIST,
+      };
+      for (const sid of returnSessions) {
+        lists[`${toolsAgent}:${sid}`] = MOCK_CHANGE_SET_LIST;
+        queryClient.setQueryData(
+          ["changes", toolsAgent, "list", sid],
+          MOCK_CHANGE_SET_LIST,
+        );
+      }
+
       seedMockChanges(
-        {
-          [`${toolsAgent}:${toolsSession}`]: MOCK_CHANGE_SET_LIST,
-          [`${toolsAgent}:${emptySession}`]: MOCK_EMPTY_CHANGE_SET_LIST,
-        },
+        lists,
         repoPath
           ? { [`${toolsAgent}:${repoPath}:base`]: MOCK_CHANGE_SET_DIFF }
           : {},
       );
+    }
+
+    // Seed mock processes data so ProcessList/DockedProcessOutputPanel render
+    {
+      const { MOCK_PROCESS_LIST, MOCK_PROCESS_OUTPUTS } =
+        await import("./mock/data/mock-tools-demo.js");
+      const { AGENT_IDS } = await import("./mock/data/agents.js");
+      const { processKeys } = await import("./modules/processes/api/keys.js");
+
+      const toolsAgent = AGENT_IDS.codexResearch;
+      queryClient.setQueryData(processKeys.list(toolsAgent), MOCK_PROCESS_LIST);
+      for (const [key, output] of Object.entries(MOCK_PROCESS_OUTPUTS)) {
+        queryClient.setQueryData(processKeys.output(toolsAgent, key), output);
+      }
     }
 
     // Prevent api-health listener from invalidating seeded cache
@@ -111,6 +139,7 @@ async function main() {
     useStore.setState({
       view: "chat",
       selectedAgent: agents[0]!.id,
+      sessionId: defaultSession,
       expandedSidebarAgents: new Set(agents.map((a) => a.id)),
       sidebarExpanded: true,
     });

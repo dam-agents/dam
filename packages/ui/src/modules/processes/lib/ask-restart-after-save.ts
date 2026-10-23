@@ -34,7 +34,7 @@ async function waitForPendingRestart(
 ): Promise<PendingRestart | null> {
   while (Date.now() < (checkUntil.get(agentId) ?? 0)) {
     await new Promise((resolve) => setTimeout(resolve, CHECK_EVERY_MS));
-    if (useStore.getState().dialog) continue;
+    if (useStore.getState().dialog?.open) continue;
     let pending: PendingRestart | null;
     try {
       pending = await readPendingRestart(agentId);

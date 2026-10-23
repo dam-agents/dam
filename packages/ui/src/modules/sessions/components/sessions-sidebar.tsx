@@ -14,6 +14,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 
+import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
@@ -145,6 +146,22 @@ export function SessionsSidebar({
       s.mode !== SessionMode.Terminal &&
       !!selectedAgent &&
       draftKeySet.has(draftKey(selectedAgent, s.sessionId));
+    const isMock = import.meta.env.VITE_MOCK === "true";
+    const changesBadge =
+      isMock && s.sessionId === MOCK_SESSION_IDS.returnBadge ? (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            onResumeSession(s.sessionId, s.mode);
+            requestAnimationFrame(() => {
+              useStore.getState().setOpenChanges(selectedAgent ?? "");
+            });
+          }}
+          className="shrink-0 inline-flex items-center gap-0.5 rounded-md bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
+        >
+          4 files
+        </span>
+      ) : undefined;
     return (
       <SessionRow
         key={s.sessionId}
@@ -156,6 +173,7 @@ export function SessionsSidebar({
         draft={draft}
         backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts?.get(s.sessionId)}
+        badge={changesBadge}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);

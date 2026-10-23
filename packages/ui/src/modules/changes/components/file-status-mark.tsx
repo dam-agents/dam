@@ -14,7 +14,7 @@ export function FileStatusMark({ file }: { file: FileDiff }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
       <span
-        className={cn("w-3.5 font-mono text-xs font-semibold", mark.className)}
+        className={cn("w-3 font-mono text-2xs font-semibold", mark.className)}
         title={file.status}
       >
         {mark.letter}

@@ -14,6 +14,7 @@ import {
   Help,
   Home,
   NewTab,
+  Notification,
   OverflowMenuVertical,
   Settings,
   Time,
@@ -21,6 +22,7 @@ import {
   View,
   ViewOff,
 } from "@carbon/icons-react";
+import { CheckmarkFilled } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -41,6 +43,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
@@ -51,12 +54,24 @@ import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
 import { useAgentClickVariant } from "../mock/agent-click-variants.js";
 import { useAgentsList } from "../modules/agents/api/queries.js";
-import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
+import {
+  AgentAvatar,
+  CHAR_NAMES,
+  CharAvatar,
+} from "../modules/agents/components/char-avatar.js";
+import { MysteryAvatar } from "../modules/agents/components/mystery-avatar.js";
+import {
+  CHARACTER_QUESTS,
+  useCharacterUnlocks,
+} from "../modules/agents/lib/character-unlocks.js";
 import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
 import { ConnectionIcon } from "../modules/connections/components/connection-icon.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
-import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
-import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
+import { NotificationRow } from "../modules/notifications/components/notification-row.js";
+import {
+  isNeedsYou,
+  type NotificationItem,
+} from "../modules/notifications/lib/notification-types.js";
 import { useStore } from "../store.js";
 import type { AgentView } from "../types.js";
 import { stateDotClass, stateLabel } from "./status-indicator.js";
@@ -240,6 +255,45 @@ export function IconRail({
   const activityEndRef = useRef<HTMLDivElement>(null);
   const hasActivity = feedItems.length > 0;
   const hasUnreadActivity = feedItems.some((item) => item.type === "unread");
+
+  const characterUnlocks = useCharacterUnlocks();
+  const [checklistDismissed, setChecklistDismissed] = useState(false);
+  const questsDone = CHARACTER_QUESTS.filter((q) =>
+    characterUnlocks.rewards.has(q.id),
+  ).length;
+  const questsTotal = CHARACTER_QUESTS.length;
+  const showChecklist = !checklistDismissed && questsDone < questsTotal;
+
+  const [approvalDismissedIds, setApprovalDismissedIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [approvalDismissingIds, setApprovalDismissingIds] = useState<
+    Set<string>
+  >(new Set());
+  const approvalItems = useMemo(
+    () =>
+      notifItems.filter(
+        (i) => isNeedsYou(i) && !approvalDismissedIds.has(i.id),
+      ),
+    [notifItems, approvalDismissedIds],
+  );
+  const approvalAgentNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of notifAgents) map.set(a.id, a.name);
+    return map;
+  }, [notifAgents]);
+  const handleApprovalDismiss = useCallback((item: NotificationItem) => {
+    setApprovalDismissingIds((prev) => new Set(prev).add(item.id));
+    setTimeout(() => {
+      setApprovalDismissingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      setApprovalDismissedIds((prev) => new Set(prev).add(item.id));
+    }, 300);
+  }, []);
+
   const [agentsStuck, setAgentsStuck] = useState(false);
   const [activityStuck, setActivityStuck] = useState(false);
 
@@ -1563,6 +1617,281 @@ export function IconRail({
 
         <div className="shrink-0 pb-2 pt-1">
           <div className="flex flex-col gap-px px-2">
+            {showChecklist && (
+              <Popover>
+                {(() => {
+                  const trigger = (
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={
+                          expandedNav
+                            ? undefined
+                            : `Get started, ${questsDone} of ${questsTotal} done`
+                        }
+                        className={cn(
+                          "flex h-[34px] w-full items-center rounded-lg transition-colors",
+                          expandedNav
+                            ? "gap-3 px-3 text-foreground/80 hover:text-foreground hover:bg-muted"
+                            : "justify-center text-foreground/80 hover:text-foreground hover:bg-muted",
+                        )}
+                      >
+                        <ChecklistProgressRing
+                          done={questsDone}
+                          total={questsTotal}
+                        />
+                        {expandedNav && (
+                          <span className="truncate text-sm font-medium">
+                            Get started
+                          </span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                  );
+                  return expandedNav ? (
+                    trigger
+                  ) : (
+                    <Tooltip content="Get started" side="right">
+                      {trigger}
+                    </Tooltip>
+                  );
+                })()}
+                <PopoverContent
+                  side="right"
+                  align="end"
+                  className="w-[340px] p-0"
+                >
+                  <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
+                    <ChecklistProgressRing
+                      done={questsDone}
+                      total={questsTotal}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground">
+                        Get started
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {questsDone} of {questsTotal} done · unlock new avatars
+                      </p>
+                    </div>
+                    <PopoverClose asChild>
+                      <Button variant="ghost" size="icon-sm">
+                        <Close size={16} />
+                      </Button>
+                    </PopoverClose>
+                  </div>
+                  {questsDone > 0 && (
+                    <div className="flex gap-1.5 px-4 pb-3">
+                      {CHAR_NAMES.map((_, i) => {
+                        const name = characterUnlocks.caught[i] ?? null;
+                        return (
+                          <div
+                            key={name ?? `empty-${i}`}
+                            className={cn(
+                              "flex size-8 items-center justify-center rounded-md border",
+                              name
+                                ? "border-border bg-card"
+                                : "border-dashed border-border bg-muted/30",
+                            )}
+                          >
+                            {name ? (
+                              <CharAvatar
+                                name={name}
+                                state="running"
+                                className="size-6"
+                              />
+                            ) : (
+                              <MysteryAvatar className="size-5" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <ul className="border-t border-border py-1.5">
+                    {CHARACTER_QUESTS.map((quest) => {
+                      const reward =
+                        characterUnlocks.rewards.get(quest.id) ?? null;
+                      const done = characterUnlocks.rewards.has(quest.id);
+                      const working = characterUnlocks.working === quest.id;
+                      return (
+                        <li
+                          key={quest.id}
+                          className="flex list-none items-center gap-3 rounded-md px-4 py-1.5 transition-colors hover:bg-muted/40"
+                        >
+                          <span className="flex size-4 shrink-0 items-center justify-center">
+                            {done ? (
+                              <CheckmarkFilled
+                                size={16}
+                                className="text-success"
+                              />
+                            ) : working ? (
+                              <Spinner size={16} />
+                            ) : (
+                              <span className="size-4 rounded-full border-2 border-border" />
+                            )}
+                          </span>
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "truncate text-sm",
+                                done
+                                  ? "text-muted-foreground"
+                                  : "text-foreground",
+                              )}
+                            >
+                              {quest.title}
+                            </span>
+                          </span>
+                          <span className="flex size-6 shrink-0 items-center justify-center">
+                            {done && reward ? (
+                              <CharAvatar
+                                name={reward}
+                                state="running"
+                                className="size-6"
+                              />
+                            ) : (
+                              <MysteryAvatar className="size-5" />
+                            )}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="flex justify-end border-t border-border px-4 py-2">
+                    <PopoverClose asChild>
+                      <button
+                        type="button"
+                        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                        onClick={() => setChecklistDismissed(true)}
+                      >
+                        Dismiss
+                      </button>
+                    </PopoverClose>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
+            {approvalItems.length > 0 && (
+              <Popover>
+                {(() => {
+                  const trigger = (
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={
+                          expandedNav
+                            ? undefined
+                            : `Approvals waiting (${approvalItems.length})`
+                        }
+                        className={cn(
+                          "flex h-[34px] w-full items-center rounded-lg transition-colors",
+                          expandedNav
+                            ? "gap-3 px-3 text-foreground/80 hover:text-foreground hover:bg-muted"
+                            : "justify-center text-foreground/80 hover:text-foreground hover:bg-muted",
+                        )}
+                      >
+                        <IconWithBadge
+                          icon={Notification}
+                          badge={approvalItems.length}
+                          size={16}
+                        />
+                        {expandedNav && (
+                          <span className="truncate text-sm font-medium">
+                            Approvals waiting
+                          </span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                  );
+                  return expandedNav ? (
+                    trigger
+                  ) : (
+                    <Tooltip content="Approvals waiting" side="right">
+                      {trigger}
+                    </Tooltip>
+                  );
+                })()}
+                <PopoverContent
+                  side="right"
+                  align="end"
+                  className="w-[520px] p-0"
+                >
+                  <div className="flex items-center justify-between border-b border-border px-5 pt-5 pb-4">
+                    <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                      Approvals waiting
+                      {approvalItems.length > 0 && (
+                        <span className="rounded-full bg-warning/15 px-2 text-sm font-medium text-warning-fg">
+                          {approvalItems.length}
+                        </span>
+                      )}
+                    </h2>
+                    <PopoverClose asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Close approvals"
+                      >
+                        <Close size={16} />
+                      </Button>
+                    </PopoverClose>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-b border-border py-3 pl-2.5 pr-5">
+                    {approvalItems.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          for (const item of approvalItems)
+                            handleApprovalDismiss(item);
+                        }}
+                        className="ml-auto shrink-0 text-sm text-accent transition-colors hover:text-accent/80"
+                      >
+                        Dismiss all
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[420px] overflow-y-auto px-2 py-4">
+                    {approvalItems.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {approvalItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="overflow-hidden transition-all duration-300 ease-out"
+                            style={
+                              approvalDismissingIds.has(item.id)
+                                ? {
+                                    opacity: 0,
+                                    maxHeight: 0,
+                                    marginBottom: 0,
+                                  }
+                                : { opacity: 1, maxHeight: 300 }
+                            }
+                          >
+                            <NotificationRow
+                              item={item}
+                              agentName={
+                                approvalAgentNameMap.get(item.agentId) ??
+                                "Agent"
+                              }
+                              agents={notifAgents}
+                              onDismiss={() => handleApprovalDismiss(item)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 py-16 text-center">
+                        <p className="text-sm text-muted-foreground">
+                          You're all caught up. No approvals are waiting.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+
             <RailLink
               label="Documentation"
               icon={Help}
@@ -1582,6 +1911,51 @@ export function IconRail({
         </nav>
       )}
     </>
+  );
+}
+
+function ChecklistProgressRing({
+  done,
+  total,
+}: {
+  done: number;
+  total: number;
+}) {
+  const size = 20;
+  const stroke = 2.5;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = total > 0 ? done / total : 0;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="shrink-0 -rotate-90"
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={stroke}
+        className="text-border"
+      />
+      {pct > 0 && (
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeDasharray={`${c * pct} ${c * (1 - pct)}`}
+          strokeLinecap="round"
+          className="text-primary"
+        />
+      )}
+    </svg>
   );
 }
 

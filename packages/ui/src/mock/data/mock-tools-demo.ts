@@ -2,6 +2,8 @@ import type {
   ChangeSet,
   ChangeSetDiff,
   ChangeSetList,
+  ProcessList,
+  ProcessOutput,
 } from "agent-runtime-api";
 
 import type { MockChangesData } from "../mock-changes-card.js";
@@ -186,4 +188,111 @@ export const MOCK_CHANGE_SET_DIFF: ChangeSetDiff = {
 
 export const MOCK_EMPTY_CHANGE_SET_LIST: ChangeSetList = {
   changeSets: [],
+};
+
+export const MOCK_PROCESS_LIST: ProcessList = {
+  running: [
+    {
+      key: "proc-npm-build-1",
+      kind: "detached",
+      pid: 48201,
+      command: "npm run build",
+      startedAt: minutesAgo(3),
+      cpuPercent: 42.1,
+      rssBytes: 218_103_808,
+      outputPath: "/tmp/proc-npm-build-1.log",
+      keepsAwake: false,
+      keepSource: "default",
+      container: null,
+    },
+    {
+      key: "proc-npm-test-1",
+      kind: "detached",
+      pid: 48315,
+      command: "npm test -- --watch",
+      startedAt: minutesAgo(8),
+      cpuPercent: 8.4,
+      rssBytes: 154_009_600,
+      outputPath: "/tmp/proc-npm-test-1.log",
+      keepsAwake: true,
+      keepSource: "agent",
+      container: null,
+    },
+  ],
+  finished: [
+    {
+      key: "proc-npm-lint-1",
+      kind: "detached",
+      command: "npm run lint",
+      startedAt: minutesAgo(12),
+      finishedAt: minutesAgo(10),
+      endedBy: "exit",
+      outputPath: "/tmp/proc-npm-lint-1.log",
+      keptAwake: false,
+      keepSource: "default",
+      container: null,
+    },
+  ],
+  pendingRestart: null,
+  startupItems: [],
+};
+
+export const MOCK_PROCESS_OUTPUTS: Record<string, ProcessOutput> = {
+  "proc-npm-build-1": {
+    text: [
+      "> acme-web-app@2.4.0 build",
+      "> next build",
+      "",
+      "   ▲ Next.js 14.2.3",
+      "",
+      "   Creating an optimized production build ...",
+      " ✓ Compiled successfully",
+      "   Linting and checking validity of types ...",
+      " ✓ Collecting page data ...",
+      " ✓ Generating static pages (8/8)",
+      " ✓ Collecting build traces ...",
+      "",
+      "Route (app)                  Size     First Load JS",
+      "┌ ○ /                        5.24 kB        89.2 kB",
+      "├ ○ /dashboard               12.1 kB        96.1 kB",
+      "├ ○ /login                   3.82 kB        87.8 kB",
+      "└ ○ /settings                8.91 kB        92.9 kB",
+      "",
+      "○  (Static)  prerendered as static content",
+    ].join("\n"),
+    truncated: false,
+  },
+  "proc-npm-test-1": {
+    text: [
+      "> acme-web-app@2.4.0 test",
+      "> vitest --watch",
+      "",
+      " ✓ src/middleware/auth.test.ts (4 tests) 32ms",
+      " ✓ src/middleware/redirect.test.ts (3 tests) 18ms",
+      " ✓ src/routes/auth.test.ts (6 tests) 45ms",
+      " ✓ src/utils/jwt.test.ts (2 tests) 12ms",
+      "",
+      " Test Files  4 passed (4)",
+      " Tests       15 passed (15)",
+      " Start at    14:32:07",
+      " Duration    1.24s",
+      "",
+      " Waiting for file changes...",
+    ].join("\n"),
+    truncated: false,
+  },
+  "proc-npm-lint-1": {
+    text: [
+      "> acme-web-app@2.4.0 lint",
+      "> eslint . --ext .ts,.tsx",
+      "",
+      "/home/user/acme-web-app/src/middleware/auth.ts",
+      "  14:5  warning  Unexpected console statement  no-console",
+      "",
+      "✖ 1 problem (0 errors, 1 warning)",
+      "",
+      "Done in 4.2s.",
+    ].join("\n"),
+    truncated: false,
+  },
 };

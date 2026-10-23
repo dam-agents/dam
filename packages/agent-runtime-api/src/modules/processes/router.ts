@@ -1,6 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
-import { processKeyInputSchema, setKeepInputSchema } from "./schemas.js";
+import {
+  processKeyInputSchema,
+  setKeepInputSchema,
+  setStartupItemEnabledInputSchema,
+  startupItemInputSchema,
+} from "./schemas.js";
 import type { ProcessesDomainError } from "./types.js";
 
 function toTrpcError(
@@ -17,6 +22,7 @@ function toTrpcError(
 
 const noOutput = (key: string) => `no output for process ${key}`;
 const notRunning = () => "This process is no longer running.";
+const noStartupItem = (id: string) => `No Startup Item ${id}.`;
 
 export const processesRouter = t.router({
   list: t.procedure.query(({ ctx }) => ctx.processes.list()),
@@ -55,4 +61,35 @@ export const processesRouter = t.router({
         message: "No change is waiting for a restart.",
       });
   }),
+
+  restartStartupItem: t.procedure
+    .input(startupItemInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.processes.restartStartupItem(input.id);
+      if (!result.ok) throw toTrpcError(result.error, noStartupItem);
+    }),
+
+  stopStartupItem: t.procedure
+    .input(startupItemInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.processes.stopStartupItem(input.id);
+      if (!result.ok) throw toTrpcError(result.error, noStartupItem);
+    }),
+
+  setStartupItemEnabled: t.procedure
+    .input(setStartupItemEnabledInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.processes.setStartupItemEnabled(
+        input.id,
+        input.enabled,
+      );
+      if (!result.ok) throw toTrpcError(result.error, noStartupItem);
+    }),
+
+  removeStartupItem: t.procedure
+    .input(startupItemInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.processes.removeStartupItem(input.id);
+      if (!result.ok) throw toTrpcError(result.error, noStartupItem);
+    }),
 });

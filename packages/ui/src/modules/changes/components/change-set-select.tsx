@@ -8,6 +8,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+import { TruncateStart } from "../../../components/truncate-start.js";
 import {
   changeSetLabel,
   hasNewChanges,
@@ -39,11 +40,20 @@ export function ChangeSetSelect({
         <button
           type="button"
           aria-label="Change set"
-          title={selected?.path}
-          className="flex h-7 min-w-0 max-w-64 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-left text-xs hover:bg-muted"
+          className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 text-left hover:bg-muted"
         >
-          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-            {selected ? changeSetLabel(selected) : "Choose a change set"}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-xs font-medium text-foreground">
+              {selected ? changeSetLabel(selected) : "Choose a change set"}
+            </span>
+            {selected && (
+              <TruncateStart
+                className="font-mono text-2xs text-muted-foreground"
+                title={selected.path}
+              >
+                {selected.path}
+              </TruncateStart>
+            )}
           </span>
           {fresh && (
             <span
@@ -52,11 +62,12 @@ export function ChangeSetSelect({
               title="New changes in another change set"
             />
           )}
-          <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+          <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        tail={false}
         className="flex max-h-[60vh] w-[min(28rem,90vw)] flex-col p-0"
       >
         <ChangeSetOptions

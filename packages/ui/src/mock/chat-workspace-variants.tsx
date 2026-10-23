@@ -424,11 +424,13 @@ export function WorkspaceChatHeader({
   openPanels,
   onTogglePanel,
   onNewChat,
+  headerExtra,
 }: {
   chrome: AgentChrome;
   openPanels?: ReadonlySet<LeftPanelKind>;
   onTogglePanel?: (panel: LeftPanelKind) => void;
   onNewChat?: () => void;
+  headerExtra?: ReactNode;
 }) {
   return (
     <div className="flex h-14 shrink-0 items-center gap-2 pr-6 pl-6">
@@ -446,7 +448,8 @@ export function WorkspaceChatHeader({
         onClick={() => onTogglePanel?.("artifacts")}
       />
       <div className="flex flex-1 items-center justify-center min-w-0">
-        <div className="flex w-full max-w-[813px] items-center justify-end px-4">
+        <div className="flex w-full max-w-[813px] items-center justify-end gap-2 px-4">
+          {headerExtra}
           {chrome.status}
           {onNewChat && (
             <Button variant="outline" size="sm" onClick={onNewChat}>

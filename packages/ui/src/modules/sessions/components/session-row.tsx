@@ -79,6 +79,7 @@ interface Props {
   draft?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
+  badge?: React.ReactNode;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -92,6 +93,7 @@ export function SessionRow({
   draft = false,
   backgroundWork = NO_WORK,
   cost,
+  badge,
   onResume,
   onDelete,
 }: Props) {
@@ -212,6 +214,7 @@ export function SessionRow({
               title={backgroundWorkLabel(backgroundWork)}
             />
           )}
+          {badge}
         </div>
         <span className="text-xs text-muted-foreground">
           {formatTimestamp(s.updatedAt ?? s.createdAt)}

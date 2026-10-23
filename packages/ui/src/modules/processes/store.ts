@@ -43,6 +43,7 @@ export const createProcessesSlice: StateCreator<
       key
         ? {
             openProcessOutputKey: key,
+            sidePanelTab: "processes",
             openFilePath: null,
             openFileDirty: false,
             openFileEdit: false,
@@ -50,6 +51,7 @@ export const createProcessesSlice: StateCreator<
             openArtifactDirty: false,
             openDelegation: null,
             openBrowserAgentId: null,
+            openChangesAgentId: null,
           }
         : { openProcessOutputKey: null },
     ),

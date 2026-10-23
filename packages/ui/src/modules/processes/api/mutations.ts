@@ -60,3 +60,53 @@ export function useApplyPendingRestart(agentId: string) {
     meta: { errorToast: "Couldn't apply the change" },
   });
 }
+
+type StartupItemAction =
+  | "restartStartupItem"
+  | "stopStartupItem"
+  | "removeStartupItem";
+
+function useStartupItemAction(
+  agentId: string,
+  action: StartupItemAction,
+  errorToast: string,
+) {
+  const refresh = useRefreshProcesses(agentId);
+  return useMutation({
+    mutationFn: (id: string) =>
+      processesClientFor(agentId).processes[action].mutate({ id }),
+    onSettled: refresh,
+    meta: { errorToast },
+  });
+}
+
+export const useRestartStartupItem = (agentId: string) =>
+  useStartupItemAction(
+    agentId,
+    "restartStartupItem",
+    "Couldn't restart the login item",
+  );
+
+export const useStopStartupItem = (agentId: string) =>
+  useStartupItemAction(
+    agentId,
+    "stopStartupItem",
+    "Couldn't stop the login item",
+  );
+
+export const useRemoveStartupItem = (agentId: string) =>
+  useStartupItemAction(
+    agentId,
+    "removeStartupItem",
+    "Couldn't remove the login item",
+  );
+
+export function useSetStartupItemEnabled(agentId: string) {
+  const refresh = useRefreshProcesses(agentId);
+  return useMutation({
+    mutationFn: (input: { id: string; enabled: boolean }) =>
+      processesClientFor(agentId).processes.setStartupItemEnabled.mutate(input),
+    onSettled: refresh,
+    meta: { errorToast: "Couldn't change the login item" },
+  });
+}

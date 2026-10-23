@@ -5,21 +5,30 @@ import type {
   CompareTo,
 } from "agent-runtime-api";
 
+import { queryClient } from "../../../query-client.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { changesClientFor } from "./client.js";
 import { changesKeys } from "./keys.js";
-
-const isMock = import.meta.env.VITE_MOCK === "true";
-
-let mockChangesData: {
-  lists: Record<string, ChangeSetList>;
-  diffs: Record<string, ChangeSetDiff>;
-} | null = null;
 
 export function seedMockChanges(
   lists: Record<string, ChangeSetList>,
   diffs: Record<string, ChangeSetDiff>,
-) {
-  mockChangesData = { lists, diffs };
+): void {
+  for (const [compositeKey, list] of Object.entries(lists)) {
+    const [agentId, sessionId] = compositeKey.split(":");
+    if (agentId && sessionId) {
+      queryClient.setQueryData(changesKeys.list(agentId, sessionId), list);
+    }
+  }
+  for (const [compositeKey, diff] of Object.entries(diffs)) {
+    const parts = compositeKey.split(":");
+    const agentId = parts[0];
+    const compare = parts[parts.length - 1] as CompareTo;
+    const path = parts.slice(1, -1).join(":");
+    if (agentId && path) {
+      queryClient.setQueryData(changesKeys.diff(agentId, path, compare), diff);
+    }
+  }
 }
 
 export function useChangeSets(
@@ -27,20 +36,16 @@ export function useChangeSets(
   sessionId: string | null,
 ) {
   const operable = useIsAgentOperable(agentId);
-  return useQuery<ChangeSetList>({
+  return useQuery({
     queryKey: changesKeys.list(agentId ?? "_none", sessionId),
-    queryFn: () => {
-      if (isMock && mockChangesData) {
-        const key = `${agentId}:${sessionId}`;
-        const data = mockChangesData.lists[key];
-        if (data) return data;
-      }
-      throw new Error("changes tRPC not available on this branch");
-    },
+    queryFn: () =>
+      changesClientFor(agentId!).changes.list.query(
+        sessionId ? { sessionId } : {},
+      ),
     enabled: !!agentId && operable,
     placeholderData: keepPreviousData,
-    staleTime: Infinity,
-    retry: false,
+    staleTime: 2_000,
+    retry: 1,
   });
 }
 
@@ -50,18 +55,14 @@ export function useChangeSetDiff(
   compare: CompareTo,
 ) {
   const operable = useIsAgentOperable(agentId);
-  return useQuery<ChangeSetDiff>({
+  return useQuery({
     queryKey: changesKeys.diff(agentId, path ?? "_none", compare),
-    queryFn: () => {
-      if (isMock && mockChangesData) {
-        const key = `${agentId}:${path}:${compare}`;
-        const data = mockChangesData.diffs[key];
-        if (data) return data;
-      }
-      throw new Error("changes tRPC not available on this branch");
-    },
+    queryFn: () =>
+      changesClientFor(agentId).changes.diff.query({ path: path!, compare }),
     enabled: operable && path !== null,
-    staleTime: Infinity,
-    retry: false,
+    placeholderData: (previous, query) =>
+      query?.queryKey[3] === path ? previous : undefined,
+    staleTime: 2_000,
+    retry: 1,
   });
 }

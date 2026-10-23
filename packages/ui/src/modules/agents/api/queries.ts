@@ -2,7 +2,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
-import { useStore } from "../../../store.js";
+import { type PlatformStore, useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentState, AgentView } from "../../../types.js";
 
@@ -63,18 +63,29 @@ export function useAgentDisplayName(agentId: string | null): string | null {
   return agents.find((a) => a.id === agentId)?.name ?? agentId;
 }
 
-export function useIsAgentOperable(agentId: string | null): boolean {
+export type AgentReach = "operable" | "unreachable" | "inoperable";
+
+function reachIn(
+  s: PlatformStore,
+  agentId: string | null,
+  runState: AgentState | undefined,
+): AgentReach {
+  if (
+    agentId === null ||
+    runState !== "running" ||
+    s.restartingAgents.has(agentId)
+  )
+    return "inoperable";
+  return s.unreachableAgents.has(agentId) ? "unreachable" : "operable";
+}
+
+export function useAgentReach(agentId: string | null): AgentReach {
   const runState = useAgentRunState(agentId);
-  const restarting = useStore((s) =>
-    agentId ? s.restartingAgents.has(agentId) : false,
-  );
-  const pausing = useStore((s) =>
-    agentId ? s.pausingAgents.has(agentId) : false,
-  );
-  const unreachable = useStore((s) =>
-    agentId ? s.unreachableAgents.has(agentId) : false,
-  );
-  return runState === "running" && !restarting && !pausing && !unreachable;
+  return useStore((s) => reachIn(s, agentId, runState));
+}
+
+export function useIsAgentOperable(agentId: string | null): boolean {
+  return useAgentReach(agentId) === "operable";
 }
 
 function isDeniedAgentRead(error: unknown): boolean {

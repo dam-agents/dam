@@ -18,10 +18,13 @@ export { personalAssistantTranscript } from "./personal-assistant.js";
 export { plainWikiTranscript } from "./plain-wiki.js";
 export { qualityAssuranceTranscript } from "./quality-assurance.js";
 export { qualityInspectorTranscript } from "./quality-inspector.js";
+export type { ReturnPattern } from "./return-patterns.js";
+export { returnPatternTranscript } from "./return-patterns.js";
 export { shinkaevolveTranscript } from "./shinkaevolve.js";
 export { sliceTranscriptForPhase, sliceTranscriptForStep } from "./slice.js";
 export { softwareDeveloperTranscript } from "./software-developer.js";
 export { spotlightsTranscript } from "./spotlights.js";
+export { TOOLS_DEMO_CHANGE_CARDS, toolsDemoTranscript } from "./tools-demo.js";
 export type { StepKind, TranscriptMeta, TranscriptStep } from "./types.js";
 
 import { useStore } from "../../../store.js";
@@ -45,10 +48,12 @@ import { personalAssistantTranscript } from "./personal-assistant.js";
 import { plainWikiTranscript } from "./plain-wiki.js";
 import { qualityAssuranceTranscript } from "./quality-assurance.js";
 import { qualityInspectorTranscript } from "./quality-inspector.js";
+import { returnPatternTranscript } from "./return-patterns.js";
 import { shinkaevolveTranscript } from "./shinkaevolve.js";
 import { sliceTranscriptForStep } from "./slice.js";
 import { softwareDeveloperTranscript } from "./software-developer.js";
 import { spotlightsTranscript } from "./spotlights.js";
+import { toolsDemoTranscript } from "./tools-demo.js";
 import type { TranscriptMeta } from "./types.js";
 
 const KIT_TRANSCRIPTS: Record<string, () => TranscriptMeta> = {
@@ -86,6 +91,18 @@ export function mockTranscript(agentId: string, sessionId: string): Message[] {
   }
   if (sessionId === MOCK_SESSION_IDS.longChat) {
     return longChatTranscript();
+  }
+  if (sessionId === MOCK_SESSION_IDS.toolsDemo) {
+    return toolsDemoTranscript().messages;
+  }
+  if (
+    sessionId === MOCK_SESSION_IDS.returnPill ||
+    sessionId === MOCK_SESSION_IDS.returnHeader ||
+    sessionId === MOCK_SESSION_IDS.returnJump ||
+    sessionId === MOCK_SESSION_IDS.returnScrollbar ||
+    sessionId === MOCK_SESSION_IDS.returnBadge
+  ) {
+    return returnPatternTranscript().messages;
   }
   const meta = mockTranscriptMeta(agentId, sessionId);
   if (meta) {

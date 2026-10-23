@@ -1,8 +1,8 @@
 import { formatBytes } from "../../../lib/format-size.js";
-import { formatDurationMs } from "../../../lib/format-time.js";
+import { formatDuration } from "../../home/lib/format-time.js";
 
 export function formatRunTime(startedAt: string, now: Date): string {
-  return formatDurationMs(now.getTime() - Date.parse(startedAt));
+  return formatDuration(now.getTime() - Date.parse(startedAt));
 }
 
 export function formatCpu(cpuPercent: number | null): string | null {

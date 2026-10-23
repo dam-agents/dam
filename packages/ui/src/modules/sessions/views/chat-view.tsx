@@ -41,16 +41,19 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
-import {
-  TOOLS_DEMO_BROWSER_URL,
-  TOOLS_DEMO_CHANGES,
-  TOOLS_DEMO_TASKS,
-} from "../../../mock/data/mock-tools-demo.js";
+import { TOOLS_DEMO_BROWSER_URL } from "../../../mock/data/mock-tools-demo.js";
 import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
-import { MockBackgroundChip } from "../../../mock/mock-background-chip.js";
+import type { ReturnPattern } from "../../../mock/data/transcripts/index.js";
+import { TOOLS_DEMO_CHANGE_CARDS } from "../../../mock/data/transcripts/index.js";
+import { InlineChangeCard } from "../../../mock/inline-change-card.js";
 import { MockBrowserLinkChip } from "../../../mock/mock-browser-link-chip.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
-import { MockChangesCard } from "../../../mock/mock-changes-card.js";
+import {
+  ReturnHeaderButton,
+  ReturnJumpChip,
+  ReturnPill,
+  ReturnScrollbarMarks,
+} from "../../../mock/return-pattern-ui.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -109,6 +112,8 @@ import {
 } from "../../packs/lib/demo-exit-actions.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { DockedProcessesPanel } from "../../processes/components/docked-processes-panel.js";
+import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import {
   getDefaultExamples,
   useRotatingPlaceholder,
@@ -127,6 +132,7 @@ import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
+import { WorkingDots } from "../components/working-dots.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -236,15 +242,39 @@ export function ChatView() {
   const isMock = import.meta.env.VITE_MOCK === "true";
 
   const isToolsDemo = isMock && sessionId === MOCK_SESSION_IDS.toolsDemo;
-  const mockTasks = isToolsDemo ? TOOLS_DEMO_TASKS : [];
+
+  const returnPattern: ReturnPattern | null = useMemo(() => {
+    if (!isMock || !sessionId) return null;
+    const map: Record<string, ReturnPattern> = {
+      [MOCK_SESSION_IDS.returnPill]: "pill",
+      [MOCK_SESSION_IDS.returnHeader]: "header",
+      [MOCK_SESSION_IDS.returnJump]: "jump",
+      [MOCK_SESSION_IDS.returnScrollbar]: "scrollbar",
+      [MOCK_SESSION_IDS.returnBadge]: "badge",
+    };
+    return map[sessionId] ?? null;
+  }, [isMock, sessionId]);
+
+  const showChangeCards = isToolsDemo || returnPattern !== null;
+
+  const returnTotalFiles = useMemo(
+    () => TOOLS_DEMO_CHANGE_CARDS.reduce((s, c) => s + c.files.length, 0),
+    [],
+  );
+
+  const processesSummary = useRunningProcesses(selectedAgent);
+  const sidePanelTab = useStore((s) => s.sidePanelTab);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const openProcessesList =
+    sidePanelTab === "processes" && !openProcessOutputKey;
 
   const openChangesAgentId = useStore((s) => s.openChangesAgentId);
   const setOpenChanges = useStore((s) => s.setOpenChanges);
   const openMockChanges = openChangesAgentId !== null;
 
   useEffect(() => {
-    if (!isToolsDemo) setOpenChanges(null);
-  }, [isToolsDemo, setOpenChanges]);
+    if (!showChangeCards) setOpenChanges(null);
+  }, [showChangeCards, setOpenChanges]);
 
   useEffect(() => {
     if (!isMock || !selectedAgent) return;
@@ -608,6 +638,7 @@ export function ChatView() {
       openArtifactId ||
       dockedExperiment ||
       openProcessOutputKey ||
+      openProcessesList ||
       openMockChanges
     ) || !!(openBrowserAgentId && canOpenBrowser);
 
@@ -700,6 +731,16 @@ export function ChatView() {
                   }
                 : undefined
             }
+            headerExtra={
+              returnPattern === "header" ? (
+                <ReturnHeaderButton
+                  totalFiles={returnTotalFiles}
+                  onOpen={() => {
+                    if (selectedAgent) setOpenChanges(selectedAgent);
+                  }}
+                />
+              ) : undefined
+            }
           />
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           {sessionMode === SessionMode.Terminal &&
@@ -737,7 +778,25 @@ export function ChatView() {
                 {showJump && (
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-background to-transparent" />
                 )}
-                <div ref={messagesRef} className="flex-1 overflow-y-auto">
+                {returnPattern === "jump" && (
+                  <ReturnJumpChip
+                    cards={TOOLS_DEMO_CHANGE_CARDS}
+                    messagesRef={messagesRef}
+                    onOpen={() => {
+                      if (selectedAgent) setOpenChanges(selectedAgent);
+                    }}
+                  />
+                )}
+                <div
+                  ref={messagesRef}
+                  className="relative flex-1 overflow-y-auto"
+                >
+                  {returnPattern === "scrollbar" && (
+                    <ReturnScrollbarMarks
+                      cards={TOOLS_DEMO_CHANGE_CARDS}
+                      messagesRef={messagesRef}
+                    />
+                  )}
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -789,38 +848,49 @@ export function ChatView() {
                           )}
                         </div>
                       ))}
-                    {messages.map((m, mi) => (
-                      <ChatMessage
-                        key={m.id}
-                        message={m}
-                        isLast={mi === messages.length - 1}
-                        hasPendingPermission={hasPendingPermission}
-                        onRetry={sendPrompt}
-                        onFileClick={openFileHandler}
-                        onLoadOlder={loadOlderKeepingScroll}
-                      />
-                    ))}
-                    {isToolsDemo && messages.length > 0 && (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <MockBrowserLinkChip
-                            url={TOOLS_DEMO_BROWSER_URL}
-                            onOpen={() => {
-                              if (selectedAgent)
-                                void openBrowser(
-                                  selectedAgent,
-                                  TOOLS_DEMO_BROWSER_URL,
-                                );
-                            }}
+                    {messages.map((m, mi) => {
+                      const card = showChangeCards
+                        ? TOOLS_DEMO_CHANGE_CARDS.find(
+                            (c) => c.afterMessageId === m.id,
+                          )
+                        : undefined;
+                      return (
+                        <div key={m.id}>
+                          <ChatMessage
+                            message={m}
+                            isLast={mi === messages.length - 1}
+                            hasPendingPermission={hasPendingPermission}
+                            onRetry={sendPrompt}
+                            onFileClick={openFileHandler}
+                            onLoadOlder={loadOlderKeepingScroll}
                           />
+                          {card && (
+                            <div data-change-card={card.afterMessageId}>
+                              <InlineChangeCard
+                                card={card}
+                                onViewChanges={() => {
+                                  if (selectedAgent)
+                                    setOpenChanges(selectedAgent);
+                                }}
+                              />
+                            </div>
+                          )}
                         </div>
-                        <MockChangesCard
-                          changes={TOOLS_DEMO_CHANGES}
-                          onViewChanges={() => {
-                            if (selectedAgent) setOpenChanges(selectedAgent);
+                      );
+                    })}
+                    {isToolsDemo && messages.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <MockBrowserLinkChip
+                          url={TOOLS_DEMO_BROWSER_URL}
+                          onOpen={() => {
+                            if (selectedAgent)
+                              void openBrowser(
+                                selectedAgent,
+                                TOOLS_DEMO_BROWSER_URL,
+                              );
                           }}
                         />
-                      </>
+                      </div>
                     )}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
@@ -845,11 +915,37 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                {mockTasks.length > 0 && (
+                {isToolsDemo && processesSummary && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
                       <div className="flex justify-end">
-                        <MockBackgroundChip tasks={mockTasks} />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSidePanelTab(
+                              openProcessesList ? null : "processes",
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          <WorkingDots size="sm" className="text-success" />
+                          {processesSummary.running} task
+                          {processesSummary.running === 1 ? "" : "s"} running
+                        </button>
+                      </div>
+                    </ChatColumn>
+                  </div>
+                )}
+                {returnPattern === "pill" && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <div className="flex justify-end">
+                        <ReturnPill
+                          totalFiles={returnTotalFiles}
+                          onOpen={() => {
+                            if (selectedAgent) setOpenChanges(selectedAgent);
+                          }}
+                        />
                       </div>
                     </ChatColumn>
                   </div>
@@ -959,7 +1055,9 @@ export function ChatView() {
                   agentId={selectedAgent}
                   outputKey={openProcessOutputKey}
                 />
-              ) : openMockChanges && isToolsDemo && selectedAgent ? (
+              ) : openProcessesList && selectedAgent ? (
+                <DockedProcessesPanel agentId={selectedAgent} />
+              ) : openMockChanges && showChangeCards && selectedAgent ? (
                 <DockedChangesPanel
                   agentId={selectedAgent}
                   sessionId={sessionId ?? null}

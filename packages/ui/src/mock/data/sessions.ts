@@ -60,6 +60,11 @@ export const MOCK_SESSION_IDS = {
   longChat: "sess-long-chat-example",
   toolsDemo: "sess-tools-demo",
   emptyState: "sess-empty-state",
+  returnPill: "sess-return-pill",
+  returnHeader: "sess-return-header",
+  returnJump: "sess-return-jump",
+  returnScrollbar: "sess-return-scrollbar",
+  returnBadge: "sess-return-badge",
 };
 
 export const KIT_SESSION_TO_PACK: Record<string, string> = {};
@@ -108,6 +113,36 @@ const ciPipelineSessions = [
     AGENT_IDS.codexResearch,
     "Long chat stream example",
     8 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.returnPill,
+    AGENT_IDS.codexResearch,
+    "Return: pill",
+    20 * min,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.returnHeader,
+    AGENT_IDS.codexResearch,
+    "Return: header button",
+    22 * min,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.returnJump,
+    AGENT_IDS.codexResearch,
+    "Return: jump chip",
+    24 * min,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.returnScrollbar,
+    AGENT_IDS.codexResearch,
+    "Return: scrollbar marks",
+    26 * min,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.returnBadge,
+    AGENT_IDS.codexResearch,
+    "Return: sidebar badge",
+    28 * min,
   ),
   makeSession(
     "sess-ci-006",

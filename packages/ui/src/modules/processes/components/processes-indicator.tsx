@@ -1,24 +1,16 @@
 import { Button } from "@/components/ui/button";
 
 import { WorkingDots } from "../../sessions/components/working-dots.js";
-import { useProcesses } from "../api/queries.js";
 import { useOpenProcessesSection } from "../hooks/use-open-processes-section.js";
-import { summarizeProcesses } from "../lib/process-summary.js";
+import { useRunningProcesses } from "../hooks/use-running-processes.js";
 
 const RESTART_PENDING_HINT = "A settings change is waiting";
 
-export function ProcessesIndicator({
-  agentId,
-  onClick,
-}: {
-  agentId: string | null;
-  onClick?: () => void;
-}) {
-  const { data } = useProcesses(agentId, { enabled: true, poll: false });
+export function ProcessesIndicator({ agentId }: { agentId: string | null }) {
+  const summary = useRunningProcesses(agentId);
   const openSection = useOpenProcessesSection();
-  if (!data) return null;
-  const { running, keepingAwake, restartPending } = summarizeProcesses(data);
-  if (running === 0) return null;
+  if (!summary) return null;
+  const { running, keepingAwake, restartPending } = summary;
 
   return (
     <Button
@@ -26,7 +18,7 @@ export function ProcessesIndicator({
       size="sm"
       data-testid="processes-indicator"
       className="text-muted-foreground"
-      onClick={onClick ?? openSection}
+      onClick={openSection}
     >
       <WorkingDots size="md" className="working-dots-slow text-success" />
       <span>

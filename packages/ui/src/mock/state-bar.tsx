@@ -5,7 +5,6 @@ import {
   ListBoxes,
   Renew,
   TextFont,
-  Warning,
 } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
@@ -136,25 +135,6 @@ function MockStateBarPanel() {
         aria-label="Placeholder texts"
       >
         <TextFont size={16} className="text-foreground" />
-      </button>
-
-      <button
-        type="button"
-        onClick={() => {
-          const name =
-            TOAST_AGENTS[Math.floor(Math.random() * TOAST_AGENTS.length)]!;
-          const headlines = [
-            "Wants to access network",
-            "Wants to run a command",
-          ];
-          const headline =
-            headlines[Math.floor(Math.random() * headlines.length)]!;
-          fireApprovalToast(name, headline, openApprovals);
-        }}
-        className="fixed bottom-4 left-[120px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted"
-        aria-label="Fire approval toast"
-      >
-        <Warning size={16} className="text-foreground" />
       </button>
 
       <StepControls />

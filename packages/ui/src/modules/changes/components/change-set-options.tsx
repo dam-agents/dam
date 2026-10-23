@@ -95,7 +95,7 @@ function OptionGroup({
       {collapsible ? (
         <button
           type="button"
-          className="flex w-full items-center gap-1 px-3 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          className="flex w-full items-center gap-1 px-3 pt-2 pb-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
           aria-expanded={expanded}
           onClick={() => setExpandedByUser(!expandedByUser)}
         >
@@ -103,7 +103,7 @@ function OptionGroup({
           {group.label} ({group.changeSets.length})
         </button>
       ) : (
-        <div className="px-3 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="px-3 pt-2 pb-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
           {group.label}
         </div>
       )}
@@ -157,14 +157,14 @@ function ChangeSetOption({
         <DiffStatText stat={changeSet.stat} className="ml-auto shrink-0" />
       </span>
       <TruncateStart
-        className="font-mono text-xs text-muted-foreground"
+        className="font-mono text-2xs text-muted-foreground"
         title={changeSet.path}
       >
         {changeSet.path}
       </TruncateStart>
       {changeSet.readError && (
         <span
-          className="truncate text-xs text-danger"
+          className="truncate text-2xs text-danger"
           title={changeSet.readError}
         >
           Couldn't read: {changeSet.readError}
