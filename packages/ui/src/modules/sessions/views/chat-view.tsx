@@ -66,7 +66,6 @@ import {
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
 import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
-import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { AgentUpdateDot } from "../../agents/components/update-available-action.js";
@@ -636,7 +635,6 @@ export function ChatView() {
     environments: environmentsTabShown({
       newLayout,
       enabled: environmentsEnabled,
-      vm: agentView?.vm === true,
     }),
     gettingStarted,
   });
@@ -1244,14 +1242,6 @@ export function ChatView() {
                     />
                   )}
                 </button>
-                {agentView && (
-                  <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                    <RuntimeMigrationBadge
-                      agent={agentView}
-                      labelClassName="@max-[279px]:sr-only"
-                    />
-                  </span>
-                )}
               </div>
               <div
                 data-chat-status
@@ -1375,11 +1365,7 @@ export function ChatView() {
       ) : selectedAgent &&
         !agentInaccessible &&
         !agentOperable &&
-        !(
-          agentView &&
-          agentDisplay &&
-          startsInChat(agentView, agentDisplay.state)
-        ) ? (
+        !(agentView && agentDisplay && startsInChat(agentDisplay.state)) ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

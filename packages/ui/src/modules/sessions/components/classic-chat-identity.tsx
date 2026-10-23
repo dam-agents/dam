@@ -8,15 +8,14 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
-import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar while the
  * new-layout experiment is off: the Agent's state dot, its avatar and name,
- * editable in place, its runtime badge, and the buttons that toggle the
- * browser and the changes beside the conversation, open the sections on a
- * phone, and open the Agent's configuration.
+ * editable in place, and the buttons that toggle the browser and the changes
+ * beside the conversation, open the sections on a phone, and open the
+ * Agent's configuration.
  */
 export function ClassicChatIdentity({
   agent,
@@ -63,14 +62,6 @@ export function ClassicChatIdentity({
         />
       ) : (
         <h1 className="text-sm font-bold text-foreground truncate">{name}</h1>
-      )}
-      {agent && (
-        <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-          <RuntimeMigrationBadge
-            agent={agent}
-            labelClassName="@max-[279px]:sr-only"
-          />
-        </span>
       )}
       <div className="ml-auto flex shrink-0">
         {canOpenBrowser && agentId && (

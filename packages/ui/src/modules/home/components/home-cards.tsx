@@ -148,10 +148,9 @@ export function HeroCard() {
 
 export function ResourcesBarsCard() {
   const agents = useAgentsList();
-  const { workingAgentIds } = useFeed();
   return (
     <section aria-label="Resources" className={cn(CARD, "@xl:col-span-2")}>
-      <ResourcesCard agents={agents} workingAgentIds={workingAgentIds} />
+      <ResourcesCard agents={agents} />
     </section>
   );
 }
@@ -264,7 +263,6 @@ export function AgentStatesCard() {
   const agents = useAgentsList();
   const { workingAgentIds } = useFeed();
   const states = agentStates(agents, workingAgentIds);
-  const vm = agents.filter((a) => a.vm).length;
   return (
     <Card title="Agents" pictogram={<Robot aria-hidden />}>
       <ul className="flex flex-col gap-2 text-sm">
@@ -281,7 +279,7 @@ export function AgentStatesCard() {
         ))}
       </ul>
       <p className="mt-auto pt-4 text-xs text-muted-foreground">
-        {vm} VM · {agents.length - vm} container
+        {agents.length} VM
       </p>
     </Card>
   );

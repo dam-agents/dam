@@ -3,7 +3,7 @@ import { isStartRefusal, TerminationCode } from "api-server-api";
 import type { Toast } from "../../../lib/toast.js";
 import type { AgentView } from "../../../types.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent's restart count is the runner's, which a stop does not reset, while hibernation publishes zero, so the first count a vm agent reports after it slept is a baseline until it is running again, not a crash.
+// UNIT_BOUNDARY_DESCRIPTION: an agent's restart count is the runner's, which a stop does not reset, while hibernation publishes zero, so the first count an agent reports after it slept is a baseline until it is running again, not a crash.
 export interface CrashMark {
   restarts: number;
   announced?: { reason: string; atRestarts: number };
@@ -17,7 +17,6 @@ type WatchedAgent = Pick<
   | "state"
   | "podTerminationReason"
   | "podTerminationCode"
-  | "vm"
   | "podRestarts"
   | "podRestartReason"
 >;
@@ -56,7 +55,6 @@ export function terminationNotice(
   subject: string,
   code: string | undefined,
   reason: string,
-  vm: boolean,
 ): string {
   const { text } = splitConsole(reason);
   const sentence = text.charAt(0).toUpperCase() + text.slice(1);
@@ -65,9 +63,7 @@ export function terminationNotice(
   if (code === TerminationCode.MachineStorageFull)
     return `${subject} can't start: your VM agents' storage is full. ${sentence}`;
   if (code === TerminationCode.HomeVolumeFull)
-    return vm
-      ? `${subject} can't start: its storage is full. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.`
-      : `${subject} can't start: its storage is full. Request more storage.`;
+    return `${subject} can't start: its storage is full. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.`;
   if (isStartRefusal(code)) return `${subject} can't start — ${text}`;
   return `${subject} crashed — ${text}`;
 }
@@ -98,7 +94,6 @@ export function nextCrashNotices(
             agent.name,
             agent.podTerminationCode,
             reason,
-            agent.vm,
           ),
         });
       announced = { reason, atRestarts: agent.podRestarts };
@@ -108,9 +103,8 @@ export function nextCrashNotices(
       !before.asleep &&
       agent.podRestarts > before.restarts;
     const asleep =
-      agent.vm &&
-      (agent.state === "hibernated" ||
-        (before?.asleep === true && agent.state !== "running"));
+      agent.state === "hibernated" ||
+      (before?.asleep === true && agent.state !== "running");
     const sameCrashRestarting =
       announced !== undefined && agent.podRestarts <= announced.atRestarts + 1;
     if (restarted && !sameCrashRestarting) {

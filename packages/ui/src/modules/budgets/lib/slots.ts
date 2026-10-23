@@ -1,29 +1,12 @@
-import type { BudgetReserved } from "api-server-api";
-
 import { formatGi } from "../../../lib/format-size.js";
-import type { AgentView } from "../../../types.js";
 import { parseCpuMilli, parseMemoryMi } from "../../sandboxes/lib/quantity.js";
 import { formatCores } from "./format.js";
 
 export const BYTES_PER_MI = 1024 ** 2;
 
-export interface SlotUnit {
-  cpuMilli: number;
-  memoryMi: number;
-}
-
 export interface SizeMi {
   cpuMilli: number;
   memoryMi: number;
-}
-
-export const SIZE_MULTIPLIERS = [1, 2, 4] as const;
-
-export function slotUnitOf(budget: BudgetReserved): SlotUnit {
-  return {
-    cpuMilli: Math.max(1, budget.slot.cpuMilli),
-    memoryMi: Math.max(1, Math.round(budget.slot.memoryBytes / BYTES_PER_MI)),
-  };
 }
 
 export function sizeInMi(size: { cpu?: string; memory?: string }): SizeMi {
@@ -33,169 +16,8 @@ export function sizeInMi(size: { cpu?: string; memory?: string }): SizeMi {
   };
 }
 
-export function sizeForMultiplier(unit: SlotUnit, multiplier: number): SizeMi {
-  return {
-    cpuMilli: unit.cpuMilli * multiplier,
-    memoryMi: unit.memoryMi * multiplier,
-  };
-}
-
-function sizeMultiplier(size: SizeMi, unit: SlotUnit): number {
-  const ratio = Math.max(
-    size.cpuMilli / unit.cpuMilli,
-    size.memoryMi / unit.memoryMi,
-  );
-  return ratio > 0 ? ratio : 1;
-}
-
-export function slotsFor(size: SizeMi, unit: SlotUnit): number {
-  return Math.max(1, Math.ceil(sizeMultiplier(size, unit) - 1e-9));
-}
-
-export function ceilingSlots(budget: BudgetReserved, unit: SlotUnit): number {
-  return Math.max(
-    0,
-    Math.min(
-      Math.floor(budget.cpu.ceilingMilli / unit.cpuMilli),
-      Math.floor(budget.memory.ceilingBytes / BYTES_PER_MI / unit.memoryMi),
-    ),
-  );
-}
-
-export function freeSlots(
-  budget: BudgetReserved,
-  unit: SlotUnit,
-  ownReserved: SizeMi = { cpuMilli: 0, memoryMi: 0 },
-): number {
-  return Math.max(
-    0,
-    Math.min(
-      Math.floor(
-        (budget.cpu.ceilingMilli -
-          budget.cpu.reservedMilli +
-          ownReserved.cpuMilli) /
-          unit.cpuMilli,
-      ),
-      Math.floor(
-        ((budget.memory.ceilingBytes - budget.memory.reservedBytes) /
-          BYTES_PER_MI +
-          ownReserved.memoryMi) /
-          unit.memoryMi,
-      ),
-    ),
-  );
-}
-
-function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
-  return `${String(Number(sizeMultiplier(size, unit).toFixed(2)))}x`;
-}
-
 export function formatCpuMemory(size: SizeMi): string {
   return `${formatCores(size.cpuMilli)} CPU · ${formatGi(
     size.memoryMi * BYTES_PER_MI,
   )} GiB`;
-}
-
-export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {
-  return `${formatMultiplier(size, unit)} · ${formatCpuMemory(size)}`;
-}
-
-export type ComputeCellState = "running" | "awake" | "available";
-
-export interface ComputeSegment {
-  state: ComputeCellState;
-  agentId: string | null;
-  agentName: string | null;
-  cpuMilli: number;
-  memoryMi: number;
-  slots: number;
-  alwaysOn: boolean;
-}
-
-interface ComputeGroup {
-  state: Exclude<ComputeCellState, "available">;
-  agents: number;
-  slots: number;
-}
-
-interface ComputeView {
-  segments: ComputeSegment[];
-  usedSlots: number;
-  ceilingSlots: number;
-  totalSlots: number;
-  groups: ComputeGroup[];
-}
-
-export function computeView(
-  agents: readonly AgentView[],
-  workingAgentIds: ReadonlySet<string>,
-  budget: BudgetReserved,
-): ComputeView {
-  const unit = slotUnitOf(budget);
-  const scaledUp = agents.filter(
-    (agent) => agent.state !== "hibernated" && !agent.overBudget && !agent.vm,
-  );
-  const held = scaledUp.map((agent) => {
-    const size = sizeInMi(agent.size);
-    return {
-      agent,
-      ...size,
-      slots: slotsFor(size, unit),
-      state: (workingAgentIds.has(agent.id) ? "running" : "awake") as Exclude<
-        ComputeCellState,
-        "available"
-      >,
-    };
-  });
-
-  const ordered = [
-    ...held.filter((h) => h.state === "running"),
-    ...held.filter((h) => h.state === "awake"),
-  ];
-
-  const segments: ComputeSegment[] = ordered.map((entry) => ({
-    state: entry.state,
-    agentId: entry.agent.id,
-    agentName: entry.agent.name,
-    cpuMilli: entry.cpuMilli,
-    memoryMi: entry.memoryMi,
-    slots: entry.slots,
-    alwaysOn: entry.agent.hibernationTimeoutMin === 0,
-  }));
-
-  const usedSlots = held.reduce((sum, h) => sum + h.slots, 0);
-  const ceiling = ceilingSlots(budget, unit);
-  const totalSlots = Math.max(usedSlots, ceiling);
-  if (totalSlots > usedSlots) {
-    segments.push({
-      state: "available",
-      agentId: null,
-      agentName: null,
-      cpuMilli: 0,
-      memoryMi: 0,
-      slots: totalSlots - usedSlots,
-      alwaysOn: false,
-    });
-  }
-
-  const groupFor = (
-    state: Exclude<ComputeCellState, "available">,
-  ): ComputeGroup => {
-    const rows = held.filter((h) => h.state === state);
-    return {
-      state,
-      agents: rows.length,
-      slots: rows.reduce((sum, r) => sum + r.slots, 0),
-    };
-  };
-
-  return {
-    segments,
-    usedSlots,
-    ceilingSlots: ceiling,
-    totalSlots,
-    groups: [groupFor("running"), groupFor("awake")].filter(
-      (g) => g.agents > 0,
-    ),
-  };
 }

@@ -7,7 +7,7 @@ export function TerminationReason({
   agent,
   size,
 }: {
-  agent: Pick<AgentView, "podTerminationReason" | "podTerminationCode" | "vm">;
+  agent: Pick<AgentView, "podTerminationReason" | "podTerminationCode">;
   size: "sm" | "xs";
 }) {
   const reason = agent.podTerminationReason;
@@ -19,12 +19,7 @@ export function TerminationReason({
     >
       <p className="flex items-start gap-1.5 text-left text-danger">
         <Warning size={size === "sm" ? 14 : 12} className="mt-0.5 shrink-0" />
-        {terminationNotice(
-          "This agent",
-          agent.podTerminationCode,
-          reason,
-          agent.vm,
-        )}
+        {terminationNotice("This agent", agent.podTerminationCode, reason)}
       </p>
       {consoleTail && (
         <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-left font-mono text-2xs text-muted-foreground">

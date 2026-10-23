@@ -26,7 +26,7 @@ const percentOf = (used: number, limit: number) =>
 
 export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
   const { data: usage, isPending } = usePoolUsage();
-  const vmAgents = agents.filter((agent) => agent.vm);
+  const vmAgents = [...agents];
   if (!usage) {
     if (isPending) return null;
     return (

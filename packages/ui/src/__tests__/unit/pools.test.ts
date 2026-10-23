@@ -12,7 +12,7 @@ import {
 import type { AgentView } from "../../types.js";
 
 /**
- * TEST_OVERVIEW: A pool bar lists each vm agent's share largest first, folds
+ * TEST_OVERVIEW: A pool bar lists each agent's share largest first, folds
  * shares too thin to see, and shows what the pool counts beyond the agents'
  * own shares as one last segment, so the segments always add up to the bar.
  */
@@ -20,7 +20,7 @@ import type { AgentView } from "../../types.js";
 const GiB = 1024 ** 3;
 
 const agent = (id: string, state: AgentView["state"] = "running") =>
-  ({ id, name: id, state, vm: true }) as AgentView;
+  ({ id, name: id, state }) as AgentView;
 
 const usage: BudgetVmUsage = {
   memory: { usedBytes: 6 * GiB, limitBytes: 10 * GiB, level: "ok" },

@@ -22,7 +22,7 @@ export function HomeView() {
 
 function CurrentHomeView() {
   const { agentsData, initialLoaded, rowProps } = useAgentRows();
-  const { workingAgentIds, workingByAgent } = useFeed();
+  const { workingByAgent } = useFeed();
 
   const allAgents = agentsData?.list ?? [];
   const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
@@ -59,10 +59,7 @@ function CurrentHomeView() {
         <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
           <MeteringNotice className="@3xl:col-span-2" />
           <div className="rounded-lg border border-border bg-card p-6">
-            <ResourcesCard
-              agents={allAgents}
-              workingAgentIds={workingAgentIds}
-            />
+            <ResourcesCard agents={allAgents} />
           </div>
           <SpendWidget />
         </div>

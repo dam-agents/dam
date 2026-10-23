@@ -24,12 +24,9 @@ export function agentReadiness(
     : "down";
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the chat stays usable while the agent starts, rather than sitting behind the full-screen overlay. A vm agent boots in seconds, so its chat opens at once with a held composer and a provisional session list. A container agent takes too long for that to make sense, so its start keeps the overlay.
-export function startsInChat(
-  agent: Pick<AgentView, "vm">,
-  state: AgentDisplayState,
-): boolean {
-  return agent.vm && (state === "starting" || state === "preparing_workspace");
+// UNIT_BOUNDARY_DESCRIPTION: whether the chat stays usable while the agent starts, rather than sitting behind the full-screen overlay. An agent boots in seconds, so its chat opens at once with a held composer and a provisional session list.
+export function startsInChat(state: AgentDisplayState): boolean {
+  return state === "starting" || state === "preparing_workspace";
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a prompt typed while the agent starts is held in the browser until the agent is running. The api-server relay already waits for the Ready condition, but Ready comes before the workspace is prepared, and a prompt must not race the workspace seed or install. The wait ends when the agent becomes operable, and fails when the agent leaves the starting states without becoming operable. An agent that is not starting when the send begins gives no wait (null): the send goes out as before and the relay wakes the agent.
