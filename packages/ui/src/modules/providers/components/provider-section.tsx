@@ -19,6 +19,7 @@ import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { AllAgentsProviderLimit } from "../../spend/components/all-agents-provider-limit.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
+import { useRecheckOnOpen } from "../hooks/use-recheck-on-open.js";
 import {
   PROVIDER_ROWS,
   type ProviderRowDef,
@@ -64,6 +65,7 @@ export function ProviderSection({
     const item = itemOf(row);
     return !!item && hasKeyCheck(item.conn.templateId);
   });
+  useRecheckOnOpen(() => recheck.mutate(), !loading && checkable);
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
     item?: ProviderItem;

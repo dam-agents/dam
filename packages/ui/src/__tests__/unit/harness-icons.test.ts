@@ -161,7 +161,7 @@ describe("harness icons on provider and preset cards", () => {
           onOpen() {},
         }),
       );
-      expect(html).toContain("supports:");
+      expect(html).toContain("Supports:");
       expect(html).toContain("size-5");
       expect(html).not.toContain("Chat and Responses APIs");
       if (connected) {

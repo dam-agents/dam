@@ -19,16 +19,14 @@ export function ProviderKeyStatus({
       </p>
     );
   }
-  if (!check) {
-    return <p className="text-xs text-muted-foreground">Key not checked</p>;
-  }
+  if (!check) return null;
   const at = formatTimestamp(check.checkedAt);
   switch (check.result) {
     case "ok":
       return (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Checkmark size={12} aria-hidden className="shrink-0 text-success" />
-          Last checked {at}
+          Working right now
         </p>
       );
     case "refused":

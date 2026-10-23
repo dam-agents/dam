@@ -43,6 +43,14 @@ export function ProviderRow({
 }: Props) {
   const name = givenName ?? providerName(type);
   const refused = connected && keyCheck?.result === "refused";
+  const keyStatus =
+    connected && keyCheck !== undefined ? (
+      <ProviderKeyStatus check={keyCheck} checking={checking} />
+    ) : null;
+  const keyStatusBesideHarnesses =
+    connected &&
+    keyCheck !== undefined &&
+    (checking || keyCheck?.result === "ok");
   const body = (
     <>
       <CardIcon provider={type} templateId={templateId} />
@@ -62,7 +70,7 @@ export function ProviderRow({
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-muted-foreground">supports:</span>
+            <span className="text-xs text-muted-foreground">Supports:</span>
             {harnesses?.length ? (
               <HarnessIcons
                 harnesses={harnesses}
@@ -76,12 +84,13 @@ export function ProviderRow({
               </span>
             )}
           </div>
-          <div className="min-w-0 text-right">{balance}</div>
-        </div>
-        {connected && keyCheck !== undefined && (
-          <div className="mt-2">
-            <ProviderKeyStatus check={keyCheck} checking={checking} />
+          <div className="flex min-w-0 items-center justify-end gap-3 text-right">
+            {keyStatusBesideHarnesses && keyStatus}
+            {balance}
           </div>
+        </div>
+        {keyStatus && !keyStatusBesideHarnesses && (
+          <div className="mt-2">{keyStatus}</div>
         )}
       </div>
     </>

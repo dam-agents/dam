@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. After it, each row shows the stored result of its last key check: a check mark with the time when the key worked, a refused state in place of the green Connected badge that asks for a new key and is named in the row's accessible name, a neutral warning with the detail when the provider could not say, and "not checked" for a Connection that carries no result.
+// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. A key that worked reads "Working right now" beside the harnesses it supports; a refused key replaces the green Connected badge and asks for a new one, named in the row's accessible name; a provider that could not say shows a neutral warning with the detail; a Connection that carries no result says nothing.
 import type { ProviderKeyCheck } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -111,8 +111,8 @@ describe("provider key recheck", () => {
     expect(render().match(/Recheck keys/g)).toHaveLength(1);
   });
 
-  // TEST_SCENARIO: a key that worked at its last check reads Connected with a check mark and the time it was checked.
-  it("shows when a working key was last checked", () => {
+  // TEST_SCENARIO: a key that worked at its last check reads Connected, with a check mark saying it works right now beside the harnesses it supports.
+  it("says a working key works right now", () => {
     state.items = new Map([
       [
         "anthropic",
@@ -127,7 +127,7 @@ describe("provider key recheck", () => {
     ]);
     const row = rowOf(render(), "Edit Anthropic");
     expect(row).toContain("Connected");
-    expect(row).toContain("Last checked");
+    expect(row).toContain("Working right now");
     expect(row).not.toContain("refused");
   });
 
@@ -155,7 +155,7 @@ describe("provider key recheck", () => {
     expect(row).not.toContain(">Connected<");
     expect(row).toContain("HTTP 401");
     expect(row).toContain("Replace the key");
-    expect(row).not.toContain("Last checked");
+    expect(row).not.toContain("Working right now");
   });
 
   // TEST_SCENARIO: a check that said nothing about the key keeps the row Connected and shows a neutral warning with the detail.
@@ -182,11 +182,12 @@ describe("provider key recheck", () => {
     expect(row).toContain("HTTP 503");
   });
 
-  // TEST_SCENARIO: a Connection stored before its key was ever checked carries no result, so its row says the key is not checked.
-  it("says a key with no check is not checked", () => {
+  // TEST_SCENARIO: a Connection stored before its key was ever checked carries no result, so its row says nothing about the key instead of asking the user to read a state they cannot act on.
+  it("says nothing about a key with no check", () => {
     state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
     const row = rowOf(render(), "Edit Bob");
-    expect(row).toContain("Key not checked");
+    expect(row).not.toContain("Key not checked");
+    expect(row).not.toContain("Working right now");
   });
 
   // TEST_SCENARIO: the deployment CurveBender's key is not the user's to check, so an install holding only it gets no Recheck button, since a recheck could never change its row.
