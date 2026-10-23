@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/agentstore"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/crdcheck"
 	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
@@ -90,6 +91,16 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+
+	marker, err := agentstore.ReadMarker(ctx, client, cfg.Namespace, cfg.ReleaseName)
+	if err != nil {
+		slog.Error("reading the agent store marker", "error", err)
+		os.Exit(1)
+	}
+	if refusal := agentstore.Refusal(cfg.AgentStore, marker); refusal != "" {
+		slog.Error("refusing to start", "agentStore", cfg.AgentStore, "reason", refusal)
+		os.Exit(1)
+	}
 
 	if err := crdcheck.Assert(ctx, dynClient); err != nil {
 		slog.Error("CRD schema check failed", "error", err)

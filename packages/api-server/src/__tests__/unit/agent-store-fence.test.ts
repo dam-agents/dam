@@ -1,0 +1,85 @@
+import { describe, it, expect } from "vitest";
+import type * as k8s from "@kubernetes/client-node";
+import {
+  AGENT_STORE_ABSORBED_KEY,
+  AGENT_STORE_MARKER_KEY,
+  agentStoreMarkerName,
+  agentStoreRefusal,
+  readAgentStoreMarker,
+} from "../../modules/agent-store/fence.js";
+
+// TEST_OVERVIEW: The startup fence is what keeps one wrong pairing from serving: a build on the custom resources after the authority switched, or a build on Postgres before the switch absorbed anything. Both crash-loop instead, and both read the one marker the absorb leaves in the cluster.
+
+const ABSORBED = {
+  [AGENT_STORE_MARKER_KEY]: "postgres",
+  [AGENT_STORE_ABSORBED_KEY]: "2026-10-24T00:00:00Z",
+};
+
+describe("agent store fence", () => {
+  // TEST_SCENARIO: Every pairing of the two modes against the three marker states, because the ordinary install walks through them in order and must never be refused on the way.
+  it("refuses only the two pairings that would serve the wrong store", () => {
+    const cases: Array<
+      [string, "crd" | "postgres", Record<string, string> | null, boolean]
+    > = [
+      ["custom resources, no marker", "crd", null, false],
+      [
+        "custom resources, switched",
+        "crd",
+        { [AGENT_STORE_MARKER_KEY]: "postgres" },
+        true,
+      ],
+      ["custom resources, absorbed", "crd", ABSORBED, true],
+      ["postgres, no marker", "postgres", null, true],
+      [
+        "postgres, switched without an absorb stamp",
+        "postgres",
+        { [AGENT_STORE_MARKER_KEY]: "postgres" },
+        true,
+      ],
+      ["postgres, absorbed", "postgres", ABSORBED, false],
+    ];
+
+    for (const [name, mode, marker, refused] of cases) {
+      const refusal = agentStoreRefusal(mode, marker);
+      expect(refusal === null, name).toBe(!refused);
+    }
+  });
+
+  // TEST_SCENARIO: The marker lives in the agent namespace under the release's own name, and a read that fails for any reason other than absence must stop the start: a fence that cannot read its fact has not passed.
+  it("reads the release's marker and treats only a 404 as absent", async () => {
+    expect(agentStoreMarkerName("platform")).toBe("platform-agent-store");
+
+    const asked: Array<{ namespace: string; name: string }> = [];
+    const absent = {
+      readNamespacedConfigMap: async (args: {
+        namespace: string;
+        name: string;
+      }) => {
+        asked.push(args);
+        throw Object.assign(new Error("not found"), { code: 404 });
+      },
+    } as unknown as k8s.CoreV1Api;
+    expect(
+      await readAgentStoreMarker(absent, "platform-agents", "platform"),
+    ).toBeNull();
+    expect(asked).toEqual([
+      { namespace: "platform-agents", name: "platform-agent-store" },
+    ]);
+
+    const present = {
+      readNamespacedConfigMap: async () => ({ data: ABSORBED }),
+    } as unknown as k8s.CoreV1Api;
+    expect(
+      await readAgentStoreMarker(present, "platform-agents", "platform"),
+    ).toEqual(ABSORBED);
+
+    const broken = {
+      readNamespacedConfigMap: async () => {
+        throw new Error("the API server is unreachable");
+      },
+    } as unknown as k8s.CoreV1Api;
+    await expect(
+      readAgentStoreMarker(broken, "platform-agents", "platform"),
+    ).rejects.toThrow("unreachable");
+  });
+});

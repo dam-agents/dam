@@ -12,6 +12,10 @@ import {
   agentServiceAddress,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
+  agentStoreRefusal,
+  readAgentStoreMarker,
+} from "./modules/agent-store/fence.js";
+import {
   composeStorageGate,
   composeUserBudgetsAdmin,
   listRunnerUsageOwners,
@@ -359,6 +363,19 @@ export async function bootstrap() {
   getLogger().info("api-server starting");
 
   const { api } = createApi(config.namespace);
+  const agentStoreMarker = await readAgentStoreMarker(
+    api,
+    config.namespace,
+    config.releaseName,
+  );
+  const refusal = agentStoreRefusal(config.agentStore, agentStoreMarker);
+  if (refusal) {
+    getLogger().error(
+      { agentStore: config.agentStore, release: config.releaseName },
+      refusal,
+    );
+    throw new Error(refusal);
+  }
   const dbTls = {
     ca: config.databaseCaCertPath
       ? readFileSync(config.databaseCaCertPath, "utf8")

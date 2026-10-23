@@ -20,6 +20,7 @@ type Config struct {
 	APIServerInstanceLabel string
 	LeaseName              string
 	PodName                string
+	AgentStore             string
 
 	AgentBase AgentBase
 
@@ -178,6 +179,7 @@ func LoadFromEnv() (*Config, error) {
 		APIServerInstanceLabel: envOrDefault("PLATFORM_INSTANCE_LABEL", release),
 		LeaseName:              envOrDefault("PLATFORM_LEASE_NAME", release+"-controller"),
 		PodName:                podName,
+		AgentStore:             envOrDefault("PLATFORM_AGENT_STORE", "crd"),
 	}
 
 	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {
