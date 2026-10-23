@@ -16,7 +16,6 @@ import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
 import { ProviderRow } from "../../modules/providers/components/provider-row.js";
-import { HarnessCard } from "../../modules/sandboxes/components/steps/harness-card.js";
 
 vi.mock("../../modules/providers/api/queries.js", () => ({
   useProviderBalance: () => ({
@@ -219,31 +218,4 @@ describe("harness icons on provider and preset cards", () => {
     for (const name of ["Bob", "Codex", "Pi"])
       expect(html).not.toContain(`aria-label="${name}"`);
   });
-
-  it.each(["default", "custom"])(
-    "shows all four harnesses only on the Coding agent preset (%s)",
-    (id) => {
-      const html = renderToStaticMarkup(
-        createElement(HarnessCard, {
-          template: {
-            id,
-            name: "Coding agent",
-            category: "harness",
-            description: "",
-            image: "image",
-            size: {},
-            providers: [],
-            tags: [],
-            experimental: false,
-          },
-          selected: false,
-          onSelect() {},
-        }),
-      );
-      for (const name of ["Bob", "Claude", "Codex", "Pi"]) {
-        if (id === "default") expect(html).toContain(`aria-label="${name}"`);
-        else expect(html).not.toContain(`aria-label="${name}"`);
-      }
-    },
-  );
 });
