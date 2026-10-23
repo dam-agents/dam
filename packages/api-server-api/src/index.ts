@@ -458,6 +458,7 @@ export {
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
   CURVE_BENDER_HOST,
+  CURVE_BENDER_WORK_MODEL,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   displayNameForTemplate,
   BOB_HOST,
