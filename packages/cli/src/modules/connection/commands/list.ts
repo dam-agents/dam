@@ -23,8 +23,8 @@ const HEADER = [
   "STATUS",
   "PROVIDER",
   "HOSTS",
-  "SCOPE",
   "EXPIRES",
+  "SCOPE",
 ];
 
 function sortViews(
@@ -62,8 +62,8 @@ function tableFor(views: readonly ConnectionView[]): string {
       statusCell(c),
       providerCell(c),
       c.hosts.join(","),
-      formatScope(scopeOf(c)),
       c.check?.expiresAt ? formatExpiry(c.check.expiresAt) : "—",
+      formatScope(scopeOf(c)),
     ]),
   ]);
 }
