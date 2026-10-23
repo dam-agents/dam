@@ -60,12 +60,14 @@ export function ProviderSection({
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
   const recheck = useRecheckProviderKeys();
+  const autoRecheck = useRecheckProviderKeys({ silent: true });
   const loading = isPending || catalogPending || templatesPending;
   const checkable = rows.some((row) => {
     const item = itemOf(row);
     return !!item && hasKeyCheck(item.conn.templateId);
   });
-  useRecheckOnOpen(() => recheck.mutate(), !loading && checkable);
+  useRecheckOnOpen(() => autoRecheck.mutate(), !loading && checkable);
+  const checking = recheck.isPending || autoRecheck.isPending;
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
     item?: ProviderItem;
@@ -94,10 +96,10 @@ export function ProviderSection({
               variant="outline"
               size="sm"
               onClick={() => recheck.mutate()}
-              disabled={recheck.isPending}
+              disabled={checking}
             >
-              {recheck.isPending ? <Spinner size={14} /> : <Renew size={14} />}
-              {recheck.isPending ? "Rechecking…" : "Recheck keys"}
+              {checking ? <Spinner size={14} /> : <Renew size={14} />}
+              {checking ? "Rechecking…" : "Recheck keys"}
             </Button>
           </div>
         )}
@@ -123,9 +125,7 @@ export function ProviderSection({
                     item && !managed ? (item.conn.keyCheck ?? null) : undefined
                   }
                   checking={
-                    recheck.isPending &&
-                    !!item &&
-                    hasKeyCheck(item.conn.templateId)
+                    checking && !!item && hasKeyCheck(item.conn.templateId)
                   }
                   harnesses={catalog?.harnesses
                     .filter((h) =>
