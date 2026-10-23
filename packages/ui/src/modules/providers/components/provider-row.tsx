@@ -50,7 +50,7 @@ export function ProviderRow({
   const keyStatusBesideHarnesses =
     connected &&
     keyCheck !== undefined &&
-    (checking || keyCheck?.result === "ok");
+    (checking || keyCheck?.result !== "unverified");
   const body = (
     <>
       <CardIcon provider={type} templateId={templateId} />

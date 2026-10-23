@@ -31,11 +31,9 @@ export function ProviderKeyStatus({
       );
     case "refused":
       return (
-        <p className="flex items-start gap-1.5 text-xs text-danger">
-          <WarningFilled size={12} aria-hidden className="mt-0.5 shrink-0" />
-          <span>
-            Key refused on {at} ({check.detail}). Replace the key.
-          </span>
+        <p className="flex items-center gap-1.5 text-xs text-danger">
+          <WarningFilled size={12} aria-hidden className="shrink-0" />
+          Key refused
         </p>
       );
     case "unverified":

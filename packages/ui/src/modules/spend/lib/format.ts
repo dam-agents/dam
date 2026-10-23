@@ -36,7 +36,7 @@ export const UNIT_NAMES: Readonly<Record<SpendUnit, string>> = {
 export const NO_LIMIT_REASONS: Readonly<
   Record<"free" | "not_priced" | "not_metered", string>
 > = {
-  free: "Calls on this provider are free, so it takes no spend limit.",
+  free: "This provider has no billing.",
   not_priced:
     "Calls on this provider are not priced yet, so it takes no spend limit.",
   not_metered:

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. A key that worked reads "Working right now" beside the harnesses it supports; a refused key replaces the green Connected badge and asks for a new one, named in the row's accessible name; a provider that could not say shows a neutral warning with the detail; a Connection that carries no result says nothing.
+// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. A key that worked reads "Working right now" beside the harnesses it supports; a refused key replaces the green Connected badge with "Key refused", named in the row's accessible name; a provider that could not say shows a neutral warning with the detail; a Connection that carries no result says nothing.
 import type { ProviderKeyCheck } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -131,8 +131,8 @@ describe("provider key recheck", () => {
     expect(row).not.toContain("refused");
   });
 
-  // TEST_SCENARIO: a key the provider refused replaces the green Connected badge with Key refused and asks the user to replace the key, with the HTTP detail.
-  it("marks a refused key and asks for a new one", () => {
+  // TEST_SCENARIO: a key the provider refused replaces the green Connected badge with Key refused, and the row says no more than that about it.
+  it("marks a refused key", () => {
     state.items = new Map([
       [
         "anthropic",
@@ -153,8 +153,7 @@ describe("provider key recheck", () => {
     expect(row).toContain('aria-label="Edit Anthropic, key refused"');
     expect(row).toContain("Key refused");
     expect(row).not.toContain(">Connected<");
-    expect(row).toContain("HTTP 401");
-    expect(row).toContain("Replace the key");
+    expect(row).not.toContain("HTTP 401");
     expect(row).not.toContain("Working right now");
   });
 
