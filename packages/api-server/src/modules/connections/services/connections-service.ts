@@ -1719,7 +1719,12 @@ export function createConnectionsService(deps: {
       try {
         const meta = await discoverMcpAuth(new URL(input.url));
         return {
-          auth: meta && meta.registrationEndpoint ? "oauth" : "none",
+          auth:
+            meta &&
+            (meta.registrationEndpoint ||
+              meta.clientIdMetadataDocumentSupported)
+              ? "oauth"
+              : "none",
         };
       } catch {
         return { auth: "none" };
