@@ -665,6 +665,23 @@ export {
   decodeFrame,
 } from "./modules/terminal/protocol.js";
 
+export {
+  AGENT_NOT_READY_REASON,
+  DEFAULT_RECONNECT_POLICY,
+  RECONNECT_BACKOFF_MS,
+  RECONNECT_GIVE_UP_MS,
+  describeTerminalDrop,
+  nextReconnectDelay,
+  planReconnect,
+  terminalDropRetries,
+} from "./modules/terminal/reconnect.js";
+export type {
+  ReconnectClock,
+  ReconnectPolicy,
+  ReconnectStep,
+  TerminalDrop,
+} from "./modules/terminal/reconnect.js";
+
 export type {
   LocalSkill,
   ScanFailure,

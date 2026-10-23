@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Session inside the pod
 
@@ -195,6 +195,16 @@ While the report is not empty the PTY is never reaped; once it is empty, the qui
 Such a PTY makes the runtime busy only while its work is [kept](agent-processes.md#keeping-work), as a chat session does: unkept work holds the terminal open and dies at hibernation.
 When the PTY ends, the session's report goes with it, so a dead terminal cannot keep the agent busy.
 There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
+
+A terminal viewer whose connection drops connects again to the same session by itself; `dam chat` and the web terminal follow one set of rules from the contract package.
+It reconnects only after a connection that carried a frame, so a first connect that fails is reported at once.
+A drop is transient when the socket is lost, the relay goes away or restarts, the upgrade meets a server error, or the relay loses the agent's end of the connection.
+The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, disabled, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
+The relay closes for those last ones with an "agent not ready" reason, which is how a viewer tells them apart from a lost agent connection.
+Attempts back off at 1, 2, 5, 10 and then every 30 seconds, as `dam run` does, and stop two minutes after the drop of the last connection that carried a frame.
+A reconnect never asks for a reset and never wakes the Agent: it only waits out a wake asked for elsewhere, so a retry can neither kill the session it is trying to reach nor wake an Agent its owner put to sleep meanwhile.
+The PTY usually still lives, since the detach grace and the quiet clock outlast a short drop, and the reattach replays its scrollback onto a cleared screen.
+The viewer can stop the attempts: Ctrl+C in `dam chat`, a Stop button in the web terminal.
 
 SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection in-pod OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.
 The transport and its auth belong to the CLI surface that uses it ([cli](cli.md#ssh-access)) and to agent-runtime's relay duties ([platform-topology](platform-topology.md)).

@@ -7,6 +7,7 @@ import {
   platformRunResultResponseSchema,
   platformTurnEndedParamsSchema,
   PROMPT_QUEUE_FULL_CODE,
+  RECONNECT_BACKOFF_MS,
   runEndedSupported,
   SessionMode,
   SessionType,
@@ -36,8 +37,6 @@ export function noModelHint(error: { data?: unknown }): string {
     ? "\nhint: list the models with `dam agent models <agent>`, then pass one with `--model`, or save a default with `dam agent update <agent> --model <provider>/<model id>`"
     : "";
 }
-
-const RECONNECT_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
 export type RunError =
   | BootstrapError
@@ -103,7 +102,7 @@ export interface RunServiceDeps {
   out: (text: string) => void;
   errOut: (line: string) => void;
   onInterrupt?: (handler: () => void) => () => void;
-  reconnectBackoffMs?: number[];
+  reconnectBackoffMs?: readonly number[];
   whyNotStarted?: (ctx: BootstrapContext) => Promise<string | null>;
 }
 
