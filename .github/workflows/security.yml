@@ -229,17 +229,18 @@ jobs:
         with:
           persist-credentials: false
 
-      # The CLI is `.mise/config.toml`'s `http:mend` tool, so mise.lock pins its
-      # build and the sha256 of every platform. A Mend release changes neither.
+      # The CLI is a tool of the `security:mend` task, so mise installs it from
+      # mise.lock when the task runs and a plain `mise install` never fetches it.
+      # mise runs a task with the whole toolset, so this is the shared full
+      # install the other full-install jobs use, cache included.
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-        with:
-          install_args: http:mend
 
       - name: Detect vulnerabilities
         run: |
           set -euo pipefail
 
-          results=$(mend dep --dir . \
+          # --no-deps: the scan reads the sources, not the pnpm workspace.
+          results=$(mise run --no-deps security:mend -- \
             --scope "${MEND_ORGNAME}//${MEND_PRODUCTNAME}//${MEND_PROJECTNAME}" \
             --update --format json --non-interactive)
 
