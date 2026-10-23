@@ -17,7 +17,7 @@ vi.hoisted(() => {
 function chatStore() {
   useStore.getState().resetChatContext();
   useStore.setState({ view: "chat", selectedAgent: "a1", dialog: null });
-  useStore.getState().setDock({ kind: "artifact", id: "art-1", edit: false });
+  useStore.getState().setDock({ kind: "artifact", id: "art-1" });
   return useStore;
 }
 
@@ -42,11 +42,7 @@ describe("leaving the chat with a docked artifact", () => {
     store.getState().closeDialog(false);
     await settle();
     expect(store.getState().selectedAgent).toBe("a1");
-    expect(store.getState().dock).toEqual({
-      kind: "artifact",
-      id: "art-1",
-      edit: false,
-    });
+    expect(store.getState().dock).toEqual({ kind: "artifact", id: "art-1" });
     expect(store.getState().openArtifactDirty).toBe(true);
   });
 

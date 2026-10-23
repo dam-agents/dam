@@ -83,7 +83,12 @@ export function useTakeBackPrompt({
         return;
       }
 
-      useStore.getState().setRewritePending({ sessionId: sid, takeBack: true });
+      const pending = { sessionId: sid, takeBack: true };
+      useStore.getState().setRewritePending(pending);
+      const endPending = () => {
+        if (useStore.getState().rewritePending === pending)
+          useStore.getState().setRewritePending(null);
+      };
       takeBackLocally();
       let result: { sessionId: string };
       try {
@@ -105,11 +110,11 @@ export function useTakeBackPrompt({
             }) as Promise<{ sessionId: string }>,
         );
       } catch (err) {
-        useStore.getState().setRewritePending(null);
+        endPending();
         undoLocally();
         throw err;
       }
-      useStore.getState().setRewritePending(null);
+      endPending();
       if (inView()) setMessages((prev) => finalizeRunningReply(prev));
       if (result.sessionId === sid) return;
       useStore

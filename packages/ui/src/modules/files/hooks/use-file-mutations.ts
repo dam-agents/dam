@@ -68,17 +68,13 @@ async function fileToBase64(file: File): Promise<string> {
 
 export function useFileMutations(agentId: string | null) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const dock = useStore((s) => s.dock);
-  const openFilePath = dock?.kind === "file" ? dock.path : null;
+  const openFilePath = useStore((s) =>
+    s.dock?.kind === "file" ? s.dock.path : null,
+  );
   const setDock = useStore((s) => s.setDock);
   const setOpenFile = useCallback(
-    (path: string) =>
-      setDock({
-        kind: "file",
-        path,
-        edit: dock?.kind === "file" ? dock.edit : false,
-      }),
-    [setDock, dock],
+    (path: string) => setDock({ kind: "file", path }),
+    [setDock],
   );
   const renameExpandedDir = useStore((s) => s.renameExpandedDir);
   const pruneExpandedDir = useStore((s) => s.pruneExpandedDir);

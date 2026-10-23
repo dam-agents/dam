@@ -35,7 +35,7 @@ export function useFileTree(selectedAgent: string | null) {
       if (!(await confirmDiscard())) return;
       try {
         await fetchFileContent(selectedAgent, path);
-        setDock({ kind: "file", path, edit: opts?.edit ?? false });
+        setDock({ kind: "file", path }, opts);
         revealFiles();
       } catch (err) {
         emitToast({

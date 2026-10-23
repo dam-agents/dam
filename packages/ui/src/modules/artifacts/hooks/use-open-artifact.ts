@@ -20,11 +20,7 @@ export function useOpenArtifact() {
   return useCallback(
     async (id: string | null, opts?: { edit?: boolean }) => {
       if (id !== openArtifactId && !(await confirmDiscard())) return;
-      setDock(
-        id === null
-          ? null
-          : { kind: "artifact", id, edit: opts?.edit ?? false },
-      );
+      setDock(id === null ? null : { kind: "artifact", id }, opts);
     },
     [openArtifactId, confirmDiscard, setDock],
   );

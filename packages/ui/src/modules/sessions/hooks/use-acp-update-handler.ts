@@ -28,7 +28,7 @@ export function useAcpUpdateHandler(
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
       const pending = useStore.getState().rewritePending;
-      const rewriting = pending?.sessionId === sessionId ? pending : null;
+      const inFlight = pending?.sessionId === sessionId ? pending : null;
 
       const { sessionUpdate: kind } = update;
 
@@ -45,7 +45,7 @@ export function useAcpUpdateHandler(
       }
 
       if (kind === "platform_session_reset") {
-        if (!rewriting) onSessionReset(sessionId);
+        if (!inFlight) onSessionReset(sessionId);
         return;
       }
 
@@ -56,7 +56,7 @@ export function useAcpUpdateHandler(
       }
 
       if (kind === "config_option_update") return;
-      if (rewriting?.takeBack) return;
+      if (inFlight?.takeBack) return;
 
       setMessages((prev) => applyUpdate(prev, update, frame));
     };

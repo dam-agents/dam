@@ -216,9 +216,7 @@ describe("opening a docked item", () => {
     const store = panelStore();
     store.getState().setSidePanelTab(null);
 
-    store
-      .getState()
-      .setDock({ kind: "file", path: "/home/agent/a.md", edit: false });
+    store.getState().setDock({ kind: "file", path: "/home/agent/a.md" });
     expect(store.getState().sidePanelTab).toBe("files");
 
     store.getState().setOpenBrowser("agent-a");
@@ -232,13 +230,13 @@ describe("opening a docked item", () => {
 describe("a docked item's draft", () => {
   it("TEST_SCENARIO: the panel holds one docked item, so the draft the previous one kept is dropped when another opens", () => {
     const store = panelStore();
-    store.getState().setDock({ kind: "file", path: "/a.md", edit: true });
+    store.getState().setDock({ kind: "file", path: "/a.md" }, { edit: true });
     expect(store.getState().openFileDirty).toBe(false);
     expect(store.getState().openFileEdit).toBe(true);
 
-    store.getState().setDock({ kind: "file", path: "/a.md", edit: false });
+    store.getState().setDock({ kind: "file", path: "/a.md" });
     store.getState().setOpenFileDirty(true);
-    store.getState().setDock({ kind: "artifact", id: "art-1", edit: false });
+    store.getState().setDock({ kind: "artifact", id: "art-1" });
     expect(store.getState().openFileDirty).toBe(false);
     expect(store.getState().openFileEdit).toBe(false);
 
@@ -251,9 +249,9 @@ describe("a docked item's draft", () => {
 
   it("TEST_SCENARIO: reopening the artifact the panel already holds keeps its unsaved draft", () => {
     const store = panelStore();
-    store.getState().setDock({ kind: "artifact", id: "art-1", edit: false });
+    store.getState().setDock({ kind: "artifact", id: "art-1" });
     store.getState().setOpenArtifactDirty(true);
-    store.getState().setDock({ kind: "artifact", id: "art-1", edit: true });
+    store.getState().setDock({ kind: "artifact", id: "art-1" }, { edit: true });
     expect(store.getState().openArtifactDirty).toBe(true);
     expect(store.getState().openArtifactEdit).toBe(true);
   });
@@ -273,6 +271,22 @@ describe("a maximized panel", () => {
     store.getState().setOpenBrowser("agent-1");
     store.getState().setSidePanelMaximized("browser");
     store.getState().setSidePanelTab(null);
+    expect(store.getState().sidePanelMaximized).toBe(null);
+  });
+
+  it("TEST_SCENARIO: a link that opens the browser the panel already shows keeps it maximized, so following the agent does not shrink the view", () => {
+    const store = panelStore();
+    store.getState().setOpenBrowser("agent-1");
+    store.getState().setSidePanelMaximized("browser");
+    store.getState().setOpenBrowser("agent-1", "http://localhost:4444/");
+    expect(store.getState().sidePanelMaximized).toBe("browser");
+  });
+
+  it("TEST_SCENARIO: opening a different item ends the maximized view of the one it evicts", () => {
+    const store = panelStore();
+    store.getState().setOpenBrowser("agent-1");
+    store.getState().setSidePanelMaximized("browser");
+    store.getState().setDock({ kind: "file", path: "/a.md" });
     expect(store.getState().sidePanelMaximized).toBe(null);
   });
 

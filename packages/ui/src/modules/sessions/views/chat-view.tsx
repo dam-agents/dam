@@ -180,6 +180,7 @@ import {
   classicPanel,
 } from "../lib/classic-chat-layout.js";
 import { defaultKindOf } from "../lib/default-kind.js";
+import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
@@ -649,7 +650,7 @@ export function ChatView() {
     hiddenTabs,
     dockedTab !== null,
   );
-  const dockedItem = dockedTab && JSON.stringify(shownDock);
+  const dockedItem = dockedTab && dockKey(shownDock);
   const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
   const dockHiddenOnPhone =
     phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
