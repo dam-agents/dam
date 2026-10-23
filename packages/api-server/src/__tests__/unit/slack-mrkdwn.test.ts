@@ -64,6 +64,46 @@ describe("markdownToSections", () => {
     );
   });
 
+  /**
+   * TEST_SCENARIO: Slack renders each section alone. A code block longer than
+   * one section, such as a log, must stay a code block in every piece, and a
+   * cut must never split an escaped character such as `&amp;`, or the reader
+   * sees raw markup.
+   */
+  it("keeps a long code block fenced in every section and its entities whole", () => {
+    const lines = Array.from(
+      { length: 200 },
+      (_, i) => `line ${i} & <value> ${"x".repeat(20)}`,
+    );
+    const sections = texts(`\`\`\`\n${lines.join("\n")}\n\`\`\``);
+    expect(sections.length).toBeGreaterThan(1);
+    for (const section of sections) {
+      expect(section.length).toBeLessThanOrEqual(3000);
+      expect(section.startsWith("```\n")).toBe(true);
+      expect(section.endsWith("\n```")).toBe(true);
+      expect(section.split("```")).toHaveLength(3);
+      for (const line of section.split("\n").slice(1, -1))
+        expect(line).toMatch(/^line \d+ &amp; &lt;value&gt; x{20}$/);
+    }
+    expect(sections.flatMap((s) => s.split("\n").slice(1, -1))).toHaveLength(
+      200,
+    );
+  });
+
+  it("cuts a long line at a space, never inside an entity", () => {
+    const sections = texts(Array.from({ length: 800 }, () => "a&b").join(" "));
+    expect(sections.length).toBeGreaterThan(1);
+    for (const section of sections)
+      expect(section.trim()).toMatch(/^(a&amp;b ?)+$/);
+  });
+
+  it("cuts a code line longer than a section and still ends", () => {
+    const sections = texts(`\`\`\`\n${"y".repeat(7000)}\n\`\`\``);
+    expect(sections.every((s) => s.length <= 3000)).toBe(true);
+    expect(sections.every((s) => s.split("```").length === 3)).toBe(true);
+    expect(sections.join("").replace(/[`\n]/g, "")).toBe("y".repeat(7000));
+  });
+
   it("emits mrkdwn section blocks", () => {
     expect(markdownToSections("hi")).toEqual([
       { type: "section", text: { type: "mrkdwn", text: "hi" } },

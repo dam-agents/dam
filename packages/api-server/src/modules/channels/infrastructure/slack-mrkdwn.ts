@@ -95,10 +95,42 @@ function toMrkdwn(node: MdNode): string {
     .exhaustive(() => "");
 }
 
+const FENCE = "```";
+
+function cutPoint(text: string, limit: number): number {
+  const head = text.slice(0, limit);
+  const newline = head.lastIndexOf("\n");
+  const space = head.lastIndexOf(" ");
+  const half = limit / 2;
+  let at = newline > half ? newline : space > half ? space : limit;
+  const entity = /&[a-z]{0,4}$/.exec(text.slice(0, at));
+  if (entity && entity.index > half) at = entity.index;
+  const open = text.lastIndexOf("<", at - 1);
+  if (open > half && open > text.lastIndexOf(">", at - 1)) at = open;
+  if (/[\uD800-\uDBFF]/.test(text.charAt(at - 1))) at -= 1;
+  return at;
+}
+
+function opensFence(piece: string): boolean {
+  return piece.split(FENCE).length % 2 === 0;
+}
+
 function slices(text: string): string[] {
+  const limit = SECTION_CHARS - 2 * (FENCE.length + 1);
   const out: string[] = [];
-  for (let at = 0; at < text.length; at += SECTION_CHARS)
-    out.push(text.slice(at, at + SECTION_CHARS));
+  let rest = text;
+  while (rest.length > SECTION_CHARS) {
+    const at = cutPoint(rest, limit);
+    const piece = rest.slice(0, at);
+    rest = rest.slice(at).replace(/^\n/, "");
+    if (opensFence(piece)) {
+      out.push(`${piece}\n${FENCE}`);
+      rest = `${FENCE}\n${rest}`;
+    } else {
+      out.push(piece);
+    }
+  }
+  out.push(rest);
   return out;
 }
 
@@ -109,7 +141,11 @@ function slices(text: string): string[] {
  * blocks hold a `markdown` block, so the text Slack renders from Markdown
  * elsewhere is converted here instead. A section holds at most 3000
  * characters, so the text is split between top-level parts (paragraphs, lists,
- * code blocks), and a part longer than that is cut into pieces. mrkdwn reads
+ * code blocks), and a part longer than that is cut into pieces. Slack renders
+ * each section alone, so a cut falls at a line break or a space where it can,
+ * never inside an entity, a `<...>` link or mention, or a surrogate pair, and
+ * a code block cut in two is closed at the end of one piece and opened again
+ * at the start of the next. mrkdwn reads
  * `&`, `<` and `>` as markup, so they are escaped, except in a mention written
  * in Slack's own form (`<@U...>`, `<#C...>`, `<!here>`).
  */

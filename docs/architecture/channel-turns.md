@@ -244,7 +244,7 @@ What the agent sees:
   A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
   A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
   Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
-  Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
+  Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
   A reply with only a file posts it as one message, and cannot also go to the channel.
   A thread-triggered turn is never nudged towards it: the thread is where the answer belongs, and surfacing it to the channel takes an explicit ask.
   The one turn still nudged is a coalesced batch of top-level messages, which has no thread the channel is already watching.
