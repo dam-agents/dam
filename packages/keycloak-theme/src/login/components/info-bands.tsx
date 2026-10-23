@@ -1148,142 +1148,89 @@ function ClusterWatchCard() {
 
 /* ═══════ Band 6: Testimonials ═════════════════════════════════════ */
 
-const TESTIMONIALS = [
-  {
-    tag: "Code review",
-    role: "Product dev team",
-    quote:
-      "We pointed a PR code-guardian agent at every repo we own. Reviews land in under two minutes now — before anyone on the team even opens the diff.",
-  },
-  {
-    tag: "Fleet operations",
-    role: "Infrastructure lead",
-    quote:
-      "I run a fleet sweep every morning: one agent audits our clusters, another bridges Slack alerts to GitHub issues. What used to be a two-hour triage is a five-minute read.",
-  },
-  {
-    tag: "Knowledge base",
-    role: "Compiler team",
-    quote:
-      "We dropped an agent into our Slack channel. It indexes every conversation and surfaces the right thread when someone asks a question — no more re-explaining things.",
-  },
-  {
-    tag: "Onboarding",
-    role: "Engineering manager",
-    quote:
-      "New hires spin up an agent on day one. It walks them through the repo, explains the build, and opens their first PR. Ramp-up went from two weeks to three days.",
-  },
-  {
-    tag: "Test generation",
-    role: "QA engineer",
-    quote:
-      "The agent watches every merge to main and writes integration tests for the changed paths. Our coverage went from 60% to 89% in a month — without anyone writing a test by hand.",
-  },
-  {
-    tag: "Docs sync",
-    role: "Developer advocate",
-    quote:
-      "Whenever an API changes, the agent diffs the OpenAPI spec and updates the docs site automatically. Our docs haven't been out of date since we set it up.",
-  },
-];
-
-function useTestimonialCarousel() {
-  const [idx, setIdx] = useState(0);
-  const [fade, setFade] = useState(true);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setFade(false);
-      setTimeout(() => {
-        setIdx((prev) => (prev + 1) % TESTIMONIALS.length);
-        setFade(true);
-      }, 400);
-    }, 12000);
-    return () => clearInterval(id);
-  }, []);
-
-  const goTo = (i: number) => {
-    setFade(false);
-    setTimeout(() => {
-      setIdx(i);
-      setFade(true);
-    }, 300);
-  };
-
-  return { idx, fade, goTo, t: TESTIMONIALS[idx]! };
+function testimonials(brandName: string) {
+  return [
+    {
+      tag: "Code review across repos",
+      role: "A four-person product dev team",
+      context: `The team works alongside chemists and PMs and runs scheduled code-review agents across its GitHub repos. A Slack-connected agent answers non-developers' questions about a codebase the team inherited.`,
+      quote: `"We have now set up many scheduled PR code-guardian agents for many of our code repos. This was done just via natural language. No friction setting it up."`,
+    },
+    {
+      tag: "Fleet operations",
+      role: "An infrastructure and operations lead",
+      context: `Their ${brandName} agent sweeps a fleet of clusters every morning and carries requests from Slack over to the team's GitHub.`,
+      quote: `"${brandName} is doing a fleet sweep for me for several of my clusters every morning, and I use it to bridge Slack requests to GitHub."`,
+    },
+    {
+      tag: "Team knowledge base",
+      role: "A compiler team",
+      context: `The team keeps its shared knowledge base on ${brandName}, and an agent in six of the team's Slack channels answers engineers' questions from it. The team now owns and runs the agent itself.`,
+      quote: `"Immensely useful to have this agent on [our] Slack channels."`,
+    },
+  ];
 }
 
-function CarouselDots({ idx, onSelect }: { idx: number; onSelect: (i: number) => void }) {
+function TestimonialCard({
+  tag,
+  role,
+  context,
+  quote,
+}: {
+  tag: string;
+  role: string;
+  context: string;
+  quote: string;
+}) {
   return (
-    <div className="mt-10 flex gap-2">
-      {TESTIMONIALS.map((_, i) => (
-        <button
-          key={i}
-          onClick={() => onSelect(i)}
-          className={`h-1.5 rounded-full transition-all duration-300 ${
-            i === idx
-              ? "w-6 bg-foreground"
-              : "w-1.5 bg-foreground/20 hover:bg-foreground/40"
-          }`}
-          aria-label={`Quote ${i + 1}`}
-        />
-      ))}
+    <div className="rounded-xl border border-input bg-background p-6 shadow-[0_2px_16px_rgba(0,0,0,0.06)]">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+          <svg className="size-5 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            {tag}
+          </p>
+          <p className="text-[15px] font-semibold text-foreground">{role}</p>
+        </div>
+      </div>
+      <p className="text-[14px] leading-relaxed text-muted-foreground">
+        {context}
+      </p>
+      <div className="mt-4 border-l-2 border-foreground/15 pl-4">
+        <p className="text-[14px] font-medium leading-relaxed text-foreground">
+          {quote}
+        </p>
+      </div>
     </div>
   );
 }
 
-/* — Layout A: Centered (original) — quote centered with dots below — */
-
 export function BandTestimonials({ brandName }: { brandName: string }) {
-  const { idx, fade, goTo, t } = useTestimonialCarousel();
+  const items = testimonials(brandName);
 
   return (
     <section className="flex min-h-[100dvh] snap-start flex-col justify-center overflow-hidden py-24 lg:py-32">
       <div className="mx-auto w-full max-w-[1120px] px-6">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
-          <div>
-            <SectionLabel>From the community</SectionLabel>
-            <SectionTitle>
-              See how your colleagues
-              <br />
-              are using {brandName}.
-            </SectionTitle>
-            <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted-foreground">
-              Real stories from teams running agents every day.
-            </p>
-          </div>
+        <div className="mb-12">
+          <SectionLabel>From the community</SectionLabel>
+          <SectionTitle>
+            See how your colleagues
+            <br />
+            are using {brandName}.
+          </SectionTitle>
+          <p className="mt-4 max-w-md text-[16px] leading-relaxed text-muted-foreground">
+            Real stories from teams running agents every day.
+          </p>
+        </div>
 
-          <div className="flex flex-col items-center justify-center">
-            <div
-              className="w-full transition-opacity duration-400"
-              style={{ opacity: fade ? 1 : 0 }}
-            >
-              <svg
-                className="mb-6 size-10 text-foreground opacity-10"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"
-                  fill="currentColor"
-                />
-              </svg>
-              <p className="text-[32px] font-normal leading-[1.5] text-foreground md:text-[42px]">
-                {t.quote}
-              </p>
-              <div className="mt-6 flex items-center gap-3">
-                <span className="text-[13px] font-medium text-muted-foreground">
-                  {t.role}
-                </span>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-[13px] font-medium text-muted-foreground">
-                  {t.tag}
-                </span>
-              </div>
-            </div>
-            <CarouselDots idx={idx} onSelect={goTo} />
-          </div>
+        <div className="flex flex-col gap-5">
+          {items.map((t) => (
+            <TestimonialCard key={t.tag} {...t} />
+          ))}
         </div>
       </div>
     </section>
