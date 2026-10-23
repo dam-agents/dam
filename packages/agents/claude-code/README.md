@@ -22,6 +22,13 @@ Files a user attaches to a message, and files a channel brings in, land under `~
 `managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
 The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
 
+## User settings
+
+[`sync-claude-settings.mjs`](rootfs/usr/local/lib/sync-claude-settings.mjs) writes the platform's own keys into `~/.claude/settings.json`: the `OTEL_*` telemetry variables of the rail the agent was given, and the `report-background-work.mjs` entry it owns in `hooks.Stop` and `hooks.SubagentStop`.
+It runs in the ACP adapter's node before the adapter's first line, and once more before a web terminal's `claude`, and it touches no key it does not own.
+That file has more than one writer — this sync, agent-runtime's harness-config driver, and a starter kit's own install — so this sync and the runtime both take `~/.claude/settings.json.lock` across their whole read-modify-write and rename a temporary file of their own into place ([the write rule](../../../docs/architecture/runtime-delivery.md#writing-a-file)); a kit's install and Claude Code itself take no lock and can still lose a change to each other or to one of these two.
+A file the sync cannot read or parse is kept byte for byte and named on stderr, and only a missing file starts from `{}`.
+
 ## Agent instructions
 
 The platform instructions reach Claude Code as its managed memory file: the image links `/etc/claude-code/CLAUDE.md` to `/etc/AGENTS.md`, so an owner's file cannot replace them.
