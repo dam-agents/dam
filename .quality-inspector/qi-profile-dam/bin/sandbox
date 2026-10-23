@@ -22,6 +22,19 @@ else
   elif [ "$(jq -r .fork <<<"$r")" = true ]; then bad "github $repo is a fork — use a repository of its own"
   elif [ "$(jq -r '.has_issues' <<<"$r")" != true ]; then bad "github $repo has issues turned off"
   else ok "github token of $login sees $repo"; fi
+  # The write grants the cleanup needs, by writes that change nothing: a pull request and a branch
+  # that do not exist. A public repository is readable with no grant, so only a write tells: 403
+  # without the grant, 404 or 422 (not found) with it.
+  gh_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X "$1" -H "Authorization: Bearer $E2E_SANDBOX_GITHUB_TOKEN" \
+    -H 'Accept: application/vnd.github+json' ${3:+-d "$3"} "https://api.github.com/repos/$repo/$2"; }
+  for g in "Pull requests:pull requests:PATCH:pulls/999999999:{}" "Contents:branches:DELETE:git/refs/heads/qi-sandbox-check-no-such-branch:"; do
+    IFS=: read -r name what m path body <<<"$g"
+    case "$(gh_code "$m" "$path" "$body")" in
+      (404|422) ok "github the token may write $repo's $what";;
+      (403) bad "github the token may not write $repo's $what — give it $name: Read and write";;
+      (*) bad "github no answer from $m api.github.com/repos/$repo/$path (its egress rule is added by hand)";;
+    esac
+  done
   # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32,
   # and GitHub knows the OAuth App (a made-up code is refused as a bad code, not as a bad client).
   if [ -n "$login" ] && [ "$(tr 'A-Z' 'a-z' <<<"$login")" != "$(tr 'A-Z' 'a-z' <<<"${E2E_SANDBOX_GITHUB_LOGIN:-}")" ]; then

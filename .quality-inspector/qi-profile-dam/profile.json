@@ -82,6 +82,19 @@
     { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
     { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
+    { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/pulls", "why": "sandbox: an agent opens the pull request a test asks for" },
+    { "host": "api.github.com", "method": "GET", "path": "/repos/{profile.sandbox_github_repo}/pulls?*", "why": "sandbox: the test finds that pull request by the run's id in its title" },
+    { "host": "api.github.com", "method": "GET", "path": "/repos/{profile.sandbox_github_repo}/pulls/*", "why": "sandbox: the agent reads the pull request's status for its scheduled post" },
+    { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/pulls/*", "why": "sandbox: the test closes it after a pass" },
+    { "host": "api.github.com", "method": "DELETE", "path": "/repos/{profile.sandbox_github_repo}/git/refs/heads/*", "why": "sandbox: the test deletes its branch after a pass" },
+    { "host": "github.com", "method": "GET", "path": "/{profile.sandbox_github_repo}.git/info/refs?service=git-upload-pack", "why": "sandbox: the agent clones the sandbox repository (with .git)" },
+    { "host": "github.com", "method": "POST", "path": "/{profile.sandbox_github_repo}.git/git-upload-pack", "why": "sandbox: the clone's pack (with .git)" },
+    { "host": "github.com", "method": "GET", "path": "/{profile.sandbox_github_repo}.git/info/refs?service=git-receive-pack", "why": "sandbox: the agent pushes its branch (with .git)" },
+    { "host": "github.com", "method": "POST", "path": "/{profile.sandbox_github_repo}.git/git-receive-pack", "why": "sandbox: the push's pack (with .git)" },
+    { "host": "github.com", "method": "GET", "path": "/{profile.sandbox_github_repo}/info/refs?service=git-upload-pack", "why": "sandbox: the agent clones the sandbox repository (without .git)" },
+    { "host": "github.com", "method": "POST", "path": "/{profile.sandbox_github_repo}/git-upload-pack", "why": "sandbox: the clone's pack (without .git)" },
+    { "host": "github.com", "method": "GET", "path": "/{profile.sandbox_github_repo}/info/refs?service=git-receive-pack", "why": "sandbox: the agent pushes its branch (without .git)" },
+    { "host": "github.com", "method": "POST", "path": "/{profile.sandbox_github_repo}/git-receive-pack", "why": "sandbox: the push's pack (without .git)" },
     { "host": "github.com", "method": "GET", "path": "/login", "why": "sandbox: the test user's GitHub sign-in — the login form" },
     { "host": "github.com", "method": "GET", "path": "/login?*", "why": "sandbox: the login form, with its return_to" },
     { "host": "github.com", "method": "POST", "path": "/session", "why": "sandbox: the test user's password" },
@@ -98,7 +111,7 @@
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
   "sandbox": {
     "accounts": [
-      { "id": "github", "what": "a GitHub test user with a TOTP second factor, an organization of its own with one repository, an OAuth App there for DAM's GitHub sign-in, and the user's fine-grained token that may write issues in that repository only",
+      { "id": "github", "what": "a GitHub test user with a TOTP second factor, an organization of its own with one repository, an OAuth App there for DAM's GitHub sign-in, and the user's fine-grained token that may write issues, pull requests and branches in that repository only",
         "guide": "sandbox/github.md", "credentials": ["TOKEN", "LOGIN", "PASSWORD", "TOTP_SECRET", "OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET"] },
       { "id": "slack", "what": "a free Slack workspace with one channel, DAM's Slack app in it, and a second person who writes to the agent",
         "guide": "sandbox/slack.md", "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"] }
