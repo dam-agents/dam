@@ -23,6 +23,11 @@
 -- row here is what makes the controller's reclaim compare-and-set catch a
 -- timeout raised at the same instant: the row update is the point, so the
 -- assignment is a no-op that lets the version trigger below add one.
+--
+-- A guard that takes two locks fixes their order: every writer that touches
+-- both a definition and its signals row must write the definition first.
+-- Ordinary inserts and updates by the two services do not, and a writer that
+-- does will deadlock against this trigger until it follows the order.
 CREATE FUNCTION control.agents_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.owner_sub IS DISTINCT FROM OLD.owner_sub THEN

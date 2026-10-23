@@ -398,7 +398,7 @@ export async function bootstrap() {
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
   reportControlGrants(getLogger(), await reconcileControlGrants(db));
-  if (config.agentStorePreviewReport)
+  if (config.agentStorePreviewReport && config.agentStore === "crd")
     await reportAbsorbPreview({
       listCustomObjects: (plural) =>
         createK8sClient(api, config.namespace).listCustomObjects(plural),
