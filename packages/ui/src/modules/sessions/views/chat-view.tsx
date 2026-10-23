@@ -31,10 +31,7 @@ import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
 import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
 import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
-import {
-  COMPOSER_LOCKED_REASON,
-  composerLocked,
-} from "../../a2ui/lib/composer-lock.js";
+import { composerLocked } from "../../a2ui/lib/composer-lock.js";
 import {
   conversationEmpty,
   isQueuedSend,
@@ -186,6 +183,7 @@ import {
   classicDockToggle,
   classicPanel,
 } from "../lib/classic-chat-layout.js";
+import { composerBlock } from "../lib/composer-block.js";
 import { sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
@@ -507,6 +505,14 @@ export function ChatView() {
     chatFormPreferences,
   );
   useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
+  const block = composerBlock({
+    agentId: selectedAgent,
+    providers,
+    noProviders,
+    noGrantedProvider,
+    sharedCurveBender: !!shared,
+    formLocked: formLocksComposer,
+  });
   const sendWithA2uiData = useCallback(
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
       sendAndFollow(withRendererMetadata(text), ...rest),
@@ -530,10 +536,10 @@ export function ChatView() {
         catalog: sendCatalog.data,
       });
       const attached =
-        plan?.attach === null || plan?.attach === undefined
+        plan.attach === null
           ? true
           : await attachProviderQuietly(agentId, plan.attach);
-      if (!plan || !attached) {
+      if (!attached) {
         setDraft(draftKey(agentId, sessionId), {
           text,
           attachments: attachments ?? [],
@@ -1111,17 +1117,13 @@ export function ChatView() {
             onSend={sendPrepared}
             onStop={stopAgent}
             onTakeBack={takeBack}
-            blockedReason={
-              noGrantedProvider && !shared
-                ? noProviders
-                  ? "Connect an LLM provider to start."
-                  : "Attach an LLM provider to this agent to start."
-                : formLocksComposer
-                  ? COMPOSER_LOCKED_REASON
-                  : null
-            }
-            onBlockedClick={() =>
-              noProviders ? setProvidersModal(true) : setPairPickerOpen(true)
+            blockedReason={block?.reason ?? null}
+            onBlockedClick={
+              block?.kind === "connect"
+                ? () => setProvidersModal(true)
+                : block?.kind === "attach"
+                  ? () => setPairPickerOpen(true)
+                  : undefined
             }
           />
           {!hasPendingPermission &&
