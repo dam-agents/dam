@@ -10,6 +10,7 @@ import type {
 import type { Dispatcher, EventDispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 import { processEvents } from "./event-loop.js";
+import { safeReport } from "./infrastructure/report.js";
 
 export interface HarnessConfigReport {
   harnessConfigCurrent?: HarnessConfigCurrent;
@@ -34,18 +35,20 @@ export interface ApplyStateDeps {
 export function createRuntimeChannelService(
   deps: ApplyStateDeps,
 ): RuntimeChannelService {
-  const reportFailure = async (event: Event, message: string) => {
-    try {
-      await deps.reporter.report({
-        eventId: event.id,
-        outcome: "failed",
-        detail: message.slice(0, 2000),
-      });
-    } catch (err) {
-      deps.log(
-        `[runtime] failure report for ${event.id} did not send: ${(err as Error).message}`,
-      );
-    }
+  const reportFailure = async (
+    event: Event,
+    message: string,
+  ): Promise<void> => {
+    await safeReport(
+      () =>
+        deps.reporter.report({
+          eventId: event.id,
+          outcome: "failed",
+          detail: message.slice(0, 2000),
+        }),
+      deps.log,
+      `[runtime] failure report for ${event.id}`,
+    );
   };
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(work: () => Promise<T>): Promise<T> => {

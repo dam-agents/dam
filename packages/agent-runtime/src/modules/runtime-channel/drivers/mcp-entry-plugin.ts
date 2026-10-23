@@ -4,8 +4,6 @@ import { z } from "zod";
 import {
   PLATFORM_MCP_ENTRY_NAME,
   SESSION_REF_HEADER,
-  type DriverBinding,
-  type KindHandler,
   type Plugin,
 } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
@@ -15,6 +13,7 @@ import {
   type DocumentStore,
 } from "../../../core/document-store.js";
 import { expandHome } from "../../../core/expand-home.js";
+import { contributionPlugin } from "../infrastructure/plugin-registry.js";
 
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
@@ -63,104 +62,95 @@ export function createMcpEntryPlugin(deps?: {
     entry: { url: string; headers?: Record<string, string> } | null,
   ) => void;
 }): Plugin {
-  return {
-    name: IMPL_NAME,
+  return contributionPlugin(IMPL_NAME, "mcp-entry", (binding) => {
+    const parsed = bindingSchema.safeParse(binding);
+    if (!parsed.success) {
+      throw new Error(
+        `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
+      );
+    }
+    const {
+      path,
+      format,
+      keyPath,
+      urlKey,
+      headersKey,
+      extraFields,
+      sessionRef,
+    } = parsed.data;
+    const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
+    const effectiveHeadersKey = headersKey ?? DEFAULT_HEADERS_KEY;
+    let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
 
-    bind(kind: string, binding: DriverBinding): KindHandler {
-      if (kind !== "mcp-entry") {
-        throw new Error(
-          `plugin "${IMPL_NAME}" does not handle kind "${kind}" — bind it to "mcp-entry" only`,
-        );
-      }
-      const parsed = bindingSchema.safeParse(binding);
-      if (!parsed.success) {
-        throw new Error(
-          `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
-        );
-      }
-      const {
-        path,
-        format,
-        keyPath,
-        urlKey,
-        headersKey,
-        extraFields,
-        sessionRef,
-      } = parsed.data;
-      const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
-      const effectiveHeadersKey = headersKey ?? DEFAULT_HEADERS_KEY;
-      let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
+    return async (contributions, ctx) => {
+      stateStore ??= openJsonFile(
+        join(ctx.pluginStateDir, "mcp-entry-state.json"),
+        { schema: stateSchema, initial: () => ({ installed: [] }) },
+      );
+      const installed = new Set(stateStore.read().installed);
 
-      return async (contributions, ctx) => {
-        stateStore ??= openJsonFile(
-          join(ctx.pluginStateDir, "mcp-entry-state.json"),
-          { schema: stateSchema, initial: () => ({ installed: [] }) },
-        );
-        const installed = new Set(stateStore.read().installed);
-
-        const entries: Record<string, unknown> = {};
-        let platformEntry: {
-          url: string;
-          headers?: Record<string, string>;
-        } | null = null;
-        for (const c of contributions) {
-          if (c.kind !== "mcp-entry") continue;
-          const platform = c.name === PLATFORM_MCP_ENTRY_NAME;
-          if (platform)
-            platformEntry = {
-              url: c.url,
-              ...(c.headers ? { headers: c.headers } : {}),
-            };
-          const headers =
-            platform && sessionRef
-              ? { ...c.headers, [SESSION_REF_HEADER]: sessionRef }
-              : c.headers;
-          entries[c.name] = {
-            ...(urlKey ? { [urlKey]: c.url } : { type: "http", url: c.url }),
-            ...(headers ? { [effectiveHeadersKey]: headers } : {}),
-            ...extraFields,
+      const entries: Record<string, unknown> = {};
+      let platformEntry: {
+        url: string;
+        headers?: Record<string, string>;
+      } | null = null;
+      for (const c of contributions) {
+        if (c.kind !== "mcp-entry") continue;
+        const platform = c.name === PLATFORM_MCP_ENTRY_NAME;
+        if (platform)
+          platformEntry = {
+            url: c.url,
+            ...(c.headers ? { headers: c.headers } : {}),
           };
-        }
-        const names = Object.keys(entries);
-        const targetPath = expandHome(path, ctx.agentHome);
+        const headers =
+          platform && sessionRef
+            ? { ...c.headers, [SESSION_REF_HEADER]: sessionRef }
+            : c.headers;
+        entries[c.name] = {
+          ...(urlKey ? { [urlKey]: c.url } : { type: "http", url: c.url }),
+          ...(headers ? { [effectiveHeadersKey]: headers } : {}),
+          ...extraFields,
+        };
+      }
+      const names = Object.keys(entries);
+      const targetPath = expandHome(path, ctx.agentHome);
 
-        const segs = effectiveKey.split(".");
-        const next = { ...readKeyedObject(targetPath, format, segs) };
-        for (const name of installed) {
-          if (!(name in entries)) delete next[name];
-        }
-        Object.assign(next, entries);
+      const segs = effectiveKey.split(".");
+      const next = { ...readKeyedObject(targetPath, format, segs) };
+      for (const name of installed) {
+        if (!(name in entries)) delete next[name];
+      }
+      Object.assign(next, entries);
 
-        ctx.log(
-          `desired entries (${names.length}): ${names.length === 0 ? "<none>" : names.join(", ")}; preserved ${Object.keys(next).length - names.length} other server(s)`,
-        );
-        const content: Record<string, unknown> = keyPath
-          ? next
-          : { [effectiveKey]: next };
-        ctx.log(`writing → ${targetPath} (keyPath=${effectiveKey})`);
-        const desired = new Map<string, FileDesired[]>([
+      ctx.log(
+        `desired entries (${names.length}): ${names.length === 0 ? "<none>" : names.join(", ")}; preserved ${Object.keys(next).length - names.length} other server(s)`,
+      );
+      const content: Record<string, unknown> = keyPath
+        ? next
+        : { [effectiveKey]: next };
+      ctx.log(`writing → ${targetPath} (keyPath=${effectiveKey})`);
+      const desired = new Map<string, FileDesired[]>([
+        [
+          targetPath,
           [
-            targetPath,
-            [
-              {
-                format,
-                mergeMode: "key-targeted",
-                content,
-                ...(keyPath ? { keyPath } : {}),
-              },
-            ],
+            {
+              format,
+              mergeMode: "key-targeted",
+              content,
+              ...(keyPath ? { keyPath } : {}),
+            },
           ],
-        ]);
-        await applyFiles(desired as Map<string, FileDesired[] | null>, {
-          agentHome: ctx.agentHome,
-          log: ctx.log,
-          onUnparseable: "throw",
-        });
-        stateStore.write({ installed: [...names].sort() });
-        deps?.onPlatformEntry?.(platformEntry);
-      };
-    },
-  };
+        ],
+      ]);
+      await applyFiles(desired as Map<string, FileDesired[] | null>, {
+        agentHome: ctx.agentHome,
+        log: ctx.log,
+        onUnparseable: "throw",
+      });
+      stateStore.write({ installed: [...names].sort() });
+      deps?.onPlatformEntry?.(platformEntry);
+    };
+  });
 }
 
 function readKeyedObject(

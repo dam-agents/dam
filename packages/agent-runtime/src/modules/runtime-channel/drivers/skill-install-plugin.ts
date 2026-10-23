@@ -3,8 +3,6 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import type {
   Contribution,
-  DriverBinding,
-  KindHandler,
   Plugin,
   SkillInstallInput,
   SkillInstallResult,
@@ -16,6 +14,7 @@ import {
   type DocumentStore,
 } from "../../../core/document-store.js";
 import { expandHome } from "../../../core/expand-home.js";
+import { contributionPlugin } from "../infrastructure/plugin-registry.js";
 
 const IMPL_NAME = "skill-install";
 
@@ -63,106 +62,97 @@ export type SkillInstallFn = (
 export function createSkillInstallPlugin(deps: {
   install: SkillInstallFn;
 }): Plugin {
-  return {
-    name: IMPL_NAME,
+  return contributionPlugin(IMPL_NAME, "skill-ref", (binding) => {
+    const parsed = bindingSchema.safeParse(binding);
+    if (!parsed.success) {
+      throw new Error(
+        `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
+      );
+    }
+    const configuredPaths = parsed.data.paths;
+    let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
 
-    bind(kind: string, binding: DriverBinding): KindHandler {
-      if (kind !== "skill-ref") {
-        throw new Error(
-          `plugin "${IMPL_NAME}" does not handle kind "${kind}" — bind it to "skill-ref" only`,
-        );
-      }
-      const parsed = bindingSchema.safeParse(binding);
-      if (!parsed.success) {
-        throw new Error(
-          `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
-        );
-      }
-      const configuredPaths = parsed.data.paths;
-      let stateStore: DocumentStore<z.infer<typeof stateSchema>> | undefined;
+    return async (contributions, ctx) => {
+      stateStore ??= openJsonFile(join(ctx.pluginStateDir, STATE_FILE), {
+        schema: stateSchema,
+        initial: () => ({ installed: [] }),
+      });
+      const skillPaths = configuredPaths.map((p) =>
+        expandHome(p, ctx.agentHome),
+      );
+      const resolvedPaths = skillPaths.map((p) => resolve(p));
+      const skillRefs = contributions.filter(
+        (c): c is Extract<Contribution, { kind: "skill-ref" }> =>
+          c.kind === "skill-ref",
+      );
+      const managed = new Set(stateStore.read().installed);
+      ctx.log(
+        `wanted (${skillRefs.length}): ${
+          skillRefs.length === 0
+            ? "<none>"
+            : skillRefs.map((c) => `${c.name}@${c.version}`).join(", ")
+        }; targets: ${resolvedPaths.join(", ") || "<none>"}; managed: ${
+          [...managed].join(", ") || "<none>"
+        }`,
+      );
 
-      return async (contributions, ctx) => {
-        stateStore ??= openJsonFile(join(ctx.pluginStateDir, STATE_FILE), {
-          schema: stateSchema,
-          initial: () => ({ installed: [] }),
-        });
-        const skillPaths = configuredPaths.map((p) =>
-          expandHome(p, ctx.agentHome),
-        );
-        const resolvedPaths = skillPaths.map((p) => resolve(p));
-        const skillRefs = contributions.filter(
-          (c): c is Extract<Contribution, { kind: "skill-ref" }> =>
-            c.kind === "skill-ref",
-        );
-        const managed = new Set(stateStore.read().installed);
+      const desired = new Set<string>();
+      const installed = new Set<string>();
+      const failed: string[] = [];
+      for (const c of skillRefs) {
+        desired.add(c.name);
+        const installInput: SkillInstallInput = {
+          sourceUrl: c.sourceUrl,
+          name: c.name,
+          version: c.version,
+          skillPaths,
+          ...(c.path !== undefined ? { path: c.path } : {}),
+          ...(c.fetch !== undefined ? { fetch: c.fetch } : {}),
+        };
         ctx.log(
-          `wanted (${skillRefs.length}): ${
-            skillRefs.length === 0
-              ? "<none>"
-              : skillRefs.map((c) => `${c.name}@${c.version}`).join(", ")
-          }; targets: ${resolvedPaths.join(", ") || "<none>"}; managed: ${
-            [...managed].join(", ") || "<none>"
-          }`,
+          `install ${c.name}@${c.version} from ${c.sourceUrl} into ${skillPaths.length} path(s)`,
         );
-
-        const desired = new Set<string>();
-        const installed = new Set<string>();
-        const failed: string[] = [];
-        for (const c of skillRefs) {
-          desired.add(c.name);
-          const installInput: SkillInstallInput = {
-            sourceUrl: c.sourceUrl,
-            name: c.name,
-            version: c.version,
-            skillPaths,
-            ...(c.path !== undefined ? { path: c.path } : {}),
-            ...(c.fetch !== undefined ? { fetch: c.fetch } : {}),
-          };
+        const result = await deps.install(installInput);
+        if (!result.ok) {
           ctx.log(
-            `install ${c.name}@${c.version} from ${c.sourceUrl} into ${skillPaths.length} path(s)`,
+            `${c.name}@${c.version} from ${c.sourceUrl}: install failed (${result.error.kind})`,
           );
-          const result = await deps.install(installInput);
-          if (!result.ok) {
-            ctx.log(
-              `${c.name}@${c.version} from ${c.sourceUrl}: install failed (${result.error.kind})`,
-            );
-            failed.push(`${c.name} (${result.error.kind})`);
-            continue;
-          }
-          ctx.log(`${c.name}@${c.version}: install ok`);
-          installed.add(c.name);
+          failed.push(`${c.name} (${result.error.kind})`);
+          continue;
         }
+        ctx.log(`${c.name}@${c.version}: install ok`);
+        installed.add(c.name);
+      }
 
-        const toRemove = [...managed].filter((name) => !desired.has(name));
-        for (const root of resolvedPaths) {
-          for (const name of toRemove) {
-            const p = join(root, name);
-            if (!existsSync(p)) continue;
-            try {
-              rmSync(p, { recursive: true, force: true });
-              ctx.log(`removed ${p}`);
-            } catch (err) {
-              ctx.log(`failed to remove ${p}: ${(err as Error).message}`);
-            }
+      const toRemove = [...managed].filter((name) => !desired.has(name));
+      for (const root of resolvedPaths) {
+        for (const name of toRemove) {
+          const p = join(root, name);
+          if (!existsSync(p)) continue;
+          try {
+            rmSync(p, { recursive: true, force: true });
+            ctx.log(`removed ${p}`);
+          } catch (err) {
+            ctx.log(`failed to remove ${p}: ${(err as Error).message}`);
           }
         }
+      }
 
-        const nextManaged = [...desired].filter(
-          (name) => managed.has(name) || installed.has(name),
-        );
-        stateStore.write({ installed: [...nextManaged].sort() });
-        ctx.log(
-          `managed now (${nextManaged.length}): ${
-            nextManaged.join(", ") || "<none>"
-          }; removed ${toRemove.length}`,
-        );
+      const nextManaged = [...desired].filter(
+        (name) => managed.has(name) || installed.has(name),
+      );
+      stateStore.write({ installed: [...nextManaged].sort() });
+      ctx.log(
+        `managed now (${nextManaged.length}): ${
+          nextManaged.join(", ") || "<none>"
+        }; removed ${toRemove.length}`,
+      );
 
-        if (failed.length > 0) {
-          throw new Error(
-            `install failed for ${failed.length} skill(s): ${failed.join(", ")}`,
-          );
-        }
-      };
-    },
-  };
+      if (failed.length > 0) {
+        throw new Error(
+          `install failed for ${failed.length} skill(s): ${failed.join(", ")}`,
+        );
+      }
+    };
+  });
 }

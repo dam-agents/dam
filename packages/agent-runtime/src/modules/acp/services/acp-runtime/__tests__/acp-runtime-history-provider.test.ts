@@ -6,7 +6,7 @@ import type { HistoryProvider } from "../../../infrastructure/history-provider.j
  * TEST_OVERVIEW: cold session fills from the image's session-history provider
  * instead of the harness.
  *
- * When the runtime-manifest declares a sessionHistory command, a cold
+ * When the runtime-manifest declares a sessionHistory provider, a cold
  * session/load runs it and fills the Session Transcript from its output — no
  * harness process is involved and the response is synthesized with
  * placeholder metadata. The harness has then never loaded the session, so the

@@ -278,7 +278,7 @@ export function createGitHubRestClient(clientOpts: {
             : visit(target);
         }
         const parentPath = path.posix.dirname(p);
-        if (!isNotFound(r) || parentPath === ".") return r;
+        if (!isGithubNotFound(r) || parentPath === ".") return r;
         const parent = await visit(parentPath);
         if (!parent.ok || parent.value.path === parentPath) return r;
         return visit(
@@ -312,7 +312,7 @@ export function createGitHubRestClient(clientOpts: {
           opts,
         );
         if (!listing.ok) {
-          if (viaLink && isNotFound(listing)) continue;
+          if (viaLink && isGithubNotFound(listing)) continue;
           return listing;
         }
         if (!Array.isArray(listing.value)) {
@@ -435,12 +435,21 @@ function sourceFetchFailed(host: DetectedOwnerRepo) {
     });
 }
 
-function isNotFound(res: Result<unknown, SkillsDomainError>): boolean {
+export function isGithubNotFound(
+  res: Result<unknown, SkillsDomainError>,
+): boolean {
   return (
     !res.ok &&
     res.error.kind === "UpstreamGitHubError" &&
     res.error.status === 404
   );
+}
+
+export async function anonymousFirst<T>(
+  call: (opts: GithubFetchOpts) => Promise<Result<T, SkillsDomainError>>,
+): Promise<Result<T, SkillsDomainError>> {
+  const anonymous = await call({ withAuth: false });
+  return isGithubNotFound(anonymous) ? call({ withAuth: true }) : anonymous;
 }
 
 function symlinkTarget(linkPath: string, body: unknown): string | null {

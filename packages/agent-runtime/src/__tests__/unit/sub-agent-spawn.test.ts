@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { subAgentSpawnIn } from "../../modules/acp/infrastructure/sub-agent-spawn.js";
+import { toolCallOutcomeIn } from "../../modules/acp/infrastructure/tool-call-outcome.js";
 
 /**
  * TEST_OVERVIEW: The spawn-line reader that lets an outcome delivered later
@@ -28,10 +28,14 @@ function frame(
   };
 }
 
-describe("subAgentSpawnIn", () => {
+function spawnOf(frame: unknown) {
+  return toolCallOutcomeIn(frame)?.subAgentSpawn ?? null;
+}
+
+describe("toolCallOutcomeIn sub-agent spawn", () => {
   it("reads the id from a tool result's spawn line", () => {
     expect(
-      subAgentSpawnIn(
+      spawnOf(
         frame({
           rawOutput: "[invoke] spawned six -> agent-aaaa1111\nneeds: isolation",
         }),
@@ -41,7 +45,7 @@ describe("subAgentSpawnIn", () => {
 
   it("reads every id once across text blocks, with or without a line-number prefix", () => {
     expect(
-      subAgentSpawnIn(
+      spawnOf(
         frame({
           rawOutput: [
             {
@@ -64,7 +68,7 @@ describe("subAgentSpawnIn", () => {
 
   it("ignores a call that is still running", () => {
     expect(
-      subAgentSpawnIn(
+      spawnOf(
         frame({
           status: "in_progress",
           rawOutput: "[invoke] spawned six -> agent-aaaa1111",
@@ -75,7 +79,7 @@ describe("subAgentSpawnIn", () => {
 
   it("ignores updates that are not tool call updates", () => {
     expect(
-      subAgentSpawnIn(
+      spawnOf(
         frame({
           sessionUpdate: "agent_message_chunk",
           rawOutput: "[invoke] spawned six -> agent-aaaa1111",
@@ -86,11 +90,11 @@ describe("subAgentSpawnIn", () => {
 
   it("ignores a frame with no session and output with no spawn line", () => {
     expect(
-      subAgentSpawnIn(
+      spawnOf(
         frame({ rawOutput: "[invoke] spawned six -> agent-aaaa1111" }, null),
       ),
     ).toBeNull();
-    expect(subAgentSpawnIn(frame({ rawOutput: "all done" }))).toBeNull();
-    expect(subAgentSpawnIn(frame({}))).toBeNull();
+    expect(spawnOf(frame({ rawOutput: "all done" }))).toBeNull();
+    expect(spawnOf(frame({}))).toBeNull();
   });
 });

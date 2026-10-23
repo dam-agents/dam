@@ -4,13 +4,13 @@ import type {
   SkillsService,
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
+import { subPathEscapes } from "agent-runtime-api/skill-tree";
 import { makeSkillName, type SkillName } from "../domain/skill-name.js";
 import { makeSkillPaths, type SkillPath } from "../domain/skill-path.js";
 import type { GitHubRestClient } from "../infrastructure/github-rest-client.js";
 import { detectGithubOwnerRepo } from "../infrastructure/github-rest-client.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
 import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
-import { subPathEscapes } from "../infrastructure/local-skill-repository.js";
 import { runInstall } from "./install.js";
 import { runPublish } from "./publish.js";
 import { runScan } from "./scan.js";
