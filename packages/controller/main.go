@@ -202,17 +202,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 	go idleChecker.RunLoop(ctx)
 
-	warmPool := reconciler.NewWarmPoolManager(client, cfg)
-	go warmPool.RunLoop(ctx)
-
-	storageMigration := reconciler.NewStorageMigrationManager(client, dynClient, cfg)
-	go storageMigration.RunLoop(ctx)
-
 	orphanSweep := func() {
 		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
 		start := time.Now()
-		agentReconciler.ReconcileOrphanPVCs(sctx)
-		agentReconciler.ReconcileRetainedVolumes(sctx)
 		agentReconciler.ReconcileOrphanLeafSecrets(sctx)
 		agentReconciler.ReconcileOrphanMachines(sctx)
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))

@@ -400,33 +400,6 @@ func TestTheSweepForgetsTheMachinesTheRunnerNoLongerHolds(t *testing.T) {
 	assert.Empty(t, node.deleted)
 }
 
-// TEST_SCENARIO: an aborted migration marks the machine it could not delete as left, and that mark is the only record of a machine the Agent no longer claims. The informer cache can still hold the copy from before the abort, so a sweep that keeps the machine on that copy's word must keep the mark too, or the machine is never collected.
-func TestASweepKeepsTheMarkOfAMachineItKept(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.Reconcile(ctx, agent))
-	require.Contains(t, node.specs, "my-agent")
-
-	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-	require.NoError(t, indexer.Add(stored.DeepCopy()))
-	ann := stored.GetAnnotations()
-	ann[annRuntimeMigrationMachineLeft] = "true"
-	stored.SetAnnotations(ann)
-	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
-	require.NoError(t, err)
-	r.WithAgentCache(cache.NewGenericLister(indexer, AgentsGVR.GroupResource()))
-
-	r.ReconcileOrphanMachines(ctx)
-
-	assert.NotContains(t, node.deleted, "my-agent", "the cache's copy before the abort still names the machine")
-	after, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "true", after.GetAnnotations()[annRuntimeMigrationMachineLeft], "so the mark stays until the machine goes")
-}
-
 type unreadableAgentCache struct{}
 
 var errUnreadableCache = stderrors.New("the agent cache cannot be read")

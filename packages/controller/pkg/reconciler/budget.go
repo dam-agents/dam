@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,144 +15,6 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
-
-// UNIT_BOUNDARY_DESCRIPTION: the refusal a person reads, or empty when the start is admitted — the message is the verdict, so there is no second flag to disagree with it.
-func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, owner string) (string, error) {
-	if owner == "" || agent.Spec.IsVM() {
-		return "", nil
-	}
-	up, err := r.agentDesiredUp(ctx, agent.Name, agent.Spec.IsVM())
-	if err != nil {
-		return "", err
-	}
-	if up {
-		return "", nil
-	}
-
-	lock := r.ownerLock(owner)
-	lock.Lock()
-	defer lock.Unlock()
-
-	reservedCPU, reservedMem, err := r.reservedByOwner(ctx, owner, agent.Name)
-	if err != nil {
-		return "", err
-	}
-	candCPU, candMem := r.limitsOf(&agent.Spec)
-	ceilCPU, ceilMem, err := r.ceilingFor(ctx, owner)
-	if err != nil {
-		return "", err
-	}
-
-	totalCPU := reservedCPU.DeepCopy()
-	totalCPU.Add(candCPU)
-	totalMem := reservedMem.DeepCopy()
-	totalMem.Add(candMem)
-	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
-		return fmt.Sprintf(
-			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — disable agents you aren't using to free room",
-			totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()), nil
-	}
-	return "", nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: this gate exists to stop a running machine growing past its owner's ceiling, so an unreachable runner means there is no such machine to protect — and refusing here would wedge the reconcile that creates the runner in the first place.
-func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, owner string) (string, error) {
-	if owner == "" || agent.Spec.IsVM() {
-		return "", nil
-	}
-	newCPU, newMem := r.limitsOf(&agent.Spec)
-	ns := r.config.Namespace
-	existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("reading agent statefulset: %w", err)
-	}
-	if existing.Spec.Replicas == nil || *existing.Spec.Replicas < 1 {
-		return "", nil
-	}
-	var oldCPU, oldMem resource.Quantity
-	found := false
-	for i := range existing.Spec.Template.Spec.Containers {
-		c := &existing.Spec.Template.Spec.Containers[i]
-		if c.Name == AgentContainerName {
-			oldCPU = c.Resources.Limits[corev1.ResourceCPU]
-			oldMem = c.Resources.Limits[corev1.ResourceMemory]
-			found = true
-		}
-	}
-	if !found {
-		return "", nil
-	}
-	if newCPU.Cmp(oldCPU) <= 0 && newMem.Cmp(oldMem) <= 0 {
-		return "", nil
-	}
-
-	lock := r.ownerLock(owner)
-	lock.Lock()
-	defer lock.Unlock()
-
-	reservedCPU, reservedMem, err := r.reservedByOwner(ctx, owner, agent.Name)
-	if err != nil {
-		return "", err
-	}
-	ceilCPU, ceilMem, err := r.ceilingFor(ctx, owner)
-	if err != nil {
-		return "", err
-	}
-	totalCPU := reservedCPU.DeepCopy()
-	totalCPU.Add(newCPU)
-	totalMem := reservedMem.DeepCopy()
-	totalMem.Add(newMem)
-	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
-		return fmt.Sprintf(
-			"this size takes your running agents to %s/%s CPU and %s/%s memory — shrink it, or stop another agent to free room",
-			totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()), nil
-	}
-	return "", nil
-}
-
-func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self string) (resource.Quantity, resource.Quantity, error) {
-	ns := r.config.Namespace
-	var cpu, mem resource.Quantity
-
-	sss, err := r.client.AppsV1().StatefulSets(ns).List(ctx, metav1.ListOptions{LabelSelector: LabelAgent})
-	if err != nil {
-		return cpu, mem, fmt.Errorf("listing agent statefulsets: %w", err)
-	}
-	up := make(map[string]bool, len(sss.Items))
-	for i := range sss.Items {
-		ss := &sss.Items[i]
-		if ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1 {
-			up[ss.Name] = true
-		}
-	}
-
-	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(ns).List(ctx, metav1.ListOptions{
-		LabelSelector: envoyOwnerLabel + "=" + owner,
-	})
-	if err != nil {
-		return cpu, mem, fmt.Errorf("listing owner agents: %w", err)
-	}
-	for i := range agents.Items {
-		item := &agents.Items[i]
-		if item.GetName() == self {
-			continue
-		}
-		a, err := FromCacheObject[apiv1.Agent](item)
-		if err != nil {
-			return cpu, mem, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
-		}
-		if a.Spec.IsVM() || !up[item.GetName()] {
-			continue
-		}
-		c, m := r.limitsOf(&a.Spec)
-		cpu.Add(c)
-		mem.Add(m)
-	}
-	return cpu, mem, nil
-}
 
 func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vm bool) (bool, error) {
 	if vm {
@@ -218,28 +79,6 @@ func parseQuantityOr(s string, def resource.Quantity) resource.Quantity {
 		return def
 	}
 	return q
-}
-
-func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resource.Quantity, resource.Quantity, error) {
-	obj, err := r.dynamic.Resource(UserBudgetsGVR).Namespace(r.config.Namespace).Get(ctx, "budget-"+owner, metav1.GetOptions{})
-	if errors.IsNotFound(err) {
-		return r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget, nil
-	}
-	if err != nil {
-		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("reading userbudget: %w", err)
-	}
-	b, err := FromCacheObject[apiv1.UserBudget](obj)
-	if err != nil {
-		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("decoding userbudget %s: %w", obj.GetName(), err)
-	}
-	cpu, mem := r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget
-	if b.Spec.CPU != nil {
-		cpu = *b.Spec.CPU
-	}
-	if b.Spec.Memory != nil {
-		mem = *b.Spec.Memory
-	}
-	return cpu, mem, nil
 }
 
 func (r *AgentReconciler) wakeAlreadyDenied(name, lastActivity string) bool {

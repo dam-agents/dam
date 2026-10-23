@@ -139,11 +139,11 @@ func (c *IdleChecker) check(ctx context.Context) {
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
-		effective := effectiveIdleTimeout(hibernationOverride(agent), isVMObject(agent), c.config.AgentBase)
+		effective := effectiveIdleTimeout(hibernationOverride(agent), c.config.AgentBase)
 		if effective > 0 && (shortest == 0 || effective < shortest) {
 			shortest = effective
 		}
-		if shouldRunMigrating(agent.GetAnnotations(), runtimeMigrationOfObject(agent), effective, now) {
+		if shouldRun(agent.GetAnnotations(), effective, now) {
 			continue
 		}
 

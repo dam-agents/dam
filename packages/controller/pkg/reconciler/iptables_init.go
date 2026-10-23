@@ -12,62 +12,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-
-	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 const iptablesInitContainerName = "egress-lockdown"
-
-func buildIptablesInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
-	cfgInit := cfg.AgentBase.IptablesInit
-	if cfgInit == nil || !cfgInit.Enabled || cfgInit.Image == "" || gatewayClusterIP == "" {
-		return nil
-	}
-
-	script := `set -eu
-echo "egress-lockdown: gateway=$GATEWAY_IP:$ENVOY_PORT"
-if iptables-nft -nL OUTPUT >/dev/null 2>&1; then
-    IPT=iptables-nft
-    IP6T=ip6tables-nft
-elif iptables-legacy -nL OUTPUT >/dev/null 2>&1; then
-    IPT=iptables-legacy
-    IP6T=ip6tables-legacy
-else
-    echo "egress-lockdown: FATAL — neither iptables-nft nor iptables-legacy works against this kernel (CONFIG_NF_TABLES and CONFIG_IP_NF_IPTABLES both absent?)" >&2
-    exit 1
-fi
-echo "egress-lockdown: backend=$IPT"
-"$IPT" -A OUTPUT -o lo -j ACCEPT
-"$IPT" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-"$IPT" -A OUTPUT -d "$GATEWAY_IP" -p tcp --dport "$ENVOY_PORT" -j ACCEPT
-"$IPT" -A OUTPUT -j DROP
-"$IP6T" -A OUTPUT -o lo -j ACCEPT
-"$IP6T" -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-"$IP6T" -A OUTPUT -j DROP
-echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
-`
-
-	runAsRoot := int64(0)
-	return &corev1.Container{
-		Name:    iptablesInitContainerName,
-		Image:   cfgInit.Image,
-		Command: []string{"/bin/sh", "-c", script},
-		Env: []corev1.EnvVar{
-			{Name: "GATEWAY_IP", Value: gatewayClusterIP},
-			{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
-		},
-		SecurityContext: &corev1.SecurityContext{
-			RunAsUser:                &runAsRoot,
-			RunAsNonRoot:             new(false),
-			AllowPrivilegeEscalation: new(false),
-			ReadOnlyRootFilesystem:   new(true),
-			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
-				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},
-			},
-		},
-	}
-}
 
 func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desired *corev1.Service, kind, name string) (*corev1.Service, error) {
 	cli := client.CoreV1().Services(desired.Namespace)

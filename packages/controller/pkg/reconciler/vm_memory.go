@@ -242,7 +242,7 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	byOwner := map[string][]*apiv1.Agent{}
 	for _, obj := range items {
 		a, err := FromCacheObject[apiv1.Agent](obj)
-		if err != nil || vmSideOf(a) == nil || a.Labels[envoyOwnerLabel] == "" {
+		if err != nil || !a.Spec.IsVM() || a.Labels[envoyOwnerLabel] == "" {
 			continue
 		}
 		byOwner[a.Labels[envoyOwnerLabel]] = append(byOwner[a.Labels[envoyOwnerLabel]], a)
@@ -380,7 +380,7 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 		if err != nil {
 			return hibernated, err
 		}
-		if _, ok := reclaimEligible(peer, effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase), now, r.reclaimFloor(peer, now, c.forRefusedStart)); !ok {
+		if _, ok := reclaimEligible(peer, effectiveIdleTimeout(peer.Spec.HibernationTimeout, r.config.AgentBase), now, r.reclaimFloor(peer, now, c.forRefusedStart)); !ok {
 			slog.InfoContext(ctx, "left an agent running: it stopped being idle while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
 			continue
 		}

@@ -210,25 +210,20 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	r.grantHolds.Delete(name)
 
 	machine := vmrunner.MachineSpec{
-		Image:           spec.Image,
-		CPUs:            max(r.config.VM.Runner.MachineCPUs, 1),
-		MemoryMiB:       memoryMiB,
-		StorageGiB:      storageGiB,
-		Env:             env,
-		CACert:          machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),
-		AllowCIDRs:      allow,
-		GatewayHostPort: gatewayHostPort,
-		GuestResolver:   resolver,
-		Revision:        agent.Annotations[annRollRev],
-		Running:         running,
-		PullAuths:       pullAuths,
-		ExpectSeed:      runtimeMigrationExpectSeed(agent),
-
+		Image:                spec.Image,
+		CPUs:                 max(r.config.VM.Runner.MachineCPUs, 1),
+		MemoryMiB:            memoryMiB,
+		StorageGiB:           storageGiB,
+		Env:                  env,
+		CACert:               machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),
+		AllowCIDRs:           allow,
+		GatewayHostPort:      gatewayHostPort,
+		GuestResolver:        resolver,
+		Revision:             agent.Annotations[annRollRev],
+		Running:              running,
+		PullAuths:            pullAuths,
 		NestedVirtualization: wantsNesting(agent, r.config.AgentTemplateDefaults) && r.config.VM.Runner.NestedVirtualization,
 		AdmitMiB:             admitMiB,
-	}
-	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
-		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
@@ -468,7 +463,7 @@ func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
 
 // UNIT_BOUNDARY_DESCRIPTION: an Agent's workspace has no backup, and a live List of the owner's Agents can read empty for a while on a cluster that shares its CRDs, so a machine one sweep finds unclaimed may be live. The informer cache is a second opinion beside that List, and time is the third: a machine is deleted only when both name no Agent for it and no sweep has found one for the grace. The first sweep that finds it unclaimed records when, and a sweep that finds it claimed forgets that, so a machine claimed again waits the whole grace. Anything an Agent names as a machine an aborted migration left keeps its mark until the machine is gone. With no owner, the machines are those of the host runner, which serves every owner.
 func (r *AgentReconciler) sweepMachines(ctx context.Context, owner string, ids []string, agents []unstructured.Unstructured, deleteMachine func(context.Context, string) error) {
-	claimed, abandoned := machineClaims(agents)
+	claimed := machineClaims(agents)
 	cached := r.cachedMachineClaims(owner)
 	if cached == nil {
 		slog.Warn("orphan machine GC: the agent cache cannot be read, no machine is collected this pass", "owner", owner)
@@ -481,17 +476,14 @@ func (r *AgentReconciler) sweepMachines(ctx context.Context, owner string, ids [
 		key := owner + "/" + id
 		if claimed[id] {
 			r.orphanMachines.Delete(key)
-			delete(abandoned, id)
 			continue
 		}
 		first, seen := r.orphanMachines.LoadOrStore(key, time.Now())
 		if !seen || time.Since(first.(time.Time)) < orphanGrace {
-			delete(abandoned, id)
 			continue
 		}
 		if err := deleteMachine(ctx, id); err != nil {
 			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
-			delete(abandoned, id)
 			continue
 		}
 		r.orphanMachines.Delete(key)
@@ -504,7 +496,6 @@ func (r *AgentReconciler) sweepMachines(ctx context.Context, owner string, ids [
 		}
 		return true
 	})
-	r.forgetLeftMachines(ctx, abandoned)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: which machines the informer cache's Agents say are theirs, read as the second opinion beside a sweep's live List: on a cluster that shares its CRDs the List can read empty for a while, and a machine deleted on it alone costs the owner every disk of their runner. A cache that cannot be read answers nothing at all, which keeps every machine, as the cache does for the runner. With no owner, every Agent in the namespace claims, since the host runner serves them all.
@@ -523,34 +514,19 @@ func (r *AgentReconciler) cachedMachineClaims(owner string) map[string]bool {
 	}
 	for _, obj := range items {
 		if u, ok := obj.(*unstructured.Unstructured); ok {
-			c, _ := machineClaims([]unstructured.Unstructured{*u})
-			maps.Copy(claimed, c)
+			maps.Copy(claimed, machineClaims([]unstructured.Unstructured{*u}))
 		}
 	}
 	return claimed
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which machine names the listed Agents claim, and which of them an aborted migration left behind. Such an Agent runs as a container again and no longer claims its machine, unless a new migration was requested since, which removes the machine itself before it builds a fresh one.
-func machineClaims(agents []unstructured.Unstructured) (claimed, left map[string]bool) {
-	claimed, left = map[string]bool{}, map[string]bool{}
+// UNIT_BOUNDARY_DESCRIPTION: which machines the listed Agents claim. An Agent's workspace has no backup, so a machine is kept unless every reading of the Agents, live and cached, fails to name one.
+func machineClaims(agents []unstructured.Unstructured) map[string]bool {
+	claimed := map[string]bool{}
 	for i := range agents {
-		ann := agents[i].GetAnnotations()
-		if ann[annRuntimeMigrationMachineLeft] != "" && ann[annRuntimeMigration] == "" {
-			left[agents[i].GetName()] = true
-			continue
-		}
 		claimed[agents[i].GetName()] = true
 	}
-	return claimed, left
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the runner no longer holds these machines, so the Agents that left them lose the mark. One whose delete failed stays marked for the next sweep.
-func (r *AgentReconciler) forgetLeftMachines(ctx context.Context, left map[string]bool) {
-	for id := range left {
-		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, id, map[string]*string{annRuntimeMigrationMachineLeft: nil}); err != nil {
-			slog.Warn("orphan machine GC: clearing the mark of a machine an aborted move left failed; the next sweep clears it", "agent", id, "error", err)
-		}
-	}
+	return claimed
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed without its claim: nobody could see what the claim holds, and an empty List of Agents can be a CRD event rather than an owner who left, so the claim stays for the owner's next vm Agent to build its runner on.
@@ -683,9 +659,6 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 		return err
 	}
 	halt := vmrunner.MachineSpec{Running: false}
-	if runtimeMigrationOfObject(agent).seedable() {
-		halt.Migration = &vmrunner.MachineMigration{}
-	}
 	st, err := client.Ensure(ctx, name, halt)
 	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
 	if err != nil {
@@ -1052,7 +1025,7 @@ func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agen
 func anyVMAgent(items []unstructured.Unstructured) bool {
 	for i := range items {
 		backend, _, _ := unstructured.NestedString(items[i].Object, "spec", "backend", "type")
-		if backend == "vm" || items[i].GetAnnotations()[annRuntimeMigration] != "" {
+		if backend == "vm" {
 			return true
 		}
 	}

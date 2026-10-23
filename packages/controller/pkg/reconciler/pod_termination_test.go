@@ -36,9 +36,6 @@ func TestTerminationReason_HomeVolumeFullFromTheTerminationMessage(t *testing.T)
 	assert.True(t, ok)
 	assert.Equal(t, apiv1.ReasonHomeVolumeFull, reason)
 	assert.Contains(t, message, "home volume is full")
-
-	_, restartReason := podRestarts(pod)
-	assert.Equal(t, apiv1.ReasonHomeVolumeFull, restartReason)
 }
 
 // TEST_SCENARIO: Any other termination message keeps the generic cause, so a container that writes its own text there is never mistaken for a full disk.

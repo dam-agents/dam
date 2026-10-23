@@ -8,13 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
-	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -68,32 +64,6 @@ func agentStatefulSet(name string, replicas int32) *appsv1.StatefulSet {
 		},
 		Spec: appsv1.StatefulSetSpec{Replicas: &replicas},
 	}
-}
-
-func TestIdleChecker_HibernatesIdleInstance(t *testing.T) {
-	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	agent := idleAgentCR("idle-agent", staleTime, nil)
-	ss := agentStatefulSet("idle-agent", 1)
-	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
-
-	checker.check(context.Background())
-
-	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "idle agent scaled to zero")
-
-	u, err := checker.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
-	var readyStatus, readyReason string
-	for _, c := range conds {
-		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionReady {
-			readyStatus, _ = m["status"].(string)
-			readyReason, _ = m["reason"].(string)
-		}
-	}
-	assert.Equal(t, string(metav1.ConditionFalse), readyStatus, "hibernated agent must report Ready=False")
-	assert.Equal(t, apiv1.ReasonHibernated, readyReason, "hibernated agent must carry the Hibernated reason")
 }
 
 func TestIdleChecker_SkipsRecentlyActiveInstance(t *testing.T) {
@@ -186,37 +156,6 @@ func TestIdleChecker_SkipsAgentAtZeroAndReportedHibernated(t *testing.T) {
 	checker.check(context.Background())
 
 	assert.False(t, probed, "a sleeping agent must not be probed or re-hibernated")
-}
-
-// TEST_SCENARIO: An agent held at zero without hibernation published still needs its status flipped.
-func TestIdleChecker_HibernatesAgentAtZeroWithoutPublishedHibernation(t *testing.T) {
-	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	agent := idleAgentCR("parked-agent", staleTime, nil)
-	ss := agentStatefulSet("parked-agent", 0)
-	checker, _ := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
-	probed := false
-	checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
-
-	checker.check(context.Background())
-
-	assert.True(t, probed, "an agent whose status has not caught up must still be swept")
-}
-
-// TEST_SCENARIO: A running pod is reaped even when its status wrongly reads hibernated.
-func TestIdleChecker_HibernatesRunningAgentDespiteHibernatedStatus(t *testing.T) {
-	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	agent := idleAgentCR("mislabelled-agent", staleTime, nil)
-	agent.Status.Conditions = hibernatedCondition()
-	ss := agentStatefulSet("mislabelled-agent", 1)
-	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
-
-	checker.check(context.Background())
-
-	got, err := client.AppsV1().
-		StatefulSets("test-agents").
-		Get(context.Background(), "mislabelled-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, int32(0), *got.Spec.Replicas, "a running pod must be reaped whatever its status says")
 }
 
 func TestIdleChecker_CheckInterval(t *testing.T) {
@@ -428,25 +367,6 @@ func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
 	assert.Equal(t, int32(0), settle(t, stalled), "a roll whose own pod never started is waiting on nothing of the owner's")
 }
 
-// TEST_SCENARIO: An install without virtualization runs no runner and its controller holds no grant on Deployments, so the read that finds the machines a roll waits on must not be attempted there: a refused read on every sweep would leave every idle agent awake for good.
-func TestIdleChecker_SweepsOnAnInstallWithoutVirtualization(t *testing.T) {
-	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	agent := idleAgentCR("idle-agent", staleTime, nil)
-	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("idle-agent", 1))
-	listed := false
-	checker.client.(*fake.Clientset).PrependReactor("list", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
-		listed = true
-		return true, nil, k8serrors.NewForbidden(schema.GroupResource{Resource: "deployments"}, "", nil)
-	})
-
-	checker.check(context.Background())
-
-	assert.False(t, listed, "the sweep must not ask for Deployments the controller holds no grant on")
-	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "the sweep hibernates without that read")
-}
-
 // TEST_SCENARIO: A runner roll starts while the sweep is probing the machine it will wait on. The probe is the last thing the sweep does before it hibernates, so a pin read before it would be stale and the machine would be halted under the roll. The sweep must read the pin under the owner's lock, the one a roll start takes, and leave that machine up.
 func TestIdleChecker_RollStartingDuringTheSweepKeepsItsMachineAwake(t *testing.T) {
 	ctx := context.Background()
@@ -560,16 +480,14 @@ func TestIdleChecker_LastUnreadyPodRollReleasesItsPin(t *testing.T) {
 	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "a stalled roll pins nothing, so its machine hibernates again")
 }
 
-// TEST_SCENARIO: A vm agent reads the chart's vm idle timeout only when it carries no override of its own; one that carries an override honours it as a container agent does, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.
+// TEST_SCENARIO: An Agent reads the chart's idle timeout only when it carries no override of its own; one that carries an override honours it, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.
 func TestEffectiveIdleTimeout(t *testing.T) {
-	base := config.AgentBase{IdleTimeout: config.Duration(time.Hour), VMIdleTimeout: config.Duration(5 * time.Minute)}
+	base := config.AgentBase{VMIdleTimeout: config.Duration(5 * time.Minute)}
 	never := &metav1.Duration{}
 	hour := &metav1.Duration{Duration: time.Hour}
-	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, true, base))
-	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(nil, true, base))
-	assert.Equal(t, time.Hour, effectiveIdleTimeout(hour, true, base))
-	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, false, base))
-	assert.Equal(t, time.Hour, effectiveIdleTimeout(nil, false, base))
+	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, base))
+	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(nil, base))
+	assert.Equal(t, time.Hour, effectiveIdleTimeout(hour, base))
 }
 
 // TEST_SCENARIO: A vm agent that carries a never-hibernate override outlives the chart's vm idle timeout, and one past its own positive override hibernates inside it.
