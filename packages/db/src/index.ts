@@ -61,6 +61,18 @@ export {
   spendCeilings,
 } from "./schema.js";
 export {
+  control,
+  controlAgents,
+  controlAgentSignals,
+  controlAgentStatus,
+  controlAgentConditions,
+  controlAgentL7Hosts,
+  controlAgentKitState,
+  controlUserBudgets,
+  controlAgentStore,
+  controlCrdSnapshots,
+} from "./control-schema.js";
+export {
   eq,
   and,
   or,
