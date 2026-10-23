@@ -4,7 +4,7 @@
 # deployed scripts against a stubbed provision: one that fails, one that hangs,
 # one that fails late, one that succeeds. No cluster, no Lima.
 set -euo pipefail
-step() { yq -r ".jobs.e2e.steps[] | select(.name == \"$1\") | .run" .github/workflows/e2e.yml; }
+step() { yq -r "[.jobs[].steps[] | select(.name == \"$1\") | .run] | .[0] // \"\"" .github/workflows/e2e.yml; }
 launch_raw="$(step 'Provision k3s in the background')"
 wait_raw="$(step 'Wait for the background k3s provision')"
 [ -n "$launch_raw" ] && [ -n "$wait_raw" ] ||

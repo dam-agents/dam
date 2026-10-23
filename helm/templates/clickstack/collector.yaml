@@ -29,7 +29,6 @@ data:
           http:
             endpoint: 0.0.0.0:4318
             include_metadata: true
-      {{- if .Values.virtualization.enabled }}
       # The VM runners are off the mesh, so they cannot push through the
       # AuthorizationPolicy that gates the OTLP receivers; this collector pulls
       # from them instead. Discovery is by pod, in the agent namespace, and only
@@ -52,7 +51,6 @@ data:
                 - source_labels: [__meta_kubernetes_pod_container_port_name]
                   regex: metrics
                   action: keep
-      {{- end }}
     processors:
       memory_limiter:
         check_interval: 5s
@@ -183,12 +181,12 @@ data:
           processors: [memory_limiter, resource/agent-identity, batch]
           exporters: [clickhouse]
         metrics:
-          receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
+          receivers: [otlp, prometheus/vm-runners]
           processors: [memory_limiter, resource/agent-identity, batch]
           exporters: [clickhouse]
         {{- if .Values.monitoring.enabled }}
         metrics/vm-pool:
-          receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
+          receivers: [otlp, prometheus/vm-runners]
           processors: [memory_limiter, resource/agent-identity, filter/vm-pool, batch]
           exporters: [prometheus]
         {{- end }}
@@ -246,9 +244,7 @@ spec:
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.clickstack.collector) | nindent 6 }}
     spec:
       enableServiceLinks: false
-      {{- if .Values.virtualization.enabled }}
       serviceAccountName: {{ $name }}
-      {{- end }}
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       # The ClickHouse exporter creates its schema (otel_logs/otel_metrics_*/…)
       # once, at collector start; it never retries the DDL, only the inserts.
@@ -315,7 +311,6 @@ spec:
         - name: config
           configMap:
             name: {{ $name }}
-{{- if .Values.virtualization.enabled }}
 ---
 # Pod discovery for the VM runner scrape above: read-only, and only in the
 # agent namespace, where the controller creates the runners.
@@ -357,5 +352,4 @@ subjects:
   - kind: ServiceAccount
     name: {{ $name }}
     namespace: {{ .Release.Namespace }}
-{{- end }}
 {{- end }}

@@ -275,14 +275,10 @@ spec:
             {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
-            {{- if .Values.virtualization.enabled }}
-            - name: VIRTUALIZATION_ENABLED
-              value: "true"
             - name: VM_POOL_STORAGE
               value: {{ .Values.virtualization.runner.storage | quote }}
             - name: VM_POOL_MEMORY
               value: {{ (((.Values.virtualization.runner.resources | default dict).limits) | default dict).memory | default "" | toString | quote }}
-            {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
               value: "true"
@@ -364,8 +360,6 @@ spec:
             - name: AGENT_WORK_DIR
               value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
-              value: {{ .Values.controller.agent.base.idleTimeout | quote }}
-            - name: AGENT_VM_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.vmIdleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
             # so create-time resource stamping (#1900) cannot drift from the

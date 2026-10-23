@@ -57,8 +57,8 @@ Every other volume the chart and the controller create is a claim, a ConfigMap, 
 ## Which pools the files reach
 
 - The MachineConfig carries `machineconfiguration.openshift.io/role: worker`.
-  It reaches the `worker` pool and every custom pool whose `machineConfigSelector` also selects `worker` MachineConfigs, as custom pools usually do (for example a pool for OpenShift sandboxed containers, Kata).
-  That is intended: VM runners and container agents may land on any worker that offers `/dev/kvm` or runs agents, and the directories are harmless on the others.
+  It reaches the `worker` pool and every custom pool whose `machineConfigSelector` also selects `worker` MachineConfigs, as custom pools usually do.
+  That is intended: a VM runner may land on any worker that offers `/dev/kvm`, and the directories are harmless on the others.
 - The KubeletConfig selects the `worker` pool by `pools.operator.machineconfiguration.openshift.io/worker`.
   MCO renders it as the MachineConfig `99-worker-generated-kubelet` with `role: worker`, so custom pools that inherit `worker` MachineConfigs get the thresholds and the reboot too.
 - A pool may take several KubeletConfigs; if one already targets the `worker` pool, consider merging these fields into it rather than adding another.
@@ -89,7 +89,7 @@ Pools update in parallel, so with two pools two nodes are down at once.
   oc get pods -n <platform-namespace> -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName
   ```
 
-- Every container agent restarts once, when its node drains, and every VM runner's restart reboots all of its owner's machines.
+- Every VM runner's restart reboots all of its owner's machines.
   An agent and its gateway on different pools restart at different times.
 
 Expect 6 to 10 minutes per node (drain plus an RHCOS reboot), times the node count of the largest pool, divided by its `maxUnavailable`.

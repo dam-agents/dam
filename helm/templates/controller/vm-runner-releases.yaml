@@ -1,5 +1,5 @@
 {{- $v := .Values.virtualization }}
-{{- if and $v.enabled $v.runner.releaseHostPath (not $v.runner.hostAddress) }}
+{{- if and $v.runner.releaseHostPath (not $v.runner.hostAddress) }}
 {{- /*
 The per-node runner release stager: the only writer of the node directory that
 `runner.releaseHostPath` names. It runs this chart's runner image and copies the

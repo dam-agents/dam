@@ -1,5 +1,5 @@
 {{- $v := .Values.virtualization }}
-{{- if and $v.enabled (not $v.runner.hostAddress) }}
+{{- if not $v.runner.hostAddress }}
 {{- /*
 The per-node image cache service: the only writer of the node directory
 `platform.vmImageCache.dir` derives from `imageCache.hostPath`. Every runner of
@@ -303,7 +303,7 @@ spec:
 {{- /*
 The same SCC the node cache already obliges an OpenShift install to name for
 its runners: this pod mounts that same host directory and runs as uid 0, and
-the chart's own agent SCC refuses a hostPath.
+no SCC the chart renders admits a hostPath.
 */}}
 {{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-image-cache" "scc" .) }}
 {{- end }}
