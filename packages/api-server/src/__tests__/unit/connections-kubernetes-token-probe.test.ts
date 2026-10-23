@@ -95,13 +95,13 @@ describe("Kubernetes token check", () => {
       },
     };
     const token = jwt({ exp: 1_792_800_000, sub: "x" });
-    await expect(
-      probeKubernetesToken(target(), token, 5_000),
-    ).resolves.toEqual({
-      status: "passed",
-      account: "system:serviceaccount:ops:deployer",
-      expiresAt: new Date(1_792_800_000 * 1000).toISOString(),
-    });
+    await expect(probeKubernetesToken(target(), token, 5_000)).resolves.toEqual(
+      {
+        status: "passed",
+        account: "system:serviceaccount:ops:deployer",
+        expiresAt: new Date(1_792_800_000 * 1000).toISOString(),
+      },
+    );
     expect(seen).toEqual([
       {
         method: "POST",
@@ -151,7 +151,9 @@ describe("Kubernetes token check", () => {
       5_000,
     );
     expect(outcome.status).toBe("failed");
-    expect(outcome.reason).toMatch(/not publicly trusted.*give the cluster's CA/);
+    expect(outcome.reason).toMatch(
+      /not publicly trusted.*give the cluster's CA/,
+    );
     expect(seen).toEqual([]);
   });
 

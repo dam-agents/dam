@@ -66,18 +66,14 @@ async function probeGitHubToken(
     };
   }
   if (res.ok) {
-    const user = githubUserSchema.safeParse(
-      await res.json().catch(() => null),
-    );
+    const user = githubUserSchema.safeParse(await res.json().catch(() => null));
     const expiresAt = githubExpiry(
       res.headers.get("github-authentication-token-expiration"),
     );
     const scopes = githubScopes(res.headers.get("x-oauth-scopes"));
     return {
       status: "passed",
-      ...(user.success
-        ? { account: stripControlChars(user.data.login) }
-        : {}),
+      ...(user.success ? { account: stripControlChars(user.data.login) } : {}),
       ...(expiresAt ? { expiresAt } : {}),
       ...(scopes ? { scopes } : {}),
     };
