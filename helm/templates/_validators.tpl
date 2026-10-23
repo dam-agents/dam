@@ -213,11 +213,7 @@ serve. Fail at render instead, where the operator is looking.
 {{- end -}}
 
 {{/*
-Every agent is a machine on its owner's VM runner, so the install has no
-backend to switch between and no agent pod to shape. Helm keeps a value
-nothing reads without a word, and the controller refuses to start on a field
-its config no longer has, so an install still carrying one of these keys
-fails the render instead.
+The install must carry the terms the person accepting them saw.
 */}}
 {{- define "platform.validate.termsRequired" -}}
 {{- if not (.Values.terms.text | default "" | trim) -}}
