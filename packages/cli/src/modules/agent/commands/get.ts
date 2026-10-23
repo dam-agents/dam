@@ -15,6 +15,7 @@ import {
 } from "../domain/agent-models.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { renderAvatar } from "../domain/agent-avatar.js";
 import { resolveAgentOrExit } from "./errors.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
@@ -67,6 +68,7 @@ function renderAgent(agent: AgentView, models: AgentModelsView): string {
     ["TEMPLATE", agent.templateId ?? "<custom>"],
     ["IMAGE", agent.image],
     ["STATE", displayState(agent)],
+    ["AVATAR", renderAvatar(agent.avatar)],
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
