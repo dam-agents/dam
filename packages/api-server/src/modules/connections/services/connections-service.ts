@@ -114,6 +114,7 @@ import {
   renewedAuth,
   writeToken,
   type CredentialWriterDeps,
+  type TokenAuth,
 } from "./credential-writer.js";
 import { recordAccountLabel } from "./account-label.js";
 import { accountLabelOf } from "../domain/account-label.js";
@@ -1488,21 +1489,29 @@ export function createConnectionsService(deps: {
       const secretPath = connectionSecretPath(built.auth);
 
       let auth = built.auth;
-      if (auth.kind === "client-credentials" && secretPath) {
-        const clientSecret = built.secrets.get(secretPath)?.["client_secret"];
-        if (!clientSecret) {
+      const mintFirstToken = async (
+        current: TokenAuth,
+        credential: {
+          field: "client_secret" | "private_key";
+          missing: string;
+          grant: string;
+        },
+        mint: (
+          secret: string,
+        ) => Promise<{ accessToken: string; expiresAt?: number }>,
+      ): Promise<TokenAuth> => {
+        const secret = secretPath
+          ? built.secrets.get(secretPath)?.[credential.field]
+          : undefined;
+        if (!secretPath || !secret) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `template ${template.id}: missing clientSecret`,
+            message: `template ${template.id}: missing ${credential.missing}`,
           });
         }
-        const minted = await mintClientCredentialsToken(deps.oauthEngine, {
-          connectionRef: `connection:${id}:${template.id}`,
-          auth,
-          clientSecret,
-        });
-        auth = {
-          ...auth,
+        const minted = await rejectIfInvalid(() => mint(secret));
+        const next: TokenAuth = {
+          ...current,
           connectedAt: Math.floor(Date.now() / 1000),
           expiresAt: minted.expiresAt,
         };
@@ -1517,47 +1526,45 @@ export function createConnectionsService(deps: {
           actorKind: "user",
           target: id,
           result: "success",
-          detail: { templateId: template.id, grant: "client_credentials" },
+          detail: { templateId: template.id, grant: credential.grant },
         });
+        return next;
+      };
+
+      if (auth.kind === "client-credentials") {
+        const credentialsAuth = auth;
+        auth = await mintFirstToken(
+          credentialsAuth,
+          {
+            field: "client_secret",
+            missing: "clientSecret",
+            grant: "client_credentials",
+          },
+          (clientSecret) =>
+            mintClientCredentialsToken(deps.oauthEngine, {
+              connectionRef: `connection:${id}:${template.id}`,
+              auth: credentialsAuth,
+              clientSecret,
+            }),
+        );
       }
 
-      if (auth.kind === "github-app" && secretPath) {
-        const privateKeyPem = built.secrets.get(secretPath)?.["private_key"];
-        if (!privateKeyPem) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `template ${template.id}: missing privateKey`,
-          });
-        }
+      if (auth.kind === "github-app") {
         const appAuth = auth;
-        const minted = await rejectIfInvalid(() =>
-          mintGitHubAppToken(deps.githubAppEngine, {
-            connectionRef: `connection:${id}:${template.id}`,
-            auth: appAuth,
-            privateKeyPem,
-          }),
-        );
-        auth = {
-          ...auth,
-          connectedAt: Math.floor(Date.now() / 1000),
-          expiresAt: minted.expiresAt,
-        };
-        built.secrets.set(secretPath, {
-          ...(built.secrets.get(secretPath) ?? {}),
-          access_token: minted.accessToken,
-          ...buildConnectionSdsFields(contributions, minted.accessToken),
-        });
-        securityLog("info", "oauth.token_mint", {
-          category: "credential",
-          actor: deps.ownerId,
-          actorKind: "user",
-          target: id,
-          result: "success",
-          detail: {
-            templateId: template.id,
+        auth = await mintFirstToken(
+          appAuth,
+          {
+            field: "private_key",
+            missing: "privateKey",
             grant: "github_app_installation",
           },
-        });
+          (privateKeyPem) =>
+            mintGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${id}:${template.id}`,
+              auth: appAuth,
+              privateKeyPem,
+            }),
+        );
       }
 
       if (effectiveInput.authKind === "sigv4" && auth.kind === "sigv4") {
