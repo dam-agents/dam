@@ -1,31 +1,21 @@
-import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
-import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
+import { WebSocket } from "ws";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
-import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
-import { keepAlive } from "./heartbeat.js";
+import {
+  createWakeGatedRelay,
+  type WakeGatedRelay,
+} from "./wake-gated-relay.js";
 
-const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const EVICT_CHANNEL = "terminal:evict";
 
-export interface TerminalRelay {
-  handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    agentId: string,
-    actor: RelayActor,
-  ): void;
-  close(): void;
-}
+export type TerminalRelay = WakeGatedRelay;
 
 // UNIT_BOUNDARY_DESCRIPTION: a terminal wakes a hibernated agent, unless its client asks with `wake=0`, as the web app does for a connect of its own rather than the user's: then it only waits out a wake already asked for, so a tab left open does not wake an agent its user just put to sleep. It holds the agent awake only once the agent's end is open, since the hold alone would wake it.
 export function createTerminalRelay(
@@ -36,13 +26,13 @@ export function createTerminalRelay(
   upstreamBase: (agentId: string) => string = (agentId) =>
     `ws://${podBaseUrl(agentId, namespace)}`,
 ): TerminalRelay {
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
-  addUpgradeSecurityHeaders(wss);
   const stamper = createActivityStamper(repo);
   const replicaId = randomUUID();
   const activeClients = new Map<string, WebSocket>();
-  const clientKey = (agentId: string, sessionId: string) =>
-    `${agentId}:${sessionId}`;
+  const params = (req: IncomingMessage) =>
+    new URL(req.url!, `http://${req.headers.host}`).searchParams;
+  const clientKey = (agentId: string, req: IncomingMessage) =>
+    `${agentId}:${params(req).get("sessionId") ?? "default"}`;
 
   function evictLocal(key: string, reason: string) {
     const ws = activeClients.get(key);
@@ -68,156 +58,59 @@ export function createTerminalRelay(
     } catch {}
   });
 
-  async function handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    agentId: string,
-    actor: RelayActor,
-  ) {
-    const url = new URL(req.url!, `http://${req.headers.host}`);
-    const sessionId = url.searchParams.get("sessionId") ?? "default";
-    const reset = url.searchParams.get("reset") === "1";
-    const waitOnly = url.searchParams.get("wake") === "0";
-    const lease = new URLSearchParams();
-    for (const name of ["harness", "provider", "model"]) {
-      const value = url.searchParams.get(name);
-      if (value) lease.set(name, value);
-    }
-
-    wss.handleUpgrade(req, socket, head, (client) => {
-      client.on("error", () => {
-        try {
-          client.terminate();
-        } catch {}
-      });
-      keepAlive(client);
-
-      const key = clientKey(agentId, sessionId);
+  const relay = createWakeGatedRelay({
+    repo,
+    upstreamBase,
+    ensureReady: (agentId, req) =>
+      repo.ensureReady(agentId, { waitOnly: params(req).get("wake") === "0" }),
+    upstreamPath: (agentId, req) => {
+      const query = params(req);
+      const sessionId = query.get("sessionId") ?? "default";
+      const reset = query.get("reset") === "1";
+      const lease = new URLSearchParams();
+      for (const name of ["harness", "provider", "model"]) {
+        const value = query.get(name);
+        if (value) lease.set(name, value);
+      }
+      return `/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`;
+    },
+    holdPresence: { fromOpen: presence },
+    onClient: (client, agentId, req) => {
+      const key = clientKey(agentId, req);
       evictLocal(key, "superseded");
       void bus.publish(EVICT_CHANNEL, JSON.stringify({ key, from: replicaId }));
       activeClients.set(key, client);
-
-      let release = () => {};
-      let clientGone = false;
       client.once("close", () => {
-        clientGone = true;
-        release();
         if (activeClients.get(key) === client) activeClients.delete(key);
       });
-
-      const pending: { data: Buffer; isBinary: boolean }[] = [];
-      let pendingBytes = 0;
-      let bufferOverflow = false;
-      const buffer = (data: Buffer, isBinary: boolean) => {
-        if (bufferOverflow) return;
-        pendingBytes += data.byteLength;
-        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
-          bufferOverflow = true;
-          try {
-            client.close(1013, "buffer full");
-          } catch {
-            client.terminate();
-          }
-          return;
-        }
-        pending.push({ data, isBinary });
-      };
-      client.on("message", buffer);
-
-      readyOrAnswering(
-        repo,
-        agentId,
-        repo.ensureReady(agentId, { waitOnly }),
-        `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
-        () => clientGone,
-      )
-        .then(
-          () =>
-            new Promise<WebSocket>((resolve, reject) => {
-              const ws = new WebSocket(
-                `${upstreamBase(agentId)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`,
-              );
-              ws.on("open", () => resolve(ws));
-              ws.on("error", (err) => {
-                ws.close();
-                reject(err);
-              });
-            }),
-        )
-        .then((upstream) => {
-          if (clientGone || bufferOverflow) {
-            try {
-              upstream.close();
-            } catch {}
-            return;
-          }
-          release = presence.acquire(agentId);
-          actor.attached();
-          client.off("message", buffer);
-          for (const { data, isBinary } of pending)
-            upstream.send(data, { binary: isBinary });
-          pending.length = 0;
-
-          client.on("message", (data, isBinary) => {
-            if (upstream.readyState !== WebSocket.OPEN) return;
-            upstream.send(data, { binary: isBinary });
-            stamper.bump(agentId);
-          });
-
-          upstream.on("message", (data, isBinary) => {
-            if (client.readyState === WebSocket.OPEN)
-              client.send(data, { binary: isBinary });
-          });
-
-          upstream.on("close", (code, reason) => {
-            if (client.readyState !== WebSocket.OPEN) return;
-            try {
-              client.close(
-                sanitizeCloseCode(code),
-                reason.toString() || "upstream closed",
-              );
-            } catch {
-              client.terminate();
-            }
-          });
-
-          upstream.on("error", () => {
-            if (client.readyState !== WebSocket.OPEN) return;
-            try {
-              client.close(1011, "upstream error");
-            } catch {
-              client.terminate();
-            }
-          });
-
-          client.on("close", () => {
-            if (upstream.readyState === WebSocket.OPEN) upstream.close();
-          });
-        })
-        .catch((err) => {
-          process.stderr.write(
-            `[terminal-relay] failed to connect: ${err?.message ?? err}\n`,
-          );
-          const reason = isAgentWakeTimeoutError(err)
-            ? `agent not ready: ${err.failure.kind}`
-            : "failed to connect to agent";
-          client.close(1011, reason);
-        });
-    });
-  }
+    },
+    onClientForwarded: (agentId) => stamper.bump(agentId),
+    closeOnWakeFailure: (err) => {
+      process.stderr.write(
+        `[terminal-relay] failed to connect: ${(err as Error)?.message ?? err}\n`,
+      );
+      return isAgentWakeTimeoutError(err)
+        ? `agent not ready: ${err.failure.kind}`
+        : "failed to connect to agent";
+    },
+    closeOnUpstreamClose: (code, reason) => ({
+      code: sanitizeCloseCode(code),
+      reason: reason.toString() || "upstream closed",
+    }),
+    closeOnUpstreamError: (err, opened) => {
+      if (opened) return "upstream error";
+      process.stderr.write(
+        `[terminal-relay] failed to connect: ${err?.message ?? err}\n`,
+      );
+      return "failed to connect to agent";
+    },
+  });
 
   return {
-    handleUpgrade,
+    handleUpgrade: relay.handleUpgrade,
     close() {
       unsubscribeEvict();
-      for (const client of wss.clients) {
-        try {
-          client.close(1001, "server shutting down");
-        } catch {
-          client.terminate();
-        }
-      }
+      relay.close();
     },
   };
 }

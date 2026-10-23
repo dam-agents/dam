@@ -1,27 +1,15 @@
-import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
-import { keepAlive } from "./heartbeat.js";
-import { WebSocketServer, WebSocket } from "ws";
-import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
-import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
-import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
+import {
+  createWakeGatedRelay,
+  type WakeGatedRelay,
+} from "./wake-gated-relay.js";
 
 const PENDING_BUFFER_MAX_BYTES = 256 * 1024;
 
-export interface BrowserStreamRelay {
-  handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    agentId: string,
-    actor: RelayActor,
-  ): void;
-  close(): void;
-}
+export type BrowserStreamRelay = WakeGatedRelay;
 
 export async function requiresConnectionAddress(
   repo: Pick<AgentsRepository, "get">,
@@ -51,106 +39,16 @@ export function createBrowserStreamRelay(
   upstreamBase: (agentId: string) => string = (agentId) =>
     `ws://${podBaseUrl(agentId, namespace)}`,
 ): BrowserStreamRelay {
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
-  addUpgradeSecurityHeaders(wss);
-  const closeWs = (ws?: WebSocket, code?: number, reason?: string) => {
-    try {
-      ws?.close(code, reason);
-    } catch {
-      ws?.terminate();
-    }
-  };
-
-  function handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    agentId: string,
-    actor: RelayActor,
-  ) {
-    wss.handleUpgrade(req, socket, head, async (client) => {
-      client.on("error", () => client.terminate());
-      let release = () => {};
-
-      keepAlive(client);
-
-      let upstream: WebSocket | undefined;
-      let clientGone = false;
-      client.on("close", () => {
-        clientGone = true;
-        release();
-        closeWs(upstream);
-      });
-
-      const pending: [Buffer, boolean][] = [];
-      let pendingBytes = 0;
-      let overflow = false;
-      const buffer = (d: Buffer, b: boolean) => {
-        if (overflow) return;
-        pendingBytes += d.byteLength;
-        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
-          overflow = true;
-          closeWs(client, 1013, "buffer full");
-          return;
-        }
-        pending.push([d, b]);
-      };
-      client.on("message", buffer);
-
-      try {
-        await readyOrAnswering(
-          repo,
-          agentId,
-          repo.ensureReady(agentId, { waitOnly: true }),
-          `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
-          () => clientGone,
-        );
-      } catch (err) {
-        const reason = isAgentWakeTimeoutError(err)
-          ? `agent not ready: ${err.failure.kind}`
-          : "agent unavailable";
-        closeWs(client, 1011, reason);
-        return;
-      }
-      if (clientGone || overflow) return;
-
-      upstream = new WebSocket(`${upstreamBase(agentId)}${upstreamPath}`);
-      const us = upstream;
-      us.on("open", () => {
-        if (clientGone || overflow) return closeWs(us);
-        release = presence.acquire(agentId);
-        actor.attached();
-        client.off("message", buffer);
-        for (const [d, b] of pending) us.send(d, { binary: b });
-        client.on("message", (d, isBinary) => {
-          if (us.readyState === WebSocket.OPEN)
-            us.send(d, { binary: isBinary });
-        });
-        us.on("message", (d, isBinary) => {
-          if (client.readyState === WebSocket.OPEN)
-            client.send(d, { binary: isBinary });
-        });
-        us.on("close", (code, reason) =>
-          closeWs(
-            client,
-            sanitizeCloseCode(code),
-            reason.toString() || "browser stream closed",
-          ),
-        );
-      });
-      us.on("error", () => {
-        closeWs(us);
-        if (client.readyState === WebSocket.OPEN)
-          closeWs(client, 1011, "agent connection failed");
-      });
-    });
-  }
-
-  return {
-    handleUpgrade,
-    close() {
-      for (const client of wss.clients)
-        closeWs(client, 1001, "server shutting down");
-    },
-  };
+  return createWakeGatedRelay({
+    repo,
+    upstreamBase,
+    upstreamPath: () => upstreamPath,
+    ensureReady: (agentId) => repo.ensureReady(agentId, { waitOnly: true }),
+    bufferMaxBytes: PENDING_BUFFER_MAX_BYTES,
+    holdPresence: { fromOpen: presence },
+    closeOnUpstreamClose: (code, reason) => ({
+      code: sanitizeCloseCode(code),
+      reason: reason.toString() || "browser stream closed",
+    }),
+  });
 }
