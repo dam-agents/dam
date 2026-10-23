@@ -60,7 +60,7 @@ function closeButton(node: ReactNode): { onClick: Click } {
   throw new Error("no close button");
 }
 
-// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with its rule under it and none above, and the X is a 40 square that closes and hands the keyboard back like the small button, without JanUI being on.
+// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with its rule under it and none above, the X sits in a square 48 cell whose border reaches the panel's top, and the X is a 40 square that closes and hands the keyboard back like the small button, without JanUI being on.
 it("draws the unified right toolbar's header on the rail's row with a tile X", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -86,9 +86,30 @@ it("draws the unified right toolbar's header on the rail's row with a tile X", (
     html.match(/<button[^>]*data-testid="side-panel-close"[^>]*>/)?.[0] ?? "";
   expect(closeTag).toContain("size-10");
   expect(closeTag).toContain("[corner-shape:squircle]");
+  const cell =
+    html.match(/class="([^"]*self-stretch border-l[^"]*)"/)?.[1] ?? "";
+  expect(cell.split(" ")).toEqual(
+    expect.arrayContaining(["size-12", "-mt-2", "-mr-2"]),
+  );
+  expect(html).toMatch(
+    /class="[^"]*size-12[^"]*"><button[^>]*data-testid="side-panel-close"/,
+  );
   store.current.getState().setSidePanelTab("approvals");
   closeButton(PanelCloseButton({ tiles: true })).onClick(outsidePanel);
   expect(store.current.getState().sidePanelTab).toBeNull();
+});
+
+// TEST_SCENARIO: A docked panel's header starts at the panel's top and is 48 high, so its X keeps the cell that stretches over the header alone from the 8 px of padding it has always had.
+it("keeps the stretched cell in a docked panel's header", () => {
+  const html = renderToStaticMarkup(
+    createElement(TooltipProvider, null, PanelCloseButton({ tiles: true })),
+  );
+  const cell =
+    html.match(/class="([^"]*self-stretch border-l[^"]*)"/)?.[1] ?? "";
+  expect(cell.split(" ")).toContain("pl-2");
+  expect(cell).not.toContain("size-12");
+  expect(cell).not.toContain("-mt-2");
+  expect(cell).not.toContain("-mr-2");
 });
 
 // TEST_SCENARIO: The X is the last item of a panel's top bar, after the panel's own buttons, with a border between them; a panel outside the shell's provider, such as the classic chat's column, keeps the classic 48 px header and its rule.

@@ -43,19 +43,33 @@ function ShownWhereItCloses({
  * full-screen panel there has its own back button, unless the panel keeps a
  * top bar of its own instead. Under the Unified right toolbar experiment it
  * is a 40 px tile of the rail's size rather than the small ghost button.
+ * SidebarSection's tiled header starts 8 px below the panel's top, so there
+ * the tile sits in a square cell that runs those 8 px plus the row's 40 px
+ * down to the panel's rule; a docked panel's header starts at the top, and
+ * its X keeps the cell that stretches over the header alone.
  */
-export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
+export function SidePanelCloseButton({
+  onClose,
+  squareCell = false,
+}: {
+  onClose?: () => void;
+  squareCell?: boolean;
+}) {
   const tiles = useContext(RightToolbarTiles);
-  return <PanelCloseButton onClose={onClose} tiles={tiles} />;
+  return (
+    <PanelCloseButton onClose={onClose} tiles={tiles} squareCell={squareCell} />
+  );
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the X's chrome and close behavior, told which variant the panel's shell draws so an open panel updates with the Unified right toolbar experiment instead of reading a marker off the root.
 export function PanelCloseButton({
   onClose,
   tiles,
+  squareCell = false,
 }: {
   onClose?: () => void;
   tiles: boolean;
+  squareCell?: boolean;
 }) {
   // UNIT_BOUNDARY_DESCRIPTION: JanUI, and any shell whose panel keeps a top bar of its own under the Unified right toolbar experiment, draw no back button over a narrow panel, so those panels keep the X; the layout is read off the root, which does not change without a reload.
   const newLayout =
@@ -79,7 +93,8 @@ export function PanelCloseButton({
     <ShownWhereItCloses ownClose={onClose !== undefined}>
       <div
         className={cn(
-          "flex shrink-0 items-center self-stretch border-l border-border pl-2",
+          "flex shrink-0 items-center justify-center self-stretch border-l border-border",
+          squareCell ? "-mt-2 -mr-2 size-12 pt-2" : "pl-2",
           !newLayout && !tiles && "max-md:hidden",
         )}
       >
