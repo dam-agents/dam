@@ -541,8 +541,6 @@ export function createSpendLedger(db: Db): SpendLedger {
       );
       return rows.map((r) => {
         const measured = times.get(`${r.callingAgentId}\u0000${r.sessionId}`);
-        // A day read prunes the calls older than 30 days, so a stale firstAt
-        // would name a later day than firstDay; keep days only then.
         const time =
           measured && utcDay(new Date(measured.firstAt)) === r.firstDay
             ? measured
