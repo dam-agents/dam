@@ -1,4 +1,5 @@
 import {
+  AUTH_ERROR_HINT,
   capInlineImages,
   jsonRpcErrorDetails,
   promptBlockSchema,
@@ -23,8 +24,7 @@ export function undeliveredOf(
   return { id, recordedAt, ...capInlineImages(parsed.data) };
 }
 
-const AUTH_HINT =
-  "Authentication Error: Ensure the API/OAuth credential secret is correct and linked to this agent (Agents > select agent > Secrets).\n\nError: ";
+const AUTH_HINT = `${AUTH_ERROR_HINT}\n\nError: `;
 
 export function rewriteAuthError(line: string): string {
   if (!line.includes("authentication_error")) return line;
