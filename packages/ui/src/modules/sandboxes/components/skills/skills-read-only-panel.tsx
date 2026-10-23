@@ -187,7 +187,7 @@ export function SkillsReadOnlyPanel({
         )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           {mode === "never-run"
-            ? "The source list is known before first boot; which of its skills are installed isn&rsquo;t."
+            ? "The source list is known before first boot; which of its skills are installed isn’t."
             : "Sources stay editable while stopped. Reading what a private one contains needs the agent running."}
         </p>
       </section>
