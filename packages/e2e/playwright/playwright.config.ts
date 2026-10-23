@@ -1,7 +1,5 @@
 import { defineConfig, devices, type Project } from "@playwright/test";
 
-import { laneBackend } from "./src/lib/lane.js";
-
 const baseURL = process.env.PLATFORM_BASE_URL ?? "http://localhost:4444";
 
 const storageState = "./.auth/user.json";
@@ -55,10 +53,7 @@ const suite: NamedProject[] = [
   },
   {
     name: "own-agents",
-    testMatch:
-      laneBackend === "vm"
-        ? /\/(17|18|20|22|23|25|27|29)-.*\.spec\.ts$/
-        : /\/(17|18|19|25)-.*\.spec\.ts$/,
+    testMatch: /\/(17|18|19|22|23|25|27|29)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
@@ -113,14 +108,10 @@ const suite: NamedProject[] = [
 
 const prSkip =
   process.env.E2E_SCOPE === "pr"
-    ? new RegExp(
-        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|25|26|27" : "12|18|21"})-`,
-      )
+    ? new RegExp("\\/(12|18|19|21|23|25|26|27)-")
     : undefined;
 
-const prEmpty = new Set(
-  laneBackend === "vm" ? ["new-layout", "agent-backend"] : [],
-);
+const prEmpty = new Set(["new-layout", "agent-backend"]);
 
 const agentBackend: NamedProject = {
   name: "agent-backend",
@@ -138,16 +129,16 @@ const runnerRelease: NamedProject = {
   use: { ...devices["Desktop Chrome"], storageState },
 };
 
-const projects = (
-  laneBackend === "vm" ? [...suite, agentBackend, runnerRelease] : suite
-).filter(({ name }) => !prSkip || !prEmpty.has(name));
+const projects = [...suite, agentBackend, runnerRelease].filter(
+  ({ name }) => !prSkip || !prEmpty.has(name),
+);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the smoke suite's Playwright projects: which specs a run
- * takes, in what order, and on which Backend. E2E_VIRTUALIZATION picks the lane.
- * E2E_SCOPE=pr narrows a pull request's run to the specs that fail for real there, and
- * the merge queue, the nightly run and a tag take every one (docs/architecture/e2e.md).
- * No spec a PR run keeps reads state an excluded spec creates.
+ * takes, and in what order. E2E_SCOPE=pr narrows a pull request's run to the specs
+ * that fail for real there, and the merge queue, the nightly run and a tag take every
+ * one (docs/architecture/e2e.md). No spec a PR run keeps reads state an excluded spec
+ * creates.
  */
 export default defineConfig({
   testDir: "./src/tests",

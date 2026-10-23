@@ -10,7 +10,7 @@ export interface KeepAwake {
   lastFailure: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what keeps a vm Agent out of the idle sweep, which hibernates a machine whose last activity is older than the chart-wide `controller.agent.base.vmIdleTimeout`: a wake writes the `agent-platform.ai/last-activity` stamp that sweep reads, and this writes one every `everyMs`. A vm Agent ignores its own hibernation timeout, so this is the only thing that decides for that lane. The interval is the caller's to stop, and a wake that fails is counted rather than thrown: the spec that keeps a machine awake through an upgrade expects the api-server itself to roll, so one refusal must not fail the spec, and the first failure is logged because a keep-awake path broken for another reason otherwise shows up only as the hibernation it caused.
+// UNIT_BOUNDARY_DESCRIPTION: what keeps a vm Agent out of the idle sweep, which hibernates a machine whose last activity is older than the chart-wide `controller.agent.base.vmIdleTimeout`: a wake writes the `agent-platform.ai/last-activity` stamp that sweep reads, and this writes one every `everyMs`. A machine ignores its own hibernation timeout, so this is the only thing that decides for it. The interval is the caller's to stop, and a wake that fails is counted rather than thrown: the spec that keeps a machine awake through an upgrade expects the api-server itself to roll, so one refusal must not fail the spec, and the first failure is logged because a keep-awake path broken for another reason otherwise shows up only as the hibernation it caused.
 export function keepAwake(
   wake: () => Promise<unknown>,
   { every = everyMs }: { every?: number } = {},
