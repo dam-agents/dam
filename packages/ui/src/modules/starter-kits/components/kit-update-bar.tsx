@@ -20,6 +20,8 @@ import { useKitName } from "../hooks/use-kit-name.js";
 import { useKitUpdateSessionId } from "../hooks/use-kit-update-session.js";
 import { KitUpdateChangesCard } from "./kit-update-changes-card.js";
 
+const SESSION_WAIT_MS = 120_000;
+
 export function KitUpdateBar({ agentId }: { agentId: string | null }) {
   const update = useKitUpdate(agentId);
   if (!agentId || !update) return null;
@@ -58,6 +60,12 @@ function KitUpdateBarContent({
     setStartedUpdate(null);
     openAgentSession(agentId, sessionId);
   }, [startedUpdate, sessionId, agentId, openAgentSession]);
+
+  useEffect(() => {
+    if (!startedUpdate) return;
+    const timer = setTimeout(() => setStartedUpdate(null), SESSION_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [startedUpdate]);
 
   const startUpdate = () =>
     start.mutate(agentId, {
