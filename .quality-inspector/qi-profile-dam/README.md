@@ -18,12 +18,24 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
   The GitHub sign-in's pages are the only `github.com` paths in `egress`, each with its method — the inspector's kit admits no other shape there; `suite/lib/sandbox.ts` → `githubSignIn` drives them, so a test never names GitHub.
   `controller.gatewayUpstreamExtraCAs` is the VM gateway's CA, so nested gateways and the api-server trust the TLS it intercepts.
   `bin/sandbox check` proves the accounts; `suite/lib/sandbox.ts` is the test person; `egress` names only the sandbox repository's issue and pull-request writes, git's clone and push of it (quality-inspector 3.9.0 or later), the GitHub sign-in and Slack.
-- `scenarios/` — the product team's flows the inspector replays nightly.
+- `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, and what the nested install cannot do.
   User-facing only — never implementation detail.
 
 **Keep it in step with the chart.**
 A change that alters what a fresh install needs — a new prerequisite, a renamed value the QA install sets (`keycloak.testUser`, `keycloak.extraTestUsers`, `terms`, `ingress.catchAllAppHost`) — updates `profile.json` in the same PR.
+
+## Smoke regression suite
+
+The journeys every release must keep, one file each in `scenarios/`.
+What goes in, how it stays small and when a journey leaves: [`docs/guidelines/smoke-regression-suite.md`](../../docs/guidelines/smoke-regression-suite.md).
+Adding, renaming or removing a file updates this table in the same PR.
+
+| Journey                                                                                               | What it walks                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`a-users-full-day-from-login-to-slack`](scenarios/a-users-full-day-from-login-to-slack.md)           | create an agent, connect GitHub through the sign-in, a pull request asked for in chat, connect Slack, a scheduled task posts to Slack while the agent sleeps |
+| [`agent-files-a-github-issue-asked-in-slack`](scenarios/agent-files-a-github-issue-asked-in-slack.md) | connect GitHub and Slack, an issue asked for in a Slack thread                                                                                               |
+| [`agent-opens-a-pull-request-asked-in-slack`](scenarios/agent-opens-a-pull-request-asked-in-slack.md) | connect GitHub and Slack, a pull request asked for in a Slack thread                                                                                         |
 
 ## Delivery
 
