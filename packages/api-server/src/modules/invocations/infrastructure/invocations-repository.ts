@@ -6,11 +6,16 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   sql,
   type Db,
   invocations as invocationsTable,
 } from "db";
-import type { InvocationHarnessConfig } from "api-server-api";
+import type {
+  InvocationHarnessConfig,
+  InvocationOutput,
+  InvocationOutputStream,
+} from "api-server-api";
 
 export type InvocationStatus = "running" | "done" | "failed";
 
@@ -19,6 +24,7 @@ export type InvocationOrigin = "tool" | "script";
 export interface InvocationSpec {
   label: string | null;
   prompt: string;
+  script: string | null;
   templateId: string | null;
   image: string | null;
   connections: string[];
@@ -36,6 +42,9 @@ export interface InvocationRow extends InvocationSpec {
   result: unknown;
   status: InvocationStatus;
   errorReason: string | null;
+  exitCode: number | null;
+  output: InvocationOutput | null;
+  outputExpiresAt: Date | null;
   createdAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
@@ -63,6 +72,11 @@ export interface InvocationsRepository {
   get(id: string): Promise<InvocationRow | null>;
   complete(id: string, result: unknown): Promise<boolean>;
   fail(id: string, reason: string): Promise<void>;
+  finishScript(id: string, finish: ScriptFinish): Promise<boolean>;
+  dropOutputStream(id: string, stream: InvocationOutputStream): Promise<void>;
+  clearOutput(id: string): Promise<void>;
+  listExpiredOutputs(now: Date, limit: number): Promise<InvocationRow[]>;
+  listScriptsByRoot(rootDriverId: string): Promise<InvocationRow[]>;
   listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
   listRunning(limit: number): Promise<InvocationRow[]>;
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
@@ -80,6 +94,21 @@ export interface InvocationsRepository {
   deleteReapedByRoot(rootDriverId: string): Promise<number>;
 }
 
+export type ScriptFinish =
+  | {
+      status: "done";
+      exitCode: number;
+      output: InvocationOutput;
+      outputExpiresAt: Date | null;
+    }
+  | {
+      status: "failed";
+      exitCode: number | null;
+      errorReason: string;
+      output: InvocationOutput;
+      outputExpiresAt: Date | null;
+    };
+
 export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
   return {
     id: r.id,
@@ -88,6 +117,7 @@ export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     owner: r.owner,
     label: r.label,
     prompt: r.prompt,
+    script: r.script,
     templateId: r.templateId,
     image: r.image,
     connections: r.connections,
@@ -98,6 +128,9 @@ export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     result: r.result,
     status: r.status as InvocationStatus,
     errorReason: r.errorReason,
+    exitCode: r.exitCode,
+    output: r.output as InvocationOutput | null,
+    outputExpiresAt: r.outputExpiresAt,
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
@@ -119,6 +152,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         owner: input.owner,
         label: input.label,
         prompt: input.prompt,
+        script: input.script,
         templateId: input.templateId,
         image: input.image,
         connections: input.connections,
@@ -167,6 +201,67 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
             eq(invocationsTable.status, "running"),
           ),
         );
+    },
+
+    async finishScript(id, finish) {
+      const updated = await db
+        .update(invocationsTable)
+        .set({
+          status: finish.status,
+          exitCode: finish.exitCode,
+          output: finish.output,
+          outputExpiresAt: finish.outputExpiresAt,
+          errorReason: finish.status === "failed" ? finish.errorReason : null,
+          completedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(invocationsTable.id, id),
+            eq(invocationsTable.status, "running"),
+          ),
+        )
+        .returning({ id: invocationsTable.id });
+      return updated.length > 0;
+    },
+
+    async dropOutputStream(id, stream) {
+      const rest = sql`(${invocationsTable.output} - ${stream}::text)`;
+      await db
+        .update(invocationsTable)
+        .set({
+          output: sql`nullif(${rest}, '{}'::jsonb)`,
+          outputExpiresAt: sql`case when ${rest} = '{}'::jsonb then null else ${invocationsTable.outputExpiresAt} end`,
+        })
+        .where(eq(invocationsTable.id, id));
+    },
+
+    async clearOutput(id) {
+      await db
+        .update(invocationsTable)
+        .set({ output: null, outputExpiresAt: null })
+        .where(eq(invocationsTable.id, id));
+    },
+
+    async listExpiredOutputs(now, limit) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(lte(invocationsTable.outputExpiresAt, now))
+        .limit(limit);
+      return rows.map(toRow);
+    },
+
+    async listScriptsByRoot(rootDriverId) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(
+          and(
+            eq(invocationsTable.rootDriverId, rootDriverId),
+            isNotNull(invocationsTable.script),
+          ),
+        );
+      return rows.map(toRow);
     },
 
     async listExpiredRunning(now, limit) {

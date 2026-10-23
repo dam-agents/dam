@@ -37,6 +37,11 @@ function makeService(opts: {
       rec.deleted.push(id);
     },
     markTranscriptCaptured: async () => {},
+    finishScript: async () => true,
+    dropOutputStream: async () => {},
+    clearOutput: async () => {},
+    listExpiredOutputs: async () => [],
+    listScriptsByRoot: async () => [],
     deleteReapedByRoot: async () => 0,
   };
   const service = createInvocationsService({
@@ -57,6 +62,7 @@ function makeService(opts: {
     } as never,
     wakeAgent: async () => {},
     readHarnessConfigSupport: async () => null,
+    scriptOutputsAvailable: true,
   });
   return { rec, service };
 }

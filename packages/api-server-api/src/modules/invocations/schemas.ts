@@ -25,50 +25,98 @@ export const invocationHarnessConfigSchema = z
     { message: "harnessConfig needs a model, a mode or configOptions" },
   );
 
-export const spawnInvocationRequestSchema = z
-  .object({
-    harness: templateHarnessSchema.optional(),
-    image: z.string().min(1).optional(),
-    connections: z.array(z.string().min(1)).optional(),
+const spawnTargetShape = {
+  harness: templateHarnessSchema.optional(),
+  image: z.string().min(1).optional(),
+  connections: z.array(z.string().min(1)).optional(),
+  label: z.string().min(1).max(100).optional(),
+  ttlMs: z
+    .number()
+    .int()
+    .min(MIN_INVOCATION_TTL_MS)
+    .max(MAX_INVOCATION_TTL_MS)
+    .optional(),
+  ...agentSetupShape,
+  seed: agentSetupSeedSchema.optional(),
+  memory: z
+    .string()
+    .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '4Gi'")
+    .optional(),
+  cpu: z
+    .string()
+    .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
+    .optional(),
+};
+
+interface SpawnTargetFields {
+  harness?: unknown;
+  image?: unknown;
+  resources?: unknown;
+  cpu?: unknown;
+  memory?: unknown;
+}
+
+function refineSpawnTarget<S extends z.ZodType<SpawnTargetFields>>(
+  schema: S,
+): S {
+  return schema
+    .refine((d) => d.harness !== undefined || d.image !== undefined, {
+      message: "pass a harness, or an image",
+    })
+    .refine(
+      (d) =>
+        d.resources === undefined ||
+        (d.cpu === undefined && d.memory === undefined),
+      { message: "pass cpu and memory inside resources, not beside it" },
+    );
+}
+
+export const spawnInvocationRequestSchema = refineSpawnTarget(
+  z.object({
+    ...spawnTargetShape,
     prompt: z.string().min(1),
     schema: z.unknown(),
-    label: z.string().min(1).max(100).optional(),
-    ttlMs: z
-      .number()
-      .int()
-      .min(MIN_INVOCATION_TTL_MS)
-      .max(MAX_INVOCATION_TTL_MS)
-      .optional(),
-    ...agentSetupShape,
-    seed: agentSetupSeedSchema.optional(),
-    memory: z
-      .string()
-      .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '4Gi'")
-      .optional(),
-    cpu: z
-      .string()
-      .regex(/^\d+(\.\d+)?m?$/, "cpu must look like '2', '0.5' or '500m'")
-      .optional(),
     harnessConfig: invocationHarnessConfigSchema.optional(),
-  })
-  .refine((d) => d.harness !== undefined || d.image !== undefined, {
-    message: "pass a harness, or an image",
-  })
-  .refine(
-    (d) =>
-      d.resources === undefined ||
-      (d.cpu === undefined && d.memory === undefined),
-    { message: "pass cpu and memory inside resources, not beside it" },
-  );
+  }),
+);
+
+export const MAX_INVOCATION_SCRIPT_CHARS = 64 * 1024;
+
+export const spawnScriptInvocationRequestSchema = refineSpawnTarget(
+  z.object({
+    ...spawnTargetShape,
+    script: z.string().trim().min(1).max(MAX_INVOCATION_SCRIPT_CHARS),
+  }),
+);
 
 export const spawnInvocationResponseSchema = z.object({
   id: z.string().min(1),
+});
+
+export const INVOCATION_OUTPUT_STREAMS = ["stdout", "stderr"] as const;
+
+export const invocationOutputStreamSchema = z.enum(INVOCATION_OUTPUT_STREAMS);
+
+export const invocationOutputBlobSchema = z.object({
+  sizeBytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export const invocationOutputSchema = z.object({
+  stdout: invocationOutputBlobSchema.optional(),
+  stderr: invocationOutputBlobSchema.optional(),
 });
 
 export const invocationViewSchema = z.object({
   status: z.enum(["running", "done", "failed"]),
   result: z.unknown(),
   errorReason: z.string().optional(),
+  exitCode: z.number().int().optional(),
+  output: invocationOutputSchema.optional(),
+});
+
+export const invocationOutputLinkSchema = invocationOutputBlobSchema.extend({
+  url: z.string().min(1),
 });
 
 export const INVOCATIONS_TREE_MAX_IDS = 200;

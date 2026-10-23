@@ -6,6 +6,12 @@ import {
 } from "../domain/harness-config-refusal.js";
 import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import { createSetupFailure } from "./setup-failure.js";
+import type { ScriptOutputs } from "./script-outputs.js";
+
+const SCRIPT_STEP = "script";
+
+const NO_SCRIPT_RUNNER_REASON =
+  "the image's agent-runtime predates script sub-agents; rebuild the image on a current base image";
 
 export interface InvocationLivenessSweep {
   tick(): Promise<void>;
@@ -22,6 +28,8 @@ export interface CreateInvocationLivenessSweepDeps {
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   hasAgent: (agentId: string) => Promise<boolean>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  runsScripts: (agentId: string) => Promise<boolean | null>;
+  outputs: Pick<ScriptOutputs, "purgeExpired" | "purgeRoot">;
   batchSize: number;
   now?: () => Date;
 }
@@ -70,6 +78,13 @@ export function createInvocationLivenessSweep(
             await failSetup(row.id, HARNESS_CONFIG_STEP, refusal);
             continue;
           }
+          if (
+            row.script !== null &&
+            (await deps.runsScripts(row.id)) === false
+          ) {
+            await failSetup(row.id, SCRIPT_STEP, NO_SCRIPT_RUNNER_REASON);
+            continue;
+          }
           const restart = await deps.readTargetRestart(row.id);
           if (restart && restart.podRestarts > 0) {
             await failAndReap(
@@ -93,6 +108,7 @@ export function createInvocationLivenessSweep(
         await deps.reaper.reap(row);
         try {
           if (!(await deps.hasAgent(row.rootDriverId))) {
+            await deps.outputs.purgeRoot(row.rootDriverId);
             await deps.repo.deleteReapedByRoot(row.rootDriverId);
           }
         } catch (err) {
@@ -101,6 +117,7 @@ export function createInvocationLivenessSweep(
           );
         }
       }
+      await deps.outputs.purgeExpired(deps.batchSize);
     } finally {
       running = false;
     }

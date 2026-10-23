@@ -24,6 +24,7 @@ export const eventKind = z.enum([
   "harness-config",
   "satellite-outcome",
   "sub-agent-outcome",
+  "invocation-script",
   "session-message",
   "session-defaults",
   "startup-items",
@@ -389,6 +390,23 @@ export const subAgentOutcomeEvent = z.object({
   payload: subAgentOutcomeEventPayload,
 });
 
+export const invocationScriptEventPayload = z.object({
+  command: z.string().min(1),
+  deadline: z.string().datetime({ offset: true }),
+  reportBy: z.string().datetime({ offset: true }),
+});
+export type InvocationScriptEventPayload = z.infer<
+  typeof invocationScriptEventPayload
+>;
+
+export const invocationScriptEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("invocation-script"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: invocationScriptEventPayload,
+});
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a message one of the agent's Sessions sends into
  * another of its Sessions through the send_session_message tool. `from` names
@@ -429,6 +447,7 @@ export const event = z.discriminatedUnion("kind", [
   harnessConfigEvent,
   satelliteOutcomeEvent,
   subAgentOutcomeEvent,
+  invocationScriptEvent,
   sessionMessageEvent,
   sessionDefaultsEvent,
   startupItemsEvent,

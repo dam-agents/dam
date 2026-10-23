@@ -194,6 +194,7 @@ export async function composeRuntimeChannel(
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
+
   registry.register(createAgentInstructionsPlugin({ log }));
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(

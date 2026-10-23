@@ -265,6 +265,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "sub-agent-outcome" },
     defaultOn: true,
   },
+  "invocation-script": {
+    binding: { impl: "invocation-script" },
+    defaultOn: true,
+  },
   "session-message": {
     binding: { impl: "session-message" },
     defaultOn: true,

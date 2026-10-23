@@ -30,6 +30,7 @@ import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js
 import {
   composeSubAgentAwaitMarks,
   composeInvocationsForOwner,
+  type ScriptOutputs,
   createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
@@ -108,6 +109,7 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  scriptOutputs: ScriptOutputs;
   sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
@@ -197,6 +199,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       wakeAgent,
       frames: deps.delegationFrames,
       readHarnessConfigSupport,
+      scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
@@ -273,6 +276,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         },
       }).budgets,
     defaultLimits,
+    scriptOutputs: deps.scriptOutputs,
   };
 
   const readChatFormPreferences = createChatFormPreferencesReader(db);
@@ -336,6 +340,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     }),
     kbPublish: kbPublishGate,
     toolApprovalsFor: deps.toolApprovalsFor,
+    invocationScripts: deps.scriptOutputs,
   });
 
   const server = serve(

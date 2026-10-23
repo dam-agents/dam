@@ -51,7 +51,7 @@ export class InvocationFailed extends Error {
   }
 }
 
-type Setup = Pick<
+export type Setup = Pick<
   SpawnInvocationRequest,
   | "harness"
   | "image"
@@ -151,7 +151,23 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
 
-  const deadline = Date.now() + timeoutMs;
+  const view = await awaitInvocation(id, tag, { pollMs, timeoutMs });
+  if (view.status === "failed") {
+    log(
+      `failed ${tag} (${id})${view.errorReason ? `: ${view.errorReason}` : ""}`,
+    );
+    throw new InvocationFailed(id, tag, view.errorReason);
+  }
+  log(`done ${tag} (${id})`);
+  return view.result as T;
+}
+
+export async function awaitInvocation(
+  id: string,
+  tag: string,
+  opts: { pollMs: number; timeoutMs: number },
+): Promise<InvocationView & { status: "done" | "failed" }> {
+  const deadline = Date.now() + opts.timeoutMs;
   let consecutiveErrors = 0;
   for (;;) {
     let view: InvocationView;
@@ -163,24 +179,15 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
       consecutiveErrors = 0;
     } catch (err) {
       if (++consecutiveErrors >= 5) throw err;
-      await sleep(pollMs);
+      await sleep(opts.pollMs);
       continue;
     }
-    if (view.status === "done") {
-      log(`done ${tag} (${id})`);
-      return view.result as T;
-    }
-    if (view.status === "failed") {
-      log(
-        `failed ${tag} (${id})${view.errorReason ? `: ${view.errorReason}` : ""}`,
-      );
-      throw new InvocationFailed(id, tag, view.errorReason);
-    }
+    if (view.status !== "running") return { ...view, status: view.status };
     if (Date.now() > deadline) {
       throw new Error(
-        `spawn ${tag} (${id}) timed out after ${Math.round(timeoutMs / 1000)}s`,
+        `spawn ${tag} (${id}) timed out after ${Math.round(opts.timeoutMs / 1000)}s`,
       );
     }
-    await sleep(pollMs);
+    await sleep(opts.pollMs);
   }
 }

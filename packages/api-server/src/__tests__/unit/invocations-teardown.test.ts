@@ -37,6 +37,10 @@ function row(
     reapedAt: null,
     transcriptCaptured: false,
     transcriptTruncated: false,
+    script: null,
+    exitCode: null,
+    output: null,
+    outputExpiresAt: null,
     harnessConfig: null,
     driverSessionId: null,
     ...overrides,
@@ -70,6 +74,11 @@ function fakeRepo(rows: InvocationRow[]) {
       rows.filter((r) => r.rootDriverId === root && r.reapedAt === null),
     delete: async () => {},
     markTranscriptCaptured: calls.markTranscriptCaptured,
+    finishScript: async () => true,
+    dropOutputStream: async () => {},
+    clearOutput: async () => {},
+    listExpiredOutputs: async () => [],
+    listScriptsByRoot: async () => [],
     deleteReapedByRoot: calls.deleteReapedByRoot,
   };
   return { repo, calls };
@@ -215,7 +224,11 @@ describe("the driver cascade", () => {
       row("agent-d", { status: "done", reapedAt: new Date() }),
     ]);
     const reaper = reaperSpy();
-    await createDriverCascade({ repo, reaper })("root-1");
+    await createDriverCascade({
+      repo,
+      reaper,
+      outputs: { purgeRoot: async () => {} },
+    })("root-1");
     const reaped = reaper.reap.mock.calls.map(([r]) => r.id).sort();
     expect(reaped).toEqual(["agent-a", "agent-b", "agent-c"]);
     for (const call of reaper.reap.mock.calls) {
@@ -234,7 +247,11 @@ describe("the driver cascade", () => {
       row("agent-leaf", { driverAgentId: "agent-mid" }),
     ]);
     const reaper = reaperSpy();
-    await createDriverCascade({ repo, reaper })("agent-mid");
+    await createDriverCascade({
+      repo,
+      reaper,
+      outputs: { purgeRoot: async () => {} },
+    })("agent-mid");
     expect(calls.fail).toHaveBeenCalledWith(
       "agent-mid",
       "target agent deleted",
