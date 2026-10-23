@@ -1378,6 +1378,12 @@ export async function bootstrap() {
     spendHold: channelSpendHold,
     attendance: turnAttendance,
   });
+  const kbShareServing = composeKbShareServing({
+    db,
+    store: artifacts,
+    k8s: k8sClient,
+    grepDeadlineMs: config.kbShareGrepDeadlineMs,
+  });
   const shareHostGate = createByLinkHostGate(
     shareSignIns.map((signIn) => ({
       share: {
@@ -1402,12 +1408,7 @@ export async function bootstrap() {
           }),
           environments:
             signIn === publicShareSignIn ? environmentFrontDoor : null,
-          kbMcp: composeKbShareServing({
-            db,
-            store: artifacts,
-            k8s: k8sClient,
-            grepDeadlineMs: config.kbShareGrepDeadlineMs,
-          }),
+          kbMcp: kbShareServing,
         }),
       },
       content: {
