@@ -91,15 +91,14 @@ A flow that needs real Slack, real GitHub, a real model or real time passing is 
 - Creating a connection with a custom header; recreating a disconnected connection grants it to its agents again.
 - Creating an agent in one click from the Generalist card, and a Mock agent with a connection and the default provider.
 - Exchanging messages with an agent; a message sent while the agent is still answering keeps each reply under its own message.
-- A message that could not be delivered, an answer cut short, and a tab closed or reconnected mid-answer: each shown as such, never lost.
 - Deleting an inactive and an active session, landing on the right page.
 - The sidebar: dragging agents into a new order, sessions newest first, pinning a session above every agent, filtering and deleting a pinned session.
 - API keys and their scopes: a manage key creates and deletes agents, an operate key runs them, a read key only looks, and no key manages other keys.
 - Network rules for one path, and a waiting network approval shown in the open conversation.
 - Sharing a knowledge base.
 - Satellites: registering a machine, granting it to an agent, draining and removing it, and seeing it among Connections.
-- Slack with a mocked workspace: a channel any member drives, binding and unbinding from the chat, replies to unmentioned messages, one agent in two channels, a second workspace.
-- An agent that hibernates and wakes, restarts or loses its machine, with its files intact; a one-time task that fires once and records its delivery.
+- Slack with a mocked workspace: a channel any member drives, binding and unbinding from the chat, replies to unmentioned messages.
+- An agent that hibernates and wakes, restarts or loses its machine, with its files intact, and a scheduled task's fire reaching it.
 - The browser panel showing the user and the agent the same tab.
 
 ## Versions
