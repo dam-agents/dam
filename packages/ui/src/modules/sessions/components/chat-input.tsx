@@ -40,6 +40,7 @@ export interface ChatInputProps {
   onStop: () => void;
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
+  onBlockedClick?: () => void;
 }
 
 export function ChatInput({
@@ -50,6 +51,7 @@ export function ChatInput({
   onStop,
   onTakeBack,
   blockedReason,
+  onBlockedClick,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -189,7 +191,7 @@ export function ChatInput({
   const promptHistory = usePromptHistory(recallPrompt);
 
   const send = useCallback(() => {
-    if (!key || loadingSession) return;
+    if (!key || loadingSession || blockedReason) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
@@ -198,7 +200,14 @@ export function ChatInput({
     promptHistory.reset();
     clearDraftContent(key);
     onSend(text, files);
-  }, [key, loadingSession, clearDraftContent, onSend, promptHistory]);
+  }, [
+    key,
+    loadingSession,
+    blockedReason,
+    clearDraftContent,
+    onSend,
+    promptHistory,
+  ]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {
@@ -267,7 +276,7 @@ export function ChatInput({
             </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className={`flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0${blockedReason && onBlockedClick ? " cursor-pointer" : ""}`}
               value={input}
               onChange={(e) => {
                 promptHistory.reset();
@@ -275,9 +284,11 @@ export function ChatInput({
               }}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
+              onClick={blockedReason ? onBlockedClick : undefined}
               placeholder={placeholder}
               rows={1}
-              disabled={!key || !!blockedReason}
+              readOnly={!!blockedReason}
+              disabled={!key || (!!blockedReason && !onBlockedClick)}
             />
             {showStop && (
               <Button

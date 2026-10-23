@@ -27,7 +27,7 @@ Its rows start switched off, except the provider the owner clicked in the picker
 An agent holds one provider of a kind, so switching a row on locks the other rows of its kind.
 The UI names a provider by its Settings name, such as Bob Shell, not the connection's own name.
 With no provider Connection the owner holds, the chat opens the provider list in a modal, and the picker's place links to it; the shared CurveBender counts as one the owner holds.
-While the agent holds no provider, the chat blocks sending and says whether to attach one the owner holds or connect one; a provider connected there is attached.
+A send never waits for a model: with none picked it takes the platform's [preferred model](#the-model-router) on the agent's attached providers, else the first they list.
 With no pair picked or remembered, the picker preselects the default harness on the first granted provider it accepts, else the first carried harness a granted provider fits, with its default model.
 Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the pair picked for the next session, else the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
@@ -50,7 +50,7 @@ Each section marks a default that is not set or whose provider the agent no long
 Detaching a provider lists the defaults and schedules that run on it before it goes.
 With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
 A saved pair with no model is a default that is **not set**; the platform never picks a provider or a model in the person's place.
-On a routed runtime a default is saved only with a model: the Providers page shows "Not set" and offers no unset choice, a harness picked there waits for its model, and the picker of a new session or of a session with no model reads "Choose a model" and holds the prompt until one is picked.
+On a routed runtime a default is saved only with a model: the Providers page shows "Not set" and offers no unset choice, a harness picked there waits for its model, and the picker of a new session or of a session with no model reads "Choose a model" until a send resolves one.
 In the JanUI experiment the new session's picker neither attaches nor disconnects a provider: it ends with a Manage providers row, counting the attached providers among the owner's, that opens the agent's Providers page.
 On a routed runtime (`modelRouter` on hello) the saved model is a qualified name and its provider follows from it; a bare name, a provider the agent does not hold, or a model missing from the harness's last reported list is refused.
 A run nobody picks for stays on the harness asked for, on the saved model and the provider it names; no saved model, or a model on a provider the agent no longer holds, fails the run as having no default model, with the reason, and no fitting provider fails it rather than moving it to another harness.

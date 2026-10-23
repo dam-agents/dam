@@ -68,7 +68,8 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   );
 }
 
-const CURVE_BENDER_WORK_MODEL = "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
+export const CURVE_BENDER_WORK_MODEL =
+  "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the window the RITS deployment of the work model
  * serves, measured against its own vLLM router (max_model_len 1048576, a live

@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { useNow } from "../../../hooks/use-now.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { AgentView, Message } from "../../../types.js";
+import type { AgentView, Attachment, Message } from "../../../types.js";
 import { useChatFormPreferences } from "../../a2ui/api/queries.js";
 import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
 import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
@@ -125,7 +125,12 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import { rememberFirstModel } from "../api/session-pair.js";
+import {
+  attachProviderQuietly,
+  rememberFirstModel,
+  useHarnessCatalogModels,
+  useProviderConnections,
+} from "../api/session-pair.js";
 import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
@@ -137,6 +142,7 @@ import {
   ContinuedFromPrelude,
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
+import { CurveBenderAlert } from "../components/curve-bender-alert.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -163,6 +169,7 @@ import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useChatScroll } from "../hooks/use-chat-scroll.js";
+import { useCurveBender } from "../hooks/use-curve-bender.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
@@ -179,10 +186,12 @@ import {
   classicDockToggle,
   classicPanel,
 } from "../lib/classic-chat-layout.js";
+import { sharedCurveBender } from "../lib/curve-bender.js";
 import { defaultKindOf } from "../lib/default-kind.js";
 import { dockKey } from "../lib/dock.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
+import { sendPreparation } from "../lib/send-preparation.js";
 import {
   type DockedItems,
   dockedItemTab,
@@ -324,9 +333,10 @@ export function ChatView() {
   const {
     choice,
     newSessionAgent,
+    pair,
+    pairHarness,
     noProviders,
     noGrantedProvider,
-    needsModel,
   } = useNewSessionChoice({
     agentId: selectedAgent,
     sessionId,
@@ -335,6 +345,40 @@ export function ChatView() {
     operable: agentOperable,
     session: currentSession,
   });
+  const providers = useProviderConnections(selectedAgent);
+  const shared = sharedCurveBender(providers.owned);
+  const routed =
+    choice.kind === "picker" ? choice.routed : harnessStatus?.modelRouter;
+  const sendHarness =
+    (sessionId ? currentSession?.harness : pairHarness) ?? agentView?.harness;
+  const sendCatalog = useHarnessCatalogModels(
+    routed ? selectedAgent : null,
+    sendHarness ?? null,
+  );
+  const curveBender = useCurveBender({
+    agentId: selectedAgent,
+    routed,
+    session:
+      sessionId && currentSession
+        ? {
+            harness: currentSession.harness ?? null,
+            model: currentSession.model ?? null,
+          }
+        : null,
+    selection: sessionId
+      ? currentSession
+        ? {
+            model: currentSession.model ?? null,
+            provider: currentSession.provider ?? null,
+          }
+        : undefined
+      : harnessStatus === undefined
+        ? undefined
+        : { model: pair?.model ?? null, provider: pair?.provider ?? null },
+    onChooseSessionModel: chooseSessionModel,
+  });
+  const setNextSessionPair = useStore((s) => s.setNextSessionPair);
+  const setDraft = useStore((s) => s.setDraft);
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -477,6 +521,52 @@ export function ChatView() {
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
       sendAndFollow(withRendererMetadata(text), ...rest),
     [sendAndFollow, withRendererMetadata],
+  );
+  const sendPrepared = useCallback(
+    async (text: string, attachments?: Attachment[]) => {
+      const agentId = selectedAgent;
+      if (!agentId) return;
+      const plan = sendPreparation({
+        session: sessionId
+          ? {
+              harness: sendHarness ?? "",
+              model: currentSession?.model ?? null,
+            }
+          : null,
+        harness: sessionId ? null : (sendHarness ?? null),
+        pair: sessionId ? null : pair,
+        granted: providers.granted,
+        owned: providers.owned,
+        catalog: sendCatalog.data,
+      });
+      const attached =
+        plan?.attach === null || plan?.attach === undefined
+          ? true
+          : await attachProviderQuietly(agentId, plan.attach);
+      if (!plan || !attached) {
+        setDraft(draftKey(agentId, sessionId), {
+          text,
+          attachments: attachments ?? [],
+        });
+        return;
+      }
+      if (plan.pair) setNextSessionPair(agentId, plan.pair);
+      if (plan.model) await chooseSessionModel(plan.model);
+      await sendWithA2uiData(text, attachments);
+    },
+    [
+      selectedAgent,
+      sessionId,
+      currentSession,
+      sendHarness,
+      pair,
+      providers,
+      sendCatalog.data,
+      setDraft,
+      setNextSessionPair,
+      chooseSessionModel,
+      sendWithA2uiData,
+    ],
   );
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
@@ -1023,23 +1113,29 @@ export function ChatView() {
           />
           <KitUpdateBar agentId={selectedAgent} />
           <HomeVolumeBar agentId={selectedAgent} />
+          <CurveBenderAlert
+            visible={!!shared}
+            selected={curveBender.selected}
+            onTry={curveBender.tryIt}
+          />
           <ChatInputArea
             textareaRef={textareaRef}
             busy={busy}
             loadingSession={loadingSession}
-            onSend={sendWithA2uiData}
+            onSend={sendPrepared}
             onStop={stopAgent}
             onTakeBack={takeBack}
             blockedReason={
-              noGrantedProvider
+              noGrantedProvider && !shared
                 ? noProviders
                   ? "Connect an LLM provider to start."
                   : "Attach an LLM provider to this agent to start."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
-                  : needsModel
-                    ? "Choose a model for this session first."
-                    : null
+                  : null
+            }
+            onBlockedClick={() =>
+              noProviders ? setProvidersModal(true) : setPairPickerOpen(true)
             }
           />
           {!hasPendingPermission &&
