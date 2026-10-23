@@ -30,15 +30,11 @@ import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js
 import {
   composeSubAgentAwaitMarks,
   composeInvocationsForOwner,
-  createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
 } from "../../modules/invocations/index.js";
 import type { SpendHoldGate } from "../../modules/spend/index.js";
-import {
-  composeBudgetsModule,
-  composeSpawnSizeGate,
-} from "../../modules/budgets/index.js";
+import { composeBudgetsModule } from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import {
   composeKbPublishGate,
@@ -159,10 +155,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     cpu: config.agentDefaultCpuLimit,
     memory: config.agentDefaultMemoryLimit,
   };
-  const defaultCeiling = {
-    cpu: config.defaultUserCpuBudget,
-    memory: config.defaultUserMemoryBudget,
-  };
   const publishLimits = {
     perFileMaxBytes: config.kbSharePerFileMaxBytes,
     totalMaxBytes: config.kbShareTotalMaxBytes,
@@ -198,18 +190,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       frames: deps.delegationFrames,
       readHarnessConfigSupport,
       spendHold,
-      targetAdmission: createTargetAdmission({
-        readTemplateResources: async (templateId) =>
-          (await templatesRepo.readSpec(templateId))?.spec.resources,
-        defaultLimits,
-        virtualizationEnabled:
-          agentsInstallSettings(config).virtualizationEnabled,
-        gate: composeSpawnSizeGate({
-          k8s: k8sClient,
-          owner,
-          defaultCeiling,
-        }),
-      }),
     });
 
   const mcpArtifactLibraryFor = (owner: string) =>
@@ -264,13 +244,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         k8s: k8sClient,
         owner,
         listAgents: () => agentsRepo.list(owner),
-        defaultCeiling,
-        slotSize: defaultLimits,
         isSlackUnlinked: async () => false,
-        vmPool: {
-          storage: config.vmPoolStorage,
-          memory: config.vmPoolMemory,
-        },
       }).budgets,
     defaultLimits,
   };
@@ -310,8 +284,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
       const agent = await agentsRepo.get(agentId, owner);
-      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
-        return null;
+      if (!agent || agent.spec.environmentOf) return null;
       return deps.environmentsFor(owner).forOwningAgent(agentId);
     },
     agentTelemetry,

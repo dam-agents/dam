@@ -15,13 +15,6 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "the room they have. It may start by itself once room frees up; if it " +
         "doesn't, contact its owner."
       );
-    case "migrating":
-      return "This agent is moving to the new runtime — try again in a few minutes.";
-    case "migration-failed":
-      return (
-        "This agent's move to the new runtime failed, and it stays asleep " +
-        "until an operator finishes or undoes the move."
-      );
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":

@@ -59,7 +59,7 @@ function setup() {
     registrySecretPort: unused(),
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
-    agentIdleTimeoutMinutes: { container: 30, vm: 5 },
+    agentIdleTimeoutMinutes: 5,
     cleanupHooks: [],
     readTemplateSpec: async () => null,
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({
@@ -68,7 +68,6 @@ function setup() {
     }),
     contributionsProgress: unused(),
     podStatus: unused(),
-    resizeLock: (_key, fn) => fn(),
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},

@@ -45,7 +45,6 @@ import {
   createInvocationPinReconciler,
   type InvocationPinReconciler,
 } from "./services/invocation-pin.js";
-import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { ReadHarnessConfigSupport } from "./domain/harness-config-refusal.js";
 import {
@@ -74,7 +73,6 @@ export function composeInvocationsForOwner(opts: {
   wakeAgent: (agentId: string) => Promise<void>;
   frames: DelegationFramesPort;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
-  targetAdmission?: TargetAdmission;
   spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
@@ -89,7 +87,6 @@ export function composeInvocationsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
-    ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),

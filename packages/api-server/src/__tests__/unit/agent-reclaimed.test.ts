@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent the platform put to sleep early carries the controller's reclaimed-at stamp. The agent view says so while the agent sleeps on that stamp, naming memory for a vm agent and compute otherwise, and drops it once a newer activity outdates the stamp or the agent is no longer hibernated.
+// TEST_OVERVIEW: An agent the platform put to sleep early carries the controller's reclaimed-at stamp. The agent view says so while the agent sleeps on that stamp, naming memory it freed, and drops it once a newer activity outdates the stamp or the agent is no longer hibernated.
 import { describe, expect, it } from "vitest";
 
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
@@ -9,7 +9,6 @@ function agent(opts: {
   lastActivity: string;
   reclaimedAt?: string;
   readyReason?: string;
-  vm?: boolean;
 }) {
   return {
     metadata: {
@@ -21,7 +20,7 @@ function agent(opts: {
           : {}),
       },
     },
-    spec: opts.vm ? { backend: { type: "vm" } } : {},
+    spec: {},
     status: {
       conditions: [
         {
@@ -36,28 +35,17 @@ function agent(opts: {
 }
 
 describe("reclaimed", () => {
-  it("names memory for a reclaimed vm agent", () => {
+  it("names the memory a reclaimed agent freed", () => {
     const infra = parseInfraAgent(
       agent({
         lastActivity: "2026-10-13T09:55:00.000Z",
         reclaimedAt: RECLAIMED_AT,
-        vm: true,
       }),
     );
     expect(infra.reclaimed).toEqual({
       at: "2026-10-13T10:00:00.000Z",
       for: "memory",
     });
-  });
-
-  it("names compute for a reclaimed container agent", () => {
-    const infra = parseInfraAgent(
-      agent({
-        lastActivity: "2026-10-13T09:55:00.000Z",
-        reclaimedAt: RECLAIMED_AT,
-      }),
-    );
-    expect(infra.reclaimed?.for).toBe("compute");
   });
 
   // TEST_SCENARIO: A deliberate touch after the reclaim outdates the stamp, as it does for the controller, so the agent no longer says it was put to sleep early.

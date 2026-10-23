@@ -150,7 +150,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
   const managed = [
     ...Object.keys(REQUIRED_ENV),
     "AGENT_DEFAULT_STORAGE_SIZE",
-    "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
     "FEATURE_DEFAULT_MODE",
     "CURVE_BENDER_DEPLOYMENT_API_KEY",
@@ -174,12 +173,10 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     }
   });
 
-  // TEST_SCENARIO: the chart sets the disk default and default mounts on the api-server. Every composition root takes the agents module's install facts from this one reading, so the migration decision names the install's disk default and default mounts rather than none.
+  // TEST_SCENARIO: the chart sets the disk default and default mounts on the api-server. Every composition root takes the agents module's install facts from this one reading, so an Agent is stamped with the install's disk default and default mounts rather than none.
   it("carries the chart's disk default and default mounts", () => {
     process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
-    process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
-      virtualizationEnabled: true,
       defaultHarness: "claude-code",
       telemetry: false,
       agentDefaultStorageSize: "20Gi",
@@ -254,8 +251,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
   });
 });
 
-describe("loadConfig — runtime migration inputs", () => {
-  const KEYS = ["VIRTUALIZATION_ENABLED", "AGENT_DEFAULT_MOUNTS"];
+describe("loadConfig — template mount defaults", () => {
+  const KEYS = ["AGENT_DEFAULT_MOUNTS"];
   const managed = [...Object.keys(REQUIRED_ENV), ...KEYS];
   const saved: Record<string, string | undefined> = {};
 
@@ -274,16 +271,7 @@ describe("loadConfig — runtime migration inputs", () => {
     }
   });
 
-  // TEST_SCENARIO: an install that writes VIRTUALIZATION_ENABLED=false has no VM runner. Reading any non-empty string as true would offer the migration there and flip Agents onto a backend nothing runs.
-  it("reads VIRTUALIZATION_ENABLED as the boolean it spells", () => {
-    expect(loadConfig().virtualizationEnabled).toBe(false);
-    process.env.VIRTUALIZATION_ENABLED = "false";
-    expect(loadConfig().virtualizationEnabled).toBe(false);
-    process.env.VIRTUALIZATION_ENABLED = "true";
-    expect(loadConfig().virtualizationEnabled).toBe(true);
-  });
-
-  // TEST_SCENARIO: the runtime migration plans from the template default mounts the controller renders for an Agent that names none. Without the chart's value the api-server falls back to the chart's own default, HOME persisted and /tmp not.
+  // TEST_SCENARIO: the template default mounts are what the controller renders for an Agent that names none. Without the chart's value the api-server falls back to the chart's own default, HOME persisted and /tmp not.
   it("reads the template default mounts the chart hands over", () => {
     expect(loadConfig().agentDefaultMounts).toEqual([
       { path: "/home/agent", persist: true },

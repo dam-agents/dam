@@ -138,9 +138,6 @@ describe("the Slack invite on the budgets read", () => {
   const read = (vm: RunnerUsage | null, unlinked: boolean) =>
     createBudgetsService({
       listAgents: async () => [],
-      readCeilingOverride: async () => null,
-      defaultCeiling: { cpu: "4", memory: "8Gi" },
-      slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => vm,
       isSlackUnlinked: async () => unlinked,
     }).reserved();
@@ -156,9 +153,6 @@ describe("the Slack invite on the budgets read", () => {
     // TEST_SCENARIO: a failed identity lookup drops the invite, not the whole read.
     const view = await createBudgetsService({
       listAgents: async () => [],
-      readCeilingOverride: async () => null,
-      defaultCeiling: { cpu: "4", memory: "8Gi" },
-      slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => usage(),
       isSlackUnlinked: async () => {
         throw new Error("db down");

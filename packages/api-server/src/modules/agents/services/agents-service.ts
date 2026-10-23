@@ -44,7 +44,6 @@ import {
   assembleSpecFromImage,
   resolveEffectiveHibernationTimeoutMin,
   type DefaultResourceLimits,
-  type IdleTimeoutMinutes,
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
@@ -56,11 +55,6 @@ import {
   ANN_STARTER_KIT_DEFAULT_MODEL,
   ANN_STARTER_KIT_SEED,
 } from "../infrastructure/labels.js";
-import {
-  type AgentMount,
-  isVmBackend,
-  type VmPoolCapacity,
-} from "../domain/runtime-migration.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -536,23 +530,15 @@ function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
   return { ...infra, spec: { ...infra.spec, env } };
 }
 
-export interface ResizeGatePort {
-  assertResizeFits(
-    agent: InfraAgent,
-    newSize: { cpu?: string; memory?: string },
-  ): Promise<void>;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent when its owner's shared storage is too full to hold one, and reads the pool a move must fit into, in the runner's own figures. Unreadable or absent is null, which refuses nothing.
+// UNIT_BOUNDARY_DESCRIPTION: refuses a new agent when its owner's shared storage is too full to hold one machine, in the runner's own figures. Unreadable or absent is null, which refuses nothing.
 export interface StorageGatePort {
   assertCanCreateVm(): Promise<void>;
-  readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
-  agentIdleTimeoutMinutes: IdleTimeoutMinutes;
+  agentIdleTimeoutMinutes: number;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
   lastHelloAt?: (agentId: string) => Promise<Date | null>;
@@ -565,12 +551,9 @@ export function createAgentsService(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  virtualizationEnabled?: boolean;
   defaultHarness?: string;
   telemetry?: boolean;
-  resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
-  resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -1068,14 +1051,6 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
-      // UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. A container is what an install without virtualization can still make, and what the Agents made before the microVM was the default already run as; nothing new is created on it.
-      if (input.vm === false && deps.virtualizationEnabled)
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "this install runs every new agent as its own microVM, so a container agent cannot be created; only agents made before virtualization was enabled still run on the container backend",
-        });
-      const vm = input.vm ?? deps.virtualizationEnabled === true;
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
@@ -1105,7 +1080,6 @@ export function createAgentsService(deps: {
             description: input.description,
             size: input.size,
             storage: input.storage,
-            vm,
           },
           deps.agentDefaultLimits,
         );
@@ -1124,20 +1098,11 @@ export function createAgentsService(deps: {
             description: input.description,
             size: input.size,
             storage: input.storage,
-            vm,
           },
           deps.agentDefaultLimits,
         );
       }
-      const backend = spec.backend as { type?: string } | undefined;
-      if (backend?.type === "vm" && !deps.virtualizationEnabled) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
-        });
-      }
-      if (backend?.type === "vm") await deps.storageGate?.assertCanCreateVm();
+      await deps.storageGate?.assertCanCreateVm();
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
@@ -1362,44 +1327,11 @@ export function createAgentsService(deps: {
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
       if (input.whisper !== undefined)
         patch.whispersOff = input.whisper ? null : true;
-      let gateLiveResize:
-        | ((
-            apply: () => Promise<InfraAgent | null>,
-          ) => Promise<InfraAgent | null>)
-        | null = null;
-      if (input.size !== undefined) {
-        gateLiveResize = (apply) =>
-          deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
-            const current = await deps.repo.get(input.id, deps.owner);
-            if (!current) return null;
-            if (isVmBackend(current.spec)) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message:
-                  "A VM agent has no size: it shares its owner's VM runner.",
-              });
-            }
-            if (!current.hibernated && !current.overBudget) {
-              const gate = deps.resizeGate;
-              if (!gate) {
-                throw new TRPCError({
-                  code: "BAD_REQUEST",
-                  message: "Resizing a running sandbox is not supported here.",
-                });
-              }
-              await gate.assertResizeFits(current, input.size!);
-            }
-            return apply();
-          });
-        patch.resources = { limits: input.size };
-      }
-      const applyPatch = () =>
+      if (input.size !== undefined) patch.resources = { limits: input.size };
+      const infra =
         Object.keys(patch).length > 0
-          ? deps.repo.updateSpec(input.id, deps.owner, patch)
-          : deps.repo.get(input.id, deps.owner);
-      const infra = gateLiveResize
-        ? await gateLiveResize(applyPatch)
-        : await applyPatch();
+          ? await deps.repo.updateSpec(input.id, deps.owner, patch)
+          : await deps.repo.get(input.id, deps.owner);
       if (!infra) return null;
 
       let env = input.env;
@@ -1502,9 +1434,6 @@ export function createAgentsService(deps: {
     async wake(id) {
       if (!(await ownsOrDeny(id, "agent.wake")))
         return err({ type: "AgentNotFound" });
-      const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
-      if (hold !== "none")
-        return err({ type: "RuntimeMigrating", failed: hold === "failed" });
       const woke = await deps.repo.wake(id);
       if (!woke.ok) return err(woke.error);
       const infra = woke.value;
@@ -1541,15 +1470,8 @@ export function createAgentsService(deps: {
       if (!(await ownsOrDeny(id, "agent.sleep"))) return null;
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return null;
-      if ((current.runtimeMigrationHold ?? "none") !== "none")
-        throw new TRPCError({
-          code: "CONFLICT",
-          message:
-            "This agent is moving to the new runtime and is not running; it can be stopped once the move ends",
-        });
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
-        current.spec.backend?.type === "vm",
         deps.agentIdleTimeoutMinutes,
       );
       const infra =
@@ -1572,8 +1494,6 @@ export function createAgentsService(deps: {
         return err({ type: "AgentNotFound" });
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return err({ type: "AgentNotFound" });
-      if ((current.runtimeMigrationHold ?? "none") !== "none")
-        return err({ type: "RuntimeMigrating" });
       const infra = await deps.repo.setDisabled(id, disabled);
       if (!infra) return err({ type: "AgentNotFound" });
       securityLog("info", disabled ? "agent.disable" : "agent.enable", {

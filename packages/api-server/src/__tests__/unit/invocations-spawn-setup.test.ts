@@ -102,7 +102,7 @@ const baseInput: SpawnInput = {
 };
 
 describe("spawn applies an Agent Setup", () => {
-  // TEST_SCENARIO: the seed, backend, size, disk and env a kit would pass to the create reach the target's create unchanged, and the target keeps its minted name so spend views still recognise it once it is gone.
+  // TEST_SCENARIO: the seed, size, disk and env a kit would pass to the create reach the target's create unchanged, and the target keeps its minted name so spend views still recognise it once it is gone.
   test("the setup reaches the target's create", async () => {
     const { service, created } = makeService();
 
@@ -114,7 +114,6 @@ describe("spawn applies an Agent Setup", () => {
           commit: "a".repeat(40),
           into: "work",
         },
-        backend: "vm",
         resources: { cpu: "2", memory: "4Gi", storage: "10Gi" },
         env: [{ name: "MODE", value: "cell" }],
         skills: [],
@@ -128,7 +127,6 @@ describe("spawn applies an Agent Setup", () => {
         commit: "a".repeat(40),
         into: "work",
       },
-      vm: true,
       size: { cpu: "2", memory: "4Gi" },
       storage: "10Gi",
       env: [{ name: "MODE", value: "cell" }],

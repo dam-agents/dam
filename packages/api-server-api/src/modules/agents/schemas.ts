@@ -113,7 +113,6 @@ export const agentCreateInputSchema = z.object({
   connectionIds: z.array(z.string()).optional(),
   providerConnectionId: z.string().min(1).optional(),
   size: agentSizeSchema.optional(),
-  vm: z.boolean().optional(),
   storage: storageQuantitySchema.optional(),
   sweepable: z.boolean().optional(),
   lifetimeMs: z.number().int().min(0).optional(),

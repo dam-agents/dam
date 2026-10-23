@@ -35,13 +35,12 @@ function sizeAndStorage(
 }
 
 export function createInputFromSetup(
-  setup: Pick<AgentSetup, "backend" | "resources" | "env"> & {
+  setup: Pick<AgentSetup, "resources" | "env"> & {
     seed?: AgentSetupSeed;
   },
-): Pick<AgentCreateInput, "gitRepo" | "vm" | "size" | "storage" | "env"> {
+): Pick<AgentCreateInput, "gitRepo" | "size" | "storage" | "env"> {
   return {
     ...(setup.seed ? { gitRepo: seedGitRepo(setup.seed) } : {}),
-    ...(setup.backend === "vm" ? { vm: true } : {}),
     ...sizeAndStorage(setup.resources),
     ...(setup.env && setup.env.length > 0 ? { env: setup.env } : {}),
   };

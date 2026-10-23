@@ -1,22 +1,16 @@
 import type { TemplateSpec } from "api-server-api";
 import { goDurationToMinutes } from "../../../duration.js";
 
-export interface IdleTimeoutMinutes {
-  container: number;
-  vm: number;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the idle window an Agent hibernates after, in minutes: its own override, else the chart-wide default, which is a separate value for vm Agents. The controller reads the override as a Go duration, so this does too: a positive duration under a minute projects to one rather than to zero, which the platform reads as never-hibernate, and a value the controller cannot read inherits the default. A vm Agent is not offered the setting, so it reads the vm default; one that carries an override anyway — a Template or starter kit seed, or one whose Backend moved — honours it, as a container Agent does.
+// UNIT_BOUNDARY_DESCRIPTION: the idle window an Agent hibernates after, in minutes: its own override, else the chart-wide default. The controller reads the override as a Go duration, so this does too: a positive duration under a minute projects to one rather than to zero, which the platform reads as never-hibernate, and a value the controller cannot read inherits the default. A machine is not offered the setting, so one that carries an override anyway — a Template or starter kit seed — honours it.
 export function resolveEffectiveHibernationTimeoutMin(
   override: string | undefined,
-  vm: boolean,
-  idle: IdleTimeoutMinutes,
+  idleTimeoutMinutes: number,
 ): number {
   if (override != null) {
     const own = goDurationToMinutes(override);
     if (own != null) return own;
   }
-  return vm ? idle.vm : idle.container;
+  return idleTimeoutMinutes;
 }
 
 export interface DefaultResourceLimits {
@@ -44,14 +38,13 @@ export function concreteResources(
     : { limits };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. A vm agent gets no storage size: its disk grows inside its owner's storage pool, so a template's or kit's size sizes container volumes only. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it on both backends. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
+// UNIT_BOUNDARY_DESCRIPTION: the spec an Agent's machine is built from. Every Agent runs on its owner's runner, so the backend is written as the machine it is, and the template's size, class and mounts are what size that machine's disk. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it.
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
   opts: {
     description?: string;
     size?: { cpu?: string; memory?: string };
-    vm?: boolean;
     storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
@@ -67,11 +60,9 @@ export function assembleSpecFromTemplate(
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     hibernationTimeout: tmplSpec.hibernationTimeout,
-    storageSize: opts.vm ? undefined : (opts.storage ?? tmplSpec.storageSize),
+    storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: opts.vm ? { type: "vm" } : undefined,
-    runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
-    nodeSelector: opts.vm ? undefined : tmplSpec.nodeSelector,
+    backend: { type: "vm" },
   };
 }
 
@@ -81,7 +72,6 @@ export function assembleSpecFromImage(
     image?: string;
     description?: string;
     size?: { cpu?: string; memory?: string };
-    vm?: boolean;
     storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
@@ -91,7 +81,7 @@ export function assembleSpecFromImage(
     image: opts.image,
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
-    backend: opts.vm ? { type: "vm" } : undefined,
-    storageSize: opts.vm ? undefined : opts.storage,
+    backend: { type: "vm" },
+    storageSize: opts.storage,
   };
 }

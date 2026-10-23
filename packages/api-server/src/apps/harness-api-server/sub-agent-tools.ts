@@ -43,11 +43,11 @@ const MAX_AWAIT_IDS = 50;
 const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent: if your harness has one, it runs here, starts in seconds and costs no extra compute, so prefer it whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
 - different-harness: it must run on another harness (see list_harnesses);
 - own-setup: it needs its own repository (seed), install command, env or skills;
-- more-resources: more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
+- more-resources: more CPU, memory or disk than this sandbox;
 - isolation: the work must not be able to touch this workspace;
 - parallel: heavy parallel work beyond what this sandbox can run;
 - checked-result: a result the platform validates against a schema.
-A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources or a vm backend.
+A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources.
 
 The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); connections you pass must be your own grants (see list_connections). The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
@@ -102,9 +102,6 @@ const spawnInput = {
   env: spawnShape.env.describe("Environment variables, as [{name, value}]."),
   resources: spawnShape.resources.describe(
     "cpu, memory, storage (disk). Omitted values come from the harness's template; give a clone or build more memory.",
-  ),
-  backend: spawnShape.backend.describe(
-    '"vm" to run in a microVM, when the work needs a container runtime or a cluster inside.',
   ),
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",
@@ -192,10 +189,9 @@ export function unmetNeed(
     needs.includes("more-resources") &&
     !body.resources &&
     body.cpu === undefined &&
-    body.memory === undefined &&
-    body.backend !== "vm"
+    body.memory === undefined
   )
-    return "more-resources without resources or a vm backend";
+    return "more-resources without resources";
   return null;
 }
 

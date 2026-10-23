@@ -24,7 +24,6 @@ import type {
   ChannelConfig,
   ContributionKind,
   DriverFailure,
-  RuntimeMigration,
   TemplateUpdate,
   KitUpdatePending,
   SeedStamp,
@@ -47,11 +46,6 @@ import {
   AGENT_POD_REASON_MACHINE_STOPPING,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
-  RUNTIME_MIGRATING_CONDITION,
-  RUNTIME_MIGRATION_KEY,
-  RUNTIME_MIGRATION_MESSAGE_KEY,
-  RUNTIME_MIGRATION_SOURCE_KEY,
-  RUNTIME_MIGRATION_TARGET_KEY,
   DISABLED_KEY,
   STOP_REQUESTED_KEY,
   STORAGE_MIGRATION_KEY,
@@ -65,15 +59,7 @@ import {
   ANN_IMAGE_UPDATE_FROM,
   ANN_IMAGE_UPDATE_REFUSED,
 } from "./labels.js";
-import {
-  type IdleTimeoutMinutes,
-  resolveEffectiveHibernationTimeoutMin,
-} from "../domain/spec-assembly.js";
-import {
-  runtimeMigrationHold,
-  runtimeMigrationOf,
-  type RuntimeMigrationHold,
-} from "../domain/runtime-migration.js";
+import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
 
@@ -106,7 +92,6 @@ interface AgentStatusObject {
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
-  runtimeMigrationAttempts?: number;
 }
 
 export interface InfraAgent {
@@ -140,9 +125,6 @@ export interface InfraAgent {
   hibernated: boolean;
   stopRequested: boolean;
   disabled: boolean;
-  runtimeMigration?: RuntimeMigration;
-  runtimeMigrationHold?: RuntimeMigrationHold;
-  runtimeMigrationTarget?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -179,7 +161,6 @@ export function computeAgentState(
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
-  if ((infra.runtimeMigrationHold ?? "none") !== "none") return "migrating";
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
@@ -269,20 +250,10 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       reclaimedAt.getTime()
       ? {
           at: reclaimedAt.toISOString(),
-          for: crSpec.backend?.type === "vm" ? "memory" : "compute",
+          for: "memory",
         }
       : undefined;
   const createdAt = createdAtOf(obj);
-  const migrating = status.conditions?.find(
-    (c) => c.type === RUNTIME_MIGRATING_CONDITION,
-  );
-  const runtimeMigration = runtimeMigrationOf({
-    requested: annotations[RUNTIME_MIGRATION_KEY],
-    legacyMessage: annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
-    ...(migrating ? { condition: migrating } : {}),
-    attempts: status.runtimeMigrationAttempts,
-    vm: crSpec.backend?.type === "vm",
-  });
   const resourceVersion = obj.metadata?.resourceVersion;
   const generation = obj.metadata?.generation;
   const startFailed = status.conditions?.find((c) => c.type === "StartFailed");
@@ -363,14 +334,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
     disabled: !!annotations[DISABLED_KEY],
-    ...(runtimeMigration ? { runtimeMigration } : {}),
-    runtimeMigrationHold: runtimeMigrationHold(
-      runtimeMigration,
-      !!annotations[RUNTIME_MIGRATION_SOURCE_KEY],
-    ),
-    ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
-      ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
-      : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
@@ -433,7 +396,7 @@ export function assembleAgent(
   infra: InfraAgent,
   channels: ChannelConfig[],
   contributionFailures: DriverFailure[],
-  idleTimeoutMinutes: IdleTimeoutMinutes,
+  idleTimeoutMinutes: number,
   preparingWorkspace: boolean,
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
@@ -447,14 +410,10 @@ export function assembleAgent(
     ...(infra.createdAt ? { createdAt: infra.createdAt } : {}),
     templateId: infra.templateId,
     templateUpdate,
-    ...(infra.runtimeMigration
-      ? { runtimeMigration: infra.runtimeMigration }
-      : {}),
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
       infra.spec.hibernationTimeout,
-      infra.spec.backend?.type === "vm",
       idleTimeoutMinutes,
     ),
     error: infra.error,

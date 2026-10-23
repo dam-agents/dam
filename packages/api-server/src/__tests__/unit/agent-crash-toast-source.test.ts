@@ -68,7 +68,7 @@ function viewOf(status: Record<string, unknown>) {
       infra,
       [],
       [],
-      { container: 60, vm: 5 },
+      5,
       false,
       undefined,
       {} as RuntimeFeatures,

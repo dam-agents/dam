@@ -48,7 +48,6 @@ import {
   setSlackChannelAmbient,
   setSlackChannelDefault,
   createAgentSweep,
-  createRuntimeMigrationSwitch,
   createImageUpdate,
   podIsIdle,
   createAvatarImagesRepository,
@@ -56,7 +55,6 @@ import {
   storeAvatarImage,
   sweepAvatarImages,
 } from "./modules/agents/index.js";
-import { createAgentRuntimeClient } from "./modules/runtime-delivery/infrastructure/agent-runtime-client.js";
 import {
   composePrStateResolver,
   connectScanCacheBus,
@@ -636,10 +634,7 @@ export async function bootstrap() {
     namespace: config.namespace,
     bullConnection,
     agentRunningPort: {
-      // UNIT_BOUNDARY_DESCRIPTION: a migrated machine is Ready only after the Backend switches, but its runtime waits just 15 s for the env the copy left behind before it starts the harness without it. A verified machine already holds the Agent's Service, so it takes the push at once.
-      isRunning: async (agentId) =>
-        (await agentsRepo.isReady(agentId)) ||
-        agentsRepo.peekCached(agentId)?.runtimeMigration?.phase === "verified",
+      isRunning: (agentId) => agentsRepo.isReady(agentId),
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
@@ -1646,9 +1641,6 @@ export async function bootstrap() {
         agent.starterKitOnboarded === undefined
       );
     },
-    runtimeMigrating: async (agentId) =>
-      ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
-      "none",
     spendHold,
     agentDisabled: async (agentId) =>
       (await agentsRepo.get(agentId))?.disabled === true,
@@ -1942,14 +1934,7 @@ export async function bootstrap() {
     composeAgentsModule({
       api,
       readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
-      storageGate: composeStorageGate({
-        k8s: k8sClient,
-        owner,
-        vmPool: {
-          storage: config.vmPoolStorage,
-          memory: config.vmPoolMemory,
-        },
-      }),
+      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
@@ -2077,50 +2062,12 @@ export async function bootstrap() {
     environments.sweepExpired(),
   );
 
-  const runtimeMigrationSwitch = createRuntimeMigrationSwitch({
-    listAgents: () => agentsRepo.list(),
-    getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
-    writeMigration: (id, patch) =>
-      liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
-    migration: async (agent) => {
-      const install = agentsInstallSettings(config);
-      // UNIT_BOUNDARY_DESCRIPTION: the pool is the owner's own runner's figures, and the home is what the Agent's runtime measured on its volume; either unreadable refuses nothing, since the runner stops what it has no room for on its own.
-      const [capacity, homeBytes] = await Promise.all([
-        composeStorageGate({
-          k8s: k8sClient,
-          owner: agent.owner ?? "",
-          vmPool: {
-            storage: config.vmPoolStorage,
-            memory: config.vmPoolMemory,
-          },
-        })
-          .readCapacity()
-          .catch(() => null),
-        createAgentRuntimeClient(agent.id, config.namespace)
-          .homeVolume()
-          .then((v) => (v ? Math.max(0, v.totalBytes - v.freeBytes) : null))
-          .catch(() => null),
-      ]);
-      return {
-        virtualizationEnabled: install.virtualizationEnabled,
-        defaultMounts: install.agentDefaultMounts,
-        defaultStorageSize: install.agentDefaultStorageSize,
-        capacity,
-        homeBytes,
-      };
-    },
-    log: (message) => process.stderr.write(`${message}\n`),
-  });
-  await periodicJobs.register("runtime-migration-switch", 2_000, () =>
-    runtimeMigrationSwitch.tick(),
-  );
-
   const imageUpdate = createImageUpdate({
     listAgents: () => agentsRepo.list(),
     getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
     readTemplateSpec: templatesRepo.readSpec,
     writeSpec: (id, write) =>
-      liveAgentsRepo.writeRuntimeMigration(id, undefined, write),
+      liveAgentsRepo.writeAgentSpec(id, undefined, write),
     podIsIdle: (id) => podIsIdle(id, config.namespace),
     idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),
@@ -2168,11 +2115,10 @@ export async function bootstrap() {
         emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
         subsMatching: (text, max) => userDirectory.searchSubs(text, max),
       },
-      listAgents: () => agentsRepo.list(),
       defaults: {
         cpu: config.defaultUserCpuBudget,
         memory: config.defaultUserMemoryBudget,
-        storage: config.virtualizationEnabled ? config.vmPoolStorage : null,
+        storage: config.vmPoolStorage,
       },
     }),
     providerStatus: providerStatus.service,

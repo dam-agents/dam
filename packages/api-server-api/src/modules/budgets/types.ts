@@ -46,9 +46,6 @@ export interface BudgetStorageFull {
 }
 
 export interface BudgetReserved {
-  cpu: { reservedMilli: number; ceilingMilli: number };
-  memory: { reservedBytes: number; ceilingBytes: number };
-  slot: { cpuMilli: number; memoryBytes: number };
   vm?: BudgetVmUsage;
 }
 
@@ -62,14 +59,14 @@ export type UserBudgetUser = z.infer<typeof userBudgetUserSchema>;
 export type UserBudgetSetInput = z.infer<typeof userBudgetSetInputSchema>;
 export type UserBudgetRemoveInput = z.infer<typeof userBudgetRemoveInputSchema>;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a user without a budget of their own gets. `storage` is null on an install without vm agents, where no storage is ever given.
+// UNIT_BOUNDARY_DESCRIPTION: what a user without a budget of their own gets.
 export interface UserBudgetDefaults {
   cpu: string;
   memory: string;
   storage: string | null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one user's own budget as an operator sees it. A field the budget leaves out is null and falls back to the default on its own. `setBySub` and `updatedAt` are null for a budget written outside the platform, which records neither. `reserved` is what the user's running container agents reserve now, as the user's own meter counts it.
+// UNIT_BOUNDARY_DESCRIPTION: one user's own budget as an operator sees it. A field the budget leaves out is null and falls back to the default on its own. `setBySub` and `updatedAt` are null for a budget written outside the platform, which records neither.
 export interface UserBudgetEntry {
   ownerSub: string;
   email: string | null;
@@ -79,7 +76,6 @@ export interface UserBudgetEntry {
   setBySub: string | null;
   setByEmail: string | null;
   updatedAt: string | null;
-  reserved: { cpuMilli: number; memoryBytes: number };
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: one page of the users' own budgets. `total` counts every budget, `matched` the ones the query finds, and `entries` holds at most the asked limit of those, from the asked offset on.

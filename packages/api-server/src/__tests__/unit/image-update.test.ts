@@ -15,7 +15,7 @@ import {
   parseInfraAgent,
   type InfraAgent,
 } from "../../modules/agents/infrastructure/agent-mappers.js";
-import type { RuntimeMigrationWrite } from "../../modules/agents/infrastructure/agents-repository.js";
+import type { AgentSpecWrite } from "../../modules/agents/infrastructure/agents-repository.js";
 import {
   createImageUpdate,
   imageMove,
@@ -30,7 +30,7 @@ const FROM = "agent-platform.ai/image-update-from";
 const REFUSED = "agent-platform.ai/image-update-refused";
 const NOW = new Date("2026-10-12T12:00:00Z");
 const TWO_HOURS_AGO = new Date("2026-10-12T10:00:00Z");
-const IDLE_MIN = { container: 60, vm: 60 };
+const IDLE_MIN = 60;
 
 function agent(overrides?: Partial<InfraAgent>): InfraAgent {
   return {
@@ -94,7 +94,7 @@ function update(
   },
 ) {
   const byId = new Map(agents.map((a) => [a.id, a]));
-  const writeSpec = vi.fn(async (id: string, write: RuntimeMigrationWrite) => {
+  const writeSpec = vi.fn(async (id: string, write: AgentSpecWrite) => {
     const a = byId.get(id)!;
     return {
       ok: true as const,
@@ -178,7 +178,7 @@ describe("imageMove", () => {
       imageMove(
         agent({ hibernated: false, ready: true, quietSince: TWO_HOURS_AGO }),
         DEFAULT_IMAGE,
-        { container: 0, vm: 0 },
+        0,
         NOW,
       ),
     ).toBe("if-pod-idle");

@@ -90,8 +90,6 @@ export type {
   SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
-  RuntimeMigration,
-  RuntimeMigrationPhase,
   ConnectSlackResult,
   BindSlackChannelResult,
   BindTelegramChatResult,

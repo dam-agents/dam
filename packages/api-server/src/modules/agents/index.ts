@@ -29,7 +29,6 @@ export {
 export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
-export { createRuntimeMigrationSwitch } from "./services/runtime-migration.js";
 export { createImageUpdate } from "./services/image-update.js";
 export { podIsIdle } from "./infrastructure/pod-status-client.js";
 export {

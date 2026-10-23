@@ -102,16 +102,9 @@ export const agentsRouter = t.router({
       if (res.ok) return toAgentView(res.value);
       if (res.error.type === "AgentNotFound")
         throw new TRPCError({ code: "NOT_FOUND" });
-      if (res.error.type === "AgentDisabled")
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "This agent is disabled; enable it to wake it",
-        });
       throw new TRPCError({
         code: "CONFLICT",
-        message: res.error.failed
-          ? "This agent's move to the new runtime failed and it waits on an operator to finish or undo the move"
-          : "This agent is moving to the new runtime and wakes once the move is done",
+        message: "This agent is disabled; enable it to wake it",
       });
     }),
 
@@ -136,13 +129,7 @@ export const agentsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.setDisabled(input.id, input.disabled);
       if (res.ok) return toAgentView(res.value);
-      if (res.error.type === "AgentNotFound")
-        throw new TRPCError({ code: "NOT_FOUND" });
-      throw new TRPCError({
-        code: "CONFLICT",
-        message:
-          "This agent is moving to the new runtime; it can be disabled once the move ends",
-      });
+      throw new TRPCError({ code: "NOT_FOUND" });
     }),
 
   upgrade: manageAgentsProcedure

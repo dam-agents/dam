@@ -50,13 +50,10 @@ describe("unmetNeed", () => {
     ).toBeNull();
   });
 
-  test("more-resources needs resources, cpu, memory or a vm backend", () => {
+  test("more-resources needs resources, cpu or memory", () => {
     expect(unmetNeed(["more-resources"], base, null)).toMatch(/more-resources/);
     expect(
       unmetNeed(["more-resources"], { ...base, resources: { cpu: "4" } }, null),
-    ).toBeNull();
-    expect(
-      unmetNeed(["more-resources"], { ...base, backend: "vm" }, null),
     ).toBeNull();
   });
 

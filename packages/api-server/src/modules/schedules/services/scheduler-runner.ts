@@ -91,7 +91,6 @@ export interface SchedulerRunnerDeps {
   restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
-  runtimeMigrating?: (agentId: string) => Promise<boolean>;
   spendHold?: SpendHoldGate;
   agentDisabled: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
@@ -462,12 +461,6 @@ export function createSchedulerRunner(
       log(`fire: agent ${sched.agentId} has not finished onboarding; holding`);
       noteFire("held", { holdReason: "onboarding" });
       await hold("held: onboarding not complete");
-      return;
-    }
-    if (await deps.runtimeMigrating?.(sched.agentId)) {
-      log(`fire: agent ${sched.agentId} is moving to the new runtime; holding`);
-      noteFire("held", { holdReason: "runtime_migration" });
-      await hold("held: moving to the new runtime");
       return;
     }
     if (await deps.agentDisabled(sched.agentId)) {
