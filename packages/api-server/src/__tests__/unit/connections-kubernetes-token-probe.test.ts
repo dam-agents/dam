@@ -1,3 +1,4 @@
+import { createServer as createPlainServer } from "node:http";
 import { createServer, type Server } from "node:https";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -16,8 +17,9 @@ import {
  * token acts as, and the expiry comes from the token's `exp` claim. A 401
  * fails, saying the token expired when its claim is past. A certificate the
  * given CA, or the public roots without one, does not trust fails as kubectl
- * would. A cluster too old for SelfSubjectReview, another answer or a
- * timeout leaves the token unchecked.
+ * would, and so does any other TLS error. A cluster too old for
+ * SelfSubjectReview, another answer or a timeout leaves the token
+ * unchecked; the timeout is a deadline for the whole request.
  */
 
 interface Seen {
@@ -29,7 +31,12 @@ interface Seen {
 
 let server: Server;
 let port: number;
-let answer: { status: number; body?: unknown; hang?: boolean };
+let answer: {
+  status: number;
+  body?: unknown;
+  hang?: boolean;
+  drip?: boolean;
+};
 let seen: Seen[];
 
 function jwt(claims: Record<string, unknown>): string {
@@ -58,6 +65,12 @@ beforeAll(async () => {
           body,
         });
         if (answer.hang) return;
+        if (answer.drip) {
+          res.writeHead(answer.status, { "Content-Type": "application/json" });
+          const tick = setInterval(() => res.write(" "), 50);
+          res.on("close", () => clearInterval(tick));
+          return;
+        }
         res.writeHead(answer.status, { "Content-Type": "application/json" });
         res.end(answer.body === undefined ? "" : JSON.stringify(answer.body));
       });
@@ -193,6 +206,41 @@ describe("Kubernetes token check", () => {
       reason:
         "the cluster answered HTTP 503, which says nothing about the token",
     });
+  });
+
+  // TEST_SCENARIO: an API server that sends its answer a little at a time, never idle but never done, is cut off at the deadline, so a save never waits longer than the timeout.
+  it("cuts off an answer that drips past the deadline", async () => {
+    answer = { status: 201, drip: true };
+    const started = Date.now();
+    await expect(
+      probeKubernetesToken(target(), "opaque-token", 300),
+    ).resolves.toEqual({
+      status: "unchecked",
+      reason: "the cluster's API server did not answer in time",
+    });
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  // TEST_SCENARIO: a TLS error that is not a trust error, such as a server that speaks no TLS, fails too, as kubectl would refuse it.
+  it("fails a TLS error that is not a trust error", async () => {
+    const plain = createPlainServer((_req, res) => res.end("{}"));
+    await new Promise<void>((resolve) =>
+      plain.listen(0, "127.0.0.1", () => resolve()),
+    );
+    const plainPort = (plain.address() as AddressInfo).port;
+    try {
+      const outcome = await probeKubernetesToken(
+        { host: "127.0.0.1", port: plainPort, caPem: TEST_CLUSTER_CERT },
+        "opaque-token",
+        5_000,
+      );
+      expect(outcome).toEqual({
+        status: "failed",
+        reason: "the TLS connection to the cluster failed (EPROTO)",
+      });
+    } finally {
+      plain.close();
+    }
   });
 
   // TEST_SCENARIO: an API server that does not answer in time leaves the token unchecked with a fixed reason.

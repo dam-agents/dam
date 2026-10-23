@@ -29,6 +29,15 @@ const UNTRUSTED_CERT_CODES = new Set([
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
 ]);
 
+function isTlsErrorCode(code: string): boolean {
+  return (
+    code === "EPROTO" ||
+    code.startsWith("ERR_TLS_") ||
+    code.startsWith("ERR_SSL_") ||
+    code.includes("CERT")
+  );
+}
+
 const reviewSchema = z.object({
   status: z.object({
     userInfo: z.object({ username: z.string().min(1) }),
@@ -92,7 +101,11 @@ function postReview(
         res.on("error", reject);
       },
     );
-    req.setTimeout(timeoutMs, () => req.destroy(new ProbeTimeout()));
+    const deadline = setTimeout(
+      () => req.destroy(new ProbeTimeout()),
+      timeoutMs,
+    );
+    req.on("close", () => clearTimeout(deadline));
     req.on("error", reject);
     req.end(SELF_SUBJECT_REVIEW);
   });
@@ -124,13 +137,19 @@ function unreachable(
         : `the cluster's certificate is not publicly trusted (${code}); give the cluster's CA`,
     };
   }
+  if (typeof code === "string" && isTlsErrorCode(code)) {
+    return {
+      status: "failed",
+      reason: `the TLS connection to the cluster failed (${code})`,
+    };
+  }
   return {
     status: "unchecked",
     reason: "the cluster's API server could not be reached",
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a Kubernetes service-account token the way kubectl uses it: a SelfSubjectReview posted to the cluster's API server with the token and, when the Connection has one, the cluster's CA as the only trusted root. Any authenticated identity may create one, so it needs no permission beyond the token itself. A 200 or 201 passes and names the user the token acts as; the expiry comes from the token's own `exp` claim, as a ServiceAccount token is a JWT. A 401 fails, saying when the token expired if it has. A certificate the CA or the public roots do not trust fails, since kubectl would refuse it too. Any other answer, a timeout or a network error says nothing about the token and leaves it unchecked, with a fixed reason: an error's own text can carry the request, and the reason is stored and shown.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a Kubernetes service-account token the way kubectl uses it: a SelfSubjectReview posted to the cluster's API server with the token and, when the Connection has one, the cluster's CA as the only trusted root. Any authenticated identity may create one, so it needs no permission beyond the token itself. A 200 or 201 passes and names the user the token acts as; the expiry comes from the token's own `exp` claim, as a ServiceAccount token is a JWT. A 401 fails, saying when the token expired if it has. A certificate the CA or the public roots do not trust fails, and so does any other TLS error, since kubectl would refuse them too. The timeout is a deadline for the whole request, not only for an idle socket. Any other answer, a timeout or a network error says nothing about the token and leaves it unchecked, with a fixed reason: an error's own text can carry the request, and the reason is stored and shown.
 export async function probeKubernetesToken(
   target: CredentialProbeTarget,
   token: string,
