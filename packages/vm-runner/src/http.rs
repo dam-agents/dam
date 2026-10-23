@@ -121,14 +121,7 @@ impl Token {
     }
 
     pub fn keep_fresh(self: Arc<Self>) {
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(TOKEN_RELOAD);
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                self.reload();
-            }
-        });
+        crate::every(TOKEN_RELOAD, None, move || self.reload());
     }
 
     fn matches(&self, got: &[u8]) -> bool {
@@ -326,18 +319,27 @@ struct StatusWait {
     since: u64,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the two long-poll reads share: `wait` and `since` are read once, and a read without `wait` answers at once rather than waiting. `read` gets the `since` version and the wait, which is None when the caller asked for no wait.
+async fn long_poll(
+    query: Result<Query<StatusWait>, QueryRejection>,
+    read: impl FnOnce(u64, Option<Duration>) -> Response + Send + 'static,
+) -> Response {
+    let Ok(Query(asked)) = query else {
+        return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
+    };
+    let wait = (asked.wait != 0).then(|| Duration::from_secs(asked.wait));
+    blocking(move || read(asked.since, wait)).await
+}
+
 async fn status(
     State(server): State<Arc<Server>>,
     Path(id): Path<String>,
     query: Result<Query<StatusWait>, QueryRejection>,
 ) -> Response {
-    let Ok(Query(asked)) = query else {
-        return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
-    };
-    blocking(move || {
-        let read = match asked.wait {
-            0 => server.get(&id),
-            wait => server.wait(&id, asked.since, Duration::from_secs(wait)),
+    long_poll(query, move |since, wait| {
+        let read = match wait {
+            None => server.get(&id),
+            Some(wait) => server.wait(&id, since, wait),
         };
         match read {
             Ok(status) => Json(status).into_response(),
@@ -352,13 +354,10 @@ async fn pressure(
     State(server): State<Arc<Server>>,
     query: Result<Query<StatusWait>, QueryRejection>,
 ) -> Response {
-    let Ok(Query(asked)) = query else {
-        return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
-    };
-    blocking(move || {
-        let read = match asked.wait {
-            0 => server.pressure(),
-            wait => server.wait_pressure(asked.since, Duration::from_secs(wait)),
+    long_poll(query, move |since, wait| {
+        let read = match wait {
+            None => server.pressure(),
+            Some(wait) => server.wait_pressure(since, wait),
         };
         Json(read).into_response()
     })

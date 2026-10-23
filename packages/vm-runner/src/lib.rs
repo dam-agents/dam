@@ -4,9 +4,9 @@ mod cache;
 pub mod cacheapi;
 mod capability;
 mod capacity;
+mod cgroup;
 mod command;
 pub mod console;
-mod cpu;
 pub mod embedded;
 mod fetch;
 mod files;
@@ -18,7 +18,6 @@ pub mod link;
 mod metrics;
 mod plan;
 pub mod preload;
-mod pressure;
 pub mod release;
 pub mod runtime;
 pub mod seed;
@@ -40,4 +39,60 @@ fn locked<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 // UNIT_BOUNDARY_DESCRIPTION: the milliseconds since `started`, as the whole number a log field or a report carries.
 fn elapsed_ms(started: std::time::Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one periodic task of the process: `work` on a blocking thread, at once and then every `period`, until `lifetime` fires. It serves the work no runner owns — a node service's preload pass, the runner binary's log trim and reaper, the token file's re-read — where `Server::every` serves the timers of one runner. A pass that panics is left to the next one rather than stopping the timer. The task comes back, so a caller that must outlive its last pass can wait for it.
+pub fn every(
+    period: std::time::Duration,
+    lifetime: Option<tokio_util::sync::CancellationToken>,
+    work: impl Fn() + Send + Sync + 'static,
+) -> tokio::task::JoinHandle<()> {
+    let work = std::sync::Arc::new(work);
+    tokio::spawn(async move {
+        loop {
+            let pass = work.clone();
+            let _ = tokio::task::spawn_blocking(move || pass()).await;
+            let waited = tokio::time::sleep(period);
+            match &lifetime {
+                Some(lifetime) => tokio::select! {
+                    _ = lifetime.cancelled() => return,
+                    _ = waited => {}
+                },
+                None => waited.await,
+            }
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    // TEST_SCENARIO: a periodic task runs its pass at once and again after each period, and the lifetime token stops it between passes rather than leaving it to run on.
+    #[tokio::test]
+    async fn a_periodic_task_runs_at_once_then_every_period_until_it_is_cancelled() {
+        let passes = Arc::new(AtomicU32::new(0));
+        let counted = passes.clone();
+        let lifetime = tokio_util::sync::CancellationToken::new();
+        let task = super::every(
+            Duration::from_millis(10),
+            Some(lifetime.clone()),
+            move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        lifetime.cancel();
+        let _ = task.await;
+        let ran = passes.load(Ordering::Relaxed);
+        assert!(ran >= 2, "ran {ran} times in a hundred milliseconds");
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert_eq!(
+            passes.load(Ordering::Relaxed),
+            ran,
+            "a cancelled task ran on"
+        );
+    }
 }

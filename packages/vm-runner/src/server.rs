@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -200,7 +200,7 @@ struct Machines {
     closed: bool,
     entries: HashMap<String, MachineEntry>,
     pressure: Pressure,
-    cpu: crate::cpu::Window,
+    cpu: crate::cgroup::Window,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what `OomKills::seen` holds until a sample reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
@@ -229,7 +229,7 @@ const OOM_KILL_COUNT: &str = "oom-kill-count";
 // UNIT_BOUNDARY_DESCRIPTION: the count a starting runner begins from: the one the runner it replaces last read, since a kill that landed in between is still the count it will read, and a cgroup the kernel recreated reads lower than that and starts afresh. Absent — a first start — it begins where the cgroup stands, since a count from before this pod means nothing here.
 fn oom_kills_seen_before(state_dir: &std::path::Path, cgroup: Option<&std::path::Path>) -> u64 {
     let counted = cgroup
-        .and_then(crate::pressure::oom_kills)
+        .and_then(crate::cgroup::oom_kills)
         .unwrap_or(OOM_KILLS_UNREAD);
     std::fs::read_to_string(state_dir.join(OOM_KILL_COUNT))
         .ok()
@@ -568,75 +568,30 @@ impl Server {
             }
         }
         server.hold_images();
-        let refreshing = Arc::downgrade(&server);
-        let lifetime = server.lifetime.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = lifetime.cancelled() => return,
-                    _ = tokio::time::sleep(HOLD_REFRESH) => {}
-                }
-                let Some(server) = refreshing.upgrade() else {
-                    return;
-                };
-                let _ = tokio::task::spawn_blocking(move || server.hold_images()).await;
-            }
-        });
-        let checking = Arc::downgrade(&server);
-        let lifetime = server.lifetime.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = lifetime.cancelled() => return,
-                    _ = tokio::time::sleep(STORAGE_CHECK) => {}
-                }
-                let Some(server) = checking.upgrade() else {
-                    return;
-                };
-                let _ = tokio::task::spawn_blocking(move || server.check_storage()).await;
-            }
-        });
-        // UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
-        let prober = Arc::downgrade(&server);
-        server.background(move |lifetime| {
-            while !lifetime.is_cancelled() {
-                let Some(server) = prober.upgrade() else {
-                    return;
-                };
-                server.probe_due();
-                drop(server);
-                std::thread::sleep(PROBE_TICK);
-            }
-        });
+        server.every(HOLD_REFRESH, |server| server.hold_images());
+        server.every(STORAGE_CHECK, |server| server.check_storage());
+        // UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe.
+        server.every(PROBE_TICK, |server| server.probe_due());
         locked(&server.machines).pressure.version =
             server.versions.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cgroup) = server.config.cgroup_dir.clone() {
-            let sampler = Arc::downgrade(&server);
-            server.background(move |lifetime| {
-                // UNIT_BOUNDARY_DESCRIPTION: a working set this runner cannot read says nothing about pressure, but it says nothing about the cgroup's grouping either, so the grouping sample waits on no pressure reading: the two are read apart and the failure is said once, not at every tick.
-                let mut pressure_unreadable = false;
-                while !lifetime.is_cancelled() {
-                    let Some(server) = sampler.upgrade() else {
-                        return;
-                    };
-                    server.sample_oom_group(&cgroup);
-                    if let Ok(stat) = crate::cpu::stat(&cgroup) {
-                        locked(&server.machines).cpu.push(Instant::now(), stat);
+            // UNIT_BOUNDARY_DESCRIPTION: a working set this runner cannot read says nothing about pressure, but it says nothing about the cgroup's grouping either, so the grouping sample waits on no pressure reading: the two are read apart and the failure is said once, not at every tick.
+            let pressure_unreadable = AtomicBool::new(false);
+            server.every(crate::cgroup::SAMPLE_EVERY, move |server| {
+                server.sample_oom_group(&cgroup);
+                if let Ok(stat) = crate::cgroup::stat(&cgroup) {
+                    locked(&server.machines).cpu.push(Instant::now(), stat);
+                }
+                match crate::cgroup::working_set_mib(&cgroup) {
+                    Ok(mib) => {
+                        pressure_unreadable.store(false, Ordering::Relaxed);
+                        server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX));
                     }
-                    match crate::pressure::working_set_mib(&cgroup) {
-                        Ok(mib) => {
-                            pressure_unreadable = false;
-                            server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX));
-                        }
-                        Err(e) => {
-                            if !pressure_unreadable {
-                                pressure_unreadable = true;
-                                tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
-                            }
+                    Err(e) => {
+                        if !pressure_unreadable.swap(true, Ordering::Relaxed) {
+                            tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
                         }
                     }
-                    drop(server);
-                    std::thread::sleep(crate::pressure::SAMPLE_EVERY);
                 }
             });
         }
@@ -649,13 +604,13 @@ impl Server {
             let machines = locked(&self.machines);
             (machines.pressure.pressured, machines.pressure.signalled)
         };
-        let now = crate::pressure::pressured(
+        let now = crate::cgroup::pressured(
             i64::from(working_set_mib),
             i64::from(self.memory_limit_mib()),
             was,
         );
         let signal = now != was
-            || (now && signalled.is_none_or(|at| at.elapsed() >= crate::pressure::SIGNAL_EVERY));
+            || (now && signalled.is_none_or(|at| at.elapsed() >= crate::cgroup::SIGNAL_EVERY));
         if signal && now {
             self.measure_running();
         }
@@ -672,7 +627,7 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: records one sample of whether the runner's cgroup kills every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The node's kubelet writes memory.oom.group and groups unless its `singleProcessOOMKill` is on, so a node that leaves the setting alone takes an owner's whole pool down, and a kubelet can turn grouping on under a runner that started with it off. The runner reads it at every sample rather than once at start and says each change on its console; its gauge reads the sample, so a scrape never disagrees with the console.
     fn sample_oom_group(&self, cgroup: &Path) {
-        let now = crate::pressure::oom_group(cgroup);
+        let now = crate::cgroup::oom_group(cgroup);
         let mut machines = locked(&self.machines);
         let was = std::mem::replace(&mut machines.pressure.oom_group, now);
         drop(machines);
@@ -826,7 +781,7 @@ impl Server {
             .config
             .cgroup_dir
             .as_ref()
-            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
+            .and_then(|cgroup| crate::cgroup::oom_kills(cgroup))
         else {
             return;
         };
@@ -900,7 +855,7 @@ impl Server {
             .config
             .cgroup_dir
             .as_ref()
-            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
+            .and_then(|cgroup| crate::cgroup::oom_kills(cgroup))
             .is_none()
         {
             return true;
@@ -967,9 +922,15 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a pressure read, as `wait` is for a machine's status: it answers once the pressure version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes.
     pub fn wait_pressure(&self, since: u64, timeout: Duration) -> RunnerPressure {
+        self.wait_changed(since, timeout, |machines| machines.pressure.version);
+        self.pressure()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the wait both long-polls share: it returns once `version` reads a figure other than `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes with no change. A different version rather than a greater one ends the wait, so a caller holding a version from before a runner restart or a delete is answered at once.
+    fn wait_changed(&self, since: u64, timeout: Duration, version: impl Fn(&Machines) -> u64) {
         let deadline = Instant::now() + timeout.min(STATUS_WAIT_CAP);
         let mut machines = locked(&self.machines);
-        while !machines.closed && machines.pressure.version == since {
+        while !machines.closed && version(&machines) == since {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 break;
@@ -979,8 +940,6 @@ impl Server {
                 Err(e) => e.into_inner().0,
             };
         }
-        drop(machines);
-        self.pressure()
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, waits up to CLOSE_GRACE for it, and then stops every machine still running within STOP_ON_CLOSE. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. The machines are stopped as the controller's stop does it, so a runner going away quiesces each guest's disk instead of leaving the pod's kill to cut its power. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
@@ -1097,6 +1056,30 @@ impl Server {
         }
         let lifetime = self.lifetime.clone();
         self.work.spawn_blocking(move || work(lifetime));
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one periodic task of the runner: `work` on a blocking thread, one period after the runner starts and then every `period`, until the runner closes. Both the loop and each pass of it are tracked with the runner's other work, so closing cancels the wait between passes and waits for the pass in flight. It holds the runner weakly, so a task left after the last owner ends instead of keeping it alive. A pass that panics is left to the next one rather than stopping the timer: a lease, a grant or a log that stops being refreshed is worse than a pass that failed.
+    fn every(
+        self: &Arc<Self>,
+        period: Duration,
+        work: impl Fn(&Arc<Self>) + Send + Sync + 'static,
+    ) {
+        let server = Arc::downgrade(self);
+        let lifetime = self.lifetime.clone();
+        let work = Arc::new(work);
+        self.work.spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = lifetime.cancelled() => return,
+                    _ = tokio::time::sleep(period) => {}
+                }
+                let Some(server) = server.upgrade() else {
+                    return;
+                };
+                let pass = work.clone();
+                let _ = tokio::task::spawn_blocking(move || pass(&server)).await;
+            }
+        });
     }
 
     pub fn list(&self) -> anyhow::Result<Vec<String>> {
@@ -1240,22 +1223,12 @@ impl Server {
         Ok(self.status(id))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a status read: answers as soon as the machine's status version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes with no change. A different version rather than a greater one ends the wait, so a caller holding a version from before a runner restart or a delete is answered at once.
+    // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a status read: answers as soon as the machine's status version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes with no change.
     pub fn wait(&self, id: &str, since: u64, timeout: Duration) -> Result<MachineStatus, Rejected> {
         check_id(id)?;
-        let deadline = Instant::now() + timeout.min(STATUS_WAIT_CAP);
-        let mut machines = locked(&self.machines);
-        while !machines.closed && machines.entries.get(id).map_or(0, |e| e.version) == since {
-            let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                break;
-            }
-            machines = match self.changed.wait_timeout(machines, left) {
-                Ok((guard, _)) => guard,
-                Err(e) => e.into_inner().0,
-            };
-        }
-        drop(machines);
+        self.wait_changed(since, timeout, |machines| {
+            machines.entries.get(id).map_or(0, |e| e.version)
+        });
         Ok(self.status(id))
     }
 
@@ -2078,8 +2051,8 @@ impl Server {
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
             storage: (self.config.measure_storage)(),
-            cpu: cgroup.and_then(|c| crate::cpu::stat(c).ok()),
-            cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
+            cpu: cgroup.and_then(|c| crate::cgroup::stat(c).ok()),
+            cpu_limit_milli: cgroup.and_then(|c| crate::cgroup::limit_milli(c).ok().flatten()),
             working_set_mib: sampled.map(|p| p.0),
             pressured: sampled.map(|p| p.1),
             oom_group,
@@ -2133,8 +2106,8 @@ impl Server {
             })
             .collect();
         let cpu = self.config.cgroup_dir.as_deref().and_then(|cgroup| {
-            let limit_milli = crate::cpu::limit_milli(cgroup).ok().flatten();
-            let stall = crate::cpu::pressure_percent(cgroup);
+            let limit_milli = crate::cgroup::limit_milli(cgroup).ok().flatten();
+            let stall = crate::cgroup::pressure_percent(cgroup);
             if limit_milli.is_none() && stall.is_none() {
                 return None;
             }
@@ -2366,7 +2339,7 @@ impl Server {
         self.config
             .cgroup_dir
             .as_deref()
-            .and_then(crate::pressure::limit_mib)
+            .and_then(crate::cgroup::limit_mib)
             .and_then(|mib| i32::try_from(mib).ok())
             .unwrap_or(self.config.memory_mib)
     }

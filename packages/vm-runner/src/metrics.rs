@@ -105,7 +105,7 @@ pub struct Gauges {
     pub reserve_mib: i32,
     pub committed_mib: Option<i64>,
     pub storage: Option<crate::storage::StorageUse>,
-    pub cpu: Option<crate::cpu::CpuStat>,
+    pub cpu: Option<crate::cgroup::CpuStat>,
     pub cpu_limit_milli: Option<u64>,
     pub working_set_mib: Option<i32>,
     pub pressured: Option<bool>,
@@ -542,7 +542,7 @@ mod tests {
                 used: 75,
                 usable: 100,
             }),
-            cpu: Some(crate::cpu::CpuStat {
+            cpu: Some(crate::cgroup::CpuStat {
                 usage_usec: 2_500_000,
                 nr_periods: 40,
                 nr_throttled: 10,
