@@ -57,7 +57,7 @@ export function EnvironmentsPanel({
         ) : (
           <ul className="flex flex-col divide-y divide-border">
             {list.map((environment) => (
-              <li key={environment.id} className="px-4 py-4">
+              <li key={environment.id}>
                 <EnvironmentCard environment={environment} />
               </li>
             ))}

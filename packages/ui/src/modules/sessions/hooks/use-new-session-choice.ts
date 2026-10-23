@@ -3,7 +3,6 @@ import { type HarnessCapability, routesSessionPairs } from "agent-runtime-api";
 import type { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import type { useAgentSession } from "../api/queries.js";
 import { useProviderConnections } from "../api/session-pair.js";
-import { useHasModelChoices } from "./use-has-model-choices.js";
 import { useNextSessionPair } from "./use-next-session-pair.js";
 
 type Status = ReturnType<typeof useHarnessConfigStatus>["data"];
@@ -76,9 +75,10 @@ export function newSessionChoice(input: {
 export interface NewSessionChoiceResult {
   choice: NewSessionChoice;
   newSessionAgent: string | null;
+  pair: ReturnType<typeof useNextSessionPair>;
+  pairHarness: string | null;
   noProviders: boolean;
   noGrantedProvider: boolean;
-  needsModel: boolean;
 }
 
 export function useNewSessionChoice({
@@ -111,21 +111,20 @@ export function useNewSessionChoice({
     sessionHarness,
   });
   const providerConnections = useProviderConnections(newSessionAgent);
-  const routedAgent = status?.modelRouter ? agentId : null;
   const pair = useNextSessionPair(
     choice.kind === "picker" && choice.routed ? choice.agentId : null,
     carried.map((h) => h.name),
     choice.kind === "picker" ? choice.defaultHarness : undefined,
   );
-  const newPairHasChoices = useHasModelChoices(routedAgent, pair?.harness);
-  const sessionHasChoices = useHasModelChoices(
-    session ? routedAgent : null,
-    sessionHarness,
-  );
 
   return {
     choice,
     newSessionAgent,
+    pair,
+    pairHarness:
+      choice.kind === "picker"
+        ? (pair?.harness ?? choice.defaultHarness)
+        : (pair?.harness ?? null),
     noProviders:
       !!newSessionAgent &&
       providerConnections.loaded &&
@@ -134,8 +133,5 @@ export function useNewSessionChoice({
       !!newSessionAgent &&
       providerConnections.loaded &&
       providerConnections.granted.length === 0,
-    needsModel:
-      (pair?.model === null && newPairHasChoices) ||
-      (sessionHasChoices && !session?.model),
   };
 }

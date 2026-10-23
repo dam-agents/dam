@@ -287,3 +287,59 @@ describe("loadConfig — template mount defaults", () => {
     ]);
   });
 });
+
+describe("loadConfig — backchannel addresses", () => {
+  const BACKCHANNEL_ENV: Record<string, string> = {
+    BACKCHANNEL_UI_BASE_URL: "http://localhost:4444",
+    BACKCHANNEL_KEYCLOAK_URL: "http://keycloak.localhost:4444",
+    BACKCHANNEL_SHARE_BASE_URL: "http://share.localhost:4444",
+    BACKCHANNEL_CONTENT_BASE_URL: "http://content.localhost:4444",
+  };
+  const managed = [
+    ...Object.keys(REQUIRED_ENV),
+    ...Object.keys(BACKCHANNEL_ENV),
+  ];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: The chart sets no backchannel env when the backchannel is
+   * off, and the install then has its public addresses alone.
+   */
+  it("has no backchannel without its env", () => {
+    expect(loadConfig().backchannel).toBeNull();
+  });
+
+  it("reads the four backchannel addresses the chart sets", () => {
+    Object.assign(process.env, BACKCHANNEL_ENV);
+    expect(loadConfig().backchannel).toEqual({
+      uiBaseUrl: "http://localhost:4444",
+      keycloakExternalUrl: "http://keycloak.localhost:4444",
+      shareBaseUrl: "http://share.localhost:4444",
+      contentBaseUrl: "http://content.localhost:4444",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Part of a backchannel would leave its sign-in or its share
+   * pages pointing at the public addresses, so it is refused at boot.
+   */
+  it("refuses part of a backchannel", () => {
+    process.env.BACKCHANNEL_UI_BASE_URL = "http://localhost:4444";
+    expect(() => loadConfig()).toThrow(/must be set together/);
+  });
+});

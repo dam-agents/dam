@@ -34,7 +34,8 @@ export function buildTestCommand(deps: {
     .addHelpText(
       "after",
       "\nThe server uses the stored credential the way an agent does: a GitHub token\n" +
-        "against GitHub's user endpoint, a model provider key against the provider.\n" +
+        "against GitHub's user endpoint, a Kubernetes token in a SelfSubjectReview on\n" +
+        "its cluster's API server, a model provider key against the provider.\n" +
         "The result replaces the one `dam connection list --json` shows.\n" +
         "\nExit codes: 0 the check passed, 1 it failed or could not run,\n" +
         "2 the connection has no check.\n" +
@@ -63,7 +64,7 @@ export function buildTestCommand(deps: {
       if (!check) {
         process.stderr.write(
           `error: '${match.name}' has no credential check; ` +
-            "GitHub tokens and model provider keys have one\n",
+            "GitHub and Kubernetes tokens and model provider keys have one\n",
         );
         process.exit(EXIT_INVALID_INPUT);
       }

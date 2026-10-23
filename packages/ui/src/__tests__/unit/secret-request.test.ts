@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the page a user types a connection secret on reads its request from the link, says where the secret goes in plain terms, and tells a user who opened another user's link not to enter a secret there. After the save it shows what the token check found, and a held secret says whether it failed the check or could not be checked.
+// TEST_OVERVIEW: the page a user types a connection secret on reads its request from the link, says where the secret goes in plain terms, and tells a user who opened another user's link not to enter a secret there. After the save it shows what the token check found, and a held secret says whether it failed the check, could not be checked, or passed but expires within a day.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -70,5 +70,18 @@ describe("secret request page", () => {
     expect(heldCheckCopy({ status: "unchecked", at }).title).toMatch(
       /could not be checked/,
     );
+  });
+
+  // TEST_SCENARIO: a token that passes but expires within a day, such as a service-account token EKS shortened to 24 hours, is held with its own warning, so the user sees it before agents start failing the next day.
+  it("warns of a token that expires within a day", () => {
+    const at = "2026-10-22T08:00:00.000Z";
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const later = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    expect(
+      heldCheckCopy({ status: "passed", expiresAt: soon, at }).title,
+    ).toMatch(/expires within a day/);
+    expect(
+      heldCheckCopy({ status: "passed", expiresAt: later, at }).title,
+    ).not.toMatch(/expires/);
   });
 });

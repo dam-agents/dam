@@ -456,6 +456,7 @@ export {
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
   CURVE_BENDER_HOST,
+  CURVE_BENDER_WORK_MODEL,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   displayNameForTemplate,
   BOB_HOST,
@@ -585,6 +586,10 @@ export type {
   SecretRequestView,
   SecretRequestsService,
 } from "./modules/connections/types.js";
+export {
+  CREDENTIAL_EXPIRES_SOON_MS,
+  credentialExpiresSoon,
+} from "./modules/connections/credential-expiry.js";
 export {
   authConfig as connectionAuthConfigSchema,
   providerKeyCheck as providerKeyCheckSchema,

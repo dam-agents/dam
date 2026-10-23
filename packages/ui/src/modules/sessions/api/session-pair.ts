@@ -227,6 +227,38 @@ export function useProviderConnections(agentId: string | null): {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: attaches a provider without the restart question,
+ * for a caller that runs on it at once: the grant reaches a pod the session
+ * start boots, so nothing running is left on the old env.
+ */
+export async function attachProviderQuietly(
+  agentId: string,
+  connectionId: string,
+): Promise<boolean> {
+  try {
+    await api.connections.updateAgentConnections.mutate({
+      agentId,
+      grant: [connectionId],
+      revoke: [],
+    });
+  } catch (err: unknown) {
+    emitToast({
+      kind: "error",
+      message: `Couldn't attach the model provider: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return false;
+  }
+  await Promise.all(
+    [
+      trpc.connections.getAgentConnections.pathKey(),
+      trpc.harnessConfig.sessionPair.pathKey(),
+      egressRulesKeys.all,
+    ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+  );
+  return true;
+}
+
 export function useGrantProvider(agentId: string | null) {
   const update = useMutation({
     mutationFn: (change: { grant?: string[]; revoke?: string[] }) =>

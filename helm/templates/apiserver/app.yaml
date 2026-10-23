@@ -301,6 +301,16 @@ spec:
               value: {{ include "platform.url.share" . | quote }}
             - name: CONTENT_BASE_URL
               value: {{ include "platform.url.content" . | quote }}
+            {{- if .Values.backchannel.enabled }}
+            - name: BACKCHANNEL_UI_BASE_URL
+              value: {{ include "platform.backchannel.url" (dict "root" .) | quote }}
+            - name: BACKCHANNEL_KEYCLOAK_URL
+              value: {{ include "platform.backchannel.url" (dict "root" . "sub" "keycloak") | quote }}
+            - name: BACKCHANNEL_SHARE_BASE_URL
+              value: {{ include "platform.backchannel.url" (dict "root" . "sub" "share") | quote }}
+            - name: BACKCHANNEL_CONTENT_BASE_URL
+              value: {{ include "platform.backchannel.url" (dict "root" . "sub" "content") | quote }}
+            {{- end }}
             - name: KB_SHARE_PER_FILE_MAX_BYTES
               value: {{ .Values.apiServer.kbShares.perFileMaxBytes | quote }}
             - name: KB_SHARE_TOTAL_MAX_BYTES

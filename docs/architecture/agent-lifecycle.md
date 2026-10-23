@@ -217,8 +217,7 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 - **api-server (`active-session` annotation).** A refcount of open chat, terminal, SSH and browser connections — set on the first, cleared on the last.
   So a chat merely open in the UI keeps the Agent awake, as an open terminal does.
   Since the probe is blind to SSH, an SSH session leans on this annotation, which alone suffices while the connection is open.
-  A half-dead terminal, SSH or browser connection is reclaimed within a minute: the api-server pings each such client every 30 seconds and cuts one that left the previous ping unanswered.
-  A chat connection is not pinged.
+  A half-dead chat, terminal, SSH or browser connection is reclaimed within a minute: the api-server pings each such client every 30 seconds and cuts one that left the previous ping unanswered.
   Pins orphaned by a dead replica are swept by a periodic reconcile over per-replica Redis presence keys (the keys expire by TTL when their replica stops refreshing them).
 - **api-server (`last-activity` annotation).** The one traffic-driven signal, and the clock the idle timeout measures against.
   Bumped, debounced, by any relay or proxied call as bytes flow, by an explicit wake, and by the scheduler on a fire.

@@ -1,9 +1,13 @@
-import { Launch, TrashCan } from "@carbon/icons-react";
+import { Launch } from "@carbon/icons-react";
 import type { EnvironmentView } from "api-server-api";
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import {
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { cn } from "@/lib/utils";
 
 import { timeUntil } from "../../../lib/format-time.js";
@@ -37,7 +41,11 @@ export function environmentAccessLabel(access: string[] | null): string {
  * UNIT_BOUNDARY_DESCRIPTION: One of an agent's Environments as its owner sees
  * it, as a row of the agent's Environments list: each endpoint's address as a
  * link, whether it runs, when it expires, who may open it, and the owner's
- * controls — extend the expiry and delete it.
+ * controls — extend the expiry and delete it — in one menu on the name row.
+ * The card brings its own padding, so it looks the same in every list. An
+ * endpoint's name, port and address are columns of their own; the name column
+ * has a minimum width most names fit (they run to 12 characters), so the
+ * addresses start at one x in every card of a list.
  */
 export function EnvironmentCard({
   environment,
@@ -77,12 +85,12 @@ export function EnvironmentCard({
 
   return (
     <div
-      className="@container flex flex-col gap-3"
+      className="flex flex-col gap-3 px-4 py-3"
       data-testid="environment-card"
       data-environment={environment.name}
     >
-      <div className="flex flex-col gap-2 @lg:flex-row @lg:items-start @lg:justify-between @lg:gap-3">
-        <div className="min-w-0">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
           <p
             className="truncate text-md font-medium text-foreground"
             title={environment.name}
@@ -109,50 +117,41 @@ export function EnvironmentCard({
             </StatusItem>
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1 self-start">
-          <Select
-            size="sm"
-            aria-label={`Extend ${environment.name}`}
-            value=""
-            disabled={extend.isPending}
-            onChange={(e) => {
-              const days = Number(e.target.value);
-              if (days > 0) handleExtend(days);
-            }}
-          >
-            <option value="" disabled>
-              Extend…
-            </option>
-            {EXTEND_CHOICES.map((c) => (
-              <option key={c.days} value={c.days}>
-                {c.label} from now
-              </option>
-            ))}
-          </Select>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`Delete ${environment.name}`}
-            tooltip="Delete"
-            disabled={remove.isPending}
-            onClick={() => void handleDelete()}
-          >
-            <TrashCan size={16} />
-          </Button>
-        </div>
+        <RowActionsMenu
+          label={`Actions for ${environment.name}`}
+          testId="environment-actions"
+          disabled={extend.isPending || remove.isPending}
+        >
+          <DropdownMenuLabel>Extend to</DropdownMenuLabel>
+          {EXTEND_CHOICES.map((c) => (
+            <DropdownMenuItem
+              key={c.days}
+              onSelect={() => handleExtend(c.days)}
+            >
+              {c.label} from now
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem tone="danger" onSelect={() => void handleDelete()}>
+            Delete Environment
+          </DropdownMenuItem>
+        </RowActionsMenu>
       </div>
 
       <ul
-        className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1"
+        className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1"
         data-testid="environment-endpoints"
       >
         {environment.endpoints.map((endpoint) => (
           <li
             key={endpoint.name}
-            className="col-span-2 grid grid-cols-subgrid items-center text-sm"
+            className="col-span-3 grid grid-cols-subgrid items-center text-sm"
           >
-            <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-              {endpoint.name} · {endpoint.port}
+            <span className="min-w-[8ch] whitespace-nowrap font-mono text-xs text-muted-foreground">
+              {endpoint.name}
+            </span>
+            <span className="min-w-[5ch] text-right font-mono text-xs tabular-nums text-muted-foreground">
+              {endpoint.port}
             </span>
             {endpoint.url ? (
               <a

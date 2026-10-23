@@ -96,7 +96,10 @@ Before the user types, the page shows what the save will do — the template, th
 The submit then runs the ordinary create or rotation, with its validation; a refused secret leaves the link usable until it expires.
 A header template may also name a **credential check**, which the GitHub personal access token templates do: the token is tried on the user endpoint of its GitHub host before it is stored, on create and on rotation alike.
 The check passes, naming the account, the expiry and, for a classic token, the scopes; fails, with GitHub's reason (bad credentials, or SSO authorization an organization requires); or stays unchecked when GitHub gives no answer about the token.
-The page holds a token that does not pass, so the user can fix it on the same link, and saves it on a confirmed "save anyway": the user is warned, never blocked.
+The Kubernetes template names one too: the api-server posts a SelfSubjectReview to the cluster's API server with the token, trusting the Connection's stored CA when it has one and the public roots otherwise, as the gateway does.
+Any authenticated identity may create a SelfSubjectReview, so the check needs no permission beyond the token.
+It passes naming the user the token acts as (`system:serviceaccount:<namespace>:<name>`) and the expiry from the token's `exp` claim; fails on a 401, saying the token expired when its claim is past, and on a certificate the CA or the public roots do not trust; and stays unchecked on a cluster older than Kubernetes 1.28, another answer, or no answer.
+The page holds a token that does not pass, and one that passes but expires within a day, so the user can fix it on the same link, and saves it on a confirmed "save anyway": the user is warned, never blocked.
 Saved through any path, the token keeps the result and its time on the Connection, which every listing carries, so a token saved after a failed check does not read like a healthy one; the owner can check one stored credential again, which replaces the result, and a provider key is checked again with its provider check.
 The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
 The page covers the static and minting kinds; OAuth needs no secret here.
@@ -316,6 +319,9 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 The same proxy, reached with a key the deployment provides instead of the user's.
 The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
 It is not behind a feature flag: where the key is set, every user has it, and a user who connects nothing of their own still has a provider to run an agent on.
+Such an install shows a CurveBender notice above every chat's composer, for every user: the coloured logo on a white tile, the page's own surface colours, a link to the documentation, and a close kept in this browser alone.
+Its **Try now** button attaches the shared Connection and selects its work model — a fresh chat also moves to Pi, an open session keeps its harness — then thanks the person and links the community channel.
+The composer never waits for a provider: an agent holding none takes this Connection before the prompt goes out, and only an install without the key keeps the block, whose composer opens the picker, or the provider list where the owner holds none, when clicked.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.

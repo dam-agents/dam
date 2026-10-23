@@ -22,7 +22,7 @@ function stubFetch(res: () => Response | Promise<Response>) {
 }
 
 const probe = (host = "github.com", value = "ghp_token") =>
-  createCredentialProbe().probe("github-user", host, value);
+  createCredentialProbe().probe("github-user", { host }, value);
 
 describe("GitHub token check", () => {
   afterEach(() => {

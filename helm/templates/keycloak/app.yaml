@@ -115,12 +115,19 @@ spec:
               value: {{ .Values.keycloak.events.errorLevel | quote }}
             - name: KC_HTTP_PORT
               value: {{ .Values.keycloak.port | quote }}
+            {{- /* With the backchannel on, Keycloak takes its address from
+                   each request, so a token names the address it was issued
+                   on; a fixed hostname would name the public one on every
+                   token. Keycloak allows a dynamic backchannel only beside a
+                   fixed hostname. */}}
+            {{- if not .Values.backchannel.enabled }}
             - name: KC_HOSTNAME
               value: {{ include "platform.url.keycloak" . | quote }}
+            {{- end }}
             - name: KC_HOSTNAME_STRICT
               value: "false"
             - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
-              value: "true"
+              value: {{ (not .Values.backchannel.enabled) | quote }}
             - name: KC_PROXY_HEADERS
               value: "xforwarded"
             - name: KC_HTTP_ENABLED
