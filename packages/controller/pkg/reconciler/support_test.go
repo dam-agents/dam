@@ -106,8 +106,7 @@ var testConfig = &config.Config{
 		VMIdleTimeout: config.Duration(5 * time.Minute),
 	},
 	AgentTemplateDefaults: config.AgentTemplateDefaults{
-		ImagePullPolicy: "IfNotPresent",
-		StorageSize:     "10Gi",
+		StorageSize: "10Gi",
 	},
 }
 

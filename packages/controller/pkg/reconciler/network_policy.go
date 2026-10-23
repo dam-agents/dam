@@ -22,17 +22,17 @@ import (
 func BuildGatewayIngressNetworkPolicy(pairKey, owner string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
-	from := []networkingv1.NetworkPolicyPeer{{
-		PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{LabelPair: pairKey, LabelRole: RoleAgent}},
-	}}
-	ingress := []networkingv1.NetworkPolicyIngressRule{{
-		From:  from,
-		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envoyPort}},
-	}}
-	if owner != "" {
-		runner := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)}}
-		ingress[0].From = append(ingress[0].From, runner)
+	ingress := []networkingv1.NetworkPolicyIngressRule{}
+	if owner == "" {
 		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envoyPort}},
+		})
+	} else {
+		runner := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)}}
+		ingress = append(ingress, networkingv1.NetworkPolicyIngressRule{
+			From:  []networkingv1.NetworkPolicyPeer{runner},
+			Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &envoyPort}},
+		}, networkingv1.NetworkPolicyIngressRule{
 			From:  []networkingv1.NetworkPolicyPeer{runner},
 			Ports: machineGatewayPolicyPorts(),
 		})

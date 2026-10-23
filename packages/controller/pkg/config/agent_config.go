@@ -107,9 +107,8 @@ type VMRunnerRollout struct {
 }
 
 type AgentTemplateDefaults struct {
-	ImagePullPolicy string                       `json:"imagePullPolicy,omitempty"`
-	StorageSize     string                       `json:"storageSize,omitempty"`
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
+	StorageSize string                       `json:"storageSize,omitempty"`
+	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	Mounts       []Mount       `json:"mounts,omitempty"`
 	Env          []EnvVar      `json:"env,omitempty"`

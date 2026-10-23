@@ -326,10 +326,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	podFactory.Start(ctx.Done())
 	secretFactory.Start(ctx.Done())
 	go statefulSetInformer.RunWithContext(ctx)
-	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced}
-	if runnerInformer != nil {
-		synced = append(synced, runnerInformer.HasSynced, runnerPodInformer.HasSynced)
-	}
+	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced, runnerInformer.HasSynced, runnerPodInformer.HasSynced}
 	// UNIT_BOUNDARY_DESCRIPTION: a cluster that cannot read nodes still runs every other backend, so the node watch is not waited for here — it reports nothing until it syncs, rather than holding every backend's reconcile behind a permission the node role alone grants.
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")

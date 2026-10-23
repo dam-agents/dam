@@ -24,8 +24,7 @@ func TestAgentBase_JSONRoundTrip(t *testing.T) {
 
 func TestAgentTemplateDefaults_JSONRoundTrip(t *testing.T) {
 	in := AgentTemplateDefaults{
-		ImagePullPolicy: "IfNotPresent",
-		StorageSize:     "10Gi",
+		StorageSize: "10Gi",
 		Mounts: []Mount{
 			{Path: "$HOME", Persist: true},
 			{Path: "/tmp", Persist: false},
@@ -39,7 +38,6 @@ func TestAgentTemplateDefaults_JSONRoundTrip(t *testing.T) {
 
 	var out AgentTemplateDefaults
 	require.NoError(t, json.Unmarshal(data, &out))
-	assert.Equal(t, "IfNotPresent", out.ImagePullPolicy)
 	assert.Equal(t, "10Gi", out.StorageSize)
 	require.Len(t, out.Mounts, 2)
 	assert.Equal(t, "$HOME", out.Mounts[0].Path)

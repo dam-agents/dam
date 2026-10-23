@@ -15,9 +15,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
-const AgentContainerName = "agent"
-
-// UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. On the vm backend platform-init, which is Rust and runs inside the guest, bind-mounts the disk here, so the path is stated in the vm runner's contract fixtures and a test here holds this constant to them, because nothing else would notice the two drifting.
+// UNIT_BOUNDARY_DESCRIPTION: the agent home. platform-init, which is Rust and runs inside the guest, bind-mounts the machine's disk here, so the path is stated in the vm runner's contract fixtures and a test here holds this constant to them, because nothing else would notice the two drifting.
 const agentHomeDir = "/home/agent"
 
 func portInt32(p int) int32 {
@@ -33,11 +31,6 @@ const (
 	LabelRole   = "agent-platform.ai/role"
 	RoleAgent   = "agent"
 	RoleGateway = "gateway"
-
-	LabelMount = "agent-platform.ai/mount"
-
-	LabelPool          = "agent-platform.ai/pool"
-	LabelPoolAvailable = "agent-platform.ai/pool-available"
 )
 
 const (
@@ -45,7 +38,7 @@ const (
 	annStatefulSetTemplate = "agent-platform.ai/statefulset-template"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: an Agent's secretRef names a Secret by name alone, in the namespace that also holds every other owner's credentials, the runners' tokens and the gateways' keys, and every key of it lands in the agent's environment on both backends. So only a Secret carrying the Agent's own owner label is honoured, and never one the platform manages — the credentials a gateway injects and the pull Secrets the api-server writes carry the managed-by label, and a runner's token and certificate its component — because those are meant for everything except the agent. The refusal names the label to add rather than the Secret's contents, so an operator's Secret that predates the rule is one label away from working.
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's secretRef names a Secret by name alone, in the namespace that also holds every other owner's credentials, the runners' tokens and the gateways' keys, and every key of it lands in the machine's environment. So only a Secret carrying the Agent's own owner label is honoured, and never one the platform manages — the credentials a gateway injects and the pull Secrets the api-server writes carry the managed-by label, and a runner's token and certificate its component — because those are meant for everything except the agent. The refusal names the label to add rather than the Secret's contents, so an operator's Secret that predates the rule is one label away from working.
 func (r *AgentReconciler) ownedSecretRef(ctx context.Context, agent *apiv1.Agent) (*corev1.Secret, error) {
 	name := agent.Spec.SecretRef
 	if name == "" {
@@ -115,7 +108,6 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "API_SERVER_URL", Value: fmt.Sprintf("http://%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)},
 		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
-		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 }
 

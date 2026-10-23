@@ -206,9 +206,6 @@ const (
 	// ReasonNeverReady: the current pod's agent container, or the machine,
 	// has run for ten minutes on this spec without becoming ready.
 	ReasonNeverReady = "NeverReady"
-	// ReasonAdmissionDenied: an admission webhook or policy refused the agent
-	// StatefulSet with this spec's image, so the old pod keeps running.
-	ReasonAdmissionDenied = "AdmissionDenied"
 )
 
 // ReasonHibernated is stamped on the readiness conditions when the idle checker

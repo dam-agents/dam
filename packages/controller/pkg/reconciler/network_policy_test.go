@@ -14,18 +14,18 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
-// TEST_SCENARIO: a vm agent's traffic leaves from the owner's VM runner, not from an agent pod, so its gateway admits that runner too — and only that owner's runner, because a guest that escapes into another owner's runner must not reach this gateway.
+// TEST_SCENARIO: a machine's traffic leaves from the owner's VM runner, so its gateway admits that runner on the proxy port — and only that owner's runner, because a guest that escapes into another owner's runner must not reach this gateway.
 func TestGatewayIngressAdmitsTheOwnersRunnerForAVMAgent(t *testing.T) {
 	np := BuildGatewayIngressNetworkPolicy("my-instance", testOwner, testConfig, configMapOwnerRef(testOwnerCM))
 
 	require.Len(t, np.Spec.Ingress, 2)
 	from := np.Spec.Ingress[0].From
-	require.Len(t, from, 2, "the paired agent and the owner's runner")
-	assert.Equal(t, vmRunnerSelector(testOwner), from[1].PodSelector.MatchLabels)
-	assert.Equal(t, testOwner, from[1].PodSelector.MatchLabels[envoyOwnerLabel])
+	require.Len(t, from, 1, "the owner's runner alone: no pod carries the agent role any more")
+	assert.Equal(t, vmRunnerSelector(testOwner), from[0].PodSelector.MatchLabels)
+	assert.Equal(t, testOwner, from[0].PodSelector.MatchLabels[envoyOwnerLabel])
 }
 
-// TEST_SCENARIO: a machine reaches its gateway without proxy settings on the proxy port, which the runner is already admitted on, and on the machine resolver, only through the owner's runner. The resolver port is admitted from that runner alone — the proxy rule's other peer, the agent pod a container agent would have, gets nothing new — and a container agent's gateway admits none of them.
+// TEST_SCENARIO: a machine reaches its gateway without proxy settings on the proxy port, which the runner is already admitted on, and on the machine resolver, only through the owner's runner.
 func TestGatewayIngressAdmitsTheMachinesTransparentPortsFromItsRunnerOnly(t *testing.T) {
 	np := BuildGatewayIngressNetworkPolicy("my-instance", testOwner, testConfig, configMapOwnerRef(testOwnerCM))
 

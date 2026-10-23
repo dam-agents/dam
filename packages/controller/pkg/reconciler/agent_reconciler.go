@@ -345,16 +345,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
 
 	lastActivity := agent.Annotations[annLastActivity]
-	alwaysOn := idleTimeout <= 0
-	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true"
 	overBudget := ""
 	awaiting, awaitingReason := "", ""
 	parked := false
-	if parked && autoRetry {
-		r.recordParkedRetry(name)
-	} else {
-		r.clearParkedRetry(name)
-	}
+	r.clearParkedRetry(name)
 
 	rollRev := agent.Annotations[annRollRev]
 
@@ -422,7 +416,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	machineRuns := running
 	pairAtRest := false
-	if !running && !hardStop && !parked {
+	if !running && !hardStop {
 		if machineRuns, err = r.pairAwake(ctx, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
 		}

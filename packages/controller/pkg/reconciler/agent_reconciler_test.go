@@ -96,8 +96,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 			VMIdleTimeout: config.Duration(time.Hour),
 		},
 		AgentTemplateDefaults: config.AgentTemplateDefaults{
-			ImagePullPolicy: "IfNotPresent",
-			StorageSize:     "10Gi",
+			StorageSize: "10Gi",
 		},
 		DefaultUserCPUBudget:    resource.MustParse("4"),
 		DefaultUserMemoryBudget: resource.MustParse("8Gi"),

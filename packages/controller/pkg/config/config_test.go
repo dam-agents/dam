@@ -134,7 +134,6 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
 		"AGENT_TEMPLATE_DEFAULTS": `{
-			"imagePullPolicy": "IfNotPresent",
 			"storageSize": "10Gi",
 			"resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
 			"mounts": [{"path": "$HOME", "persist": true}, {"path": "/tmp"}],
@@ -144,7 +143,6 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	d := cfg.AgentTemplateDefaults
-	assert.Equal(t, "IfNotPresent", d.ImagePullPolicy)
 	assert.Equal(t, "10Gi", d.StorageSize)
 	require.Len(t, d.Mounts, 2)
 	assert.Equal(t, "$HOME", d.Mounts[0].Path)
