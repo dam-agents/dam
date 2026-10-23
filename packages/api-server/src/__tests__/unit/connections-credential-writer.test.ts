@@ -86,6 +86,23 @@ describe("a credential writer inside the Connection's lock", () => {
     expect(authUpdates).toEqual([]);
   });
 
+  it("writes anyway when the writer only needs the auth kind", async () => {
+    const { deps, mint, mints, authUpdates } = makeDeps({
+      ...CONN,
+      auth: { ...AUTH, expiresAt: 1_800_003_000 },
+    });
+
+    await mintUnderLock(
+      CONN,
+      AUTH,
+      { ...deps, standDownOnKindChangeOnly: true },
+      mint,
+    );
+
+    expect(mints()).toBe(1);
+    expect(authUpdates).toEqual([{ ...AUTH, expiresAt: 1_800_003_600 }]);
+  });
+
   it("writes the minted auth when the stored row still matches", async () => {
     const { deps, mint, mints, authUpdates } = makeDeps(CONN);
 

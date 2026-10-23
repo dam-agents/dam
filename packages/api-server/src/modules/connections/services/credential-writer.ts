@@ -22,6 +22,7 @@ export interface CredentialWriterDeps {
   secretStore: SecretStore;
   connectionLock: XactLock;
   lockKey: string;
+  standDownOnKindChangeOnly?: boolean;
 }
 
 export function isTokenAuth(auth: ConnectionAuthConfig): auth is TokenAuth {
@@ -66,7 +67,8 @@ export async function mintUnderLock<A extends TokenAuth>(
     if (
       !isTokenAuth(freshAuth) ||
       freshAuth.kind !== auth.kind ||
-      freshAuth.expiresAt !== auth.expiresAt
+      (!deps.standDownOnKindChangeOnly &&
+        freshAuth.expiresAt !== auth.expiresAt)
     ) {
       return;
     }

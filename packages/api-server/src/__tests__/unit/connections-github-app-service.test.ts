@@ -348,9 +348,10 @@ describe("github-app connection create", () => {
     const id = await svc.createFromTemplate(createInput());
     const authBefore = rows.get(id)!.auth;
 
-    await expect(svc.update(id, { value: "not-a-key" })).rejects.toThrow(
-      /PEM-encoded/,
-    );
+    await expect(svc.update(id, { value: "not-a-key" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: /PEM-encoded/,
+    });
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
     expect(rows.get(id)!.auth).toEqual(authBefore);

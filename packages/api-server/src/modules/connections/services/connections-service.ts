@@ -531,19 +531,22 @@ export function createConnectionsService(deps: {
     auth: Extract<Connection["auth"], { kind: "github-app" }>,
     rawPrivateKey: string,
   ): Promise<void> {
-    const privateKeyPem = normalizePrivateKeyPem(rawPrivateKey);
     await mintUnderLock(
       conn,
       auth,
       writerDeps(gitHubAppMintLockKey(conn.id)),
       async (fresh, freshAuth) => {
-        const minted = await rejectIfInvalid(() =>
-          mintGitHubAppToken(deps.githubAppEngine, {
-            connectionRef: `connection:${conn.id}:${conn.templateId}`,
-            auth: freshAuth,
-            privateKeyPem,
-          }),
-        );
+        const { privateKeyPem, minted } = await rejectIfInvalid(async () => {
+          const pem = normalizePrivateKeyPem(rawPrivateKey);
+          return {
+            privateKeyPem: pem,
+            minted: await mintGitHubAppToken(deps.githubAppEngine, {
+              connectionRef: `connection:${conn.id}:${conn.templateId}`,
+              auth: freshAuth,
+              privateKeyPem: pem,
+            }),
+          };
+        });
         await writeToken(
           deps.secretStore,
           fresh,
@@ -1733,7 +1736,10 @@ export function createConnectionsService(deps: {
       await mintUnderLock(
         conn,
         auth,
-        writerDeps(gitHubAppMintLockKey(conn.id)),
+        {
+          ...writerDeps(gitHubAppMintLockKey(conn.id)),
+          standDownOnKindChangeOnly: true,
+        },
         async (fresh, freshAuth) => {
           const { repositories, repositoryIds, permissions, ...rest } =
             freshAuth;
