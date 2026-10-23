@@ -162,36 +162,6 @@ AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # Probe by opening: the node can exist while the device cgroup still denies it.
 kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; }
-# A local install runs vm agents wherever this host can: on an Apple silicon
-# Mac's own hypervisor, or in a sandbox that is the node and can open
-# /dev/kvm, such as a platform vm agent whose runner's node allows nesting.
-# Elsewhere it leaves them off and says why. The values or a --set decide
-# either way, and CI is not local: e2e:install chooses for each lane.
-VIRT_DEFAULTED=""
-VIRT_OFF_NOTE=""
-if [ -z "$VIRT_CHOSEN" ] && [ -z "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  if [ "$CLUSTER_TARGET" = environment ]; then
-    VIRT_OFF_NOTE="an Environment has no /dev/kvm"
-  elif [ -n "${IS_SANDBOX:-}" ]; then
-    if kvm_usable; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="this sandbox cannot open /dev/kvm"; fi
-  elif [ "$(uname -s)" = Darwin ]; then
-    if [ "$(uname -m)" = arm64 ]; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="the Mac's VM runner needs Apple silicon"; fi
-  else
-    # Ceiling: the lima VM is created with nested virtualization only on a Mac
-    # (vz); a qemu VM on a KVM host that nests could run them too.
-    VIRT_OFF_NOTE="outside a sandbox, a Linux host's k3s VM gets no /dev/kvm from this install"
-  fi
-fi
-virt_off_warning() {
-  [ -z "$VIRT_OFF_NOTE" ] || echo "WARN: vm-backend agents are off: $VIRT_OFF_NOTE (--set=virtualization.enabled=true to try anyway)." >&2
-}
-if [ -n "$VIRT_DEFAULTED" ]; then
-  echo "vm-backend agents are on, the local default (--set=virtualization.enabled=false turns them off)"
-  VIRT_ENABLED=1
-  HELM_EXTRA_ARGS+=(--set=virtualization.enabled=true)
-  AGENT_VALUE_FLAGS+=(--set=virtualization.enabled=true)
-fi
-virt_off_warning
 # On a Mac the VM runner runs on the Mac itself, on its own hypervisor, rather
 # than as pods in the k3s VM on a hypervisor nested inside it: a nested guest
 # boots several times slower, and only M3 and later nest at all.
@@ -207,12 +177,12 @@ fi
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
 # template's catch-all ignore.
 NODEPORT_FORWARD='.portForwards = [{"guestPortRange": [30000, 32767], "hostIP": "127.0.0.1"}] + .portForwards'
-if [ -n "$VIRT_ENABLED" ] && [ "$CLUSTER_TARGET" = environment ]; then
-  echo "FATAL: virtualization.enabled=true needs /dev/kvm on the node, which an Environment does not have." >&2
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "FATAL: an Environment's node has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   exit 1
 fi
-if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
-  echo "FATAL: virtualization.enabled=true needs a usable /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
+if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
+  echo "FATAL: this host cannot open /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   exit 1
 fi
 
@@ -550,8 +520,7 @@ else
     RUNNER_IMAGE_BUILT=1
   fi
 
-  COMPONENTS=(controller api-server ui keycloak)
-  [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
+  COMPONENTS=(controller api-server ui keycloak vm-runner)
   # An Environment pulls each image the registry has for this checkout's
   # source itself, under the local tag the chart runs, rather than this agent
   # pulling it and streaming it over the link; only an image the registry

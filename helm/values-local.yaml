@@ -19,9 +19,6 @@ controller:
     tag: latest
     pullPolicy: Never
   logLevel: debug
-  agent:
-    templateDefaults:
-      imagePullPolicy: IfNotPresent
 
   # Room for one driver (2 CPU / 3Gi) plus one heavy nous worker
   # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
