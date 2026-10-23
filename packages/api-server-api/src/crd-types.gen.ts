@@ -21,31 +21,6 @@ export interface AgentSpecCR {
    */
   avatar?: string;
   /**
-   * Backend is the isolation substrate, always `vm`: every Agent is a
-   * persistent microVM on its owner's VM runner. The api-server writes it on
-   * every create, and the controller refuses an Agent that selects
-   * anything else rather than reading it as a machine, so a container Agent
-   * left over from before the switch is visible instead of silently
-   * converted. Kept as a field for one release, then removed.
-   */
-  backend?: {
-    type: "container" | "vm";
-    /**
-     * VM carries vm-backend props; present only when type == "vm".
-     */
-    vm?: {
-      /**
-       * NestedVirtualization asks for this agent's machine to get the node's
-       * virtualization extensions, so the guest can run KVM itself. It takes
-       * effect only on an install with virtualization.runner.nestedVirtualization
-       * and a node whose KVM allows nesting; the NestedVirtualization condition
-       * says whether it did. Other machines on the same runner are unaffected.
-       * Changing it restarts the agent's machine.
-       */
-      nestedVirtualization?: boolean;
-    };
-  };
-  /**
    * Description is an optional human-readable description.
    */
   description?: string;
@@ -152,6 +127,15 @@ export interface AgentSpecCR {
    * Name is an optional human-readable name.
    */
   name?: string;
+  /**
+   * NestedVirtualization asks for this Agent's machine to get the node's
+   * virtualization extensions, so the guest can run KVM itself. It takes
+   * effect only on an install with virtualization.runner.nestedVirtualization
+   * and a node whose KVM allows nesting; the NestedVirtualization condition
+   * says whether it did. Other machines on the same runner are unaffected.
+   * Changing it restarts the machine.
+   */
+  nestedVirtualization?: boolean;
   /**
    * RequireConnectionAddress makes the agent's gateway inject a Connection's
    * credential only into a request that names that Connection, by its token

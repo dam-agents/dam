@@ -151,7 +151,7 @@ const spawnInput = {
   ),
   env: spawnShape.env.describe("Environment variables, as [{name, value}]."),
   resources: spawnShape.resources.describe(
-    "cpu, memory, storage (disk). Omitted values come from the harness's template; give a clone or build more memory.",
+    "cpu, memory and storage (disk) for the sub-agent's machine. Omitted values come from the harness's template; give a clone or build more memory.",
   ),
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",

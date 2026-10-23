@@ -79,28 +79,25 @@ func TestAnAgentWaitingForItsRunnerBacksOff(t *testing.T) {
 	assert.False(t, backingOff, "a reached runner resets the backoff")
 }
 
-// TEST_SCENARIO: a runner Deployment changed — its pod became ready. Its owner's vm agents are the ones waiting on it; the owner's container agents and other owners' agents are not woken.
+// TEST_SCENARIO: a runner Deployment changed — its pod became ready. Its owner's Agents are the ones waiting on it; another owner's are not woken.
 func TestARunnerChangeWakesOnlyItsOwnersVMAgents(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-	add := func(name, owner string, vm bool) {
+	add := func(name, owner string) {
 		a := vmAgentCR()
 		a.Name = name
 		a.Labels = map[string]string{envoyOwnerLabel: owner}
-		if !vm {
-			a.Spec.Backend = nil
-		}
 		u, err := agentToUnstructured(a)
 		require.NoError(t, err)
 		require.NoError(t, indexer.Add(u))
 	}
-	add("vm-one", testOwner, true)
-	add("container-one", testOwner, false)
-	add("vm-other", "someone-else", true)
+	add("vm-one", testOwner)
+	add("vm-two", testOwner)
+	add("vm-other", "someone-else")
 	r.WithAgentCache(cache.NewGenericLister(indexer, schema.GroupResource{Group: AgentsGVR.Group, Resource: AgentsGVR.Resource}))
 
-	assert.Equal(t, []string{"vm-one"}, r.OwnerVMAgents(testOwner))
+	assert.Equal(t, []string{"vm-one", "vm-two"}, r.OwnerVMAgents(testOwner))
 	assert.Empty(t, r.OwnerVMAgents(""))
 }
 

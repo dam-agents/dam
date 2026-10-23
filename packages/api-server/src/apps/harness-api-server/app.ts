@@ -288,8 +288,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
       const agent = await agentsRepo.get(agentId, owner);
-      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
-        return null;
+      if (!agent || agent.spec.environmentOf) return null;
       return deps.environmentsFor(owner).forOwningAgent(agentId);
     },
     agentTelemetry,

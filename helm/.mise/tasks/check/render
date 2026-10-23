@@ -256,14 +256,7 @@ if helm template platform . "${COMMON[@]}" \
 fi
 # Virtualization keys the chart no longer reads fail the render rather than
 # being dropped without a word.
-for removed in 'virtualization.enabled=true' \
-  'controller.agent.base.runtimeClassName=kata' \
-  'controller.agent.base.nodeSelector.role=runner' \
-  'controller.agent.base.terminationGracePeriod=5' \
-  'controller.requestsFromLimits.fraction=0.5' \
-  'controller.warmPool.enabled=true' \
-  'controller.storageMigration.enabled=true' \
-  'virtualization.imageCache.preload.enabled=false' \
+for removed in 'virtualization.imageCache.preload.enabled=false' \
   'virtualization.runner.releaseSameRuntimeOnly=true' \
   'virtualization.runner.dnsPolicy=Default' \
   'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \

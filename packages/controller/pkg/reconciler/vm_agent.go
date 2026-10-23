@@ -118,7 +118,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the owner gateway is rendered after the runner call, still under the owner's lock: a machine reaches its gateway through its own Service's address whichever pod that selects, so a start never waits for the owner's render, a few reads and writes per agent of the owner.
-	if r.ownerGatewayServes(spec) {
+	if r.ownerGatewayServes() {
 		defer func() {
 			if _, err := r.ensureOwnerGateway(ctx, owner); err != nil {
 				slog.Warn("owner gateway: not applied", "owner", owner, "agent", name, "error", err)
@@ -403,7 +403,7 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	}
 	r.ownerless.Delete(owner)
 	r.sweepMachines(ctx, owner, ids, agents.Items, runner.client.Delete)
-	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
+	if len(agents.Items) > 0 || r.cachedOwnerAgents(ctx, owner) > 0 {
 		return
 	}
 	r.deleteOwnerGateway(ctx, owner)
@@ -528,7 +528,7 @@ func machineClaims(agents []unstructured.Unstructured) map[string]bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed without its claim: nobody could see what the claim holds, and an empty List of Agents can be a CRD event rather than an owner who left, so the claim stays for the owner's next vm Agent to build its runner on.
 func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner string, listed int, cause error) {
-	if listed > 0 || r.cachedOwnerAgents(ctx, owner, false) > 0 {
+	if listed > 0 || r.cachedOwnerAgents(ctx, owner) > 0 {
 		r.ownerless.Delete(owner)
 		slog.Warn("orphan machine GC: the owner's VM runner cannot be reached, it is kept", "owner", owner, "error", cause)
 		return
@@ -544,23 +544,12 @@ func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner st
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner's Agents as the informer sees them, counted as a second opinion beside a fresh List: either one knowing of an Agent keeps the runner.
-func (r *AgentReconciler) cachedOwnerAgents(ctx context.Context, owner string, vmOnly bool) int {
+func (r *AgentReconciler) cachedOwnerAgents(ctx context.Context, owner string) int {
 	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
 		return 1
 	}
-	n := 0
-	for _, obj := range items {
-		u, ok := obj.(*unstructured.Unstructured)
-		if !ok {
-			n++
-			continue
-		}
-		if !vmOnly || anyVMAgent([]unstructured.Unstructured{*u}) {
-			n++
-		}
-	}
-	return n
+	return len(items)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first, so an owner who never had a runner is not reported as an unreachable one. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
@@ -624,11 +613,10 @@ func (r *AgentReconciler) OwnerAgents(owner string) []unstructured.Unstructured 
 }
 
 func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
-	var names []string
-	for _, u := range r.OwnerAgents(owner) {
-		if anyVMAgent([]unstructured.Unstructured{u}) {
-			names = append(names, u.GetName())
-		}
+	agents := r.OwnerAgents(owner)
+	names := make([]string, 0, len(agents))
+	for _, u := range agents {
+		names = append(names, u.GetName())
 	}
 	return names
 }
@@ -644,9 +632,6 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 			return nil
 		}
 		return err
-	}
-	if !anyVMAgent([]unstructured.Unstructured{*agent}) {
-		return nil
 	}
 	if r.config.VM.Runner.HostAddress == "" {
 		if _, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{}); k8serrors.IsNotFound(err) {
@@ -836,9 +821,6 @@ func killIsOver(agent *apiv1.Agent, kill runnerKill, now time.Time) bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: what this agent reads about the owner's latest kill: the kill it carries, whether the newest kill is one to record, and whether that kill is what the agent should read as down for. A kill the agent already carries is never decided again, which holds one kill to one notice however often it reconciles; a new kill is recorded whatever comes of it, so a kill the agent was not on, one it had already recovered from and one past its episode are decided where they are first read instead of surfacing later as new; and it is published only to a machine that was holding memory on the killed runner at its finished time and only while the ten minutes it explains are running. The runner's record of its kills moves forward, so a kill older than the one an agent carries never replaces it.
 func (r *AgentReconciler) runnerOOMAttribution(ctx context.Context, agent *apiv1.Agent, now time.Time) (kill runnerKill, record, publish bool) {
-	if !agent.Spec.IsVM() {
-		return runnerKill{}, false, false
-	}
 	carried := carriedKill(agent)
 	latest := r.runnerOOMKill(ctx, agent.Labels[envoyOwnerLabel])
 	if !latest.IsZero() && carried.ID != latest.ID && (carried.IsZero() || latest.At.After(carried.At)) {
@@ -949,10 +931,7 @@ func setConditionTime(s *apiv1.AgentStatus, condType string, at time.Time) {
 const runnerOOMEpisode = 10 * time.Minute
 
 func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {
-	if !agent.Spec.IsVM() {
-		return false
-	}
-	return defaults.NestedVirtualization || (agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization)
+	return defaults.NestedVirtualization || agent.Spec.NestedVirtualization
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: tells an owner whose agent asks for nesting, itself or through controller.agent.templateDefaults.nestedVirtualization, whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
@@ -1021,16 +1000,6 @@ func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agen
 		slog.Warn("writing agent machine-error status", "agent", agent.Name, "error", err)
 	}
 	return r.setError(ctx, agent.Name, msg)
-}
-
-func anyVMAgent(items []unstructured.Unstructured) bool {
-	for i := range items {
-		backend, _, _ := unstructured.NestedString(items[i].Object, "spec", "backend", "type")
-		if backend == "vm" {
-			return true
-		}
-	}
-	return false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no disk size of its own: every disk is sparse and may grow to the owner's whole storage pool, so the claim's use is the owner's real use, which the runner's storage guard watches. A machine the runner does not hold yet is created at the pool, since every runner release creates a disk at the size it is asked for. An existing machine whose runner reports no disk size may be on an older release, which would restart a running machine to grow its disk, so it keeps the size the Agent's spec gives it: a new pool reboots no agent. So does a machine whose pool cannot be read, which the claim reports. The answer is remembered, and an ensure that reports a disk size marks the runner as one that grows disks, so the status is read once per machine.

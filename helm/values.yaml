@@ -396,10 +396,10 @@ virtualization:
     # every machine that should run (see `resources`).
     machineCPUs: 4
     # true = runners may give the node's virtualization extensions to the
-    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
+    # machines whose Agent asks for them (spec.nestedVirtualization,
     # or controller.agent.templateDefaults.nestedVirtualization for all),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
-    # vm-backend install. Every other machine boots without them. A runner
+    # install. Every other machine boots without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
     # (kvm_intel and kvm_amd `nested=1`) and needs a module reload to change,
     # so this value is the install's switch. A nesting guest reaches the host
@@ -1809,7 +1809,7 @@ controller:
       env: []
       skillSources: []
       # true = every vm agent asks for nested virtualization, as if its Agent
-      # set spec.backend.vm.nestedVirtualization. It is only an ask: a machine
+      # set spec.nestedVirtualization. It is only an ask: a machine
       # nests only when `virtualization.runner.nestedVirtualization` lets the
       # runners nest and the node's KVM allows it. Applied at reconcile, so
       # turning it on or off also changes existing vm agents and restarts

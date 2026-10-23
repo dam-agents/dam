@@ -381,7 +381,6 @@ func (n *fakeNode) spec(id string) vmrunner.MachineSpec {
 
 func vmAgentCR() *apiv1.Agent {
 	agent := agentCR()
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	agent.Spec.Image = "quay.io/example/claude-code-vm:1"
 	agent.Spec.Resources.Limits = map[string]string{"cpu": "1500m", "memory": "3Gi"}
 	agent.Annotations = map[string]string{annLastActivity: time.Now().UTC().Format(time.RFC3339), annRollRev: "7"}

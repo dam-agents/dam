@@ -121,12 +121,6 @@ export interface AgentActivityStamp {
   written: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds: every spec write that names the backend is a bug and fails loudly.
-function assertBackendUntouched(patch: Record<string, unknown>): void {
-  if ("backend" in patch)
-    throw new Error("an agent's backend is set at create and never changes");
-}
-
 export function createAgentsRepository(
   k8s: K8sClient,
   cache: AgentStateCache,
@@ -234,7 +228,6 @@ export function createAgentsRepository(
     },
 
     async updateSpec(id, owner, patch) {
-      assertBackendUntouched(patch);
       const obj = await ownedObject(id, owner);
       if (!obj) return null;
       const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
@@ -246,7 +239,6 @@ export function createAgentsRepository(
     },
 
     async patchSpec(id, patch) {
-      assertBackendUntouched(patch);
       await k8s.patchCustomObject(AGENTS_PLURAL, id, { spec: patch });
     },
 

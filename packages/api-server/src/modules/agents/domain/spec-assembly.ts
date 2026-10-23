@@ -38,7 +38,7 @@ export function concreteResources(
     : { limits };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the spec an Agent's machine is built from. Every Agent runs on its owner's runner, so the backend is written as the machine it is, and the template's size, class and mounts are what size that machine's disk. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it.
+// UNIT_BOUNDARY_DESCRIPTION: the spec an Agent's machine is built from. Every Agent runs on its owner's runner, so the template's size, class and mounts are what size that machine's disk. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it.
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
@@ -62,7 +62,6 @@ export function assembleSpecFromTemplate(
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: opts.storage ?? tmplSpec.storageSize,
     storageClass: tmplSpec.storageClass,
-    backend: { type: "vm" },
   };
 }
 
@@ -81,7 +80,6 @@ export function assembleSpecFromImage(
     image: opts.image,
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
-    backend: { type: "vm" },
     storageSize: opts.storage,
   };
 }

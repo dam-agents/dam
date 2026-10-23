@@ -81,7 +81,7 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 		if err != nil {
 			return runnerDemand{}, fmt.Errorf("decoding an agent of owner %s: %w", owner, err)
 		}
-		if a.Name != self.Name && a.Spec.IsVM() {
+		if a.Name != self.Name {
 			agents = append(agents, a)
 		}
 	}

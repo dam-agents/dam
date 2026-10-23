@@ -28,7 +28,7 @@ removed_ok="agent-platform.ai_forks.yaml agent-platform.ai_runs.yaml" # #2987: p
 # that removes it must say what happens to a stored value. The baseline copy is
 # stripped of these paths, so the comparison sees the same absent field on both
 # sides instead of a removal.
-removed_fields="agent-platform.ai_agents.yaml:properties.spec.properties.runtimeClassName agent-platform.ai_agents.yaml:properties.spec.properties.nodeSelector agent-platform.ai_agents.yaml:properties.status.properties.runtimeMigrationAttempts" # the container backend and its per-template scheduling are gone; every Agent is a machine
+removed_fields="agent-platform.ai_agents.yaml:properties.spec.properties.backend agent-platform.ai_agents.yaml:properties.spec.properties.runtimeClassName agent-platform.ai_agents.yaml:properties.spec.properties.nodeSelector agent-platform.ai_agents.yaml:properties.status.properties.runtimeMigrationAttempts" # the container backend and its per-template scheduling are gone; every Agent is a machine, and backend.vm.nestedVirtualization moved to spec.nestedVirtualization
 for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" $legacy); do
   if [ ! -f "$crds/$(basename "$f")" ]; then
     case " $removed_ok " in

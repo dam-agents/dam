@@ -242,7 +242,7 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	byOwner := map[string][]*apiv1.Agent{}
 	for _, obj := range items {
 		a, err := FromCacheObject[apiv1.Agent](obj)
-		if err != nil || !a.Spec.IsVM() || a.Labels[envoyOwnerLabel] == "" {
+		if err != nil || a.Labels[envoyOwnerLabel] == "" {
 			continue
 		}
 		byOwner[a.Labels[envoyOwnerLabel]] = append(byOwner[a.Labels[envoyOwnerLabel]], a)

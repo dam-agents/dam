@@ -594,9 +594,9 @@ func TestBuildEnvoyBootstrapConfigMap_RequireAddressReachesEveryChain(t *testing
 	secret.Annotations[envoyInjectionHostsAnn] = `[{"host":"api.anthropic.com","headerName":"Authorization"}]`
 	secret = withHostSDS(secret, "api.anthropic.com")
 
-	off, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, false)
+	off, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, false)
 	require.NoError(t, err)
-	on, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, true)
+	on, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, []corev1.Secret{secret}, nil, true)
 	require.NoError(t, err)
 	assert.NotContains(t, off.Data["envoy.yaml"], "matcher_list")
 	assert.Contains(t, on.Data["envoy.yaml"], "matcher_list")

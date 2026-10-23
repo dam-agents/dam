@@ -124,13 +124,13 @@ func TestTheMachineResolverAnswersLocallyAndForwardsNothing(t *testing.T) {
 	assert.Contains(t, machineDNSCorefile, "IN A {$"+machineDNSGatewayIPEnv+"}")
 	assert.Contains(t, machineDNSCorefile, "template ANY ANY {\n        rcode REFUSED")
 
-	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", true, bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, machineDNSCorefile, cm.Data[machineDNSCorefileKey])
 
-	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, configMapOwnerRef(testOwnerCM), nil, nil, false)
 	require.NoError(t, err)
-	assert.NotContains(t, cm.Data, machineDNSCorefileKey)
+	assert.Equal(t, machineDNSCorefile, cm.Data[machineDNSCorefileKey], "every Agent is a machine, so every gateway resolves for one")
 }
 
 // TEST_SCENARIO: the resolver runs beside Envoy only in a machine's gateway, answers with the address it was handed, and keeps a single capability. It states no uid, so OpenShift's restricted policy can assign one from the namespace range; a stated uid would fit no SCC the gateway may use. CoreDNS's binary carries the bind capability as a file capability, which the kernel refuses to exec outside the bounding set — dropping it too leaves a gateway pod that never starts.
@@ -153,9 +153,9 @@ func TestTheResolverSidecarRunsOnlyInAMachinesGateway(t *testing.T) {
 	assert.Len(t, container.Spec.Template.Spec.Containers, 1)
 }
 
-// TEST_SCENARIO: once every name resolves to the gateway, a machine connects to it on the ordinary ports. 443 and 80 both reach the proxy listener, which hands TLS to the internal listener and routes plain HTTP by Host, and 53 the resolver over UDP and TCP. A container agent's gateway exposes the proxy port alone.
+// TEST_SCENARIO: once every name resolves to the gateway, a machine connects to it on the ordinary ports. 443 and 80 both reach the proxy listener, which hands TLS to the internal listener and routes plain HTTP by Host, and 53 the resolver over UDP and TCP.
 func TestAMachinesGatewayServiceCarriesTheOrdinaryPorts(t *testing.T) {
-	svc := BuildGatewayService("my-instance", true, testConfig, configMapOwnerRef(testOwnerCM))
+	svc := BuildGatewayService("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	got := map[string]string{}
 	for _, p := range svc.Spec.Ports {
 		got[string(p.Protocol)+"/"+itoa(p.Port)] = p.TargetPort.String()
@@ -168,16 +168,15 @@ func TestAMachinesGatewayServiceCarriesTheOrdinaryPorts(t *testing.T) {
 		"TCP/53":                                itoa(gatewayMachineDNSPort),
 	}, got)
 
-	assert.Len(t, BuildGatewayService("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM)).Spec.Ports, 1)
 }
 
 // TEST_SCENARIO: an existing gateway Service is never recreated, because its ClusterIP is what a machine's allowlist and resolver name. A gateway that predates transparent egress gains the ports in place, keeping its address, and one already carrying them is left untouched.
 func TestAnExistingGatewayServiceGainsThePortsInPlace(t *testing.T) {
-	old := BuildGatewayService("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM))
+	old := BuildGatewayService("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	old.Spec.ClusterIP = "172.30.9.9"
 	client := fake.NewSimpleClientset(old)
 
-	desired := BuildGatewayService("my-instance", true, testConfig, configMapOwnerRef(testOwnerCM))
+	desired := BuildGatewayService("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	live, err := ensureGatewayService(context.Background(), client, desired, "agent", "my-instance")
 	require.NoError(t, err)
 	assert.Equal(t, "172.30.9.9", live.Spec.ClusterIP)

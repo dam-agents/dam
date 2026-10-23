@@ -235,7 +235,7 @@ func hibernationPublished(agent *unstructured.Unstructured) bool {
 // UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why it went down rather than that it is up to nothing; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. A boot the runner reports copying a disk is held without that cap: the runner bounds it, for up to six hours, and a hibernation would stop the copy and start it again from nothing. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
 func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
 	ready, _, failed := vmStartConditions(agent)
-	if !isVMObject(agent) || idleTimeout <= 0 || failed {
+	if idleTimeout <= 0 || failed {
 		return false
 	}
 	if ready != nil && ready["status"] == string(metav1.ConditionTrue) {
@@ -248,7 +248,7 @@ func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, n
 
 func vmBootInProgress(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
 	ready, podReady, failed := vmStartConditions(agent)
-	if !isVMObject(agent) || idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
+	if idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
 		return false
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a machine the kernel or its seccomp filter killed is booting again, which is held like any boot: the reason says why the machine went down, not that it is up to nothing.
@@ -315,11 +315,6 @@ func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 		}
 	}
 	return atZero
-}
-
-func isVMObject(agent *unstructured.Unstructured) bool {
-	backend, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
-	return backend == "vm"
 }
 
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {

@@ -152,7 +152,6 @@ describe("imageMove", () => {
           spec: {
             name: "a",
             image: OLD_DEFAULT_IMAGE,
-            backend: { type: "vm" },
           },
         }),
       ),
@@ -194,7 +193,6 @@ describe("imageMove", () => {
             name: "a",
             image: OLD_DEFAULT_IMAGE,
             hibernationTimeout: "0s",
-            backend: { type: "vm" },
           },
         }),
       ),
@@ -211,7 +209,6 @@ describe("imageMove", () => {
           spec: {
             name: "a",
             image: OLD_DEFAULT_IMAGE,
-            backend: { type: "vm" },
           },
         }),
       ),

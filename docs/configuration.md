@@ -258,7 +258,7 @@ With a running systemd (or OpenRC) it runs the Lima provision scripts on the hos
 On a node kernel without IPv6 the mesh dataplane is installed IPv4-only.
 Claude Code on the web needs that wrapper and more: see the [`ccweb`](../.agents/skills/ccweb/SKILL.md) skill.
 Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `cluster:install` fails in one that cannot.
-Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.templateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
+Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.templateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
 Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
 It is off by default because a nesting guest reaches the host kernel's nested-virtualization code.

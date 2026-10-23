@@ -228,10 +228,6 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	owner := agent.Labels["agent-platform.ai/owner"]
 
-	if !agentSpec.IsVM() {
-		return r.setError(ctx, name, "this Agent's spec still selects the container backend, which this install no longer runs: nothing starts it here, and an operator has to move it to a machine first")
-	}
-
 	if err := r.ensureConcreteSize(ctx, agent); err != nil {
 		return fmt.Errorf("agent %s: %w", name, err)
 	}
@@ -243,12 +239,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, agentSpec.IsVM(), r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
 	var liveGatewaySvc *corev1.Service
-	onOwnerGateway, err := r.onOwnerGateway(ctx, agentSpec, name)
+	onOwnerGateway, err := r.onOwnerGateway(ctx, name)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("reading gateway service: %v", err))
 	}
@@ -315,18 +311,15 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return nil
 		},
 		ownGateway(func() error {
-			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM(), r.config, ownerRef))
+			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, r.config, ownerRef))
 		}),
 		ownGateway(func() error {
 			return applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef))
 		}),
 		func() (err error) {
-			desired := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
-			if agentSpec.IsVM() {
-				desired, err = r.ownerGatewayServiceFor(ctx, desired, owner)
-				if err != nil {
-					return fmt.Errorf("reading gateway service: %v", err)
-				}
+			desired, err := r.ownerGatewayServiceFor(ctx, BuildGatewayService(name, r.config, ownerRef), owner)
+			if err != nil {
+				return fmt.Errorf("reading gateway service: %v", err)
 			}
 			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name); err != nil {
 				return fmt.Errorf("ensuring gateway service: %v", err)

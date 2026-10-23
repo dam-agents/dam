@@ -295,7 +295,7 @@ func (r *AgentReconciler) vmAgentsByOwner(ctx context.Context) map[string][]*api
 	}
 	for _, obj := range items {
 		a, err := FromCacheObject[apiv1.Agent](obj)
-		if err != nil || !a.Spec.IsVM() || a.Labels[envoyOwnerLabel] == "" {
+		if err != nil || a.Labels[envoyOwnerLabel] == "" {
 			continue
 		}
 		byOwner[a.Labels[envoyOwnerLabel]] = append(byOwner[a.Labels[envoyOwnerLabel]], a)

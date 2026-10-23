@@ -9,7 +9,6 @@ add it to the include list in `platform.validate`.
 */}}
 
 {{- define "platform.validate" -}}
-{{- include "platform.validate.virtualizationOnlyBackend" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
@@ -198,32 +197,6 @@ backend to switch between and no agent pod to shape. Helm keeps a value
 nothing reads without a word, and the controller refuses to start on a field
 its config no longer has, so an install still carrying one of these keys
 fails the render instead.
-*/}}
-{{- define "platform.validate.virtualizationOnlyBackend" -}}
-{{- if hasKey (.Values.virtualization | default dict) "enabled" -}}
-{{- fail "virtualization.enabled is gone: every agent runs as a machine on its owner's VM runner, so there is no backend to switch on or off. Remove the key; the runner values are required instead (virtualization.runner.resources.limits.memory, virtualization.imageCache.hostPath, virtualization.runner.releaseHostPath)." -}}
-{{- end -}}
-{{- $base := dig "base" dict .Values.controller.agent -}}
-{{- range $key := list "storageClass" "accessMode" "idleTimeout" "terminationGracePeriod" "extraLabels" "extraAnnotations" "nodeSelector" "tolerations" "affinity" "topologySpreadConstraints" "priorityClassName" "runtimeClassName" "probes" "podSecurityContext" "containerSecurityContext" "iptablesInit" "npGateInit" -}}
-{{- if hasKey $base $key -}}
-{{- fail (printf "controller.agent.base.%s is gone: the agent pod it shaped no longer exists, and the gateway pod takes no setting from here. Remove the key — vmIdleTimeout is the one idle timeout, and imagePullSecrets is the one pull secret entry." $key) -}}
-{{- end -}}
-{{- end -}}
-{{- if dig "warmPool" "enabled" false .Values.controller -}}
-{{- fail "controller.warmPool is gone: its spare workspace volumes were claimed by container agents, and every agent now keeps its disk on its owner's VM runner. Remove the block." -}}
-{{- end -}}
-{{- if dig "storageMigration" "enabled" false .Values.controller -}}
-{{- fail "controller.storageMigration is gone: it drained container workspace volumes onto single-writer storage, and those volumes went with the container backend. Remove the block." -}}
-{{- end -}}
-{{- with dig "requestsFromLimits" dict .Values.controller -}}
-{{- fail "controller.requestsFromLimits is gone: it derived an agent pod's requests from its limits, and a machine has no pod to schedule. Remove the block." -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-Terms of Use are non-optional — the api-server gate refuses every
-authenticated route until each user has accepted the current version.
-A missing text or version would lock out every account at first request.
 */}}
 {{- define "platform.validate.termsRequired" -}}
 {{- if not (.Values.terms.text | default "" | trim) -}}

@@ -78,40 +78,6 @@ spec:
                   "emoji:<emoji>" or "image:<sha256>"; unset means a character picked
                   from its owner and name.'
                 type: string
-              backend:
-                description: |-
-                  Backend is the isolation substrate, always `vm`: every Agent is a
-                  persistent microVM on its owner's VM runner. The api-server writes it on
-                  every create, and the controller refuses an Agent that selects
-                  anything else rather than reading it as a machine, so a container Agent
-                  left over from before the switch is visible instead of silently
-                  converted. Kept as a field for one release, then removed.
-                properties:
-                  type:
-                    enum:
-                    - container
-                    - vm
-                    type: string
-                  vm:
-                    description: VM carries vm-backend props; present only when type
-                      == "vm".
-                    properties:
-                      nestedVirtualization:
-                        description: |-
-                          NestedVirtualization asks for this agent's machine to get the node's
-                          virtualization extensions, so the guest can run KVM itself. It takes
-                          effect only on an install with virtualization.runner.nestedVirtualization
-                          and a node whose KVM allows nesting; the NestedVirtualization condition
-                          says whether it did. Other machines on the same runner are unaffected.
-                          Changing it restarts the agent's machine.
-                        type: boolean
-                    type: object
-                required:
-                - type
-                type: object
-                x-kubernetes-validations:
-                - message: 'vm block requires type: vm'
-                  rule: self.type == 'vm' || !has(self.vm)
               description:
                 description: Description is an optional human-readable description.
                 type: string
@@ -238,6 +204,15 @@ spec:
               name:
                 description: Name is an optional human-readable name.
                 type: string
+              nestedVirtualization:
+                description: |-
+                  NestedVirtualization asks for this Agent's machine to get the node's
+                  virtualization extensions, so the guest can run KVM itself. It takes
+                  effect only on an install with virtualization.runner.nestedVirtualization
+                  and a node whose KVM allows nesting; the NestedVirtualization condition
+                  says whether it did. Other machines on the same runner are unaffected.
+                  Changing it restarts the machine.
+                type: boolean
               requireConnectionAddress:
                 description: |-
                   RequireConnectionAddress makes the agent's gateway inject a Connection's

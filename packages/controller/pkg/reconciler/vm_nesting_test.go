@@ -13,11 +13,11 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// TEST_OVERVIEW: nesting is asked for per Agent, through spec.backend.vm.nestedVirtualization, or for every vm agent at once through controller.agent.templateDefaults.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
+// TEST_OVERVIEW: nesting is asked for per Agent, through spec.nestedVirtualization, or for every vm agent at once through controller.agent.templateDefaults.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
 
 func nestingAgent() *apiv1.Agent {
 	agent := vmAgentCR()
-	agent.Spec.Backend.VM = &apiv1.VMBackend{NestedVirtualization: true}
+	agent.Spec.NestedVirtualization = true
 	return agent
 }
 
@@ -77,7 +77,7 @@ func TestAnAgentThatDoesNotAskNeitherNestsNorCarriesTheCondition(t *testing.T) {
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	require.NotNil(t, readNestingCondition(t, r, "my-agent"))
 
-	agent.Spec.Backend.VM = nil
+	agent.Spec.NestedVirtualization = false
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	assert.False(t, node.spec("my-agent").NestedVirtualization)
 	assert.Nil(t, readNestingCondition(t, r, "my-agent"))

@@ -46,7 +46,7 @@ describe("assembleSpecFromTemplate", () => {
       {},
       defaultLimits,
     );
-    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.backend).toBeUndefined();
     expect(spec.runtimeClassName).toBeUndefined();
     expect(spec.nodeSelector).toBeUndefined();
   });
@@ -60,7 +60,7 @@ describe("assembleSpecFromTemplate", () => {
       defaultLimits,
     );
     expect(spec.harness).toBe("codex");
-    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.backend).toBeUndefined();
   });
 
   // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the mounts travel unchanged, and the template's size is the disk the machine gets. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
@@ -78,7 +78,7 @@ describe("assembleSpecFromTemplate", () => {
       {},
       defaultLimits,
     );
-    expect(spec.backend).toEqual({ type: "vm" });
+    expect(spec.backend).toBeUndefined();
     expect(spec.mounts).toEqual([
       { path: "/home/agent", persist: true },
       { path: "/tmp", persist: false },

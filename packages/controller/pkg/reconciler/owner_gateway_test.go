@@ -137,7 +137,7 @@ func TestOwnerGateway_SweptWithTheOwnersLastVMAgent(t *testing.T) {
 
 // TEST_SCENARIO: the cut-over keeps the Service's ClusterIP, which the machine's allowlist and resolver name, and changes only where it points: the owner gateway pod, with every port the Service declares mapped onto the agent's own slot and no other port declared.
 func TestOwnerGateway_RetargetMapsOnlyTheAgentsSlot(t *testing.T) {
-	svc := BuildGatewayService("agent-a", true, testConfig, metav1.OwnerReference{})
+	svc := BuildGatewayService("agent-a", testConfig, metav1.OwnerReference{})
 	svc.Spec.ClusterIP = "10.43.0.7"
 	moved := retargetedGatewayService(svc, testOwner, 3)
 	assert.Equal(t, "10.43.0.7", moved.Spec.ClusterIP)

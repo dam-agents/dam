@@ -66,14 +66,14 @@ type AgentSpec struct {
 	// +optional
 	AgentHome string `json:"agentHome,omitempty"`
 
-	// Backend is the isolation substrate, always `vm`: every Agent is a
-	// persistent microVM on its owner's VM runner. The api-server writes it on
-	// every create, and the controller refuses an Agent that selects
-	// anything else rather than reading it as a machine, so a container Agent
-	// left over from before the switch is visible instead of silently
-	// converted. Kept as a field for one release, then removed.
+	// NestedVirtualization asks for this Agent's machine to get the node's
+	// virtualization extensions, so the guest can run KVM itself. It takes
+	// effect only on an install with virtualization.runner.nestedVirtualization
+	// and a node whose KVM allows nesting; the NestedVirtualization condition
+	// says whether it did. Other machines on the same runner are unaffected.
+	// Changing it restarts the machine.
 	// +optional
-	Backend *Backend `json:"backend,omitempty"`
+	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
 
 	// Harness names the harness the agent image runs (claude-code, codex,
 	// pi, bob, copilot, mock). One image serves every harness, and the agent reads
@@ -152,35 +152,6 @@ type AgentSpec struct {
 	// not replace.
 	// +optional
 	RequireConnectionAddress bool `json:"requireConnectionAddress,omitempty"`
-}
-
-// Backend is a discriminated union selecting the agent's isolation substrate
-// (K8s convention: `type` plus a sub-block named after the variant).
-// +kubebuilder:validation:XValidation:rule="self.type == 'vm' || !has(self.vm)",message="vm block requires type: vm"
-type Backend struct {
-	// +kubebuilder:validation:Enum=container;vm
-	Type string `json:"type"`
-	// VM carries vm-backend props; present only when type == "vm".
-	// +optional
-	VM *VMBackend `json:"vm,omitempty"`
-}
-
-// VMBackend carries the props only a vm-backend agent has. Scratch sizing and
-// placement are chart-level policy (config.VM).
-type VMBackend struct {
-	// NestedVirtualization asks for this agent's machine to get the node's
-	// virtualization extensions, so the guest can run KVM itself. It takes
-	// effect only on an install with virtualization.runner.nestedVirtualization
-	// and a node whose KVM allows nesting; the NestedVirtualization condition
-	// says whether it did. Other machines on the same runner are unaffected.
-	// Changing it restarts the agent's machine.
-	// +optional
-	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
-}
-
-// IsVM reports whether the spec selects the vm backend.
-func (s *AgentSpec) IsVM() bool {
-	return s.Backend != nil && s.Backend.Type == "vm"
 }
 
 // Condition types on an Agent's status. Conditions are the source of truth for

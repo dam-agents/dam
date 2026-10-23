@@ -314,7 +314,6 @@ func runnerDeployment(annotations map[string]string) *appsv1.Deployment {
 func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("rolled-agent", staleTime, nil)
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	ss := agentStatefulSet("rolled-agent", 1)
 	runner := runnerDeployment(map[string]string{
@@ -337,7 +336,6 @@ func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
 	settle := func(t *testing.T, annotations map[string]string) int32 {
 		t.Helper()
 		agent := idleAgentCR("rolled-agent", staleTime, nil)
-		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 		agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 		ss := agentStatefulSet("rolled-agent", 1)
 		checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runnerDeployment(annotations))
@@ -399,7 +397,6 @@ func TestIdleChecker_RollStartingDuringTheSweepKeepsItsMachineAwake(t *testing.T
 // TEST_SCENARIO: The pin read and the halt must be one decision, taken under the owner's lock, the one a runner roll start takes. A pin read before the probe, or a halt taken outside that lock, lets a roll begin in between and wait on a machine the sweep then stops. This asserts the lock is held at the moment of the halt, which is what closes that window.
 func TestIdleChecker_HaltsUnderTheOwnersLock(t *testing.T) {
 	agent := idleAgentCR("locked-agent", time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339), nil)
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("locked-agent", 1))
 	checker.config.AgentBase.VMIdleTimeout = config.Duration(time.Hour)
@@ -494,7 +491,6 @@ func TestIdleChecker_VMHonoursItsOwnTimeout(t *testing.T) {
 	swept := func(t *testing.T, override time.Duration) int32 {
 		t.Helper()
 		agent := withHibernationTimeout(idleAgentCR("vm-agent", staleTime, nil), override)
-		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 		checker, client := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 1))
 		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 
@@ -541,7 +537,6 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			agent := idleAgentCR("vm-agent", at(tt.lastActivity), nil)
-			agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 			agent.Status.Conditions = tt.conds
 			checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", tt.replicas))
 			checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)

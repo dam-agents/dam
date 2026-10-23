@@ -877,12 +877,12 @@ func newEnvoyOTelView(instanceName string, cfg *config.Config) envoyOTelView {
 	return v
 }
 
-func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) (*corev1.ConfigMap, error) {
+func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string, requireAddress bool) (*corev1.ConfigMap, error) {
 	chains := chainsFromSecrets(secrets, l7Hosts)
 	for i := range chains {
 		chains[i].RequireAddress = requireAddress
 	}
-	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains, vm)
+	yaml, err := renderEnvoyBootstrap(instanceName, attributionID, cfg, chains, true)
 	if err != nil {
 		return nil, err
 	}
@@ -890,9 +890,7 @@ func BuildEnvoyBootstrapConfigMap(instanceName, attributionID string, vm bool, c
 	if cfg.GatewayUpstreamTrustBundle != "" {
 		data[envoyUpstreamCAKey] = cfg.GatewayUpstreamTrustBundle
 	}
-	if vm {
-		data[machineDNSCorefileKey] = machineDNSCorefile
-	}
+	data[machineDNSCorefileKey] = machineDNSCorefile
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            EnvoyBootstrapName(instanceName),
