@@ -73,7 +73,7 @@ function describeJwksFailure(err: unknown): string {
 }
 
 export interface AuthConfig {
-  issuerUrl: string;
+  issuers: string[];
   jwksUrl: string;
   audience?: string;
   requiredRole?: string;
@@ -101,7 +101,7 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
     let payload: JWTPayload;
     try {
       ({ payload } = await jwtVerify(token, JWKS, {
-        issuer: config.issuerUrl,
+        issuer: config.issuers,
         audience: config.audience,
         algorithms: ["RS256"],
       }));

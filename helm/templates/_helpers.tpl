@@ -191,6 +191,21 @@ Host:port string for URLs (includes port if non-empty)
 {{- include "platform.url.derived" (dict "root" . "sub" "content") -}}
 {{- end }}
 
+{{- /* A backchannel address: `{scheme}://{sub.}{domain}{:port}` from
+       `backchannel.*`, no `sub` for the app host. Empty with the backchannel
+       off. Pass `dict "root" $ "sub" "share"`. */ -}}
+{{- define "platform.backchannel.url" -}}
+{{- $b := .root.Values.backchannel -}}
+{{- if $b.enabled -}}
+{{- $host := ternary (printf "%s.%s" .sub $b.domain) $b.domain (not (empty .sub)) -}}
+{{- if $b.port -}}
+{{- printf "%s://%s:%v" $b.scheme $host $b.port -}}
+{{- else -}}
+{{- printf "%s://%s" $b.scheme $host -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
 {{/*
 Extract just the hostname (no scheme, no port, no path) from a URL.
 Usage: {{ include "platform.url.host" (include "platform.url.ui" .) }}

@@ -321,6 +321,11 @@ import {
 } from "./sagas/agent-artifacts-sweeper.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
+import {
+  createAddressSets,
+  keycloakRealmUrl,
+  type AddressSet,
+} from "./core/address-sets.js";
 import { createXactLock } from "./core/xact-lock.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
@@ -524,9 +529,20 @@ export async function bootstrap() {
       agentsRepo.isOwnedBy(agentId, ownerSub),
     ownerDirectory: userDirectory,
   });
+  const addresses = createAddressSets(
+    {
+      uiBaseUrl: config.uiBaseUrl,
+      keycloakExternalUrl: config.keycloakExternalUrl,
+      shareBaseUrl: config.shareBaseUrl,
+      contentBaseUrl: config.contentBaseUrl,
+    },
+    config.backchannel,
+  );
   const auth = createAuth(
     {
-      issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+      issuers: addresses.all.map((set) =>
+        keycloakRealmUrl(set, config.keycloakRealm),
+      ),
       jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       audience: config.keycloakApiAudience,
       requiredRole: config.keycloakRequiredRole,
@@ -546,17 +562,29 @@ export async function bootstrap() {
   const shareViewer = composeShareViewer({ db, artifacts });
   const shareRenderTokens = composeShareRenderTokens({ redis: sharedRedis });
   const shareRelayTokens = composeShareRelayTokens({ redis: sharedRedis });
-  const shareAuth = composeShareAuth({
-    redis: sharedRedis,
-    keycloak: {
-      externalUrl: config.keycloakExternalUrl,
-      internalUrl: config.keycloakUrl,
-      realm: config.keycloakRealm,
-      clientId: config.keycloakShareClientId,
-    },
-    shareBaseUrl: config.shareBaseUrl,
+  const shareSignInFor = (set: AddressSet, storePrefix: string) => ({
+    set,
+    auth: composeShareAuth({
+      redis: sharedRedis,
+      keycloak: {
+        externalUrl: set.keycloakExternalUrl,
+        internalUrl: config.keycloakUrl,
+        realm: config.keycloakRealm,
+        clientId: config.keycloakShareClientId,
+      },
+      shareBaseUrl: set.shareBaseUrl,
+      storePrefix,
+    }),
+    cookie: shareSessionCookie(set.shareBaseUrl),
   });
-  const shareCookie = shareSessionCookie(config.shareBaseUrl);
+  const publicShareSignIn = shareSignInFor(addresses.public, "share");
+  const shareSignIns = [
+    publicShareSignIn,
+    ...(config.backchannel
+      ? [shareSignInFor(config.backchannel, "share-backchannel")]
+      : []),
+  ];
+  const { auth: shareAuth, cookie: shareCookie } = publicShareSignIn;
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
@@ -584,7 +612,9 @@ export async function bootstrap() {
       },
       platform: {
         issuers: [
-          `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
+          ...addresses.all.map((set) =>
+            keycloakRealmUrl(set, config.keycloakRealm),
+          ),
           `${config.keycloakUrl}/realms/${config.keycloakRealm}`,
         ],
         isApiKey: isApiKeyToken,
@@ -1350,45 +1380,49 @@ export async function bootstrap() {
     spendHold: channelSpendHold,
     attendance: turnAttendance,
   });
-  const shareHostGate = createByLinkHostGate({
-    share: {
-      baseUrl: config.shareBaseUrl,
-      app: createShareHostApp({
-        auth: createShareAuthRoutes({
-          auth: shareAuth,
-          brandName: config.brand.name,
-          sessionCookie: shareCookie,
-        }),
-        viewer: createShareViewerApp({
-          viewer: shareViewer,
-          auth: shareAuth,
-          sessionCookie: shareCookie,
-          renderTokens: shareRenderTokens,
-          relayTokens: shareRelayTokens,
-          brandName: config.brand.name,
-          uiBaseUrl: config.uiBaseUrl,
-          contentBaseUrl: config.contentBaseUrl,
-          shareBaseUrl: config.shareBaseUrl,
-          bridge: shareBridge,
-        }),
-        environments: environmentFrontDoor,
-        kbMcp: composeKbShareServing({
-          db,
-          store: artifacts,
-          k8s: k8sClient,
-          grepDeadlineMs: config.kbShareGrepDeadlineMs,
-        }),
-      }),
-    },
-    content: {
-      baseUrl: config.contentBaseUrl,
-      app: createContentApp({
-        viewer: shareViewer,
-        renderTokens: shareRenderTokens,
-        shareBaseUrl: config.shareBaseUrl,
-      }),
-    },
+  const kbShareServing = composeKbShareServing({
+    db,
+    store: artifacts,
+    k8s: k8sClient,
+    grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
+  const shareHostGate = createByLinkHostGate(
+    shareSignIns.map((signIn) => ({
+      share: {
+        baseUrl: signIn.set.shareBaseUrl,
+        app: createShareHostApp({
+          auth: createShareAuthRoutes({
+            auth: signIn.auth,
+            brandName: config.brand.name,
+            sessionCookie: signIn.cookie,
+          }),
+          viewer: createShareViewerApp({
+            viewer: shareViewer,
+            auth: signIn.auth,
+            sessionCookie: signIn.cookie,
+            renderTokens: shareRenderTokens,
+            relayTokens: shareRelayTokens,
+            brandName: config.brand.name,
+            uiBaseUrl: signIn.set.uiBaseUrl,
+            contentBaseUrl: signIn.set.contentBaseUrl,
+            shareBaseUrl: signIn.set.shareBaseUrl,
+            bridge: shareBridge,
+          }),
+          environments:
+            signIn === publicShareSignIn ? environmentFrontDoor : null,
+          kbMcp: kbShareServing,
+        }),
+      },
+      content: {
+        baseUrl: signIn.set.contentBaseUrl,
+        app: createContentApp({
+          viewer: shareViewer,
+          renderTokens: shareRenderTokens,
+          shareBaseUrl: signIn.set.shareBaseUrl,
+        }),
+      },
+    })),
+  );
 
   const agentIcons =
     slackGatewayFactory && config.imgbbApiKey
@@ -2242,6 +2276,7 @@ export async function bootstrap() {
     jwksWarmup,
     surfaceAttribution,
     slackOauthCallbackUrl,
+    addresses,
     shareHostGate,
     environmentGate,
     publicAgentPageService,

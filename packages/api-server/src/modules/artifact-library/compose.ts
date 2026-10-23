@@ -145,6 +145,7 @@ export interface ComposeShareAuthOpts {
     clientId: string;
   };
   shareBaseUrl: string;
+  storePrefix: string;
 }
 
 export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
@@ -166,10 +167,14 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
         idTokenKey: createRemoteJWKSet(keycloakShareJwksUrl(keycloak)),
       },
     ),
-    pending: createRedisTtlStore(opts.redis, "share:login", SHARE_LOGIN_TTL_MS),
+    pending: createRedisTtlStore(
+      opts.redis,
+      `${opts.storePrefix}:login`,
+      SHARE_LOGIN_TTL_MS,
+    ),
     sessions: createRedisTtlStore(
       opts.redis,
-      "share:session",
+      `${opts.storePrefix}:session`,
       SHARE_SESSION_TTL_MS,
     ),
     shareBaseUrl: shareBase,

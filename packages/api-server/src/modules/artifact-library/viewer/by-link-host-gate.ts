@@ -7,12 +7,16 @@ export interface ByLinkHost {
   app: Fetchable;
 }
 
-export function createByLinkHostGate(hosts: {
+export interface ByLinkHosts {
   share: ByLinkHost;
   content: ByLinkHost;
-}): MiddlewareHandler {
+}
+
+export function createByLinkHostGate(
+  sets: readonly ByLinkHosts[],
+): MiddlewareHandler {
   const byHostname = new Map<string, Fetchable>();
-  for (const host of [hosts.share, hosts.content]) {
+  for (const host of sets.flatMap((set) => [set.share, set.content])) {
     const hostname = new URL(host.baseUrl).hostname.toLowerCase();
     if (byHostname.has(hostname))
       throw new Error("Share and content hosts must use different hostnames");

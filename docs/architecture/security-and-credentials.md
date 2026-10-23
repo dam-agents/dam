@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -93,6 +93,8 @@ The user agent flow:
 3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every resource the user creates (Agent CR, K8s credential Secret, etc.).
 
 The realm holds a **dedicated public client** for the artifact share host ([artifact-library](artifact-library.md#the-share-host--trust-boundary)): PKCE-only, redirect pinned to that host's sign-in callback, and no `platform-api` audience, so its tokens are rejected by the api-server.
+An install with a [backchannel](environments.md#an-install-inside-an-environment) has two address sets: there the share client also allows the backchannel share host's callback, Keycloak names each token after the address its sign-in started on, and the api-server accepts tokens from both Keycloak addresses.
+Keycloak then takes its address from the forwarded host, which only the ingress in front of it sets.
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 The share host is also the front door of [Environments](environments.md#addresses): it signs their visitors in with the same client and session, and hands each address a one-time code, bound to the visitor's browser, for a session of its own that lasts while the share session does.
 

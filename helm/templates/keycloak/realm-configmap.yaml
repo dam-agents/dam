@@ -2,6 +2,8 @@
 {{- $appName := include "platform.keycloak.fullname" . }}
 {{- $uiUrl := include "platform.url.ui" . }}
 {{- $shareUrl := include "platform.url.share" . }}
+{{- $backUiUrl := include "platform.backchannel.url" (dict "root" .) }}
+{{- $backShareUrl := include "platform.backchannel.url" (dict "root" . "sub" "share") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -40,6 +42,9 @@ data:
           "redirectUris": [
             {{ printf "%s/*" $uiUrl | quote }},
             "http://localhost:5173/*"
+            {{- with $backUiUrl }},
+            {{ printf "%s/*" . | quote }}
+            {{- end }}
             {{- range .Values.keycloak.extraRedirectUris }},
             {{ . | quote }}
             {{- end }}
@@ -47,6 +52,9 @@ data:
           "webOrigins": [
             {{ $uiUrl | quote }},
             "http://localhost:5173"
+            {{- with $backUiUrl }},
+            {{ . | quote }}
+            {{- end }}
             {{- range .Values.keycloak.extraWebOrigins }},
             {{ . | quote }}
             {{- end }}
@@ -114,14 +122,20 @@ data:
           "serviceAccountsEnabled": false,
           "redirectUris": [
             {{ printf "%s/auth/callback" $shareUrl | quote }}
+            {{- with $backShareUrl }},
+            {{ printf "%s/auth/callback" . | quote }}
+            {{- end }}
           ],
           "webOrigins": [
             {{ $shareUrl | quote }}
+            {{- with $backShareUrl }},
+            {{ . | quote }}
+            {{- end }}
           ],
           "protocol": "openid-connect",
           "attributes": {
             "pkce.code.challenge.method": "S256",
-            "post.logout.redirect.uris": {{ printf "%s/auth/login*" $shareUrl | quote }}
+            "post.logout.redirect.uris": {{ ternary (printf "%s/auth/login*##%s/auth/login*" $shareUrl $backShareUrl) (printf "%s/auth/login*" $shareUrl) (not (empty $backShareUrl)) | quote }}
           }
         }
       ],
