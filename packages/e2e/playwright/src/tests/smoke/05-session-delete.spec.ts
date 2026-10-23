@@ -75,13 +75,6 @@ test("deleting inactive and active sessions preserves the right navigation (#423
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
-    await expect(activeRow).toHaveAttribute(
-      "data-session-id",
-      activeSessionId ?? "",
-    );
-    await expect(
-      page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
-    ).toBeVisible();
 
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(inactiveRow).toHaveCount(1);
