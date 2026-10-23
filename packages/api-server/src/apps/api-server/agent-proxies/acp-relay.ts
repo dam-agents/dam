@@ -20,6 +20,7 @@ import {
 } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
+import { keepAlive } from "./heartbeat.js";
 import { emit, EventType } from "../../../events.js";
 import { getLogger } from "../../../core/logger.js";
 import type { FirePair } from "../../../modules/harness-config/index.js";
@@ -93,6 +94,7 @@ export function createAcpRelay(
           client.terminate();
         } catch {}
       });
+      keepAlive(client);
 
       const passive =
         new URL(req.url ?? "", "http://localhost").searchParams.get(
