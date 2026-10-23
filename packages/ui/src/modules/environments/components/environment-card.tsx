@@ -42,7 +42,10 @@ export function environmentAccessLabel(access: string[] | null): string {
  * it, as a row of the agent's Environments list: each endpoint's address as a
  * link, whether it runs, when it expires, who may open it, and the owner's
  * controls — extend the expiry and delete it — in one menu on the name row.
- * The card brings its own padding, so it looks the same in every list.
+ * The card brings its own padding, so it looks the same in every list. An
+ * endpoint's name, port and address are columns of their own; the name column
+ * has a minimum width most names fit (they run to 12 characters), so the
+ * addresses start at one x in every card of a list.
  */
 export function EnvironmentCard({
   environment,
@@ -144,7 +147,6 @@ export function EnvironmentCard({
             key={endpoint.name}
             className="col-span-3 grid grid-cols-subgrid items-center text-sm"
           >
-            {/* An endpoint name is at most 12 characters; most fit in 8, so a shared minimum starts the address column at one x in every card. */}
             <span className="min-w-[8ch] whitespace-nowrap font-mono text-xs text-muted-foreground">
               {endpoint.name}
             </span>
