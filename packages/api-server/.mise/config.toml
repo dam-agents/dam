@@ -25,6 +25,12 @@ HARNESS_CONFIG_DATABASE_URL="$HARNESS_CONFIG_DATABASE_URL" pnpm exec tsx scripts
 
 [tasks."test:control-grants"]
 description = "Check the controller role's privileges against a real PostgreSQL"
+# The api-server that grants to the controller owns its tables and holds no
+# CREATEROLE, so an install's real shape is two identities: point
+# CONTROL_GRANTS_DATABASE_URL at the database as its owner, and
+# CONTROL_GRANTS_ADMIN_DATABASE_URL at the same database as a role that may
+# create logins. Left unset, the one URL does both, which is fine on a
+# disposable server.
 run = '''
 set -euo pipefail
 : "${CONTROL_GRANTS_DATABASE_URL:?point it at a disposable database with the migrations applied, on a server where creating and dropping platform_controller is acceptable}"

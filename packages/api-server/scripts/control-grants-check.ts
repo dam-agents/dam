@@ -12,6 +12,11 @@
  * Run by `mise run //packages/api-server:test:control-grants` against a
  * disposable database with this branch's migrations applied, on a server where
  * creating and dropping `platform_controller` is acceptable.
+ * The api-server that grants to the role owns its tables and holds no
+ * CREATEROLE, so an install's shape is two identities: point
+ * `CONTROL_GRANTS_DATABASE_URL` at the database as its owner, and
+ * `CONTROL_GRANTS_ADMIN_DATABASE_URL` at the same database as a role that may
+ * create logins.
  */
 import { createDb, sql, type DbTx } from "db";
 import {
@@ -28,6 +33,10 @@ if (!url) {
 }
 
 const { db, sql: client } = createDb(url, { poolMax: 1 });
+
+const adminUrl = process.env.CONTROL_GRANTS_ADMIN_DATABASE_URL;
+const admin = adminUrl ? createDb(adminUrl, { poolMax: 1 }) : undefined;
+const roleDb = admin?.db ?? db;
 
 const AGENT = "agent-grants-check";
 const OWNER = "sub-grants-check";
@@ -51,14 +60,14 @@ function check(name: string, ok: boolean, detail = ""): void {
 }
 
 async function dropRole(): Promise<void> {
-  const present = await db.execute<{ present: boolean }>(
+  const present = await roleDb.execute<{ present: boolean }>(
     sql`SELECT to_regrole(${CONTROL_ROLE}) IS NOT NULL AS present`,
   );
   if (!present[0]?.present) return;
-  await db
+  await roleDb
     .execute(sql`DROP OWNED BY ${sql.identifier(CONTROL_ROLE)}`)
     .catch(() => {});
-  await db
+  await roleDb
     .execute(sql`DROP ROLE IF EXISTS ${sql.identifier(CONTROL_ROLE)}`)
     .catch(() => {});
 }
@@ -72,7 +81,7 @@ type Attempt = {
 
 async function asController(run: (tx: DbTx) => Promise<unknown>) {
   try {
-    await db.transaction(async (tx) => {
+    await roleDb.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL ROLE ${sql.identifier(CONTROL_ROLE)}`);
       await run(tx);
     });
@@ -257,7 +266,7 @@ const ATTEMPTS: Attempt[] = [
 
 async function main(): Promise<void> {
   await dropRole();
-  await db.execute(
+  await roleDb.execute(
     sql`CREATE ROLE ${sql.identifier(CONTROL_ROLE)} NOLOGIN NOSUPERUSER`,
   );
 
@@ -331,4 +340,7 @@ await main()
       process.exitCode = 1;
     }
   })
-  .finally(() => client.end({ timeout: 5 }));
+  .finally(async () => {
+    await admin?.sql.end({ timeout: 5 });
+    await client.end({ timeout: 5 });
+  });
