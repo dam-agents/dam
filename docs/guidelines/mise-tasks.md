@@ -31,7 +31,7 @@ Arguments pass through verbatim after the first `--` (`mise run image:resolve --
 A task that takes flags or positionals declares them in `#USAGE` lines instead of parsing `"$@"` by hand (`#USAGE flag "--force"`, `#USAGE arg "<tar>..." var=#true`); mise parses them and hands the script `$usage_<name>` variables, and a repeatable one arrives shell-quoted for `eval "xs=($usage_x)"`.
 A hidden helper that other scripts call by path rather than through a nested `mise run` (about 0.4 s each) uses the `#!/usr/bin/env -S usage bash` shebang, so its `#USAGE` lines parse without mise (`image:pack`, `image:pull`, `image:name-layout`).
 Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead.
-Scripts that are not tasks live outside `.mise/tasks/`: [`.mise/lib/cluster.sh`](../../.mise/lib/cluster.sh), which every `cluster:*` and `e2e:*` task sources to resolve `LIMA_INSTANCE` and `KUBECONFIG` (the `e2e:*` tasks and the Playwright run task pin `LIMA_INSTANCE=platform-k3s-test` in their `env`).
+Scripts that are not tasks live outside `.mise/tasks/`: [`.mise/lib/cluster.sh`](../../.mise/lib/cluster.sh), which every `cluster:*` and `e2e:*` task sources to resolve `LIMA_INSTANCE` and `KUBECONFIG` (the `e2e:*` tasks and the Playwright run task pin `LIMA_INSTANCE=platform-k3s-test` in their `env`), or, with `--environment <name>`, one of the agent's Environments through [`.mise/lib/cluster-environment.sh`](../../.mise/lib/cluster-environment.sh).
 [`.mise/lib/lima-build.sh`](../../.mise/lib/lima-build.sh) is sourced by the image tasks that need a Linux host of the image's arch (the agents' and the VM runner's): off Linux they build in the dev cluster's Lima VM.
 
 ## Naming and descriptions

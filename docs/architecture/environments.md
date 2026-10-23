@@ -47,7 +47,7 @@ The link is one-way: only the Owning Agent's machine can open it, the runner joi
   `scp`, `ssh -L` and streaming an image in, `docker save IMAGE | ssh env-<name> k3s ctr images import -`, work as with any host.
 - **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it until it next boots; only the Owning Agent reaches the link, so the link itself is the authorization.
 - **On the Environment**, an openrc service of the image, `platform-env`, runs `socat` on the vsock port, which hands each connection to a short script that trusts the key and runs `sshd -i`; it starts only on a machine that is an Environment.
-  A shell gets the gateway and CA settings an openrc service gets, so `docker` and `k3s` pull as they do at boot.
+  A shell gets what an openrc service gets of the machine's environment: the image's tool `PATH`, the gateway and CA settings, so `docker` and `k3s` pull as they do at boot, and the image's `XDG_RUNTIME_DIR`, where `rc-service --user` finds the agent's own services.
 - **An open link keeps both machines awake.** The proxy on the agent and the script `socat` starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
 
 The agent's side is a small Python helper, since Node has no vsock, and both sides carry the bytes with `socat`.
@@ -120,6 +120,18 @@ Its host names differ from the public ones, which the chart and the api-server b
   Each set has its own share host app: its own sign-in callback, a session store and cookie of its own, so a share session from one set is never read on the other, and its own content host framed by its own share host.
   The Environments front door is on the public share host alone.
   Links the platform writes into messages and tool results stay on the public addresses.
+
+`mise run cluster:install -- --environment <name>` installs or upgrades the platform in an Environment from a checkout, the same way every time (the `cluster-ops` skill has the steps).
+The cluster tasks then act on the Environment's k3s instead of their own host's: the node over the link, the API through a tunnel the tasks open and reuse.
+The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
+It runs no mesh and no vm agents, which the Environment's kernel cannot.
+Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
+Beside the chart it installs two pieces the gate needs:
+
+- **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
+- **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
+
+`--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name>` forwards its port over the link to the agent's machine.
 
 ## Surfaces
 
