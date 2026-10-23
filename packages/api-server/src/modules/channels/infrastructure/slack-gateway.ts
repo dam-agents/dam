@@ -314,6 +314,7 @@ export interface SlackGateway {
     iconUrl?: string;
     channelId: string;
     threadTs?: string;
+    blocks?: SlackBlock[];
     teamId: SlackWorkspace;
   }): Promise<void>;
   downloadFile(
