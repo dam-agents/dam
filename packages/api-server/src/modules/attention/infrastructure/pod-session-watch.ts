@@ -1,11 +1,6 @@
-import { createTRPCClient, createWSClient, wsLink } from "@trpc/client";
-import {
-  podSessionNoticeSchema,
-  type AppRouter as AgentRuntimeRouter,
-  type PodSession,
-} from "agent-runtime-api";
+import { podSessionNoticeSchema, type PodSession } from "agent-runtime-api";
 
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { agentPodWsClient } from "../../../core/agent-pod-client.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One connection to one pod, carrying both halves of
@@ -43,18 +38,11 @@ export function createPodSessionClient(
   log: (message: string) => void,
   webSocket?: typeof WebSocket,
 ): PodSessionClient {
-  const connect = (agentId: string) => {
-    const wsClient = createWSClient({
-      url: `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,
-      WebSocket: webSocket,
-      keepAlive: { enabled: true },
+  const connect = (agentId: string) =>
+    agentPodWsClient(agentId, namespace, {
+      webSocket,
       onError: () => log(`pod session watch errored for ${agentId}`),
     });
-    const client = createTRPCClient<AgentRuntimeRouter>({
-      links: [wsLink({ client: wsClient })],
-    });
-    return { wsClient, client };
-  };
 
   return {
     watchAgent(agentId, onNotice) {

@@ -715,13 +715,13 @@ export async function bootstrap() {
       agentsRepo.isOwnedBy(agentId, ownerSub),
     spillLog: async (agentId, ref, output) => {
       try {
-        return await createAgentWorkspaceFiles(
-          `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
-        ).write({
-          path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
-          bytes: Buffer.from(output, "utf8"),
-          contentType: "text/plain",
-        });
+        return await createAgentWorkspaceFiles(agentId, config.namespace).write(
+          {
+            path: `.dam/satellite-jobs/${ref.replace("#", "-")}.log`,
+            bytes: Buffer.from(output, "utf8"),
+            contentType: "text/plain",
+          },
+        );
       } catch {
         return null;
       }
@@ -1414,9 +1414,7 @@ export async function bootstrap() {
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
-          createAgentWorkspaceFiles(
-            `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
-          ),
+          createAgentWorkspaceFiles(agentId, config.namespace),
         listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
         agentIcon: agentIcons?.iconUrl ?? null,

@@ -6,6 +6,7 @@ import { createRemoteJWKSet } from "jose";
 import type { AcpClientFactory } from "../../core/acp-client.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
+import type { SpendHoldReason } from "../spend/index.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
 import { RELAY_TOKEN_TTL_MS, type RelayGrant } from "./domain/relay-grant.js";
 import {
@@ -181,7 +182,7 @@ export function composeShareBridge(opts: {
   ensureReady: (agentId: string) => Promise<void>;
   agentApi: AgentApiPodClient;
   makeAcpClient: AcpClientFactory;
-  spendHold: (agentId: string) => Promise<"limit" | "ceiling" | null>;
+  spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
   attendance: ChannelTurnAttendance;
 }): ShareBridgeService {
   return createShareBridgeService({

@@ -59,22 +59,14 @@ export interface SchedulesRepository {
   deleteByAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
   findOwnerByAgent(agentId: string): Promise<string | null>;
-  recordFire(
+  writeStatus(
     id: string,
-    result: string,
-    nextRun: Date | null,
+    patch: ScheduleStatusWrite,
     tx?: Db | DbTx,
   ): Promise<void>;
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
-  stampFire(id: string, result: string): Promise<void>;
-  stampResult(
-    id: string,
-    result: string | null,
-    nextRun?: Date | null,
-  ): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
-  setNextRun(id: string, nextRun: Date | null): Promise<void>;
   claimWaitingOnce(owner: string, now: Date): Promise<string[]>;
   replaceResult(id: string, expected: string, next: string): Promise<boolean>;
   countAgentOnce(
@@ -86,6 +78,13 @@ export interface SchedulesRepository {
     days: number,
     keepResult: string,
   ): Promise<{ id: string; agentId: string; owner: string }[]>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one write of a schedule's fire state, setting exactly the columns named: the fire time with its result, the result alone after a failed commit, or the next run on its own.
+export interface ScheduleStatusWrite {
+  lastFiredAt?: Date;
+  lastFiredResult?: string | null;
+  nextRun?: Date | null;
 }
 
 interface InternalRow {
@@ -290,13 +289,17 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
       return rows[0]?.owner ?? null;
     },
 
-    async recordFire(id, result, nextRun, tx): Promise<void> {
+    async writeStatus(id, patch, tx): Promise<void> {
       await (tx ?? db)
         .update(schedulesTable)
         .set({
-          lastFiredAt: new Date(),
-          lastFiredResult: result,
-          nextRun,
+          ...(patch.lastFiredAt !== undefined && {
+            lastFiredAt: patch.lastFiredAt,
+          }),
+          ...(patch.lastFiredResult !== undefined && {
+            lastFiredResult: patch.lastFiredResult,
+          }),
+          ...(patch.nextRun !== undefined && { nextRun: patch.nextRun }),
           updatedAt: new Date(),
         })
         .where(eq(schedulesTable.id, id));
@@ -304,27 +307,6 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
 
     transaction(fn) {
       return db.transaction(fn);
-    },
-    async stampFire(id, result): Promise<void> {
-      await db
-        .update(schedulesTable)
-        .set({
-          lastFiredAt: new Date(),
-          lastFiredResult: result,
-          updatedAt: new Date(),
-        })
-        .where(eq(schedulesTable.id, id));
-    },
-
-    async stampResult(id, result, nextRun): Promise<void> {
-      await db
-        .update(schedulesTable)
-        .set({
-          lastFiredResult: result,
-          ...(nextRun !== undefined ? { nextRun } : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(schedulesTable.id, id));
     },
 
     async applyStatusPatch(id, patch): Promise<void> {
@@ -434,13 +416,6 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         )
         .returning({ id: schedulesTable.id });
       return rows.map((row) => row.id);
-    },
-
-    async setNextRun(id, nextRun): Promise<void> {
-      await db
-        .update(schedulesTable)
-        .set({ nextRun, updatedAt: new Date() })
-        .where(eq(schedulesTable.id, id));
     },
   };
 }

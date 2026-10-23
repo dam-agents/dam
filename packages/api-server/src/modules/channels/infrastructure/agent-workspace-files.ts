@@ -1,5 +1,4 @@
-import { createTRPCClient, httpLink } from "@trpc/client";
-import type { AppRouter } from "agent-runtime-api";
+import { agentPodClient } from "../../../core/agent-pod-client.js";
 
 export interface AgentWorkspaceFiles {
   write(input: {
@@ -9,15 +8,20 @@ export interface AgentWorkspaceFiles {
   }): Promise<string>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: workspace writes carry a spilled satellite log or a file a channel hands its Agent, which can run to megabytes on a slow disk, so they get four times the round-trip budget a plain call gets.
+const WRITE_TIMEOUT_MS = 60_000;
+
 export type AgentWorkspaceFilesFactory = (
   agentId: string,
 ) => AgentWorkspaceFiles;
 
 export function createAgentWorkspaceFiles(
-  trpcUrl: string,
+  agentId: string,
+  namespace: string,
 ): AgentWorkspaceFiles {
-  const client = createTRPCClient<AppRouter>({
-    links: [httpLink({ url: trpcUrl })],
+  const client = agentPodClient(agentId, namespace, {
+    timeoutMs: WRITE_TIMEOUT_MS,
+    batch: false,
   });
   return {
     async write({ path, bytes, contentType }) {

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Db } from "db";
+import { createMemoryTtlStore } from "../../../core/ttl-store.js";
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
 import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import { AGENTS_PLURAL } from "../../agents/infrastructure/labels.js";
@@ -21,16 +22,16 @@ export function composeKbShareServing(opts: {
   k8s: K8sClient;
   grepDeadlineMs: number;
 }): Hono {
-  const nameCache = new Map<string, { name: string; expiresAt: number }>();
+  const nameCache = createMemoryTtlStore<string>(AGENT_NAME_TTL_MS);
 
   async function agentName(agentId: string): Promise<string> {
-    const cached = nameCache.get(agentId);
-    if (cached && cached.expiresAt > Date.now()) return cached.name;
+    const cached = await nameCache.peek(agentId);
+    if (cached !== null) return cached;
     const obj = await opts.k8s
       .getCustomObject(AGENTS_PLURAL, agentId)
       .catch(() => null);
     const name = (obj?.spec as { name?: string } | undefined)?.name ?? agentId;
-    nameCache.set(agentId, { name, expiresAt: Date.now() + AGENT_NAME_TTL_MS });
+    await nameCache.set(agentId, name);
     return name;
   }
 
