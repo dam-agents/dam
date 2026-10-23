@@ -17,7 +17,14 @@ export interface SessionLedgerRow extends SpendAmount {
   readonly cacheWrite1hTokens: number;
   readonly firstDay: string;
   readonly lastDay: string;
+  readonly firstAt?: string;
+  readonly lastAt?: string;
 }
+
+const earlier = (a: string | undefined, b: string | undefined) =>
+  a === undefined || (b !== undefined && b < a) ? b : a;
+const later = (a: string | undefined, b: string | undefined) =>
+  a === undefined || (b !== undefined && b > a) ? b : a;
 
 const COUNT_FIELDS = [
   "calls",
@@ -83,6 +90,10 @@ export function foldSessions(input: {
     for (const field of COUNT_FIELDS) entry[field] += row[field];
     if (row.firstDay < entry.firstDay) entry.firstDay = row.firstDay;
     if (row.lastDay > entry.lastDay) entry.lastDay = row.lastDay;
+    const firstAt = earlier(entry.firstAt, row.firstAt);
+    const lastAt = later(entry.lastAt, row.lastAt);
+    if (firstAt !== undefined) entry.firstAt = firstAt;
+    if (lastAt !== undefined) entry.lastAt = lastAt;
   };
   for (const row of input.own) add(row.sessionId, row, false);
   for (const row of input.subAgents) {

@@ -37,6 +37,7 @@ export interface TelemetryWindow {
 export interface TelemetryLogFilter extends TelemetryWindow {
   traceId?: string;
   promptId?: string;
+  routerCallsWithin?: { fromIso: string; toIso: string };
   event?: string;
   contains?: string;
 }
@@ -182,7 +183,14 @@ export function createTelemetryService(deps: {
       const recordFilter: TelemetryLogFilter =
         query.promptId === undefined
           ? window
-          : { ...window, promptId: query.promptId };
+          : {
+              ...window,
+              promptId: query.promptId,
+              routerCallsWithin: {
+                fromIso: query.from,
+                toIso: shiftIso(query.to, END_TRUNCATION_MS),
+              },
+            };
       const [logs, spans] =
         ids.length === 0
           ? [[] as UnattachedLog[], [] as TelemetrySpan[]]

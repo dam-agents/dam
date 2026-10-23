@@ -115,6 +115,7 @@ export async function startExtAuthzGrpcApp(
             connectionId: spend.connectionId,
             providers: spend.providers,
             sessionId: spend.sessionId,
+            routerCallId: spend.routerCallId,
             dialect: spend.dialect,
           },
         });

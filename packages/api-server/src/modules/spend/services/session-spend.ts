@@ -1,5 +1,6 @@
 import type { SpendSessions } from "api-server-api";
 import { foldSessions } from "../domain/sessions.js";
+import type { CallWindow } from "../domain/ledger.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 
 export interface SpawnedSubAgents {
@@ -13,11 +14,12 @@ export async function readSessionSpend(
     agentId: string;
     from: string;
     to: string;
+    at?: CallWindow;
     sessionIds?: readonly string[];
     limit: number;
   },
 ): Promise<SpendSessions> {
-  const { ownerSub, agentId, from, to, sessionIds, limit } = query;
+  const { ownerSub, agentId, from, to, at, sessionIds, limit } = query;
   const [own, spawnSessions] = await Promise.all([
     deps.ledger.sessionRows({
       ownerSub,
@@ -26,6 +28,7 @@ export async function readSessionSpend(
       withSessionOnly: true,
       from,
       to,
+      ...(at && { at }),
     }),
     deps.subAgents.spawnSessions(agentId),
   ]);
@@ -39,6 +42,7 @@ export async function readSessionSpend(
     withSessionOnly: false,
     from,
     to,
+    ...(at && { at }),
   });
   return foldSessions({
     own,

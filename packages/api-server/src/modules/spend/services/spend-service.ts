@@ -41,6 +41,7 @@ import type { SpendLimits } from "../infrastructure/spend-limits.js";
 import type { SpendCeilings } from "../infrastructure/spend-ceilings.js";
 import { readSessionSpend, type SpawnedSubAgents } from "./session-spend.js";
 import type { DayTotals, GrantedConnections } from "./spend-check.js";
+import { readRangeOf, type ReadRange } from "../domain/read-window.js";
 
 export interface SpendQuestionCloser {
   closePending(input: { ownerSub: string; limitId: string }): Promise<void>;
@@ -236,7 +237,18 @@ export function createSpendService(deps: {
       });
     },
 
-    async breakdown({ agentId, from, to }) {
+    async breakdown(input) {
+      const { agentId } = input;
+      const range: Partial<ReadRange> & { from: string; to: string } =
+        "at" in input
+          ? readRangeOf(
+              input.at,
+              new Date(),
+              await deps.meteringStart(),
+              await deps.ledger.callDetailSince(),
+            )
+          : { from: input.from, to: input.to };
+      const { from, to, at } = range;
       const payer = agentId ? await deps.payers.payerOf(agentId) : undefined;
       const scope = !agentId ? "owner" : payer === agentId ? "payer" : "caller";
       const [rows, connectionNames] = await Promise.all([
@@ -246,6 +258,7 @@ export function createSpendService(deps: {
           ...(scope === "caller" && { callingAgentId: agentId }),
           from,
           to,
+          ...(at && { at }),
         }),
         deps.connectionNames(),
       ]);
@@ -257,13 +270,14 @@ export function createSpendService(deps: {
         sessionCategories: await categoriesOf(rows),
         scope,
       });
-      return labelAgents(
+      const labelled = labelAgents(
         breakdown,
         await labelsOf(
           agentIdsOf([...breakdown.byAgent, ...breakdown.byCallingAgent]),
           agentIdsOf(breakdown.byCallingAgent),
         ),
       );
+      return range.window ? { ...labelled, window: range.window } : labelled;
     },
 
     async subAgents({ agentId, from, to, limit }) {
@@ -286,15 +300,25 @@ export function createSpendService(deps: {
       };
     },
 
-    async sessions({ agentId, from, to, sessionIds, limit }) {
-      return readSessionSpend(deps, {
+    async sessions({ agentId, from, to, at, sessionIds, limit }) {
+      const range = at
+        ? readRangeOf(
+            at,
+            new Date(),
+            await deps.meteringStart(),
+            await deps.ledger.callDetailSince(),
+          )
+        : null;
+      const sessions = await readSessionSpend(deps, {
         ownerSub: deps.ownerSub,
         agentId,
-        from: from ?? utcDay(await deps.meteringStart()),
-        to: to ?? utcDay(new Date()),
+        from: range?.from ?? from ?? utcDay(await deps.meteringStart()),
+        to: range?.to ?? to ?? utcDay(new Date()),
+        ...(range?.at && { at: range.at }),
         ...(sessionIds && { sessionIds }),
         limit: limit ?? SPEND_SESSIONS_DEFAULT_LIMIT,
       });
+      return range ? { ...sessions, window: range.window } : sessions;
     },
 
     async turns({ agentId, sessionId, windows }) {
@@ -305,6 +329,17 @@ export function createSpendService(deps: {
         windows,
       });
       return foldTurns(windows, rows);
+    },
+
+    async calls({ agentId, routerCallIds }) {
+      const subAgentIds = await deps.subAgents.spawnSessions(agentId);
+      return {
+        calls: await deps.ledger.callCosts({
+          ownerSub: deps.ownerSub,
+          callingAgentIds: [agentId, ...subAgentIds.keys()],
+          routerCallIds,
+        }),
+      };
     },
 
     async metering() {

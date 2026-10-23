@@ -1,8 +1,13 @@
-import type { SpendAmount, SpendSessionRow } from "api-server-api";
+import type {
+  SpendAmount,
+  SpendCallCost,
+  SpendSessionRow,
+} from "api-server-api";
 
 import {
   bobcoinCell,
   callsAndTokens,
+  callSpanLine,
   coveredCell,
   coveredDetail,
   paidCell,
@@ -17,6 +22,11 @@ export function amountsLabel(amounts: readonly SpendAmount[]): string | null {
   if (totals.usd_list > 0) return coveredCell(totals.usd_list);
   if (totals.bobcoin > 0) return bobcoinCell(totals.bobcoin);
   return null;
+}
+
+export function callCostLabel(cost: SpendCallCost): string | null {
+  const text = amountsLabel([cost]);
+  return text && cost.estimated ? `~${text}` : text;
 }
 
 function amountsList(amounts: readonly SpendAmount[]): string {
@@ -47,6 +57,8 @@ export function sessionSpendTitle(row: SpendSessionRow): string {
       .filter((part) => part !== null)
       .join(" · "),
   ];
+  if (row.firstAt && row.lastAt)
+    lines.push(callSpanLine(row.firstAt, row.lastAt));
   const subAgents = amountsList(row.subAgentAmounts);
   if (subAgents) lines.push(subAgentPart(subAgents));
   return lines.join("\n");

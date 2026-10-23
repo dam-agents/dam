@@ -15,8 +15,12 @@ import { renderFittedTable, renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import {
+  callCostText,
+  formatAt,
   formatDayWindow,
+  hourWindow,
   NO_CALL_TELEMETRY,
+  readWindowLabel,
   spendText,
   spendWindow,
 } from "../domain/spend-window.js";
@@ -44,7 +48,7 @@ export function buildMetricsCommand(deps: {
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .option(
       "--since <hours>",
-      `lookback window in hours; the spend covers the UTC days it touches (max ${METRICS_MAX_SINCE_HOURS}; default: every measured day)`,
+      `lookback window in hours; spend older than 30 days counts whole UTC days (max ${METRICS_MAX_SINCE_HOURS}; default: every measured day)`,
     )
     .option("--session <id>", "narrow to one session")
     .option(
@@ -114,16 +118,15 @@ export function buildMetricsCommand(deps: {
         const metrics = deps.createMetricsService(host);
         const metering = await metrics.metering();
         exitOnServiceError(metering, host);
-        const window = spendWindow({
-          sinceHours,
-          startDay: metering.value.startDay,
-          now: new Date(),
-        });
+        const now = new Date();
+        const days = spendWindow({ startDay: metering.value.startDay, now });
+        const range =
+          sinceHours === undefined ? days : { at: hourWindow(sinceHours, now) };
         const [breakdown, sessions, overview, titles] = await Promise.all([
-          metrics.breakdown({ agentId: agent.id, ...window }),
+          metrics.breakdown({ agentId: agent.id, ...range }),
           metrics.sessions({
             agentId: agent.id,
-            ...window,
+            ...range,
             ...(opts.session && { sessionIds: [opts.session] }),
             limit: SPEND_SESSIONS_MAX,
           }),
@@ -142,9 +145,33 @@ export function buildMetricsCommand(deps: {
           overview.error.kind === "transport" &&
           overview.error.serverCode === "PRECONDITION_FAILED";
         if (!noTelemetry) exitOnServiceError(overview, host);
+        const routerCallIds = overview.ok
+          ? overview.value.contextPerCall.flatMap((call) =>
+              call.routerCallId ? [call.routerCallId] : [],
+            )
+          : [];
+        const costs =
+          routerCallIds.length > 0
+            ? await metrics.calls({ agentId: agent.id, routerCallIds })
+            : null;
+        const costOf = new Map(
+          (costs?.ok ? costs.value.calls : []).map((c) => [c.routerCallId, c]),
+        );
         const calls = overview.ok
           ? overview.value.contextPerCall.map(
-              ({ costUsd: _cost, ...call }) => call,
+              ({ costUsd: _cost, routerCallId, ...call }) => {
+                const cost = costOf.get(routerCallId);
+                return {
+                  ...call,
+                  cost: cost
+                    ? {
+                        unit: cost.unit,
+                        costMicros: cost.costMicros,
+                        estimated: cost.estimated,
+                      }
+                    : null,
+                };
+              },
             )
           : null;
         const sessionRows = sessions.value.rows.map((r) => ({
@@ -158,11 +185,21 @@ export function buildMetricsCommand(deps: {
             : (narrowed?.amounts ?? []);
         const byModel = narrowed === undefined ? breakdown.value.byModel : null;
 
+        const read = breakdown.value.window;
+        const shownDays = read
+          ? {
+              from: read.fromAt.slice(0, 10),
+              to: new Date(Date.parse(read.toAt) - 1)
+                .toISOString()
+                .slice(0, 10),
+            }
+          : days;
         if (opts.json) {
           return writeStdoutAndExit(
             `${JSON.stringify({
               agentId: agent.id,
-              window,
+              window: read ? shownDays : days,
+              ...(read && { readWindow: read }),
               measuredSince: metering.value.startedAt,
               totals,
               byModel,
@@ -173,7 +210,11 @@ export function buildMetricsCommand(deps: {
           );
         }
 
-        const windowLabel = `${formatDayWindow(window)}, UTC days${opts.session ? ` · session ${opts.session}` : ""}`;
+        const windowLabel = `${
+          read && sinceHours !== undefined
+            ? readWindowLabel(read, shownDays, sinceHours)
+            : `${formatDayWindow(days)}, UTC days`
+        }${opts.session ? ` · session ${opts.session}` : ""}`;
         if (totals.length === 0 && (calls?.length ?? 0) === 0) {
           process.stderr.write(
             `No measured spend for ${agent.name} in ${windowLabel}.\n`,
@@ -243,13 +284,21 @@ export function buildMetricsCommand(deps: {
             r.cacheReadTokens.toLocaleString(),
             (r.cacheWrite5mTokens + r.cacheWrite1hTokens).toLocaleString(),
             spendText(r.amounts),
-            r.lastDay,
+            r.lastAt ? formatAt(r.lastAt) : r.lastDay,
           ]),
           0,
         );
         const recent = calls
           ? renderTable([
-              ["TIME", "MODEL", "CONTEXT", "INPUT", "CACHE R", "OUTPUT"],
+              [
+                "TIME",
+                "MODEL",
+                "CONTEXT",
+                "INPUT",
+                "CACHE R",
+                "OUTPUT",
+                "COST",
+              ],
               ...calls.map((r) => [
                 r.at,
                 r.model,
@@ -257,6 +306,7 @@ export function buildMetricsCommand(deps: {
                 r.inputTokens.toLocaleString(),
                 r.cacheReadTokens.toLocaleString(),
                 r.outputTokens.toLocaleString(),
+                callCostText(r.cost),
               ]),
             ])
           : `${NO_CALL_TELEMETRY}\n`;

@@ -175,6 +175,7 @@ export type {
   UserBudgetUser,
 } from "./modules/budgets/types.js";
 export {
+  CALL_ROWS_RETENTION_DAYS,
   MICROS_PER_UNIT,
   PLATFORM_REFUSAL_HEADER,
   SPEND_DAILY_MAX_DAYS,
@@ -182,6 +183,9 @@ export {
   SPEND_SESSIONS_MAX,
   SPEND_SUB_AGENTS_MAX,
   SPEND_SUB_AGENTS_PAGE,
+  SPEND_CALLS_MAX,
+  spendAtWindowSchema,
+  spendCallsInputSchema,
   spendCeilingSetInputSchema,
   spendCeilingUsdTextSchema,
   spendCeilingUserSchema,
@@ -209,6 +213,9 @@ export type {
   SpendAmount,
   SpendBreakdown,
   SpendBreakdownInput,
+  SpendCallCost,
+  SpendCalls,
+  SpendCallsInput,
   SpendCeilingSource,
   SpendCeilingView,
   SpendCounts,
@@ -222,6 +229,7 @@ export type {
   SpendLimitState,
   SpendLimitView,
   SpendMetering,
+  SpendReadWindow,
   SpendService,
   SpendSessionRow,
   SpendSessions,
@@ -539,6 +547,8 @@ export {
   agentTelemetryInputSchema,
 } from "./modules/metrics/schemas.js";
 export {
+  AGENT_METRICS_MAX_HOURS,
+  AGENT_TELEMETRY_DEFAULT_DAYS,
   AGENT_TELEMETRY_MAX_DAYS,
   AGENT_TELEMETRY_MAX_LIMIT,
   METRICS_MAX_LIMIT,
