@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -241,7 +241,10 @@ What the agent sees:
   Gated by the binding; the log records the message and tally, never who reacted.
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
-  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can: the text lands before the file, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
+  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
+  A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
+  Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
+  Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
   A reply with only a file posts it as one message, and cannot also go to the channel.
   A thread-triggered turn is never nudged towards it: the thread is where the answer belongs, and surfacing it to the channel takes an explicit ask.
   The one turn still nudged is a coalesced batch of top-level messages, which has no thread the channel is already watching.
@@ -299,7 +302,9 @@ Its owner removes one with `/platform delete <message link> [reason]`, naming th
 Nothing is rendered on the post and nothing is added to Slack's message menus, which is the whole point: a rendered button stands in front of everyone in the conversation although only one person may press it, and a message shortcut, the one affordance Slack draws without touching the post, is registered app-wide and so lands on every message in the workspace, agent or not.
 Only the Agent's owner may delete: the typist's identity link must resolve to the owner, and anyone unlinked is told to link first.
 The platform reads the linked message back from Slack to recover its footer, refusing a link it cannot resolve and one that names a post no Agent wrote.
-The owner then confirms in a Slack modal, with any reason they typed already filled in; the platform deletes the text first, then the files uploaded with it, whose ids ride in the post's **message metadata**: a file's id is reserved before its post, and its bytes are sent and the file shared after it, so the post never needs an edit and the text never waits for the upload.
+The owner then confirms in a Slack modal, with any reason they typed already filled in; the platform deletes the text first, then the files uploaded with it.
+A file shared with its text is part of that one post, so reading the post back names it.
+A text posted apart from its file carries the file's id in the post's **message metadata**: the id is reserved before the post, and the bytes are sent and the file shared after it, so the post never needs an edit.
 Metadata carries those ids because it is invisible in the client and comes back on a later read, where a button's value died with the button.
 A reply's session is then told once, with a short notice, unless the Agent is stopped; a top-level post names no session, so nobody is told.
 A post that is only an attachment, top-level or a thread reply, is a single file message instead: its footer block rides on the file itself, so its own link names the Agent, and the files it carries are deleted with it.
