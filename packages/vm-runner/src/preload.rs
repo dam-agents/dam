@@ -11,27 +11,18 @@ use crate::imagecache::ImageCache;
 // UNIT_BOUNDARY_DESCRIPTION: the node service's preload loop. A runner exists only once one of its owner's agents needs one, so without this the first machine on every harness image, on every node, after every deploy, waits out the fetch with a user on the other end. Each pass reads the install's default pull Secrets from their mounted volume again, so a rotated Secret is used without a restart.
 pub async fn run(
     cache: Arc<ImageCache>,
-    every: Duration,
+    period: Duration,
     secrets: Option<PathBuf>,
     lifetime: CancellationToken,
 ) {
-    loop {
+    let _ = crate::every(period, Some(lifetime), move || {
         let auths = secrets
             .as_deref()
             .map(read_pull_secrets)
             .unwrap_or_default();
-        let pass = cache.clone();
-        if tokio::task::spawn_blocking(move || pass.preload(&auths))
-            .await
-            .is_err()
-        {
-            return;
-        }
-        tokio::select! {
-            _ = lifetime.cancelled() => return,
-            _ = tokio::time::sleep(every) => {}
-        }
-    }
+        cache.preload(&auths);
+    })
+    .await;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the docker configs to preload with, one per mounted pull Secret, in the order the install lists them. The kubelet tries each Secret in turn, so they are kept apart rather than merged, and a stale credential for a registry does not hide a good one listed after it. The chart projects Secret number N into the directory `N`, zero-padded so the names sort in order, under the key it was written with: `.dockerconfigjson`, a whole config with its registries under `auths`, or the older `.dockercfg`, which is the registries alone. A Secret that is missing or names no registry adds nothing. The kubelet's own dot-named links are skipped. The documents hold credentials, so none is logged.

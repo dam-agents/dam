@@ -382,35 +382,23 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     )?;
 
     let logs = server.clone();
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(vm_runner::console::TRIM_EVERY);
-        loop {
-            tick.tick().await;
-            let logs = logs.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                for id in logs.list().unwrap_or_default() {
-                    let cut = vm_runner::console::trim_logs(
-                        &id,
-                        &smolvm::agent::vm_data_dir(&id),
-                        vm_runner::console::LOG_CAP_BYTES,
-                    );
-                    if cut {
-                        logs.forget_kernel_read(&id);
-                    }
-                }
-            })
-            .await;
+    vm_runner::every(vm_runner::console::TRIM_EVERY, None, move || {
+        for id in logs.list().unwrap_or_default() {
+            let cut = vm_runner::console::trim_logs(
+                &id,
+                &smolvm::agent::vm_data_dir(&id),
+                vm_runner::console::LOG_CAP_BYTES,
+            );
+            if cut {
+                logs.forget_kernel_read(&id);
+            }
         }
     });
     // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick, since it says which signal killed the machine; a death this read misses is one the sweep below reaps, and smolvm keeps that signal for the tick that follows.
     let reaping = server.clone();
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(REAP_EVERY);
-        loop {
-            tick.tick().await;
-            reaping.reap_killed();
-            smolvm::process::reap_vm_children();
-        }
+    vm_runner::every(REAP_EVERY, None, move || {
+        reaping.reap_killed();
+        smolvm::process::reap_vm_children();
     });
 
     let listener = bind(&args.listen)?;
