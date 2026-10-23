@@ -565,7 +565,9 @@ export function loadConfig(): Config {
       },
     },
     links: {
+      docs: process.env.LINKS_DOCS || null,
       computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
+      curveBenderCommunity: process.env.LINKS_CURVE_BENDER_COMMUNITY || null,
       slackInstallRequest: process.env.LINKS_SLACK_INSTALL_REQUEST || null,
     },
     terms: {

@@ -8,6 +8,10 @@ const state = vi.hoisted(() => ({
   navigateToSettings: vi.fn(),
 }));
 
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
   useNewLayout: () => false,
 }));
@@ -18,6 +22,8 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: typeof state) => unknown) => select(state),
 }));
 
+const { CHART_DEFAULT_LINKS, fakeLinks } =
+  await import("./support/fake-links.js");
 const { useSidebarDestinations } =
   await import("../../modules/platform/hooks/use-sidebar-destinations.js");
 
@@ -36,6 +42,7 @@ it("TEST_SCENARIO: Home, Artifacts and Starter kits each open their own page", (
 beforeEach(() => {
   state.rightToolbar = false;
   state.view = "home";
+  fakeLinks.current = { ...CHART_DEFAULT_LINKS };
   vi.clearAllMocks();
 });
 
@@ -45,6 +52,14 @@ it("leaves Artifacts and Documentation out while the right toolbar offers them",
   const { primary, secondary } = useSidebarDestinations();
   expect(primary.map((d) => d.label)).toEqual(["Home", "Starter kits"]);
   expect(secondary.map((d) => d.label)).toEqual(["Settings"]);
+});
+
+// TEST_SCENARIO: an install that sets no documentation site has no Documentation entry, rather than one that opens nothing.
+it("leaves Documentation out when the install sets no documentation site", () => {
+  fakeLinks.current = { ...CHART_DEFAULT_LINKS, docs: null };
+  expect(useSidebarDestinations().secondary.map((d) => d.label)).toEqual([
+    "Settings",
+  ]);
 });
 
 it.each([

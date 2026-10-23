@@ -5,9 +5,9 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Notice } from "@/components/ui/notice";
-import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
+import { useDocsUrl } from "../../../links/api/queries.js";
 import {
   CURVE_BENDER_DESCRIPTION,
   IBM_LITELLM_DESCRIPTION,
@@ -30,15 +30,17 @@ const MARK =
 
 const CURVE_BENDER_KEY_PREFIX = "sk-";
 
+const CURVE_BENDER_KEY_URL = `https://${CURVE_BENDER_HOST}/ui/`;
+
 const LITELLM_PROVIDERS = {
   "ibm-litellm": {
     description: IBM_LITELLM_DESCRIPTION,
-    keyGuideUrl: KEY_GUIDE_URL,
+    keyGuideUrl: null,
     keyGuideHint: "Follow the guide and generate your LiteLLM token",
   },
   "curve-bender": {
     description: CURVE_BENDER_DESCRIPTION,
-    keyGuideUrl: `https://${CURVE_BENDER_HOST}/ui/`,
+    keyGuideUrl: CURVE_BENDER_KEY_URL,
     keyGuideHint: "Generate a key in the CurveBender LiteLLM dashboard",
   },
 } as const;
@@ -61,8 +63,9 @@ export function LiteLlmProxyForm({
   });
   const { isSubmitting, isValid } = formState;
 
-  const { description, keyGuideUrl, keyGuideHint } =
-    LITELLM_PROVIDERS[provider];
+  const liteLlmKeyDocsUrl = useDocsUrl("liteLlmKey");
+  const { description, keyGuideHint, ...entry } = LITELLM_PROVIDERS[provider];
+  const keyGuideUrl = entry.keyGuideUrl ?? liteLlmKeyDocsUrl;
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
   const value = stripWhitespace(watch("value"));
@@ -95,7 +98,9 @@ export function LiteLlmProxyForm({
           )}
         </>
       }
-      keyPage={{ href: keyGuideUrl, hint: keyGuideHint }}
+      keyPage={
+        keyGuideUrl ? { href: keyGuideUrl, hint: keyGuideHint } : undefined
+      }
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
@@ -119,7 +124,7 @@ export function LiteLlmProxyForm({
             CurveBender keys start with {CURVE_BENDER_KEY_PREFIX}, and IBM Cloud
             API keys don't work here. Generate a key in the{" "}
             <a
-              href={keyGuideUrl}
+              href={CURVE_BENDER_KEY_URL}
               {...externalLinkProps}
               className="underline hover:text-primary"
             >

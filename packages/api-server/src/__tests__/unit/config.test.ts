@@ -355,3 +355,61 @@ describe("loadConfig — backchannel addresses", () => {
     expect(() => loadConfig()).toThrow(/must be set together/);
   });
 });
+
+describe("loadConfig — outbound links", () => {
+  const LINKS_ENV = {
+    docs: "LINKS_DOCS",
+    computeRequest: "LINKS_COMPUTE_REQUEST",
+    curveBenderCommunity: "LINKS_CURVE_BENDER_COMMUNITY",
+    slackInstallRequest: "LINKS_SLACK_INSTALL_REQUEST",
+  } as const;
+  const managed = [...Object.keys(REQUIRED_ENV), ...Object.values(LINKS_ENV)];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  // TEST_SCENARIO: an install that leaves the chart's links alone keeps the documentation and help addresses the UI had built in before they became configurable.
+  it("serves the chart's default links as the UI linked them before", () => {
+    const values = load(
+      readFileSync(
+        new URL("../../../../../helm/values.yaml", import.meta.url),
+        "utf8",
+      ),
+    ) as { links: Record<keyof typeof LINKS_ENV, string> };
+    for (const [key, env] of Object.entries(LINKS_ENV)) {
+      const value = values.links[key as keyof typeof LINKS_ENV];
+      if (value) process.env[env] = value;
+    }
+    expect(loadConfig().links).toEqual({
+      docs: "https://pages.github.ibm.com/dam-agents/docs/",
+      computeRequest:
+        "https://ibm-research.slack.com/archives/C0B3F03NB24/p1788879773235759",
+      curveBenderCommunity:
+        "https://ibm.enterprise.slack.com/archives/C0C3E4VJAR1",
+      slackInstallRequest: null,
+    });
+  });
+
+  // TEST_SCENARIO: the chart leaves out the env of a link set empty, and the server then serves no link, which the UI hides.
+  it("serves no link for one the install does not set", () => {
+    expect(loadConfig().links).toEqual({
+      docs: null,
+      computeRequest: null,
+      curveBenderCommunity: null,
+      slackInstallRequest: null,
+    });
+  });
+});
