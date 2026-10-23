@@ -51,6 +51,7 @@ auto = true
 "aqua:rustsec/rustsec/cargo-audit" = "latest"
 "conda:tar" = "latest"
 "conda:coreutils" = "latest"
+"conda:sed" = "latest"
 "conda:bash" = "latest"
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
