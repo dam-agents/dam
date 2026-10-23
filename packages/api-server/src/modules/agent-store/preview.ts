@@ -1,5 +1,4 @@
-import { inArray, type Db } from "db";
-import { connectionGrants } from "db";
+import { connectionGrants, inArray, type Db } from "db";
 import { parseGoDurationNs } from "../../duration.js";
 import type { Logger } from "../../core/logger.js";
 import type { KubeObject } from "../agents/infrastructure/k8s.js";
