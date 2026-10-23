@@ -8,11 +8,6 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
-export function repoLabel(source: SkillSource): string {
-  const base = repoSlug(source.gitUrl);
-  return source.path ? `${base} · ${source.path}` : base;
-}
-
 export function SkillSourceHeader({
   source,
   visibility,
@@ -41,7 +36,8 @@ export function SkillSourceHeader({
           )}
         </div>
         <p className="truncate font-mono text-xs text-muted-foreground">
-          {repoLabel(source)}
+          {repoSlug(source.gitUrl)}
+          {source.path ? ` · ${source.path}` : ""}
         </p>
       </div>
       {children}
@@ -82,7 +78,7 @@ export function SkillSourceActions({
       </DropdownMenuItem>
       {onHide && (
         <DropdownMenuItem
-          disabled={hideDisabled || hideBlocker !== null}
+          disabled={hideDisabled || !!hideBlocker}
           onSelect={onHide}
           className={cn(hideBlocker && "h-auto items-start py-2")}
         >
