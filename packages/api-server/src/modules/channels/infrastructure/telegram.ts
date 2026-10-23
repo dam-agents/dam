@@ -18,7 +18,10 @@ import {
 } from "chat";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
-import type { PostMessageOptions } from "../services/channel-manager.js";
+import type {
+  ChannelWorker,
+  PostMessageOptions,
+} from "../services/worker-contract.js";
 import {
   AcpSessionLoadError,
   AcpTurnAbandonedError,
@@ -94,10 +97,9 @@ export interface ChannelConversation {
   title: string;
 }
 
-export interface TelegramWorker {
+export interface TelegramWorker extends ChannelWorker {
   type: ChannelType.Telegram;
   start(): Promise<void>;
-  stopAll(): Promise<void>;
   resolveIdentity(): Promise<void>;
   botUsername(): string | null;
   listConversations(agentId: string): Promise<ChannelConversation[]>;
@@ -106,7 +108,6 @@ export interface TelegramWorker {
     text: string,
     options?: PostMessageOptions,
   ): Promise<{ ok: true } | { error: string }>;
-  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 async function isTelegramChatAdmin(

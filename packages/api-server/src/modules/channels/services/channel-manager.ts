@@ -18,166 +18,45 @@ import type { SlackConversationStanding } from "./slack-workspace-probe.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
+import {
+  attachmentResultSchema,
+  channelUserSchema,
+  messageReactionsResultSchema,
+  sendResultSchema,
+  threadResultSchema,
+  type AddressedWorker,
+  type AttachmentQuery,
+  type AttachmentResult,
+  type ChannelAttachment,
+  type ChannelReaction,
+  type ChannelReply,
+  type ChannelSendResult,
+  type ChannelUser,
+  type ChannelWorker,
+  type MessageReactionsResult,
+  type PersonNotice,
+  type PostMessageOptions,
+  type ReactionsQuery,
+  type ThreadQuery,
+  type ThreadResult,
+  type WireAttachment,
+} from "./worker-contract.js";
 
-export interface ChannelAttachment {
-  filename: string;
-  data: Buffer;
-  mimeType?: string;
-  title?: string;
-}
-
-export interface PostMessageOptions {
-  conversationId?: string;
-  attachment?: ChannelAttachment;
-  unfurlLinks?: boolean;
-  unfurlMedia?: boolean;
-}
-
-export interface ChannelReply {
-  text: string;
-  threadTs?: string;
-  conversationId?: string;
-  alsoSendToChannel?: boolean;
-  attachment?: ChannelAttachment;
-  unfurlLinks?: boolean;
-  unfurlMedia?: boolean;
-}
-
-export interface ChannelReaction {
-  emoji: string;
-  messageTs?: string;
-  conversationId?: string;
-}
-
-const sendResultSchema = z.union([
-  z.object({ ok: z.literal(true), attachmentError: z.string().optional() }),
-  z.object({ error: z.string() }),
-]);
-export type ChannelSendResult = z.infer<typeof sendResultSchema>;
-
-export interface ChannelUser {
-  id: string;
-  username?: string;
-  realName?: string;
-  displayName?: string;
-  title?: string;
-  pronouns?: string;
-  email?: string;
-  timezone?: string;
-  timezoneLabel?: string;
-  statusText?: string;
-  statusEmoji?: string;
-  isBot?: boolean;
-  isDeleted?: boolean;
-  error?: string;
-}
-
-export interface ChannelMessageReaction {
-  name: string;
-  count: number;
-  users: string[];
-}
-
-export interface ReactionsQuery {
-  conversationId?: string;
-  messageTs?: string;
-}
-
-export interface MessageReactionsResult {
-  reactions: ChannelMessageReaction[];
-  conversationId: string;
-  messageTs: string;
-}
-
-export interface ThreadQuery {
-  threadTs: string;
-  cursor?: string;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: One window of a thread as the reading Agent gets
- * it. `hasMore` says the window is not the whole thread and `cursor` is how to
- * reach the rest, so the two together say which end is missing: a cursor means
- * the remainder sits before this window, and its absence under `hasMore` means
- * the thread is longer than a read can walk and nothing reaches the newest
- * replies. That second state carries no handle on purpose. The window returned
- * there is a slice from the middle whose position the platform cannot vouch
- * for, and a handle inviting a walk from it would send the Agent back through
- * the wrong part of a thread whose end it never saw.
- */
-export interface ThreadResult {
-  messages: string[];
-  conversationId: string;
-  threadTs: string;
-  hasMore: boolean;
-  cursor?: string;
-}
-
-export interface AttachmentQuery {
-  fileId: string;
-}
-
-export interface AttachmentResult {
-  path: string;
-  name: string;
-  size: number;
-  contentType?: string;
-  conversationId: string;
-}
-
-interface Worker {
-  type: ChannelType;
-  stopAll(): Promise<void>;
-  listConversations(
-    instanceName: string,
-  ): Promise<{ id: string; title: string }[]>;
-  postMessage(
-    instanceName: string,
-    text: string,
-    options?: PostMessageOptions,
-  ): Promise<ChannelSendResult>;
-  reply?(instanceName: string, reply: ChannelReply): Promise<ChannelSendResult>;
-  react?(
-    instanceName: string,
-    reaction: ChannelReaction,
-  ): Promise<{ ok: true } | { error: string }>;
-  declineTurn?(
-    instanceName: string,
-    threadTs?: string,
-  ): Promise<{ ok: true } | { error: string }>;
-  handOffTurn?(
-    instanceName: string,
-    threadTs: string,
-    targetName: string,
-    note?: string,
-  ): Promise<{ ok: true; agent: string } | { error: string }>;
-  describeUsers?(
-    instanceName: string,
-    userIds: string[],
-    conversationId?: string,
-  ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  describeMessageReactions?(
-    instanceName: string,
-    query: ReactionsQuery,
-  ): Promise<MessageReactionsResult | { error: string }>;
-  resolveConversationLabels?(
-    refs: SlackConversationRef[],
-  ): Promise<SlackLabelledConversation[]>;
-  readThread?(
-    instanceName: string,
-    query: ThreadQuery,
-  ): Promise<ThreadResult | { error: string }>;
-  fetchAttachment?(
-    instanceName: string,
-    query: AttachmentQuery,
-  ): Promise<AttachmentResult | { error: string }>;
-  notifyPerson?(keycloakSub: string, text: string): Promise<{ sent: number }>;
-}
-
-export interface PersonNotice {
-  slack: string;
-  telegram?: string;
-}
+export type {
+  AttachmentQuery,
+  AttachmentResult,
+  ChannelAttachment,
+  ChannelMessageReaction,
+  ChannelReaction,
+  ChannelReply,
+  ChannelSendResult,
+  ChannelUser,
+  MessageReactionsResult,
+  PostMessageOptions,
+  ReactionsQuery,
+  ThreadQuery,
+  ThreadResult,
+} from "./worker-contract.js";
 
 export interface ChannelManager {
   availableChannels(): Partial<Record<ChannelType, boolean>>;
@@ -251,22 +130,30 @@ export interface ChannelManager {
   ): Promise<{ sent: number }>;
 }
 
+const ADDRESSED_METHODS = [
+  "react",
+  "declineTurn",
+  "handOffTurn",
+  "describeUsers",
+  "describeMessageReactions",
+  "readThread",
+  "fetchAttachment",
+] as const;
+
+type AddressedMethod = (typeof ADDRESSED_METHODS)[number];
+
+const METHOD_NAMES = [
+  "listConversations",
+  "postMessage",
+  "reply",
+  ...ADDRESSED_METHODS,
+  "resolveConversationLabels",
+  "slackConversationStanding",
+  "notifyPerson",
+] as const;
+
 export const channelRpcRequestSchema = z.object({
-  method: z.enum([
-    "listConversations",
-    "postMessage",
-    "reply",
-    "react",
-    "declineTurn",
-    "handOffTurn",
-    "describeUsers",
-    "describeMessageReactions",
-    "resolveConversationLabels",
-    "slackConversationStanding",
-    "readThread",
-    "fetchAttachment",
-    "notifyPerson",
-  ]),
+  method: z.enum(METHOD_NAMES),
   args: z.array(z.unknown()),
 });
 export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
@@ -310,22 +197,6 @@ const okOrErrorSchema = z.union([
   z.object({ ok: z.literal(true) }),
   z.object({ error: z.string() }),
 ]);
-const channelUserSchema = z.object({
-  id: z.string(),
-  username: z.string().optional(),
-  realName: z.string().optional(),
-  displayName: z.string().optional(),
-  title: z.string().optional(),
-  pronouns: z.string().optional(),
-  email: z.string().optional(),
-  timezone: z.string().optional(),
-  timezoneLabel: z.string().optional(),
-  statusText: z.string().optional(),
-  statusEmoji: z.string().optional(),
-  isBot: z.boolean().optional(),
-  isDeleted: z.boolean().optional(),
-  error: z.string().optional(),
-});
 const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
   postMessage: sendResultSchema,
@@ -341,17 +212,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     z.object({ error: z.string() }),
   ]),
   describeMessageReactions: z.union([
-    z.object({
-      reactions: z.array(
-        z.object({
-          name: z.string(),
-          count: z.number(),
-          users: z.array(z.string()),
-        }),
-      ),
-      conversationId: z.string(),
-      messageTs: z.string(),
-    }),
+    messageReactionsResultSchema,
     z.object({ error: z.string() }),
   ]),
   resolveConversationLabels: z.array(
@@ -360,30 +221,45 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
   ),
   slackConversationStanding: z.enum(["member", "known", "unknown"]),
-  readThread: z.union([
-    z.object({
-      messages: z.array(z.string()),
-      conversationId: z.string(),
-      threadTs: z.string(),
-      hasMore: z.boolean(),
-      cursor: z.string().optional(),
-    }),
-    z.object({ error: z.string() }),
-  ]),
+  readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
   fetchAttachment: z.union([
-    z.object({
-      path: z.string(),
-      name: z.string(),
-      size: z.number(),
-      contentType: z.string().optional(),
-      conversationId: z.string(),
-    }),
+    attachmentResultSchema,
     z.object({ error: z.string() }),
   ]),
   notifyPerson: z.object({ sent: z.number() }),
 };
 
-type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
+const unsupported: Record<
+  AddressedMethod,
+  (channelType: ChannelType) => unknown
+> = {
+  react: (channelType) => ({
+    error: `reactions not supported on ${channelType}`,
+  }),
+  declineTurn: () => ({ ok: true }),
+  handOffTurn: (channelType) => ({
+    error: `handing a turn to another agent is not supported on ${channelType}`,
+  }),
+  describeUsers: (channelType) => ({
+    error: `user lookup not supported on ${channelType}`,
+  }),
+  describeMessageReactions: (channelType) => ({
+    error: `message reactions not supported on ${channelType}`,
+  }),
+  readThread: (channelType) => ({
+    error: `thread reads are not supported on ${channelType}`,
+  }),
+  fetchAttachment: (channelType) => ({
+    error: `attachment fetches are not supported on ${channelType}`,
+  }),
+};
+
+type Worker = ChannelWorker & Partial<AddressedWorker>;
+
+type LocalHandlers = Record<
+  ChannelRpcRequest["method"],
+  (...args: never[]) => Promise<unknown>
+>;
 
 export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
@@ -457,6 +333,7 @@ export function createChannelManager(deps: {
         ? [{ name: attempts[i]![0], reason: r.reason }]
         : [],
     );
+
     for (const f of failed) {
       process.stderr.write(
         `[channels] ${f.name} worker start failed, retrying in ${TRANSPORT_RETRY_MS / 1000}s: ${f.reason instanceof Error ? f.reason.message : f.reason}\n`,
@@ -507,7 +384,7 @@ export function createChannelManager(deps: {
     }
   }
 
-  const localHandlers = {
+  const explicitHandlers = {
     listConversations: (instanceName: string, channelType: ChannelType) => {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker) return Promise.resolve([]);
@@ -541,66 +418,6 @@ export function createChannelManager(deps: {
       if (attachment) replyArgs = { ...replyArgs, attachment };
       return worker.reply(instanceName, replyArgs);
     },
-    react: (
-      instanceName: string,
-      channelType: ChannelType,
-      reaction: ChannelReaction,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.react)
-        return Promise.resolve({
-          error: `reactions not supported on ${channelType}`,
-        });
-      return worker.react(instanceName, reaction);
-    },
-    declineTurn: (
-      instanceName: string,
-      channelType: ChannelType,
-      threadTs?: string,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.declineTurn) return Promise.resolve({ ok: true as const });
-      return worker.declineTurn(instanceName, threadTs);
-    },
-    handOffTurn: (
-      instanceName: string,
-      channelType: ChannelType,
-      threadTs: string,
-      targetName: string,
-      note?: string,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.handOffTurn)
-        return Promise.resolve({
-          error: `handing a turn to another agent is not supported on ${channelType}`,
-        });
-      return worker.handOffTurn(instanceName, threadTs, targetName, note);
-    },
-    describeUsers: (
-      instanceName: string,
-      channelType: ChannelType,
-      userIds: string[],
-      conversationId?: string,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.describeUsers)
-        return Promise.resolve({
-          error: `user lookup not supported on ${channelType}`,
-        });
-      return worker.describeUsers(instanceName, userIds, conversationId);
-    },
-    describeMessageReactions: (
-      instanceName: string,
-      channelType: ChannelType,
-      query: ReactionsQuery,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.describeMessageReactions)
-        return Promise.resolve({
-          error: `message reactions not supported on ${channelType}`,
-        });
-      return worker.describeMessageReactions(instanceName, query);
-    },
     resolveConversationLabels: (refs: SlackConversationRef[]) =>
       slackWorker?.resolveConversationLabels?.(refs) ?? Promise.resolve([]),
     slackConversationStanding: (
@@ -610,30 +427,6 @@ export function createChannelManager(deps: {
       deps.slackWorker
         ? deps.slackWorker.conversationStanding(slackChannelId, teamId)
         : Promise.reject(new Error("slack worker not available")),
-    readThread: (
-      instanceName: string,
-      channelType: ChannelType,
-      query: ThreadQuery,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.readThread)
-        return Promise.resolve({
-          error: `thread reads are not supported on ${channelType}`,
-        });
-      return worker.readThread(instanceName, query);
-    },
-    fetchAttachment: (
-      instanceName: string,
-      channelType: ChannelType,
-      query: AttachmentQuery,
-    ) => {
-      const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.fetchAttachment)
-        return Promise.resolve({
-          error: `attachment fetches are not supported on ${channelType}`,
-        });
-      return worker.fetchAttachment(instanceName, query);
-    },
     notifyPerson: async (keycloakSub: string, notice: PersonNotice) => {
       const { telegram } = notice;
       const results = await Promise.all([
@@ -651,7 +444,32 @@ export function createChannelManager(deps: {
       ]);
       return { sent: results.reduce((sum, r) => sum + r.sent, 0) };
     },
-  } as const;
+  };
+
+  const addressedHandlers = Object.fromEntries(
+    ADDRESSED_METHODS.map((method) => [
+      method,
+      async (
+        instanceName: unknown,
+        channelType: unknown,
+        ...args: unknown[]
+      ) => {
+        const worker = workers.find((w) => w.type === channelType);
+        const member = worker as
+          | Record<string, ((...a: unknown[]) => Promise<unknown>) | undefined>
+          | undefined;
+        const call = member?.[method];
+        return call
+          ? call(instanceName, ...args)
+          : unsupported[method](channelType as ChannelType);
+      },
+    ]),
+  ) as Record<AddressedMethod, (...args: unknown[]) => Promise<unknown>>;
+
+  const localHandlers: LocalHandlers = {
+    ...explicitHandlers,
+    ...addressedHandlers,
+  };
 
   subscriptions.push(
     events$()
@@ -679,7 +497,21 @@ export function createChannelManager(deps: {
       }),
   );
 
-  return {
+  const dispatched =
+    (method: ChannelRpcRequest["method"]) =>
+    (...args: unknown[]) =>
+      dispatchResult(method, args, () =>
+        (localHandlers[method] as (...a: unknown[]) => Promise<unknown>)(
+          ...args,
+        ),
+      );
+
+  const addressedFacade = Object.fromEntries(
+    ADDRESSED_METHODS.map((method) => [method, dispatched(method)]),
+  ) as unknown as Pick<ChannelManager, AddressedMethod>;
+
+  const manager: ChannelManager = {
+    ...addressedFacade,
     availableChannels() {
       return Object.fromEntries(workers.map((w) => [w.type, true]));
     },
@@ -693,12 +525,11 @@ export function createChannelManager(deps: {
       if (rpc) {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
-          const handler = localHandlers[req.method] as
-            ((...a: unknown[]) => Promise<unknown>) | undefined;
+          const handler = localHandlers[req.method];
           if (!handler)
             throw new Error(`unknown channel rpc method ${req.method}`);
           return handler(
-            ...(rpcArgSchemas[req.method].parse(req.args) as unknown[]),
+            ...(rpcArgSchemas[req.method].parse(req.args) as never[]),
           );
         });
       }
@@ -724,7 +555,7 @@ export function createChannelManager(deps: {
 
     listConversations(instanceName, channelType) {
       return dispatch("listConversations", [instanceName, channelType], () =>
-        localHandlers.listConversations(instanceName, channelType),
+        explicitHandlers.listConversations(instanceName, channelType),
       ).catch(() => []);
     },
 
@@ -739,7 +570,12 @@ export function createChannelManager(deps: {
         "postMessage",
         [instanceName, channelType, text, wireOptions],
         () =>
-          localHandlers.postMessage(instanceName, channelType, text, options),
+          explicitHandlers.postMessage(
+            instanceName,
+            channelType,
+            text,
+            options,
+          ),
       );
     },
 
@@ -753,101 +589,28 @@ export function createChannelManager(deps: {
       return dispatchResult(
         "reply",
         [instanceName, channelType, wireArgs],
-        () => localHandlers.reply(instanceName, channelType, replyArgs),
-      );
-    },
-
-    react(instanceName, channelType, reaction) {
-      return dispatchResult(
-        "react",
-        [instanceName, channelType, reaction],
-        () => localHandlers.react(instanceName, channelType, reaction),
-      );
-    },
-
-    declineTurn(instanceName, channelType, threadTs) {
-      return dispatchResult(
-        "declineTurn",
-        [instanceName, channelType, threadTs],
-        () => localHandlers.declineTurn(instanceName, channelType, threadTs),
-      );
-    },
-
-    handOffTurn(instanceName, channelType, threadTs, targetName, note) {
-      return dispatchResult(
-        "handOffTurn",
-        [instanceName, channelType, threadTs, targetName, note],
-        () =>
-          localHandlers.handOffTurn(
-            instanceName,
-            channelType,
-            threadTs,
-            targetName,
-            note,
-          ),
-      );
-    },
-
-    describeUsers(instanceName, channelType, userIds, conversationId) {
-      return dispatchResult(
-        "describeUsers",
-        [instanceName, channelType, userIds, conversationId],
-        () =>
-          localHandlers.describeUsers(
-            instanceName,
-            channelType,
-            userIds,
-            conversationId,
-          ),
+        () => explicitHandlers.reply(instanceName, channelType, replyArgs),
       );
     },
 
     resolveSlackConversationLabels(refs) {
       return dispatch("resolveConversationLabels", [refs], () =>
-        localHandlers.resolveConversationLabels(refs),
+        explicitHandlers.resolveConversationLabels(refs),
       ).catch(() => []);
-    },
-
-    describeMessageReactions(instanceName, channelType, query) {
-      return dispatchResult(
-        "describeMessageReactions",
-        [instanceName, channelType, query],
-        () =>
-          localHandlers.describeMessageReactions(
-            instanceName,
-            channelType,
-            query,
-          ),
-      );
     },
 
     slackConversationStanding(slackChannelId, teamId) {
       return dispatch(
         "slackConversationStanding",
         [slackChannelId, teamId],
-        () => localHandlers.slackConversationStanding(slackChannelId, teamId),
-      );
-    },
-
-    readThread(instanceName, channelType, query) {
-      return dispatchResult(
-        "readThread",
-        [instanceName, channelType, query],
-        () => localHandlers.readThread(instanceName, channelType, query),
-      );
-    },
-
-    fetchAttachment(instanceName, channelType, query) {
-      return dispatchResult(
-        "fetchAttachment",
-        [instanceName, channelType, query],
-        () => localHandlers.fetchAttachment(instanceName, channelType, query),
+        () =>
+          explicitHandlers.slackConversationStanding(slackChannelId, teamId),
       );
     },
 
     notifyPerson(keycloakSub, notice) {
       return dispatch("notifyPerson", [keycloakSub, notice], () =>
-        localHandlers.notifyPerson(keycloakSub, notice),
+        explicitHandlers.notifyPerson(keycloakSub, notice),
       ).catch((err: unknown) => {
         process.stderr.write(
           `[channels] could not notify ${keycloakSub}: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -856,4 +619,6 @@ export function createChannelManager(deps: {
       });
     },
   };
+
+  return manager;
 }

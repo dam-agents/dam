@@ -51,6 +51,7 @@ import {
 } from "../attachment-budget.js";
 import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
+  AddressedWorker,
   AttachmentQuery,
   AttachmentResult,
   ChannelAttachment,
@@ -58,12 +59,13 @@ import type {
   ChannelReply,
   ChannelSendResult,
   ChannelUser,
+  ChannelWorker,
   MessageReactionsResult,
   PostMessageOptions,
   ReactionsQuery,
   ThreadQuery,
   ThreadResult,
-} from "../services/channel-manager.js";
+} from "../services/worker-contract.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
   AcpSessionLoadError,
@@ -987,7 +989,7 @@ export interface ChannelRegistry {
   ): Promise<SlackBoundConversation[]>;
 }
 
-export interface SlackWorker {
+export interface SlackWorker extends ChannelWorker, AddressedWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
   conversationStanding(
@@ -996,51 +998,9 @@ export interface SlackWorker {
   ): Promise<SlackConversationStanding>;
   start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
-  stopAll(): Promise<void>;
-  listConversations(
-    instanceName: string,
-  ): Promise<{ id: string; title: string }[]>;
-  postMessage(
-    instanceName: string,
-    text: string,
-    options?: PostMessageOptions,
-  ): Promise<ChannelSendResult>;
-  reply(instanceName: string, reply: ChannelReply): Promise<ChannelSendResult>;
-  react(
-    instanceName: string,
-    reaction: ChannelReaction,
-  ): Promise<{ ok: true } | { error: string }>;
-  declineTurn(
-    instanceName: string,
-    threadTs?: string,
-  ): Promise<{ ok: true } | { error: string }>;
-  handOffTurn(
-    instanceName: string,
-    threadTs: string,
-    targetName: string,
-    note?: string,
-  ): Promise<{ ok: true; agent: string } | { error: string }>;
-  describeUsers(
-    instanceName: string,
-    userIds: string[],
-    conversationId?: string,
-  ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  describeMessageReactions(
-    instanceName: string,
-    query: ReactionsQuery,
-  ): Promise<MessageReactionsResult | { error: string }>;
   resolveConversationLabels(
     refs: SlackConversationRef[],
   ): Promise<SlackLabelledConversation[]>;
-  readThread(
-    instanceName: string,
-    query: ThreadQuery,
-  ): Promise<ThreadResult | { error: string }>;
-  fetchAttachment(
-    instanceName: string,
-    query: AttachmentQuery,
-  ): Promise<AttachmentResult | { error: string }>;
-  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 export interface SlackOAuthPending {
