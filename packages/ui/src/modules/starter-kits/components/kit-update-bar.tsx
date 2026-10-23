@@ -28,6 +28,7 @@ export function KitUpdateBar({ agentId }: { agentId: string | null }) {
   if (update.state !== "available" && update.state !== "pending") return null;
   return (
     <KitUpdateBarContent
+      key={agentId}
       agentId={agentId}
       pending={update.pending}
       target={update.pending?.targetCommit ?? update.latest}
