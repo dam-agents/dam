@@ -229,19 +229,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Mend CLI
-        env:
-          # A versioned build, so a Mend release does not change what this
-          # downloads: the fixed https://downloads.mend.io/cli/ URL serves the
-          # latest. `build` of a release in https://downloads.mend.io/matrix.json
-          # names it; Mend publishes its hash beside it, at <the url>.sha256.
-          # Mend supports a release for six months: `/up` bumps both.
-          MEND_CLI_BUILD: 26.9.2.4 # 26.9.2-hf1
-          MEND_CLI_SHA256: 2361e798bb1796b5ae89b871294d264d8804a639a36b75498df3cceeddd6b0d1
-        run: |
-          curl -fsSL "https://downloads.mend.io/production/unified/${MEND_CLI_BUILD}/linux_amd64/mend" -o /usr/local/bin/mend
-          echo "$MEND_CLI_SHA256  /usr/local/bin/mend" | sha256sum -c -
-          chmod +x /usr/local/bin/mend
+      # The CLI is `.mise/config.toml`'s `http:mend` tool, so mise.lock pins its
+      # build and the sha256 of every platform. A Mend release changes neither.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: http:mend
 
       - name: Detect vulnerabilities
         run: |

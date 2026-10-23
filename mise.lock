@@ -408,6 +408,23 @@ url = "https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz"
 checksum = "sha256:d3870437e1e95b67f8edbde964156c84a26503f560821d40c542441658934fba"
 url = "https://get.helm.sh/helm-v4.3.0-darwin-arm64.tar.gz"
 
+[[tools."http:mend"]]
+version = "26.9.2.4"
+backend = "http:mend"
+specifiers = ["26.9.2.4"]
+
+[tools."http:mend"."platforms.linux-arm64"]
+checksum = "sha256:55a9735342dea6877ed78af7ae14520d46119d1f93685343b934785c503023ad"
+url = "https://downloads.mend.io/production/unified/26.9.2.4/linux_arm64/mend"
+
+[tools."http:mend"."platforms.linux-x64"]
+checksum = "sha256:2361e798bb1796b5ae89b871294d264d8804a639a36b75498df3cceeddd6b0d1"
+url = "https://downloads.mend.io/production/unified/26.9.2.4/linux_amd64/mend"
+
+[tools."http:mend"."platforms.macos-arm64"]
+checksum = "sha256:6b54a3cfc229fd33c2b88569257beb52377ee95ecc31f8f1bad32948934baed9"
+url = "https://downloads.mend.io/production/unified/26.9.2.4/darwin_arm64/mend"
+
 [[tools.jactionlint]]
 version = "2.1.0"
 backend = "github:jdx/jactionlint"
