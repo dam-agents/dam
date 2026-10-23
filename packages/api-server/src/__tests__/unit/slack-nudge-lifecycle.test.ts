@@ -108,6 +108,7 @@ function harness(opts: {
     } as never,
     pendingOAuthFlows: createMemoryTtlStore<SlackOAuthPending>(600_000),
     getInstanceOwner: async () => OWNER,
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () => [
         {

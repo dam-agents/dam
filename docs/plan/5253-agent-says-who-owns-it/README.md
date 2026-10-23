@@ -70,18 +70,28 @@ The user made these decisions while the plan was discussed:
    A bound DM is not always with the owner, and the platform checks no sender there either.
    The owner directs the Agent through its instructions file and the platform UI, not through channel messages.
 
+The user made these decisions during implementation:
+
+6. **Session view.** The UI hides the `<agent-owner>` block, as it hides the other contract blocks.
+   The same change also hides `<permission-check>`, which the hide list missed when that block was added.
+   The PR carries a screenshot of the session view.
+7. **Slack guarantees.** `slack-guarantees.md` changes in the same PR: §3 lists the owner block among what every Slack turn carries, and §4 gets a row for an Agent that says it does not know who owns it.
+
 ### Failure behaviour
 
 A failed lookup never fails a turn.
-It gives the "no name on record" block, as a failed lookup on the Public Agent Page omits the owner line.
+A failed or slow name lookup gives the "no name on record" block, as a failed lookup on the Public Agent Page omits the owner line; the directory's user lookup is bounded by a short timeout.
+A failed identity-link lookup keeps the name and leaves out only the Slack tag (decided during implementation).
+Each failure is logged with the Agent id.
 `resolveAgentDisplayName` in the Slack worker already follows this pattern.
 
 ### Composition
 
 The channels module must not import the identity directory from the agents module.
 `bootstrap.ts` passes a function `(sub) => display name or null` into both workers, as it passes `getInstanceOwner` and `isTermsAccepted` today.
-The new dependency is optional, with a default that returns `null`, as `agentIcon` and `readPodRestarts` are.
-Then the twenty unit test files that build the Slack worker compile with no change.
+The new dependency is required, as the `/typescript-engineering` skill requires (decided during implementation).
+A missing wiring is then a type error, not an Agent that silently names nobody.
+Each test set-up that builds a worker passes `async () => null`.
 
 ## Conventions & glossary
 
@@ -103,7 +113,13 @@ Then the twenty unit test files that build the Slack worker compile with no chan
 The feature is one sub-issue, so its smoke test in [01](./01-agent-names-its-owner.md#smoke-test) is the whole-feature smoke test.
 In short: on the local dev cluster with Slack configured, mention a bound Agent with "who owns you?".
 The reply names the owner's display name and does not tag the owner.
-The Slack session, opened in the UI by its owner, shows the `<owner>` block in the prompt.
+The turn's prompt in the session file on the pod has the `<agent-owner>` block, and the session view in the UI does not show it.
+
+## Sub-issues
+
+| #                                   | Sub-issue                                  | Done |
+| ----------------------------------- | ------------------------------------------ | ---- |
+| [01](./01-agent-names-its-owner.md) | The agent names its owner on channel turns | [x]  |
 
 ## Delivery
 

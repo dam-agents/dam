@@ -61,6 +61,7 @@ export function toDirectoryUser(record: KeycloakUserRecord): DirectoryUser {
 
 const TOKEN_MARGIN_SECONDS = 30;
 const LOOKUP_TTL_MS = 60_000;
+const USER_LOOKUP_TIMEOUT_MS = 3_000;
 
 export function createKeycloakUserDirectory(
   config: KeycloakUserDirectoryConfig,
@@ -69,7 +70,7 @@ export function createKeycloakUserDirectory(
   const subCache = new Map<string, CachedUser>();
   const emailToSubCache = new Map<string, CachedLookup>();
 
-  async function getAdminToken(): Promise<string> {
+  async function getAdminToken(signal?: AbortSignal): Promise<string> {
     const now = Date.now() / 1000;
     if (tokenCache && tokenCache.expiresAt > now + TOKEN_MARGIN_SECONDS) {
       return tokenCache.accessToken;
@@ -85,6 +86,7 @@ export function createKeycloakUserDirectory(
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params,
+        signal,
       },
     );
     if (!res.ok) {
@@ -102,12 +104,16 @@ export function createKeycloakUserDirectory(
     return data.access_token;
   }
 
-  async function adminFetch(path: string): Promise<Response> {
-    const token = await getAdminToken();
+  async function adminFetch(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const token = await getAdminToken(signal);
     return fetch(
       `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}${path}`,
       {
         headers: { Authorization: `Bearer ${token}` },
+        signal,
       },
     );
   }
@@ -118,7 +124,10 @@ export function createKeycloakUserDirectory(
     if (cached && cached.expiresAt > now) return cached.user;
 
     try {
-      const res = await adminFetch(`/users/${encodeURIComponent(sub)}`);
+      const res = await adminFetch(
+        `/users/${encodeURIComponent(sub)}`,
+        AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
+      );
       if (!res.ok) {
         process.stderr.write(
           `[keycloak-user-directory] user lookup ${sub} failed: ${res.status}\n`,

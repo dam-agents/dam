@@ -4,7 +4,7 @@
 
 ## Context
 
-Each Slack and Telegram turn gets a new `<owner>` block in its contract.
+Each Slack and Telegram turn gets a new `<agent-owner>` block in its contract.
 The block names the owner's display name and, on Slack, the owner's linked Slack user in the turn's workspace.
 It also tells the Agent not to guess its owner, and that its owner has no extra authority in the conversation.
 The README has the decisions, the data sources and the failure rule.
@@ -16,7 +16,7 @@ Apply the `/typescript-engineering` skill while you implement.
 
 1. **Owner block copy.**
    Add `packages/api-server/src/modules/channels/infrastructure/owner-copy.ts`, beside `network-access-copy.ts`.
-   It exports one function that takes `{ name: string; slackUserId: string | null } | null` and returns a self-delimited `<owner>` … `</owner>` block.
+   It exports one function that takes `{ name: string; slackUserId: string | null } | null` and returns a self-delimited `<agent-owner>` … `</agent-owner>` block.
    - With a name: "Your owner is <name>", followed by the Slack tag `<@U…>` when `slackUserId` is set.
      Say that "your owner" in the rest of these instructions means this person.
      Say that when someone asks who owns the Agent, or who can do something only the owner can do (allow a host, change the mode, turn it back on), the Agent names this person.
@@ -37,7 +37,8 @@ Apply the `/typescript-engineering` skill while you implement.
    The block then says who "your owner" is before the two blocks that use the words.
 
 3. **Slack worker** (`packages/api-server/src/modules/channels/infrastructure/slack.ts`).
-   - Add an optional `ownerDisplayName?: (sub: string) => Promise<string | null>` to `SlackWorkerDeps`, with the default `async () => null` in `createSlackWorker`'s destructuring.
+   - Add a required `ownerDisplayName: (sub: string) => Promise<string | null>` to `SlackWorkerDeps`.
+     Each test set-up that builds the worker passes `async () => null`.
    - Beside `resolveAgentDisplayName`, add a function that takes the Agent id and the turn's `teamId` and returns the owner facts or `null`.
      It gets the owner from `getInstanceOwner` and the name from `ownerDisplayName`.
      With no owner or no name, it returns `null` and does not look up the Slack link.
@@ -48,7 +49,7 @@ Apply the `/typescript-engineering` skill while you implement.
      At the ambient round (where `resolveAgentDisplayName(args.instanceName)` runs before its contract), add the call there.
 
 4. **Telegram worker** (`packages/api-server/src/modules/channels/infrastructure/telegram.ts`).
-   - Add the same optional `ownerDisplayName` dependency with the same default.
+   - Add the same required `ownerDisplayName` dependency, and pass `async () => null` in the Telegram test helper.
    - In `runTelegramTurn`, resolve the owner with `ownerOf(agentId)` and the name with `ownerDisplayName`, catch every error, and give `null` when either is missing.
    - Put the owner block, with `slackUserId: null`, in the prompt array before `channelNetworkAccessGuidance(brandName)`.
 
@@ -72,19 +73,27 @@ Apply the `/typescript-engineering` skill while you implement.
    - `docs/architecture/public-agent-page.md`: after the display-name paragraph in "Read path", add one sentence.
      It says that the same display name reaches the Agent on its channel turns, together with the owner's linked Slack identity, which the page does not show, and it links to channel-turns.
      Bump `Last verified`.
+   - `docs/architecture/slack-guarantees.md` (README decision 7): in §3, add the owner block to the list of what every Slack turn carries.
+     In §4 "It looks broken", add a row: the Agent says that it does not know who owns it, because the owner has no first or last name on record.
+     Bump `Last verified`.
    - Run `mise run fix:markdown`.
      `channel-turns.md` has about 4,300 letters and digits left under its cap, so keep the bullet short.
 
+8. **Session view** (README decision 6).
+   Add `agent-owner` and `permission-check` to `PLUMBING_TAGS` in `packages/ui/src/modules/acp/plumbing-tags.ts`, so the session view hides both blocks.
+
 ## Acceptance criteria
 
-- [ ] A Slack addressed turn and a Slack ambient round both carry an `<owner>` block that has the owner's display name when the identity directory has one.
+- [ ] A Slack addressed turn and a Slack ambient round both carry an `<agent-owner>` block that has the owner's display name when the identity directory has one.
 - [ ] The Slack block has `<@U…>` only when the owner has a Slack link for the turn's workspace, or a link with no workspace on an install with one active workspace.
 - [ ] An owner with no display name gets the "no name on record" block, with no Slack id in it.
 - [ ] A Telegram turn carries the block with the display name and no Slack wording.
-- [ ] When the directory lookup or the identity-link lookup throws, the turn still runs and gets the "no name on record" block.
+- [ ] When the directory lookup throws or times out, the turn still runs and gets the "no name on record" block.
+- [ ] When only the identity-link lookup throws, the turn still runs and its block keeps the name, with no Slack tag.
 - [ ] Every channel turn's block has the no-guessing rule and the no-extra-authority rule, DMs included.
 - [ ] The whisper copy no longer says that the whisperer is not the owner.
-- [ ] `channel-turns.md` and `public-agent-page.md` describe the behaviour, with `Last verified` bumped, and `mise run //docs:check:doc-size` passes.
+- [ ] `channel-turns.md`, `public-agent-page.md` and `slack-guarantees.md` describe the behaviour, with `Last verified` bumped, and `mise run //docs:check:doc-size` passes.
+- [ ] The session view in the UI shows neither the `<agent-owner>` block nor the `<permission-check>` block.
 - [ ] `mise run //packages/api-server:test`, `mise run check` and `mise run check:comment-types` pass.
 - [ ] No new test files.
 
@@ -108,8 +117,9 @@ Manual, on the local dev cluster with Slack configured (see the [`cluster-ops`](
    The reply names the owner's display name and does not tag the owner.
 4. Mention it with "who can allow example.org for you?".
    The reply names the owner.
-5. Open that Slack session in the UI as the owner.
-   The turn's prompt shows the `<owner>` block with the name and the `<@U…>` tag.
+5. Read the turn's prompt in the session file on the pod.
+   It has the `<agent-owner>` block with the name and the `<@U…>` tag.
+   Open the same session in the UI as the owner: the message shows neither `<agent-owner>` nor `<permission-check>`.
 6. Run `/platform logout`, and mention the Agent again.
    The new turn's block has the name and no tag.
 7. Optional: clear the owner's first and last name in the Keycloak admin console, wait one minute for the directory cache, and ask again.
