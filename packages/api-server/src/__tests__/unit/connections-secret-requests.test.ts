@@ -530,6 +530,17 @@ describe("secret requests an agent makes", () => {
     });
   });
 
+  // TEST_SCENARIO: the agent's tool takes loose inputs; the server fills in the template's auth kind and refuses inputs the template does not take, naming the field.
+  it("builds a request from a template id, a name and loose inputs", async () => {
+    const agent = world().forAgent("alice", "agent-1");
+    await expect(
+      agent.requestNew({ templateId: "github-pat", name: "my-github" }),
+    ).resolves.toMatchObject({ requestId: expect.any(String) });
+    await expect(
+      agent.requestNew({ templateId: "github-pat", name: "Bad Name!" }),
+    ).rejects.toThrow(/name/);
+  });
+
   // TEST_SCENARIO: an agent cannot steer a secret to a host it chose, nor ask for a new secret of a connection it does not hold, because the owner trusts the page to send the secret where the service lives.
   it("refuses a host the template does not preset and a connection not granted", async () => {
     const held = {

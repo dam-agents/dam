@@ -103,7 +103,7 @@ The page holds a token that does not pass, and one that passes but expires withi
 Saved through any path, the token keeps the result and its time on the Connection, which every listing carries, so a token saved after a failed check does not read like a healthy one; the owner can check one stored credential again, which replaces the result, and a provider key is checked again with its provider check.
 The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
 The page covers the static and minting kinds; OAuth needs no secret here.
-An Agent can ask for the same page through its platform MCP server (`request_connection_secret`), as its owner: the link is the owner's, and the page names the Agent that asked.
+An Agent can ask for the same page through its platform MCP server (the `connection_secret` tool), as its owner: the link is the owner's, and the page names the Agent that asked.
 An Agent's request is narrower than the CLI's, because the Agent, not the person, chose its inputs: a new Connection must send the secret only to the hosts its template presets without config inputs, so a custom template, an S3 endpoint or a host of the Agent's choosing is refused, and a rotation names only a Connection granted to that Agent.
 The Connection the page creates is granted to the Agent that asked, and the status that Agent polls says whether the grant took; it reads only its own requests.
 OAuth stays a person's step: an Agent does not start a sign-in.

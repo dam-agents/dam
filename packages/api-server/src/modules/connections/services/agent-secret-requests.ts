@@ -1,12 +1,15 @@
-import type {
-  ConnectionRequestSecretInput,
-  SecretRequestState,
-  SecretRequestTicket,
+import {
+  secretlessConnectionCreateInputSchema,
+  type ConnectionRequestSecretInput,
+  type SecretRequestState,
+  type SecretRequestTicket,
 } from "api-server-api";
+import type { ConnectionTemplate } from "../domain/connection-template.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import { isSecretRequestAuthKind } from "../domain/secret-request.js";
 import {
   agentPresetHosts,
+  badRequest,
   issueSecretRequest,
   secretRequestStatus,
   type SecretRequestIssuerDeps,
@@ -18,12 +21,15 @@ export interface AgentSecretTemplate {
   authKind: string;
   description?: string;
   hosts: string[];
-  configInputs?: {
-    name: string;
-    label: string;
-    hint?: string;
-    values?: readonly string[];
-  }[];
+  inputs?: AgentSecretInput[];
+}
+
+interface AgentSecretInput {
+  name: string;
+  label: string;
+  required?: true;
+  hint?: string;
+  values?: readonly string[];
 }
 
 export interface AgentSecretConnection {
@@ -39,7 +45,61 @@ export interface AgentSecretRequests {
     connections: AgentSecretConnection[];
   }>;
   request(input: ConnectionRequestSecretInput): Promise<SecretRequestTicket>;
+  requestNew(input: {
+    templateId: string;
+    name: string;
+    inputs?: Record<string, string>;
+  }): Promise<SecretRequestTicket>;
   status(requestId: string): Promise<SecretRequestState>;
+}
+
+const GITHUB_APP_INPUTS: AgentSecretInput[] = [
+  { name: "appId", label: "App ID", required: true },
+  { name: "installationId", label: "Installation ID", required: true },
+];
+
+function inputsOf(template: ConnectionTemplate): AgentSecretInput[] {
+  if (template.authKind === "github-app") return GITHUB_APP_INPUTS;
+  if (template.authKind !== "header") return [];
+  return (template.configInputs ?? []).map((i) => ({
+    name: i.inputName,
+    label: i.label,
+    ...(i.hint ? { hint: i.hint } : {}),
+    ...(i.enumValues ? { values: i.enumValues } : {}),
+  }));
+}
+
+function connectionOf(
+  template: ConnectionTemplate,
+  name: string,
+  inputs: Record<string, string>,
+): ConnectionRequestSecretInput {
+  const configNames = new Set(
+    template.authKind === "header"
+      ? (template.configInputs ?? []).map((i) => i.inputName)
+      : [],
+  );
+  const configInputs = Object.fromEntries(
+    Object.entries(inputs).filter(([key]) => configNames.has(key)),
+  );
+  const fields = Object.fromEntries(
+    Object.entries(inputs).filter(([key]) => !configNames.has(key)),
+  );
+  const parsed = secretlessConnectionCreateInputSchema.safeParse({
+    ...fields,
+    templateId: template.id,
+    name,
+    authKind: template.authKind,
+    ...(configNames.size > 0 ? { configInputs } : {}),
+  });
+  if (!parsed.success) {
+    throw badRequest(
+      parsed.error.issues
+        .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+        .join("; "),
+    );
+  }
+  return { action: "create", connection: parsed.data };
 }
 
 /**
@@ -68,7 +128,7 @@ export function createAgentSecretRequests(
           ? agentPresetHosts(t)
           : null;
         if (!hosts) return [];
-        const inputs = t.authKind === "header" ? (t.configInputs ?? []) : [];
+        const inputs = inputsOf(t);
         return [
           {
             templateId: t.id,
@@ -76,16 +136,7 @@ export function createAgentSecretRequests(
             authKind: t.authKind,
             ...(t.description ? { description: t.description } : {}),
             hosts: [...hosts],
-            ...(inputs.length > 0
-              ? {
-                  configInputs: inputs.map((i) => ({
-                    name: i.inputName,
-                    label: i.label,
-                    ...(i.hint ? { hint: i.hint } : {}),
-                    ...(i.enumValues ? { values: i.enumValues } : {}),
-                  })),
-                }
-              : {}),
+            ...(inputs.length > 0 ? { inputs } : {}),
           },
         ];
       });
@@ -103,6 +154,15 @@ export function createAgentSecretRequests(
       };
     },
     request: (input) => issueSecretRequest(issuer, input, deps.agentId),
+    async requestNew({ templateId, name, inputs }) {
+      const template = deps.templates.get(templateId);
+      if (!template) throw badRequest(`unknown template ${templateId}`);
+      return issueSecretRequest(
+        issuer,
+        connectionOf(template, name, inputs ?? {}),
+        deps.agentId,
+      );
+    },
     status: (requestId) => secretRequestStatus(issuer, requestId, deps.agentId),
   };
 }

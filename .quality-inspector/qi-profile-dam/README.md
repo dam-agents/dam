@@ -31,8 +31,8 @@ Keep `.quality-inspector/` free of symlinks and submodules: the Contents API ans
 
 ## Egress rules
 
-An inspector that runs on DAM needs no rule typed by hand: it proposes each `egress` entry it lacks to its owner with the platform's `propose_egress_rule` tool, with the entry's host, method and path and its `why` as the reason, once `{profile.<key>}` is filled in.
-The owner allows each one where waiting approvals show — on Home or in the inspector's chat — and the rule is written as the owner would type it; `egress_proposal_status` tells the inspector which ones are allowed.
+An inspector that runs on DAM needs no rule typed by hand: it proposes each `egress` entry it lacks to its owner with the platform's `egress_proposal` tool (`propose`), with the entry's host, method and path and its `why` as the reason, once `{profile.<key>}` is filled in.
+The owner allows each one where waiting approvals show — on Home or in the inspector's chat — and the rule is written as the owner would type it; its `status` action tells the inspector which ones are allowed.
 An older DAM without the tool keeps the manual path: the operator adds the rule in the agent's network settings.
 `bin/sandbox check` names a missing rule the same way.
 

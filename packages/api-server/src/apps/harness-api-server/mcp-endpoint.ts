@@ -85,9 +85,9 @@ import {
 } from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 import { registerChatFormTools } from "../../modules/chat-forms/index.js";
-import { registerConnectionSecretTools } from "../../modules/connections/mcp-tools.js";
+import { registerConnectionSecretTool } from "../../modules/connections/mcp-tools.js";
 import type { AgentSecretRequests } from "../../modules/connections/services/agent-secret-requests.js";
-import { registerEgressProposalTools } from "../../modules/approvals/mcp-tools.js";
+import { registerEgressProposalTool } from "../../modules/approvals/mcp-tools.js";
 import type { EgressProposals } from "../../modules/approvals/services/egress-proposals.js";
 import type { ChatFormPreferences } from "api-server-api/chat-forms";
 
@@ -1457,10 +1457,10 @@ export function createMcpSession(
   if (deps.chatForms) registerChatFormTools(server, deps.chatForms);
 
   if (deps.secretRequests)
-    registerConnectionSecretTools(server, { requests: deps.secretRequests });
+    registerConnectionSecretTool(server, { requests: deps.secretRequests });
 
   if (deps.egressProposals)
-    registerEgressProposalTools(server, { proposals: deps.egressProposals });
+    registerEgressProposalTool(server, { proposals: deps.egressProposals });
 
   if (deps.environments)
     registerEnvironmentTools(server, { environments: deps.environments });

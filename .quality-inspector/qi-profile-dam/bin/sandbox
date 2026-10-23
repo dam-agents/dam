@@ -32,7 +32,7 @@ else
     case "$(gh_code "$m" "$path" "$body")" in
       (404|422) ok "github the token may write $repo's $what";;
       (403) bad "github the token may not write $repo's $what — give it $name: Read and write";;
-      (*) bad "github no answer from $m api.github.com/repos/$repo/$path (propose its egress rule with propose_egress_rule, or add it by hand)";;
+      (*) bad "github no answer from $m api.github.com/repos/$repo/$path (propose its egress rule with the egress_proposal tool, or add it by hand)";;
     esac
   done
   # The test user who signs in through DAM's OAuth: the token is theirs, the TOTP secret is base32,
@@ -49,7 +49,7 @@ else
   case "$e" in
     (bad_verification_code) ok "github the OAuth App answers its client id and secret";;
     (incorrect_client_credentials) bad "github the OAuth App refuses E2E_SANDBOX_GITHUB_OAUTH_CLIENT_ID / _SECRET";;
-    (*) bad "github no answer from POST github.com/login/oauth/access_token (propose its egress rule with propose_egress_rule, or add it by hand)";;
+    (*) bad "github no answer from POST github.com/login/oauth/access_token (propose its egress rule with the egress_proposal tool, or add it by hand)";;
   esac
 fi
 
