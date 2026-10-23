@@ -228,30 +228,6 @@ describe("dam agent disable / enable (integration)", () => {
     );
   });
 
-  /** TEST_SCENARIO: A runtime migration holds the Agent, so the server refuses
-   * with CONFLICT. The CLI names the move and the verb it was asked for, and
-   * exits 1. */
-  it("a runtime migration hold exits 1 and names the move", async () => {
-    const agent = makeAgent({ name: "prod" });
-    await withFixture(
-      {
-        list: async () => [agent],
-        setDisabled: async () => ({
-          ok: false,
-          error: { type: "RuntimeMigrating" },
-        }),
-      },
-      async () => {
-        const r = await runDam(["agent", "enable", "prod"], env);
-
-        expect(r.exitCode).toBe(1);
-        expect(r.stderr).toContain(
-          'error: agent "prod" is moving to the new runtime; it can be enabled once the move ends\n',
-        );
-      },
-    );
-  });
-
   /** TEST_SCENARIO: A disabled Agent's state reads `hibernated`, which hides
    * that nothing will wake it. List and get show `disabled` instead. */
   it("list and get show a disabled agent as disabled", async () => {

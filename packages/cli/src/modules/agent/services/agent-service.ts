@@ -2,7 +2,6 @@ import { err, ok, type Result } from "../../../result.js";
 import type {
   AuthRequiredError,
   NotFoundError,
-  RuntimeMigratingError,
   TransportError,
 } from "../domain/errors.js";
 import type { AgentView } from "../domain/agent-view.js";
@@ -34,10 +33,7 @@ export interface AgentService {
     id: string,
     disabled: boolean,
   ): Promise<
-    Result<
-      AgentView,
-      TransportError | AuthRequiredError | NotFoundError | RuntimeMigratingError
-    >
+    Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
   >;
 }
 
@@ -86,8 +82,6 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
       try {
         return ok(await deps.trpc.agents.setDisabled.mutate({ id, disabled }));
       } catch (e) {
-        if (trpcErrorCode(e) === "CONFLICT")
-          return err({ kind: "runtime-migrating" });
         return notFoundOnMutate(e, id);
       }
     },

@@ -93,11 +93,10 @@ function renderPage(page: UserBudgetPage): string {
   return (
     `${head}\n${shown}\n\n` +
     renderTable([
-      ["USER", "CPU", "MEMORY", "STORAGE", "RESERVED", "SET BY", "CHANGED"],
+      ["USER", "CPU", "MEMORY", "STORAGE", "SET BY", "CHANGED"],
       ...page.entries.map((entry) => [
         entry.email ?? entry.ownerSub,
         ...sizesText(entry),
-        `${entry.reserved.cpuMilli / 1000} CPU, ${(entry.reserved.memoryBytes / 1024 ** 3).toFixed(1)}Gi`,
         entry.setByEmail ?? entry.setBySub ?? "-",
         entry.updatedAt === null
           ? "-"
