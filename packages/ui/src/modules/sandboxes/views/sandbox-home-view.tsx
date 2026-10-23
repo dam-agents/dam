@@ -71,7 +71,7 @@ export function SandboxHomeView() {
   const sections = SECTIONS.filter(
     (e) =>
       (chatFormsEnabled || e.section !== "chat-forms") &&
-      (environmentsEnabled ? true : e.section !== "environments"),
+      (environmentsEnabled || e.section !== "environments"),
   );
   const sectionEntry = SECTIONS.find((e) => e.section === section);
   const SectionPictogram = sectionEntry?.pictogram;

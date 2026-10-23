@@ -9,13 +9,12 @@
 #USAGE flag "--environment <name>" help="Install into this agent's Environment of that name, over the Environment Link"
 #USAGE flag "--backchannel" help="With --environment: also answer on the backchannel addresses, which cluster:open forwards to this agent"
 #USAGE flag "--backchannel-port <port>" default="4444" help="The port of the backchannel addresses, which cluster:open forwards"
-# vm-backend agents run as microVMs (virtualization.enabled): on a Mac on one
-# VM runner on the Mac's own hypervisor (cluster:host-runner), elsewhere on the
-# chart's VM runner pods, which on a lima VM needs nested virtualization (Apple
-# silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Outside CI they
-# are on by default on an Apple silicon Mac and in a sandbox (IS_SANDBOX) that
-# can open /dev/kvm, and off with a warning elsewhere; the values or
-# --set=virtualization.enabled=true|false decide either way.
+# Every agent runs as a microVM on a VM runner: on a Mac on one VM runner on the
+# Mac's own hypervisor (cluster:host-runner), elsewhere on the chart's VM runner
+# pods, which on a lima VM needs nested virtualization (Apple silicon M3+;
+# PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Outside CI the install runs
+# them on an Apple silicon Mac and in a sandbox (IS_SANDBOX) that
+# can open /dev/kvm, and nowhere else: a host without it is refused.
 # SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD
 # also skips importing them. --no-mesh (local-only, refused under CI) installs
 # no Istio dataplane, so AuthorizationPolicies exist but nothing enforces
@@ -32,7 +31,9 @@
 # on one port, give the public URLs; the host-name bridge listens on that port.
 # A component whose source image:resolve finds in the registry is pulled there,
 # under the local tag the chart runs, and only a changed one is built here and
-# streamed in. No mesh and no vm agents: the Environment's kernel has neither.
+# streamed in. No mesh: the Environment's kernel has none. Every agent is a
+# machine on a VM runner, so the Environment's guest needs /dev/kvm, which an
+# Agent asks for with spec.nestedVirtualization.
 #
 # Both install and upgrade share the same flow:
 #   ensure VM/k3s → cert-manager → build images → load into k3s → helm install/upgrade
@@ -177,8 +178,9 @@ fi
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
 # template's catch-all ignore.
 NODEPORT_FORWARD='.portForwards = [{"guestPortRange": [30000, 32767], "hostIP": "127.0.0.1"}] + .portForwards'
-if [ "$CLUSTER_TARGET" = environment ]; then
-  echo "FATAL: an Environment's node has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
+if [ "$CLUSTER_TARGET" = environment ] && ! env_ssh 'test -e /dev/kvm' 2>/dev/null; then
+  echo "FATAL: Environment '$CLUSTER_ENVIRONMENT' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
+  echo "An Environment gives one only when its Agent asks for nested virtualization (spec.nestedVirtualization: true) on an install and a node that allow nesting; create one that does, or install on a cluster that has it." >&2
   exit 1
 fi
 if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then

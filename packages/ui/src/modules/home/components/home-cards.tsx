@@ -279,7 +279,7 @@ export function AgentStatesCard() {
         ))}
       </ul>
       <p className="mt-auto pt-4 text-xs text-muted-foreground">
-        {agents.length} machines
+        {agents.length} {agents.length === 1 ? "machine" : "machines"}
       </p>
     </Card>
   );
