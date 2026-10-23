@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -11,7 +11,7 @@ A Driver reaches Invocations two ways.
 A script — a loop an agent wrote that fans work out and gathers the results — speaks over the per-agent HTTP surface on the harness port through the [Driver SDK](#driver-sdk).
 An agent handing off one piece of work mid-task uses the [sub-agent tools](#sub-agent-tools) on its platform MCP server instead, without writing code.
 Either way the caller is the waypoint-authenticated agent in the path; no request body ever names the Driver, and both surfaces resolve a spawn through the same code, so it means the same on either.
-Through the SDK, a spawn can also hand the target a shell command instead of a prompt, so deterministic work runs with no model turn ([script runs](#script-runs)).
+On either surface, a spawn can hand the target a shell command instead of a prompt, so deterministic work runs with no model turn ([script runs](#script-runs)).
 
 ```mermaid
 sequenceDiagram
@@ -118,7 +118,7 @@ A deleted root drops only the records whose reap landed; the sweep drops the res
 The target is seeded and installed exactly as before; then, in place of opening a Session, its runtime runs the command once in the workspace and nothing else.
 No model call runs, so Provider Inheritance, the model choices and the spend-limit refusal do not apply: the target gets no model provider, and a script spawn names no result schema and no harness config.
 Admission still applies, since the target still takes room.
-Only the Driver SDK spawns scripts; the sub-agent tools take prompts, because an agent with a shell runs a command itself.
+A spawn names a prompt or a script, never both: one that names both, or a script with a result schema or model choices, is refused, because it is ambiguous whether the Driver wants the output or a judgment of it.
 
 **The result is the bytes the script produced.** The target keeps stdout and stderr whole, never decoded or trimmed, with each one's size and SHA-256, and uploads both to the object store under keys only the api-server builds, through short-lived links it mints for that target alone.
 It then reports the exit code and what it uploaded; the api-server checks each blob's size against the store before it believes the report, records the run, and reaps the target at once, since there is no closing reply or conversation to wait for.
@@ -131,6 +131,7 @@ The target's runtime reports itself busy while the script runs, so the idle chec
 A runtime that predates script runs advertises no handler for them, so the liveness sweep fails such a target as a setup failure instead of letting it sit until its deadline.
 
 **The Driver reads each stream once.** The Driver's view of the Invocation names the exit code and each stream's size and hash; reading a stream fetches it through a short-lived link, checks the hash, and then tells the platform to delete it.
+Through the tools, await_subagents shows only a script's exit code and the start and end of each stream, so a large output never fills the model's context; **fetch_subagent_output** returns a shell command that downloads the stream to a file in the agent's sandbox, checks its hash and only then acks it, so the output outlives the model's context and the user can open the file too.
 A stream nobody reads is deleted after seven days, and every stream goes when the root Driver goes ([persistence](persistence.md#lifetime)); since an Invocation's keys are fixed, these deletions also catch an upload no report ever recorded.
 No object store configured means nowhere to put the output, so a script spawn is refused up front.
 
@@ -177,7 +178,8 @@ A Driver that crashed mid-fan-out stays up until its targets' deadlines end thei
 
 ## Sub-agent tools
 
-The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, the setup, and the harness config as flat model, mode and config options — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **list_harnesses**, **list_connections** and **get_budget** answer what the SDK's reads answer.
+The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, the setup, and the harness config as flat model, mode and config options, or a script in place of the prompt — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **fetch_subagent_output** saves a script's stream to a file; **list_harnesses**, **list_connections** and **get_budget** answer what the SDK's reads answer.
+The description steers a command whose output the agent needs to a script, so no model turn retells it.
 Scripts stay the path for orchestration logic — loops, scoring one result with another — and wait for their sub-agents in the foreground; long waits and wide fan-outs use the tools, because only a tool spawn's result is delivered as a turn.
 
 **Waiting is a long poll, bounded under the request timeout.** await_subagents returns as soon as any listed Invocation is terminal, or after four minutes with the ones still running, and the agent calls it again.
@@ -199,7 +201,7 @@ A runtime too old to know the kind drops it at dispatch; await_subagents still w
 
 **The model is told when not to use it, and must say why it does.** Most harnesses carry their own in-sandbox subagents, which start in seconds and cost nothing extra.
 spawn_subagent's description opens by steering the model there when its harness has one, and names what only a platform sub-agent gives: another harness, its own setup, more resources or a microVM, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
-The call must name one or more of these as `needs`, and the server refuses a need the request does not bear out — another harness that is the Driver's own, a setup with no seed, install, env or skills, more resources with none asked — so a stated need is one the model acted on; the three it cannot check pass as stated.
+The call must name one or more of these as `needs`, and the server refuses a need the request does not bear out — another harness that is the Driver's own, a setup with no seed, install, env or skills, more resources with none asked, a schema-checked result from a script — so a stated need is one the model acted on; the three it cannot check pass as stated.
 Every harness gets the delegation skill from the base image, and the base image's instructions repeat the rule in two sentences.
 The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 

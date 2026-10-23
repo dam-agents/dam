@@ -23,6 +23,7 @@ export interface ArtifactStore {
     contentType: string;
     sizeBytes: number;
   } | null>;
+  getRange(key: string, start: number, end: number): Promise<Buffer | null>;
   exists(key: string): Promise<boolean>;
   head(key: string): Promise<ArtifactStat | null>;
   delete(key: string): Promise<void>;

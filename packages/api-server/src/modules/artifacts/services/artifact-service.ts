@@ -18,6 +18,7 @@ export interface ArtifactService {
   }): Promise<void>;
   get(key: string): Promise<Artifact | null>;
   getStream(key: string): ReturnType<ArtifactStore["getStream"]>;
+  getRange(key: string, start: number, end: number): Promise<Buffer | null>;
   exists(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
   readonly maxBytes: number;
@@ -51,6 +52,7 @@ export function createArtifactService(deps: {
     },
     get: (key) => deps.store.get(key),
     getStream: (key) => deps.store.getStream(key),
+    getRange: (key, start, end) => deps.store.getRange(key, start, end),
     exists: (key) => deps.store.exists(key),
     delete: (key) => deps.store.delete(key),
 

@@ -70,7 +70,7 @@ export interface DriverOpsDeps {
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
   defaultModel?: (driverId: string, harness: string) => Promise<string | null>;
-  scriptOutputs: Pick<ScriptOutputs, "link" | "ack">;
+  scriptOutputs: Pick<ScriptOutputs, "link" | "ack" | "preview">;
 }
 
 const NO_SCRIPT_SPAWN_MODEL_MESSAGE =
@@ -308,7 +308,12 @@ function driverOps(
       }
     },
 
-    async spawnScript(body: ScriptSpawnRequest): Promise<SpawnOutcome> {
+    async spawnScript(
+      body: ScriptSpawnRequest,
+      from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
+        origin: "script",
+      },
+    ): Promise<SpawnOutcome> {
       const base = await resolveSpawn(body);
       if (!base.ok) return base;
       try {
@@ -321,11 +326,12 @@ function driverOps(
           script: body.script,
           ...(body.label !== undefined ? { label: body.label } : {}),
           ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
-          origin: "script",
+          origin: from.origin,
+          driverSessionId: from.driverSessionId ?? null,
         });
         return { ok: true, id };
       } catch (err) {
-        return refusalOf(err, "script");
+        return refusalOf(err, from.origin);
       }
     },
 
@@ -340,6 +346,12 @@ function driverOps(
       stream: InvocationOutputStream,
     ): Promise<boolean> =>
       deps.scriptOutputs.ack(invocationId, driverId, stream),
+
+    outputPreview: (
+      invocationId: string,
+      stream: InvocationOutputStream,
+      edgeBytes: number,
+    ) => deps.scriptOutputs.preview(invocationId, driverId, stream, edgeBytes),
 
     get: (invocationId: string): Promise<InvocationView | null> =>
       invocations.get(invocationId, driverId),

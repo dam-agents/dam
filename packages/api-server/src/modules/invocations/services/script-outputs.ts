@@ -21,6 +21,7 @@ import type { TargetReaper } from "./target-reaper.js";
 
 export interface OutputBlobStore {
   createUploadUrl(key: string): Promise<{ url: string } | null>;
+  getRange(key: string, start: number, end: number): Promise<Buffer | null>;
   stat(key: string): Promise<{ sizeBytes: number } | null>;
   createAgentDownloadUrl(
     key: string,
@@ -40,8 +41,20 @@ export interface ScriptOutputs extends InvocationScriptReports {
     driverAgentId: string,
     stream: InvocationOutputStream,
   ): Promise<boolean>;
+  preview(
+    invocationId: string,
+    driverAgentId: string,
+    stream: InvocationOutputStream,
+    edgeBytes: number,
+  ): Promise<OutputPreview | null>;
   purgeExpired(limit: number): Promise<number>;
   purgeRoot(rootDriverId: string): Promise<void>;
+}
+
+export interface OutputPreview {
+  sizeBytes: number;
+  head: string;
+  tail?: string;
 }
 
 const NO_STORE_REASON =
@@ -179,6 +192,29 @@ export function createScriptOutputs(deps: {
         `${row.id}.${stream}`,
       );
       return signed ? { ...blob, url: signed.url } : null;
+    },
+
+    async preview(invocationId, driverAgentId, stream, edgeBytes) {
+      const row = await deps.repo.get(invocationId);
+      if (!row || row.driverAgentId !== driverAgentId) return null;
+      const blob = row.output?.[stream];
+      if (!blob) return null;
+      const key = outputKey(row, stream);
+      const size = blob.sizeBytes;
+      if (size === 0) return { sizeBytes: 0, head: "" };
+      if (size <= edgeBytes * 2) {
+        const all = await deps.store.getRange(key, 0, size - 1);
+        return { sizeBytes: size, head: all?.toString("utf8") ?? "" };
+      }
+      const [head, tail] = await Promise.all([
+        deps.store.getRange(key, 0, edgeBytes - 1),
+        deps.store.getRange(key, size - edgeBytes, size - 1),
+      ]);
+      return {
+        sizeBytes: size,
+        head: head?.toString("utf8") ?? "",
+        tail: tail?.toString("utf8") ?? "",
+      };
     },
 
     async ack(invocationId, driverAgentId, stream) {

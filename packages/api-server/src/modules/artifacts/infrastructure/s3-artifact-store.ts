@@ -86,6 +86,23 @@ export function createS3ArtifactStore(deps: {
       };
     },
 
+    async getRange(key, start, end): Promise<Buffer | null> {
+      try {
+        const res = await deps.client.send(
+          new GetObjectCommand({
+            Bucket: deps.bucket,
+            Key: key,
+            Range: `bytes=${start}-${end}`,
+          }),
+        );
+        const bytes = await res.Body?.transformToByteArray();
+        return bytes ? Buffer.from(bytes) : null;
+      } catch (err) {
+        if (err instanceof NoSuchKey || err instanceof NotFound) return null;
+        throw err;
+      }
+    },
+
     async exists(key): Promise<boolean> {
       return (await head(key)) !== null;
     },

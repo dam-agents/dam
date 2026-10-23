@@ -236,6 +236,7 @@ function stubArtifacts(
     put: notImplemented,
     get: () => Promise.resolve(null),
     getStream: notImplemented,
+    getRange: notImplemented,
     exists: notImplemented,
     delete: () => Promise.resolve(),
     createUploadUrl: notImplemented,

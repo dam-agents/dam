@@ -1,16 +1,17 @@
 ---
 name: spawn-subagent
-description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result.
-  Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result.
+description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result, or run one shell command with no model and return its exact output.
+  Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step in a fresh sandbox.
   Its first step decides whether a platform sub-agent is needed at all.
   Hand-offs, fan-outs and long waits use the spawn_subagent and await_subagents tools; a driver SDK script (Python driver_sdk, JS driver-sdk.mjs) is only for orchestration logic that finishes in one foreground command.
-allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
+allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__fetch_subagent_output, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
 ---
 
 # Spawn a sub-agent
 
 The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox that runs one prompt to completion, reports one result, and is then removed.
 You (the driver) hand it a prompt plus the result shape you expect, and get the validated result back.
+Or you hand it a shell command (`script`): no model runs, and you get the command's exit code and its exact stdout and stderr.
 It runs unattended and cannot ask you anything.
 
 ## Step 1 — Decide: is a platform sub-agent needed?
@@ -41,11 +42,17 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
    A sub-agent on your own harness runs on this session's model and settings; on any other harness, pass `model` (one `list_harnesses` lists for it), or the spawn is refused.
    When the user set this session's platform sub-agents to a harness, model, mode or effort, those bind: a `harness` you omit is that one, another is refused, and the spawn result names what was set.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
+   **When the work is a command whose output you need** (a test suite, an eval, a benchmark, a build, a data transform), pass `script` instead of `prompt` and `schema`, and no model options: no model runs, so it costs no model call and the output is not retold.
+   Pass one or the other; a call with both is refused.
    Never pick a model through `env`: the platform then records no harness config and runs none of its checks.
    It returns the sub-agent id at once.
 3. **Wait.** Call `await_subagents` with the ids.
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
    A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
+   For a script, it gives the exit code and the start and end of stdout and stderr.
+4. **Save a script's output in full** with `fetch_subagent_output` and a `path`, then run the command it returns: it downloads the stream byte for byte to that file in this sandbox and checks it.
+   Read the file as often as you need; the user can open it too.
+   Fetch each stream once, since the platform deletes its copy after the download; one nobody fetches is deleted after seven days.
 
 For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in one `await_subagents` call.
 
@@ -141,12 +148,11 @@ Time spent queued for compute counts too.
 **Give a heavy sub-agent more memory.** The harness default (often 1Gi) OOM-kills a clone plus install or build.
 An OOM-killed sub-agent fails fast with its reason.
 
-## Run a script instead of a prompt
+## Run a command from a driver script
 
-When the work is a command, such as a benchmark, a test suite, an eval harness or a data transform on a seeded checkout, use `spawn_script` (JS: `spawnScript`).
+In a driver script, the SDK runs a command the same way the tools' `script` does: `spawn_script` (JS: `spawnScript`).
 No model turn runs: the sub-agent is set up with the same options as above, then runs the script once with `bash -lc` in its workspace.
 You get back what the script wrote, byte for byte, instead of a model's retelling of it.
-Only the SDK takes a script; the tools take prompts.
 
 ```python
 out = d.spawn_script(
