@@ -276,6 +276,7 @@ import {
 } from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
+  composeEgressProposals,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -301,6 +302,7 @@ import {
 } from "./modules/egress-rules/compose.js";
 import {
   composeConnectionsAtBoot,
+  composeAgentSecretRequests,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
   createConnectionNames,
@@ -2295,6 +2297,22 @@ export async function bootstrap() {
   const harnessDeps = {
     toolApprovalsFor: (owner: string) =>
       composeToolApprovalReports(approvalsRelay, owner),
+    agentSecretRequestsFor: (owner: string, agentId: string) =>
+      composeAgentSecretRequests({
+        ownerId: owner,
+        agentId,
+        db,
+        uiBaseUrl: config.uiBaseUrl,
+        stores: connectionsBoot.secretRequestStores,
+        templates: connectionsBoot.templates,
+      }),
+    egressProposalsFor: (owner: string, agentId: string) =>
+      composeEgressProposals({
+        db,
+        ruleMatcher: createEgressRuleMatchAdapter(db),
+        agentId,
+        ownerSub: owner,
+      }),
     satellitesBoot,
     secretStore,
     spendHold,

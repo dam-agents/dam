@@ -335,6 +335,7 @@ dam approval list --json
 `dam approval approve <id>` and `dam approval deny <id>` answer a pending request.
 For a network request they write a permanent rule for its host, method and path unless you pass `--once`, which answers only this one request.
 A request to go past a spend limit is an approval too: approving it allows one more limit amount of spend today.
+A rule a DAM agent proposed ahead of need is one too: approving it writes that rule, denying it writes none.
 Show the user what the request is and act only on their answer (hard rule 4).
 
 ### Channels

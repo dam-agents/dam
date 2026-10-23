@@ -16,7 +16,10 @@ export function useEgressApprovalRestart(
 ): EgressApprovalRestart {
   const showConfirm = useStore((s) => s.showConfirm);
 
-  const payload = row.payload.kind === "ext_authz" ? row.payload : null;
+  const payload =
+    row.payload.kind === "ext_authz" || row.payload.kind === "egress_proposal"
+      ? row.payload
+      : null;
   const narrowRule: PromotionRule | null = payload
     ? {
         host: payload.host,
