@@ -41,6 +41,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
    `list_harnesses` names the provider each harness would run on, or the provider this agent lacks for it: tell the user what to attach rather than spawning there.
    A sub-agent on your own harness runs on this session's model and settings; on any other harness, pass `model` (one `list_harnesses` lists for it), or the spawn is refused.
    When the user set this session's platform sub-agents to a harness, model, mode or effort, those bind: a `harness` you omit is that one, another is refused, and the spawn result names what was set.
+   With no such setting, a spawn that names neither `harness` nor `image` runs on your own harness.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
    **When the work is a command whose output you need** (a test suite, an eval, a benchmark, a build, a data transform), pass `script` instead of `prompt` and `schema`, and no model options: no model runs, so it costs no model call and the output is not retold.
    Pass one or the other; a call with both is refused.
