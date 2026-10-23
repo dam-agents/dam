@@ -17,7 +17,7 @@ import { KitLinkForm } from "./kit-link-form.js";
 
 const DEFAULT_KIT = {
   name: "The Generalist",
-  text: "The fastest way to start chatting with an agent. One click creates an agent with no additional setup questions. Use it as-is or customize it later by adding connections, channels, schedules, and more.",
+  text: "One click, no setup. Use it as-is or customize it later by adding connections, channels, schedules, and more.",
 };
 
 export function BrowseKitsModal() {
