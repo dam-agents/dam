@@ -2,10 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import {
-  createExecHistoryProvider,
-  createWorkerHistoryProvider,
-} from "../history-provider.js";
+import { createWorkerHistoryProvider } from "../history-provider.js";
 import { prestartHistoryWorkers } from "../history-worker.js";
 
 /**
@@ -15,9 +12,8 @@ import { prestartHistoryWorkers } from "../history-worker.js";
  * The worker variant hosts the declared module in one persistent worker
  * thread: a per-request error or an invalid frame resolves that fetch to
  * null without killing the worker, and a module that cannot load at all
- * resolves every fetch to null. The exec variant runs the declared command
- * once per fetch with the same validation. Null always means "fall back to
- * the harness load".
+ * resolves every fetch to null. Null always means "fall back to the harness
+ * load".
  */
 
 function frameLine(sessionId: string, text: string): string {
@@ -189,70 +185,5 @@ describe("worker history provider", () => {
       log: () => {},
     });
     expect(await provider.fetch("sess-a")).toBeNull();
-  });
-});
-
-describe("exec history provider", () => {
-  /**
-   * TEST_SCENARIO: The command variant runs the declared executable per
-   * fetch, passing the session id as the final argument, and parses its
-   * stdout lines with the same validation as the worker variant.
-   */
-  it("should serve lines printed by the declared command", async () => {
-    const script =
-      "process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:process.argv[1],update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'x'}}}})+'\\n')";
-    const provider = createExecHistoryProvider({
-      command: ["node", "-e", script],
-      cwd: process.cwd(),
-      log: () => {},
-    });
-    const lines = await provider.fetch("sess-a");
-    expect(lines).toHaveLength(1);
-    expect(lines![0]).toContain("sess-a");
-  });
-
-  /**
-   * TEST_SCENARIO: The pipe delivers bytes, not characters, so a chunk
-   * boundary can land inside a multi-byte UTF-8 sequence. Decoding each
-   * chunk independently would turn the split character into U+FFFD while the
-   * line still parses as JSON — silent corruption of replayed text. The
-   * command below flushes the first half of a three-byte character, waits,
-   * then writes the rest; the provider must reassemble it exactly.
-   */
-  it("should reassemble a multi-byte character split across stream chunks", async () => {
-    const script = `
-      const line = JSON.stringify({jsonrpc:"2.0",method:"session/update",params:{sessionId:process.argv[1],update:{sessionUpdate:"agent_message_chunk",content:{type:"text",text:"překlad — 日本語"}}}}) + "\\n";
-      const bytes = Buffer.from(line, "utf8");
-      const at = line.indexOf("日");
-      const cut = Buffer.byteLength(line.slice(0, at), "utf8") + 1;
-      process.stdout.write(bytes.subarray(0, cut));
-      setTimeout(() => process.stdout.write(bytes.subarray(cut)), 30);
-    `;
-    const provider = createExecHistoryProvider({
-      command: ["node", "-e", script],
-      cwd: process.cwd(),
-      log: () => {},
-    });
-    const lines = await provider.fetch("sess-a");
-    expect(lines).toHaveLength(1);
-    expect(lines![0]).toContain("překlad — 日本語");
-    expect(lines![0]).not.toContain("�");
-  });
-
-  /**
-   * TEST_SCENARIO: The output budget is enforced in bytes, and exceeding it
-   * fails the fetch closed — the caller falls back to the harness load
-   * instead of buffering without bound.
-   */
-  it("should fail closed when output exceeds the byte budget", async () => {
-    const messages: string[] = [];
-    const provider = createExecHistoryProvider({
-      command: ["node", "-e", "process.stdout.write('x'.repeat(100))"],
-      cwd: process.cwd(),
-      maxOutputBytes: 10,
-      log: (msg) => messages.push(msg),
-    });
-    expect(await provider.fetch("sess-a")).toBeNull();
-    expect(messages.join("\n")).toContain("more than 10 bytes");
   });
 });

@@ -1,10 +1,11 @@
 import { workspaceCommandEventPayload } from "agent-runtime-api";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { DriverBinding, EventHandler, Plugin } from "agent-runtime-api";
+import type { Plugin } from "agent-runtime-api";
 
 import { describeFailure, runOnce } from "../../../core/run-once.js";
 import { sentinelExists } from "./sentinel.js";
+import { eventPlugin } from "../infrastructure/plugin-registry.js";
 
 const IMPL_NAME = "workspace-command";
 
@@ -26,34 +27,24 @@ export function createWorkspaceCommandPlugin(deps: {
   spawnEnv?: () => NodeJS.ProcessEnv;
 }): Plugin {
   const run = deps.run ?? runCommand;
-  return {
-    name: IMPL_NAME,
-    bindEvent(kind: string, _binding: DriverBinding): EventHandler {
-      if (kind !== "workspace-command") {
-        throw new Error(
-          `plugin "${IMPL_NAME}" does not handle event kind "${kind}"`,
-        );
-      }
-      return async (payload, ctx) => {
-        const { command } = workspaceCommandEventPayload.parse(payload);
-        const sentinel = join(ctx.pluginStateDir, DONE_SENTINEL);
-        if (await sentinelExists(sentinel)) {
-          deps.log(`[workspace-command] already run, skipping`);
-          return;
-        }
-        deps.log(`[workspace-command] running in ${deps.workDir}: ${command}`);
-        await run(command, deps.workDir, deps.log, deps.spawnEnv?.());
-        try {
-          await writeFile(sentinel, `${new Date().toISOString()}\n`, {
-            flag: "wx",
-          });
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-        }
-        deps.log(`[workspace-command] completed`);
-      };
-    },
-  };
+  return eventPlugin(IMPL_NAME, "workspace-command", async (payload, ctx) => {
+    const { command } = workspaceCommandEventPayload.parse(payload);
+    const sentinel = join(ctx.pluginStateDir, DONE_SENTINEL);
+    if (await sentinelExists(sentinel)) {
+      deps.log(`[workspace-command] already run, skipping`);
+      return;
+    }
+    deps.log(`[workspace-command] running in ${deps.workDir}: ${command}`);
+    await run(command, deps.workDir, deps.log, deps.spawnEnv?.());
+    try {
+      await writeFile(sentinel, `${new Date().toISOString()}\n`, {
+        flag: "wx",
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
+    deps.log(`[workspace-command] completed`);
+  });
 }
 
 const TAIL_LINES = 10;

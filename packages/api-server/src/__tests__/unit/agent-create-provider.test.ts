@@ -63,8 +63,6 @@ function setup(
 ) {
   const connections = createConnectionsService({
     harnesses: { default: "claude-code", harnesses: [] },
-    platformProviderEnabled: async () => false,
-    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner-1",
     repo: unused<ConnectionsDeps["repo"]>({

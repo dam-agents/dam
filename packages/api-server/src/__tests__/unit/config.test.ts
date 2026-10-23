@@ -1,6 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { load } from "js-yaml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentsInstallSettings, loadConfig } from "../../config.js";
@@ -148,21 +146,6 @@ describe("loadConfig — object storage", () => {
   });
 });
 
-const CA_PEM = `-----BEGIN CERTIFICATE-----
-MIICDjCCAbQCCQD5R1rtVWLcEjAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDAptb2Rl
-bC1jYS1hMB4XDTI2MTAxNjA4MTcyNloXDTM2MTAxMzA4MTcyNlowFTETMBEGA1UE
-AwwKbW9kZWwtY2EtYTCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQEC
-IQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAA
-AAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2
-O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOk
-QPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/
-UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAARe0Xtx
-RxQuJB2S/fgWU9jWEItXXyPbL5kEm/3hg8sbI+dSSjMbpGab+YWuZYVKhsQUhnDx
-LBIAQ7cYs+pcVa7JMAoGCCqGSM49BAMCA0gAMEUCIQDXOFH5iFHkU+nhfJ6T9+jt
-mmkBNIQHEZyNseqNrUDmwQIgTMRmxAc+KqNdi/HNDz1fCYGZvkoVYMgLYZM0W/aS
-1f8=
------END CERTIFICATE-----`;
-
 describe("agentsInstallSettings — what every agents module is built with", () => {
   const managed = [
     ...Object.keys(REQUIRED_ENV),
@@ -170,10 +153,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
     "FEATURE_DEFAULT_MODE",
-    "PLATFORM_PROVIDER_BASE_URL",
-    "PLATFORM_PROVIDER_MODEL",
-    "PLATFORM_PROVIDER_API_KEY",
-    "PLATFORM_PROVIDER_CA_FILE",
     "CURVE_BENDER_DEPLOYMENT_API_KEY",
     "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
@@ -222,27 +201,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     });
   });
 
-  // TEST_SCENARIO: the built-in provider is offered only where the operator named a model server and its key; without a base URL or without a key the feature is off even when the chart pins it on, a configured base URL loses its trailing slash, and a plain-HTTP one leaves the feature off without failing the boot.
-  it("turns the platform provider off without a base URL or key", () => {
-    process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
-    expect(loadConfig().platformProvider).toBeNull();
-    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
-    process.env.PLATFORM_PROVIDER_BASE_URL = "https://llm.models.svc:8443/";
-    process.env.PLATFORM_PROVIDER_MODEL = "m";
-    expect(loadConfig().platformProvider).toBeNull();
-    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
-    process.env.PLATFORM_PROVIDER_API_KEY = "sk-operator";
-    expect(loadConfig().platformProvider).toEqual({
-      baseUrl: "https://llm.models.svc:8443",
-      model: "m",
-      apiKey: "sk-operator",
-    });
-    expect(loadConfig().featureModes["platform-provider"]).toBe("on");
-    process.env.PLATFORM_PROVIDER_BASE_URL = "http://llm.models.svc:8000";
-    expect(loadConfig().platformProvider).toBeNull();
-    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
-  });
-
   // TEST_SCENARIO: the deployment's CurveBender is offered only where the install sets its key; without one the install configures no shared CurveBender rather than failing the boot.
   it("offers the deployment CurveBender only with its key", () => {
     expect(loadConfig().curveBenderDeployment).toBeNull();
@@ -252,28 +210,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     });
   });
 
-  // TEST_SCENARIO: the chart mounts the model server's CA as a file; the api-server carries its certificate for the gateway, and a CA file that is set but missing or holds no certificate leaves the feature off without failing the boot.
-  it("reads the platform provider's CA file, and turns the feature off when it is unreadable", () => {
-    const dir = mkdtempSync(join(tmpdir(), "platform-ca-"));
-    const caFile = join(dir, "service-ca.crt");
-    writeFileSync(caFile, `${CA_PEM}\n`);
-    process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
-    process.env.PLATFORM_PROVIDER_BASE_URL = "https://llm.models.svc:8443";
-    process.env.PLATFORM_PROVIDER_API_KEY = "sk-operator";
-    process.env.PLATFORM_PROVIDER_CA_FILE = caFile;
-    expect(loadConfig().platformProvider?.ca).toBe(CA_PEM);
-    expect(loadConfig().featureModes["platform-provider"]).toBe("on");
-    for (const bad of [join(dir, "missing.crt"), dir]) {
-      process.env.PLATFORM_PROVIDER_CA_FILE = bad;
-      expect(loadConfig().platformProvider).toBeNull();
-      expect(loadConfig().featureModes["platform-provider"]).toBe("off");
-    }
-    writeFileSync(caFile, "not a certificate");
-    process.env.PLATFORM_PROVIDER_CA_FILE = caFile;
-    expect(loadConfig().platformProvider).toBeNull();
-  });
-
-  // TEST_SCENARIO: the chart's own price list is what every install boots with, so each row must pass the config schema, the built-in provider's DeepSeek row included.
+  // TEST_SCENARIO: the chart's own price list is what every install boots with, so each row must pass the config schema.
   it("accepts the chart's price list", () => {
     const values = load(
       readFileSync(
@@ -287,8 +224,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     try {
       expect(loadConfig().spendPriceOverrides).toContainEqual(
         expect.objectContaining({
-          provider: "platform-llm",
-          model: "deepseek-v4.1-flash",
+          provider: "ibm-litellm",
+          model: "aws/claude-opus-5-5",
         }),
       );
     } finally {

@@ -60,7 +60,7 @@ function closeButton(node: ReactNode): { onClick: Click } {
   throw new Error("no close button");
 }
 
-// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with no rule under it, and the X is a 40 square that closes and hands the keyboard back like the small button, without JanUI being on.
+// TEST_SCENARIO: With the Unified right toolbar experiment on, the panel's header sits on the first rail tile's row, 40 high and 8 below the top with its rule under it and none above, and the X is a 40 square that closes and hands the keyboard back like the small button, without JanUI being on.
 it("draws the unified right toolbar's header on the rail's row with a tile X", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -80,7 +80,7 @@ it("draws the unified right toolbar's header on the rail's row with a tile X", (
   );
   const headerClass =
     html.match(/class="([^"]*mt-2[^"]*h-10[^"]*)"/)?.[1] ?? "";
-  expect(headerClass.split(" ")).not.toContain("border-b");
+  expect(headerClass.split(" ")).toContain("border-b");
   expect(headerClass.split(" ")).not.toContain("border-t");
   const closeTag =
     html.match(/<button[^>]*data-testid="side-panel-close"[^>]*>/)?.[0] ?? "";
@@ -110,6 +110,21 @@ it("ends the panel's top bar with the X, behind a border", () => {
   );
   const headerClass = html.match(/class="([^"]*h-12[^"]*)"/)?.[1] ?? "";
   expect(headerClass.split(" ")).toContain("border-b");
+});
+
+// TEST_SCENARIO: A phone hides the X, because the full-screen panel there has its own back button, except where the panel keeps a top bar with the X instead, which the Unified right toolbar experiment draws.
+it.each([
+  ["the tiled panel", true, false],
+  ["the classic column", false, true],
+])("in %s the X is hidden on a phone: %s", (_, tiles, hidden) => {
+  const html = renderToStaticMarkup(
+    createElement(TooltipProvider, null, PanelCloseButton({ tiles })),
+  );
+  const container =
+    html.match(
+      /class="([^"]*self-stretch border-l border-border[^"]*)"/,
+    )?.[1] ?? "";
+  expect(container.split(" ").includes("max-md:hidden")).toBe(hidden);
 });
 
 // TEST_SCENARIO: Clicking the X closes the open panel.

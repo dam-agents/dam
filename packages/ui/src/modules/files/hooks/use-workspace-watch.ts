@@ -1,39 +1,25 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { workspaceNoticeSchema } from "agent-runtime-api";
-import { useEffect } from "react";
 
-import { watchWithRetry } from "../../../lib/watch-retry.js";
-import { agentTrpc } from "../../agents/agent-trpc.js";
 import {
-  useAgentLacksLiveUpdates,
-  useIsAgentOperable,
-} from "../../agents/api/queries.js";
+  useAgentLiveUpdates,
+  useAgentWatch,
+} from "../../agents/hooks/use-agent-watch.js";
 import { fileKeys } from "../api/keys.js";
 import { paramsForExpanded, useExpandedDirs } from "../api/queries.js";
 
 export function useWorkspaceWatch(agentId: string | null) {
-  const queryClient = useQueryClient();
-  const operable = useIsAgentOperable(agentId);
-  const compat = useAgentLacksLiveUpdates(agentId);
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
-  const pathKey = JSON.stringify(paths);
+  const live = useAgentLiveUpdates(agentId);
 
-  useEffect(() => {
-    if (!agentId || !operable || compat) return;
-    return watchWithRetry((onError) =>
-      agentTrpc(agentId).files.watch.subscribe(
-        { paths: JSON.parse(pathKey) as string[] },
-        {
-          onData: (notice) => {
-            if (!workspaceNoticeSchema.safeParse(notice).success) return;
-            void queryClient.invalidateQueries({
-              queryKey: fileKeys.tree(agentId),
-            });
-          },
-          onError,
-        },
-      ),
-    );
-  }, [agentId, compat, operable, pathKey, queryClient]);
+  useAgentWatch({
+    agentId,
+    enabled: live,
+    inputKey: JSON.stringify(paths),
+    subscribe: (trpc, onData, onError) =>
+      trpc.files.watch.subscribe({ paths }, { onData, onError }),
+    notice: workspaceNoticeSchema,
+    invalidate: (queryClient, id) =>
+      void queryClient.invalidateQueries({ queryKey: fileKeys.tree(id) }),
+  });
 }

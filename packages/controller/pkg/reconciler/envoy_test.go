@@ -2154,12 +2154,12 @@ func TestRenderEnvoyBootstrap_SigningSecretMissingKeyStillBoots(t *testing.T) {
 	}, httpFilterNamesForHost(t, mustParseBootstrap(t, got), "s3.example.cloud"))
 }
 
-// TEST_SCENARIO: the built-in provider's Connection Secret, on its own model server's port, yields a metered chain that dials that port, like any other model-provider Connection; a Connection of a template that is no model provider stays unmetered.
-func TestChainsFromSecrets_PlatformProviderChainIsMetered(t *testing.T) {
+// TEST_SCENARIO: a model-provider Connection's Secret, on its own model server's port, yields a metered chain that dials that port, like any other model-provider Connection; a Connection of a template that is no model provider stays unmetered.
+func TestChainsFromSecrets_ProviderChainIsMetered(t *testing.T) {
 	for _, tc := range []struct {
 		template string
 		metered  bool
-	}{{"platform-llm", true}, {"ibm-litellm", true}, {"curve-bender-deployment", true}, {"github", false}} {
+	}{{"ibm-litellm", true}, {"curve-bender-deployment", true}, {"github", false}} {
 		s := ownerSecret("platform-conn-"+tc.template, "connection", "conn-"+tc.template)
 		delete(s.Annotations, envoyHostPatternAnn)
 		s.Annotations[envoySecretPurposeAnn] = "connection:" + tc.template

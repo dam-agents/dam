@@ -7,7 +7,7 @@ import {
 } from "../lib/copy.js";
 import { NO_LIMIT_REASONS } from "../lib/format.js";
 import { connectionDisplayName } from "../lib/level-labels.js";
-import { allAgentsConnectionLevels } from "../lib/limit-levels.js";
+import { allAgentsConnectionLevels, spentOn } from "../lib/limit-levels.js";
 import { LimitLine } from "./limit-line.js";
 
 interface Props {
@@ -34,12 +34,11 @@ export function AllAgentsProviderLimit({
 
   const name = connectionDisplayName(connectionName, templateId);
   const connection = { id: connectionId, name, templateId };
-  const spentMicros = status.ownerSpentByConnection
-    .filter(
-      (total) =>
-        total.connectionId === connectionId && total.unit === rule.unit,
-    )
-    .reduce((sum, total) => sum + total.costMicros, 0);
+  const spentMicros = spentOn(
+    status.ownerSpentByConnection,
+    connectionId,
+    rule.unit,
+  );
 
   return (
     <LimitLine

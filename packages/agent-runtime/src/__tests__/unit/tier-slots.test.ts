@@ -89,25 +89,24 @@ describe("a side call on a tier", () => {
   });
 
   /** TEST_SCENARIO: A tierless provider that lists nothing on the preference
-   * lists keeps the session's own model, as the built-in provider does, and
-   * an Anthropic model's tier slot still follows the session's provider by
-   * tier word. */
+   * lists keeps the session's own model, and an Anthropic model's tier slot
+   * still follows the session's provider by tier word. */
   it("keeps the session's model where the preference lists match nothing", () => {
-    const platform = provider("platform", ["deepseek-v4.1-flash", "qwen-9"]);
+    const cb = provider("cb", ["rits/zai-org/glm-5-4", "qwen-9"]);
     expect(
       where({
         requested: "claude-sonnet-5",
-        sessionModel: "platform/deepseek-v4.1-flash",
-        providers: [platform],
+        sessionModel: "cb/rits/zai-org/glm-5-4",
+        providers: [cb],
       }),
-    ).toBe("claude/platform/deepseek-v4.1-flash");
+    ).toBe("claude/cb/rits/zai-org/glm-5-4");
     expect(
       where({
         requested: "claude/anthropic/claude-haiku-5-5",
-        sessionModel: "platform/deepseek-v4.1-flash",
-        providers: [platform],
+        sessionModel: "cb/rits/zai-org/glm-5-4",
+        providers: [cb],
       }),
-    ).toBe("claude/platform/deepseek-v4.1-flash");
+    ).toBe("claude/cb/rits/zai-org/glm-5-4");
     const ibm = provider("ibm", [
       "aws/claude-opus-5-5",
       "aws/claude-sonnet-5-5",

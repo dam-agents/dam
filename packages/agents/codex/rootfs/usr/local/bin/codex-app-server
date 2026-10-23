@@ -1,7 +1,7 @@
 #!/bin/sh
 # codex-acp runs `$CODEX_PATH app-server`. The provider's base URL is the Model
-# Router, fixed in /etc/codex/config.toml, so every thread (also the title thread
-# codex-acp starts without CODEX_CONFIG) reaches it without a -c override.
+# Router, fixed in /etc/codex/config.toml, so every thread, also one codex-acp
+# starts on its own without CODEX_CONFIG, reaches it without a -c override.
 . /usr/local/lib/codex-otel.sh
 . /usr/local/lib/codex-agents-md.sh
 # developer_instructions takes the text, not a path, and Codex has no file

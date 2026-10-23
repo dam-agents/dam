@@ -24,10 +24,9 @@ const MONTHS = [
   "Dec",
 ];
 
-export function providerNameOf(templateId: string, brandName: string): string {
+export function providerNameOf(templateId: string): string {
   const type = providerTypeForTemplateId(templateId);
-  if (type === null) return templateId;
-  return type === "platform" ? brandName : PROVIDERS[type].displayName;
+  return type === null ? templateId : PROVIDERS[type].displayName;
 }
 
 export function utcLabel(at: Date): string {

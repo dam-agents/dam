@@ -35,7 +35,9 @@ if [ "$(uname -s)" != Linux ]; then
   exit
 fi
 
-sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
+# No --preserve-env: the runners' sudo ignores a bare one (sudo-rs says so and
+# then resets the environment), so each call names the variables it needs.
+sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo)
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 : > "$work/started"
@@ -285,6 +287,14 @@ for d in usr opt; do printf '\n[[oci.copy]]\nhost = "../build/%s"\nimage = "/%s"
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
     MISE_TRUSTED_CONFIG_PATHS="$project" MISE_EXPERIMENTAL=1
+  # sudo resets root's environment, and the runners' sudo ignores a bare
+  # --preserve-env (see the sudo array), so the build's mise is handed these
+  # through env below: its own MISE_* settings, the date the build records as
+  # the image's, and the PATH it runs commands from. Nothing secret travels
+  # with them: argv is readable on the host, and a build that installs no mise
+  # tool needs no token.
+  envs=(PATH="$PATH")
+  while read -r v; do envs+=("$v=${!v}"); done < <(compgen -e | grep -E '^(MISE_|SOURCE_DATE_EPOCH$)' | grep -vE '_(TOKEN|SECRET|KEY|PASSWORD)$')
   : > "$MISE_GLOBAL_CONFIG_FILE"
   cd "$project"
   # The apt bootstrap needs root. Three warnings say nothing here: mise judges
@@ -292,7 +302,7 @@ for d in usr opt; do printf '\n[[oci.copy]]\nhost = "../build/%s"\nimage = "/%s"
   # layer's resolve inside the image and those in smolvm's guest rootfs inside
   # the guest; it flags the copies, though both are this build's own tree; and
   # an image with no tools is the point.
-  { ${sudo[@]+"${sudo[@]}"} "$(command -v mise)" oci build --no-mise --from "$from" -o "$work/layout" 2>&1 1>&3 3>&- |
+  { ${sudo[@]+"${sudo[@]}"} env "${envs[@]}" "$(command -v mise)" oci build --no-mise --from "$from" -o "$work/layout" 2>&1 1>&3 3>&- |
     { grep -vE 'oci layer: symlink [^ ]*(/mise-oci-apt-rootfs-[^ ]*/diff|/agent-rootfs)/[^ ]* .* has an absolute target outside|mise oci build: (copying host path |no tools in the toolset)' || true; } >&2; } 3>&1
 )
 [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$work"

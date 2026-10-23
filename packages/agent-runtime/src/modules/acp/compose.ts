@@ -1,7 +1,7 @@
 import { parseQualifiedModel } from "api-server-api";
 import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
+import type { ArtifactTouch } from "./infrastructure/tool-call-outcome.js";
 import type { ToolActivity } from "../changes/index.js";
 import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
@@ -15,7 +15,6 @@ import {
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import { nonClaudeModelEnv } from "./domain/non-claude-env.js";
 import {
-  createExecHistoryProvider,
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
@@ -134,9 +133,8 @@ const HARNESS_STATE_PORTS: Record<HarnessStateDialect, HarnessStatePort> = {
 
 export interface HarnessRuntime extends SessionHarness {
   sessionHistory?: {
-    module?: string;
+    module: string;
     exportName?: string;
-    command?: string[];
   };
   sessionCut?: {
     module: string;
@@ -275,22 +273,12 @@ function historyProviderOf(
   opts: ComposeAcpOptions,
   declared: HarnessRuntime["sessionHistory"],
 ): HistoryProvider | undefined {
-  const { log } = opts;
-  if (declared?.module !== undefined) {
-    return createWorkerHistoryProvider({
-      modulePath: declared.module,
-      exportName: declared.exportName,
-      log,
-    });
-  }
-  if (declared?.command !== undefined) {
-    return createExecHistoryProvider({
-      command: declared.command,
-      cwd: opts.workingDir,
-      log,
-    });
-  }
-  return undefined;
+  if (declared === undefined) return undefined;
+  return createWorkerHistoryProvider({
+    modulePath: declared.module,
+    exportName: declared.exportName,
+    log: opts.log,
+  });
 }
 
 export function composeAcp(opts: ComposeAcpOptions): {

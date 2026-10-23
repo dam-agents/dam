@@ -18,28 +18,24 @@ import {
 } from "chat";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
 import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
-import type { PostMessageOptions } from "../services/channel-manager.js";
+import type {
+  ChannelWorker,
+  PostMessageOptions,
+} from "../services/worker-contract.js";
 import {
   AcpSessionLoadError,
   AcpTurnAbandonedError,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
-import {
-  turnFailureReasonToken,
-  turnFailureUserCopy,
-  noDefaultModelUserCopy,
-} from "./turn-failure-copy.js";
+import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
+import { channelDeny } from "./channel-authz.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
-  isAgentWakeTimeoutError,
   isTelegramPrivateChat,
   telegramChatOf,
-  wakeFailureReasonToken,
 } from "../../agents/index.js";
-import { wakeFailureUserCopy } from "./wake-failure-copy.js";
-import { isNoDefaultModelError } from "../../harness-config/index.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
@@ -50,6 +46,8 @@ import {
 } from "./spend-hold-copy.js";
 import {
   createConversationQueue,
+  getOrCreateQueue,
+  steerChannelTurn,
   type ConversationQueue,
 } from "./conversation-queue.js";
 import {
@@ -99,10 +97,9 @@ export interface ChannelConversation {
   title: string;
 }
 
-export interface TelegramWorker {
+export interface TelegramWorker extends ChannelWorker {
   type: ChannelType.Telegram;
   start(): Promise<void>;
-  stopAll(): Promise<void>;
   resolveIdentity(): Promise<void>;
   botUsername(): string | null;
   listConversations(agentId: string): Promise<ChannelConversation[]>;
@@ -111,7 +108,6 @@ export interface TelegramWorker {
     text: string,
     options?: PostMessageOptions,
   ): Promise<{ ok: true } | { error: string }>;
-  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 async function isTelegramChatAdmin(
@@ -295,12 +291,8 @@ export function createTelegramMessageHandler(deps: {
       telegramUserId,
     );
     if (isAdmin) return false;
-    securityLog("warn", "channel.authz_deny", {
-      category: "channel",
+    channelDeny("telegram", {
       actor: null,
-      actorKind: "external",
-      surface: "telegram",
-      decision: "deny",
       reason: "not-group-admin",
       detail: { telegramUserId, threadId: thread.id, command: action },
     });
@@ -731,31 +723,17 @@ export function createTelegramWorker(deps: {
       });
       outcome = "success";
     } catch (err) {
-      failureReason = isAgentWakeTimeoutError(err)
-        ? wakeFailureReasonToken(err.failure)
-        : err instanceof AcpTurnAbandonedError
-          ? turnFailureReasonToken(err)
-          : isNoDefaultModelError(err)
-            ? "no-default-model"
-            : "acp-error";
+      const failure = classifyTurnFailure(err);
+      failureReason = failure.reason;
       getLogger().warn(
         { agentId, reason: failureReason, error: String(err), ambientTurn },
         "telegram.turn.failed",
       );
-      if (ambientTurn) return;
-      if (isAgentWakeTimeoutError(err)) {
-        await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
-      } else if (err instanceof AcpTurnAbandonedError) {
-        await thread.post(turnFailureUserCopy(err)).catch(() => {});
-      } else if (isNoDefaultModelError(err)) {
+      const sleeping = isAgentStoppedError(err) && !err.disabled;
+      if (!ambientTurn && !sleeping)
         await thread
-          .post(noDefaultModelUserCopy(err, deps.uiBaseUrl, agentId))
+          .post(failure.copy({ uiBaseUrl: deps.uiBaseUrl, agentId }))
           .catch(() => {});
-      } else if (isAgentStoppedError(err) && err.disabled) {
-        await thread
-          .post("This agent is disabled by its owner — ask them to enable it.")
-          .catch(() => {});
-      }
     } finally {
       releaseAttendance();
       annotateSpan({
@@ -807,16 +785,12 @@ export function createTelegramWorker(deps: {
       },
       steer: async (sessionId, batch) => {
         if (ambientTurnRunning) return "refused";
-        const outcome = await makeAcpClient(agentId).steer(
+        return steerChannelTurn(
+          makeAcpClient(agentId),
           sessionId,
           steerFrame(batch),
+          { surface: "telegram", fields: { agentId, threadId } },
         );
-        if (outcome === "injected") return "injected";
-        getLogger().debug(
-          { agentId, threadId, outcome },
-          "telegram.turn.steer_declined",
-        );
-        return outcome === "unsupported" ? "unsupported" : "refused";
       },
       onEmpty: () => {
         telegramQueues.delete(key);
@@ -838,12 +812,9 @@ export function createTelegramWorker(deps: {
     ambient: boolean,
   ): void {
     const key = `${agentId}|${thread.id}`;
-    let queue = telegramQueues.get(key);
-    if (!queue) {
-      queue = createChatQueue(key, agentId, thread.id);
-      telegramQueues.set(key, queue);
-    }
-    void queue.submit({ text, author, thread, ambient });
+    void getOrCreateQueue(telegramQueues, key, () =>
+      createChatQueue(key, agentId, thread.id),
+    ).submit({ text, author, thread, ambient });
   }
 
   function emitTurn(

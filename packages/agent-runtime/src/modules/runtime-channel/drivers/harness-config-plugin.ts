@@ -1,12 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
-  DriverBinding,
-  EventHandler,
   HarnessConfigChoice,
   HarnessConfigCurrent,
   HarnessConfigEventPayload,
-  Plugin,
 } from "agent-runtime-api";
 import { harnessConfigChoice } from "agent-runtime-api";
 import { z } from "zod";
@@ -26,13 +23,11 @@ import type { HarnessConfigBinding } from "../manifest.js";
 import { expandHome } from "../../../core/expand-home.js";
 import type { LeaseEnvReader } from "../../../core/runtime-env.js";
 
-const IMPL_NAME = "harness-config";
-
 export type ApplyHarnessConfigFn = (
   payload: HarnessConfigEventPayload,
 ) => Promise<void>;
 
-export interface HarnessConfigPlugin extends Plugin {
+export interface HarnessConfigPlugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
   readonly sessionModel: boolean;
@@ -270,7 +265,6 @@ export function createHarnessConfigPlugin(deps: {
   };
 
   return {
-    name: IMPL_NAME,
     supported: binding !== undefined,
     catalog: binding?.catalog,
     sessionModel: binding?.sessionModel === true,
@@ -282,9 +276,6 @@ export function createHarnessConfigPlugin(deps: {
     writeModelWindows,
     models: (provider) => listModels(envOf(provider)),
     apply,
-    bindEvent(_kind: string, _binding: DriverBinding): EventHandler {
-      return async (payload) => apply(payload as HarnessConfigEventPayload);
-    },
   };
 }
 

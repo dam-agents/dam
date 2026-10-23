@@ -46,12 +46,9 @@ export function createOutageAlertsService(deps: {
   describeAgent: (agentId: string) => Promise<AgentFacts | null>;
   unattendedAgentsOn: (templateId: string) => Promise<UnattendedAgentOn[]>;
   homeUrl: string;
-  brandName: string;
   delayMs: number;
 }): OutageAlertsService {
   const log = () => getLogger();
-  const providerName = (templateId: string) =>
-    providerNameOf(templateId, deps.brandName);
 
   const send = async (alert: OutageAlert, notice: AlertNotice) => {
     const [first] = alert.agents;
@@ -78,7 +75,7 @@ export function createOutageAlertsService(deps: {
     if (!(await deps.repo.claim(stored.version, next))) return;
     await send(
       next,
-      recoveryMessage(next, at, providerName(next.templateId), deps.homeUrl),
+      recoveryMessage(next, at, providerNameOf(next.templateId), deps.homeUrl),
     );
   };
 
@@ -104,7 +101,7 @@ export function createOutageAlertsService(deps: {
     if (!(await deps.repo.claim(stored?.version ?? null, next))) return;
     await send(
       next,
-      outageMessage(next, providerName(outage.templateId), deps.homeUrl),
+      outageMessage(next, providerNameOf(outage.templateId), deps.homeUrl),
     );
   };
 

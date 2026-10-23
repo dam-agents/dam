@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 
 export interface ProcEntry {
   pid: number;
@@ -237,4 +238,56 @@ export function startMemReaper(opts: {
       opts.log(`poll failed: ${(err as Error).message}`);
     }
   }, opts.pollMs ?? 2_000).unref();
+}
+
+export function startRuntimeMetrics(opts?: {
+  intervalMs?: number;
+  log?: (msg: string) => void;
+}): void {
+  const log = opts?.log ?? ((msg: string) => process.stderr.write(msg));
+  const cgMax = readCgroupBytes(
+    "/sys/fs/cgroup/memory.max",
+    "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+  );
+  const haveLimit = cgMax !== null && Number.isFinite(cgMax) && cgMax < 1e15;
+  const eld = monitorEventLoopDelay({ resolution: 20 });
+  eld.enable();
+  let prevCpu = process.cpuUsage();
+  let prevAt = Date.now();
+  setInterval(() => {
+    try {
+      const maxMs = eld.max / 1e6;
+      const p99Ms = eld.percentile(99) / 1e6;
+      eld.reset();
+      const cpu = process.cpuUsage(prevCpu);
+      prevCpu = process.cpuUsage();
+      const now = Date.now();
+      const wallMs = Math.max(1, now - prevAt);
+      prevAt = now;
+      const cpuPct = Math.round(
+        ((cpu.user + cpu.system) / 1000 / wallMs) * 100,
+      );
+      const mu = process.memoryUsage();
+      const cgCur = readCgroupBytes(
+        "/sys/fs/cgroup/memory.current",
+        "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+      );
+      const cgStr =
+        cgCur !== null
+          ? ` cgroup=${mib(cgCur)}${haveLimit ? "/" + mib(cgMax as number) : ""}MB`
+          : "";
+      const memStr = `rss=${mib(mu.rss)}MB heap=${mib(mu.heapUsed)}/${mib(mu.heapTotal)}MB cpu=${cpuPct}%${cgStr}`;
+      if (maxMs >= 1_000) {
+        log(
+          `[eventloop] blocked up to ${Math.round(maxMs)}ms (p99 ${Math.round(p99Ms)}ms) in last 10s — ${memStr}\n`,
+        );
+      } else if (
+        haveLimit &&
+        cgCur !== null &&
+        cgCur / (cgMax as number) >= 0.85
+      ) {
+        log(`[mem] high cgroup usage — ${memStr}\n`);
+      }
+    } catch {}
+  }, opts?.intervalMs ?? 10_000).unref();
 }

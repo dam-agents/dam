@@ -44,6 +44,20 @@ describe("provider harness compatibility", () => {
     },
   );
 
+  // TEST_SCENARIO: a values file that still lists a provider the api-server no longer offers keeps the install starting: the id is dropped from the harness's list instead of failing the chart's parse, which would crash-loop the api-server.
+  it("drops a provider the api-server no longer offers", () => {
+    const parsed = harnessCatalogConfigSchema.parse({
+      default: "claude-code",
+      catalog: {
+        "claude-code": {
+          displayName: "Claude",
+          providers: ["ibm-litellm", "platform"],
+        },
+      },
+    });
+    expect(parsed.catalog["claude-code"]?.providers).toEqual(["ibm-litellm"]);
+  });
+
   it("moves an automatic turn off a remembered Pi/OAuth pair", async () => {
     const pair = await resolveFirePair(
       {

@@ -9,8 +9,14 @@ import { readyOrAnswering } from "./ready-or-answering.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import {
   acpNativeRowId,
+  isRequest,
+  isResponse,
+  parseFrame,
   recordedOptionsOf,
   recordedToolOf,
+  type JsonRpcFrame,
+  type JsonRpcRequest,
+  type JsonRpcResponse,
 } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
@@ -21,47 +27,21 @@ import { fillSavedDefault } from "./saved-default.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 
-interface JsonRpcRequest {
-  jsonrpc: "2.0";
-  id: number | string;
-  method: string;
-  params: {
-    sessionId?: string;
-    options?: { optionId: string; kind?: string }[];
-    toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown };
-    _meta?: { platform?: { initiator?: string; harness?: unknown } };
-  };
+interface RelayParams {
+  sessionId?: string;
+  options?: { optionId: string; kind?: string }[];
+  toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown };
+  _meta?: { platform?: { initiator?: string; harness?: unknown } };
 }
 
-interface JsonRpcResponse {
-  jsonrpc: "2.0";
-  id: number | string;
-  result?: unknown;
-  error?: unknown;
-}
-
-function tryParse(data: unknown): unknown {
+function tryParse(data: unknown): JsonRpcFrame | null {
   try {
-    return JSON.parse(
+    return parseFrame(
       typeof data === "string" ? data : (data as Buffer).toString("utf-8"),
     );
   } catch {
     return null;
   }
-}
-
-function isRequest(msg: unknown): msg is JsonRpcRequest {
-  if (typeof msg !== "object" || msg === null) return false;
-  const m = msg as Partial<JsonRpcRequest>;
-  return m.id !== undefined && typeof m.method === "string";
-}
-
-function isResponse(msg: unknown): msg is JsonRpcResponse {
-  if (typeof msg !== "object" || msg === null) return false;
-  const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
-  if (m.id === undefined) return false;
-  if (m.method !== undefined) return false;
-  return m.result !== undefined || m.error !== undefined;
 }
 
 export function sanitizeCloseCode(code: number): number {
@@ -131,12 +111,13 @@ export function createAcpRelay(
         mirroredRows.clear();
       });
 
-      function mirrorPermissionRequest(msg: JsonRpcRequest): void {
-        const sessionId = msg.params?.sessionId;
-        if (!sessionId || !identity) return;
-        const tc = msg.params.toolCall ?? {};
+      function mirrorPermissionRequest(msg: JsonRpcRequest<RelayParams>): void {
+        const params = msg.params;
+        const sessionId = params?.sessionId;
+        if (!params || !sessionId || !identity) return;
+        const tc = params.toolCall ?? {};
         const { toolName, toolCallId } = recordedToolOf(tc);
-        const options = recordedOptionsOf(msg.params.options);
+        const options = recordedOptionsOf(params.options);
         const key = String(msg.id);
         mirroredRows.set(
           key,
@@ -161,7 +142,11 @@ export function createAcpRelay(
       }
 
       function trackIfPrompt(parsed: unknown): void {
-        if (!isRequest(parsed) || parsed.method !== "session/prompt") return;
+        if (
+          !isRequest<RelayParams>(parsed) ||
+          parsed.method !== "session/prompt"
+        )
+          return;
         if (
           actor.surface === "ui" &&
           parsed.params?._meta?.platform?.initiator === "system"
@@ -331,7 +316,7 @@ export function createAcpRelay(
             const parsed = tryParse(data);
             client.send(data, { binary: false });
             if (
-              isRequest(parsed) &&
+              isRequest<RelayParams>(parsed) &&
               parsed.method === "session/request_permission"
             )
               mirrorPermissionRequest(parsed);

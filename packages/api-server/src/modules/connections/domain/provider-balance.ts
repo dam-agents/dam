@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   CURVE_BENDER_HOST,
   IBM_LITELLM_HOST,
@@ -20,25 +21,38 @@ export interface ProviderBalanceSource {
   ): Promise<ProviderBalance | null>;
 }
 
-export interface BobProfile {
-  instances?: {
-    instance_id?: string;
-    refresh_at?: number | null;
-    teams?: {
-      id?: string;
-      budget_limit?: number | null;
-      usage?: number | null;
-    }[];
-  }[];
-}
+const nullableNumber = z.number().nullish();
 
-export interface LiteLlmKeyInfo {
-  info: {
-    spend?: number | null;
-    max_budget?: number | null;
-    budget_reset_at?: string | null;
-  };
-}
+export const bobProfileSchema = z.object({
+  instances: z
+    .array(
+      z.object({
+        instance_id: z.string().optional(),
+        refresh_at: nullableNumber,
+        teams: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              budget_limit: nullableNumber,
+              usage: nullableNumber,
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .optional(),
+});
+
+export const liteLlmKeyInfoSchema = z.object({
+  info: z.object({
+    spend: nullableNumber,
+    max_budget: nullableNumber,
+    budget_reset_at: z.string().nullish(),
+  }),
+});
+
+export type BobProfile = z.infer<typeof bobProfileSchema>;
+export type LiteLlmKeyInfo = z.infer<typeof liteLlmKeyInfoSchema>;
 
 function isoOrNull(value: string | null | undefined): string | null {
   if (!value) return null;

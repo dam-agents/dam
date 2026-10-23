@@ -86,8 +86,11 @@ export function SidePanelShell({
   mainClassName?: string;
   children: ReactNode;
 }) {
-  const tiles = useNewLayout();
+  // UNIT_BOUNDARY_DESCRIPTION: JanUI is the only shell whose left navigation is a rail and whose page has no bar above it; the toolbar alone leaves the shell to the page and changes only the right side.
+  const janui = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
+  // UNIT_BOUNDARY_DESCRIPTION: a tab is the whole of what the panel shows whenever the tiled rail is drawn, whatever shell is around it, so the panel lays over a narrow page and keeps its own top bar with its X instead of a column of sections with a back button.
+  const tabbed = janui || rightToolbar;
   const barW = rightToolbar ? RIGHT_RAIL_W : CLASSIC_RIGHT_RAIL_W;
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
@@ -117,8 +120,7 @@ export function SidePanelShell({
 
   const sidePanelOpen = activeTab !== null;
   const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
-  // UNIT_BOUNDARY_DESCRIPTION: under JanUI a tab is the whole of what the panel shows, so an open tab is what a narrow viewport lays over the page.
-  const mobilePanelOpen = tiles
+  const mobilePanelOpen = tabbed
     ? sidePanelOpen
     : mobileOnPanel || (sidePanelOpen && dockedShown);
   const maximizable = maximizableView(
@@ -159,12 +161,18 @@ export function SidePanelShell({
   useEffect(() => {
     if (beside.current === pageKey) return;
     beside.current = pageKey;
-    if (tiles && mobileOverlay) closeMobilePanel();
-  }, [pageKey, tiles, mobileOverlay, closeMobilePanel]);
+    if (tabbed && mobileOverlay) closeMobilePanel();
+  }, [pageKey, tabbed, mobileOverlay, closeMobilePanel]);
   useEffect(() => {
     if (!mobileOverlay) return;
     const before = document.activeElement as HTMLElement | null;
-    mobileBackRef.current?.focus();
+    // UNIT_BOUNDARY_DESCRIPTION: a tabbed panel has no back button over a narrow page, so the keyboard starts on the X that closes it instead.
+    (tabbed
+      ? filePanelRef.current?.querySelector<HTMLElement>(
+          '[data-testid="side-panel-close"]',
+        )
+      : mobileBackRef.current
+    )?.focus();
     // UNIT_BOUNDARY_DESCRIPTION: over the page the panel is the only thing to reach, so Tab stays inside it; the element that opened it gets the keyboard back when it closes.
     const onTab = (e: KeyboardEvent) => {
       if (e.key !== "Tab" || e.defaultPrevented || layerAbove()) return;
@@ -210,14 +218,14 @@ export function SidePanelShell({
       releaseBackEntry();
       before?.focus();
     };
-  }, [mobileOverlay, closeMobilePanel]);
+  }, [mobileOverlay, tabbed, closeMobilePanel]);
 
   return (
     <div ref={setColumnsEl} className="flex flex-1 min-h-0 min-w-0">
       <div
         className={cn(
           "relative flex flex-1 flex-col min-w-0",
-          mobileOnPanel && "hidden md:flex",
+          mobilePanelOpen && "hidden md:flex",
           sidePanelFills && "md:!hidden",
           mainClassName,
         )}
@@ -250,9 +258,16 @@ export function SidePanelShell({
         data-testid="side-panel"
         className={cn(
           "flex bg-chrome relative z-content",
-          tiles
-            ? mobilePanelOpen &&
-                "max-md:fixed max-md:inset-y-0 max-md:left-14 max-md:right-0 max-md:z-overlay"
+          tabbed
+            ? cn(
+                mobilePanelOpen &&
+                  cn(
+                    "max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-overlay",
+                    // UNIT_BOUNDARY_DESCRIPTION: a page with the left rail under it leaves that rail standing beside the panel it lays over, while a page with no rail keeps the whole width; the inset belongs to the open overlay, since a closed panel's rail sits in the page's own row.
+                    janui ? "max-md:left-14" : "max-md:left-0",
+                  ),
+                !janui && !mobilePanelOpen && "max-md:hidden",
+              )
             : cn(
                 "max-md:fixed max-md:inset-0 max-md:z-overlay",
                 !mobilePanelOpen && "max-md:hidden",
@@ -286,8 +301,8 @@ export function SidePanelShell({
             <div
               className={cn(
                 "flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3",
-                // UNIT_BOUNDARY_DESCRIPTION: JanUI's panel fills the screen beside its rail at a narrow width, so it keeps its own top bar with its X instead of a back button and a title of its own.
-                tiles ? "hidden" : "md:hidden",
+                // UNIT_BOUNDARY_DESCRIPTION: a tabbed panel fills the screen beside its rail at a narrow width, so it keeps its own top bar with its X instead of a back button and a title of its own.
+                tabbed ? "hidden" : "md:hidden",
               )}
             >
               <Button

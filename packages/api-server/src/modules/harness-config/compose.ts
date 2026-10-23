@@ -2,7 +2,6 @@ import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import type {
   DefaultKind,
-  DefaultModelNotice,
   HarnessCatalog,
   HarnessConfigService,
   SessionPair,
@@ -35,12 +34,6 @@ import { createHarnessConfigEventQueue } from "./infrastructure/config-event-que
 import type { OutboxRepo } from "../runtime-delivery/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { emit, EventType } from "../../events.js";
-import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
-import {
-  createUnattendedAgentsReader,
-  type UnattendedAgent,
-} from "./infrastructure/unattended-agents.js";
-import { createInitializationPairResolver } from "./services/initialization-pair.js";
 
 export const ETE_BYPASS_RESET = {
   reset: "ibm-litellm-bypass-mode",
@@ -143,16 +136,6 @@ export function composeFirePair(deps: {
     resolveFirePair(resolver, agentId, kind, preferred);
 }
 
-export function composeInitializationPairResolver(deps: {
-  firePair: (
-    agentId: string,
-    preferred: { harness?: string },
-  ) => Promise<SessionPair | null | undefined>;
-  log: (msg: string) => void;
-}): ReturnType<typeof createInitializationPairResolver> {
-  return createInitializationPairResolver(deps);
-}
-
 export function composeDefaultConverter(deps: {
   db: Db;
   namespace: string;
@@ -232,16 +215,4 @@ export function composeScheduleModelForFire(deps: {
     getCapabilities: deps.getCapabilities,
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
   });
-}
-
-export function composeUnattendedAgentsReader(
-  db: Db,
-): (templateId: string) => Promise<UnattendedAgent[]> {
-  return createUnattendedAgentsReader(db);
-}
-
-export function composeDefaultModelNotices(
-  db: Db,
-): (agentIds: readonly string[]) => Promise<DefaultModelNotice[]> {
-  return createDefaultModelNoticeReader(db);
 }

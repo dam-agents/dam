@@ -22,7 +22,6 @@ export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
     openai: ["openai-chat", "openai-responses"],
     bedrock: [],
     bob: ["openai-chat"],
-    platform: ALL_DIALECTS,
   };
 
 export interface ProviderListing {
@@ -32,13 +31,6 @@ export interface ProviderListing {
   harnesses?: readonly string[];
   prices?: ModelPrices;
 }
-
-const FREE: ModelPrices = {
-  inputPerToken: 0,
-  outputPerToken: 0,
-  cacheReadPerToken: 0,
-  cacheWritePerToken: 0,
-};
 
 export const ANTHROPIC_OAUTH_TEMPLATE = "anthropic-oauth";
 /**
@@ -80,16 +72,6 @@ export function listingForTemplate(templateId: string): ProviderListing | null {
           tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
           shape: "openai-models",
         },
-      };
-    case "platform-llm":
-      return {
-        spec: {
-          urlEnv: ["PLATFORM_LLM_BASE_URL", "OPENAI_BASE_URL"],
-          tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
-          credentialHeader: "authorization",
-          shape: "openai-models",
-        },
-        prices: FREE,
       };
     case "anthropic":
       return {

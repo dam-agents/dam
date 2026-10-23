@@ -115,32 +115,6 @@ describe("resolveDrivers", () => {
   });
 });
 
-describe("sessionHistory declaration", () => {
-  it("rejects declaring both module and command — the loser would be silently ignored", () => {
-    const result = runtimeManifestSchema.safeParse({
-      manifestVersion: 1,
-      sessionHistory: {
-        module: "/usr/local/lib/history.mjs",
-        command: ["history-cmd"],
-      },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts exactly one of module or command", () => {
-    for (const sessionHistory of [
-      { module: "/usr/local/lib/history.mjs" },
-      { command: ["history-cmd"] },
-    ]) {
-      const result = runtimeManifestSchema.safeParse({
-        manifestVersion: 1,
-        sessionHistory,
-      });
-      expect(result.success).toBe(true);
-    }
-  });
-});
-
 describe("agentProcesses declaration", () => {
   // TEST_SCENARIO: the reaper matches the Name: line of /proc/<pid>/status,
   // TEST_SCENARIO: which the kernel cuts to 15 characters. A longer name could

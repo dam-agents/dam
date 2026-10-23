@@ -5,18 +5,18 @@ import type {
   SkillsDomainError,
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
+import { subPathEscapes } from "agent-runtime-api/skill-tree";
 import type { SkillName } from "../domain/skill-name.js";
 import type { SkillPath } from "../domain/skill-path.js";
 import {
+  anonymousFirst,
   detectGithubOwnerRepo,
+  isGithubNotFound,
   type GitHubRestClient,
 } from "../infrastructure/github-rest-client.js";
-import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
+import { fetchGithubPath } from "./fetch-github-path.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
-import {
-  subPathEscapes,
-  type LocalSkillRepository,
-} from "../infrastructure/local-skill-repository.js";
+import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
 
 export interface InstallDeps {
   github: GitHubRestClient;
@@ -77,16 +77,9 @@ async function fetchSourceAtVersion(
     return isGithubNotFound(byDirectory) ? ok(undefined) : byDirectory;
   }
   if (host) {
-    let bytes = await deps.github.fetchTarball(host, version, {
-      withAuth: false,
-    });
-    if (
-      !bytes.ok &&
-      bytes.error.kind === "UpstreamGitHubError" &&
-      bytes.error.status === 404
-    ) {
-      bytes = await deps.github.fetchTarball(host, version, { withAuth: true });
-    }
+    const bytes = await anonymousFirst((o) =>
+      deps.github.fetchTarball(host, version, o),
+    );
     if (!bytes.ok) return bytes;
     await deps.repo.extractTarball(bytes.value, dest, { stripComponents: 1 });
     return ok(undefined);

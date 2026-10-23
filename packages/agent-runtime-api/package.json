@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./router": "./src/router.ts",
-    "./kb-snapshot": "./src/modules/kb-snapshot/index.ts"
+    "./kb-snapshot": "./src/modules/kb-snapshot/index.ts",
+    "./skill-tree": "./src/modules/skills/skill-tree.ts"
   },
   "dependencies": {
     "@trpc/server": "^11.19.0",

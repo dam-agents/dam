@@ -4,8 +4,6 @@ import { CURVE_BENDER_HOST, IBM_LITELLM_HOST, PROVIDERS } from "api-server-api";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
@@ -14,19 +12,16 @@ import {
   CURVE_BENDER_DESCRIPTION,
   IBM_LITELLM_DESCRIPTION,
 } from "../../lib/provider-rows.js";
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import {
+  ProviderFormShell,
+  ProviderSecretRow,
+  requiredSecretSchema,
+  stripWhitespace,
+} from "../provider-form-shell.js";
 
-const liteLlmProxyCredentialSchema = z
-  .object({ value: z.string() })
-  .superRefine((data, ctx) => {
-    if (stripWhitespace(data.value).length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["value"],
-        message: "Required",
-      });
-    }
-  });
+const liteLlmProxyCredentialSchema = z.object({
+  value: requiredSecretSchema,
+});
 
 type FormValues = z.infer<typeof liteLlmProxyCredentialSchema>;
 
@@ -104,21 +99,14 @@ export function LiteLlmProxyForm({
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      <div className="flex gap-3">
-        <Input
-          type="password"
-          autoComplete="off"
-          data-1p-ignore
-          data-lpignore="true"
-          data-form-type="other"
-          placeholder="sk-…"
-          aria-label={`${PROVIDERS[provider].displayName} API key`}
-          {...register("value")}
-        />
-        <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
-        </Button>
-      </div>
+      <ProviderSecretRow
+        register={register("value")}
+        placeholder="sk-…"
+        ariaLabel={`${PROVIDERS[provider].displayName} API key`}
+        isEdit={isEdit}
+        isSubmitting={isSubmitting}
+        submitDisabled={submitDisabled}
+      />
 
       {provider === "curve-bender" &&
         value.length > 0 &&

@@ -1,3 +1,5 @@
+import { createTtlMap } from "../../../core/ttl-map.js";
+
 export const BOT_POST_TURNS_PER_CONVERSATION = 3;
 
 const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -23,30 +25,20 @@ export function createBotPostLoopBound(
   opts: { limit?: number; now?: () => number } = {},
 ): BotPostLoopBound {
   const limit = opts.limit ?? BOT_POST_TURNS_PER_CONVERSATION;
-  const now = opts.now ?? Date.now;
-  const admitted = new Map<string, { count: number; expiresAt: number }>();
-
-  function prune(at: number): void {
-    if (admitted.size <= PRUNE_ABOVE) return;
-    for (const [key, entry] of admitted) {
-      if (entry.expiresAt <= at) admitted.delete(key);
-    }
-  }
+  const admitted = createTtlMap<string, number>({
+    ttlMs: CONVERSATION_TTL_MS,
+    maxEntries: PRUNE_ABOVE,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
 
   return {
     notePersonPost(conversation) {
       admitted.delete(conversation);
     },
     admitBotPost(conversation) {
-      const at = now();
-      prune(at);
-      const entry = admitted.get(conversation);
-      const count = entry && entry.expiresAt > at ? entry.count : 0;
+      const count = admitted.get(conversation) ?? 0;
       if (count >= limit) return false;
-      admitted.set(conversation, {
-        count: count + 1,
-        expiresAt: at + CONVERSATION_TTL_MS,
-      });
+      admitted.set(conversation, count + 1);
       return true;
     },
   };

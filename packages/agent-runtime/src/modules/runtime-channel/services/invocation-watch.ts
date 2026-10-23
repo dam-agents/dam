@@ -1,4 +1,5 @@
 import type { EventReportInput } from "agent-runtime-api";
+import { safeReport } from "../infrastructure/report.js";
 
 const DETAIL_MAX = 2_000;
 const MODEL_ERROR_MAX = 600;
@@ -88,13 +89,17 @@ export function createInvocationWatch(
       lastError ? `${cause}; its last model call failed: ${lastError}` : cause
     ).slice(0, DETAIL_MAX);
     deps.log(`[invocation] failing the run: ${detail}`);
-    deps.reporter
-      .report({ eventId, outcome: "failed", stage: "run", detail })
-      .catch((err: unknown) =>
-        deps.log(
-          `[invocation] run failure report failed: ${(err as Error).message}`,
-        ),
-      );
+    void safeReport(
+      () =>
+        deps.reporter.report({
+          eventId,
+          outcome: "failed",
+          stage: "run",
+          detail,
+        }),
+      deps.log,
+      "[invocation] run failure report",
+    );
   }
 
   const watched = (sessionId: string | null) =>

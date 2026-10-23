@@ -1,7 +1,6 @@
 import type { SwitchComponent } from "api-server-api/chat-forms";
 
-import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
+import { ToggleRow } from "@/components/ui/toggle-row";
 
 import { useA2uiSurface } from "../../contexts/a2ui-surface-context.js";
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
@@ -22,32 +21,21 @@ export function A2uiSwitch({ component }: Props) {
   const { text, recommended } = splitRecommended(label);
   return (
     <div className="flex flex-col gap-1">
-      <label
-        className={cn(
-          "flex items-start justify-between gap-4",
-          editable && "cursor-pointer",
-        )}
-      >
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-foreground">
+      <ToggleRow
+        title={
+          <>
             {text}
             {recommended && <A2uiRecommendedMark />}
-          </span>
-          {description && (
-            <span className="mt-0.5 block text-sm text-muted-foreground">
-              {description}
-            </span>
-          )}
-        </span>
-        <Switch
-          label={label}
-          checked={bindings.boolean(value, id)}
-          disabled={!editable}
-          onCheckedChange={(checked) =>
-            setValue(id, bindings.target(value, id), checked)
-          }
-        />
-      </label>
+          </>
+        }
+        label={label}
+        description={description}
+        checked={bindings.boolean(value, id)}
+        disabled={!editable}
+        onCheckedChange={(checked) =>
+          setValue(id, bindings.target(value, id), checked)
+        }
+      />
       <A2uiFieldMessages componentId={id} checks={checks} />
     </div>
   );
