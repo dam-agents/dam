@@ -149,7 +149,7 @@ export function buildUpdateCommand(deps: {
     )
     .option(
       "--json",
-      "emit the agent as `dam agent get --json` does, with its providers, harnesses and defaults under `models`",
+      "emit the agent's providers, harnesses and defaults, and the agent itself under `agent`",
     )
     .addHelpText(
       "after",
@@ -251,7 +251,7 @@ export function buildUpdateCommand(deps: {
 
       const models = await readAgentModels(svc, agent.id);
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify({ ...agent, models })}\n`);
+        process.stdout.write(`${JSON.stringify({ ...models, agent })}\n`);
       } else {
         process.stdout.write(
           `✓ Updated ${agent.name}.\n${renderEntries([

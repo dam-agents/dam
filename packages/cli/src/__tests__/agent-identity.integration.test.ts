@@ -271,8 +271,8 @@ describe("dam agent identity: name and avatar (integration)", () => {
     expect(uploads).toEqual([{ contentType: "image/png", bytes: 1234 }]);
     expect(updates).toEqual([{ id: AGENT_ID, avatar: `image:${IMAGE_ID}` }]);
     expect(JSON.parse(r.stdout)).toMatchObject({
-      id: AGENT_ID,
-      avatar: `image:${IMAGE_ID}`,
+      harnesses: ["claude-code"],
+      agent: { id: AGENT_ID, avatar: `image:${IMAGE_ID}` },
     });
   });
 
