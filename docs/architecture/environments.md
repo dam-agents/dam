@@ -139,7 +139,7 @@ Beside the chart it installs two pieces the gate needs:
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, a vm agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
+In the app, a vm agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 100, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
 The sidebar lists an agent's Environments under it, once it is expanded: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
 With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, the section's empty text when there is none, and a link to the section, where the list of people is edited.

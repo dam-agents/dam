@@ -106,7 +106,7 @@ describe("the Environments section", () => {
     expect(html).toContain('href="https://app-pr-42-abcdef.env.example.com"');
     expect(html).toContain("No address: this install serves no Environments.");
     expect(html).toContain("reviewer@example.com");
-    expect(html).toContain("2 / 50 people on the list");
+    expect(html).toContain("2 / 100 people on the list");
   });
 
   // TEST_SCENARIO: an agent with no Environments says that the agent creates them, and that only the owner may open them while the list is empty.
