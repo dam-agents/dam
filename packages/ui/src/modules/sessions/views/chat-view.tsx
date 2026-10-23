@@ -51,7 +51,6 @@ import { MockBackgroundChip } from "../../../mock/mock-background-chip.js";
 import { MockBrowserLinkChip } from "../../../mock/mock-browser-link-chip.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
 import { MockChangesCard } from "../../../mock/mock-changes-card.js";
-import { MockDockedChangesPanel } from "../../../mock/mock-docked-changes-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -83,6 +82,7 @@ import {
   useBrowserAvailable,
   useOpenBrowser,
 } from "../../browser/hooks/use-auto-open-browser.js";
+import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
@@ -238,9 +238,13 @@ export function ChatView() {
   const isToolsDemo = isMock && sessionId === MOCK_SESSION_IDS.toolsDemo;
   const mockTasks = isToolsDemo ? TOOLS_DEMO_TASKS : [];
 
+  const openChangesAgentId = useStore((s) => s.openChangesAgentId);
+  const setOpenChanges = useStore((s) => s.setOpenChanges);
+  const openMockChanges = openChangesAgentId !== null;
+
   useEffect(() => {
-    if (!isToolsDemo) setOpenMockChanges(false);
-  }, [isToolsDemo]);
+    if (!isToolsDemo) setOpenChanges(null);
+  }, [isToolsDemo, setOpenChanges]);
 
   useEffect(() => {
     if (!isMock || !selectedAgent) return;
@@ -274,8 +278,6 @@ export function ChatView() {
     );
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
-
-  const [openMockChanges, setOpenMockChanges] = useState(false);
 
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
   const toggleNotifications = useStore((s) => s.toggleNotifications);
@@ -814,7 +816,9 @@ export function ChatView() {
                         </div>
                         <MockChangesCard
                           changes={TOOLS_DEMO_CHANGES}
-                          onViewChanges={() => setOpenMockChanges(true)}
+                          onViewChanges={() => {
+                            if (selectedAgent) setOpenChanges(selectedAgent);
+                          }}
                         />
                       </>
                     )}
@@ -955,10 +959,10 @@ export function ChatView() {
                   agentId={selectedAgent}
                   outputKey={openProcessOutputKey}
                 />
-              ) : openMockChanges && isToolsDemo ? (
-                <MockDockedChangesPanel
-                  changes={TOOLS_DEMO_CHANGES}
-                  onClose={() => setOpenMockChanges(false)}
+              ) : openMockChanges && isToolsDemo && selectedAgent ? (
+                <DockedChangesPanel
+                  agentId={selectedAgent}
+                  sessionId={sessionId ?? null}
                 />
               ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />

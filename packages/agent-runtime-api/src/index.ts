@@ -212,3 +212,28 @@ export {
   processRowSchema,
   setKeepInputSchema,
 } from "./modules/processes/schemas.js";
+
+export type {
+  ChangeSet,
+  ChangeSetDiff,
+  ChangeSetList,
+  ChangesDomainError,
+  ChangesNotice,
+  ChangesService,
+  CompareTo,
+  DiffStat,
+  FileChangeStatus,
+  FileDiff,
+  PullRequestLink,
+  SessionRepository,
+} from "./modules/changes/types.js";
+export {
+  changeSetDiffSchema,
+  changeSetListSchema,
+  changeSetSchema,
+  changesNoticeSchema,
+  compareToSchema,
+  fileDiffSchema,
+  pullRequestLinkSchema,
+  sessionRepositorySchema,
+} from "./modules/changes/schemas.js";

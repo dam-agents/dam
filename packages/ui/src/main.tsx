@@ -1,7 +1,7 @@
 import "./App.css";
 import "./modules/usage/devtools.js";
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -49,6 +49,55 @@ async function main() {
         useStore.getState().initOnboarding(agentId, pack);
       }
     }
+
+    // Seed mock changes data so DockedChangesPanel renders
+    {
+      const { seedMockChanges } =
+        await import("./modules/changes/api/queries.js");
+      const {
+        MOCK_CHANGE_SET_LIST,
+        MOCK_CHANGE_SET_DIFF,
+        MOCK_EMPTY_CHANGE_SET_LIST,
+      } = await import("./mock/data/mock-tools-demo.js");
+      const { AGENT_IDS } = await import("./mock/data/agents.js");
+
+      const toolsAgent = AGENT_IDS.codexResearch;
+      const toolsSession = MOCK_SESSION_IDS.toolsDemo;
+      const emptySession = MOCK_SESSION_IDS.emptyState;
+
+      queryClient.setQueryData(
+        ["changes", toolsAgent, "list", toolsSession],
+        MOCK_CHANGE_SET_LIST,
+      );
+      queryClient.setQueryData(
+        ["changes", toolsAgent, "list", emptySession],
+        MOCK_EMPTY_CHANGE_SET_LIST,
+      );
+      const repoPath = MOCK_CHANGE_SET_LIST.changeSets[0]?.path;
+      if (repoPath) {
+        queryClient.setQueryData(
+          ["changes", toolsAgent, "diff", repoPath, "base"],
+          MOCK_CHANGE_SET_DIFF,
+        );
+      }
+
+      seedMockChanges(
+        {
+          [`${toolsAgent}:${toolsSession}`]: MOCK_CHANGE_SET_LIST,
+          [`${toolsAgent}:${emptySession}`]: MOCK_EMPTY_CHANGE_SET_LIST,
+        },
+        repoPath
+          ? { [`${toolsAgent}:${repoPath}:base`]: MOCK_CHANGE_SET_DIFF }
+          : {},
+      );
+    }
+
+    // Prevent api-health listener from invalidating seeded cache
+    onlineManager.setOnline(true);
+    onlineManager.setEventListener((setOnline) => {
+      setOnline(true);
+      return () => {};
+    });
 
     await loadBrand().then(applyBrand);
 

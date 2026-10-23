@@ -25,7 +25,7 @@ export const agents: AgentView[] = [
     hibernationTimeoutMin: 30,
     grantedSecretIds: [],
     grantedConnectionIds: [],
-    state: "hibernated",
+    state: "running",
     error: undefined,
     stopRequested: false,
     overBudget: false,

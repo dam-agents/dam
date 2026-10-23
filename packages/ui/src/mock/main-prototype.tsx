@@ -5,7 +5,7 @@
  */
 import "../App.css";
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -13,8 +13,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { applyBrand } from "../brand.js";
+import { seedMockChanges } from "../modules/changes/api/queries.js";
 import { queryClient } from "../query-client.js";
-import { agents } from "./data/agents.js";
+import { AGENT_IDS, agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
 import {
   artifactContents,
@@ -32,8 +33,13 @@ import {
 import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
+import {
+  MOCK_CHANGE_SET_DIFF,
+  MOCK_CHANGE_SET_LIST,
+  MOCK_EMPTY_CHANGE_SET_LIST,
+} from "./data/mock-tools-demo.js";
 import { schedules } from "./data/schedules.js";
-import { mockSessions } from "./data/sessions.js";
+import { MOCK_SESSION_IDS, mockSessions } from "./data/sessions.js";
 import { spendBreakdown } from "./data/spend.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
@@ -62,6 +68,14 @@ queryClient.setDefaultOptions({
     refetchOnMount: false,
     refetchOnReconnect: false,
   },
+});
+
+// Prevent the api-health listener from calling invalidateQueries(),
+// which would wipe seeded cache entries and trigger throwing queryFns.
+onlineManager.setOnline(true);
+onlineManager.setEventListener((setOnline) => {
+  setOnline(true);
+  return () => {};
 });
 
 // Agents + channels (combined query used by useAgents hook)
@@ -216,6 +230,39 @@ console.warn(
   "[MOCK] Registered __mockListAgentSessions for",
   Object.keys(sessionsByAgent),
 );
+
+// Changes (git) — seed the react-query cache so DockedChangesPanel renders
+{
+  const toolsAgent = AGENT_IDS.codexResearch;
+  const toolsSession = MOCK_SESSION_IDS.toolsDemo;
+  const emptySession = MOCK_SESSION_IDS.emptyState;
+  queryClient.setQueryData(
+    ["changes", toolsAgent, "list", toolsSession],
+    MOCK_CHANGE_SET_LIST,
+  );
+  queryClient.setQueryData(
+    ["changes", toolsAgent, "list", emptySession],
+    MOCK_EMPTY_CHANGE_SET_LIST,
+  );
+  const repoPath = MOCK_CHANGE_SET_LIST.changeSets[0]?.path;
+  if (repoPath) {
+    queryClient.setQueryData(
+      ["changes", toolsAgent, "diff", repoPath, "base"],
+      MOCK_CHANGE_SET_DIFF,
+    );
+  }
+
+  // Seed queryFn-level mock so data survives cache invalidation
+  seedMockChanges(
+    {
+      [`${toolsAgent}:${toolsSession}`]: MOCK_CHANGE_SET_LIST,
+      [`${toolsAgent}:${emptySession}`]: MOCK_EMPTY_CHANGE_SET_LIST,
+    },
+    repoPath
+      ? { [`${toolsAgent}:${repoPath}:base`]: MOCK_CHANGE_SET_DIFF }
+      : {},
+  );
+}
 
 // Egress rules
 queryClient.setQueryData(trpcKey("egressRules.list"), [

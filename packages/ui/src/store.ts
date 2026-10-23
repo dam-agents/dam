@@ -10,6 +10,10 @@ import {
   createBrowserSlice,
 } from "./modules/browser/store.js";
 import {
+  type ChangesSlice,
+  createChangesSlice,
+} from "./modules/changes/store.js";
+import {
   createExperimentsSlice,
   type ExperimentsSlice,
 } from "./modules/experiments/store.js";
@@ -79,8 +83,11 @@ export type PlatformStore = DialogSlice &
   PermissionsSlice &
   ProcessesSlice &
   PacksSlice &
-  DismissalsSlice & {
+  DismissalsSlice &
+  ChangesSlice & {
     openDelegation: unknown | null;
+    sidePanelTab: string | null;
+    setSidePanelTab: (tab: string | null) => void;
   };
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -99,7 +106,15 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createPacksSlice(...a),
   ...createDismissalsSlice(...a),
+  ...createChangesSlice(...a),
   openDelegation: null,
+  sidePanelTab: null,
+  setSidePanelTab: (tab) =>
+    set(
+      tab === null
+        ? { sidePanelTab: null, openChangesAgentId: null }
+        : { sidePanelTab: tab },
+    ),
 }));
 
 let draftSyncStarted = false;
