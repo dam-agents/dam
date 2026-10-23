@@ -46,7 +46,7 @@ import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import {
   type AgentActivitySession,
-  useActivitySessions,
+  useActivityFeed,
 } from "../../../home/hooks/use-activity-sessions.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
@@ -60,7 +60,7 @@ import { NewAgentMenu } from "./new-agent-menu.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, Settings, and between them what the tree lists under its Agents label — one avatar per Agent in the same manual order, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, what the tree lists under its Agents label, and Settings — one avatar per Agent in the same manual order, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
  */
 export function SidebarRail({
   onExpand,
@@ -71,7 +71,6 @@ export function SidebarRail({
 }) {
   const { agents, openAgentId, unreadAgentIds } = useSidebarAgents();
   const approvals = useApprovalsForOwner().data;
-  const activity = useActivitySessions();
   const homeOpen = useStore((s) => s.view === "home");
   const settingsOpen = useStore((s) => s.view === "settings");
   const setView = useStore((s) => s.setView);
@@ -80,10 +79,11 @@ export function SidebarRail({
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const groupBy = useStore((s) => s.sidebarGroupBy);
   const setGroupBy = useStore((s) => s.setSidebarGroupBy);
+  const feed = useActivityFeed(groupBy === "all");
   const sessions = useMemo(
     () =>
-      groupBy === "all" ? filterActivitySessions(activity.items, filters) : [],
-    [activity.items, filters, groupBy],
+      groupBy === "all" ? filterActivitySessions(feed.items, filters) : [],
+    [feed.items, filters, groupBy],
   );
   const [open, setOpen] = useState<string | null>(null);
   // UNIT_BOUNDARY_DESCRIPTION: while one popover is open or within its close grace, the pointer is already inside the rail, so the next tile opens at once; HOVER_CLOSE_MS after the last one shut, a rest on a tile needs the full HOVER_OPEN_MS again.
@@ -113,6 +113,17 @@ export function SidebarRail({
         "pl-px",
       )}
       data-testid="sidebar-rail"
+      onScroll={(e) => {
+        // UNIT_BOUNDARY_DESCRIPTION: the rail has no room for a Load more button, so the next page of the record joins its tiles as the column nears its end.
+        const el = e.currentTarget;
+        if (
+          groupBy === "all" &&
+          feed.hasNextPage &&
+          !feed.isFetchingNextPage &&
+          el.scrollTop + el.clientHeight >= el.scrollHeight - 200
+        )
+          void feed.fetchNextPage();
+      }}
     >
       <button
         type="button"
@@ -170,12 +181,32 @@ export function SidebarRail({
             />
           </div>
         </div>
+        <NewAgentMenu side="right" onNavigate={navigate}>
+          <button
+            type="button"
+            aria-label="New agent"
+            aria-haspopup="menu"
+            data-testid="sidebar-rail-new-agent"
+            className={cn(railTile(false), FOCUS_RING)}
+          >
+            <FaceAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="group-hover:hidden"
+            />
+            <FaceActivatedAdd
+              size={RAIL_GLYPH}
+              aria-hidden
+              className="hidden group-hover:block"
+            />
+          </button>
+        </NewAgentMenu>
         {groupBy === "all"
           ? sessions.map((item) => (
               <SessionTile
                 key={item.id}
                 item={item}
-                current={item.id === activity.openSessionKey}
+                current={item.id === feed.openSessionKey}
                 onNavigate={navigate}
               />
             ))
@@ -201,26 +232,6 @@ export function SidebarRail({
                 onNavigate={navigate}
               />
             ))}
-        <NewAgentMenu side="right" onNavigate={navigate}>
-          <button
-            type="button"
-            aria-label="New agent"
-            aria-haspopup="menu"
-            data-testid="sidebar-rail-new-agent"
-            className={cn(railTile(false), FOCUS_RING)}
-          >
-            <FaceAdd
-              size={RAIL_GLYPH}
-              aria-hidden
-              className="group-hover:hidden"
-            />
-            <FaceActivatedAdd
-              size={RAIL_GLYPH}
-              aria-hidden
-              className="hidden group-hover:block"
-            />
-          </button>
-        </NewAgentMenu>
       </div>
       <button
         type="button"

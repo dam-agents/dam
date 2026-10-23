@@ -3,6 +3,9 @@ import type { SessionMode, SessionType } from "../sessions/types.js";
 
 export const ATTENTION_FEED_LIMIT = 200;
 
+// UNIT_BOUNDARY_DESCRIPTION: the unit "All sessions" adds when it loads more, so the flat list grows by a screenful rather than by the whole record.
+export const ATTENTION_PAGE_LIMIT = 20;
+
 export type AttentionItemKind =
   "session" | "approval" | "default-model" | "outage-alert";
 
@@ -77,6 +80,16 @@ export interface AttentionList {
   outageAlerts: OutageAlertNotice[];
 }
 
+export interface AttentionListCursor {
+  activityAt: string;
+  sessionId: string;
+}
+
+export interface AttentionSessionPage {
+  items: AttentionItem[];
+  nextCursor: AttentionListCursor | null;
+}
+
 export interface AttentionDismissal {
   kind: AttentionItemKind;
   id: string;
@@ -84,6 +97,10 @@ export interface AttentionDismissal {
 
 export interface AttentionService {
   listForOwner(): Promise<AttentionList>;
+  listForOwnerPage(input: {
+    after?: AttentionListCursor | undefined;
+    limit?: number | undefined;
+  }): Promise<AttentionSessionPage>;
   sessionsForAgent(agentId: string): Promise<AttentionItem[]>;
   dismiss(input: { items: readonly AttentionDismissal[] }): Promise<void>;
 }

@@ -61,6 +61,15 @@ vi.mock("../../modules/home/hooks/use-activity-sessions.js", () => ({
     loading: false,
     unreadable: false,
   }),
+  useActivityFeed: () => ({
+    items: [],
+    openSessionKey: null,
+    loading: false,
+    failed: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: () => {},
+  }),
 }));
 vi.mock("../../modules/home/hooks/use-activity-conversations.js", () => ({
   useActivityConversations: () => () => undefined,

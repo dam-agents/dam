@@ -1,0 +1,1 @@
+CREATE INDEX "attention_records_owner_feed_idx" ON "attention_records" USING btree ("owner_sub",coalesce("activity_at", "created_at"),"session_id");

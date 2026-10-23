@@ -86,6 +86,7 @@ function harness(): Harness {
   const repo: AttentionRepository = {
     listForAgent: async () => [...stored.values()],
     listForOwner: async () => [],
+    listForOwnerPage: async () => [],
     listForOwnerAgent: async () => [],
     upsertRecord: async (row) => {
       if (failWrite) {

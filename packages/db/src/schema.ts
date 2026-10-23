@@ -1094,6 +1094,12 @@ export const attentionRecords = pgTable(
       table.ownerSub,
       table.activityAt,
     ),
+    // UNIT_BOUNDARY_DESCRIPTION: "All sessions" pages by (activity time, session id) with keyset paging, so the record is indexed in exactly that order for one owner, the coalesce included.
+    index("attention_records_owner_feed_idx").on(
+      table.ownerSub,
+      sql`coalesce(${table.activityAt}, ${table.createdAt})`,
+      table.sessionId,
+    ),
     index("attention_records_activity_idx").on(table.activityAt),
   ],
 );
