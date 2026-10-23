@@ -1,4 +1,4 @@
-import { Cloud, DataCenter } from "@carbon/icons-react";
+import { Cloud } from "@carbon/icons-react";
 import type { ComponentType, SVGProps } from "react";
 
 import {
@@ -31,11 +31,10 @@ const STYLES: Record<
   },
   "curve-bender": {
     Icon: CurveBenderIcon,
-    bg: "bg-icon-teal",
+    bg: "bg-icon-cb",
   },
   bob: { Icon: BobIcon, bg: "bg-icon-violet" },
   bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
-  platform: { Icon: DataCenter, bg: "bg-icon-blue" },
 };
 
 type CardIconSize = "lg" | "md" | "sm" | "tile-sm" | "tile-xs";
@@ -54,7 +53,7 @@ const TILE_SIZE_CLASS: Record<CardIconSize, string> = {
  * preset's tile. The glyph stays white on the tile whichever theme is up.
  */
 const TEMPLATE_BG: Readonly<Record<string, string>> = {
-  "curve-bender-deployment": "bg-icon-teal-deep",
+  "curve-bender-deployment": "bg-icon-cb-deep",
 };
 
 export function CardIcon({

@@ -1,13 +1,7 @@
 import type { HarnessView } from "../templates/types.js";
 
 export type ProviderPresetType =
-  | "anthropic"
-  | "ibm-litellm"
-  | "curve-bender"
-  | "openai"
-  | "bob"
-  | "bedrock"
-  | "platform";
+  "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -125,24 +119,6 @@ export function openaiEnvMappings(): EnvMapping[] {
   ];
 }
 
-export const PLATFORM_LLM_TEMPLATE_ID = "platform-llm";
-
-export function platformLlmEnvMappings(endpoint: {
-  baseUrl: string;
-  model: string;
-  name: string;
-}): EnvMapping[] {
-  return [
-    { envName: "PLATFORM_LLM_BASE_URL", placeholder: endpoint.baseUrl },
-    { envName: "PLATFORM_LLM_NAME", placeholder: endpoint.name },
-    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "ANTHROPIC_BASE_URL", placeholder: endpoint.baseUrl },
-    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
-    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "OPENAI_BASE_URL", placeholder: `${endpoint.baseUrl}/v1` },
-    { envName: "OPENAI_MODEL", placeholder: endpoint.model },
-  ];
-}
 export const BEDROCK_TEMPLATE_ID = "bedrock";
 
 export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
@@ -211,7 +187,7 @@ export interface ProviderPresetMode {
 }
 
 export type ProviderAlias =
-  "ibm" | "cb" | "anthropic" | "openai" | "bedrock" | "bob" | "platform";
+  "ibm" | "cb" | "anthropic" | "openai" | "bedrock" | "bob";
 
 export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
   "ibm",
@@ -220,7 +196,6 @@ export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
   "openai",
   "bedrock",
   "bob",
-  "platform",
 ];
 
 export const PROVIDER_ALIAS_RE = /^[a-z][a-z0-9-]*$/;
@@ -299,18 +274,6 @@ export const PROVIDERS = {
     displayName: "AWS Bedrock",
     modes: [
       { key: "api-key", label: "API key", templateId: BEDROCK_TEMPLATE_ID },
-    ],
-  },
-  platform: {
-    id: "platform",
-    alias: "platform",
-    displayName: "Platform",
-    modes: [
-      {
-        key: "built-in",
-        label: "Built in",
-        templateId: PLATFORM_LLM_TEMPLATE_ID,
-      },
     ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;

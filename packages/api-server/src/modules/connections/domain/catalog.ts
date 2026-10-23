@@ -9,8 +9,6 @@ import {
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
-  platformLlmEnvMappings,
-  PLATFORM_LLM_TEMPLATE_ID,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
@@ -184,11 +182,21 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: CurveBender's host is allowed as a host, and the
+ * key alone is narrowed to a pathPattern. The egress gate decides by a rule's
+ * host and path glob, so a credential's path scope grants nothing there: the
+ * gateway injects on `/v1/messages/count_tokens` under a `/v1/messages` scope,
+ * while the scope matches no rule and no provider scope for that path, and the
+ * call is refused as an unknown host. One entry says the host may be reached,
+ * the other which paths carry the key.
+ */
 function curveBenderContributions(
   pathPatterns?: readonly string[],
 ): Contribution[] {
   return [
     ...envContributions(curveBenderEnvMappings()),
+    { kind: "egress-allow", host: CURVE_BENDER_HOST },
     ...(pathPatterns ?? [undefined]).map((pathPattern): Contribution => ({
       kind: "egress-inject",
       host: CURVE_BENDER_HOST,
@@ -351,41 +359,6 @@ const BEDROCK: HeaderConnectionTemplate = {
   ],
 };
 
-export interface PlatformProviderEndpoint {
-  baseUrl: string;
-  model: string;
-  name: string;
-  ca?: string;
-}
-
-function platformLlm(
-  endpoint: PlatformProviderEndpoint,
-): HeaderConnectionTemplate {
-  const url = new URL(endpoint.baseUrl);
-  return {
-    id: PLATFORM_LLM_TEMPLATE_ID,
-    name: "Built-in LLM provider",
-    category: "app",
-    isCustom: false,
-    description:
-      "The operator's self-hosted model server, reached with the operator's key. It is connected when the feature is turned on.",
-    authKind: "header",
-    host: url.hostname,
-    headerName: "Authorization",
-    valueFormat: "Bearer {value}",
-    contributions: [
-      ...envContributions(platformLlmEnvMappings(endpoint)),
-      {
-        kind: "egress-inject",
-        host: url.hostname,
-        ...(url.port ? { port: Number(url.port) } : {}),
-        headerName: "Authorization",
-        valueFormat: "Bearer {value}",
-        ...(endpoint.ca ? { upstreamCa: true } : {}),
-      },
-    ],
-  };
-}
 const S3_COMPATIBLE: Sigv4ConnectionTemplate = {
   id: S3_COMPATIBLE_TEMPLATE_ID,
   name: "Object Storage",
@@ -990,12 +963,10 @@ export function buildCatalog(
   creds: OperatorCredentials = {},
   opts: {
     shareBaseUrl?: string;
-    platformProvider?: PlatformProviderEndpoint | null;
     curveBenderDeployment?: boolean;
   } = {},
 ): ConnectionTemplate[] {
   return assertContributionsParse([
-    ...(opts.platformProvider ? [platformLlm(opts.platformProvider)] : []),
     ...(opts.curveBenderDeployment ? [CURVE_BENDER_DEPLOYMENT] : []),
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,

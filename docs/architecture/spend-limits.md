@@ -89,7 +89,6 @@ The api-server looks up a price by the call's provider and model, and the first 
 
 A reply can name its model differently from the request, for example without a routing prefix or with a release date, so the lookup also matches on the model's own name.
 OpenAI and Bedrock have no public prices in DAM yet: without an operator price, their calls keep their tokens and cost nothing, so a spend limit does not stop them.
-The same holds for the built-in provider's self-hosted model, which only the operator can price.
 
 **How a cost is computed.** The rules follow LiteLLM's own cost rules, so DAM's cost equals LiteLLM's for the same counts.
 A price sets input, output, cache reads, five-minute and one-hour cache writes, and web searches.
@@ -213,7 +212,6 @@ Both kinds of Connection limit use the Connection's unit:
 | Connection                         | Unit               | Counts in the agent limit, own limit and ceiling |
 | ---------------------------------- | ------------------ | ------------------------------------------------ |
 | An Anthropic key, IBM LiteLLM      | dollars            | yes                                              |
-| The built-in provider              | dollars            | yes; it costs only with an operator price        |
 | The Claude subscription            | list-price dollars | no                                               |
 | Bob                                | Bobcoins           | no                                               |
 | Curve Bender                       | free               | no limit applies                                 |
