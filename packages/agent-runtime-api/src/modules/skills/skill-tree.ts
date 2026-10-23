@@ -17,7 +17,7 @@ export function parseFrontmatter(content: string): SkillFrontmatter {
   const out: SkillFrontmatter = {};
 
   for (let i = 0; i < lines.length; i++) {
-    const m = /^(name|description):\s*(.*)$/.exec(lines[i]);
+    const m = /^(name|description):(.*)$/.exec(lines[i]);
     if (!m) continue;
     const key = m[1] as keyof SkillFrontmatter;
     const raw = m[2].trim();

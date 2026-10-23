@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import { tailStart } from "../../domain/replay-tail.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
-import { platformOf, withPlatform } from "../../domain/platform-meta.js";
+import { withPlatform } from "../../domain/platform-meta.js";
 
 interface LogEntry {
   seq: number;
