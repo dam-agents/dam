@@ -915,27 +915,6 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                {isToolsDemo && processesSummary && (
-                  <div className="px-4 md:px-8">
-                    <ChatColumn>
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSidePanelTab(
-                              openProcessesList ? null : "processes",
-                            )
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        >
-                          <WorkingDots size="sm" className="text-success" />
-                          {processesSummary.running} task
-                          {processesSummary.running === 1 ? "" : "s"} running
-                        </button>
-                      </div>
-                    </ChatColumn>
-                  </div>
-                )}
                 {returnPattern === "pill" && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
@@ -962,6 +941,27 @@ export function ChatView() {
                   }
                   onScrollToMessage={handleScrollToMessage}
                 />
+                {isToolsDemo && processesSummary && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSidePanelTab(
+                              openProcessesList ? null : "processes",
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          <WorkingDots size="sm" className="text-success" />
+                          {processesSummary.running} task
+                          {processesSummary.running === 1 ? "" : "s"} running
+                        </button>
+                      </div>
+                    </ChatColumn>
+                  </div>
+                )}
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
