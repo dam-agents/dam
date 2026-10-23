@@ -10,6 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
+import { layerAbove } from "@/lib/layer-above";
 import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
@@ -39,10 +40,6 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 360;
-const LAYER_ABOVE_SELECTOR =
-  '[role="dialog"], [role="alertdialog"], [role="menu"]';
-
-const layerAbove = () => document.querySelector(LAYER_ABOVE_SELECTOR) !== null;
 
 const dismissLayerAbove = () =>
   (document.activeElement ?? document).dispatchEvent(
