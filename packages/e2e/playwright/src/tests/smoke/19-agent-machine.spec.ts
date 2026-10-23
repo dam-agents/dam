@@ -321,7 +321,7 @@ test("restarts with HOME intact", async ({ page }) => {
 });
 
 // TEST_SCENARIO: the runner that hosts the agent is deleted out from under it, and with it every machine it runs. Nothing asked for it, so nothing but the controller's reconcile brings the machine back, and HOME must still be on the disk it boots.
-test("comes back after its host pod is deleted, with HOME intact", async ({
+test("comes back after its host is deleted, with HOME intact", async ({
   page,
 }) => {
   test.setTimeout(300_000);

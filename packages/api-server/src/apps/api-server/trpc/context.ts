@@ -155,7 +155,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { budgets, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
-      listAgents: () => agentsRepo.list(user.sub),
+      listAgentIds: async () =>
+        (await agentsRepo.list(user.sub)).map((a) => a.id),
       isSlackUnlinked: async () =>
         channelManager.availableChannels()[ChannelType.Slack] === true &&
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))

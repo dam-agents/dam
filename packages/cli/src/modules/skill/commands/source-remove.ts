@@ -27,7 +27,7 @@ export function buildSourceRemoveCommand(deps: {
     .addHelpText(
       "after",
       "\nRemoving a source untracks its skills across all your agents; the skill\n" +
-        "files stay installed on the pods (they become standalone). Platform and\n" +
+        "files stay installed on the agents (they become standalone). Platform and\n" +
         "Agent sources can't be removed.\n" +
         "\nExamples:\n" +
         "  dam skill source remove skill-src-abc123\n" +

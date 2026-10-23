@@ -8,7 +8,7 @@ import { createK8sClient } from "./infrastructure/k8s.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
-import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
+import { createAgentServiceStatusClient } from "./infrastructure/agent-service-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createAgentsRepository,
@@ -121,7 +121,7 @@ export function composeAgentsModule(deps: {
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
       onboardingChecklists: deps.onboardingChecklists,
-      podStatus: createPodStatusClient(deps.namespace),
+      agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

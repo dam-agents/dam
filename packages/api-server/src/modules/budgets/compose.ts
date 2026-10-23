@@ -10,7 +10,6 @@ import {
 import {
   createBudgetsService,
   createStorageGate,
-  type BudgetedAgent,
   type StorageGate,
 } from "./services/budgets-service.js";
 import {
@@ -31,7 +30,7 @@ export function composeStorageGate(deps: {
 export function composeBudgetsModule(deps: {
   k8s: K8sClient;
   owner: string;
-  listAgents(): Promise<BudgetedAgent[]>;
+  listAgentIds(): Promise<string[]>;
   isSlackUnlinked(): Promise<boolean>;
 }): {
   budgets: BudgetsService;
@@ -39,7 +38,7 @@ export function composeBudgetsModule(deps: {
 } {
   return {
     budgets: createBudgetsService({
-      listAgents: deps.listAgents,
+      listAgentIds: deps.listAgentIds,
       readVmUsage: () => readRunnerUsage(deps.k8s, deps.owner),
       isSlackUnlinked: deps.isSlackUnlinked,
     }),

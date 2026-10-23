@@ -56,7 +56,6 @@ def test_spawn_sends_a_kit_shaped_setup(stub):
         install="uv pip install ./tool",
         env={"MODE": "cell"},
         resources={"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
-        backend="vm",
         skills=[{"source": "https://github.example/acme/skills", "name": "grill"}],
         ttl_ms=3_600_000,
         label="cell:persona/task",
@@ -73,7 +72,6 @@ def test_spawn_sends_a_kit_shaped_setup(stub):
         "install": {"command": "uv pip install ./tool"},
         "env": [{"name": "MODE", "value": "cell"}],
         "resources": {"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
-        "backend": "vm",
         "skills": [{"source": "https://github.example/acme/skills", "name": "grill"}],
         "ttlMs": 3_600_000,
         "label": "cell:persona/task",
@@ -144,11 +142,7 @@ def test_spawn_failure_without_a_reason_stays_bare(stub):
 def test_budget_reads_the_owner_figures(stub):
     stub.routes[("GET", "/budget")] = (
         200,
-        {
-            "cpu": {"reservedMilli": 3000, "ceilingMilli": 6000},
-            "memory": {"reservedBytes": 1, "ceilingBytes": 2},
-            "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
-        },
+        {"defaultWorkerSize": {"cpu": "1", "memory": "1Gi"}},
     )
 
-    assert d.budget()["cpu"]["ceilingMilli"] == 6000
+    assert d.budget()["defaultWorkerSize"] == {"cpu": "1", "memory": "1Gi"}

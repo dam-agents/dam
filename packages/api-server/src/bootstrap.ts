@@ -9,7 +9,7 @@ import {
   createApi,
   createK8sClient,
   createLeaseApi,
-  podBaseUrl,
+  agentServiceAddress,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeStorageGate,
@@ -49,7 +49,7 @@ import {
   setSlackChannelDefault,
   createAgentSweep,
   createImageUpdate,
-  podIsIdle,
+  agentServiceIsIdle,
   createAvatarImagesRepository,
   MAX_AVATAR_BYTES,
   storeAvatarImage,
@@ -217,7 +217,7 @@ import {
   composeShareRenderTokens,
   composeShareBridge,
   composeShareViewer,
-  createAgentApiPodClient,
+  createAgentApiClient,
   createByLinkHostGate,
   createContentApp,
   createShareAuthRoutes,
@@ -258,7 +258,7 @@ import {
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
   createInvocationsCleanupHook,
-  createPodSessionClient,
+  createDelegationFramesClient,
   createInvocationSetupFailure,
   composeScriptOutputs,
   runtimeRunsScripts,
@@ -446,7 +446,7 @@ export async function bootstrap() {
     },
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
-  const delegationFrames = createPodSessionClient({
+  const delegationFrames = createDelegationFramesClient({
     namespace: config.namespace,
     isReady: (agentId) => agentsRepo.isReady(agentId),
   });
@@ -1358,7 +1358,7 @@ export async function bootstrap() {
       firePair: (agentId) => channelFirePair(agentId, "channel"),
     });
 
-  const agentApiPodClient = createAgentApiPodClient(config.namespace);
+  const agentApiClient = createAgentApiClient(config.namespace);
   const shareBridge = composeShareBridge({
     featureOn: async (owner) =>
       (
@@ -1370,7 +1370,7 @@ export async function bootstrap() {
         }).features.flags()
       )["interactive-artifacts"],
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    agentApi: agentApiPodClient,
+    agentApi: agentApiClient,
     makeAcpClient,
     spendHold: channelSpendHold,
     attendance: turnAttendance,
@@ -1590,7 +1590,7 @@ export async function bootstrap() {
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
-      `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
+      `ws://${agentServiceAddress(agentId, config.namespace)}/api/acp`,
   });
 
   const objectStoreAgentUrl = config.objectStorageAgentEndpoint
@@ -1764,7 +1764,7 @@ export async function bootstrap() {
       shareBaseUrl: config.shareBaseUrl,
       agentExists: opts?.agentExists,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-      agentApi: agentApiPodClient,
+      agentApi: agentApiClient,
     }).artifactLibrary;
   const artifactLibraryForSystem = (owner: string) =>
     artifactLibraryFor(owner, "system");
@@ -2117,7 +2117,7 @@ export async function bootstrap() {
     readTemplateSpec: templatesRepo.readSpec,
     writeSpec: (id, write) =>
       liveAgentsRepo.writeAgentSpec(id, undefined, write),
-    podIsIdle: (id) => podIsIdle(id, config.namespace),
+    agentServiceIsIdle: (id) => agentServiceIsIdle(id, config.namespace),
     idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),
   });

@@ -118,7 +118,7 @@ function setup(
       templates[id] ? { spec: templates[id] as TemplateSpec } : null,
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({ bump: runtimeBump }),
     contributionsProgress: unused(),
-    podStatus: unused(),
+    agentServiceStatus: unused(),
     grantProvisioner: {
       async resolveSpecGrants(sel) {
         if (sel.providerConnectionId)

@@ -7,12 +7,8 @@ import {
   type RunnerUsage,
 } from "../domain/vm-usage.js";
 
-export interface BudgetedAgent {
-  id: string;
-}
-
 interface BudgetsServiceDeps {
-  listAgents(): Promise<BudgetedAgent[]>;
+  listAgentIds(): Promise<string[]>;
   readVmUsage(): Promise<RunnerUsage | null>;
   isSlackUnlinked(): Promise<boolean>;
 }
@@ -35,8 +31,8 @@ export function createStorageGate(deps: {
 export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
   return {
     async reserved(): Promise<BudgetReserved> {
-      const [agents, vmUsage] = await Promise.all([
-        deps.listAgents(),
+      const [agentIds, vmUsage] = await Promise.all([
+        deps.listAgentIds(),
         deps.readVmUsage(),
       ]);
       if (!vmUsage) return {};
@@ -48,7 +44,7 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         });
       return {
         vm: {
-          ...vmUsageView(vmUsage, new Set(agents.map((a) => a.id))),
+          ...vmUsageView(vmUsage, new Set(agentIds)),
           ...(slackUnlinked ? { slackUnlinked } : {}),
         },
       };

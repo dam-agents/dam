@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { WebSocket } from "ws";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
@@ -24,7 +24,7 @@ export function createTerminalRelay(
   presence: SessionPresence,
   bus: RedisBus,
   upstreamBase: (agentId: string) => string = (agentId) =>
-    `ws://${podBaseUrl(agentId, namespace)}`,
+    `ws://${agentServiceAddress(agentId, namespace)}`,
 ): TerminalRelay {
   const stamper = createActivityStamper(repo);
   const replicaId = randomUUID();

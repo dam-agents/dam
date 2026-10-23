@@ -153,7 +153,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "FEATURE_MODES",
     "FEATURE_DEFAULT_MODE",
     "CURVE_BENDER_DEPLOYMENT_API_KEY",
-    "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
   ];
   const saved: Record<string, string | undefined> = {};
@@ -173,17 +172,13 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     }
   });
 
-  // TEST_SCENARIO: the chart sets the disk default and default mounts on the api-server. Every composition root takes the agents module's install facts from this one reading, so an Agent is stamped with the install's disk default and default mounts rather than none.
-  it("carries the chart's disk default and default mounts", () => {
+  // TEST_SCENARIO: the chart sets the disk default on the api-server. Every composition root takes the agents module's install facts from this one reading, so an Agent is stamped with the install's disk default rather than none.
+  it("carries the chart's disk default", () => {
     process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
     expect(agentsInstallSettings(loadConfig())).toEqual({
       defaultHarness: "claude-code",
       telemetry: false,
       agentDefaultStorageSize: "20Gi",
-      agentDefaultMounts: [
-        { path: "/home/agent", persist: true },
-        { path: "/tmp", persist: false },
-      ],
     });
   });
 
@@ -248,43 +243,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       defaultHarness: "codex",
       telemetry: true,
     });
-  });
-});
-
-describe("loadConfig — template mount defaults", () => {
-  const KEYS = ["AGENT_DEFAULT_MOUNTS"];
-  const managed = [...Object.keys(REQUIRED_ENV), ...KEYS];
-  const saved: Record<string, string | undefined> = {};
-
-  beforeEach(() => {
-    for (const k of managed) {
-      saved[k] = process.env[k];
-      delete process.env[k];
-    }
-    Object.assign(process.env, REQUIRED_ENV);
-  });
-
-  afterEach(() => {
-    for (const k of managed) {
-      if (saved[k] === undefined) delete process.env[k];
-      else process.env[k] = saved[k];
-    }
-  });
-
-  // TEST_SCENARIO: the template default mounts are what the controller renders for an Agent that names none. Without the chart's value the api-server falls back to the chart's own default, HOME persisted and /tmp not.
-  it("reads the template default mounts the chart hands over", () => {
-    expect(loadConfig().agentDefaultMounts).toEqual([
-      { path: "/home/agent", persist: true },
-      { path: "/tmp", persist: false },
-    ]);
-    process.env.AGENT_DEFAULT_MOUNTS = JSON.stringify([
-      { path: "/home/agent", persist: true },
-      { path: "/data", persist: true, size: "5Gi" },
-    ]);
-    expect(loadConfig().agentDefaultMounts).toEqual([
-      { path: "/home/agent", persist: true },
-      { path: "/data", persist: true, size: "5Gi" },
-    ]);
   });
 });
 

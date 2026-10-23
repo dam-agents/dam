@@ -279,7 +279,7 @@ export function AgentStatesCard() {
         ))}
       </ul>
       <p className="mt-auto pt-4 text-xs text-muted-foreground">
-        {agents.length} VM
+        {agents.length} machines
       </p>
     </Card>
   );

@@ -47,13 +47,13 @@ describe("the VM runner's failure reasons", () => {
   // TEST_SCENARIO: every machine reason that ends a wake is explained in its own words, not by the generic fallback.
   it("each have their own description", () => {
     const fallback = describeWakeFailure({
-      kind: "agent-pod-failed",
+      kind: "agent-start-failed",
       terminationReason: "NotAReason",
     });
     for (const reason of machineReasons) {
       expect(
         describeWakeFailure({
-          kind: "agent-pod-failed",
+          kind: "agent-start-failed",
           terminationReason: reason,
         }),
       ).not.toBe(fallback);

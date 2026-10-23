@@ -8,7 +8,7 @@ import type {
   ArtifactVisibility,
 } from "api-server-api";
 
-import type { AgentApiPodClient } from "../../modules/artifact-library/infrastructure/agent-api-pod-client.js";
+import type { AgentApiClient } from "../../modules/artifact-library/infrastructure/agent-api-client.js";
 import type {
   ArtifactLibraryRepository,
   ArtifactRow,
@@ -101,7 +101,7 @@ export function createArtifactApiWorld() {
           return Promise.resolve({ ok: false, reason: "agent-unreachable" });
         return Promise.resolve(relay(agent, input));
       },
-    } satisfies AgentApiPodClient,
+    } satisfies AgentApiClient,
   };
 
   function agent(agentId: string): AgentHandle {

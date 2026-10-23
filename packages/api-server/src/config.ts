@@ -40,32 +40,6 @@ const positiveQuantitySchema = z
     message: "must be a positive quantity",
   });
 
-const defaultMountsSchema = z
-  .string()
-  .default(
-    JSON.stringify([
-      { path: "/home/agent", persist: true },
-      { path: "/tmp", persist: false },
-    ]),
-  )
-  .transform((raw, ctx) => {
-    try {
-      return JSON.parse(raw) as unknown;
-    } catch {
-      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
-      return z.NEVER;
-    }
-  })
-  .pipe(
-    z.array(
-      z.object({
-        path: z.string().min(1),
-        persist: z.boolean().default(false),
-        size: z.string().optional(),
-      }),
-    ),
-  );
-
 // UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode, with every feature it does not name read as the chart's default mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
 const featureModesSchema = z
   .object({
@@ -262,7 +236,6 @@ const configSchema = z.object({
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
   agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
-  agentDefaultMounts: defaultMountsSchema,
   defaultUserCpuBudget: positiveQuantitySchema.default("4"),
   defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   skillSourcesSeed: z.string().default(""),
@@ -391,7 +364,6 @@ export function agentsInstallSettings(config: Config) {
       (h) => h.telemetryEnv.length > 0,
     ),
     agentDefaultStorageSize: config.agentDefaultStorageSize,
-    agentDefaultMounts: config.agentDefaultMounts,
   };
 }
 
@@ -470,7 +442,6 @@ export function loadConfig(): Config {
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
     agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,
-    agentDefaultMounts: process.env.AGENT_DEFAULT_MOUNTS,
     defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
     defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,

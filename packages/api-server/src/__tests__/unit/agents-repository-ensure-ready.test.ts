@@ -153,7 +153,7 @@ describe("ensureReady", () => {
       logCause: "wake-timeout:hibernated-not-scaled",
     },
     {
-      name: "ImagePullFailure → agent-pod-failed",
+      name: "ImagePullFailure → agent-start-failed",
       conditions: [
         { type: "Ready", status: "False", reason: "PodsNotReady" },
         {
@@ -163,16 +163,16 @@ describe("ensureReady", () => {
           message: "can't pull image (check the registry credential)",
         },
       ],
-      kind: "agent-pod-failed",
+      kind: "agent-start-failed",
       logCause: "wake-timeout:agent-pod-failed:ImagePullFailure",
     },
     {
-      name: "plain PodNotReady → agent-pod-not-ready (progressing)",
+      name: "plain PodNotReady → agent-not-ready (progressing)",
       conditions: [
         { type: "Ready", status: "False", reason: "PodsNotReady" },
         { type: "AgentPodReady", status: "False", reason: "PodNotReady" },
       ],
-      kind: "agent-pod-not-ready",
+      kind: "agent-not-ready",
       logCause: "wake-timeout:agent-pod-not-ready",
     },
     {
@@ -200,7 +200,7 @@ describe("ensureReady", () => {
       logCause: "wake-timeout:reconcile-error",
     },
     {
-      name: "a machine still booting → agent-pod-not-ready (progressing)",
+      name: "a machine still booting → agent-not-ready (progressing)",
       conditions: [
         { type: "Ready", status: "False", reason: "PodsNotReady" },
         {
@@ -210,11 +210,11 @@ describe("ensureReady", () => {
           message: "pulling the image",
         },
       ],
-      kind: "agent-pod-not-ready",
+      kind: "agent-not-ready",
       logCause: "wake-timeout:agent-pod-not-ready",
     },
     {
-      name: "an unschedulable runner → agent-pod-failed, only at the timeout",
+      name: "an unschedulable runner → agent-start-failed, only at the timeout",
       conditions: [
         { type: "Ready", status: "False", reason: "PodsNotReady" },
         {
@@ -224,7 +224,7 @@ describe("ensureReady", () => {
           message: "the owner's VM runner cannot be scheduled: 0/3 nodes",
         },
       ],
-      kind: "agent-pod-failed",
+      kind: "agent-start-failed",
       logCause: "wake-timeout:agent-pod-failed:MachineRunnerUnschedulable",
     },
   ];
@@ -335,7 +335,7 @@ describe("ensureReady", () => {
     expect(isAgentWakeTimeoutError(err)).toBe(true);
     if (isAgentWakeTimeoutError(err)) {
       expect(err.failure).toEqual({
-        kind: "agent-pod-failed",
+        kind: "agent-start-failed",
         terminationReason: "MachineStorageFull",
       });
       expect(err.durationMs).toBeLessThan(10_000);
@@ -371,7 +371,7 @@ describe("ensureReady", () => {
     expect(isAgentWakeTimeoutError(err)).toBe(true);
     if (isAgentWakeTimeoutError(err)) {
       expect(err.failure).toEqual({
-        kind: "agent-pod-failed",
+        kind: "agent-start-failed",
         terminationReason: "MachineRunnerNodeLost",
       });
       expect(err.durationMs).toBeLessThan(10_000);
@@ -410,7 +410,7 @@ describe("ensureReady", () => {
     expect(isAgentWakeTimeoutError(err)).toBe(true);
     if (isAgentWakeTimeoutError(err)) {
       expect(err.failure).toEqual({
-        kind: "agent-pod-failed",
+        kind: "agent-start-failed",
         terminationReason: "MachineImageCacheUnreachable",
       });
       expect(err.durationMs).toBeLessThan(10_000);
@@ -455,7 +455,7 @@ describe("ensureReady", () => {
     );
     expect(isAgentWakeTimeoutError(err)).toBe(true);
     if (isAgentWakeTimeoutError(err)) {
-      expect(err.failure.kind).toBe("agent-pod-failed");
+      expect(err.failure.kind).toBe("agent-start-failed");
       expect(err.durationMs).toBeGreaterThanOrEqual(10_000);
       expect(err.durationMs).toBeLessThan(120_000);
     }
@@ -491,7 +491,7 @@ describe("ensureReady", () => {
     expect(isAgentWakeTimeoutError(err)).toBe(true);
     if (isAgentWakeTimeoutError(err)) {
       expect(err.failure).toEqual({
-        kind: "agent-pod-failed",
+        kind: "agent-start-failed",
         terminationReason: "MachineAllocationUnreadable",
       });
       expect(err.durationMs).toBeLessThan(30_000);

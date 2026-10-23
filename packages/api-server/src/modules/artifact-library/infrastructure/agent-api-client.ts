@@ -5,13 +5,13 @@ import {
 } from "agent-runtime-api";
 import type { ArtifactCallAgentApiResult } from "api-server-api";
 
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 
 const RUNTIME_TIMEOUT_HEADROOM_MS = 5_000;
 const REQUEST_TIMEOUT_MS =
   ARTIFACT_API_TIMEOUT_MS + RUNTIME_TIMEOUT_HEADROOM_MS;
 
-export interface AgentApiPodClient {
+export interface AgentApiClient {
   request(
     agentId: string,
     input: ArtifactApiRequestInput,
@@ -24,10 +24,10 @@ function isMissingProcedure(err: unknown): boolean {
   return data?.code === "NOT_FOUND";
 }
 
-export function createAgentApiPodClient(namespace: string): AgentApiPodClient {
+export function createAgentApiClient(namespace: string): AgentApiClient {
   return {
     async request(agentId, input) {
-      const client = agentPodClient(agentId, namespace, {
+      const client = agentServiceClient(agentId, namespace, {
         timeoutMs: REQUEST_TIMEOUT_MS,
         batch: false,
       });

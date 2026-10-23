@@ -32,7 +32,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
-import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
+import type { AgentServiceStatusClient } from "../infrastructure/agent-service-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -237,14 +237,14 @@ const NO_BACKGROUND_WORK: AgentBackgroundWork = {
 
 export function executeBackgroundWorkRead(deps: {
   getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
-  podStatus: PodStatusClient;
+  agentServiceStatus: AgentServiceStatusClient;
 }) {
   return async (id: string): Promise<AgentBackgroundWork | null> => {
     const infra = await deps.getAgent(id);
     if (!infra) return null;
     if (infra.hibernated) return NO_BACKGROUND_WORK;
     try {
-      return await deps.podStatus.backgroundWork(id);
+      return await deps.agentServiceStatus.backgroundWork(id);
     } catch {
       return NO_BACKGROUND_WORK;
     }
@@ -549,7 +549,7 @@ export function createAgentsService(deps: {
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;
-  podStatus: PodStatusClient;
+  agentServiceStatus: AgentServiceStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   defaultHarness?: string;
   telemetry?: boolean;
@@ -1047,7 +1047,7 @@ export function createAgentsService(deps: {
 
     backgroundWork: executeBackgroundWorkRead({
       getAgent: (id) => deps.repo.get(id, deps.owner),
-      podStatus: deps.podStatus,
+      agentServiceStatus: deps.agentServiceStatus,
     }),
 
     async create(input: AgentCreateInput) {

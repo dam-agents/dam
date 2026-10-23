@@ -4,8 +4,8 @@ export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
   | { kind: "hibernated-not-scaled" }
-  | { kind: "agent-pod-failed"; terminationReason: string }
-  | { kind: "agent-pod-not-ready" }
+  | { kind: "agent-start-failed"; terminationReason: string }
+  | { kind: "agent-not-ready" }
   | { kind: "gateway-not-ready" }
   | { kind: "gateway-pod-failed"; gatewayReason: string }
   | { kind: "reconcile-error"; message: string; backoffExceeded: boolean }
@@ -83,12 +83,12 @@ export function classifyWakeFailure(
     POD_FAILURE_REASONS.has(s.agentPodNotReadyReason)
   ) {
     return {
-      kind: "agent-pod-failed",
+      kind: "agent-start-failed",
       terminationReason: s.agentPodNotReadyReason,
     };
   }
   if (s.agentPodNotReadyReason !== undefined) {
-    return { kind: "agent-pod-not-ready" };
+    return { kind: "agent-not-ready" };
   }
   if (s.gatewayPodReady === false) {
     if (
@@ -107,8 +107,11 @@ export function classifyWakeFailure(
 
 export function wakeFailureReasonToken(c: WakeFailureCause): string {
   switch (c.kind) {
-    case "agent-pod-failed":
+    // UNIT_BOUNDARY_DESCRIPTION: a stored token and one a running client holds keep the historical pod wording they were recorded under; only the cause's own name changed.
+    case "agent-start-failed":
       return `wake-timeout:agent-pod-failed:${c.terminationReason}`;
+    case "agent-not-ready":
+      return "wake-timeout:agent-pod-not-ready";
     case "gateway-pod-failed":
       return `wake-timeout:gateway-pod-failed:${c.gatewayReason}`;
     case "over-budget":
@@ -120,7 +123,7 @@ export function wakeFailureReasonToken(c: WakeFailureCause): string {
 
 export function isTransientWakeFailure(c: WakeFailureCause): boolean {
   return (
-    c.kind === "agent-pod-not-ready" ||
+    c.kind === "agent-not-ready" ||
     c.kind === "gateway-not-ready" ||
     c.kind === "unknown"
   );
@@ -134,7 +137,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
       return c.message;
     case "hibernated-not-scaled":
       return "the platform didn't start it";
-    case "agent-pod-failed":
+    case "agent-start-failed":
       switch (c.terminationReason) {
         case "OutOfMemory":
           return "the agent ran out of memory";
@@ -163,7 +166,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
         default:
           return "the agent crashed while starting";
       }
-    case "agent-pod-not-ready":
+    case "agent-not-ready":
       return "the agent is still starting";
     case "gateway-not-ready":
       return "the agent's gateway is still starting";

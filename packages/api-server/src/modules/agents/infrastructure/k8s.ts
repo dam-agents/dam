@@ -202,7 +202,10 @@ export function createK8sClient(
   };
 }
 
-export function podBaseUrl(agentId: string, namespace: string): string {
+export function agentServiceAddress(
+  agentId: string,
+  namespace: string,
+): string {
   return `${agentId}.${namespace}.svc:8080`;
 }
 

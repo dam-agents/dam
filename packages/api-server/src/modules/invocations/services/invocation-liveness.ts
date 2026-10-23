@@ -89,7 +89,7 @@ export function createInvocationLivenessSweep(
           if (restart && restart.podRestarts > 0) {
             await failAndReap(
               row,
-              `target pod restarted${restart.podRestartReason ? ` (${restart.podRestartReason})` : ""}; one-shot turn cannot resume`,
+              `target's machine restarted${restart.podRestartReason ? ` (${restart.podRestartReason})` : ""}; one-shot turn cannot resume`,
             );
           }
         } catch (err) {

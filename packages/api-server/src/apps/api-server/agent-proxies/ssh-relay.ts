@@ -1,4 +1,4 @@
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { createActivityStamper } from "./activity-stamper.js";
 import type { SessionPresence } from "./session-presence.js";
@@ -14,7 +14,7 @@ export function createSshRelay(
   repo: AgentsRepository,
   presence: SessionPresence,
   upstreamBase: (agentId: string) => string = (agentId) =>
-    `ws://${podBaseUrl(agentId, namespace)}`,
+    `ws://${agentServiceAddress(agentId, namespace)}`,
 ): SshRelay {
   const stamper = createActivityStamper(repo);
   return createWakeGatedRelay({

@@ -67,7 +67,7 @@ function setup() {
       enqueueAfterCommit,
     }),
     contributionsProgress: unused(),
-    podStatus: unused(),
+    agentServiceStatus: unused(),
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},

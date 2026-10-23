@@ -19,9 +19,9 @@ const ALWAYS_ON_QUIET_MS = 60 * 60_000;
 // UNIT_BOUNDARY_DESCRIPTION: how long an Agent must stay ready on the new image before the move counts as proven. A container that crashes some seconds after it first becomes ready, or a guest that answers and then goes quiet, is ready for a moment between the exits that the controller reports as StartFailed, so a single ready read must not end the move first. A ready read without a readable transition time starts the hold at the first tick that sees it, and the hold restarts whenever the Agent reads not ready, so the move is neither proven at once nor held forever.
 const READY_HOLD_MS = 5 * 60_000;
 
-export type ImageMove = "now" | "if-pod-idle";
+export type ImageMove = "now" | "if-service-idle";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether and when the platform moves an Agent to its Template's current image without its owner. The caller passes that image only for an Agent created from a Template, so an Agent created on an image of its own, a starter kit's included, is never moved. An image this Agent already failed to start on is not tried again. A down Agent, hibernated or over budget, moves now: the image change restarts nothing. A running Agent waits for the idle checker to hibernate it, except an always-on Agent, which never hibernates: it moves once no connection is open, no Invocation pins it, its last activity is older than ALWAYS_ON_QUIET_MS, and its pod reports idle, the same signals the idle checker reads.
+// UNIT_BOUNDARY_DESCRIPTION: whether and when the platform moves an Agent to its Template's current image without its owner. The caller passes that image only for an Agent created from a Template, so an Agent created on an image of its own, a starter kit's included, is never moved. An image this Agent already failed to start on is not tried again. A down Agent, hibernated or over budget, moves now: the image change restarts nothing. A running Agent waits for the idle checker to hibernate it, except an always-on Agent, which never hibernates: it moves once no connection is open, no Invocation pins it, its last activity is older than ALWAYS_ON_QUIET_MS, and its runtime reports idle, the same signals the idle checker reads.
 export function imageMove(
   agent: InfraAgent,
   templateImage: string,
@@ -44,7 +44,7 @@ export function imageMove(
     !!agent.quietSince &&
     now.getTime() - agent.quietSince.getTime() >= ALWAYS_ON_QUIET_MS;
   return agent.ready && alwaysOn && quiet && !agent.stopRequested
-    ? "if-pod-idle"
+    ? "if-service-idle"
     : null;
 }
 
@@ -52,7 +52,7 @@ export interface ImageUpdate {
   tick(): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: keeps every Agent created from a Template on that Template's current image, so a new image reaches existing Agents without their owner. It applies the template upgrade the UI's Update applies to every Agent imageMove selects, so the harness carries over the same way, and names the image it decided on as the confirmed target, so a Template that moved in between refuses it. Eligibility is decided again on a live read, the pod is probed only after that read, and the spec is written against the read's version: a connection, a wake or an activity stamp in between conflicts, and the Agent is decided again on the next tick. The move records the image the Agent came from until the Agent has stayed ready on the new one for READY_HOLD_MS. A start that fails on the image itself, or a pod or machine on the new spec that keeps crashing or never becomes ready, moves it back and records the new image as refused, so no Agent is left on an image it cannot run. A start the node refused instead — its runner cannot reach the image cache, so no image at all can be fetched there — holds the move: nothing is moved back or recorded as refused, since the image is not what failed and would fail the same way on the image it came from, and the reason is logged once per move, keyed on the annotation that records the move rather than on the start state the platform rewrites under it, so the upgrade is seen waiting rather than silently dropped.
+// UNIT_BOUNDARY_DESCRIPTION: keeps every Agent created from a Template on that Template's current image, so a new image reaches existing Agents without their owner. It applies the template upgrade the UI's Update applies to every Agent imageMove selects, so the harness carries over the same way, and names the image it decided on as the confirmed target, so a Template that moved in between refuses it. Eligibility is decided again on a live read, the runtime is probed only after that read, and the spec is written against the read's version: a connection, a wake or an activity stamp in between conflicts, and the Agent is decided again on the next tick. The move records the image the Agent came from until the Agent has stayed ready on the new one for READY_HOLD_MS. A start that fails on the image itself, or a machine on the new spec that keeps crashing or never becomes ready, moves it back and records the new image as refused, so no Agent is left on an image it cannot run. A start the node refused instead — its runner cannot reach the image cache, so no image at all can be fetched there — holds the move: nothing is moved back or recorded as refused, since the image is not what failed and would fail the same way on the image it came from, and the reason is logged once per move, keyed on the annotation that records the move rather than on the start state the platform rewrites under it, so the upgrade is seen waiting rather than silently dropped.
 export function createImageUpdate(deps: {
   listAgents: () => Promise<InfraAgent[]>;
   getAgent: (id: string) => Promise<InfraAgent | null>;
@@ -61,7 +61,7 @@ export function createImageUpdate(deps: {
     id: string,
     write: AgentSpecWrite,
   ) => Promise<AgentSpecWriteResult>;
-  podIsIdle: (id: string) => Promise<boolean>;
+  agentServiceIsIdle: (id: string) => Promise<boolean>;
   idleTimeoutMinutes: number;
   log: (message: string) => void;
 }): ImageUpdate {
@@ -70,9 +70,9 @@ export function createImageUpdate(deps: {
   const readySeen = new Map<string, number>();
   const heldOn = new Map<string, string>();
 
-  async function idlePod(id: string): Promise<boolean> {
+  async function serviceIdle(id: string): Promise<boolean> {
     try {
-      return await deps.podIsIdle(id);
+      return await deps.agentServiceIsIdle(id);
     } catch {
       return false;
     }
@@ -86,10 +86,10 @@ export function createImageUpdate(deps: {
       getAgent: async (agentId) => {
         const live = await deps.getAgent(agentId);
         const move = live && moveOf(live, templateImage);
-        read =
-          move === "now" || (move === "if-pod-idle" && (await idlePod(agentId)))
-            ? live
-            : null;
+        const moving =
+          move === "now" ||
+          (move === "if-service-idle" && (await serviceIdle(agentId)));
+        read = moving ? live : null;
         return read;
       },
       readTemplateSpec: deps.readTemplateSpec,

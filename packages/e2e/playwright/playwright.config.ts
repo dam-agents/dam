@@ -111,10 +111,10 @@ const prSkip =
     ? new RegExp("\\/(12|18|19|21|23|25|26|27)-")
     : undefined;
 
-const prEmpty = new Set(["new-layout", "agent-backend"]);
+const prEmpty = new Set(["new-layout", "agent-machine"]);
 
-const agentBackend: NamedProject = {
-  name: "agent-backend",
+const agentMachine: NamedProject = {
+  name: "agent-machine",
   testMatch: /19-.*\.spec\.ts$/,
   dependencies: suite.map(({ name }) => name),
   use: { ...devices["Desktop Chrome"], storageState },
@@ -123,13 +123,13 @@ const agentBackend: NamedProject = {
 const runnerRelease: NamedProject = {
   name: "runner-release",
   testMatch: /28-.*\.spec\.ts$/,
-  dependencies: [...suite, agentBackend]
+  dependencies: [...suite, agentMachine]
     .map(({ name }) => name)
     .filter((name) => !prSkip || !prEmpty.has(name)),
   use: { ...devices["Desktop Chrome"], storageState },
 };
 
-const projects = [...suite, agentBackend, runnerRelease].filter(
+const projects = [...suite, agentMachine, runnerRelease].filter(
   ({ name }) => !prSkip || !prEmpty.has(name),
 );
 

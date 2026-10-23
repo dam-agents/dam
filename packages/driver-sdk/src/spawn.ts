@@ -22,8 +22,6 @@ export interface ConnectionInfo {
 }
 
 export interface Budget {
-  cpu: { reservedMilli: number; ceilingMilli: number };
-  memory: { reservedBytes: number; ceilingBytes: number };
   defaultWorkerSize: { cpu: string; memory: string };
 }
 

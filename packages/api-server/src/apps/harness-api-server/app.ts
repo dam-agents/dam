@@ -246,7 +246,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeBudgetsModule({
         k8s: k8sClient,
         owner,
-        listAgents: () => agentsRepo.list(owner),
+        listAgentIds: async () =>
+          (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
       }).budgets,
     defaultLimits,

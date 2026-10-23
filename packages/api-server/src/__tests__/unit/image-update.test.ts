@@ -89,7 +89,7 @@ function update(
   agents: InfraAgent[],
   opts?: {
     live?: (id: string) => InfraAgent | null;
-    podIsIdle?: () => Promise<boolean>;
+    agentServiceIsIdle?: () => Promise<boolean>;
     readTemplateSpec?: (id: string) => Promise<{ spec: TemplateSpec } | null>;
   },
 ) {
@@ -102,18 +102,20 @@ function update(
     };
   });
   const log = vi.fn();
-  const podIsIdle = vi.fn(opts?.podIsIdle ?? (async () => true));
+  const agentServiceIsIdle = vi.fn(
+    opts?.agentServiceIsIdle ?? (async () => true),
+  );
   const tick = createImageUpdate({
     listAgents: async () => agents,
     getAgent: async (id) =>
       opts?.live ? opts.live(id) : (byId.get(id) ?? null),
     readTemplateSpec: opts?.readTemplateSpec ?? knownTemplates,
     writeSpec,
-    podIsIdle,
+    agentServiceIsIdle,
     idleTimeoutMinutes: IDLE_MIN,
     log,
   }).tick;
-  return { tick, writeSpec, podIsIdle, log };
+  return { tick, writeSpec, agentServiceIsIdle, log };
 }
 
 describe("imageMove", () => {
@@ -168,8 +170,8 @@ describe("imageMove", () => {
     ).toBeNull();
   });
 
-  it("moves a quiet always-on agent once its pod says idle", () => {
-    expect(move(alwaysOn())).toBe("if-pod-idle");
+  it("moves a quiet always-on agent once its runtime says idle", () => {
+    expect(move(alwaysOn())).toBe("if-service-idle");
   });
 
   it("treats every agent as always-on when the install never hibernates", () => {
@@ -180,12 +182,12 @@ describe("imageMove", () => {
         0,
         NOW,
       ),
-    ).toBe("if-pod-idle");
+    ).toBe("if-service-idle");
   });
 
   // TEST_SCENARIO: a vm agent honours its own never-hibernate override, as a
   // TEST_SCENARIO: container agent does, so it is moved only after the quiet wait.
-  it("moves a quiet vm agent with a never-hibernate override once its pod says idle", () => {
+  it("moves a quiet vm agent with a never-hibernate override once its runtime says idle", () => {
     expect(
       move(
         alwaysOn({
@@ -196,7 +198,7 @@ describe("imageMove", () => {
           },
         }),
       ),
-    ).toBe("if-pod-idle");
+    ).toBe("if-service-idle");
   });
 
   it("waits for a vm agent without an override to hibernate on its own", () => {
@@ -317,31 +319,34 @@ describe("image update tick", () => {
     expect(m.writeSpec).not.toHaveBeenCalled();
   });
 
-  it("does not probe a hibernated agent's pod", async () => {
+  it("does not probe a hibernated agent's runtime", async () => {
     const m = update([agent()]);
     await m.tick();
-    expect(m.podIsIdle).not.toHaveBeenCalled();
+    expect(m.agentServiceIsIdle).not.toHaveBeenCalled();
     expect(m.writeSpec).toHaveBeenCalledOnce();
   });
 
-  it("restarts a quiet always-on agent whose pod reports idle", async () => {
+  it("restarts a quiet always-on agent whose runtime reports idle", async () => {
     const m = update([alwaysOn()]);
     await m.tick();
-    expect(m.podIsIdle).toHaveBeenCalledWith("agent-1");
+    expect(m.agentServiceIsIdle).toHaveBeenCalledWith("agent-1");
     expect(m.writeSpec).toHaveBeenCalledOnce();
   });
 
-  // TEST_SCENARIO: the pod's idle flag covers a running turn, queued prompts,
+  // TEST_SCENARIO: the runtime's idle flag covers a running turn, queued prompts,
   // TEST_SCENARIO: a live terminal and kept background work; any of them
   // TEST_SCENARIO: keeps the agent where it is, and so does a failed probe.
   it.each([
     ["is busy", async () => false],
     ["cannot be reached", () => Promise.reject(new Error("refused"))],
-  ])("leaves an always-on agent whose pod %s", async (_, podIsIdle) => {
-    const m = update([alwaysOn()], { podIsIdle });
-    await m.tick();
-    expect(m.writeSpec).not.toHaveBeenCalled();
-  });
+  ])(
+    "leaves an always-on agent whose runtime %s",
+    async (_, agentServiceIsIdle) => {
+      const m = update([alwaysOn()], { agentServiceIsIdle });
+      await m.tick();
+      expect(m.writeSpec).not.toHaveBeenCalled();
+    },
+  );
 
   it("skips running agents that hibernate", async () => {
     const m = update([agent({ hibernated: false, ready: true })]);
@@ -711,8 +716,8 @@ describe("parseInfraAgent", () => {
     ).toBeUndefined();
   });
 
-  // TEST_SCENARIO: the controller says StartFailed only of the pod or
-  // TEST_SCENARIO: machine that runs the spec its generation names, so a
+  // TEST_SCENARIO: the controller says StartFailed only of the machine
+  // TEST_SCENARIO: that runs the spec its generation names, so a
   // TEST_SCENARIO: crash loop, a harness that never becomes ready, or an
   // TEST_SCENARIO: admission refusal of the new image moves the agent back,
   // TEST_SCENARIO: while one about an older spec does not.
@@ -784,10 +789,10 @@ describe("parseInfraAgent", () => {
     ).toBe("failed");
   });
 
-  // TEST_SCENARIO: the pod a roll replaces exits on SIGTERM at the new
+  // TEST_SCENARIO: the machine a roll replaces exits on SIGTERM at the new
   // TEST_SCENARIO: generation, and memory fails on any image, so neither
   // TEST_SCENARIO: says the new image is bad without the controller's
-  // TEST_SCENARIO: StartFailed about the current pod. A vm boot that
+  // TEST_SCENARIO: StartFailed about the current machine. A vm boot that
   // TEST_SCENARIO: copies its disk is still booting, and a move back
   // TEST_SCENARIO: would stop the copy and start it again from nothing.
   it.each(["ContainerTerminated", "OutOfMemory", "MachineCopyingDisk"])(

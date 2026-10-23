@@ -44,7 +44,7 @@ export function buildPublishCommand(deps: {
     .addHelpText(
       "after",
       "\nPublishes a standalone (locally-authored) skill — one that lives on the\n" +
-        "Agent's pod but isn't installed from a source (the ones `dam skill list`\n" +
+        "Agent but isn't installed from a source (the ones `dam skill list`\n" +
         "shows under Standalone). --source is the target GitHub repo to PR against\n" +
         "(resolved id|url), distinct from where a skill was installed from. Only\n" +
         "GitHub sources can publish.\n" +

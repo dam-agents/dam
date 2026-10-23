@@ -67,7 +67,7 @@ function setup(existing: ReturnType<typeof agent>[]) {
       bump: async () => 1,
     }),
     contributionsProgress: unused(),
-    podStatus: unused(),
+    agentServiceStatus: unused(),
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},

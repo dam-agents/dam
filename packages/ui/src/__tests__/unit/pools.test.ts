@@ -102,7 +102,7 @@ describe("pool bars", () => {
       ["asleep", 20],
       ["a", 10],
       ["Logs and system", 3.25],
-      ["Agents moving to VMs", 1.25],
+      ["Machine disk copies", 1.25],
       ["tiny", 0.5],
     ]);
     expect(rows.find((r) => r.label === "b")?.agent?.id).toBe("b");

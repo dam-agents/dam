@@ -23,7 +23,7 @@ import {
   type SessionNotification,
   type Stream,
 } from "@agentclientprotocol/sdk";
-import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "./logger.js";
 import { isPlatformMcpTool } from "./platform-mcp.js";
 import { securityLog } from "./security-log.js";
@@ -508,7 +508,7 @@ export function createAcpClient(opts: {
   stallProbeMs: number;
   firePair?: (agentId: string) => Promise<SessionPair | null | undefined>;
 }): AcpClient {
-  const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
+  const url = `ws://${agentServiceAddress(opts.instanceName, opts.namespace)}/api/acp`;
   const { instanceName: agentId, stallProbeMs } = opts;
   return {
     async listSessions(): Promise<AcpSessionInfo[]> {
