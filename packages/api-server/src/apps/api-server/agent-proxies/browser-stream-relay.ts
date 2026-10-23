@@ -45,7 +45,9 @@ export function createBrowserStreamRelay(
     upstreamPath: () => upstreamPath,
     ensureReady: (agentId) => repo.ensureReady(agentId, { waitOnly: true }),
     bufferMaxBytes: PENDING_BUFFER_MAX_BYTES,
-    holdPresence: { fromOpen: presence },
+    refuse: async () => null,
+    activity: null,
+    holdPresence: { when: "open", port: presence },
     closeOnUpstreamClose: (code, reason) => ({
       code: sanitizeCloseCode(code),
       reason: reason.toString() || "browser stream closed",

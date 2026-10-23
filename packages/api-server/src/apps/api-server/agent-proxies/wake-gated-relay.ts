@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { match } from "ts-pattern";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
@@ -14,6 +15,15 @@ function wakeFailureReason(err: unknown): string {
   return isAgentWakeTimeoutError(err)
     ? `agent not ready: ${err.failure.kind}`
     : "agent unavailable";
+}
+
+export type PresenceHold =
+  | { when: "none" }
+  | { when: "connect" | "open"; port: Pick<SessionPresence, "acquire"> };
+
+export interface ActivityTick {
+  everyMs: number;
+  tick: (agentId: string) => void;
 }
 
 export interface WakeGatedRelay {
@@ -33,11 +43,8 @@ export interface WakeGatedRelayOptions {
   upstreamPath: (agentId: string, req: IncomingMessage) => string;
   ensureReady: (agentId: string, req: IncomingMessage) => Promise<void>;
   bufferMaxBytes?: number;
-  refuse?: (agentId: string) => Promise<string | null>;
-  holdPresence?: {
-    fromConnect?: Pick<SessionPresence, "acquire">;
-    fromOpen?: Pick<SessionPresence, "acquire">;
-  };
+  refuse: (agentId: string) => Promise<string | null>;
+  holdPresence: PresenceHold;
   onClient?: (client: WebSocket, agentId: string, req: IncomingMessage) => void;
   onClientFrame?: (
     client: WebSocket,
@@ -45,7 +52,7 @@ export interface WakeGatedRelayOptions {
     isBinary: boolean,
   ) => boolean;
   onClientForwarded?: (agentId: string) => void;
-  activity?: { everyMs: number; tick: (agentId: string) => void };
+  activity: ActivityTick | null;
   onWoken?: (agentId: string) => void;
   closeOnWakeFailure?: (err: unknown, agentId: string) => string;
   closeOnUpstreamClose?: (
@@ -118,7 +125,15 @@ export function createWakeGatedRelay(
       keepAlive(client);
       onClient?.(client, agentId, req);
 
-      let release = holdPresence?.fromConnect?.acquire(agentId) ?? (() => {});
+      const holdAtConnect = match(holdPresence)
+        .with({ when: "connect" }, (hold) => hold.port)
+        .with({ when: "open" }, { when: "none" }, () => null)
+        .exhaustive();
+      const holdAtOpen = match(holdPresence)
+        .with({ when: "open" }, (hold) => hold.port)
+        .with({ when: "connect" }, { when: "none" }, () => null)
+        .exhaustive();
+      let release = holdAtConnect?.acquire(agentId) ?? (() => {});
       const tick = activity
         ? setInterval(() => activity.tick(agentId), activity.everyMs)
         : undefined;
@@ -149,7 +164,7 @@ export function createWakeGatedRelay(
       client.on("message", buffer);
 
       try {
-        const refused = await refuse?.(agentId);
+        const refused = await refuse(agentId);
         if (refused) {
           closeWs(client, 1011, refused);
           return;
@@ -180,8 +195,7 @@ export function createWakeGatedRelay(
       us.on("open", () => {
         opened = true;
         if (clientGone || overflow) return closeWs(us);
-        if (holdPresence?.fromOpen)
-          release = holdPresence.fromOpen.acquire(agentId);
+        if (holdAtOpen) release = holdAtOpen.acquire(agentId);
         actor.attached();
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });

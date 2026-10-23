@@ -22,7 +22,9 @@ export function createSshRelay(
     upstreamBase,
     upstreamPath: () => "/api/ssh",
     ensureReady: (agentId) => repo.ensureReady(agentId),
-    holdPresence: { fromConnect: presence },
+    refuse: async () => null,
+    activity: null,
+    holdPresence: { when: "connect", port: presence },
     onClientForwarded: (agentId) => stamper.bump(agentId),
   });
 }

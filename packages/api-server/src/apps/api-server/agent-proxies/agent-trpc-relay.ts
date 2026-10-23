@@ -51,6 +51,7 @@ export function createAgentTrpcRelay(
         ? "agent not ready"
         : null;
     },
+    holdPresence: { when: "none" },
     onClientFrame: (client, data, isBinary) => {
       if (isBinary || data.toString() !== KEEPALIVE_PING) return false;
       client.send(KEEPALIVE_PONG);

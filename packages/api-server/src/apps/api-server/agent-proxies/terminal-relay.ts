@@ -74,7 +74,9 @@ export function createTerminalRelay(
       }
       return `/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`;
     },
-    holdPresence: { fromOpen: presence },
+    refuse: async () => null,
+    activity: null,
+    holdPresence: { when: "open", port: presence },
     onClient: (client, agentId, req) => {
       const key = clientKey(agentId, req);
       evictLocal(key, "superseded");
