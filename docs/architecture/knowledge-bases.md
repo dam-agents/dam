@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-10-14
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -32,9 +32,9 @@ Creation is the kit apply, whoever starts it:
    On the default image each session picks its harness and provider, as for any agent — not pinned to Claude Code.
    Each harness template may declare its **harness family** — which agent CLI runs inside the image, a closed vocabulary owned by the templates contract ([`packages/api-server-api/src/modules/templates/`](../../packages/api-server-api/src/modules/templates/)) and validated when templates load, so a misdeclared family rejects the template rather than degrading silently.
 2. **Install Command delivery** over the `workspace-command` rail — a one-shot runtime-channel event alongside `workspace-seed`, on the same durable outbox schedules use ([runtime delivery](runtime-delivery.md#event-lifecycle), [schedules](schedules.md#fire)).
-   The event survives the pod not being up yet — including an agent parked over budget — and is delivered once the agent is Ready.
-   agent-runtime runs the command in the workspace, in the pod's environment, so egress rides the paired gateway exactly as a harness process would.
-   It runs once: the plugin writes a sentinel on success, so a redelivery (or a pod killed mid-run before the outbox settled) never double-runs a completed install.
+   The event survives the machine not being up yet — including an agent parked over budget — and is delivered once the agent is Ready.
+   agent-runtime runs the command in the workspace, in the machine's environment, so egress rides the paired gateway exactly as a harness process would.
+   It runs once: the plugin writes a sentinel on success, so a redelivery (or a machine stopped mid-run before the outbox settled) never double-runs a completed install.
 3. **Initialization session** queued behind it — the briefing the platform composes from the kit and the agent's live state — and the **wake**, so the freshly created agent comes up, runs the bootstrap and opens on its own `ONBOARDING.md` before the user does anything.
 
 There is no knowledge-bases module left to create one: the kit apply is the only path, and the one piece of knowledge-base-specific code that survives is the share roots each retired template always had, kept so an agent stamped before kits still publishes what it always did.
@@ -52,7 +52,7 @@ The chat opens that session first while it is the agent's most recent one, so a 
 The greeting is a briefing rather than a bare command because setting a knowledge base up means asking its owner what it is for — and an agent that has to ask is one the platform holds as [not yet onboarded](starter-kits.md#concepts), reporting what it still needs as a checklist.
 The mechanism is shared with starter kits.
 
-The greeting cannot race the bootstrap: the rail runs an agent's events in order and the Install Command's handler returns only when the command has finished, so the pod not being up yet, a wake that arrives late and a failed install retrying under the runtime channel's per-event attempt budget ([runtime-delivery](runtime-delivery.md)) all merely delay it.
+The greeting cannot race the bootstrap: the rail runs an agent's events in order and the Install Command's handler returns only when the command has finished, so the machine not being up yet, a wake that arrives late and a failed install retrying under the runtime channel's per-event attempt budget ([runtime-delivery](runtime-delivery.md)) all merely delay it.
 The hold is bounded, not absolute: an install that exhausts its budget, or lands on a runtime that cannot run it, is stamped settled-with-error with the reason the runtime reported, the agent shows the failure with a retry, and only then does the initialization turn open — against a KB whose `ONBOARDING.md` may be missing, which the briefing tells the agent to report and stop on rather than the agent staying unusable until the install event's TTL.
 
 The create itself is compensated rather than transactional: the share roots are stamped by the agent create while the install event is enqueued after it, and a failed enqueue deletes the fresh agent and surfaces the failure — so an agent whose setup never ran can only arise if that compensating delete itself fails.
@@ -63,7 +63,7 @@ Lifecycle actions (wake, restart, sleep, delete) are the standard agent actions.
 
 A knowledge base can be **shared** as a read-only MCP endpoint so other people's sandboxes query it without re-ingesting its sources.
 The platform stays out of the knowledge itself: what is shared is a **published snapshot** of the owner-selected top-level workspace directories (defaulted per KB template).
-The KB's own pod computes each publish — it walks the share roots (confined to them: symlinks resolving outside a root are excluded), content-hashes every text document, builds the segmented full-text index, and uploads through short-lived presigned upload URLs — while the api-server stays the authority: it authorizes the publish, mints every storage key, diffs against the previous snapshot so unchanged content carries forward without re-upload, verifies what landed, and commits the manifest as one atomic pointer swap.
+The KB's own agent computes each publish — it walks the share roots (confined to them: symlinks resolving outside a root are excluded), content-hashes every text document, builds the segmented full-text index, and uploads through short-lived presigned upload URLs — while the api-server stays the authority: it authorizes the publish, mints every storage key, diffs against the previous snapshot so unchanged content carries forward without re-upload, verifies what landed, and commits the manifest as one atomic pointer swap.
 Serving never touches the agent: a snapshot keeps answering while the KB is hibernated, parked over budget, or stopped, and a failed republish leaves the last good snapshot serving.
 Snapshots replaced by a newer publish are garbage-collected after a grace hold — reachability spans the current snapshot and every replaced one still inside the hold; unsharing and agent deletion purge them.
 
@@ -75,7 +75,7 @@ Consumption rides the connections model: submitting the string through the `kbSh
 The entry points at the **in-cluster harness route** `/api/agents/:id/kb` — the same channel the agent already uses for platform-outbound — not the public share host, so consumer reads never leave the cluster and never traverse the egress gateway.
 Per request the platform authenticates the agent (as platform-outbound does), reads the shared-knowledge-base connections granted to it, and replays their per-share secrets into the stateless serving app; that app validates every replayed secret against the live share — the set of valid ones *is* the accessible set, so rotate and revoke cut access — and there is no user identity and no ACL beyond the grant.
 The same serving app is also reachable on the public share host as a by-link endpoint (used by the e2e and any external MCP client).
-Tools are content-agnostic retrieval only (list, read, index-backed search, grep) — read-only holds because no code path from a consumer request reaches an agent, its PVC, or any write rail; document reads resolve only through the snapshot manifest.
+Tools are content-agnostic retrieval only (list, read, index-backed search, grep) — read-only holds because no code path from a consumer request reaches an agent, its disk, or any write rail; document reads resolve only through the snapshot manifest.
 No LLM runs in the serving path: consumers' own agents synthesize on their own credentials, so a query costs the owner nothing.
 Consumer-supplied grep patterns execute in a worker thread killed at a hard deadline, never on the event loop.
 
@@ -83,9 +83,9 @@ A shared snapshot describes itself through a **usage guide**: `list_knowledge_ba
 The guide is not platform machinery; it is just a file inside the shared tree, so keeping it useful is the KB agent's job: an agent-authored knowledge base should have that agent write and refresh a minimal, consumer-facing `USAGE_GUIDE.md` (what the KB covers, how it is laid out, which tool to reach for) as part of building the wiki, so the agents that query the snapshot can orient without blind trial and error.
 Nothing enforces the file — an unshared or guide-less KB simply serves the fallback.
 
-Freshness is owned by the pod: it watches the shared folders recursively, and any edit — whoever made it — sets a dirty marker persisted on the agent volume and arms a quiet-period timer, after which the pod initiates the publish handshake with the api-server (inventory in, work order out, completion report back).
-The persisted marker means a pod that died dirty publishes shortly after its next boot with no server bookkeeping, and a scheduled or running publish holds the pod awake ([agent lifecycle](agent-lifecycle.md)).
-The api-server's remaining roles are delivery of the share's roots and limits to the pod (on share create, root changes, refresh, and wake) and a capability gate: a runtime too old to self-publish gets the share marked failed with an update-the-agent hint ([runtime delivery](runtime-delivery.md)).
+Freshness is owned by the agent: it watches the shared folders recursively, and any edit — whoever made it — sets a dirty marker persisted on the machine's disk and arms a quiet-period timer, after which the agent initiates the publish handshake with the api-server (inventory in, work order out, completion report back).
+The persisted marker means a machine that stopped dirty publishes shortly after its next boot with no server bookkeeping, and a scheduled or running publish holds the agent awake ([agent lifecycle](agent-lifecycle.md)).
+The api-server's remaining roles are delivery of the share's roots and limits to the agent (on share create, root changes, refresh, and wake) and a capability gate: a runtime too old to self-publish gets the share marked failed with an update-the-agent hint ([runtime delivery](runtime-delivery.md)).
 Publish outcomes push live hints to the owner's UI.
 Beyond that automatic path, an on-demand hard refresh republishes immediately, and it must be possible both manually by the owner (through the `kbShares` API) and by the KB's own agent — the agent acts through platform MCP tools registered only on agents that publish a knowledge base.
 While sharing is redesigned, the tool texts tell the agent not to offer or start a new share, only to refresh and report one that exists.

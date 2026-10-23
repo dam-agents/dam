@@ -1,6 +1,6 @@
 # Agent avatars
 
-Last verified: 2026-10-15
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -33,7 +33,7 @@ The eyes follow the [lifecycle](agent-lifecycle.md): open while the Agent runs, 
 A sleeping avatar keeps its colours; an emoji or an upload, which has no eyes to close, carries a grey *zzz* at its top right.
 A [disabled](agent-lifecycle.md#disable) avatar looks the same as a sleeping one, but grey.
 A sleeping character twitches now and then.
-Each awake character makes its own small gesture on hover, a sleeping one breathes, and the waking screen of a container Agent loops the gesture while it starts ([lifecycle](agent-lifecycle.md#wake)).
+Each awake character makes its own small gesture on hover, a sleeping one breathes, and the waking screen loops the gesture while an Agent starts ([lifecycle](agent-lifecycle.md#wake)).
 Motion stops when the user's system asks for reduced motion.
 
 ## One drawing everywhere

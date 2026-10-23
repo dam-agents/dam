@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-16
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -59,7 +59,7 @@ The field-level shapes live in the contract package [`packages/api-server-api/`]
     The live-agent gate keeps the guard off real agents: a live agent a user happened to name like a target keeps its row.
     The attribution itself is a **cutover, not a migration**: rows written before the change keep their old attribution and are not backfilled.
   - The **per-session-kind** rollup answers *what started this work* — a person chatting, a Channel, a Schedule, a terminal.
-    Telemetry cannot answer it alone: a call record names its Session but never what kind of Session that is, and the resource attributes that would carry it are stamped once per pod, while one pod serves Sessions of every kind at once.
+    Telemetry cannot answer it alone: a call record names its Session but never what kind of Session that is, and the resource attributes that would carry it are stamped once per machine, while one machine serves Sessions of every kind at once.
     The rollup therefore joins per-Session cost against the session directory below.
     It reuses the same **trace-family root** the Overview's per-session rollup groups on, so a child harness run counts under the kind of the Session that spawned it rather than as a kind of its own.
     A Session the directory has no row for is **not dropped** — it is reported under an unattributed bucket, because the rollup sits beneath a total the user can read and silently shedding spend would make the two disagree.
@@ -210,7 +210,7 @@ Both variants are chosen once at composition time from the same configuration, s
 Attribution is trustworthy; the numbers are self-reported.
 The two guarantees are different and this subsystem inherits both from the export path — see [observability — trusted attribution](observability.md#trusted-attribution) for the mechanism.
 
-- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's pod, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, report a negative one, post records of its own to the rail).
+- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's machine, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, report a negative one, post records of its own to the rail).
   The read path does not attempt to independently verify them; it reports what was exported.
 - **Attribution is gateway-stamped and unforgeable.** The agent attribution every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any agent attribution the gateway did not stamp; the owner follows from the agent.
   So an agent can only ever pollute *its own* spend — never make its telemetry appear under another user, and never read another user's.

@@ -1,13 +1,13 @@
 # Channels
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
 ## Overview
 
 A **channel** is a messenger surface (Slack, Telegram) that lets users drive an Agent from outside the UI.
-Channels are pluggable adapters that live inside the api-server process — no separate Deployment, no sidecar in the agent pod.
+Channels are pluggable adapters that live inside the api-server process — no separate Deployment, no sidecar on the agent's machine.
 Each adapter (the *worker*) owns its inbound socket, its outbound API, and its thread-to-session bookkeeping; a channel manager composes the workers and reacts to lifecycle events on the in-process event bus.
 
 The workers are **single-holder across the deployment**: both transports admit one consumer per install, and a worker's turn bookkeeping lives in its process.
@@ -51,7 +51,7 @@ Channels split along a structural axis that has real consequences for secrets an
 
 The binding itself is the authorization: anyone the messenger admits to the conversation drives the Agent under the Agent's own credentials.
 There is no per-person access mode, no identity link required to drive a turn, and no allow-list.
-Every turn relays single-track to the main agent pod; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis *place* and the sender's Slack user id, or for a bot post which Agent or app wrote it; and the prompt text is speaker-labelled with the sender's Slack mention, or the Agent's or app's name, so a multi-speaker session stays attributable inside the conversation itself.
+Every turn relays single-track to the main agent; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis *place* and the sender's Slack user id, or for a bot post which Agent or app wrote it; and the prompt text is speaker-labelled with the sender's Slack mention, or the Agent's or app's name, so a multi-speaker session stays attributable inside the conversation itself.
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
@@ -108,7 +108,7 @@ Each relayed message is still security-logged as a place-basis allow (marked as 
 An Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is skipped the same silent way.
 
 Inbound traffic and outbound traffic take different paths.
-Inbound is push from the messenger into the api-server worker, which routes the message to the agent pod over ACP.
+Inbound is push from the messenger into the api-server worker, which routes the message to the agent over ACP.
 Outbound is pull initiated by the agent: the harness calls a tool on the api-server's per-Agent MCP endpoint, and the api-server delegates to the right worker.
 
 One cross-cutting concern is owned elsewhere and only summarized here:
@@ -141,7 +141,7 @@ flowchart LR
     LNK[(identity_links<br/>provider=slack)]
   end
 
-  POD[agent pod]
+  POD[machine]
 
   SU <--> SAPI
   SAPI <-- Socket Mode --> SW
@@ -155,7 +155,7 @@ flowchart LR
 ```
 
 The App-Level Token comes from Helm values and lives in api-server env; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
-Resolving the channel's binding yields the Agent and the binding owner; the relay is single-track to the main pod.
+Resolving the channel's binding yields the Agent and the binding owner; the relay is single-track to the main agent.
 The workspace-wide identity-link table backs the `/platform login` flow, which authorizes the in-chat bind, unbind, ambient, whisper on/off and default commands — never who may drive a turn.
 
 ### Telegram — platform channel
@@ -176,7 +176,7 @@ flowchart LR
     BND[(binding table<br/>chat → agent)]
   end
 
-  POD[agent pod]
+  POD[machine]
 
   TU <--> TAPI
   TAPI <-- long polling --> TW
@@ -191,7 +191,7 @@ flowchart LR
 The bot token comes from Helm values and lives in api-server env, like the Slack tokens.
 A chat binds to exactly one Agent in its binding table (the chat's id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding, a forum topic's message included.
 A forum topic or a reply chain never has a row of its own.
-The relay path is single-track — the main pod handles every turn.
+The relay path is single-track — the main agent handles every turn.
 
 ## Adapters
 
@@ -383,6 +383,6 @@ Channels touch these stores; the substrate details live on [persistence](persist
 
 - **Loop guard drops (Postgres).** One row per Slack conversation where the bot-post limit dropped a post, written by the leader and read with the Agent's channels; a drop more than a day after the last starts the count again.
 
-- **The Agent's workspace (per-Agent PVC).** A Slack attachment lands there for the agent to open, so a channel speaker writes to persistent state ([persistence](persistence.md)).
+- **The Agent's workspace (its machine's disk).** A Slack attachment lands there for the agent to open, so a channel speaker writes to persistent state ([persistence](persistence.md)).
 
 Channels do **not** participate in the Agent ConfigMap spec/status split: channel routing metadata lives in Postgres, secrets in k8s Secrets, Agent ConfigMaps stay channel-free.

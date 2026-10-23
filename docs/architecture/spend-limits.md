@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -19,7 +19,7 @@ Work that nobody watches is held before it starts ([Unattended work](#unattended
 
 ```mermaid
 flowchart LR
-  subgraph pod[agent pod - not trusted]
+  subgraph pod[machine - not trusted]
     H[harness]
   end
   subgraph gw[gateway pod - trusted]
@@ -43,7 +43,7 @@ An address that names no Connection of the chain counts as no address, so a fals
 When the chain has several model-provider Connections and the request names none, the meter names all their providers and no Connection.
 The meter keeps these facts in the call's gateway metadata, out of the agent's reach, and the gateway hands them to the ext_authz check, so the gate and the ledger see the same call.
 The meter also copies the session and the harness that the [Model Router](harness-config.md#the-model-router) stamps on the call, when each is at most 128 characters of printable ASCII.
-The stamp comes from the agent's pod, so it serves display only; the gateway removes it before the provider, on every chain.
+The stamp comes from the machine, so it serves display only; the gateway removes it before the provider, on every chain.
 The meter also removes the request's compression offer, because a compressed reply cannot be read as it passes.
 It notes the path without the query and without a Connection address prefix, the API dialect of the path, and whether the path is billable.
 Billable paths are the model calls: Anthropic Messages, OpenAI Chat Completions, legacy Completions, Responses and Embeddings, and the Bedrock invoke and converse calls, streamed or not.
@@ -125,11 +125,11 @@ The api-server also keeps the last name of each Agent that goes, from its Agent 
 It skips a temporary agent, because its Invocation record names its rows.
 A delete that no api-server replica sees leaves the agent with no name.
 
-**Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.
+**Session check.** The Session comes from the stamp in the machine, so it serves display only, and no total and no limit depends on it.
 A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
 Bob sends no `X-Task-Id` on the first call of a new task, which asks for the model `background`, so the Model Router stamps no Session on that call and it counts as no Session.
 The totals and the limits of that call stay correct, because they do not read the Session.
-The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
+The agent's own machine writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
 
 **Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the start time, the unit and the cost.
@@ -354,7 +354,7 @@ The screens:
   Its Spend ceilings section gives the default ceiling, then each user with a ceiling of their own: the amount, the operator who set it last, and when.
   An operator sets a ceiling by the user's email, changes one, or removes one after a confirmation.
   An email that no user has shows its error in the dialog.
-  The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-ceiling)).
+  The Compute budgets section below it is the same screen for compute Budgets ([budgets](budgets.md#the-pool)).
 - **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
   Its help text gives the local time at which a day starts.
   The date range under the total starts at T when the period starts before T.

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -135,7 +135,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`schedule`** — time-triggered tasks on an agent: recurrences, including the Precheck that decides each occurrence, and one-time schedules at a local moment or now, owned by [schedules.md](schedules.md).
 - **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit; for a platform operator, also listing, setting and removing each user's Spend Ceiling by the user's email; owned by [spend-limits.md](spend-limits.md).
   "Continue" at a limit is an `approval` verb, because the question is an approval.
-- **`budget`** — for a platform operator, listing each user's own compute Budget one page at a time (found, sorted and paged by the server), and setting, changing or removing one by the user's email; owned by [budgets.md](budgets.md#the-ceiling).
+- **`budget`** — for a platform operator, listing each user's own compute Budget one page at a time (found, sorted and paged by the server), and setting, changing or removing one by the user's email; owned by [budgets.md](budgets.md#the-pool).
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 
 ## Shared conventions
@@ -193,10 +193,10 @@ A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in
 The CLI presents Agents as single, atomic entities — one resource carrying both spec and runtime state, with no separate instance type.
 
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side.
-  **Delete** cascades through Kubernetes ownership to the StatefulSet, Service, NetworkPolicy, and owned volumes — the same path the UI's delete uses.
-  **Restart** deletes the agent's pod; the controller recreates it with the current spec and persistent volumes survive.
+  **Delete** removes the Agent, and the controller tears down its owned resources (the gateway StatefulSet, the Services and the NetworkPolicies) and deletes the machine and its disk, the same path the UI's delete uses.
+  **Restart** stamps a restart revision; the controller restarts the machine on the current spec, and its disk survives.
   **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
-  Both refuse with a conflict while a runtime migration holds the agent, and `list` and `get` show a disabled agent's state as `disabled`.
+  `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
@@ -206,7 +206,7 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.
   A refused start — the agent parked because its owner's pool is full ([budgets](budgets.md)) — also ends the wait: it names the refusal, says how to free room, and exits non-zero, leaving the agent parked.
   A refusal already standing before a restart counts only once the wait saw another state or a short grace passed, because the first poll can still read the previous attempt's denial.
-  An error with no reconcile message prints the pod's termination reason, which is where a refused machine's text lands; a termination code the UI also treats as a refused start reads "could not start" rather than "entered error state", in both scripted and interactive create.
+  An error with no reconcile message prints the reason the controller reported, which is where a refused machine's text lands; a termination code the UI also treats as a refused start reads "could not start" rather than "entered error state", in both scripted and interactive create.
   A timeout prints the termination reason too, when the agent has one.
   Under `--json` every exit path still emits a valid Agent payload, so scripted callers never see empty stdout.
 - **`dam agent create-interactive`** is the TTY-bound complement to scripted create: it walks name → template → model-provider connection → optional GitHub PAT and ends with the same agent and grants the UI's "Add agent" dialog produces, creating the Agent before applying its connection grants.
@@ -240,12 +240,12 @@ A run refused for having no model adds the CLI commands that set one to the runt
 
 The headline property is that **the caller may leave**.
 Detaching never cancels a running turn, so `--async` exits once the runtime reports the prompt started, printing the session id to poll with `dam run get`.
-To make the result readable after the fact — the in-memory session log is reaped seconds after an unwatched turn ends, and harnesses differ in what they can replay — the agent-runtime records each finished `cli_run` run's outcome (prompt identity, stop reason, accumulated assistant text) in a **run record**, a size-capped document on the pod's own disk, deleted with the Session.
+To make the result readable after the fact — the in-memory session log is reaped seconds after an unwatched turn ends, and harnesses differ in what they can replay — the agent-runtime records each finished `cli_run` run's outcome (prompt identity, stop reason, accumulated assistant text) in a **run record**, a size-capped document on the machine's own disk, deleted with the Session.
 A run is done when its prompt is answered *and* the harness is idle: a harness that works on in an [Autonomous Turn](sessions.md#session-inside-the-pod), as Claude Code does when its background agents report after it answered, keeps the run pending, and the text of that turn joins the record.
 The record then carries the run's final stop reason: the prompt's, or `cancelled` when `dam run cancel` stopped the Autonomous Turn; a harness that dies in it leaves a record with no stop reason, as a dropped turn does.
 When the runtime writes the record it sends `platform/runEnded`, with the prompt identity and that stop reason, into the session log, and `dam run` and `run get --wait` end on it.
 A runtime announces it with `_meta.platform.runEnded` in its `initialize` answer; against one that does not, `dam run` ends at the prompt answer as before.
-A runtime-answered extension method serves it back as *done*, *pending* (turn still in flight — including one cut short by an abnormal pod death and awaiting its one automatic resume), *interrupted* (that resume was cut short too, so the runtime will never finish the run — `dam run` reports it as failed with a retry hint), or *none*; a turn the harness dropped mid-run is recorded with no stop reason rather than erased, so a lost run never reads as one that never existed.
+A runtime-answered extension method serves it back as *done*, *pending* (turn still in flight — including one cut short by an abnormal death of the machine and awaiting its one automatic resume), *interrupted* (that resume was cut short too, so the runtime will never finish the run — `dam run` reports it as failed with a retry hint), or *none*; a turn the harness dropped mid-run is recorded with no stop reason rather than erased, so a lost run never reads as one that never existed.
 `dam run get` prints it — under `--json`, the extension method's own status-discriminated payload verbatim, a *pending* shape on wait expiry so stdout is never empty — `--wait` attaches until the run ends, and `dam run cancel` cancels only a run it could positively read as pending.
 The record lives in the agent's home volume and shares its lifetime — [persistence](persistence.md) owns what that survives; durability beyond the agent is a deliberate non-goal for now.
 
@@ -259,20 +259,20 @@ Only a request nobody answers within the runtime's ten-minute wait is dropped �
 
 `dam ssh connect <agent>` drops into a plain login shell in the agent's workspace and supports everything real SSH does — `scp`, `sftp`, port-forwarding, and editor Remote-SSH.
 Where `dam chat` attaches to the harness TUI, SSH gives a bare shell.
-The session inherits the agent pod's environment — the egress proxy, credential sentinels, and `PATH` — so `git`, `gh`, and the AI CLIs work exactly as they do for the harness (the agent-runtime replays the live injected env per connection; without it even DNS fails, since egress is proxy-only).
-sshd refuses to start a session whose environment exceeds 1000 entries, so the replayed file is capped just under that and sheds Kubernetes service-link vars first — a pod carrying hundreds of them still gets a shell, with its credentials and proxy intact.
+The session inherits the agent's environment — the egress proxy, credential sentinels, and `PATH` — so `git`, `gh`, and the AI CLIs work exactly as they do for the harness (the agent-runtime replays the live injected env per connection; without it even DNS fails, since egress is proxy-only).
+sshd refuses to start a session whose environment exceeds 1000 entries, so the replayed file is capped just under that and sheds Kubernetes service-link vars first — a machine carrying hundreds of them still gets a shell, with its credentials and proxy intact.
 
-The transport is an in-pod OpenSSH `sshd` spawned per connection and tunneled over the agent WebSocket; the SSH wire protocol is opaque to the CLI and api-server, which relay bytes verbatim.
-SSH terminates at the in-pod sshd, which reuses the same upgrade auth (token → ownership → terms) as `dam chat`.
+The transport is an OpenSSH `sshd` inside the agent, spawned per connection and tunneled over the agent WebSocket; the SSH wire protocol is opaque to the CLI and api-server, which relay bytes verbatim.
+SSH terminates at that sshd, which reuses the same upgrade auth (token → ownership → terms) as `dam chat`.
 Authentication to sshd is public-key via a dedicated dam keypair under `$XDG_STATE_HOME/dam/` — the user's real identity is the bearer token verified at the WebSocket upgrade, and the SSH key is only the transport credential.
-Host-key checking is disabled deliberately: the TLS-encrypted upgrade is the real trust boundary, so the in-pod host key authenticates nothing extra, and it is no loss that a fresh host key comes with each boot.
+Host-key checking is disabled deliberately: the TLS-encrypted upgrade is the real trust boundary, so the agent's host key authenticates nothing extra, and it is no loss that a fresh host key comes with each boot.
 
 Arguments after `--` go to `ssh` verbatim, after the agent host, so `dam ssh connect <agent> -- -L 8080:localhost:8080 -N` forwards a port without a shell and `-- uname -a` runs a remote command; editor modes reject them.
 A single `--exec` flag selects the client and how it is invoked (`ssh`, or an editor in `code`/`zed` mode).
 Editor modes write a managed host block to dam's own ssh_config and pull it into `~/.ssh/config` via one `Include` line — the reliable cross-client hook, since editors are often already-running singletons that ignore a launch-time environment — then launch the editor against the agent alias; `dam ssh configure` writes those blocks without launching and can reconcile them to the host's current agents or clear them.
 `code` mode additionally pre-allows the VS Code server-download hosts as egress rules so the connect doesn't trip a mid-flight approval prompt.
 `dam ssh` depends on the OpenSSH client locally; `sshd` ships in the shared agent base image, so every agent supports it.
-The files sshd needs to let a connection in — its host key, its config and the keys a connection registers — are a vm agent's in a directory of the runtime's own, `/run/dam/ssh`, and not in its home, so a full agent is still one its owner can get into to free it; a container agent keeps them in its home, the one path its uid may write; the environment file stays where sshd reads it, in the home, so that session starts with a bare shell and without the replayed environment.
+The files sshd needs to let a connection in — its host key, its config and the keys a connection registers — are in a directory of the runtime's own, `/run/dam/ssh`, and not in the agent's home, so a full agent is still one its owner can get into to free it; the environment file stays where sshd reads it, in the home, so that session starts with a bare shell and without the replayed environment.
 
 ## Files and import
 

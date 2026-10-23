@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -29,7 +29,7 @@ An unknown or absent Template falls back to the image reference.
 The default image is every harness over the base at once, with their tools.
 Each harness's entry points and runtime manifest sit under its name.
 The agent-runtime loads every manifest there and runs each harness's drivers, so one contribution kind can have several bindings, each keeping its state per harness.
-The harness is chosen per session ([sessions](sessions.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none.
+The harness is chosen per session ([sessions](sessions.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the machine in its environment, is the default for a session that names none.
 The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
 The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
 CI exports `MISE_GITHUB_TOKEN` for those installs, which mise reads; the task hands it to the chroot's mise in a root-only file that the install removes, so no layer holds it.
@@ -66,21 +66,20 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
   k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh, which also picks up its unpinned dependencies' releases.
   There are no build-arg overrides.
 
-## Ownership and the two Backends
+## Ownership
 
-The image is root's, but for the paths the agent must write, which each layer is packed with already owned by the agent: its home, the mise system config, a workload's Python, the runtime's directory and `/run/platform`, where a container's entrypoint builds the CA bundle.
+The image is root's, but for the paths the agent must write, which each layer is packed with already owned by the agent: its home, the mise system config, a workload's Python, the runtime's directory and `/run/platform`, where the entrypoint builds the CA bundle.
 Everything else stays root's, including the shipped skills, the working-dir seed and Claude Code's managed settings, so an agent cannot rewrite what the platform ships.
 Layers are packed as plain tars: a local cluster imports them as they are, and CI gzips a published image's layers with parallel gzip as it pushes.
 
-- **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
-- **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([vm storage](vm-storage.md#the-disk)).
-  The entrypoint prepares sshd.
-  The image's build gives uid 0 the agent's home, so a login's own keys and known hosts are kept there; what admits a connection — sshd's host key, its config and the keys a connection registers — lives outside the home ([cli](cli.md#ssh-access)).
-  The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
-  The cache is the runtime's alone: no harness or command it starts inherits it.
+The machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
+SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([vm storage](vm-storage.md#the-disk)).
+The entrypoint prepares sshd.
+The image's build gives uid 0 the agent's home, so a login's own keys and known hosts are kept there; what admits a connection — sshd's host key, its config and the keys a connection registers — lives outside the home ([cli](cli.md#ssh-access)).
+The agent-runtime keeps Node's compile cache beside its own code, since the root outlives a boot.
+The cache is the runtime's alone: no harness or command it starts inherits it.
 
-On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
+The [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#the-machine-disk) owns the rule).
 It builds the bundle under `/run/platform` at every boot, and so do the docker and k3s services, which openrc may start before it: the image's distribution roots, the local CAs an agent added, and then those CAs, and never writes the image's trust store, since a machine keeps its root across images of one generation and a bundle a boot wrote there would hide the next image's roots.
 An agent's `update-ca-certificates` writes a bundle file of its own over the link, so a hook it runs links the path again and rebuilds the `/run` bundle with the new local CAs.
 The image's build moves the distribution's bundle aside and links its path, `/etc/ssl/certs/ca-certificates.crt`, to the one under `/run`; `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` name it too, and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads it like every other client.
@@ -104,14 +103,14 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
 
 - Every tool's install directory is on `PATH`, and login shells restore it, because Debian's profile resets `PATH`.
 - agent-browser and Playwright share one baked Chromium, and both trust the gateway's MITM CA through the NSS store the entrypoint fills in the home, since Chromium does not read the system bundle.
-  The image's `AGENT_BROWSER_*` defaults make agent-browser's browser the [browser panel](browser-panel.md)'s: the full Chromium, headed on the virtual display `platform-display` runs (Xvfb, i3, PipeWire and Selkies, which streams it to the panel), with its shared memory out of the container's small `/dev/shm`, which a heavy page would overflow and crash on.
+  The image's `AGENT_BROWSER_*` defaults make agent-browser's browser the [browser panel](browser-panel.md)'s: the full Chromium, headed on the virtual display `platform-display` runs (Xvfb, i3, PipeWire and Selkies, which streams it to the panel), with its shared memory out of the small `/dev/shm`, which a heavy page would overflow and crash on.
   Selkies is installed into the base image from hash-pinned wheels, and streams only royalty-free codecs ([browser-panel](browser-panel.md)).
 - docker and k3s are baked in but not started.
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
   A service gets only `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - The agent's own services, its [Startup Items](agent-processes.md#startup-items), are openrc user services of root in `~/.config/rc`, started at every boot, a new image included, by openrc's stock `user` service as `user.root`, one of the image's two services in the `default` runlevel, beside `platform-env`, which serves the Environment Link only on an Environment; OpenRC comes from Debian testing through an apt pin for them.
 - aube stands in for pnpm; npm stays for tools that call it.
-  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
+  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image, and last until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
   A tool pin in the home applies whenever the home holds it; a pinned tool the home has not installed shows as missing until `mise install`.
 
@@ -140,39 +139,33 @@ Claude Code on its own drops every `AGENTS.md` once a `CLAUDE.md` sits anywhere 
 An Agent created from a Template is kept on that Template's current image without its owner, so a deploy's new image, and the runtime fixes in it, reach existing Agents.
 An Agent created on an image of its own, a [starter kit](starter-kits.md)'s included, carries no Template and is never moved, nor is one whose Template the install no longer has.
 A periodic api-server job applies the [template upgrade](agent-lifecycle.md#template-upgrade) a user would, so the harness carries over: each harness once had an image of its own, and the Templates for those retired images resolve to the default Template, so their Agents move to the default image the same way.
-It covers both Backends.
-A vm machine keeps its root when the new image declares the same root generation key as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
+A machine keeps its root when the new image declares the same root generation key as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
 A workload's key is the default image's with its own segment appended by its build, so a move between the default image and a workload's always starts a fresh root, and a new default key is a new key for every workload too.
 An image built from the default one outside this build carries the default's key unless it declares its own.
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.
-That wake costs nothing extra for the default image on the `vm` Backend: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
+That wake costs nothing extra for the default image: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
-An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, a live terminal, kept background work and an open Environment Link ([what counts as activity](agent-lifecycle.md#hibernate)).
-The job re-reads each Agent before deciding, probes the pod after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
-A prompt arriving in the seconds between the write and the pod's restart is the one window it cannot close.
+An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its machine reporting idle, which covers a running turn, a live terminal, kept background work and an open Environment Link ([what counts as activity](agent-lifecycle.md#hibernate)).
+The job re-reads each Agent before deciding, probes the machine after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
+A prompt arriving in the seconds between the write and the machine's restart is the one window it cannot close.
 
 A move never strands an Agent.
-It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
+It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a guest that crashes seconds after it becomes ready does not prove the move.
 If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
 The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
 A start the node refused is not one of them: a machine whose runner cannot reach its node's image cache carries a reason of its own ([vm-image-cache](vm-image-cache.md)), and the job holds the move instead, writing nothing back and marking nothing refused, because the image is not what failed and the image it came from would fail the same way there.
 It says so once per move, so the upgrade reads as waiting rather than as dropped.
-The controller sets `StartFailed` only from the pod or machine that runs the current spec, or from a refusal to admit that spec, never from the pod a roll replaces, which exits too.
-On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
-On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
-The controller sets `StartFailed` for one of three reasons.
-Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
-Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
-A vm boot the runner reports as copying a disk before its guest answers does not count either: the runner holds it for up to six hours, and a move back would restart the machine and the copy with it.
+The controller sets `StartFailed` only from the machine that runs the current spec, never from the machine a roll replaces, which exits too.
+The runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
+The controller sets `StartFailed` for one of two reasons.
+Either a guest that answered and then went quiet restarted three times on this spec and is not ready now.
+Or it ran on this spec and never became ready, not counting the time an image pull takes: two minutes for a machine.
 Nor does the boot that follows a machine the kernel killed for memory or the guest's own seccomp filter killed, by the reason the runner gives it (`MachineOOMKilled`, `MachineSeccompKilled`): the image is not what the kernel weighed, nor what made the call the filter forbids.
-Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
-The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
-It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.
-The vm bound is short because a moved vm Agent takes the new image when it wakes, and a vm idle timeout hibernates it again five minutes later, or its own override does where it carries one.
+The bound is short because a moved Agent takes the new image when it wakes, and the idle timeout hibernates it again five minutes later, or its own override does where it carries one.
 At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
-An exit from out of memory or a full home volume does not count, since any image meets it.
+An exit from out of memory or a full home disk does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
 The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.

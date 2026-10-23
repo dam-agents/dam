@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -53,7 +53,6 @@ When a fire is due:
 
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed.
 The hold reads the Agent's onboarding annotation and lifts the moment the mark lands.
-A fire on an Agent a [runtime migration](vm-runtime-migration.md) holds down — from the container's stop until the machine has booted from the copy, or after a failure that came after the stop — is held the same way, reading `held: moving to the new runtime`, since the fire could only wait out the wake.
 A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `held: agent disabled`, and a one-time task due while it is disabled is recorded missed rather than left to wait for an enable.
 A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
 That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
@@ -63,9 +62,9 @@ That stamp is what a Precheck measures "anything new since last time?"
 from, so a fire that never happened must not move it.
 The refusal comes back at every occurrence until the schedule's choices or the Agent's granted providers change.
 
-An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice.
+An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on its home disk, so a redelivered or superseded fire never runs twice.
 That safety net ends where a fire is settled.
-For an ordinary fire it covers everything up to the prompt; for a prechecked one it stops at acceptance, so a check that never finishes reaches only the pod log; a session that then fails to open is reported as a failed run.
+For an ordinary fire it covers everything up to the prompt; for a prechecked one it stops at acceptance, so a check that never finishes reaches only the machine's log; a session that then fails to open is reported as a failed run.
 Losing an occurrence that way is the price of not holding the channel open, and for a recurring check the next occurrence pays it back.
 
 ## One-time schedules
@@ -81,13 +80,13 @@ What a single occurrence changes follows from it having **no next occurrence to 
   A completed one leaves the list of what will still happen and stays as history beside the Session it opened, then is pruned 30 days after it fired, a failed fire included.
   Cancelling is deleting; it can be edited only until it fires; deleting one already on its way does not recall the event.
 - **Its result is recorded by delivery, not by commit.** A recurring fire writes its result when the event commits, and a fire lost after that is paid back by the next one.
-  A one-time fire has no next one, so it writes *delivering* in the transaction that commits its event — a settle can never land before it — and reads it until its event settles on the pod (then *success*) or expires undelivered (then *missed*).
+  A one-time fire has no next one, so it writes *delivering* in the transaction that commits its event — a settle can never land before it — and reads it until its event settles on the machine (then *success*) or expires undelivered (then *missed*).
   A wake that fails after that commit leaves it *delivering* rather than recording the failure, since the event is already on its way; the fire's retry finds it committed and only pokes the Agent again.
-  Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the pod, so a runtime too old to know the kind still resolves.
+  Both transitions come from runtime delivery's per-kind listeners, notified on the api-server once the settle or the drop has committed — no report from the machine, so a runtime too old to know the kind still resolves.
 - **Its delivery window is a day, not an hour.** The event expires 24 hours after the moment, and a queue job that runs late inside that window still fires — an Agent in error state or out of budget for a while still gets the task, where a recurring fire would rather skip to the next occurrence.
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
-  Neither the onboarding hold nor the runtime-migration hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; during a migration its event simply waits out the move inside its delivery window.
+  Neither the onboarding hold nor the disabled hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; a task due while its Agent is disabled waits out the enable inside its delivery window.
   A [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) only delays it the same way: the fire records nothing and re-arms for the next UTC midnight, when the limit starts again, and the owner setting or continuing a limit re-arms it at once.
   A sleep's stop stamp is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work.
@@ -96,7 +95,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
 
 An agent may also tie one to **the session that scheduled it**: *continue* makes the task a new turn in that session when it is due, so a check-back keeps the context it was asked in; *report* runs it in a fresh session and, when that turn ends, hands its text back to the scheduling session as a new turn.
 Either way the scheduling session must be known for certain, and the platform tool has no session of its own — the MCP endpoint is one per agent.
-So agent-runtime gives every session a reference of its own and hands the harness, for each session it opens or loads, its own copy of the platform MCP entry carrying that reference; the tool records it, and the pod resolves it back when the fire lands.
+So agent-runtime gives every session a reference of its own and hands the harness, for each session it opens or loads, its own copy of the platform MCP entry carrying that reference; the tool records it, and the runtime resolves it back when the fire lands.
 A harness that does not honour a per-session entry sends no reference, and the tool refuses to tie the task to a session rather than guess.
 Codex's ACP adapter drops a session's entry whose name its `config.toml` already holds, and the platform entry is there for the terminal's `codex`, so Codex chat processes run with that filtering off and the session's own entry wins.
 Pi's adapter takes no HTTP servers, so the reference reaches Pi another way: the image's patch of the adapter starts each session's Pi process with the reference its session carried, and the platform entry in Pi's own file names it in its header, which Pi fills in per process.
@@ -116,7 +115,7 @@ Most fires of a periodic check — "did a new PR land?", "is the queue backing u
 — find nothing to do, and reaching that answer through a model is the most expensive way to ask a question a timestamp comparison could settle.
 The Precheck moves the question out of the turn.
 
-It runs in the agent pod, in the workspace directory, under `bash -lc` with the runtime process's own environment — so `HTTPS_PROXY` still points at the paired gateway and a check may reach GitHub or an API with the same injected credentials the agent gets ([security-and-credentials](security-and-credentials.md)).
+It runs in the machine, in the workspace directory, under `bash -lc` with the runtime process's own environment — so `HTTPS_PROXY` still points at the paired gateway and a check may reach GitHub or an API with the same injected credentials the agent gets ([security-and-credentials](security-and-credentials.md)).
 Running it there is the point: the inputs a real check needs — the workspace, the checkout, credentialed network access — are already present, with no new plumbing to feed them anywhere else.
 The schedule's id, the occurrence being decided, and the time of the last fire that actually started a run arrive as environment variables, so "anything new since last time?"
 needs no bookkeeping of its own.
@@ -127,8 +126,8 @@ A runtime image too old to know the field ignores it and runs, which is the same
 Whatever the command prints on stdout is appended to the task prompt (byte-capped), so the expensive turn does not re-derive what the cheap check just found; stderr does not, except that a broken Precheck's recorded reason carries the tail of it — so the reason reaches the owner's panel and the CLI too, and a check that prints secrets to stderr will show them there.
 A broken Precheck still contributes that block, carrying what it managed to print marked as unverified, or saying there is none — a task written as "process the items listed below" must never be followed by nothing, or the run acts on a reference it cannot resolve.
 
-Only the pod knows the verdict, so it reports each one back over the runtime channel's generic **event report**, naming the fire by its own event id ([runtime delivery](runtime-delivery.md#event-report--agent--api-server)); the api-server checks that the event belongs to the calling Agent, routes on its kind, and records the verdict on the schedule.
-The Precheck does not hold the fire's delivery open while it runs — the trigger settles when the pod accepts it, or a two-minute check would stop every other change reaching that Agent.
+Only the machine knows the verdict, so it reports each one back over the runtime channel's generic **event report**, naming the fire by its own event id ([runtime delivery](runtime-delivery.md#event-report--agent--api-server)); the api-server checks that the event belongs to the calling Agent, routes on its kind, and records the verdict on the schedule.
+The Precheck does not hold the fire's delivery open while it runs — the trigger settles when the machine accepts it, or a two-minute check would stop every other change reaching that Agent.
 **A schedule with a Precheck records its outcome only once the verdict exists**: the fire itself arms the next occurrence and clears a failure result left standing from before, and the report that follows writes one of two things — the last-run pair (allowed, and a broken Precheck that ran anyway), or a **declined fire** (`declined`), which clears that failure too.
 The decline count is *since the last run*, not a lifetime total — a run resets it — so what the panel shows is how many fires the Precheck has saved since work last actually happened, which is the number that says whether the check is still finding anything (an [on-demand run](#on-demand-run) the Precheck declines counts here too, which is why the unit is fires rather than occurrences).
 That is what keeps the three states apart in the row the user reads, and it is what makes the last-run stamp mean *the last fire that actually ran* — the meaning the Precheck's own environment depends on.
@@ -141,7 +140,7 @@ A third case is not cleared but **dropped**: a verdict that describes a Precheck
 The check is detached, so an owner can swap the command while one is in flight; writing that verdict would attribute it to a command that never produced it, and clearing on it would wipe what the new command had already recorded.
 The fire's payload carries the command that ran, which is what lets the report be matched to it.
 
-A report can also simply never arrive — the pod can die mid-check.
+A report can also simply never arrive — the machine can stop mid-check.
 Then the fire leaves no verdict behind: the only write is the failure result it cleared when it committed, and the last-run stamp keeps its earlier value, so the next Precheck is told work happened longer ago than it did.
 The direction is deliberate.
 An older stamp makes a check find *more* than it should and run again, where a newer one would make it skip an interval's work silently, and the next report that lands corrects it.
@@ -166,7 +165,7 @@ The session model differs by schedule mode (a one-time schedule is fresh, or lan
   One schedule, one session, history retained across fires.
   A schedule that names no choices of its own runs that session on the scheduled default, and the session follows it from its next fire ([sessions](sessions.md#session-inside-the-pod)).
 
-The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the PVC.
+The schedule↔session link is agent-owned: schedule sessions are typed (`schedule_cron`, or `schedule_once` for a one-time schedule) through ACP session metadata, and the continuous binding is a per-schedule entry in a state file on the agent's home disk.
 Resetting a continuous schedule rides the same outbox rail as fires — a `schedule-reset` event clears the binding on delivery, so the next fire starts fresh.
 Unlike a fire, a reset does not poke the Agent awake: one that stays hibernated past the event's TTL expires undelivered, and the next fire resumes the old session.
 Within a continuous schedule fires serialize naturally — each resumes the same session, prompts queuing at the runtime — while fresh fires each open their own session and may run concurrently.

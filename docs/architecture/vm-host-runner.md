@@ -1,12 +1,11 @@
 # VM host runner
 
-Last verified: 2026-10-20
+Last verified: 2026-10-23
 
-On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
+On a Mac, the local cluster runs its agents on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
 The host runner is the same vm-runner and machine API, built for the Mac.
 It is a local-development shape only: an install turns it on by naming the address pods reach the Mac at (`virtualization.runner.hostAddress`), and `cluster:install` does so on a Mac unless told to nest.
-`cluster:install` turns the `vm` Backend on by default on an Apple silicon Mac, so a local cluster there runs this runner unless the install turns the Backend off.
 
 **One runner serves every owner.** There is no per-owner boundary.
 A guest that escapes its hypervisor reaches every owner's machines and the Mac itself, as the user who started the runner.
@@ -24,10 +23,9 @@ A renewed certificate does not reach the Mac's copy, so the certificate is issue
 The cluster VM's user-mode network relays the host address to that loopback.
 An agent's Service has no runner pod to select.
 The controller writes the Service's own endpoints instead: the host address and the port this machine publishes.
-A runtime migration's copy Job reaches the runner the same way, pinned by address rather than by pod selector.
 
 **A machine reaches its gateway through a NodePort.** Guest egress leaves from the Mac, where a gateway's ClusterIP does not route.
-The controller exposes each vm Agent's gateway as a NodePort, and the cluster's VM forwards NodePorts to the Mac's loopback.
+The controller exposes each Agent's gateway as a NodePort, and the cluster's VM forwards NodePorts to the Mac's loopback.
 With the [owner gateway](credential-gateway.md#owner-gateway) on, the NodePort follows the agent's Service onto its slot on the owner's gateway pod, so nothing else changes here.
 The guest's proxy is smolvm's gateway address, which smolvm relays to the host's loopback.
 Allowing that address would open every loopback port: other machines' published ports, the runner's API, and whatever the user runs locally.

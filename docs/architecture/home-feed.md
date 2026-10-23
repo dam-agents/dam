@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -23,8 +23,8 @@ Such an end settles the request's row all the same, which keeps a late write fro
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 
-The record exists because the pod cannot answer for itself.
-Session state is agent-owned (see [persistence](persistence.md#per-agent-pvcs)), so a hibernated Agent has nobody to ask, and before the record Home simply could not show what happened on an Agent that had since gone to sleep.
+The record exists because the Agent cannot answer for itself.
+Session state is agent-owned (see [persistence](persistence.md#the-machine-disk)), so a hibernated Agent has nobody to ask, and before the record Home simply could not show what happened on an Agent that had since gone to sleep.
 Waking every Agent to render a list would be absurd — it would defeat hibernation for the one surface a user opens most.
 
 ## The record and its boundary
@@ -76,7 +76,7 @@ The two sections scroll together, each header staying at the top while its secti
 The record's rows and the Agent's own list are both newest first, and each View more appends an older page, so the rows already shown keep their places.
 
 That boundary is what makes the record safe to rebuild or discard.
-Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
+Dropping it costs a user their feed history and nothing else; the next capture refills it from the Agents.
 It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) that the session directory belongs to — the session directory is kept because spend must stay attributable, while the attention record is a convenience that may be thrown away.
 
 ## The JanUI experiment
@@ -123,9 +123,8 @@ The Pinned section reads a pinned Session from the record, and one the record do
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 Opening an Agent's list wakes a hibernated Agent the same way, and a list left waiting on an Agent that stays asleep offers the same retry; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
-An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and a vm Agent's chat also has an Environments tab while the `environments` feature is on.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and an Agent's chat also has an Environments tab while the `environments` feature is on.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
-An Agent's runtime migration badge reads on its row in the Agents list and in the overlay of an Agent that is not running; the chat header carries it only below the width where the row shows.
 
 ## The Unified right toolbar experiment
 
@@ -153,13 +152,13 @@ One lease-elected watcher writes the record.
 It holds a session watch on every awake Agent in the install — not only the ones whose owner happens to have a browser tab open — and captures what it reads.
 
 The notices it acts on carry no state.
-A notice means "this Agent's session list changed, re-read it", the same contract every pod-sourced watch in the system uses (see [platform-topology](platform-topology.md#api-server)).
+A notice means "this Agent's session list changed, re-read it", the same contract every agent-sourced watch in the system uses (see [platform-topology](platform-topology.md#api-server)).
 The watcher pulls the list, compares it against what it last wrote, and writes only rows that actually differ.
 The comparison runs both ways: a session the Agent no longer lists has its row removed, along with any dismissal recorded against it.
 That is what keeps the Agent authoritative for existence in practice and not just in principle — a deleted session stops being mentioned rather than lingering as a card nothing stands behind.
 A backstop reconcile bounds the loss if a notice is missed, and Agents whose runtime image predates the watch surface are polled instead.
-An Agent that has not yet reported its runtime features is polled too, so a poll often targets a pod that is still starting or will never start.
-Each poll read is bounded in time and ends when the Agent leaves the watcher's list, so an Agent deleted before its pod answered does not leave a socket that retries until the replica restarts.
+An Agent that has not yet reported its runtime features is polled too, so a poll often targets a machine that is still starting or will never start.
+Each poll read is bounded in time and ends when the Agent leaves the watcher's list, so an Agent deleted before its machine answered does not leave a socket that retries until the replica restarts.
 A live watch's read is bounded in time too.
 When it does write, it emits the same per-owner invalidation hint every other domain emits, so open tabs re-read over the query path rather than being pushed rows.
 
@@ -200,7 +199,7 @@ A new or recovered alert reaches open tabs through the attention hint.
 Unread is derived, never stored as a flag: a session is unread when its activity is newer than the point it was last seen.
 Both are watermarks, so they compose without a write for every card rendered, and nothing has to be marked read as a side effect of looking at a list.
 
-The seen watermark is the pod's.
+The seen watermark is the Agent's.
 The agent-runtime stamps it while a viewer is attached to a session — machine-driven channels do not count as viewers — and the watcher snapshots it into the record so a sleeping Agent can still answer.
 Dismissal is the user's own watermark, stored per user against the item: dismissing hides an approval from the bell without resolving it, without marking anything read, and without touching running work.
 The sidebar lists Sessions as they are and reads no dismissals.
@@ -233,9 +232,9 @@ The producer is a single lease-elected holder, so its ceiling is the number of c
 Hibernation means that is far below the install's size, and the watch is idle for an idle Agent.
 Two escape hatches exist if that ceiling is ever reached, and neither has been needed:
 
-- **Widen the pod's existing session-directory report into a push.** Cost would then track events rather than awake Agents.
+- **Widen the Agent's existing session-directory report into a push.** Cost would then track events rather than awake Agents.
   It requires a fleet-wide agent image first, because a hibernated Agent on an older image contributes nothing until it is updated.
 - **Shard the lease**, so each row still has exactly one writer while the Agents are divided across holders.
   This preserves the single-writer property the no-op guard depends on.
 
-The order matters: sharding is the mechanical fix and stays within the current design, while the push changes what the pod is responsible for.
+The order matters: sharding is the mechanical fix and stays within the current design, while the push changes what the Agent is responsible for.

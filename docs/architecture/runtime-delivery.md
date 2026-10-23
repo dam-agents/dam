@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -55,7 +55,7 @@ State changes write to the outbox, the worker reads and dispatches a fresh paylo
 
 A one-shot directive the agent executes through a per-kind handler inside the agent-runtime.
 Each event carries an `id` of the form `<key>:<epoch-ms>` (stable across redeliveries; an id without the timestamp never runs — see below), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl.
-The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **session-defaults** (the agent's chat, channel and scheduled defaults, sent whenever one changes and after every `hello`; each replaces the last, and the runtime keeps them on the home volume for the sessions that follow a default, see [sessions](sessions.md#session-inside-the-pod)), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or a spawned sub-agent's install bootstrap), **startup-items** (write the [Startup Items](agent-processes.md#startup-items) a starter kit declares, once at create), **agent-instructions** (write the `~/AGENTS.md` template into the home of an agent created without a kit, only when the home has none — see [agent instructions](agent-images.md#agent-instructions)), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing or its onboarding command; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** and **sub-agent-outcome** (open or continue a session with the result of a [satellite](satellites.md) job or a sub-agent that outlived its turn), **session-message** (a message one of the agent's sessions sent into another — see [sessions](sessions.md#messages-between-sessions)), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file).
+The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **session-defaults** (the agent's chat, channel and scheduled defaults, sent whenever one changes and after every `hello`; each replaces the last, and the runtime keeps them on the home for the sessions that follow a default, see [sessions](sessions.md#session-inside-the-pod)), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or a spawned sub-agent's install bootstrap), **startup-items** (write the [Startup Items](agent-processes.md#startup-items) a starter kit declares, once at create), **agent-instructions** (write the `~/AGENTS.md` template into the home of an agent created without a kit, only when the home has none — see [agent instructions](agent-images.md#agent-instructions)), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing or its onboarding command; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** and **sub-agent-outcome** (open or continue a session with the result of a [satellite](satellites.md) job or a sub-agent that outlived its turn), **session-message** (a message one of the agent's sessions sent into another — see [sessions](sessions.md#messages-between-sessions)), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file).
 Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 A workspace-mutating event runs with the agent's runtime env, the same env its harness and terminal shells get, not the runtime's bare process env.
@@ -122,7 +122,7 @@ The reply is a discriminated outcome, not a bare ack:
 
 - **applied** — the payload was processed.
   It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**.
-  A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload — it advances the answered cursor but not the applied one, so a consumer that needs the pod's disk to match the spec gates on the second.
+  A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload — it advances the answered cursor but not the applied one, so a consumer that needs the agent's disk to match the spec gates on the second.
 - **stale** — the requested version is strictly older than the agent's applied cursor, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
 
 Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome.
@@ -156,14 +156,14 @@ It never carries state itself — if the reported cursor is behind it enqueues a
 If the Contribution and Event kinds it advertises differ from the set on record, it first raises the desired version, which puts the row behind and so enqueues by the same rule.
 It raises the version the same way when the cursor is at the version but the hash the agent reports applying differs from the state built for it now, as after a deploy that changes what the api-server builds; an agent that keeps running picks such a change up at its next start.
 
-The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the pod's live-updates watch surface, the in-pod Model Router as `modelRouter`).
+The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the agent's live-updates watch surface, the Model Router as `modelRouter`).
 A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; before its first hello an agent is unknown, not outdated, and is polled.
-Each claim gates both the UI surfaces that read it and the platform's pod-facing streams.
+Each claim gates both the UI surfaces that read it and the platform's agent-facing streams.
 Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
-An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, its image binds its contribution drivers differently from when it applied, or an older runtime wrote the env file without the provider templates this one reads, as when an image update moves an agent past the Model Router release.
+An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, its image binds its contribution drivers differently from when it applied, or an older runtime wrote the env file without the provider templates this one reads, as when an image update moves an agent past the Model Router release.
 The platform then re-delivers the whole snapshot to every driver.
-The dispatch a `hello` enqueues waits for the Agent to be ready, except for a migrated machine whose migration is verified: it is ready only after its Backend switches, and its runtime waits only seconds for the env before it starts the harness without it ([runtime migration](vm-runtime-migration.md)).
+The dispatch a `hello` enqueues waits for the Agent to be ready, and its runtime waits only seconds for the env before it starts the harness without it.
 
 ```mermaid
 sequenceDiagram
@@ -197,7 +197,7 @@ The common contract:
   That distinction is what keeps a slow handler off the channel: `applyState` is serialized per agent, so anything awaited inside a handler stops every other contribution and event for that agent, and the api-server abandons the call after its own timeout.
   A handler with work that can outlive the call settles immediately and reports its outcome afterwards over the **event report** below.
   Two do: a schedule's Precheck, and a sub-agent's `trigger`, whose run the runtime watches and reports as failed when it can no longer produce a result ([invocations](invocations.md)).
-  The cost is deliberate: work detached this way is lost if the pod dies before it finishes, because the event is already settled.
+  The cost is deliberate: work detached this way is lost if the machine stops before it finishes, because the event is already settled.
 
 A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires; the events behind it in that apply keep running, except behind a failed workspace mutation, which holds them (above).
 For workspace-mutating kinds the redelivery is bounded by the attempt budget (above); the reason the runtime reported stays on the row either way.
@@ -230,7 +230,7 @@ sequenceDiagram
 ### Crash between dispatch and ack
 
 If the agent runs the handler but crashes before sending the apply response, the worker doesn't get an `appliedVersion` — no rows are stamped.
-The event reappears in the next snapshot; the agent's event loop consults its local state store (the per-key last-run timestamp, persisted on the PVC) and settles the already-run event without re-firing; the next ack stamps `dispatched_at`.
+The event reappears in the next snapshot; the agent's event loop consults its local state store (the per-key last-run timestamp, persisted on the agent's disk) and settles the already-run event without re-firing; the next ack stamps `dispatched_at`.
 
 If the handler ran but the apply response is lost, same path — redelivery settles from the state store and the cursor advances.
 Re-fire is possible only if the crash lands between the side effect and the state-store write.
@@ -299,7 +299,7 @@ So the api-server also watches for the Agent's Ready condition turning True and 
 The first sighting of each Agent, at watch start or relist, is only a baseline, so a restarted replica re-enqueues nothing.
 
 Every `applyState` call carries a deadline of about a minute.
-An agent that accepts the request but never answers — a pod wedged on memory pressure, a harness that stopped serving — fails that attempt onto the backoff instead of holding a worker slot until the transport gives up on its own, which takes minutes.
+An agent that accepts the request but never answers — a machine wedged on memory pressure, a harness that stopped serving — fails that attempt onto the backoff instead of holding a worker slot until the transport gives up on its own, which takes minutes.
 Together with per-agent coalescing, this bounds what one unresponsive agent can hold to one active job per key.
 The worker's concurrency is sized far above what that bound allows the live agent population to occupy at once, so a slot is never the scarce resource and no delivery waits behind another agent's; the cap protects the process from a burst, it does not schedule agents.
 A handler holds nothing else for the duration of the call — the Postgres reads finish before the request goes out and the outcome is recorded after it returns — so a stalled agent ties up its own socket and nothing shared.
@@ -313,7 +313,7 @@ Both the pool size and the slot count are deployment values ([`helm/values.yaml`
 A scheduled job runs every minute and does two things:
 
 1. **Outbox staleness check.** Scan for the rows an agent is behind on — the desired version is not settled yet, an earlier apply left driver failures still under their attempt budget, or the agent holds an event that is neither dispatched nor expired — every such row, not a capped batch.
-   That third branch is what recovers a fire whose in-pod dispatch threw: the version settles, so neither of the first two sees it, and without it the event would sit until its TTL ran out.
+   That third branch is what recovers a fire whose dispatch inside the agent threw: the version settles, so neither of the first two sees it, and without it the event would sit until its TTL ran out.
    For a workspace-mutating event the retry it drives is bounded by the per-event attempt budget — exhausting it stamps the event dispatched-with-error, which takes the row out of this branch.
    Re-enqueue a dispatch for each one whose agent is currently running.
    This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth.
@@ -361,10 +361,10 @@ Custom impl names may not collide with a built-in name — registration rejects 
 
 ### Built-in contribution impls
 
-| Impl            | Used by                                               | Behavior                                                                                                                                        |
-| --------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `file`          | `file` kind directly, and `mcp-entry` via composition | A format × merge-mode matrix, the substrate for every file-shaped write.                                                                        |
-| `skill-install` | `skill-ref` kind                                      | Materializes a source's skill onto the PVC at the pinned version and reaps ones that leave the snapshot. Owned in depth by [skills](skills.md). |
+| Impl            | Used by                                               | Behavior                                                                                                                                                 |
+| --------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `file`          | `file` kind directly, and `mcp-entry` via composition | A format × merge-mode matrix, the substrate for every file-shaped write.                                                                                 |
+| `skill-install` | `skill-ref` kind                                      | Materializes a source's skill onto the agent's disk at the pinned version and reaps ones that leave the snapshot. Owned in depth by [skills](skills.md). |
 
 ### Writing a file
 
@@ -380,7 +380,7 @@ A file the write cannot parse is never treated as empty either: the `harness-con
 `applyState` delivers the full Contribution snapshot.
 The driver dispatcher groups contributions by kind and calls each driver's `apply(contributions, ctx)`:
 
-1. Driver compares the desired set with what's on disk (or in its own per-kind state file on the agent PVC).
+1. Driver compares the desired set with what's on disk (or in its own per-kind state file on the agent's disk).
 2. Adds new contributions, updates changed ones, removes anything no longer in the snapshot.
 3. Returns per-driver outcome.
 
@@ -441,7 +441,7 @@ Each delivery therefore records the kinds it dropped on the outbox row, and the 
 A `hello` whose advertised kinds change **raises the desired version**, which is what makes applying that update land the refused parts; nothing else would, since the row already settled.
 Bumping rather than merely enqueueing keeps the trigger durable: the row goes behind, so the sweep recovers a lost job, and a delivery built on stale capabilities can no longer overwrite a newer one's record.
 
-Capabilities also gate whole flows, not only payload items: `hello` carries a numeric knowledge-base publish capability, and the api-server delegates share publishing to the pod only when it meets the current level — a runtime below it gets the share marked failed with an update-the-agent hint instead of silently never publishing ([knowledge bases](knowledge-bases.md)).
+Capabilities also gate whole flows, not only payload items: `hello` carries a numeric knowledge-base publish capability, and the api-server delegates share publishing to the agent only when it meets the current level — a runtime below it gets the share marked failed with an update-the-agent hint instead of silently never publishing ([knowledge bases](knowledge-bases.md)).
 
 ## Persistence touchpoints
 
@@ -450,16 +450,16 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 | Postgres `agent_env`                   | User-typed env per agent                                                                                                             | The Environment editor's store — read by the state-builder as `env` contributions, ordered first.                                                                |
 | Postgres `runtime_state_outbox`        | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped             | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads.                                                       |
 | Postgres `runtime_events`              | One row per pending event                                                                                                            | Read by the state-builder; stamped by the worker as the agent settles each id, and claimed by the agent's own event report when one arrives.                     |
-| Runtime-state file on the agent PVC    | The applied cursor, the driver bindings it was applied under, and per-key event last-run timestamps                                  | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness.                                                           |
+| Runtime-state file on the agent's disk | The applied cursor, the driver bindings it was applied under, and per-key event last-run timestamps                                  | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness.                                                           |
 | Redis (BullMQ queues)                  | Pending BullMQ jobs referencing outbox row ids                                                                                       | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running.                                                      |
-| Per-agent PVC env snapshot file        | Reconciled credential-placeholder env                                                                                                | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
-| `agents` table                         | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it.                                                |
-| Per-Agent PVC                          | Materialized files, MCP config, installed skills                                                                                     | Driver-written via runtime channel.                                                                                                                              |
-| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written                                                                                  | Per-contribution-driver, opt-in. Every file mode records the path; key-targeted also its keys.                                                                   |
+| Per-agent env snapshot file            | Reconciled credential-placeholder env                                                                                                | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
+| `agents` table                         | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every agent report that changes it.                                              |
+| The agent's disk                       | Materialized files, MCP config, installed skills                                                                                     | Driver-written via runtime channel.                                                                                                                              |
+| Per-driver state file on its disk      | Driver's tracking of what it has previously written                                                                                  | Per-contribution-driver, opt-in. Every file mode records the path; key-targeted also its keys.                                                                   |
 
 ## Invariants
 
-- **One agent's delivery never waits on another's.** Every shared stage is either per-agent (the deduplication key, the outbox row lock, the agent-runtime's serialized apply, the connection to the pod) or held only for milliseconds (Postgres reads, the job fetch).
+- **One agent's delivery never waits on another's.** Every shared stage is either per-agent (the deduplication key, the outbox row lock, the agent-runtime's serialized apply, the connection to the agent) or held only for milliseconds (Postgres reads, the job fetch).
   The only long hold is the HTTP call itself, bounded by its deadline and by one active job per key, and the worker runs far more of those concurrently than agents can occupy.
   A wedged agent slows only its own deliveries.
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern.
@@ -469,7 +469,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 - **State snapshots are idempotent, and the version bumps for every change to what the agent should hold.** That is each contribution edit, and a `hello` whose advertised Contribution or Event kinds differ from the set on record — the payload that agent should receive changes with them.
   Drivers tolerate repeated apply — a reconnect's replay, or the full re-apply an image that rebinds them asks for — and the agent rejects strictly older pushes, so neither regresses state.
   The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
-- **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
+- **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the agent's disk) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, the tool-approval report — a permission request no client can answer, and how it ended — and the event report.
   The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).

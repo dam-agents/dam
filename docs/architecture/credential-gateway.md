@@ -1,12 +1,12 @@
 # Credential gateway
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 ## Overview
 
-The credential gateway is the Envoy proxy in each Agent's paired gateway pod, or, for vm Agents on an install that turns it on, in the owner's one gateway pod ([owner gateway](#owner-gateway)): every HTTPS request the agent makes exits through it, and for the hosts the agent's Connections cover it adds the real credential on the wire — injected into a header or query parameter, or, for S3-compatible storage, by signing the request with keys the agent never holds — from Secrets mounted on the gateway pod only.
+The credential gateway is the Envoy proxy in each Agent's gateway pod, or, for an install that turns it on, in the owner's one gateway pod ([owner gateway](#owner-gateway)): every HTTPS request the agent makes exits through it, and for the hosts the agent's Connections cover it adds the real credential on the wire — injected into a header or query parameter, or, for S3-compatible storage, by signing the request with keys the agent never holds — from Secrets mounted on the gateway pod only.
 This page owns the mechanics of that path — how a host gets an intercepting chain, how credentials are injected, how requests are signed, and what keeps the gateway bootable when a Secret goes bad.
-The trust model it enforces — who holds credentials, the pod and mesh boundaries, and the ext_authz HITL gate every forwarded request passes — lives on [security-and-credentials](security-and-credentials.md).
+The trust model it enforces — who holds credentials, the machine and mesh boundaries, and the ext_authz HITL gate every forwarded request passes — lives on [security-and-credentials](security-and-credentials.md).
 Model calls reach it through the agent-side [Model Router](harness-config.md#the-model-router), which sends each call with the target Connection's placeholder in the header the Connection claims here and holds no credential.
 
 ## Envoy credential injection
@@ -16,8 +16,8 @@ The leaf is issued by a chart-managed MITM CA whose certificate is mounted into 
 
 On the wire:
 
-1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`; the per-Agent gateway Service routes to the paired gateway pod.
-   TLS egress arrives as HTTP CONNECT, plain HTTP in absolute form, forwarded without interception.
+1. The agent reaches its gateway as `http://<agent>-gateway:<envoyPort>` — through the proxy setting a harness honours, or as raw TLS from a client that keeps none — and the per-Agent gateway Service routes that to its gateway pod.
+   TLS egress therefore arrives as a CONNECT or as a handshake carrying SNI, plain HTTP in absolute form or addressed by its `Host`, and each lands in a chain that inspects it the same way.
    With a telemetry backend, plain HTTP to the gateway's own address on a reserved OTLP path goes to the collector instead, with no egress check, since it reaches nothing else (see [observability](observability.md#agent-export)).
 2. Envoy's outer listener (reach gated by NetworkPolicy) stamps the trusted attribution header on every request it forwards, or strips it where no telemetry backend is configured; either way the agent cannot supply its own (see [observability](observability.md)).
    CONNECT it terminates, routing the inner stream into an internal listener that reads SNI.
@@ -58,7 +58,7 @@ The controller therefore evicts gateway pods left running a configuration it has
 Recovery costs a normal gateway restart.
 The race itself is not closed — deletion is not atomic with the roll — so the eviction, not the ordering, is what bounds the harm.
 
-A gateway that fails anyway — crash-looping, or wedged on a superseded configuration — leaves the agent pod ready, so the agent still reads as running and chat works while its egress is down.
+A gateway that fails anyway — crash-looping, or wedged on a superseded configuration — leaves the machine side ready, so the agent still reads as running and chat works while its egress is down.
 The agent view therefore carries the gateway's failure message apart from the agent's state, and the UI shows it as a warning next to that state.
 Only hard failures count: a gateway that is starting, rolling, hibernated or parked over budget shows no warning.
 
@@ -142,11 +142,11 @@ A credentials file the descriptor names but the Secret lacks, or a signing entry
 
 ## Owner gateway
 
-With `virtualization.gateway.perOwner` on, one gateway pod per owner serves every vm Agent of that owner in place of a gateway pod each.
-It is off by default, and container Agents always keep their own gateway, so everything above holds for both kinds; this section says what differs.
+With `virtualization.gateway.perOwner` on, one gateway pod per owner serves every Agent of that owner in place of a gateway pod each.
+It is off by default; with it on, everything above holds for every one of those Agents, and this section says what differs.
 The trust model it rests on lives on [security-and-credentials](security-and-credentials.md#owner-gateway-identity).
 
-**Identity is the agent's own Service.** Each vm Agent keeps its own gateway Service and ClusterIP, which its machine's allowlist and resolver name, so moving an agent changes no machine spec.
+**Identity is the agent's own Service.** Each Agent keeps its own gateway Service and ClusterIP, which its machine's allowlist and resolver name, so moving an agent changes no machine spec.
 The controller gives each agent a slot on the owner gateway, a proxy port and a resolver port recorded on that Service, and the Service maps every port it declares onto that slot alone.
 A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own address reaches only its own listener.
 
@@ -161,7 +161,7 @@ Each agent's listener sends the harness authority, by CONNECT or plain HTTP, int
 What it admits leaves stamped with the agent's name in a header that every other route of the owner gateway strips, and the agent's harness policy admits the owner principal only with that header naming the agent.
 A request that reaches the harness address by another spelling, outside the guard, therefore carries no name and is refused at the waypoint.
 
-**Credentials and leaf.** The controller copies the keys the gateway reads, from every Secret granted to any of the owner's vm Agents, into one per-owner Secret, each key prefixed with its Secret's name; a Secret not granted, or another owner's, never enters it.
+**Credentials and leaf.** The controller copies the keys the gateway reads, from every Secret granted to any of the owner's Agents, into one per-owner Secret, each key prefixed with its Secret's name; a Secret not granted, or another owner's, never enters it.
 The controller writes it only when its content changes, so a grant, a revocation or a rotation reaches the mounted files without a restart.
 Its pod is stamped twice per content hash of the credentials in that Secret — a change to its files alone does not stamp it, since Envoy reads those as the volume updates — as an agent's own gateway pod is per revision (**Rotation**, above), so a rotation is in use as soon.
 One leaf names every host any of the agents intercepts, from the same issuer, so a machine's CA is unchanged.

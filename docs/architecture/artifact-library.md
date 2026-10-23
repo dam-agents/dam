@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -184,7 +184,7 @@ flowchart LR
   visitor -->|restricted: sign in| keycloak[keycloak]
 ```
 
-- **Agents** publish through artifact tools on the per-agent platform MCP server (the same in-pod outbound surface as channels, skills, and schedules).
+- **Agents** publish through artifact tools on the per-agent platform MCP server (the same outbound MCP surface as channels, skills, and schedules).
   Small text content travels inline; anything bigger takes the **direct-transfer** path: the tool mints a short-lived presigned upload link, the harness PUTs bytes straight to the store through its paired gateway, and the create call references the completed upload.
   The platform verifies the upload (existence, size cap) before the artifact row lands, and an upload reference outside the caller's own staging namespace reads as unknown.
   Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the owner-scoped service means it can only ever touch its owner's library.

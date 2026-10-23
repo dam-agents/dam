@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -9,13 +9,13 @@ The Agent that creates it is its **Owning Agent**.
 Users see an Environment as its own kind of thing under its agent, never as an agent: it is left out of every agent list, picker and count, and shows only with its Owning Agent, as an Environment.
 The api-server's agent list leaves it out, so the app, the CLI and an API key's agent picker never show it; it is still found by id.
 
-The feature is behind the per-user `environments` [feature](features.md), offered only on an install that runs microVMs.
+The feature is behind the per-user `environments` [feature](features.md).
 
 ## What an Environment is
 
 Underneath, an Environment is an ordinary Agent record with one more field, `environmentOf`, naming the Owning Agent.
-The cluster refuses to add, remove or change that field after create, and refuses it on any backend but `vm`.
-So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owning Agent, and every other part of the platform treats it as a vm Agent: its gateway, wake and sleep, budget and storage pool, relays and telemetry.
+The cluster refuses to add, remove or change that field after create.
+So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owning Agent, and every other part of the platform treats it as an Agent: its gateway, wake and sleep, budget and storage pool, relays and telemetry.
 
 It is created with nothing that would let it act as its Owning Agent:
 
@@ -27,12 +27,12 @@ A row in the `environments` table holds what only this module reads: its name am
 
 ## Lifecycle
 
-- **Create.** Only a vm Agent can own Environments; an Environment cannot own one.
+- **Create.** Only an Agent can own Environments; an Environment cannot own one.
   An agent holds at most `environments.maxPerAgent` of them (default 5), each name once.
   The Agent is named `<owning agent> · <name>`, which keeps it unique among the owner's agents.
   If the row cannot be written, the Agent is deleted again.
 - **Start.** A `start` command is delivered once, as a workspace command, that writes it as a [Startup Item](agent-processes.md#startup-items), an openrc user service, which then runs at every boot.
-- **Sleep.** An Environment sleeps like any vm sandbox, after the install's idle time, and keeps its disk; there is no setting of its own.
+- **Sleep.** An Environment sleeps like any machine, after the install's idle time, and keeps its disk; there is no setting of its own.
 - **Expiry.** Every Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
   The Owning Agent and the owner set and extend it, and a sweep every five minutes deletes an Environment whose expiry passed.
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
@@ -105,11 +105,11 @@ The api-server names the declared ports on every request, so a port the Environm
 
 ## Surfaces
 
-**The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to a vm Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
+**The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, a vm agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
+In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
 The sidebar lists an agent's Environments under it, once it is expanded: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
 With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, the section's empty text when there is none, and a link to the section, where the list of people is edited.

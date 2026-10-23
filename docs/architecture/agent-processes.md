@@ -1,18 +1,18 @@
 # Agent processes
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
 Besides the platform's own processes, a running agent holds the work its agent started: commands a turn waits on, jobs its harness supervises in the background, and jobs it detached from the harness.
-agent-runtime is the only component that sees the pod's process table, so it owns everything on this page: the background work a harness reports, and the **process inventory** that lists every kind for the user.
+agent-runtime is the only component that sees the machine's process table, so it owns everything on this page: the background work a harness reports, and the **process inventory** that lists every kind for the user.
 Nothing here changes when an agent hibernates — that rule, and the signals behind it, belong to [agent-lifecycle](agent-lifecycle.md#hibernate).
 
 ## Reported background work
 
 Closing a session tears down the harness's per-session subprocess, and a harness that supervises background jobs kills them as it goes, so a job an agent left running would die seconds after the last tab closed.
 ACP carries no signal to consult — a session emits nothing between turns, and `session/close` is specified to cancel any ongoing work — so the platform asks instead of inferring.
-A session reports its **complete in-flight set** to the runtime's in-pod surface, as a level rather than start/stop edges, and while that set is non-empty the runtime will not close the session and, while the work is kept, reports itself busy, so the idle checker cannot hibernate the pod underneath the work.
+A session reports its **complete in-flight set** to the runtime's own surface, as a level rather than start/stop edges, and while that set is non-empty the runtime will not close the session and, while the work is kept, reports itself busy, so the idle checker cannot hibernate the machine underneath the work.
 An empty report ends both.
 Reporting is optional: a harness that never reports behaves exactly as it did before the contract.
 Claude Code reports from a Stop hook that its launcher writes into the user settings on every start, not into the image's managed settings: an account that receives server-managed settings replaces the managed file whole, which would drop the hook.
@@ -43,7 +43,7 @@ Nothing times a hold out, so an agent with reported work does not scale to zero 
 
 ## Process inventory
 
-The runtime sorts what runs in the pod into four kinds, one row per process tree, with its command, start time, and the CPU and memory of the whole tree; the fourth, [Startup Items](#startup-items), has a section of its own:
+The runtime sorts what runs in the machine into four kinds, one row per process tree, with its command, start time, and the CPU and memory of the whole tree; the fourth, [Startup Items](#startup-items), has a section of its own:
 
 - **Turn Process** — a descendant of a chat harness that a running turn started.
   It is listed only while a turn runs on that harness, and only if it started after the earliest turn running there began, so helpers the harness keeps (MCP servers and the like) never show.
@@ -54,7 +54,7 @@ The runtime sorts what runs in the pod into four kinds, one row per process tree
 - **Detached Process** — a process re-parented to the reaper of orphans: PID 1, or the init that wraps agent-runtime and adopts orphans as a subreaper.
   Work under an attached terminal or SSH shell is not listed until it detaches.
 
-A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-pod), and the runtime reads every one of them the same way.
+A machine runs one chat harness per [Harness Lease](sessions.md#session-inside-the-pod), and the runtime reads every one of them the same way.
 
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct children — the chat harnesses, the pod service, terminals, SSH servers.
 Nor is openrc's user-services manager, which starts and stops the agent's [Startup Items](#startup-items).
@@ -108,7 +108,7 @@ Each row resolves who decided, in this order:
 3. **The default**: a Harness Task is kept, since backgrounding it was the agent's choice; a Detached Process is not.
    A Turn Process ends with its turn and takes no decision.
 
-The agent marks through the runtime's in-pod surface, from inside the agent only.
+The agent marks through the runtime's own surface, from inside the agent only.
 Once the user has decided about a process, a later mark on it is refused with a message that names the user's choice, so the agent can ask instead.
 This, like the reported contract, is not a security boundary — the agent could kill its own work anyway — but a rule an honest agent follows.
 Kept Detached Processes keep the agent awake next to kept Harness Tasks, but never hold back a harness recycle.
@@ -117,7 +117,7 @@ Marks and user choices live in the processes document, keyed so a reused pid nev
 
 ## Startup Items
 
-A **Startup Item** is a command a vm agent's machine starts at every boot, so it comes back after a hibernation, a restart and a new image, like a Mac's login items; the UI calls them **Login items**.
+A **Startup Item** is a command a machine starts at every boot, so it comes back after a hibernation, a restart and a new image, like a Mac's login items; the UI calls them **Login items**.
 It is an openrc **user service** of root, the agent's account: a script in `~/.config/rc/init.d/<name>` with a `command`, started at boot when `~/.config/rc/runlevels/default` links it, and controlled with `rc-service --user`.
 The agent writes them as plain openrc scripts, and they live in the home, the one place every boot and every image keep.
 A [starter kit](starter-kits.md) may declare some: the platform sends them once at create as a `startup-items` event, and the runtime writes each script the same way, with a comment naming the kit, links the ones that are on and starts them; it never replaces a script already there, so a name the agent took stays the agent's.
@@ -142,7 +142,7 @@ A service that runs with no script any more is listed there too, as no longer in
 **A service never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for one.
 The user restarts, stops, turns off or removes a service there: turning it off removes its boot link, so the next boot skips it, and removing it deletes its script and link once it stopped; one that will not stop stays listed, and the user is told so.
 A choice the user made is kept when openrc then fails, and the service's status says so.
-Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc.
+Every Agent's machine boots openrc, so every Agent lists Startup Items.
 
 **Stop.** The user can stop any listed process that has one: the runtime signals its whole tree — every descendant, and the process group its root leads — to terminate, and after a short grace kills what is left, matching each process by its start time so a reused pid is never hit.
 The row moves to the finished history as stopped by the user; a Turn Process just ends, and its tool call fails in front of the agent.
