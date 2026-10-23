@@ -4,6 +4,7 @@ import {
   FoundationModel,
   UserProfile,
 } from "@carbon/pictograms-react";
+import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { getUser, logout } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
@@ -25,6 +27,7 @@ import { useOperatorAvailability } from "../../operator/api/queries.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
 import { routeToPath, type SettingsTab } from "../../platform/lib/routes.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
+import { providerName } from "../../providers/lib/provider-rows.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
@@ -66,6 +69,9 @@ const themeOptions = [
 
 export function SettingsView() {
   const { data: flags, isSuccess: flagsLoaded } = useFeatures();
+  const sharedProvider = useAppConnections().data?.some(
+    (c) => c.templateId === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  );
   const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
   const showFeatures =
     featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
@@ -224,7 +230,11 @@ export function SettingsView() {
               <PageHeader
                 pictogram={<FoundationModel aria-hidden />}
                 title="Providers"
-                description="Connect an LLM provider to give agents access to its models."
+                description={
+                  sharedProvider
+                    ? `${providerName("curve-bender", CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)} is included, so you can start right away. Connect your own provider later for other models.`
+                    : "Connect an LLM provider to give agents access to its models."
+                }
               />
 
               <section className="mb-8">

@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -315,7 +315,7 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 
 The same proxy, reached with a key the deployment provides instead of the user's.
 The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
-It is not behind a feature flag: where the key is set, every user has it.
+It is not behind a feature flag: where the key is set, every user has it, and a user who connects nothing of their own still has a provider to run an agent on.
 The Connection is the deployment's, never the user's: the user's own Connection listing provisions it, it follows the deployment's key, it is removed when the deployment drops the key, and the user's own create, update and delete refuse it.
 It is named `CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
 Its row carries the preset's icon in a slightly deeper shade of its tile, so the two CurveBender rows read as related but are told apart at a glance, and it opens a read-only explainer rather than a form, since the user holds no key to enter.

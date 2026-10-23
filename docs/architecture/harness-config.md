@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -26,8 +26,8 @@ The attach dialog, from the picker or a harness button, lists only the owner's u
 Its rows start switched off, except the provider the owner clicked in the picker; nothing is attached until at least one is on and the owner confirms.
 An agent holds one provider of a kind, so switching a row on locks the other rows of its kind.
 The UI names a provider by its Settings name, such as Bob Shell, not the connection's own name.
-With no provider at all, the chat opens the provider list in a modal.
-While the agent holds no provider, the chat blocks sending, and the picker's place holds a link to that modal; a provider connected or picked there is attached to the agent.
+With no provider Connection the owner holds, the chat opens the provider list in a modal, and the picker's place links to it; the shared CurveBender counts as one the owner holds.
+While the agent holds no provider, the chat blocks sending and says whether to attach one the owner holds or connect one; a provider connected there is attached.
 With no pair picked or remembered, the picker preselects the default harness on the first granted provider it accepts, else the first carried harness a granted provider fits, with its default model.
 Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the pair picked for the next session, else the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
