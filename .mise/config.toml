@@ -109,14 +109,14 @@ zizmor = "1.30.1"
 command = "mbx"
 env = { MBX_CARGO_SHIM_MODE = "1" }
 
-# The Mend SCA CLI. Only security.yml's mend-sca job installs it, through
-# `install_args: http:mend`; no other job and no task runs it. A versioned build,
-# not downloads.mend.io/cli/, which serves the latest: the 26.9.3-hf1 release
-# changed that file, so the job's pinned hash stopped matching and every main run
-# failed (#5765). `build` of a release in https://downloads.mend.io/matrix.json
-# names it, and Mend publishes the hash beside it: checksum_url locks the hash of
-# every platform without downloading any. Mend publishes no release dates, so
-# `/up` applies the 7-day rule by hand. Mend builds no macos-x64 CLI.
+# The Mend SCA CLI. A versioned build, not downloads.mend.io/cli/, which serves
+# the latest: the 26.9.3-hf1 release changed that file, so the job's pinned hash
+# stopped matching and every main run failed (#5765). `build` of a release in
+# https://downloads.mend.io/matrix.json names it, and Mend publishes the hash
+# beside it, so checksum_url locks every platform's hash without a download.
+# Every full install downloads it; only security.yml's mend-sca job runs it,
+# through `install_args: http:mend`. matrix.json's timestamps are not publish
+# dates, so `/up` applies the 7-day rule by hand. Mend builds no macos-x64 CLI.
 [tools."http:mend"]
 version = "26.9.2.4" # 26.9.2-hf1
 
