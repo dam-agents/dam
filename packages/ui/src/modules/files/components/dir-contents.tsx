@@ -1,17 +1,13 @@
-import type { DirEntry } from "agent-runtime-api";
-import { Fragment } from "react";
-
 import { useDirSnapshot } from "../api/queries.js";
-import { FileRow } from "./file-row.js";
+import { DirEntryRow } from "./dir-entry-row.js";
 import { useFilesPanel } from "./files-panel-controller.js";
-import { InlineNameRow } from "./inline-name-row.js";
 
-interface DirContentsProps {
+interface Props {
   path: string;
   depth: number;
 }
 
-export function DirContents({ path, depth }: DirContentsProps) {
+export function DirContents({ path, depth }: Props) {
   const panel = useFilesPanel();
   const { data: snapshot } = useDirSnapshot(panel.agentId, path);
 
@@ -28,59 +24,5 @@ export function DirContents({ path, depth }: DirContentsProps) {
         />
       ))}
     </>
-  );
-}
-
-interface DirEntryRowProps {
-  entry: DirEntry;
-  parentPath: string;
-  depth: number;
-}
-
-function joinPath(parent: string, name: string): string {
-  return parent ? `${parent}/${name}` : name;
-}
-
-function DirEntryRow({ entry, parentPath, depth }: DirEntryRowProps) {
-  const panel = useFilesPanel();
-  const fullPath = joinPath(parentPath, entry.name);
-  const isDir = entry.type === "dir";
-  const isExpanded = isDir && panel.expandedDirs.has(fullPath);
-  const isRenaming = panel.renamingPath === fullPath;
-
-  return (
-    <Fragment>
-      {isRenaming ? (
-        <InlineNameRow
-          kind={isDir ? "dir" : "file"}
-          depth={depth}
-          initial={entry.name}
-          onCommit={(next) => panel.onCommitRename(fullPath, next)}
-          onCancel={panel.onCancelRename}
-        />
-      ) : (
-        <FileRow
-          name={entry.name}
-          path={fullPath}
-          type={entry.type}
-          depth={depth}
-          isDot={entry.name.startsWith(".")}
-          isCollapsed={isDir && !isExpanded}
-          dropActive={isDir && panel.dragTargetPath === fullPath}
-        />
-      )}
-      {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
-      {panel.pendingNew && panel.pendingNew.dir === fullPath && (
-        <InlineNameRow
-          kind={panel.pendingNew.kind}
-          depth={depth + 1}
-          placeholder={
-            panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
-          }
-          onCommit={panel.onCommitNew}
-          onCancel={panel.onCancelNew}
-        />
-      )}
-    </Fragment>
   );
 }

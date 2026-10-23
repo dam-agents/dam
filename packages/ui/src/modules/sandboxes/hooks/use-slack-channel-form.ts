@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChannelType, type SlackChannel } from "api-server-api";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -7,23 +6,24 @@ import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
 import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
-export type { SlackChannel };
+export type SlackChannel = Extract<
+  AgentView["channels"][number],
+  { type: "slack" }
+>;
 
-const slackChannelFormSchema = z.object({
+export const slackChannelFormSchema = z.object({
   channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
   ambient: z.boolean(),
 });
 
-type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
+export type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
 
 export function findSlackChannels(
   agent: AgentView | undefined,
 ): SlackChannel[] {
-  return agent?.channels.filter((c) => c.type === ChannelType.Slack) ?? [];
-}
-
-export function slackChannelLabel(channel: SlackChannel): string {
-  return channel.name ? `#${channel.name}` : channel.slackChannelId;
+  return (
+    agent?.channels.filter((c): c is SlackChannel => c.type === "slack") ?? []
+  );
 }
 
 export function useSlackChannelForm(

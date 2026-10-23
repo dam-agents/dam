@@ -25,6 +25,8 @@ import { useProviderStaging } from "./use-provider-staging.js";
 import { useSandboxSettingsSave } from "./use-sandbox-settings-save.js";
 import { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
+export type { SandboxSettingsStatus } from "./sandbox-settings-schema.js";
+
 export function useSandboxSettingsForm() {
   const agentId = useStore((s) => s.agentId);
 
@@ -200,12 +202,13 @@ export function useSandboxSettingsForm() {
     egressStaged,
     inheritedEnvs,
     hibernationTimeoutMin,
-    draftName: watch("name"),
     sizeCpuMilli: watch("sizeCpuMilli"),
     sizeMemoryMi: watch("sizeMemoryMi"),
-    setSize: (patch: { sizeCpuMilli: number; sizeMemoryMi: number }) => {
-      setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
-      setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
+    setSize: (patch: { sizeCpuMilli?: number; sizeMemoryMi?: number }) => {
+      if (patch.sizeCpuMilli !== undefined)
+        setValue("sizeCpuMilli", patch.sizeCpuMilli, { shouldDirty: true });
+      if (patch.sizeMemoryMi !== undefined)
+        setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
     },
     sizeRestartsAgent:
       agent !== null && !(agent.state === "hibernated" || agent.overBudget),

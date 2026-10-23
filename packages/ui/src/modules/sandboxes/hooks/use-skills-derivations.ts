@@ -1,5 +1,5 @@
 import type { LocalSkill, Skill, SkillSource } from "api-server-api";
-import { platformSkillFeature, skillKey } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useMemo } from "react";
 
 import { repoSlug } from "@/lib/git-source";
@@ -7,18 +7,8 @@ import { repoSlug } from "@/lib/git-source";
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
+import { filterByQuery } from "../components/skills/skill-search.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
-
-function filterByQuery<T extends { name: string; description: string }>(
-  items: T[],
-  query: string,
-): T[] {
-  const needle = query.toLowerCase();
-  if (!needle) return items;
-  return items.filter((item) =>
-    `${item.name} ${item.description}`.toLowerCase().includes(needle),
-  );
-}
 
 export interface SkillsDerivations {
   q: string;
@@ -28,7 +18,6 @@ export interface SkillsDerivations {
   suppressedBySource: ReadonlyMap<string, ReadonlySet<string>>;
   totals: { skills: number; sources: number; on: number };
   shownCreatedHere: LocalSkill[];
-  shownPlatform: LocalSkill[];
   shownBuiltIn: LocalSkill[];
   filteredBySource: ReadonlyMap<string, ReadonlySet<string>> | null;
   shownSources: SkillSource[];
@@ -75,16 +64,10 @@ export function useSkillsDerivations(
       standalone.filter((s) => s.origin === undefined || s.origin === "user"),
     [standalone],
   );
-  const platform = useMemo(
-    () => standalone.filter((s) => platformSkillFeature(s) !== undefined),
-    [standalone],
-  );
   const builtIn = useMemo(
     () =>
       standalone.filter(
-        (s) =>
-          (s.origin === "system" || s.origin === "system-modified") &&
-          platformSkillFeature(s) === undefined,
+        (s) => s.origin === "system" || s.origin === "system-modified",
       ),
     [standalone],
   );
@@ -112,7 +95,7 @@ export function useSkillsDerivations(
   }, [sources, skillsBySource, suppressedBySource]);
 
   const totals = useMemo(() => {
-    let skills = createdHere.length + platform.length + builtIn.length;
+    let skills = createdHere.length + builtIn.length;
     let on = 0;
     for (const list of listBySource.values()) {
       skills += list.length;
@@ -121,22 +104,11 @@ export function useSkillsDerivations(
       ).length;
     }
     return { skills, sources: sources.length, on };
-  }, [
-    createdHere.length,
-    platform.length,
-    builtIn.length,
-    listBySource,
-    installedRef,
-    sources,
-  ]);
+  }, [createdHere.length, builtIn.length, listBySource, installedRef, sources]);
 
   const shownCreatedHere = useMemo(
     () => filterByQuery(createdHere, q),
     [createdHere, q],
-  );
-  const shownPlatform = useMemo(
-    () => filterByQuery(platform, q),
-    [platform, q],
   );
   const shownBuiltIn = useMemo(() => filterByQuery(builtIn, q), [builtIn, q]);
   const filteredBySource = useMemo(() => {
@@ -159,7 +131,6 @@ export function useSkillsDerivations(
 
   const matchCount = filteredBySource
     ? shownCreatedHere.length +
-      shownPlatform.length +
       shownBuiltIn.length +
       [...filteredBySource.values()].reduce((n, names) => n + names.size, 0)
     : null;
@@ -255,17 +226,11 @@ export function useSkillsDerivations(
     for (const [gitUrl, names] of byUrl) {
       rows.push({ label: repoSlug(gitUrl), names });
     }
-    if (platform.length > 0) {
-      rows.push({
-        label: "From platform features",
-        names: platform.map((s) => s.name),
-      });
-    }
     if (builtIn.length > 0) {
       rows.push({ label: "With the image", names: builtIn.map((s) => s.name) });
     }
     return rows;
-  }, [createdHere, platform, builtIn, installed, sources, standaloneSnapshot]);
+  }, [createdHere, builtIn, installed, sources, standaloneSnapshot]);
 
   return {
     q,
@@ -275,7 +240,6 @@ export function useSkillsDerivations(
     suppressedBySource,
     totals,
     shownCreatedHere,
-    shownPlatform,
     shownBuiltIn,
     filteredBySource,
     shownSources,

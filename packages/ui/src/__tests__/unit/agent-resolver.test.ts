@@ -14,8 +14,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   templateUpdate: null,
   features: { liveUpdates: true },
   kbTemplateId: null,
-  starterKit: null,
-  starterKitOnboarded: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],
@@ -24,15 +22,9 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   overBudget: false,
   size: {},
   state,
-  podRestarts: 0,
   contributionFailures: [],
-  unsupportedContributionKinds: [],
-  workspaceFailures: [],
   channels: [],
   spawnedBy: null,
-  vm: false,
-  runtimeMigration: null,
-  runtimeMigratable: false,
 });
 
 describe("resolveAgentDisplay", () => {
@@ -95,7 +87,6 @@ describe("transitionRestartingAgents", () => {
   const NOW = 1_000_000_000_000;
   const entry = (seen: boolean, ageMs = 0) => ({
     seenNonRunning: seen,
-    parkedAtClick: false,
     clickedAt: NOW - ageMs,
   });
 

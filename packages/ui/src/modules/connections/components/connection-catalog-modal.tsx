@@ -1,13 +1,15 @@
-import type { ConnectionView, SatelliteView } from "api-server-api";
+import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
-import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
-import { CatalogSatellitesPane } from "../../satellites/components/catalog-satellites-pane.js";
-import { fetchConnection, useAppConnections } from "../api/queries.js";
+import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
+import { trpc } from "../../../trpc.js";
+import { useAppConnections } from "../api/queries.js";
+import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
 import { useDisconnectConnection } from "../hooks/use-disconnect-connection.js";
@@ -17,16 +19,11 @@ import {
   type CatalogProviderGroup,
   type CatalogTab,
   catalogTabCounts,
-  filterGroupsByAccepts,
+  templateCreateHeading,
 } from "../lib/catalog-providers.js";
-import {
-  grantBlockedReason,
-  grantRivalry,
-  grantSkippedMessage,
-} from "../lib/grant-rivals.js";
-import type { RowGrantControls } from "./catalog-connection-row.js";
-import { CatalogCreatePane } from "./catalog-create-pane.js";
 import { McpCreatePane } from "./catalog-mcp-create-pane.js";
+import { CatalogMethodChooser } from "./catalog-method-chooser.js";
+import { CatalogPaneHeader } from "./catalog-pane-header.js";
 import {
   CatalogProviderCard,
   type SandboxGrantControls,
@@ -38,54 +35,33 @@ const MCP_PROVIDER_ID = "mcp-server";
 
 type Pane =
   | { kind: "browse" }
-  | { kind: "create"; providerId: string }
+  | { kind: "choose"; providerId: string }
+  | { kind: "create"; templateId: string; providerId: string }
   | { kind: "create-mcp" };
 
 interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
-  satelliteGrant?: (satellite: SatelliteView) => RowGrantControls;
   oauthReturnView?: string;
-  onGoToChannels?: () => void;
-  initialProviderId?: string;
   initialTemplateId?: string;
-  accepts?: readonly string[];
-  title?: string;
-  subtitle?: string;
 }
 
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
-  satelliteGrant,
   oauthReturnView,
-  onGoToChannels,
-  initialProviderId,
   initialTemplateId,
-  accepts,
-  title,
-  subtitle,
 }: Props) {
-  const connectionsQ = useAppConnections({ fresh: true });
+  const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
   const maintenance = useConnectionMaintenance();
   const [activeTab, setActiveTab] = useState<CatalogTab>("apps");
-  const { data: satellites = NO_SATELLITES } = useSatellites({ live: true });
-  const showSatellites =
-    satellites.length > 0 && (!sandbox || satelliteGrant !== undefined);
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
 
-  const {
-    byTab,
-    templateById,
-    loading: loadingCatalog,
-  } = useCatalogGroups(connectionsQ.data ?? NO_CONNECTIONS);
-  const counts = useMemo(() => {
-    const base = catalogTabCounts(byTab);
-    return showSatellites
-      ? { ...base, mcp: base.mcp + satellites.length }
-      : base;
-  }, [byTab, showSatellites, satellites.length]);
+  const { byTab, templateById } = useCatalogGroups(
+    connectionsQ.data ?? NO_CONNECTIONS,
+  );
+  const counts = useMemo(() => catalogTabCounts(byTab), [byTab]);
   const catalogTabs = useMemo<TabDef<CatalogTab>[]>(
     () =>
       CATALOG_TAB_ORDER.map((tab) => ({
@@ -96,43 +72,28 @@ export function ConnectionCatalogModal({
       })),
     [counts],
   );
-  const grantedIds = sandbox?.grantedIds;
-  const grantedConnections = useMemo(
-    () =>
-      grantedIds
-        ? (connectionsQ.data ?? NO_CONNECTIONS).filter((c) =>
-            grantedIds.has(c.id),
-          )
-        : NO_CONNECTIONS,
-    [connectionsQ.data, grantedIds],
-  );
-  const blockedReasonOf = (connection: ConnectionView) => {
-    const rivalry = grantRivalry(connection, grantedConnections);
-    return rivalry && grantBlockedReason(rivalry);
-  };
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
-  const narrowed = useMemo(
-    () => (accepts ? filterGroupsByAccepts(allGroups, accepts) : null),
-    [allGroups, accepts],
-  );
 
-  const openedInitial = useRef(false);
+  const didAutoOpen = useRef(false);
   useEffect(() => {
-    if (openedInitial.current || (!initialProviderId && !initialTemplateId))
+    if (!initialTemplateId || didAutoOpen.current || allGroups.length === 0)
       return;
-    const group = allGroups.find(
-      (g) =>
-        g.provider.id === initialProviderId ||
-        g.templates.some((t) => t.id === initialTemplateId),
-    );
-    if (!group) return;
-    openedInitial.current = true;
-    setPane(
-      group.provider.id === MCP_PROVIDER_ID
-        ? { kind: "create-mcp" }
-        : { kind: "create", providerId: group.provider.id },
-    );
-  }, [allGroups, initialProviderId, initialTemplateId]);
+    didAutoOpen.current = true;
+    for (const group of allGroups) {
+      const match = group.templates.find((t) => t.id === initialTemplateId);
+      if (match) {
+        if (group.templates.length > 1)
+          setPane({ kind: "choose", providerId: group.provider.id });
+        else
+          setPane({
+            kind: "create",
+            templateId: match.id,
+            providerId: group.provider.id,
+          });
+        return;
+      }
+    }
+  }, [initialTemplateId, allGroups]);
 
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
@@ -142,21 +103,18 @@ export function ConnectionCatalogModal({
   const openNew = (group: CatalogProviderGroup) => {
     const providerId = group.provider.id;
     if (providerId === MCP_PROVIDER_ID) setPane({ kind: "create-mcp" });
-    else if (group.templates.length > 0)
-      setPane({ kind: "create", providerId });
+    else if (group.templates.length > 1)
+      setPane({ kind: "choose", providerId });
+    else if (group.templates[0])
+      setPane({
+        kind: "create",
+        templateId: group.templates[0].id,
+        providerId,
+      });
   };
 
-  const grantCreated = async (id: string) => {
-    if (sandbox) {
-      const created = await fetchConnection(id).catch(() => null);
-      const rivalry = created && grantRivalry(created, grantedConnections);
-      if (rivalry) {
-        emitToast({ kind: "warning", message: grantSkippedMessage(rivalry) });
-        onClose();
-        return;
-      }
-      sandbox.onToggleGrant(id, true);
-    }
+  const onCreated = (id: string) => {
+    sandbox?.onToggleGrant(id, true);
     emitToast({
       kind: "success",
       message: sandbox
@@ -165,83 +123,96 @@ export function ConnectionCatalogModal({
     });
     onClose();
   };
-  const onCreated = (id: string) => void grantCreated(id);
 
   const groupById = (providerId: string) =>
-    (narrowed ?? allGroups).find((g) => g.provider.id === providerId);
+    allGroups.find((g) => g.provider.id === providerId);
+  const backFromCreate = (providerId: string) => {
+    const group = groupById(providerId);
+    setPane(
+      group && group.templates.length > 1
+        ? { kind: "choose", providerId }
+        : { kind: "browse" },
+    );
+  };
 
   if (maintenance.updating || maintenance.editingScope) {
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
   }
 
   return (
-    <Modal widthClass="w-[860px] max-w-full" heightClass="h-[85vh]">
+    <Modal widthClass="w-[860px] max-w-full h-[85vh]">
       <DialogHeader
-        title={title ?? "Connection catalogue"}
-        subtitle={
-          subtitle ?? "Manage and create new connections your agents can use"
-        }
+        title="Connection catalogue"
+        subtitle="Manage and create new connections your agents can use"
         onClose={onClose}
         closeTestId="catalog-close"
       />
       <div className="flex min-h-0 flex-1">
-        {!narrowed && (
-          <Tabs
-            ariaLabel="Connection categories"
-            tabs={catalogTabs}
-            value={pane.kind === "browse" ? activeTab : null}
-            onValueChange={(tab) => {
-              setActiveTab(tab);
-              setPane({ kind: "browse" });
-            }}
-            variant="pill"
-            orientation="vertical"
-            className="w-[200px] shrink-0 border-r border-border p-3"
-          />
-        )}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Tabs
+          ariaLabel="Connection categories"
+          tabs={catalogTabs}
+          value={pane.kind === "browse" ? activeTab : null}
+          onValueChange={(tab) => {
+            setActiveTab(tab);
+            setPane({ kind: "browse" });
+          }}
+          variant="pill"
+          orientation="vertical"
+          className="w-[200px] shrink-0 border-r border-border p-3"
+        />
+        <div className="flex min-h-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-              {narrowed?.length === 0 && !loadingCatalog && (
-                <p className="text-sm text-muted-foreground">
-                  Nothing this install offers satisfies this requirement.
-                </p>
-              )}
-              {(narrowed ?? byTab.get(activeTab) ?? []).map((group) => (
+              {(byTab.get(activeTab) ?? []).map((group) => (
                 <CatalogProviderCard
                   key={group.provider.id}
                   group={group}
                   templateById={templateById}
                   sandbox={sandbox}
-                  grantBlockedReason={blockedReasonOf}
                   onNew={() => openNew(group)}
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}
                   maintenance={maintenance.rowActions}
-                  onGoToChannels={onGoToChannels}
                 />
               ))}
-              {activeTab === "mcp" && showSatellites && !narrowed && (
-                <CatalogSatellitesPane
-                  satellites={satellites}
-                  grant={satelliteGrant}
-                />
-              )}
             </div>
           )}
-          {pane.kind === "create" &&
-            (() => {
-              const group = groupById(pane.providerId);
-              return group ? (
-                <CatalogCreatePane
-                  group={group}
-                  oauthReturnView={oauthReturnView}
-                  initialTemplateId={initialTemplateId}
-                  onBack={() => setPane({ kind: "browse" })}
-                  onCreated={onCreated}
-                />
-              ) : null;
-            })()}
+          {pane.kind === "choose" && (
+            <ChoosePane
+              group={groupById(pane.providerId)}
+              onBack={() => setPane({ kind: "browse" })}
+              onPick={(t) => {
+                if (import.meta.env.VITE_MOCK) {
+                  void (api.connections.create as any)
+                    .mutate({
+                      templateId: t.id,
+                      name: t.name,
+                      authKind: t.authKind,
+                    })
+                    .then((result: { id: string }) => {
+                      void queryClient.invalidateQueries({
+                        queryKey: trpc.connections.list.queryKey(),
+                      });
+                      onCreated(result.id);
+                    });
+                  return;
+                }
+                setPane({
+                  kind: "create",
+                  templateId: t.id,
+                  providerId: pane.providerId,
+                });
+              }}
+            />
+          )}
+          {pane.kind === "create" && (
+            <CreatePane
+              template={templateById.get(pane.templateId)}
+              oauthReturnView={oauthReturnView}
+              onBack={() => backFromCreate(pane.providerId)}
+              onCreated={onCreated}
+            />
+          )}
           {pane.kind === "create-mcp" && (
             <McpCreatePane
               templateById={templateById}
@@ -253,5 +224,65 @@ export function ConnectionCatalogModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function ChoosePane({
+  group,
+  onBack,
+  onPick,
+}: {
+  group: CatalogProviderGroup | undefined;
+  onBack: () => void;
+  onPick: (template: ConnectionTemplateView) => void;
+}) {
+  if (!group) return null;
+  return (
+    <>
+      <CatalogPaneHeader
+        title={`Connect ${group.provider.title}`}
+        subtitle="Choose an authentication method"
+        onBack={onBack}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <CatalogMethodChooser templates={group.templates} onPick={onPick} />
+      </div>
+    </>
+  );
+}
+
+function CreatePane({
+  template,
+  oauthReturnView,
+  onBack,
+  onCreated,
+}: {
+  template: ConnectionTemplateView | undefined;
+  oauthReturnView?: string;
+  onBack: () => void;
+  onCreated: (id: string) => void;
+}) {
+  if (!template) return null;
+  const { title, subtitle } = templateCreateHeading(template);
+  return (
+    <>
+      <CatalogPaneHeader title={title} subtitle={subtitle} onBack={onBack} />
+      <TemplateCreateFormBody
+        key={template.id}
+        template={template}
+        popupOAuth
+        oauthReturnView={oauthReturnView}
+        onCreated={onCreated}
+        onCancel={onBack}
+        layout={(fields, footer) => (
+          <>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">{fields}</div>
+            <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
+              {footer}
+            </div>
+          </>
+        )}
+      />
+    </>
   );
 }

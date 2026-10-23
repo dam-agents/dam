@@ -1,13 +1,8 @@
-import {
-  Book,
-  Chemistry,
-  Gift,
-  OverflowMenuVertical,
-} from "@carbon/icons-react";
+import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { CARD_SURFACE } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,266 +11,250 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { clickableProps } from "@/lib/clickable";
+import { cn } from "@/lib/utils";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
-import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
-import {
-  agentKindBadge,
-  knowledgeBadge,
-  starterKitBadge,
-} from "../utils/agent-kind.js";
-import type { AgentDisplay } from "../utils/agent-resolver.js";
+import { OnboardingTag } from "../../packs/components/onboarding-tag.js";
+import type {
+  AgentDisplay,
+  AgentDisplayState,
+} from "../utils/agent-resolver.js";
 import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
-import { AgentAvatar, isAsleep } from "./avatar/agent-avatar.js";
-import {
-  agentFailures,
-  ContributionFailuresBadge,
-} from "./contribution-failures-badge.js";
-import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
-import { FreeUpComputeItems } from "./power-menu-items.js";
-import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
-import { UpdateAvailableAction } from "./update-available-action.js";
-import { VmRuntimeBadge } from "./vm-runtime-badge.js";
+import { AgentAvatar } from "./char-avatar.js";
+import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 
-interface Props {
+export interface AgentRowProps {
   agent: AgentView;
   display: AgentDisplay;
-  working?: boolean;
-  subtitle: string;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
-  updatePending: boolean;
-  updateBusy: boolean;
   onSelect: () => void;
-  onUpdate: () => void;
-  migratePending: boolean;
-  onMigrate: () => void;
-  migrationControlsBusy: boolean;
-  onAbortMigration: () => void;
-  onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
-  onShare?: () => void;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
   onStop: () => void;
   onDelete: () => void;
-  onAddToChannel?: (messenger: "slack" | "telegram") => void;
-  messengers?: { slack?: boolean; telegram?: boolean };
+  onAddToSlack?: () => void;
+  onAddToTelegram?: () => void;
+  scheduleCount?: number;
+}
+
+const BLUE_BADGE =
+  "border-transparent bg-blue-50 text-blue-600 hover:bg-blue-50 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-950";
+
+function formatCpu(raw: string): string {
+  const m = raw.match(/^(\d+)m$/);
+  if (m) return `${Number(m[1]) / 1000} CPU`;
+  return `${raw} CPU`;
+}
+
+function formatMemory(raw: string): string {
+  const gi = raw.match(/^(\d+)Gi$/);
+  if (gi) return `${gi[1]} Gi`;
+  const mi = raw.match(/^(\d+)Mi$/);
+  if (mi) return `${mi[1]} Mi`;
+  return raw;
+}
+
+function computeSubtitle(size: { cpu?: string; memory?: string }): string {
+  const parts: string[] = [];
+  if (size.cpu) parts.push(formatCpu(size.cpu));
+  if (size.memory) parts.push(formatMemory(size.memory));
+  return parts.join(" · ") || "";
+}
+
+function AgentStateBadge({ state }: { state: AgentDisplayState }) {
+  if (state === "running" || state === "running_always_on") {
+    return <Badge variant="success">Working</Badge>;
+  }
+  if (state === "hibernated" || state === "idle_always_on") {
+    return <Badge className={BLUE_BADGE}>Idle</Badge>;
+  }
+  if (state === "hibernating") {
+    return <Badge variant="muted">Hibernating</Badge>;
+  }
+  if (state === "starting" || state === "preparing_workspace") {
+    return <Badge variant="success">Working</Badge>;
+  }
+  if (state === "error") {
+    return <Badge variant="danger">Error</Badge>;
+  }
+  if (state === "over_budget") {
+    return <Badge variant="warning">Over budget</Badge>;
+  }
+  return <Badge variant="muted">{state}</Badge>;
 }
 
 export function AgentRow({
   agent,
   display,
-  working,
-  subtitle,
   temporaryDraw,
   deletePending,
-  updatePending,
-  updateBusy,
   onSelect,
-  onUpdate,
-  migratePending,
-  onMigrate,
-  migrationControlsBusy,
-  onAbortMigration,
-  onRetryMigration,
   onConfigure,
   configureLabel,
-  onShare,
   onWake,
   onRestart,
   onPause,
   onStop,
   onDelete,
-  onAddToChannel,
-  messengers = {},
-}: Props) {
-  const kindBadge = agentKindBadge(agent);
-  const kitBadge = starterKitBadge(agent);
-  const knowledge = knowledgeBadge(agent);
-  const onShareKnowledge = knowledge ? onShare : undefined;
+  onAddToSlack,
+  onAddToTelegram,
+  scheduleCount,
+}: AgentRowProps) {
+  const slackChannels = agent.channels.filter((c) => c.type === "slack") as {
+    type: "slack";
+    slackChannelId: string;
+  }[];
+
+  const maxVisibleSlack = 2;
+  const visibleSlack = slackChannels.slice(0, maxVisibleSlack);
+  const slackOverflow = slackChannels.length - visibleSlack.length;
+
+  const hasSchedules = (scheduleCount ?? 0) > 0;
+  const hasSlack = slackChannels.length > 0;
+  const hasMeta = hasSchedules || hasSlack;
+
   return (
-    <Card
+    <div
       data-testid="agent-row"
       {...clickableProps(onSelect)}
-      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
+      className={cn(
+        CARD_SURFACE,
+        "group cursor-pointer anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40",
+      )}
     >
-      <AgentAvatar
-        name={agent.name}
-        size={64}
-        sleeping={isAsleep(display.state)}
-        stopped={agent.stopRequested}
-        className="mr-1 self-start"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          {}
-          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:hover))_&]:text-primary">
-            {agent.name}
-          </h2>
-          {kindBadge && (
-            <Badge variant={kindBadge.variant} className="shrink-0">
-              {kindBadge.label}
-            </Badge>
-          )}
-          <VmRuntimeBadge agent={agent} />
-          {kitBadge && (
-            <Badge
-              variant={kitBadge.variant}
-              className="shrink-0"
-              title={kitBadge.title}
-              aria-label={`From the ${kitBadge.label} starter kit`}
+      <div className="flex items-start gap-4 p-5">
+        <AgentAvatar agentId={agent.id} state={display.state} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="min-w-0 truncate text-base font-semibold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+              {agent.name}
+            </h2>
+            <OnboardingTag agentId={agent.id} />
+            <ContributionFailuresBadge failures={agent.contributionFailures} />
+          </div>
+
+          {(computeSubtitle(agent.size) || hasMeta) && (
+            <div
+              data-testid="attachments-row"
+              className="mt-2 flex flex-wrap items-center gap-2"
             >
-              <span className="flex items-center gap-1.5">
-                <Gift size={12} aria-hidden />
-                {kitBadge.label}
-              </span>
-            </Badge>
+              {computeSubtitle(agent.size) && (
+                <Badge variant="outline" className="gap-1">
+                  {computeSubtitle(agent.size)}
+                </Badge>
+              )}
+
+              {hasSlack && (
+                <Badge variant="outline" className="gap-1.5">
+                  <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                  {visibleSlack.map((ch) => ch.slackChannelId).join(", ")}
+                  {slackOverflow > 0 && `, +${slackOverflow}`}
+                </Badge>
+              )}
+
+              {hasSchedules && (
+                <Badge variant="outline">
+                  {scheduleCount} active schedule
+                  {scheduleCount === 1 ? "" : "s"}
+                </Badge>
+              )}
+            </div>
           )}
-          {knowledge && (
-            <Badge
-              variant={knowledge.variant}
-              className="shrink-0"
-              title={knowledge.title}
-            >
-              <span className="flex items-center gap-1.5">
-                <Book size={12} aria-hidden />
-                {knowledge.label}
+
+          {temporaryDraw && temporaryDraw.count > 0 && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              <Chemistry size={16} className="shrink-0 text-accent" />
+              <span className="truncate">
+                {temporaryDraw.count} temporary agent
+                {temporaryDraw.count === 1 ? "" : "s"} running
+                {formatTemporaryDraw(temporaryDraw) &&
+                  ` · ${formatTemporaryDraw(temporaryDraw)}`}
               </span>
-            </Badge>
+            </div>
           )}
-          <OnboardingTag agent={agent} />
-          <ContributionFailuresBadge failures={agentFailures(agent)} />
-          <UnsupportedContributionsBadge agent={agent} />
         </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {subtitle}
-        </p>
-        <AgentChannelChips agent={agent} className="mt-2" />
-        {temporaryDraw && temporaryDraw.count > 0 && (
-          <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
-            <Chemistry size={12} className="shrink-0 text-accent" />
-            <span className="truncate">
-              {temporaryDraw.count} temporary agent
-              {temporaryDraw.count === 1 ? "" : "s"} running
-              {formatTemporaryDraw(temporaryDraw) &&
-                ` · ${formatTemporaryDraw(temporaryDraw)}`}{" "}
-              ·{" "}
-              <span className="text-muted-foreground">
-                released when the run ends
-              </span>
-            </span>
-          </p>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <UpdateAvailableAction
-          agent={agent}
-          pending={updatePending}
-          busy={updateBusy}
-          onUpdate={onUpdate}
-        />
-        <MigrateRuntimeAction
-          agent={agent}
-          pending={migratePending}
-          onMigrate={onMigrate}
-          controlsBusy={migrationControlsBusy}
-          onAbort={onAbortMigration}
-          onRetry={onRetryMigration}
-        />
-        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        <span
-          title={agent.overBudgetMessage ?? undefined}
-          {...(agent.overBudgetMessage
-            ? {
-                tabIndex: 0,
-                role: "note",
-                "aria-label": agent.overBudgetMessage,
-              }
-            : {})}
-        >
-          <StatusBadge state={display.state} working={working} />
-        </span>
-        {}
-        <span onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Agent actions">
-                <OverflowMenuVertical />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={onConfigure}>
-                {configureLabel}
-              </DropdownMenuItem>
-              {onShareKnowledge && (
-                <DropdownMenuItem onSelect={onShareKnowledge}>
-                  Share knowledge base
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span
+            title={agent.overBudgetMessage ?? undefined}
+            {...(agent.overBudgetMessage
+              ? {
+                  tabIndex: 0,
+                  role: "note",
+                  "aria-label": agent.overBudgetMessage,
+                }
+              : {})}
+          >
+            <AgentStateBadge state={display.state} />
+          </span>
+          <span onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Agent actions">
+                  <OverflowMenuVertical />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onSelect={onConfigure}>
+                  {configureLabel}
                 </DropdownMenuItem>
-              )}
-              {onAddToChannel && (messengers.slack || messengers.telegram) && (
-                <>
-                  <DropdownMenuSeparator />
-                  {messengers.slack && (
-                    <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
-                      <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                      Add to Slack channel
+                {onAddToSlack && (
+                  <DropdownMenuItem onSelect={onAddToSlack}>
+                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                    Add to a Slack channel
+                  </DropdownMenuItem>
+                )}
+                {onAddToTelegram && (
+                  <DropdownMenuItem onSelect={onAddToTelegram}>
+                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+                    Add to a Telegram chat
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                {display.powerAction === "start" ? (
+                  <DropdownMenuItem onSelect={onWake}>
+                    {display.state === "over_budget" ? "Start" : "Wake"}
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    disabled={display.powerAction === null}
+                    onSelect={onRestart}
+                  >
+                    Restart
+                  </DropdownMenuItem>
+                )}
+                {(display.state === "running" ||
+                  display.state === "running_always_on") && (
+                  <>
+                    <DropdownMenuItem onSelect={onPause}>
+                      Pause — wakes on next use
                     </DropdownMenuItem>
-                  )}
-                  {messengers.telegram && (
-                    <DropdownMenuItem
-                      onSelect={() => onAddToChannel("telegram")}
-                    >
-                      <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-                      Add to Telegram chat
+                    <DropdownMenuItem onSelect={onStop}>
+                      Stop — until started again
                     </DropdownMenuItem>
-                  )}
-                </>
-              )}
-              <DropdownMenuSeparator />
-              {display.state === "running" && (
-                <FreeUpComputeItems
-                  agent={agent}
-                  onPause={onPause}
-                  onStop={onStop}
-                />
-              )}
-              {display.powerAction === "start" ? (
-                <DropdownMenuItem onSelect={onWake}>
-                  {}
-                  {display.state === "over_budget" ? "Start" : "Wake"}
-                </DropdownMenuItem>
-              ) : (
+                  </>
+                )}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={display.powerAction === null}
-                  onSelect={onRestart}
+                  tone="danger"
+                  disabled={deletePending}
+                  onSelect={onDelete}
                 >
-                  Restart
+                  Delete agent
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                tone="danger"
-                disabled={deletePending}
-                onSelect={onDelete}
-              >
-                Delete agent
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </span>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </span>
+        </div>
       </div>
-    </Card>
+    </div>
   );
 }

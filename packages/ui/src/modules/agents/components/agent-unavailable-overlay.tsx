@@ -1,31 +1,19 @@
-import {
-  Asleep,
-  Migrate,
-  Play,
-  Power,
-  Renew,
-  Warning,
-} from "@carbon/icons-react";
+import { Asleep, Play, Renew, Warning } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
-import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useUpdateAgent } from "../api/mutations.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
-import { workspaceFailureSentence } from "../lib/workspace-failure.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
-import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
-import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 interface OverlayCopy {
   Icon?: typeof Asleep;
@@ -34,15 +22,21 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
-  starting: { description: "" },
+  running_always_on: { description: "" },
+  starting: { description: "The agent pod is starting up." },
   preparing_workspace: {
-    description: "Setting up the workspace. This finishes shortly.",
+    description: "Cloning the workspace seed. This finishes shortly.",
   },
   hibernating: { description: "The agent is going to sleep." },
   hibernated: {
     Icon: Asleep,
     description:
       "The agent went to sleep after a period of inactivity. Start it to pick up where you left off.",
+  },
+  idle_always_on: {
+    Icon: Asleep,
+    description:
+      "The always-on agent is idle. Start it to pick up where you left off.",
   },
   error: {
     Icon: Warning,
@@ -53,12 +47,6 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
     description:
       "Starting this agent would exceed your compute budget. Pause or stop " +
       "a running agent to free room, then start this one again.",
-  },
-  migrating: {
-    Icon: Migrate,
-    description:
-      "The agent is moving to the new sandbox runtime. It is back once its " +
-      "data has been copied, which takes a few minutes.",
   },
 };
 
@@ -80,9 +68,7 @@ export function AgentUnavailableOverlay({
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <h2 className="text-5xl font-normal tracking-tight text-foreground">
-          {name}
-        </h2>
+        <h2 className="text-lg font-bold text-foreground">{name}</h2>
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
@@ -91,18 +77,13 @@ export function AgentUnavailableOverlay({
     );
   }
 
-  if (display.state === "running") {
+  if (display.state === "running" || display.state === "running_always_on") {
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />
-        <div className="flex flex-col items-center gap-4">
-          <h2 className="text-5xl font-normal tracking-tight text-foreground">
-            {agent.name}
-          </h2>
-          <div className="flex items-center gap-2">
-            <VmRuntimeBadge agent={agent} />
-            <Badge variant="warning">Reconnecting</Badge>
-          </div>
+        <div className="flex flex-col items-center gap-2">
+          <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+          <Badge variant="warning">Reconnecting</Badge>
         </div>
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
@@ -114,38 +95,23 @@ export function AgentUnavailableOverlay({
 
   const { state, powerAction } = display;
   const { Icon } = OVERLAY_COPY[state];
-  const description = overlayDescription(state, agent);
-
-  const waiting = state === "starting" || state === "preparing_workspace";
+  const description =
+    state === "error" && agent.error
+      ? agent.error
+      : OVERLAY_COPY[state].description;
 
   return (
-    <OverlayFrame
-      onBack={onBack}
-      footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
-    >
-      {state === "starting" && <AgentAvatar name={agent.name} size={128} />}
+    <OverlayFrame onBack={onBack}>
       {Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (
         <Spinner size={40} />
       )}
-      <div className="flex flex-col items-center gap-4">
-        <h2 className="text-5xl font-normal tracking-tight text-foreground">
-          {agent.name}
-        </h2>
-        <div className="flex items-center gap-2 empty:hidden">
-          <VmRuntimeBadge agent={agent} />
-          {state !== "starting" && <StatusBadge state={state} />}
-        </div>
+      <div className="flex flex-col items-center gap-2">
+        <h2 className="text-lg font-bold text-foreground">{agent.name}</h2>
+        <StatusBadge state={state} />
       </div>
-      {description && (
-        <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
-      )}
-      {state === "starting" && (
-        <p role="status" className="sr-only">
-          The agent is starting up.
-        </p>
-      )}
+      <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       {!Icon && <StartupTip sandbox={agent.name} />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
@@ -164,46 +130,5 @@ export function AgentUnavailableOverlay({
         </Button>
       )}
     </OverlayFrame>
-  );
-}
-
-function overlayDescription(
-  state: AgentDisplayState,
-  agent: AgentView,
-): string {
-  if (state === "error" && agent.error) return agent.error;
-  const budget = agent.overBudgetMessage;
-  if (state === "over_budget" && budget)
-    return `${budget[0].toUpperCase()}${budget.slice(1)}.`;
-  if (state === "preparing_workspace") {
-    const failing = agent.workspaceFailures.find((f) => !f.settled);
-    if (failing) return workspaceFailureSentence(failing);
-  }
-  return OVERLAY_COPY[state].description;
-}
-
-function SkipTheWait({ agent }: { agent: AgentView }) {
-  const updateAgent = useUpdateAgent();
-  const showConfirm = useStore((s) => s.showConfirm);
-  if (agent.hibernationTimeoutMin === 0) return null;
-
-  const keepAlwaysOn = async () => {
-    const ok = await showConfirm(
-      "This agent will never hibernate — it stays running and consumes resources until you set a timeout again in the agent settings.",
-      "Keep always on",
-      { icon: Power, confirmLabel: "Keep always on" },
-    );
-    if (ok) updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 });
-  };
-
-  return (
-    <Button
-      variant="outline"
-      disabled={updateAgent.isPending}
-      onClick={() => void keepAlwaysOn()}
-      data-testid="skip-the-wait"
-    >
-      <Power size={14} /> Skip the wait — keep always-on
-    </Button>
   );
 }

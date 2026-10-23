@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { PROVIDERS } from "../../../../types.js";
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import { ProviderFormShell } from "../provider-form-shell.js";
+import { MODES, stripWhitespace } from "./modes.js";
 
 const OPENAI_DISPLAY_NAME = PROVIDERS.openai.displayName;
 
@@ -67,7 +68,7 @@ export function OpenAIForm({
           data-1p-ignore
           data-lpignore="true"
           data-form-type="other"
-          placeholder="sk-…"
+          placeholder={MODES["api-key"].placeholder}
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

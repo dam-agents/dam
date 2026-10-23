@@ -11,35 +11,24 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tooltip } from "@/components/ui/tooltip";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../components/status-indicator.js";
+import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
-import {
-  AgentAvatar,
-  isAsleep,
-} from "../../agents/components/avatar/agent-avatar.js";
-import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { useFeed } from "../../home/api/queries.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
-  avatarName?: string;
 }
 
-export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
-  const working = useFeed().workingByAgent.get(agent.id);
+export function SandboxHomeHeader({ agent, display }: Props) {
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -48,8 +37,6 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
   const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
-
-  const openChat = () => selectAgent(agent.id);
 
   const onStop = async () => {
     const schedules = await fetchSchedulesForAgent(agent.id);
@@ -86,21 +73,8 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
 
   return (
     <PageHeader
-      leading={
-        <AgentAvatar
-          name={avatarName ?? agent.name}
-          size={44}
-          sleeping={isAsleep(display.state)}
-          stopped={agent.stopRequested}
-        />
-      }
       title={agent.name}
-      adornment={
-        <>
-          <StatusBadge state={display.state} working={working} />
-          {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        </>
-      }
+      adornment={<StatusBadge state={display.state} />}
       actions={
         <>
           <UpdateAvailableAction
@@ -114,7 +88,7 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
               size="icon"
               aria-label="Open chat"
               variant="outline"
-              onClick={openChat}
+              onClick={() => selectAgent(agent.id)}
             >
               <Chat />
             </Button>
@@ -126,13 +100,6 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {display.state === "running" && (
-                <FreeUpComputeItems
-                  agent={agent}
-                  onPause={() => suspend.pause(agent.id)}
-                  onStop={() => void onStop()}
-                />
-              )}
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
                   Wake
@@ -144,6 +111,16 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
                 >
                   Restart
                 </DropdownMenuItem>
+              )}
+              {display.state === "running" && (
+                <>
+                  <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
+                    Pause — wakes on next use
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void onStop()}>
+                    Stop — until started again
+                  </DropdownMenuItem>
+                </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem

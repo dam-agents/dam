@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const versionResponseSchema = z.object({ appVersion: z.string() });
 
-const versionKeys = {
+export const versionKeys = {
   all: () => ["version"] as const,
 };
 

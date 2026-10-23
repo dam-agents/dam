@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ConnectionTemplateView } from "api-server-api";
-import { type ReactNode, useMemo } from "react";
+import { useMemo } from "react";
 import { type Control, Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 import { emitToast } from "@/lib/toast";
 
-import { getBrand } from "../../../brand.js";
-import { CLI_REFERENCE_URL, MCP_DOCS_URL } from "../../../constants.js";
+import { MCP_DOCS_URL } from "../../../constants.js";
 import { DisclosureBox } from "../forms/disclosure-box.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { useMcpAuthDetection } from "../hooks/use-mcp-auth-detection.js";
@@ -94,7 +93,6 @@ export function McpCreatePane({
   const headerValue = watch("headerValue");
 
   const { detected, detecting } = useMcpAuthDetection(url);
-  const cli = getBrand().short;
 
   const overriding = filled(clientId) || filled(headerValue);
   const wantsOAuth = filled(clientId)
@@ -177,23 +175,6 @@ export function McpCreatePane({
             name="url"
             label="Remote MCP server URL"
             placeholder="https://mcp.example.com/sse"
-            help={
-              <>
-                Running an MCP server on your own machine? Install the{" "}
-                <a
-                  href={CLI_REFERENCE_URL}
-                  {...externalLinkProps}
-                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent"
-                >
-                  {cli} CLI
-                </a>{" "}
-                and run{" "}
-                <code className="whitespace-nowrap">
-                  {cli} satellite --help
-                </code>{" "}
-                to learn how to forward it here.
-              </>
-            }
           />
           <DisclosureBox
             title="Advanced configuration"
@@ -281,7 +262,7 @@ function McpField({
   label: string;
   placeholder?: string;
   type?: "text" | "password";
-  help?: ReactNode;
+  help?: string;
   autoFocus?: boolean;
 }) {
   return (
@@ -300,6 +281,7 @@ function McpField({
           help={help}
           error={fieldState.error?.message}
           autoFocus={autoFocus}
+          inset
         />
       )}
     />

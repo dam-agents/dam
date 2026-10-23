@@ -1,22 +1,20 @@
-import type { SessionMode } from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 import { routeToPath } from "../platform/lib/routes.js";
 
-interface RestartingEntry {
-  seenNonRunning: boolean;
-  clickedAt: number;
-  parkedAtClick: boolean;
-}
-
 export interface AgentsSlice {
   selectedAgent: string | null;
-  restartingAgents: Map<string, RestartingEntry>;
-  setRestartingAgent: (id: string, entry: RestartingEntry) => void;
+  restartingAgents: Map<string, { seenNonRunning: boolean; clickedAt: number }>;
+  setRestartingAgent: (
+    id: string,
+    entry: { seenNonRunning: boolean; clickedAt: number },
+  ) => void;
   clearRestartingAgent: (id: string) => void;
-  setRestartingAgents: (map: Map<string, RestartingEntry>) => void;
+  setRestartingAgents: (
+    map: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
+  ) => void;
   pausingAgents: Map<string, { clickedAt: number }>;
   setPausingAgent: (id: string, entry: { clickedAt: number }) => void;
   clearPausingAgent: (id: string) => void;
@@ -27,11 +25,9 @@ export interface AgentsSlice {
   deletedAgents: ReadonlySet<string>;
   markAgentDeleted: (id: string) => void;
   selectAgent: (id: string) => void;
-  openAgentSession: (
-    agentId: string,
-    sessionId: string,
-    mode?: SessionMode,
-  ) => void;
+  navigateToAgentLanding: (id: string) => void;
+  openKnowledgeBase: (id: string) => void;
+  openAgentSession: (agentId: string, sessionId: string) => void;
   goBack: () => void;
 }
 
@@ -101,6 +97,12 @@ export const createAgentsSlice: StateCreator<
   selectAgent: (id) => {
     history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
     get().resetChatContext();
+
+    const mockCreate = (window as any).__mockCreateSession as
+      | ((agentId: string) => string)
+      | undefined;
+    if (mockCreate) mockCreate(id);
+
     set({
       selectedAgent: id,
       view: "chat",
@@ -108,7 +110,30 @@ export const createAgentsSlice: StateCreator<
     });
   },
 
-  openAgentSession: (agentId, sessionId, mode) => {
+  navigateToAgentLanding: (id) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "agent-landing", agentId: id }),
+    );
+    set({ selectedAgent: id, view: "agent-landing", agentId: id });
+  },
+
+  openKnowledgeBase: (id) => {
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "knowledge-base-chat", agent: id }),
+    );
+    get().resetChatContext();
+    set({
+      selectedAgent: id,
+      view: "knowledge-base-chat",
+      mobileScreen: "sessions",
+    });
+  },
+
+  openAgentSession: (agentId, sessionId) => {
     history.pushState(
       null,
       "",
@@ -120,27 +145,37 @@ export const createAgentsSlice: StateCreator<
       view: "chat",
       mobileScreen: "chat",
       pendingResumeSessionId: sessionId,
-      pendingResumeSessionMode: mode ?? null,
     });
   },
 
   goBack: () => {
-    history.pushState(null, "", routeToPath({ view: "home" }));
+    const fromKnowledgeBase = get().view === "knowledge-base-chat";
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: fromKnowledgeBase ? "agents" : "home" }),
+    );
     get().resetChatContext();
-    set({ selectedAgent: null, view: "home" });
+    set({
+      selectedAgent: null,
+      view: fromKnowledgeBase ? "agents" : "home",
+    });
   },
 });
 
 const RESTART_DISPLAY_TTL_MS = 120_000;
 
 export function transitionRestartingAgents(
-  current: Map<string, RestartingEntry>,
+  current: Map<string, { seenNonRunning: boolean; clickedAt: number }>,
   agents: readonly AgentView[],
   now: number = Date.now(),
-): Map<string, RestartingEntry> {
+): Map<string, { seenNonRunning: boolean; clickedAt: number }> {
   if (current.size === 0) return current;
   const byId = new Map(agents.map((a) => [a.id, a]));
-  const next = new Map<string, RestartingEntry>();
+  const next = new Map<
+    string,
+    { seenNonRunning: boolean; clickedAt: number }
+  >();
   for (const [id, entry] of current) {
     const agent = byId.get(id);
     if (!agent) continue;
@@ -148,7 +183,7 @@ export function transitionRestartingAgents(
     if (agent.state === "error") continue;
     if (agent.overBudget) continue;
     if (agent.state !== "running") {
-      next.set(id, { ...entry, seenNonRunning: true });
+      next.set(id, { seenNonRunning: true, clickedAt: entry.clickedAt });
     } else if (!entry.seenNonRunning) {
       next.set(id, entry);
     }

@@ -22,14 +22,12 @@ const TABS: readonly TabDef<Tab>[] = [
 ];
 
 export function AddSkillSourceModal({
-  sources,
   onClose,
   onCreate,
   onCreateSkills,
   initialTab = "github",
   initialFiles,
 }: {
-  sources: readonly SkillSource[];
   onClose: () => void;
   onCreate: (input: {
     name: string;
@@ -45,7 +43,7 @@ export function AddSkillSourceModal({
   initialFiles?: File[];
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
-  const githubForm = useGithubSourceForm({ sources, onCreate, onClose });
+  const githubForm = useGithubSourceForm({ onCreate, onClose });
   const uploadStaging = useUploadStaging({
     initialFiles,
     onCreateSkills,
@@ -65,7 +63,7 @@ export function AddSkillSourceModal({
         tabs={TABS}
         value={tab}
         onValueChange={setTab}
-        className="px-5 md:px-6"
+        className="px-5 md:px-7"
       />
 
       {tab === "github" ? (

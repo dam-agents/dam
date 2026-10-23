@@ -11,7 +11,6 @@ export interface CreateAgentDraft {
   templateId: string | null;
   providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
-  vm: boolean;
 }
 
 export function isCreateAgentDraftComplete(draft: CreateAgentDraft): boolean {
@@ -32,7 +31,6 @@ export function buildCreateAgentInput(
     name: draft.name.trim(),
     templateId: draft.templateId!,
     egressPreset: draft.egressPreset,
-    ...(draft.vm ? { vm: true } : {}),
     appConnectionIds: [draft.providerRef!.id],
   };
 }
@@ -44,11 +42,11 @@ export interface CodingAgentSetupDraft {
   providerRef: ProviderRef | null;
   connectionIds: string[];
   registryCredential: RegistryCredential;
-  hibernationTimeoutMin: number | null;
-  vm: boolean;
+  sizeCpuMilli: number | null;
+  sizeMemoryMi: number | null;
 }
 
-function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
+export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
   return draft.customImage.trim().length > 0;
 }
 
@@ -67,9 +65,6 @@ export function isCodingAgentSetupComplete(
     draft.name.trim().length > 0 &&
     draft.providerRef !== null &&
     (draft.templateId !== null || setupUsesCustomImage(draft)) &&
-    (draft.hibernationTimeoutMin === null ||
-      (Number.isInteger(draft.hibernationTimeoutMin) &&
-        draft.hibernationTimeoutMin >= 0)) &&
     !hasPartialRegistryCredential(draft)
   );
 }
@@ -85,10 +80,6 @@ export function buildCodingAgentSetupInput(
   return {
     name: draft.name.trim(),
     egressPreset: "trusted",
-    ...(draft.vm ? { vm: true } : {}),
-    ...(draft.hibernationTimeoutMin === null
-      ? {}
-      : { hibernationTimeoutMin: draft.hibernationTimeoutMin }),
     ...(image ? { image } : { templateId: draft.templateId! }),
     appConnectionIds: [
       ...new Set([...draft.connectionIds, draft.providerRef!.id]),
@@ -99,6 +90,14 @@ export function buildCodingAgentSetupInput(
             server: credential.server.trim(),
             username: credential.username.trim(),
             password: credential.password,
+          },
+        }
+      : {}),
+    ...(draft.sizeCpuMilli != null && draft.sizeMemoryMi != null
+      ? {
+          size: {
+            cpu: `${draft.sizeCpuMilli}m`,
+            memory: `${draft.sizeMemoryMi}Mi`,
           },
         }
       : {}),

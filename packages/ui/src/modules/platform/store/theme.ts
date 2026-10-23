@@ -3,9 +3,9 @@ import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../../store.js";
 
-const THEME_STORAGE_KEY = "platform-theme";
+export const THEME_STORAGE_KEY = "platform-theme";
 
-const themeSchema = z.enum(["light", "dark", "system"]);
+export const themeSchema = z.enum(["light", "dark", "system"]);
 export type Theme = z.infer<typeof themeSchema>;
 
 export interface ThemeSlice {
@@ -13,17 +13,12 @@ export interface ThemeSlice {
   setTheme: (t: Theme) => void;
 }
 
-export function isDarkTheme(theme: Theme): boolean {
-  return (
+function applyTheme(theme: Theme) {
+  const isDark =
     theme === "dark" ||
     (theme === "system" &&
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches)
-  );
-}
-
-function applyTheme(theme: Theme) {
-  document.documentElement.classList.toggle("dark", isDarkTheme(theme));
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", isDark);
 }
 
 export function readStoredTheme(): Theme {

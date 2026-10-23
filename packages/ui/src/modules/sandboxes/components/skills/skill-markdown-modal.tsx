@@ -1,15 +1,14 @@
-import { Download, Launch } from "@carbon/icons-react";
+import { Code, Download, Launch, View } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-import { Markdown, splitFrontmatter } from "@/components/markdown";
+import { Markdown } from "@/components/markdown";
 import {
   DialogBody,
   DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
@@ -32,6 +31,15 @@ export function SkillChip({
       {children}
     </span>
   );
+}
+
+function splitFrontmatter(raw: string): {
+  frontmatter: string | null;
+  body: string;
+} {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
+  if (!match) return { frontmatter: null, body: raw };
+  return { frontmatter: match[1], body: raw.slice(match[0].length) };
 }
 
 function sizeLabel(content: string): string {
@@ -116,10 +124,14 @@ export function SkillMarkdownModal({
             </Button>
           )}
           {content && (
-            <RenderToggle
-              rendered={!showSource}
-              onToggle={() => setShowSource((s) => !s)}
-            />
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => setShowSource((s) => !s)}
+            >
+              {showSource ? <View size={14} /> : <Code size={14} />}
+              {showSource ? "Preview" : "Source"}
+            </Button>
           )}
         </div>
 

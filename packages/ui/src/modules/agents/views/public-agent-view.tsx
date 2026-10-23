@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { ownerInitials } from "../lib/owner-initials.js";
 
 export type PublicAgentPageState =
-  { status: "loading" } | { status: "ready"; agent: PublicAgent | null };
+  | { status: "loading" }
+  | { status: "ready"; agent: PublicAgent | null };
 
-interface PublicAgentViewProps {
+export interface PublicAgentViewProps {
   state: PublicAgentPageState;
   brand: Brand;
   openPath: string;
@@ -115,8 +116,8 @@ function pitch(brand: Brand, subject: "this-agent" | "platform"): string {
     ? ` Everyone at ${brand.vendor} already has access.`
     : "";
   return (
-    `${lead} for running agents securely in the cloud and creating ` +
-    `knowledge bases.${entitlement}`
+    `${lead} for running agents securely in the cloud, running experiments, ` +
+    `and creating knowledge bases.${entitlement}`
   );
 }
 

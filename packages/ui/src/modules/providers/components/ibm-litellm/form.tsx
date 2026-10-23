@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { KEY_GUIDE_URL } from "@/constants.js";
 import { externalLinkProps } from "@/lib/external-link";
 
-import { IBM_LITELLM_DESCRIPTION } from "../../lib/provider-rows.js";
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import { ProviderFormShell } from "../provider-form-shell.js";
+import { MODES, stripWhitespace } from "./modes.js";
 
 const ibmLitellmCredentialSchema = z
   .object({ value: z.string() })
@@ -55,7 +55,7 @@ export function IbmLitellmForm({
       description={
         isEdit
           ? "Paste a new token to replace the existing one."
-          : IBM_LITELLM_DESCRIPTION
+          : "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS."
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
@@ -86,7 +86,7 @@ export function IbmLitellmForm({
           data-1p-ignore
           data-lpignore="true"
           data-form-type="other"
-          placeholder="sk-…"
+          placeholder={MODES["api-key"].placeholder}
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

@@ -1,26 +1,23 @@
 import type { ReactNode } from "react";
 import type { StateCreator } from "zustand";
 
-import type { ConfirmDialogProps } from "@/components/ui/confirm-dialog";
 import type { ConfirmDialogKind } from "@/components/ui/confirm-dialog";
 
 import type { PlatformStore } from "../../../store.js";
 
-interface ConfirmOptions {
+export interface ConfirmOptions {
   kind?: ConfirmDialogKind;
-  icon?: ConfirmDialogProps["icon"];
   confirmLabel?: string;
   cancelLabel?: string;
 }
 
-type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
+export type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
 
-interface DialogState {
+export interface DialogState {
   type: "alert" | "confirm";
   title: string;
   message: ReactNode;
   kind: ConfirmDialogKind;
-  icon?: ConfirmDialogProps["icon"];
   confirmLabel?: string;
   cancelLabel?: string;
   resolve: (ok: boolean) => void;
@@ -69,7 +66,6 @@ export const createDialogSlice: StateCreator<
           title,
           message,
           kind: options?.kind ?? "default",
-          icon: options?.icon,
           confirmLabel: options?.confirmLabel,
           cancelLabel: options?.cancelLabel,
           resolve,

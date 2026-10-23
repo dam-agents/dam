@@ -1,10 +1,4 @@
-import type { PromptBlock, ProviderPresetType } from "api-server-api";
-import type {
-  AgentKind,
-  EnvVar,
-  SlackChannel,
-  TemplateHarness,
-} from "api-server-api";
+import type { AgentKind, EnvVar } from "api-server-api";
 
 export type Role = "user" | "assistant";
 
@@ -21,28 +15,23 @@ export interface ToolChip {
   content?: ToolContent[];
 }
 
-interface TextPart {
+export interface TextPart {
   kind: "text";
   text: string;
 }
 
-interface ThoughtPart {
+export interface ThoughtPart {
   kind: "thought";
   text: string;
 }
 
-interface HistoryPart {
-  kind: "history";
-  text: string;
-}
-
-interface ImagePart {
+export interface ImagePart {
   kind: "image";
   data: string;
   mimeType: string;
 }
 
-interface FilePart {
+export interface FilePart {
   kind: "file";
   name: string;
   mimeType: string;
@@ -50,7 +39,7 @@ interface FilePart {
   size?: number;
 }
 
-interface UploadedFilePart extends FilePart {
+export interface UploadedFilePart extends FilePart {
   data: string;
   size: number;
 }
@@ -60,7 +49,6 @@ export type Attachment = ImagePart | UploadedFilePart;
 export interface RetryPayload {
   text: string;
   attachments?: Attachment[];
-  blocks?: PromptBlock[];
 }
 
 export interface VerdictPart {
@@ -73,7 +61,6 @@ export interface VerdictPart {
 export type MessagePart =
   | TextPart
   | ThoughtPart
-  | HistoryPart
   | ImagePart
   | FilePart
   | ToolChip
@@ -89,8 +76,6 @@ export interface Message {
   retryWith?: RetryPayload;
   notice?: boolean;
   loadOlderBefore?: string;
-  at?: string;
-  telemetryPromptId?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
@@ -98,27 +83,21 @@ export interface Message {
 }
 
 export type { SessionView } from "api-server-api";
+export { SessionType } from "api-server-api";
 
 export interface TemplateView {
   id: string;
   name: string;
   image: string;
   description?: string;
-  category: "harness";
-  harness?: TemplateHarness;
-  providers?: ProviderPresetType[];
+  category: "harness" | "preconfigured";
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
+  vm: boolean;
   size?: { cpu?: string; memory?: string };
-}
-
-export interface OnboardingStep {
-  id: string;
-  label: string;
-  done: boolean;
 }
 
 export type AgentState =
@@ -128,13 +107,11 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
-  | "migrating"
   | "error";
 
 export interface AgentView {
   id: string;
   name: string;
-  createdAt?: string;
   templateId: string | null;
   templateUpdate: { fromImage: string; toImage: string } | null;
   features: { liveUpdates: boolean };
@@ -151,58 +128,22 @@ export interface AgentView {
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
-  podRestarts: number;
-  podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];
-  unsupportedContributionKinds: string[];
-  workspaceFailures: {
-    kind: string;
-    error: string;
-    settled: boolean;
-    attempts: number;
-    maxAttempts: number;
-  }[];
-  channels: SlackChannel[];
+  channels: (
+    | {
+        type: "slack";
+        slackChannelId: string;
+        ambient?: boolean;
+        default?: boolean;
+      }
+    | { type: "telegram" }
+  )[];
   kbTemplateId: string | null;
-  kbShareRoots?: string[];
-  starterKit: string | null;
-  starterKitOnboarded: string | null;
-  onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
-  vm: boolean;
-  runtimeMigration: RuntimeMigrationView | null;
-  runtimeMigratable: boolean;
   kind?: AgentKind;
 }
 
-export type RuntimeMigrationPhase =
-  | "requested"
-  | "stopping"
-  | "copying"
-  | "booting"
-  | "verified"
-  | "failed"
-  | "aborting";
-
-export interface RuntimeMigrationView {
-  phase: RuntimeMigrationPhase;
-  message?: string;
-  attempts?: number;
-  abortable: boolean;
-  retryable: boolean;
-}
-
-export interface RuntimeMigrationPlanView {
-  unmovable: { path: string; reason: string }[];
-  storageSize: string;
-  storageResized: boolean;
-  bootsSleepingAgent: boolean;
-  retentionMs: number | null;
-  allowed: boolean;
-  refusal: { type: string; reasons: string[] } | null;
-}
-
-interface QuietWindowView {
+export interface QuietWindowView {
   startTime: string;
   endTime: string;
   enabled: boolean;
@@ -218,25 +159,33 @@ export interface Schedule {
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;
-  precheck: string | null;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: "user" | "agent";
-  status: {
-    lastRun?: string;
-    nextRun?: string;
-    lastResult?: string;
-    lastDeclinedAt?: string;
-    declinedCount?: number;
-    lastPrecheckError?: string;
-    precheckFailedCount?: number;
-  } | null;
+  status: { lastRun?: string; nextRun?: string; lastResult?: string } | null;
 }
 
 export type {
   BobModelPins,
   EgressPreset,
+  EnvMapping,
   EnvVar,
+  InjectionConfig,
+  ProviderPreset,
+  ProviderPresetMode,
   ProviderPresetType,
 } from "api-server-api";
-export { BOB_CHAT_MODES, isValidEnvName, PROVIDERS } from "api-server-api";
+export {
+  BOB_CHAT_MODES,
+  DEFAULT_ENV_PLACEHOLDER,
+  isProviderPresetType,
+  isValidEnvName,
+  PROVIDER_PRESET_TYPES,
+  PROVIDERS,
+} from "api-server-api";
+
+export interface McpConnection {
+  hostname: string;
+  connectedAt: string;
+  expired: boolean;
+}

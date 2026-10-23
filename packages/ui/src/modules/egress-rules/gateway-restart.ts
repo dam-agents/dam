@@ -10,9 +10,9 @@ import { splitHostPort } from "./host-port.js";
 
 type ShowConfirm = DialogSlice["showConfirm"];
 
-const GATEWAY_RESTART_TITLE = "Restart network gateway?";
+export const GATEWAY_RESTART_TITLE = "Restart network gateway?";
 
-interface StagedGatewayRestart {
+export interface StagedGatewayRestart {
   promoted: string[];
   demoted: string[];
   reapplied: string[];

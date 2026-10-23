@@ -112,7 +112,7 @@ export async function fetchFileContent(
   agentId: string,
   path: string,
 ): Promise<FileContent> {
-  return queryClient.query({
+  return queryClient.fetchQuery({
     queryKey: fileKeys.content(agentId, path),
     queryFn: async () => readFileContent(agentId, path),
   });

@@ -1,4 +1,5 @@
 import { Add } from "@carbon/icons-react";
+import type { SkillsState } from "api-server-api";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
@@ -15,8 +16,7 @@ import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
-import { LocalSkillsGroup } from "./local-skills-group.js";
-import { PlatformSkillsGroup } from "./platform-skills-group.js";
+import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSetActions } from "./skill-set-actions.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
@@ -36,14 +36,19 @@ export function SkillsSurface({
   agentState,
   readOnly,
   comingUp,
+  onStateChange,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
   readOnly: boolean;
   comingUp?: boolean;
+  onStateChange?: (state: SkillsState) => void;
 }) {
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const packSkillNames = useStore((s) =>
+    agentId ? s.packSkillsByAgent.get(agentId) : undefined,
+  );
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const staleModel = useStaleModel(agentId);
@@ -51,7 +56,11 @@ export function SkillsSurface({
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
 
-  const surface = useSkillsSurface(agentId, { readOnly, isError });
+  const surface = useSkillsSurface(agentId, {
+    readOnly,
+    isError,
+    onStateChange,
+  });
   const derived = useSkillsDerivations(surface, { readOnly, query });
   const {
     deleteStandaloneWithConfirm,
@@ -66,7 +75,6 @@ export function SkillsSurface({
     totals,
     matchCount,
     shownCreatedHere,
-    shownPlatform,
     shownBuiltIn,
     publishableSources,
     previewReady,
@@ -104,7 +112,6 @@ export function SkillsSurface({
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
       loadingBySource={surface.loadingBySource}
-      revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
       callout={
@@ -157,7 +164,6 @@ export function SkillsSurface({
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
       loadingBySource={surface.loadingBySource}
-      revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
       comingUp={!!comingUp}
@@ -220,6 +226,7 @@ export function SkillsSurface({
                 readOnly={readOnly}
                 publishes={publishes}
                 canPublish={publishableSources.length > 0}
+                packSkillNames={packSkillNames}
                 onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
                 onDownload={(skill) => void downloadStandalone(skill)}
                 onDelete={(skill, pub) =>
@@ -254,25 +261,8 @@ export function SkillsSurface({
             />
 
             {}
-            {shownPlatform.length > 0 && (
-              <PlatformSkillsGroup
-                skills={shownPlatform}
-                onOpenSkill={
-                  agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
-                    : undefined
-                }
-                onOpenSection={
-                  agentId
-                    ? (section) => navigateToSandboxHome(agentId, section)
-                    : undefined
-                }
-              />
-            )}
-
             {shownBuiltIn.length > 0 && (
-              <LocalSkillsGroup
-                label="Included with sandbox image"
+              <BuiltInSkillsGroup
                 skills={shownBuiltIn}
                 onOpenSkill={
                   agentId

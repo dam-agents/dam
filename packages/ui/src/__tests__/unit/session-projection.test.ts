@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  appendInterruptedNotice,
   applyUpdate,
   failQueuedOnDisconnect,
   finalizeAllStreaming,
@@ -290,68 +289,6 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[1].streaming).toBe(false);
   });
 
-  test("each message steered into a running turn shows as its own user message", () => {
-    const start: Message[] = [
-      userMsg("u1", "go"),
-      assistantMsg("a1", "working", true),
-    ];
-    const out = applyUpdate(start, {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u2",
-      content: {
-        type: "text" as const,
-        text: [
-          "<new-messages>",
-          "2 more messages arrived in this conversation while you were working.",
-          "Several messages now share this turn, so pass the [ts …] tag.",
-          "[ts 1.1] <@U1>: first",
-          "second line",
-          "[ts 1.2] <@U2>: third",
-          "</new-messages>",
-        ].join("\n"),
-      },
-    });
-    expect(out).toHaveLength(4);
-    expect(out[1].streaming).toBe(false);
-    expect(out.slice(2).map((m) => [m.role, m.parts])).toEqual([
-      ["user", [{ kind: "text", text: "[ts 1.1] <@U1>: first\nsecond line" }]],
-      ["user", [{ kind: "text", text: "[ts 1.2] <@U2>: third" }]],
-    ]);
-  });
-
-  test("replayed channel history shows as a history part, the frame does not", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u1",
-      content: {
-        type: "text" as const,
-        text: [
-          "<how-to-respond>\nreply with the tool\n</how-to-respond>",
-          "<context>\nThe history below is the thread.\n\n[Mon] alice: hi\n</context>",
-          "what now?",
-        ].join("\n\n"),
-      },
-    });
-    expect(out[0].parts).toEqual([
-      {
-        kind: "history",
-        text: "The history below is the thread.\n\n[Mon] alice: hi",
-      },
-      { kind: "text", text: "what now?" },
-    ]);
-  });
-
-  test("a lowercase tag that is not platform plumbing stays visible", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "user_message_chunk" as const,
-      messageId: "u1",
-      content: { type: "text" as const, text: "wrap it in <b-tag>x</b-tag>" },
-    });
-    expect(out[0].parts).toEqual([
-      { kind: "text", text: "wrap it in <b-tag>x</b-tag>" },
-    ]);
-  });
-
   test("user_message_chunk extracts binary file reference as file chip", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
@@ -560,38 +497,6 @@ describe("queued prompt scenarios", () => {
     });
     expect(m[3].streaming).toBe(false);
   });
-
-  test("an accepted prompt shows as queued when another reply is in flight", () => {
-    const behindTurn: Message[] = [
-      userMsg("u1", "first"),
-      assistantMsg("a1", "streaming reply", true, false),
-      userMsg("u2", "second"),
-      { ...assistantMsg("a2", "", true), promptId: "p2" },
-    ];
-    const out = applyUpdate(behindTurn, {
-      sessionUpdate: "platform_prompt_accepted",
-      sessionId: "test-sid",
-      promptId: "p2",
-      queued: true,
-    });
-    expect(out[3].queued).toBe(true);
-  });
-
-  test("a prompt queued only for a cold session stays a plain busy reply", () => {
-    const coldSend: Message[] = [
-      userMsg("u1", "old conversation"),
-      assistantMsg("a0", "old reply", false),
-      userMsg("u2", "fresh send"),
-      { ...assistantMsg("a2", "", true), promptId: "p2" },
-    ];
-    const out = applyUpdate(coldSend, {
-      sessionUpdate: "platform_prompt_accepted",
-      sessionId: "test-sid",
-      promptId: "p2",
-      queued: true,
-    });
-    expect(out[3].queued ?? false).toBe(false);
-  });
 });
 
 describe("finalizeAllStreaming + hasStreamingAssistant", () => {
@@ -617,23 +522,6 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
   });
 });
 
-describe("appendInterruptedNotice", () => {
-  test("appends one notice bubble when a turn was interrupted", () => {
-    const out = appendInterruptedNotice(
-      [userMsg("u1", "hi")],
-      "2026-09-07T00:00:00Z",
-    );
-    expect(out).toHaveLength(2);
-    expect(out[1].notice).toBe(true);
-    expect(out[1].parts[0]).toMatchObject({ kind: "text" });
-  });
-
-  test("no-op when the session was not interrupted", () => {
-    const start = [userMsg("u1", "hi")];
-    expect(appendInterruptedNotice(start, undefined)).toBe(start);
-  });
-});
-
 describe("failQueuedOnDisconnect", () => {
   function ourQueued(id: string, text: string): Message {
     return {
@@ -643,7 +531,7 @@ describe("failQueuedOnDisconnect", () => {
     };
   }
 
-  test("leaves our queued prompt unfailed, since the runtime parks it", () => {
+  test("fails our queued prompt with a retryable error, finalizing the rest", () => {
     const out = failQueuedOnDisconnect([
       userMsg("u1", "first"),
       assistantMsg("a1", "partial reply", true, false),
@@ -654,7 +542,9 @@ describe("failQueuedOnDisconnect", () => {
     expect(out[1].error).toBeUndefined();
     expect(firstTextPart(out[1])).toBe("partial reply");
     expect(out[3].streaming).toBe(false);
-    expect(out[3].error).toBeUndefined();
+    expect(out[3].queued).toBe(false);
+    expect(out[3].error?.message).toMatch(/couldn't deliver/i);
+    expect(out[3].error?.retryWith).toEqual({ text: "second" });
   });
 
   test("behaves as finalizeAllStreaming when nothing of ours is queued", () => {
@@ -696,11 +586,11 @@ describe("failQueuedOnDisconnect", () => {
 
 describe("mergeLocalFailures", () => {
   const failed: Message = {
-    ...userMsg("u9", "dropped"),
+    ...assistantMsg("a1", "", false),
     error: { message: "Couldn't deliver", retryWith: { text: "dropped" } },
   };
 
-  test("carries a locally-failed prompt across the reconnect rebuild", () => {
+  test("carries a locally-failed bubble across the reconnect rebuild", () => {
     const rebuilt = [userMsg("u1", "first"), assistantMsg("a1r", "reply")];
     const out = mergeLocalFailures(rebuilt, [...rebuilt, failed]);
     expect(out).toHaveLength(3);
@@ -716,44 +606,8 @@ describe("mergeLocalFailures", () => {
     expect(mergeLocalFailures(rebuilt, previous)).toBe(rebuilt);
   });
 
-  test("does not duplicate a failed prompt the rebuild already contains", () => {
+  test("does not duplicate a failed bubble the rebuild already contains", () => {
     const rebuilt = [userMsg("u1", "first"), failed];
     expect(mergeLocalFailures(rebuilt, [failed])).toBe(rebuilt);
-  });
-
-  test("drops an interrupted agent bubble, since the replay owns agent content", () => {
-    const interrupted: Message = {
-      ...assistantMsg("a9", "partial", false),
-      error: { message: "Interrupted", retryWith: { text: "prompt" } },
-    };
-    const rebuilt = [
-      userMsg("u1", "prompt"),
-      assistantMsg("a1r", "partial and the rest"),
-    ];
-    expect(mergeLocalFailures(rebuilt, [...rebuilt, interrupted])).toBe(
-      rebuilt,
-    );
-  });
-});
-
-describe("applyUpdate — the harness's name for the prompt", () => {
-  test("a replayed frame's prompt id lands on the reply being streamed", () => {
-    /**
-     * TEST_SCENARIO: history rebuilt from the harness's transcript has no
-     * turnEnded to carry the id, so each replayed chunk names it instead.
-     */
-    const start: Message[] = [userMsg("u1", "hi")];
-    const out = applyUpdate(start, txtChunk("hello"), undefined, "otel-2");
-    expect(out[1].role).toBe("assistant");
-    expect(out[1].telemetryPromptId).toBe("otel-2");
-  });
-
-  test("a frame without a prompt id leaves the reply's name alone", () => {
-    const start: Message[] = [
-      userMsg("u1", "hi"),
-      { ...assistantMsg("a1", "hel", true), telemetryPromptId: "otel-3" },
-    ];
-    const out = applyUpdate(start, txtChunk("lo"));
-    expect(out[1].telemetryPromptId).toBe("otel-3");
   });
 });

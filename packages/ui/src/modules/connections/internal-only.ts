@@ -1,12 +1,16 @@
 import type { ConnectionTemplateView } from "api-server-api";
 
-const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
+export const INTERNAL_ONLY_TEMPLATE_IDS: ReadonlySet<string> = new Set([
   "spotify",
   "youtube",
   "custom-client-credentials",
+  "github-app",
+  "github-enterprise-app",
 ]);
 
-const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = ["google-"];
+export const INTERNAL_ONLY_TEMPLATE_ID_PREFIXES: readonly string[] = [
+  "google-",
+];
 
 export function isInternalOnlyTemplate(id: string): boolean {
   return (

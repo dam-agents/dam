@@ -1,9 +1,4 @@
-import {
-  Add,
-  Checkmark,
-  OverflowMenuHorizontal,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { Add, Checkmark, OverflowMenuHorizontal } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -14,14 +9,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip } from "@/components/ui/tooltip";
 
 import { credentialCopyFor } from "../forms/field-copy.js";
 import type {
   RowGrantControls,
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
-import { GithubAppInstallButton } from "./github-app-install-hint.js";
+import { GithubAppInstallLink } from "./github-app-install-hint.js";
 
 interface Props {
   connection: ConnectionView;
@@ -55,7 +49,7 @@ export function ConnectionRowActions({
   return (
     <>
       <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
-        <GithubAppInstallButton connection={connection} />
+        <GithubAppInstallLink connection={connection} />
         {inlineFix && (
           <Button
             variant="outline"
@@ -67,9 +61,27 @@ export function ConnectionRowActions({
             {inlineFix.label}
           </Button>
         )}
-        {grant && !grant.actionHidden && (
-          <RowGrantAction rowId={connection.id} grant={grant} />
-        )}
+        {grant &&
+          !grant.actionHidden &&
+          (grant.granted ? (
+            <Badge
+              variant="muted"
+              className="h-8 shrink-0 gap-1.5 px-3 text-sm text-foreground"
+            >
+              <Checkmark size={16} className="text-success" />
+              In this agent
+            </Badge>
+          ) : (
+            <Button
+              variant="outline"
+              className="h-8 shrink-0 px-3 text-sm font-normal"
+              onClick={() => grant.onToggle(true)}
+              data-testid={`catalog-add-${connection.id}`}
+            >
+              <Add size={16} />
+              Add to agent
+            </Button>
+          ))}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -130,51 +142,5 @@ export function ConnectionRowActions({
         </DropdownMenuContent>
       </DropdownMenu>
     </>
-  );
-}
-
-export function RowGrantAction({
-  rowId,
-  grant,
-}: {
-  rowId: string;
-  grant: RowGrantControls;
-}) {
-  if (grant.granted)
-    return (
-      <Badge
-        variant="muted"
-        className="h-8 shrink-0 gap-1.5 px-3 text-sm text-foreground"
-      >
-        <Checkmark size={16} className="text-success" />
-        In this agent
-      </Badge>
-    );
-  if (grant.blockedReason)
-    return (
-      <Tooltip content={grant.blockedReason}>
-        <span className="inline-flex" tabIndex={0}>
-          <Badge
-            variant="muted"
-            className="h-8 shrink-0 gap-1.5 px-3 text-sm font-normal"
-            data-testid={`catalog-add-blocked-${rowId}`}
-          >
-            <WarningAlt size={16} className="text-warning" aria-hidden />
-            Can&apos;t add
-            <span className="sr-only">{grant.blockedReason}</span>
-          </Badge>
-        </span>
-      </Tooltip>
-    );
-  return (
-    <Button
-      variant="outline"
-      className="h-8 shrink-0 px-3 text-sm font-normal"
-      onClick={() => grant.onToggle(true)}
-      data-testid={`catalog-add-${rowId}`}
-    >
-      <Add size={16} />
-      Add to agent
-    </Button>
   );
 }

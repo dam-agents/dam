@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { monthLabel, monthRange, monthStart } from "../lib/month-range.js";
+import { useSettledMonth } from "./use-settled-month.js";
 
-type UsageState = "unavailable" | "failed" | "loading" | "ready";
+export type UsageState = "unavailable" | "failed" | "loading" | "ready";
 
 export type UsageFreshness = "fresh" | "updating" | "failed";
 
@@ -17,9 +18,10 @@ export function useMonthlySpend(agentId?: string) {
     timeZone,
     agentId,
   );
-  const settledMonth = useRef(month);
-  if (!isPlaceholderData && data !== undefined) settledMonth.current = month;
-  const shownMonth = settledMonth.current;
+  const shownMonth = useSettledMonth(
+    month,
+    !isPlaceholderData && data !== undefined,
+  );
 
   const state: UsageState = isUnavailable
     ? "unavailable"

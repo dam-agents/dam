@@ -39,13 +39,13 @@ const INERT_DROP: FolderDropCallbacks = {
   onDrop: () => {},
 };
 
-interface FolderGroupActions {
+export interface FolderGroupActions {
   onEditFolder: (folder: ArtifactFolder) => void;
   onDeleteFolder: (folder: ArtifactFolder) => void;
   onCopyFolderLink: (folder: ArtifactFolder) => Promise<string | null>;
 }
 
-interface FolderSection {
+export interface FolderSection {
   label: string;
   artifacts: LibraryArtifact[];
 }
@@ -59,7 +59,6 @@ interface Props extends ArtifactRowActions, Partial<FolderGroupActions> {
   sections?: FolderSection[];
   drop?: FolderDropCallbacks;
   dropActive?: boolean;
-  showAgent?: boolean;
 }
 
 export function FolderGroup({
@@ -71,7 +70,6 @@ export function FolderGroup({
   sections,
   drop,
   dropActive = false,
-  showAgent = true,
   onEditFolder,
   onDeleteFolder,
   onCopyFolderLink,
@@ -120,7 +118,7 @@ export function FolderGroup({
             <Badge variant="success">{sharedCount} shared</Badge>
           )}
         </DisclosureToggle>
-        {folder && (onEditFolder || onDeleteFolder || onCopyFolderLink) && (
+        {folder && (
           <div className={cn("ml-auto", HOVER_ACTION)}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -178,7 +176,6 @@ export function FolderGroup({
                     key={artifact.id}
                     artifact={artifact}
                     drag={drop}
-                    showAgent={showAgent}
                     {...rowActions}
                   />
                 ))}
@@ -190,7 +187,6 @@ export function FolderGroup({
                 key={artifact.id}
                 artifact={artifact}
                 drag={drop}
-                showAgent={showAgent}
                 {...rowActions}
               />
             ))

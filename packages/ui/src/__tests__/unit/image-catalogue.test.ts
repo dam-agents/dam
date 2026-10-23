@@ -1,55 +1,62 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  defaultHarnessId,
-  imageCatalogue,
-  reconcileHarnessSelection,
-} from "../../modules/sandboxes/lib/image-catalogue.js";
+import { imageCatalogue } from "../../modules/sandboxes/lib/image-catalogue.js";
 import type { TemplateView } from "../../types.js";
 
-function template(id: string): TemplateView {
+function template(
+  id: string,
+  vm: boolean,
+  category: TemplateView["category"] = "harness",
+): TemplateView {
   return {
     id,
     name: id,
     image: `${id}:latest`,
-    category: "harness",
-    experimental: false,
+    category,
+    experimental: vm,
+    vm,
   };
 }
 
-const CATALOGUE = [template("codex"), template("claude-code")];
+const CATALOGUE = [
+  template("claude-code", false),
+  template("codex", false),
+  template("claude-code-vm", true),
+  template("nous", false, "preconfigured"),
+  template("nous-vm", true, "preconfigured"),
+];
 
-describe("the harness catalogue", () => {
-  // TEST_SCENARIO: the setup form offers one list, and it is the harness images. Templates carry a category so a future non-harness image cannot reach that list by default.
-  it("offers the harness images", () => {
-    expect(imageCatalogue(CATALOGUE).harnesses.map((t) => t.id)).toEqual([
-      "codex",
+describe("imageCatalogue", () => {
+  it("hides VM-backed templates entirely when the feature is off", () => {
+    const { harnesses } = imageCatalogue(CATALOGUE, {
+      vmFeatureEnabled: false,
+    });
+    expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
+  });
+
+  it("mixes VM-backed templates in alongside container ones when on", () => {
+    const { harnesses } = imageCatalogue(CATALOGUE, {
+      vmFeatureEnabled: true,
+    });
+    expect(harnesses.map((t) => t.id)).toEqual([
       "claude-code",
+      "codex",
+      "claude-code-vm",
     ]);
   });
 
-  // TEST_SCENARIO: an install that has Claude Code should open on it rather than on whichever harness happens to sort first, and an install without it still has to offer something.
-  it("prefers Claude Code, and falls back to whatever is installed", () => {
-    expect(defaultHarnessId(CATALOGUE)).toBe("claude-code");
-    expect(defaultHarnessId([template("codex")])).toBe("codex");
-    expect(defaultHarnessId([])).toBeNull();
+  it("leaves specialized images out of the only list it offers", () => {
+    const { harnesses } = imageCatalogue(CATALOGUE, { vmFeatureEnabled: true });
+    expect(harnesses.every((t) => t.category === "harness")).toBe(true);
   });
 
-  // TEST_SCENARIO: a harness can disappear from an install between renders. A selection pointing at one that is gone must be corrected, or the form submits a template the platform no longer has.
-  it("corrects a selection whose harness is gone", () => {
-    expect(
-      reconcileHarnessSelection(CATALOGUE, "codex", { allowNone: false }),
-    ).toBeNull();
-    expect(
-      reconcileHarnessSelection(CATALOGUE, "retired", { allowNone: false }),
-    ).toEqual({ templateId: "claude-code" });
-    expect(
-      reconcileHarnessSelection(CATALOGUE, "retired", { allowNone: true }),
-    ).toEqual({ templateId: null });
-    expect(
-      reconcileHarnessSelection(CATALOGUE, null, { allowNone: false }),
-    ).toEqual({
-      templateId: "claude-code",
-    });
+  it("is a no-op on an install that ships no VM templates", () => {
+    const containersOnly = CATALOGUE.filter((t) => !t.vm);
+    for (const vmFeatureEnabled of [false, true]) {
+      const { harnesses } = imageCatalogue(containersOnly, {
+        vmFeatureEnabled,
+      });
+      expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
+    }
   });
 });

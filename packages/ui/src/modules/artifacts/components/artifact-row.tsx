@@ -1,4 +1,12 @@
-import { Box, OverflowMenuVertical, View } from "@carbon/icons-react";
+import {
+  Box,
+  Checkmark,
+  Link,
+  OverflowMenuVertical,
+  Share,
+  Time,
+  View,
+} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useCallback, useState } from "react";
 
@@ -9,7 +17,9 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useCopy } from "@/hooks/use-copy";
 import { clickableProps } from "@/lib/clickable";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -23,18 +33,13 @@ import {
 } from "../hooks/use-artifact-row-drag.js";
 import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import {
-  ArtifactDeletionChip,
-  ArtifactInteractiveBadge,
-  ArtifactKindBadge,
-  ArtifactStatusBadge,
-} from "./artifact-badges.js";
+import { toastCopyOutcome } from "../lib/share-link.js";
+import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
-import { CopyLinkButton } from "./copy-link-button.js";
+import { VersionBadge } from "./version-badge.js";
 
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
-  onEdit: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
@@ -52,7 +57,6 @@ export function ArtifactRow({
   showAgent = true,
   drag,
   onPreview,
-  onEdit,
   onRename,
   onMove,
   onShare,
@@ -98,54 +102,55 @@ export function ArtifactRow({
         <span className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
           {artifact.title}
         </span>
-        <span className="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs text-muted-foreground">
+        <span className="flex items-center gap-2.5 text-xs text-muted-foreground">
           {showAgent && <CreatorChip agentId={artifact.agentId} />}
-          {artifact.viewCount > 0 && (
-            <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
-              <View size={12} />
-              {artifact.viewCount}
+          {artifact.version > 1 && <VersionBadge version={artifact.version} />}
+          <span className="inline-flex items-center gap-1">
+            <View size={12} />
+            {artifact.viewCount}
+          </span>
+          {deletion.state !== "never" && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 whitespace-nowrap",
+                deletion.state === "expired" && "text-danger",
+                deletion.state === "active" && deletion.soon && "text-warning",
+              )}
+            >
+              <Time size={12} />
+              {deletion.label}
             </span>
           )}
-          <ArtifactDeletionChip
-            expiresAt={artifact.expiresAt}
-            className="order-first sm:order-none"
-          />
           <span className="hidden whitespace-nowrap sm:inline">
             {timeAgo(artifact.createdAt)}
           </span>
         </span>
       </div>
-      <div
-        draggable={false}
-        className="ml-auto flex shrink-0 items-center gap-1.5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {artifact.interactive && <ArtifactInteractiveBadge />}
-        {artifact.shareUrl && (
-          <CopyLinkButton
-            url={artifact.shareUrl}
-            variant="ghost"
-            restricted={artifact.visibility === "restricted"}
-          />
-        )}
-        <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="More actions">
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <ArtifactRowMenuItems
-              artifact={artifact}
-              onEdit={onEdit}
-              onRename={onRename}
-              onMove={onMove}
-              onShare={onShare}
-              onSetRetention={onSetRetention}
-            />
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <ArtifactStatusBadge artifact={artifact} />
+        <div
+          draggable={false}
+          className={cn("flex gap-0.5", HOVER_ACTION)}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ShareLinkButton artifact={artifact} onShare={onShare} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="More actions">
+                <OverflowMenuVertical size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <ArtifactRowMenuItems
+                artifact={artifact}
+                onRename={onRename}
+                onMove={onMove}
+                onShare={onShare}
+                onSetRetention={onSetRetention}
+              />
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   );
@@ -169,11 +174,49 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
           e.stopPropagation();
           navigateToSandboxHome(agentId, "artifacts");
         }}
-        className="inline-flex max-w-24 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent sm:max-w-40"
+        className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
       >
         <Box size={12} className="shrink-0" />
         <span className="truncate">{agentName}</span>
       </button>
     </Tooltip>
+  );
+}
+
+function ShareLinkButton({
+  artifact,
+  onShare,
+}: {
+  artifact: LibraryArtifact;
+  onShare: (artifact: LibraryArtifact) => void;
+}) {
+  const { copy, copied } = useCopy();
+  const url = artifact.shareUrl;
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={
+        copied
+          ? "Share link copied"
+          : url
+            ? "Copy share link"
+            : "Sharing settings"
+      }
+      tooltip={
+        copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
+      }
+      onClick={() =>
+        url ? void copy(url).then(toastCopyOutcome) : onShare(artifact)
+      }
+    >
+      {copied ? (
+        <Checkmark size={16} className="text-success" />
+      ) : url ? (
+        <Link size={16} />
+      ) : (
+        <Share size={16} />
+      )}
+    </Button>
   );
 }

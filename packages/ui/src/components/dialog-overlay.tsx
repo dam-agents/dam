@@ -11,7 +11,6 @@ export function DialogOverlay() {
       open={!!dialog}
       onOpenChange={(open) => !open && closeDialog(false)}
       kind={dialog?.kind ?? "default"}
-      icon={dialog?.icon}
       title={dialog?.title ?? ""}
       description={dialog?.message}
       confirmLabel={dialog?.confirmLabel}

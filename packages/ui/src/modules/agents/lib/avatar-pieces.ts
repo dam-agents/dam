@@ -1,7 +1,13 @@
 import { CHAR_COLORS, type CharName, cpth } from "../components/char-avatar.js";
 
 export type PieceKey =
-  "teardrop" | "dWing" | "halfDisc" | "crescent" | "bar" | "shortBar" | "eye";
+  | "teardrop"
+  | "dWing"
+  | "halfDisc"
+  | "crescent"
+  | "bar"
+  | "shortBar"
+  | "eye";
 
 export const AVATAR_PIECES: Record<PieceKey, { d: string; viewBox: string }> = {
   teardrop: {

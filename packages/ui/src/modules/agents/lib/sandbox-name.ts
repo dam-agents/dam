@@ -1,22 +1,37 @@
-export const AGENT_NAME_PREFIX = "agent";
+export type SandboxNameKind =
+  | "coding-agent"
+  | "experiment"
+  | "knowledge-base"
+  | "research"
+  | "assistant";
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+const PREFIX: Record<SandboxNameKind, string> = {
+  "coding-agent": "codingagent",
+  experiment: "experiment",
+  "knowledge-base": "knowledgebase",
+  research: "research",
+  assistant: "assistant",
+};
 
 export function nextSandboxName(
+  kind: SandboxNameKind,
+  takenNames: Iterable<string>,
+): string {
+  return nextNameWithPrefix(PREFIX[kind], takenNames);
+}
+
+export function nextNameWithPrefix(
   prefix: string,
   takenNames: Iterable<string>,
 ): string {
-  const pattern = new RegExp(
-    `^${escapeRegExp(prefix.toLowerCase())}(?:-(\\d+))?$`,
-  );
+  const normalized = prefix.toLowerCase();
+  const pattern = new RegExp(`^${normalized}-(\\d+)$`);
   let highest = 0;
   for (const taken of takenNames) {
     const match = pattern.exec(taken.trim().toLowerCase());
     if (!match) continue;
-    const ordinal = match[1] === undefined ? 1 : Number(match[1]);
+    const ordinal = Number(match[1]);
     if (Number.isSafeInteger(ordinal) && ordinal > highest) highest = ordinal;
   }
-  return highest === 0 ? prefix : `${prefix}-${highest + 1}`;
+  return `${normalized}-${highest + 1}`;
 }

@@ -11,7 +11,7 @@ export const settingsSchema = z.object({
     .array(envVarSchema)
     .refine(allEnvVarsValid, "All env vars need a name and a value"),
   hibernationTimeoutMin: z
-    .number({ message: "Enter a number of minutes" })
+    .number({ message: "Enter a number of minutes (0 = never)" })
     .int()
     .nonnegative(),
   sizeCpuMilli: z.number().int().positive(),
@@ -20,4 +20,7 @@ export const settingsSchema = z.object({
 export type SettingsValues = z.infer<typeof settingsSchema>;
 
 export type SandboxSettingsStatus =
-  "no-agent" | "loading" | "not-found" | "ready";
+  | "no-agent"
+  | "loading"
+  | "not-found"
+  | "ready";

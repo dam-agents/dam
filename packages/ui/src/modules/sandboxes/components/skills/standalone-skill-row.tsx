@@ -8,7 +8,7 @@ import {
 } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
-import { badgeVariants } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +38,7 @@ export function StandaloneSkillRow({
   divided,
   readOnly,
   canPublish,
+  fromPack,
   onPublish,
   onDownload,
   onDelete,
@@ -50,6 +51,7 @@ export function StandaloneSkillRow({
   divided: boolean;
   readOnly: boolean;
   canPublish: boolean;
+  fromPack?: boolean;
   onPublish: () => void;
   onDownload: () => void;
   onDelete: () => void;
@@ -82,6 +84,12 @@ export function StandaloneSkillRow({
           </p>
         )}
       </div>
+
+      {fromPack && (
+        <Badge variant="muted" size="sm" className="shrink-0">
+          Starter kit
+        </Badge>
+      )}
 
       {publish && (
         <Tooltip
@@ -156,10 +164,12 @@ export function StandaloneSkillRow({
             <Download size={14} />
             <span className="flex-1">Download skill</span>
           </DropdownMenuItem>
-          <DropdownMenuItem tone="danger" onSelect={onDelete}>
-            <TrashCan size={14} />
-            <span className="flex-1">Delete skill</span>
-          </DropdownMenuItem>
+          {!fromPack && (
+            <DropdownMenuItem tone="danger" onSelect={onDelete}>
+              <TrashCan size={14} />
+              <span className="flex-1">Delete skill</span>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

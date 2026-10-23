@@ -123,7 +123,7 @@ export function UploadSkillsTab({
       </DialogBody>
 
       <DialogActions
-        divided
+        className="border-t border-border"
         onCancel={onClose}
         label={submitLabel}
         pendingLabel="Adding…"

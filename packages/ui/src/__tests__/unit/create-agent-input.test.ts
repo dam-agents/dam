@@ -16,7 +16,6 @@ const complete: CreateAgentDraft = {
   templateId: "claude-code",
   providerRef: { id: "conn-123" },
   egressPreset: "trusted",
-  vm: false,
 };
 
 describe("create-agent draft completeness", () => {
@@ -50,15 +49,6 @@ describe("buildCreateAgentInput", () => {
     ).toMatchObject({ egressPreset: "all" });
   });
 
-  // TEST_SCENARIO: the backend is chosen beside the image, not by picking a different one, so the same template reaches the server either way and only the vm flag differs.
-  it("asks for a microVM without changing the template", () => {
-    expect(buildCreateAgentInput({ ...complete, vm: true })).toMatchObject({
-      templateId: "claude-code",
-      vm: true,
-    });
-    expect(buildCreateAgentInput(complete)).not.toHaveProperty("vm");
-  });
-
   it("throws on an incomplete draft", () => {
     expect(() =>
       buildCreateAgentInput({ ...complete, providerRef: null }),
@@ -73,8 +63,6 @@ const setup: CodingAgentSetupDraft = {
   providerRef: { id: "conn-provider" },
   connectionIds: ["conn-granted"],
   registryCredential: EMPTY_REGISTRY_CREDENTIAL,
-  hibernationTimeoutMin: 60,
-  vm: false,
 };
 
 const fullCredential = {
@@ -128,7 +116,6 @@ describe("buildCodingAgentSetupInput", () => {
     ).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
-      hibernationTimeoutMin: 60,
       templateId: "claude-code",
       appConnectionIds: ["conn-granted", "conn-provider"],
     });
@@ -143,7 +130,6 @@ describe("buildCodingAgentSetupInput", () => {
     expect(buildCodingAgentSetupInput(custom)).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
-      hibernationTimeoutMin: 60,
       image: "ghcr.io/org/agent:latest",
       appConnectionIds: ["conn-granted", "conn-provider"],
     });
@@ -163,13 +149,6 @@ describe("buildCodingAgentSetupInput", () => {
         registryCredential: fullCredential,
       }),
     ).not.toHaveProperty("registryCredential");
-  });
-
-  // TEST_SCENARIO: an untouched lifecycle choice must inherit the template's or the cluster's window, never the UI's own default.
-  it("omits the idle window when the user made no lifecycle choice", () => {
-    expect(
-      buildCodingAgentSetupInput({ ...setup, hibernationTimeoutMin: null }),
-    ).not.toHaveProperty("hibernationTimeoutMin");
   });
 
   it("throws on an incomplete draft", () => {

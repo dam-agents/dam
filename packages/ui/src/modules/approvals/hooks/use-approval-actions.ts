@@ -17,11 +17,16 @@ import {
   useDismissApproval,
 } from "../api/mutations.js";
 import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
+import { isHeldCallStillLive } from "../lib/hold.js";
 
-type ApprovalActionId =
-  "allow-once" | "allow-permanent" | "allow-host" | "dismiss" | "deny-forever";
+export type ApprovalActionId =
+  | "allow-once"
+  | "allow-permanent"
+  | "allow-host"
+  | "dismiss"
+  | "deny-forever";
 
-interface ApprovalAction {
+export interface ApprovalAction {
   id: ApprovalActionId;
   label: string;
   icon: CarbonIconType;
@@ -32,7 +37,7 @@ interface ApprovalAction {
   run: () => Promise<boolean>;
 }
 
-interface ApprovalActions {
+export interface ApprovalActions {
   actions: readonly ApprovalAction[];
   inflight: boolean;
   hostLabel: string | null;
@@ -56,8 +61,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     denyForever.isPending ||
     dismiss.isPending;
 
-  const live =
-    row.status === "pending" && new Date(row.expiresAt).getTime() > Date.now();
+  const live = isHeldCallStillLive(row);
   const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
   const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
 

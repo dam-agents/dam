@@ -1,12 +1,11 @@
-import type { SessionMode } from "api-server-api";
+import { EdgeDevice, Time } from "@carbon/icons-react";
 
 import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import type { AgentView } from "../../../types.js";
-import type { ArtifactTouched } from "../api/queries.js";
 import type { FeedItem } from "../lib/feed-item.js";
-import { FeedApprovalCard } from "./feed-approval-card.js";
+import { NotificationApprovalRow } from "./notification-approval-row.js";
 import { NotificationRow } from "./notification-row.js";
 
 const HOUR_MS = 3_600_000;
@@ -16,16 +15,39 @@ const COARSE_TICK_MS = 5 * MINUTE_MS;
 interface Props {
   items: readonly FeedItem[];
   agents: readonly AgentView[];
-  onOpenSession: (
-    agentId: string,
-    sessionId: string,
-    mode: SessionMode,
-  ) => void;
+  onOpenSession: (agentId: string, sessionId: string) => void;
   onDismiss: (item: FeedItem) => void;
   onResolved: (item: FeedItem, label: string) => void;
   resolvedLabelFor: (id: string) => string | null;
-  artifactsFor: (item: FeedItem) => readonly ArtifactTouched[];
-  onOpenArtifact: (artifactId: string) => void;
+  onArtifactClick?: (artifactId: string) => void;
+}
+
+type ChannelKind = "agent" | "slack" | "telegram" | "schedule";
+
+function channelKindFor(
+  item: Extract<FeedItem, { kind: "unread" | "in-progress" }>,
+  agents: readonly AgentView[],
+): ChannelKind {
+  if (item.session.scheduleId) return "schedule";
+  if (item.session.threadTs) return "slack";
+  const agent = agents.find((a) => a.id === item.agentId);
+  if (agent?.channels.some((c) => c.type === "slack")) return "slack";
+  return "agent";
+}
+
+function channelIcon(kind: ChannelKind) {
+  switch (kind) {
+    case "schedule":
+      return <Time size={16} />;
+    case "slack":
+      return <img src="/icons/slack.svg" alt="Slack" className="size-4" />;
+    case "telegram":
+      return (
+        <img src="/icons/telegram.svg" alt="Telegram" className="size-4" />
+      );
+    case "agent":
+      return <EdgeDevice size={16} />;
+  }
 }
 
 function tickFor(items: readonly FeedItem[], from: number): number {
@@ -43,15 +65,13 @@ export function FeedList({
   onDismiss,
   onResolved,
   resolvedLabelFor,
-  artifactsFor,
-  onOpenArtifact,
+  onArtifactClick,
 }: Props) {
   const tick = tickFor(items, Date.now());
   const now = useNow(tick);
 
-  const avatarNameOf = (agentId: string) =>
-    agents.find((a) => a.id === agentId)?.name;
-  const nameOf = (agentId: string) => avatarNameOf(agentId) ?? agentId;
+  const nameOf = (agentId: string) =>
+    agents.find((a) => a.id === agentId)?.name ?? agentId;
 
   return (
     <div className="flex flex-col gap-1">
@@ -59,11 +79,10 @@ export function FeedList({
         const meta = item.at ? timeAgo(item.at, now) : "—";
         if (item.kind === "approval") {
           return (
-            <FeedApprovalCard
+            <NotificationApprovalRow
               key={item.id}
               approval={item.approval}
               agentName={nameOf(item.agentId)}
-              avatarName={avatarNameOf(item.agentId)}
               meta={meta}
               onDismiss={() => onDismiss(item)}
               resolvedLabel={resolvedLabelFor(item.id)}
@@ -71,26 +90,28 @@ export function FeedList({
             />
           );
         }
+        const session = item.session;
+        const kind = channelKindFor(item, agents);
         return (
           <NotificationRow
             key={item.id}
-            item={item}
-            agents={agents}
+            channelIcon={channelIcon(kind)}
+            channelKind={kind}
             agentName={nameOf(item.agentId)}
-            avatarName={avatarNameOf(item.agentId)}
+            action={session.title ?? "Session"}
             meta={meta}
-            artifacts={artifactsFor(item)}
-            onOpen={() =>
-              onOpenSession(
-                item.agentId,
-                item.session.sessionId,
-                item.session.mode,
-              )
-            }
+            working={item.kind === "in-progress"}
+            unread={item.kind === "unread"}
+            artifact={item.artifact ? { name: item.artifact.name } : undefined}
+            onOpen={() => onOpenSession(item.agentId, session.sessionId)}
             onDismiss={
               item.kind === "unread" ? () => onDismiss(item) : undefined
             }
-            onOpenArtifact={onOpenArtifact}
+            onArtifactClick={
+              item.artifact && onArtifactClick
+                ? () => onArtifactClick(item.artifact!.artifactId)
+                : undefined
+            }
           />
         );
       })}

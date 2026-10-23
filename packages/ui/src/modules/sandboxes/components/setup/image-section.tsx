@@ -1,19 +1,18 @@
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { TemplateView } from "../../../../types.js";
-import { CardList } from "../card-list.js";
+import { CardGrid, CardList } from "../card-list.js";
 import {
   CustomImageCard,
   type RegistryControls,
 } from "../steps/custom-image-card.js";
-import { HarnessGrid } from "./harness-grid.js";
+import { HarnessCard } from "../steps/harness-card.js";
 
 interface Props {
   harnesses: TemplateView[];
   loading: boolean;
-  error: boolean;
-  onRetry: () => void;
   templateId: string | null;
   customImage: string;
   registry: RegistryControls;
@@ -25,8 +24,6 @@ interface Props {
 export function ImageSection({
   harnesses,
   loading,
-  error,
-  onRetry,
   templateId,
   customImage,
   registry,
@@ -39,14 +36,22 @@ export function ImageSection({
   return (
     <section className="mb-8">
       <SectionLabel spaced>Image</SectionLabel>
-      <HarnessGrid
-        harnesses={harnesses}
-        loading={loading}
-        error={error}
-        onRetry={onRetry}
-        templateId={templateId}
-        onPick={onPickTemplate}
-      />
+      {loading ? (
+        <CardList>
+          <ListSkeleton rows={2} rowHeight={156} />
+        </CardList>
+      ) : (
+        <CardGrid>
+          {harnesses.map((template) => (
+            <HarnessCard
+              key={template.id}
+              template={template}
+              selected={template.id === templateId}
+              onSelect={() => onPickTemplate(template.id)}
+            />
+          ))}
+        </CardGrid>
+      )}
 
       {setupNote && (
         <Callout tone="info" inset className="mt-3">

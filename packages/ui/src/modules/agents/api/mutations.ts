@@ -38,7 +38,6 @@ export interface CreateAgentInput {
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   registryCredential?: { server: string; username: string; password: string };
-  hibernationTimeoutMin?: number;
   gitRepo?: { url: string; ref?: string };
   importEntries?: BundleEntry[];
   importRawBundle?: File;
@@ -149,16 +148,6 @@ export function usePauseAgent() {
   });
 }
 
-export function useRetryWorkspace() {
-  return useMutation({
-    ...trpc.agents.retryWorkspace.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to retry the workspace step",
-    },
-  });
-}
-
 export function useStopAgent() {
   return useMutation({
     ...trpc.agents.stop.mutationOptions(),
@@ -191,52 +180,12 @@ export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   });
 }
 
-export function useMigrateRuntimeMutation() {
-  return useMutation({
-    ...trpc.agents.migrateRuntime.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to move the agent to the new runtime",
-    },
-  });
-}
-
-export function useAbortRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.abortRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to undo the move to the new runtime",
-    },
-  });
-}
-
-export function useRetryRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.retryRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to retry the move to the new runtime",
-    },
-  });
-}
-
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),
     meta: {
       ...invalidatesAgentsList,
       errorToast: "Failed to connect Slack",
-    },
-  });
-}
-
-export function useSetSlackAmbient() {
-  return useMutation({
-    ...trpc.agents.connectSlack.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Couldn't change ambient mode",
     },
   });
 }

@@ -1,4 +1,5 @@
 import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,13 +15,14 @@ import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FeaturesTab } from "../../features/components/features-tab.js";
-import { isFeaturesMenuRevealed } from "../../features/lib/menu-reveal.js";
+import {
+  isFeaturesMenuRevealed,
+  setFeaturesMenuRevealed,
+} from "../../features/lib/menu-reveal.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
-import { ProviderSection } from "../../providers/components/provider-section.js";
-import { useSlackInstallAvailability } from "../../slack/api/queries.js";
-import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
-import { AppVersionRow } from "../components/app-version-row.js";
+import { useAppVersion } from "../api/queries.js";
+import { ProvidersView } from "./providers-view.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -56,27 +58,32 @@ export function SettingsView() {
   const { data: flags } = useFeatures();
   const showFeatures =
     isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
-  const slackInstall = useSlackInstallAvailability();
-  const showSlackWorkspaces = slackInstall.data === true;
   const tabs = [
     ...baseTabs,
-    ...(showSlackWorkspaces
-      ? [{ value: "slack-workspaces" as const, label: "Slack workspaces" }]
-      : []),
     ...(showFeatures
       ? [{ value: "features" as const, label: "Experimental features" }]
       : []),
   ];
   const rawTab = useStore((s) => s.settingsTab);
-  const hiddenTab =
-    (rawTab === "features" && !showFeatures) ||
-    (rawTab === "slack-workspaces" && !showSlackWorkspaces);
-  const activeTab = hiddenTab ? "account" : rawTab;
+  const activeTab = rawTab === "features" && !showFeatures ? "account" : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const setView = useStore((s) => s.setView);
   const user = getUser();
+  const { data: appVersion } = useAppVersion();
+  const [versionTaps, setVersionTaps] = useState(0);
+
+  const onVersionTap = () => {
+    if (versionTaps + 1 < 5) {
+      setVersionTaps(versionTaps + 1);
+      return;
+    }
+    setVersionTaps(0);
+    const revealed = !isFeaturesMenuRevealed();
+    setFeaturesMenuRevealed(revealed);
+    navigateToSettings(revealed ? "features" : "account");
+  };
 
   return (
     <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
@@ -176,22 +183,20 @@ export function SettingsView() {
               </Button>
             </div>
 
-            <AppVersionRow />
+            {appVersion && (
+              <div
+                onClick={onVersionTap}
+                className="mt-6 text-xs text-muted-foreground break-all select-none"
+              >
+                Version {appVersion}
+              </div>
+            )}
           </div>
         )}
 
         {activeTab === "providers" && (
           <div className="anim-in">
-            <div className="w-full max-w-2xl">
-              <PageHeader
-                title="Providers"
-                description="Agents need an API key from a provider to reach a model."
-              />
-
-              <section className="mb-8">
-                <ProviderSection />
-              </section>
-            </div>
+            <ProvidersView />
           </div>
         )}
 
@@ -206,8 +211,6 @@ export function SettingsView() {
             <UsageView />
           </div>
         )}
-
-        {activeTab === "slack-workspaces" && <SlackWorkspacesView />}
 
         {activeTab === "features" && <FeaturesTab />}
       </div>

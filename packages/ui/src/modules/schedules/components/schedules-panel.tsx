@@ -3,51 +3,39 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
-import { PlatformSkillNote } from "../../sandboxes/components/skills/platform-skill-note.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { ScheduleCard } from "./schedule-card.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
 type FormState =
-  { mode: "create" } | { mode: "edit"; schedule: Schedule } | null;
+  | { mode: "create" }
+  | { mode: "edit"; schedule: Schedule }
+  | null;
 
 export function SchedulesPanel({
   agentId,
   onResumeSession,
 }: {
-  agentId: string;
-  onResumeSession: (sessionId: string) => void;
+  agentId: string | null;
+  onResumeSession?: (sessionId: string) => void;
 }) {
-  const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
 
   const [form, setForm] = useState<FormState>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
 
   const closeForm = () => setForm(null);
-
-  const skillNote = (
-    <PlatformSkillNote
-      featureId="schedules"
-      className="mb-4"
-      onOpenSkills={() => navigateToSandboxHome(agentId, "skills")}
-    />
-  );
 
   return (
     <>
       {schedules.length === 0 ? (
         <>
           <SectionLabel spaced>Schedules</SectionLabel>
-          {skillNote}
           <EmptyStateCard
             message="You have not set up any Schedules yet"
             actionLabel="Create Schedule"
@@ -67,35 +55,31 @@ export function SchedulesPanel({
               Create Schedule
             </Button>
           </div>
-          {skillNote}
-          <Inset className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
             {schedules.map((schedule) => (
               <ScheduleCard
                 key={schedule.id}
                 schedule={schedule}
-                isExpanded={expandedId === schedule.id}
-                onToggleExpanded={() =>
-                  setExpandedId((prev) =>
-                    prev === schedule.id ? null : schedule.id,
-                  )
-                }
+                isExpanded={false}
+                onToggleExpanded={() => {}}
                 onEdit={() => setForm({ mode: "edit", schedule })}
                 onViewResults={() => setResultsFor(schedule)}
               />
             ))}
-          </Inset>
+          </div>
         </>
       )}
 
-      {form && (
+      {agentId && form && (
         <ScheduleFormModal
           agentId={agentId}
           existing={form.mode === "edit" ? form.schedule : undefined}
           onClose={closeForm}
+          onSaved={closeForm}
         />
       )}
 
-      {resultsFor && (
+      {agentId && resultsFor && (
         <ScheduleResultsModal
           agentId={agentId}
           schedule={resultsFor}

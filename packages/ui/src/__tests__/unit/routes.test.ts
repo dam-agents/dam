@@ -13,7 +13,10 @@ const canonicalPaths = [
   "/slack/bind",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
+  "/agents",
   "/agents/new",
+  "/knowledge-bases/kb-1",
+  "/knowledge-bases/kb-1/settings",
   "/artifacts",
 ];
 
@@ -22,26 +25,27 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it.each([
-    "/sandboxes",
-    "/sandboxes/",
-    "/sandboxes/new",
-    "/inbox",
-    "/experiments",
-    "/experiments/new",
-  ])("sends the retired %s to Home", (path) => {
-    expect(parseRoute(path).view).toBe("home");
-  });
+  it.each(["/sandboxes", "/sandboxes/", "/sandboxes/new", "/inbox"])(
+    "sends the retired %s to Agents",
+    (path) => {
+      expect(parseRoute(path).view).toBe("agents");
+    },
+  );
 
-  // TEST_SCENARIO: the per-kind destinations are gone, and so are their paths. An unknown path is Home like any other, rather than something the router still carries a case for.
   it.each([
     "/coding-agents",
     "/coding-agents/new",
-    "/knowledge-bases",
-    "/knowledge-bases/kb-1",
-    "/knowledge-bases/kb-1/settings",
-  ])("no longer knows %s", (path) => {
-    expect(parseRoute(path).view).toBe("home");
+    "/experiments",
+    "/experiments/new",
+    "/knowledge-bases/new",
+  ])("sends the retired %s to Agents", (path) => {
+    expect(parseRoute(path).view).toBe("agents");
+  });
+
+  it("parses /knowledge-bases/:id as KB chat, not a redirect", () => {
+    expect(parseRoute("/knowledge-bases/kb-1").view).toBe(
+      "knowledge-base-chat",
+    );
   });
 });
 

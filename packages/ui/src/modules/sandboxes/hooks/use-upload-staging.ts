@@ -11,7 +11,7 @@ export interface StagedSkill {
   bytes: number;
 }
 
-interface CreateSkillsResult {
+export interface CreateSkillsResult {
   ok: boolean;
   conflictNames?: string[];
   message?: string;

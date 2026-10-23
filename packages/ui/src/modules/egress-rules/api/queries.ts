@@ -24,7 +24,7 @@ export function useEgressRulesForAgent(agentId: string | null) {
 }
 
 export function fetchEgressRulesForAgent(agentId: string) {
-  return queryClient.query({
+  return queryClient.fetchQuery({
     queryKey: egressRulesKeys.forAgent(agentId),
     queryFn: () => api.egressRules.listForAgent.query({ agentId }),
     staleTime: 0,

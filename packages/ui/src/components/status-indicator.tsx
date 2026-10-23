@@ -1,17 +1,17 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
-import { Tooltip } from "@/components/ui/tooltip";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
-const stateLabel: Record<AgentDisplayState, string> = {
-  running: "Running",
-  starting: "Starting",
-  preparing_workspace: "Preparing workspace",
+export const stateLabel: Record<AgentDisplayState, string> = {
+  running: "Working",
+  running_always_on: "Working",
+  starting: "Working",
+  preparing_workspace: "Working",
   hibernating: "Hibernating",
-  hibernated: "Hibernating",
+  hibernated: "Idle",
+  idle_always_on: "Idle",
   error: "Error",
   over_budget: "Over budget",
-  migrating: "Migrating",
 };
 
 const stateVariant: Record<
@@ -19,54 +19,28 @@ const stateVariant: Record<
   NonNullable<BadgeProps["variant"]>
 > = {
   running: "success",
-  starting: "warning",
-  preparing_workspace: "warning",
+  running_always_on: "success",
+  starting: "success",
+  preparing_workspace: "success",
   hibernating: "muted",
-  hibernated: "muted",
+  hibernated: "info",
+  idle_always_on: "info",
   error: "danger",
   over_budget: "warning",
-  migrating: "warning",
 };
 
 export const stateDotClass: Record<AgentDisplayState, string> = {
-  running: "bg-success",
-  starting: "bg-warning",
-  preparing_workspace: "bg-warning",
-  hibernating: "bg-muted-foreground",
-  hibernated: "bg-muted-foreground",
-  error: "bg-danger",
-  over_budget: "bg-warning",
-  migrating: "bg-warning",
+  running: "border-[1.5px] border-[#198038] bg-[#defbe6] dark:border-[#42be65] dark:bg-[#022d0d]",
+  running_always_on: "border-[1.5px] border-[#198038] bg-[#defbe6] dark:border-[#42be65] dark:bg-[#022d0d]",
+  starting: "border-[1.5px] border-[#198038] bg-[#defbe6] dark:border-[#42be65] dark:bg-[#022d0d]",
+  preparing_workspace: "border-[1.5px] border-[#198038] bg-[#defbe6] dark:border-[#42be65] dark:bg-[#022d0d]",
+  hibernating: "border-[1.5px] border-[#697077] bg-[#f2f4f8] dark:border-[#a2a9b0] dark:bg-[#21272a]",
+  hibernated: "border-[1.5px] border-[#0f62fe] bg-[#edf5ff] dark:border-[#78a9ff] dark:bg-[#001d6c]",
+  idle_always_on: "border-[1.5px] border-[#0f62fe] bg-[#edf5ff] dark:border-[#78a9ff] dark:bg-[#001d6c]",
+  error: "border-[1.5px] border-[#da1e28] bg-[#fff1f1] dark:border-[#ff8389] dark:bg-[#520408]",
+  over_budget: "border-[1.5px] border-[#ba4e00] bg-[#fff2e8] dark:border-[#ff832b] dark:bg-[#3e1a00]",
 };
 
-export function StatusBadge({
-  state,
-  working,
-}: {
-  state: AgentDisplayState;
-  working?: boolean;
-}) {
-  const splitRunning = state === "running" && working !== undefined;
-  const label = splitRunning
-    ? working
-      ? "Working"
-      : "Idle"
-    : stateLabel[state];
-  const variant = splitRunning && !working ? "accent" : stateVariant[state];
-  return <Badge variant={variant}>{label}</Badge>;
-}
-
-export function AlwaysOnTag() {
-  return (
-    <Tooltip
-      side="top"
-      content="This agent never hibernates on its own and keeps its compute reserved."
-    >
-      <span className="inline-flex" tabIndex={0}>
-        <Badge variant="muted" data-testid="always-on-tag">
-          Always on
-        </Badge>
-      </span>
-    </Tooltip>
-  );
+export function StatusBadge({ state }: { state: AgentDisplayState }) {
+  return <Badge variant={stateVariant[state]}>{stateLabel[state]}</Badge>;
 }

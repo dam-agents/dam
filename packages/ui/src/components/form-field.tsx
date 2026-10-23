@@ -27,17 +27,15 @@ export function FormField({
 }: Props) {
   const indentLabel = !disableInset && labelInset;
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
-      <label className="contents">
-        <SectionLabel className={cn(indentLabel && LABEL_INSET)}>
-          {label}
-        </SectionLabel>
-        <div className={cn(!disableInset && !labelInset && FIELD_INSET)}>
-          {children}
-        </div>
-      </label>
+    <label className={cn("flex flex-col gap-2", className)}>
+      <SectionLabel className={cn(indentLabel && LABEL_INSET)}>
+        {label}
+      </SectionLabel>
+      <div className={cn(!disableInset && !labelInset && FIELD_INSET)}>
+        {children}
+      </div>
       {hint && <span className="text-sm text-muted-foreground">{hint}</span>}
       <FormError message={error} />
-    </div>
+    </label>
   );
 }

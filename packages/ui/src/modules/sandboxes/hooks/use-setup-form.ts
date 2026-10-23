@@ -1,56 +1,71 @@
-import { starterKitScheduleOverrideSchema } from "api-server-api";
+import { knowledgeBaseTemplateIdSchema } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
+import type { SandboxNameKind } from "../../agents/lib/sandbox-name.js";
 
-export type SetupFlow = "coding-agent" | "starter-kit";
+export type SetupFlow = SandboxNameKind;
 
-const setupFormSchema = z.object({
+const scheduleDraftInnerSchema = z.object({
+  name: z.string(),
+  task: z.string(),
+  timezone: z.string(),
+  sessionMode: z.enum(["fresh", "continuous"]),
+  kind: z.enum(["daily", "hourly", "minutely", "custom"]),
+  interval: z.string(),
+  time: z.string(),
+  days: z.array(z.number()),
+  customRRule: z.string(),
+  quietHours: z.array(
+    z.object({
+      startTime: z.string(),
+      endTime: z.string(),
+      enabled: z.boolean(),
+    }),
+  ),
+  enabled: z.boolean().default(true),
+});
+
+const scheduleDraftSchema = scheduleDraftInnerSchema.nullable().default(null);
+
+export type ScheduleDraft = NonNullable<z.infer<typeof scheduleDraftSchema>>;
+
+export const setupFormSchema = z.object({
   name: z.string(),
   providerRef: z.object({ id: z.string() }).nullable().default(null),
   connectionIds: z.array(z.string()).default([]),
-  satelliteNames: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),
+  kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string().default(""),
-  hibernationTimeoutMin: z
-    .number()
-    .int()
-    .nonnegative()
-    .nullable()
-    .default(null)
-    .catch(null),
-  channels: z
-    .object({
-      slack: z.boolean().default(false),
-      telegram: z.boolean().default(false),
-    })
-    .default({ slack: false, telegram: false }),
-  slackChannelId: z.string().default(""),
-  skippedSchedules: z.array(z.string()).default([]),
-  scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
+  scheduleDraft: scheduleDraftSchema,
+  scheduleDrafts: z.array(scheduleDraftInnerSchema).default([]),
+  sizeCpuMilli: z.number().nullable().default(null),
+  sizeMemoryMi: z.number().nullable().default(null),
 });
-type SetupForm = z.infer<typeof setupFormSchema>;
+export type SetupForm = z.infer<typeof setupFormSchema>;
 
-interface SetupFormState {
+export interface SetupFormState {
   form: SetupForm;
   update: (patch: Partial<SetupForm>) => void;
-  toggleConnection: (id: string, granted: boolean) => void;
-  toggleSatellite: (name: string, granted: boolean) => void;
   reset: () => void;
 }
 
-function save(key: string, form: SetupForm): void {
+function storageKey(flow: SetupFlow): string {
+  return `platform-setup-${flow}`;
+}
+
+function save(flow: SetupFlow, form: SetupForm): void {
   try {
-    sessionStorage.setItem(key, JSON.stringify(form));
+    sessionStorage.setItem(storageKey(flow), JSON.stringify(form));
   } catch {}
 }
 
-function load(key: string, flow: SetupFlow): SetupForm | null {
+function load(flow: SetupFlow): SetupForm | null {
   let stored: unknown;
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = sessionStorage.getItem(storageKey(flow));
     if (!raw) return null;
     stored = JSON.parse(raw);
   } catch {
@@ -69,17 +84,14 @@ function load(key: string, flow: SetupFlow): SetupForm | null {
 
 export function useSetupForm(
   flow: SetupFlow,
-  options: { namePrefix: string; returnPath?: string; scope?: string },
+  defaults: Partial<SetupForm> = {},
+  returnPath?: string,
 ): SetupFormState {
-  const { namePrefix, returnPath, scope } = options;
-  const key = scope
-    ? `platform-setup-${flow}:${scope}`
-    : `platform-setup-${flow}`;
   const [form, setForm] = useState<SetupForm>(() => {
-    const restored = load(key, flow);
+    const restored = load(flow);
     if (restored) return restored;
-    const fresh = setupFormSchema.parse({ name: "" });
-    save(key, fresh);
+    const fresh = setupFormSchema.parse({ name: "", ...defaults });
+    save(flow, fresh);
     return fresh;
   });
 
@@ -87,53 +99,21 @@ export function useSetupForm(
     (patch: Partial<SetupForm>) => {
       setForm((prev) => {
         const next = { ...prev, ...patch };
-        save(key, next);
+        save(flow, next);
         return next;
       });
     },
-    [key],
-  );
-
-  const toggleConnection = useCallback(
-    (id: string, granted: boolean) => {
-      setForm((prev) => {
-        const next = {
-          ...prev,
-          connectionIds: granted
-            ? [...new Set([...prev.connectionIds, id])]
-            : prev.connectionIds.filter((x) => x !== id),
-        };
-        save(key, next);
-        return next;
-      });
-    },
-    [key],
-  );
-
-  const toggleSatellite = useCallback(
-    (name: string, granted: boolean) => {
-      setForm((prev) => {
-        const next = {
-          ...prev,
-          satelliteNames: granted
-            ? [...new Set([...prev.satelliteNames, name])]
-            : prev.satelliteNames.filter((x) => x !== name),
-        };
-        save(key, next);
-        return next;
-      });
-    },
-    [key],
+    [flow],
   );
 
   const setName = useCallback((name: string) => update({ name }), [update]);
-  usePrefilledSandboxName(namePrefix, form.name, setName);
+  usePrefilledSandboxName(flow, form.name, setName);
 
   const reset = useCallback(() => {
     try {
-      sessionStorage.removeItem(key);
+      sessionStorage.removeItem(storageKey(flow));
     } catch {}
-  }, [key]);
+  }, [flow]);
 
   useEffect(() => {
     if (!returnPath) return;
@@ -148,7 +128,7 @@ export function useSetupForm(
           ...prev,
           connectionIds: [...new Set([...prev.connectionIds, connectionId])],
         };
-        save(key, next);
+        save(flow, next);
         return next;
       });
       return;
@@ -160,7 +140,7 @@ export function useSetupForm(
           ? "Connection authorized, but no connection was returned."
           : `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
     });
-  }, [key, returnPath]);
+  }, [flow, returnPath]);
 
-  return { form, update, toggleConnection, toggleSatellite, reset };
+  return { form, update, reset };
 }

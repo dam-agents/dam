@@ -8,22 +8,14 @@ import { cn } from "@/lib/utils";
 
 interface ModalProps {
   widthClass?: string;
-  heightClass?: string;
-  onClose?: () => void;
   children: ReactNode;
 }
 
-export function Modal({
-  widthClass = "w-[560px]",
-  heightClass,
-  onClose,
-  children,
-}: ModalProps) {
+export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
   const labelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef);
   useBodyScrollLock();
-  useEscapeWhenTopmost(labelId, onClose);
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
       <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
@@ -32,11 +24,7 @@ export function Modal({
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelId}
-          className={cn(
-            widthClass,
-            heightClass,
-            "max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl",
-          )}
+          className={`${widthClass} max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl`}
         >
           {children}
         </div>
@@ -88,7 +76,7 @@ export function DialogHeader({
       id={title ? undefined : labelId}
       data-dialog-noautofocus
       className={cn(
-        "px-5 py-5 md:px-6 md:py-6",
+        "px-5 pt-5 pb-4 md:px-7 md:pt-7",
         divided && "border-b border-border",
         className,
       )}
@@ -97,7 +85,7 @@ export function DialogHeader({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {title && (
-              <div className="flex min-h-7 items-center gap-2">
+              <div className="flex items-center gap-2">
                 <h2
                   id={labelId}
                   className={cn(
@@ -127,7 +115,7 @@ export function DialogHeader({
                   aria-label="Close"
                   data-dialog-close
                   data-testid={closeTestId}
-                  className="shrink-0 text-muted-foreground"
+                  className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
                 >
                   <Close size={16} />
                 </Button>
@@ -148,30 +136,17 @@ export function DialogBody({
 }: DialogRegionProps & { flush?: boolean }) {
   return (
     <div
-      className={cn(
-        "flex-1 min-h-0 overflow-y-auto py-5 md:py-6",
-        !flush && "px-5 md:px-6",
-        className,
-      )}
+      className={`flex-1 min-h-0 overflow-y-auto py-5 ${flush ? "" : "px-5 md:px-7"} ${className ?? ""}`}
     >
       {children}
     </div>
   );
 }
 
-export function DialogFooter({
-  children,
-  className,
-  divided,
-}: DialogRegionProps & { divided?: boolean }) {
+export function DialogFooter({ children, className }: DialogRegionProps) {
   return (
     <div
-      className={cn(
-        "flex items-center justify-end gap-3 px-5 pb-5 md:px-6 md:pb-6",
-        "[&.border-t]:pt-5 md:[&.border-t]:pt-6",
-        divided && "border-t border-border",
-        className,
-      )}
+      className={`px-5 md:px-7 py-4 flex items-center justify-end gap-3 ${className ?? ""}`}
     >
       {children}
     </div>
@@ -191,7 +166,6 @@ interface DialogActionsProps {
   onSubmit?: () => void;
   testId?: string;
   className?: string;
-  divided?: boolean;
 }
 
 export function DialogActions({
@@ -207,10 +181,9 @@ export function DialogActions({
   onSubmit,
   testId,
   className,
-  divided,
 }: DialogActionsProps) {
   return (
-    <DialogFooter className={className} divided={divided}>
+    <DialogFooter className={className}>
       {leading && <div className="mr-auto">{leading}</div>}
       <Button
         type="button"
@@ -294,33 +267,6 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       previouslyFocused?.focus?.();
     };
   }, [containerRef]);
-}
-
-const openModalIds: string[] = [];
-
-function useEscapeWhenTopmost(id: string, onClose: (() => void) | undefined) {
-  const close = useRef(onClose);
-  useEffect(() => {
-    close.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    openModalIds.push(id);
-    return () => {
-      const at = openModalIds.indexOf(id);
-      if (at !== -1) openModalIds.splice(at, 1);
-    };
-  }, [id]);
-
-  useEffect(() => {
-    const closeIfTopmost = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (openModalIds[openModalIds.length - 1] !== id) return;
-      close.current?.();
-    };
-    window.addEventListener("keydown", closeIfTopmost);
-    return () => window.removeEventListener("keydown", closeIfTopmost);
-  }, [id]);
 }
 
 let bodyLockCount = 0;

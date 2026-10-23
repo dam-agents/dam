@@ -2,25 +2,16 @@ import type { LibraryArtifact } from "api-server-api";
 
 import { HighlightedCode } from "@/components/highlighted-code";
 
-import { CodeEditor } from "../../files/components/code-editor.js";
 import type { useArtifactContent } from "../api/queries.js";
 
 export function ArtifactSourceView({
   artifact,
   content,
   isLoading,
-  editMode,
-  draft,
-  onDraftChange,
-  onSave,
 }: {
   artifact: LibraryArtifact;
   content: ReturnType<typeof useArtifactContent>["data"];
   isLoading: boolean;
-  editMode?: boolean;
-  draft?: string;
-  onDraftChange?: (next: string) => void;
-  onSave?: () => void;
 }) {
   if (isLoading) return <Note text="Loading preview…" />;
   if (!content || content.tooLarge) {
@@ -32,18 +23,6 @@ export function ArtifactSourceView({
             : "No preview available."
         }
       />
-    );
-  }
-  if (editMode && onDraftChange && onSave) {
-    return (
-      <div className="h-full overflow-hidden">
-        <CodeEditor
-          value={draft ?? content.content}
-          path={content.fileName}
-          onChange={onDraftChange}
-          onSave={onSave}
-        />
-      </div>
     );
   }
   if (content.binary && content.contentType.startsWith("image/")) {

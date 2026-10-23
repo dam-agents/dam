@@ -37,20 +37,23 @@ function repoLabel(source: SkillSource): string {
 
 function ScanFreshness({
   scannedAt,
-  rescanning,
+  scanning,
   onRescan,
 }: {
   scannedAt: string;
-  rescanning: boolean;
+  scanning: boolean;
   onRescan: () => void;
 }) {
+  if (scanning) {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+        <Spinner size={13} /> Scanning…
+      </span>
+    );
+  }
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-      {rescanning ? (
-        <Spinner size={13} label="Re-scanning this source" />
-      ) : (
-        <Time size={13} />
-      )}
+      <Time size={13} />
       <span title={formatTimestamp(scannedAt)}>
         scanned {timeAgo(scannedAt)}
       </span>
@@ -59,7 +62,6 @@ function ScanFreshness({
         size="icon-sm"
         aria-label="Re-scan this source"
         tooltip="Re-scan this source"
-        disabled={rescanning}
         onClick={onRescan}
         className="text-muted-foreground"
       >
@@ -73,7 +75,6 @@ export function SkillSourceCard({
   source,
   skills,
   loading,
-  revalidating,
   error,
   scannedAt,
   visibility,
@@ -96,7 +97,6 @@ export function SkillSourceCard({
   source: SkillSource;
   skills: Skill[] | undefined;
   loading: boolean;
-  revalidating: boolean;
   error: ScanFailure | null;
   scannedAt?: string;
   visibility?: "public" | "private";
@@ -160,7 +160,7 @@ export function SkillSourceCard({
             <p className="truncate text-[15px] font-semibold text-foreground">
               {source.name}
             </p>
-            {loaded && (
+            {loaded && !error && (
               <span className="shrink-0 text-sm text-muted-foreground">
                 {enabled.length} of {list.length} on
               </span>
@@ -182,18 +182,16 @@ export function SkillSourceCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {}
-          {scannedAt && (
+          {!error && scannedAt && (
             <ScanFreshness
               scannedAt={scannedAt}
-              rescanning={revalidating}
+              scanning={loading}
               onRescan={onRescan}
             />
           )}
-          {!scannedAt && loading && (
-            <Spinner size={15} label="Scanning this source" />
-          )}
+          {!scannedAt && loading && <Spinner size={15} />}
           {}
-          {onToggleAll && !readOnly && loaded && (
+          {onToggleAll && !readOnly && loaded && !error && (
             <Button
               variant="outline"
               size="sm"
@@ -223,12 +221,7 @@ export function SkillSourceCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem
-                disabled={loading || revalidating}
-                onSelect={onRescan}
-              >
-                Re-scan
-              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() =>
                   window.open(source.gitUrl, "_blank", "noopener,noreferrer")
@@ -255,12 +248,13 @@ export function SkillSourceCard({
           onManageConnections={onManageConnections}
         />
       )}
-      {loaded && list.length === 0 && (
+      {loaded && !error && list.length === 0 && (
         <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
           No skills in this source.
         </p>
       )}
       {loaded &&
+        !error &&
         visible.map((skill) => {
           const ref = installedRef(skill.source, skill.name);
           const hasDrift = isDrifted(ref, skill);
@@ -284,7 +278,7 @@ export function SkillSourceCard({
           );
         })}
 
-      {loaded && collapsible && !filtering && (
+      {loaded && !error && collapsible && !filtering && (
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}

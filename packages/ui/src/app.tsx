@@ -1,33 +1,34 @@
+import { Notification } from "@carbon/icons-react";
 import { useEffect } from "react";
+
+import { Badge } from "@/components/ui/badge";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
-import { cn } from "./lib/utils.js";
+import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
+import { ComponentShowcase } from "./mock/data/component-showcase.js";
+import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
+import { SidebarSpecs } from "./mock/sidebar-specs.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import {
-  AgentCreateView,
-  StarterKitSetupView,
-} from "./modules/agents/views/agent-create-view.js";
+import { AgentLandingView } from "./modules/agents/views/agent-landing-view.js";
+import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import {
-  NotificationsBell,
-  NotificationsPanel,
-} from "./modules/home/components/notifications-panel.js";
-import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
+import { useNotifications } from "./modules/notifications/api/queries.js";
+import { NotificationsPanel } from "./modules/notifications/components/notifications-panel.js";
+import { useApprovalToasts } from "./modules/notifications/hooks/use-approval-toasts.js";
+import { isNeedsYou } from "./modules/notifications/lib/notification-types.js";
+import { PresetsView } from "./modules/packs/views/presets-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
-import { isDarkTheme } from "./modules/platform/store/theme.js";
-import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
+import { SchedulesView } from "./modules/schedules/views/schedules-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
-import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
-import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
@@ -40,10 +41,12 @@ export default function App() {
 
   useEffect(() => {
     const apply = () => {
-      document.documentElement.classList.toggle(
-        "dark",
-        isDarkTheme(useStore.getState().theme),
-      );
+      const t = useStore.getState().theme;
+      const isDark =
+        t === "dark" ||
+        (t === "system" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", isDark);
     };
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -54,15 +57,46 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+  if (view === "nav-flows") return <NavFlows />;
+  if (view === "flow-screen") return <FlowScreen />;
   return <MainApp />;
 }
 
-const SETUP_VIEWS = new Set<Route["view"]>(["agent-new", "starter-kit-new"]);
+const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
+
+function NotificationBell() {
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
+  const { items } = useNotifications();
+  const needsYouCount = items.filter(isNeedsYou).length;
+
+  return (
+    <button
+      type="button"
+      onClick={toggleNotifications}
+      aria-label={
+        needsYouCount > 0
+          ? `Approvals waiting, ${needsYouCount}`
+          : "Approvals waiting"
+      }
+      className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <Notification size={16} />
+      {needsYouCount > 0 && (
+        <Badge
+          variant="default"
+          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
+        >
+          {needsYouCount > 9 ? "9+" : needsYouCount}
+        </Badge>
+      )}
+    </button>
+  );
+}
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const activityOpen = useStore((s) => s.activityView !== null);
-  const setActivityView = useStore((s) => s.setActivityView);
+  const notificationsOpen = useStore((s) => s.notificationsOpen);
+  const setNotificationsOpen = useStore((s) => s.setNotificationsOpen);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -90,82 +124,78 @@ function MainApp() {
     }
   }, []);
 
-  if (view === "chat")
-    return (
-      <>
-        <div className="flex h-dvh bg-background overflow-hidden">
-          <IconRail hideMobileBar />
+  return (
+    <>
+      <div className="flex h-full bg-background overflow-hidden">
+        <IconRail hideMobileBar={view === "chat"} />
+        {view === "chat" ? (
           <div className="relative z-content flex-1 min-w-0">
-            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
+            <div className="pointer-events-none absolute top-0 right-0 z-10 px-4 pt-3 md:px-6">
               <div className="pointer-events-auto">
-                <NotificationsBell onOpen={() => setActivityView("feed")} />
+                <NotificationBell />
               </div>
             </div>
             <ChatView />
           </div>
-        </div>
-        {activityOpen && (
-          <NotificationsPanel onClose={() => setActivityView(null)} />
-        )}
-        <DialogOverlay />
-        <PendingBindModal />
-        <ConnectionBanner />
-      </>
-    );
-
-  return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
-            <div className="pointer-events-auto">
-              <NotificationsBell onOpen={() => setActivityView("feed")} />
+        ) : (
+          <main className="relative z-content flex-1 min-w-0 overflow-y-auto">
+            <div className="pointer-events-none sticky top-0 z-10 flex justify-end px-4 pt-3 md:px-6">
+              <div className="pointer-events-auto">
+                <NotificationBell />
+              </div>
             </div>
-          </div>
-          {view === "sandbox-home" ? (
-            <div className="min-h-0 flex-1">
+            {view === "agent-landing" ? (
+              <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <AgentLandingView />
+              </div>
+            ) : view === "sandbox-home" ? (
               <SandboxHomeView />
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ||
-                  view === "starter-kits" ||
-                  view === "starter-kit"
-                  ? "max-w-[1200px]"
-                  : "max-w-[960px]",
-              )}
-            >
-              {view === "home" ? (
-                <HomeView />
-              ) : view === "agent-new" ? (
-                <AgentCreateView kit={null} />
-              ) : view === "settings" ? (
-                <SettingsView />
-              ) : view === "starter-kits" || view === "starter-kit" ? (
-                <>
-                  <StarterKitsView />
-                  {view === "starter-kit" && <StarterKitDetailView />}
-                </>
-              ) : view === "starter-kit-new" ? (
-                <StarterKitSetupView />
-              ) : view === "artifacts" ? (
+            ) : view === "home" ? (
+              <HomeView />
+            ) : view === "presets" ? (
+              <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <PresetsView />
+              </div>
+            ) : view === "schedules" ? (
+              <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <SchedulesView />
+              </div>
+            ) : view === "artifacts" ? (
+              <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
                 <ArtifactsView />
-              ) : (
-                <HomeView />
-              )}
-            </div>
-          )}
-        </main>
+              </div>
+            ) : view === "setup-workbench" ? (
+              <div className="mx-auto w-full max-w-[1400px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <SetupWorkbenchView />
+              </div>
+            ) : view === "sidebar-specs" ? (
+              <div className="w-full px-6 py-6 pb-20">
+                <SidebarSpecs />
+              </div>
+            ) : (
+              <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                {view === "agent-new" ? (
+                  <AgentSetupView />
+                ) : view === "settings" ? (
+                  <SettingsView />
+                ) : view === "card-gallery" ? (
+                  <AgentCardGallery />
+                ) : view === "component-showcase" ? (
+                  <ComponentShowcase />
+                ) : (
+                  <HomeView />
+                )}
+              </div>
+            )}
+          </main>
+        )}
       </div>
-      {activityOpen && (
-        <NotificationsPanel onClose={() => setActivityView(null)} />
-      )}
+      <NotificationsPanel
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+      />
       <DialogOverlay />
-      <PendingBindModal />
       <ConnectionBanner />
-    </div>
+    </>
   );
 }

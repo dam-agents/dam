@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-import { stripWhitespace } from "../provider-form-shell.js";
-import { MODE_KEYS, MODES } from "./modes.js";
+import { MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
 export const anthropicCredentialSchema = z
   .object({

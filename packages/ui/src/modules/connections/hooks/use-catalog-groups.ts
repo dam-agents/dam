@@ -2,7 +2,6 @@ import {
   type ConnectionTemplateView,
   type ConnectionView,
   PROVIDER_TEMPLATE_IDS,
-  SHARED_KB_TEMPLATE_ID,
 } from "api-server-api";
 import { useMemo } from "react";
 
@@ -21,7 +20,6 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
   byTab: Map<CatalogTab, CatalogProviderGroup[]>;
   populated: CatalogProviderGroup[];
   templateById: Map<string, ConnectionTemplateView>;
-  loading: boolean;
 } {
   const templatesQ = useConnectionTemplates();
   const allTemplates = templatesQ.data ?? NO_TEMPLATES;
@@ -30,14 +28,13 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
   const byTab = useMemo(
     () =>
       groupCatalog({
-        offeredTemplates: filterOfferedTemplates(allTemplates, showInternal)
-          .filter((t) => !PROVIDER_TEMPLATE_IDS.has(t.id))
-          .filter((t) => t.id !== SHARED_KB_TEMPLATE_ID),
+        offeredTemplates: filterOfferedTemplates(
+          allTemplates,
+          showInternal,
+        ).filter((t) => !PROVIDER_TEMPLATE_IDS.has(t.id)),
         allTemplates,
         connections: connections.filter(
-          (c) =>
-            !PROVIDER_TEMPLATE_IDS.has(c.templateId) &&
-            c.templateId !== SHARED_KB_TEMPLATE_ID,
+          (c) => !PROVIDER_TEMPLATE_IDS.has(c.templateId),
         ),
       }),
     [allTemplates, connections, showInternal],
@@ -50,5 +47,5 @@ export function useCatalogGroups(connections: readonly ConnectionView[]): {
     () => new Map(allTemplates.map((t) => [t.id, t])),
     [allTemplates],
   );
-  return { byTab, populated, templateById, loading: templatesQ.isPending };
+  return { byTab, populated, templateById };
 }

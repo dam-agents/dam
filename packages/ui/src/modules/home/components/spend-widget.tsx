@@ -1,8 +1,10 @@
+import { Help } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { useStore } from "../../../store.js";
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
 import { totalCostUsd } from "../../metrics/lib/totals.js";
 import {
@@ -16,6 +18,7 @@ const TOP_SPENDERS = 3;
 const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
 
 export function SpendWidget() {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const [period, setPeriod] = useState<SpendPeriod>("1m");
   const timeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -41,7 +44,36 @@ export function SpendWidget() {
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
       <div className="mb-1 flex min-h-[32px] items-center justify-between">
-        <p className="text-sm text-muted-foreground">Spend</p>
+        <span className="flex items-center gap-1.5">
+          <p className="text-sm text-muted-foreground">Spend</p>
+          <Tooltip
+            content={
+              <span>
+                Total model cost across your agents.{" "}
+                {spenders.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const topAgent = spenders[0];
+                      if (topAgent)
+                        navigateToSandboxHome(topAgent.agentId, "usage");
+                    }}
+                    className="underline"
+                  >
+                    View detailed breakdown
+                  </button>
+                )}
+              </span>
+            }
+            side="bottom"
+          >
+            <Help
+              size={16}
+              className="cursor-help text-muted-foreground/50"
+              data-review="spend-tooltip"
+            />
+          </Tooltip>
+        </span>
         <div className="flex shrink-0 gap-0.5 rounded-md border border-border/50 bg-muted/40 p-0.5">
           {SPEND_PERIODS.map((option) => (
             <button
@@ -71,9 +103,8 @@ export function SpendWidget() {
           {spenders.map((spender) => (
             <div key={spender.agentId}>
               <div className="mb-1 flex items-center justify-between">
-                <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                  <AgentAvatar name={spender.agentName} size={16} />
-                  <span className="truncate">{spender.agentName}</span>
+                <span className="truncate text-sm text-muted-foreground">
+                  {spender.agentName}
                 </span>
                 <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
                   ${spender.costUsd.toFixed(2)}

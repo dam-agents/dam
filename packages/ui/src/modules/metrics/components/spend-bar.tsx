@@ -6,14 +6,17 @@ interface Props {
   pct: number;
   color: string;
   caption?: ReactNode;
-  icon?: ReactNode;
 }
 
-export function SpendBar({ label, value, pct, color, caption, icon }: Props) {
+export function SpendBar({ label, value, pct, color, caption }: Props) {
   return (
     <div className="flex items-center gap-4 text-sm">
       <span className="flex w-[150px] shrink-0 items-center gap-2">
-        {icon}
+        <span
+          aria-hidden="true"
+          className="size-2 shrink-0 rounded-full"
+          style={{ background: color }}
+        />
         <span className="truncate text-foreground" title={label}>
           {label}
         </span>

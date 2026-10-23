@@ -94,7 +94,7 @@ export function PublishSkillModal({
         </DialogBody>
 
         <DialogActions
-          divided
+          className="border-t border-border"
           onCancel={onClose}
           label="Publish"
           pendingLabel="Publishing…"

@@ -2,9 +2,11 @@ import type React from "react";
 
 import { cn } from "@/lib/utils";
 
+import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { type BeeColors, hashIndex, injectBeeStyles } from "./bee-avatar.js";
 
 export type { BeeColors };
+export { hashIndex };
 
 const LENS_EYES: [number, number, number][] = [
   [1100, 900, 340],
@@ -520,5 +522,30 @@ export function CharAvatar({
     >
       {charRenderers[charName](fill)}
     </div>
+  );
+}
+
+export function AgentAvatar({
+  agentId,
+  state,
+  className,
+}: {
+  agentId: string;
+  state: AgentDisplayState;
+  className?: string;
+}) {
+  const idle = state === "hibernated" || state === "idle_always_on";
+  const awake =
+    state === "running" ||
+    state === "running_always_on" ||
+    state === "starting" ||
+    state === "preparing_workspace";
+  return (
+    <CharAvatar
+      agentId={agentId}
+      state={awake || idle ? "running" : "hibernated"}
+      idle={idle}
+      className={className}
+    />
   );
 }

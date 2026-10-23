@@ -19,17 +19,6 @@ export function largestUnit(ms: number): string {
   return "moments";
 }
 
-export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return "—";
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ${minutes % 60}m`;
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-}
-
 export function timeAgo(value: DateInput, now: Date = new Date()): string {
   const d = toDate(value);
   if (!d) return "—";
@@ -50,39 +39,6 @@ export function timeUntil(value: DateInput, now: Date = new Date()): string {
   if (hr < 24) return `in ${hr} h`;
   const days = Math.round(hr / 24);
   return `in ${days} d`;
-}
-
-export function sameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-export function dayLabel(value: DateInput, now: Date = new Date()): string {
-  const d = toDate(value);
-  if (!d) return "—";
-  if (sameLocalDay(d, now)) return "Today";
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (sameLocalDay(d, yesterday)) return "Yesterday";
-  return d.toLocaleDateString(undefined, {
-    ...(d.getFullYear() === now.getFullYear()
-      ? { weekday: "long" }
-      : { year: "numeric" }),
-    month: "short",
-    day: "numeric",
-  });
-}
-
-export function clockLabel(value: DateInput): string {
-  const d = toDate(value);
-  if (!d) return "—";
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 export function formatTimestamp(value: DateInput): string {

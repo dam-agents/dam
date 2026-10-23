@@ -5,7 +5,12 @@ import {
   type ArtifactsSlice,
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
+import {
+  createExperimentsSlice,
+  type ExperimentsSlice,
+} from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
+import { createPacksSlice, type PacksSlice } from "./modules/packs/store.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -19,6 +24,10 @@ import {
   type SidebarSlice,
 } from "./modules/platform/store/sidebar.js";
 import {
+  createSidebarAgentsSlice,
+  type SidebarAgentsSlice,
+} from "./modules/platform/store/sidebar-agents.js";
+import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
@@ -27,7 +36,6 @@ import {
   flushDraftsOnHide,
   onForeignDraftChange,
 } from "./modules/sessions/lib/draft-snapshot.js";
-import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.js";
 import {
   createPermissionsSlice,
   type PermissionsSlice,
@@ -37,26 +45,40 @@ import {
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
 
+export type { DialogState } from "./modules/platform/store/dialog.js";
+export type {
+  PendingPermission,
+  PermissionOption,
+  PermissionOutcome,
+} from "./modules/sessions/store/permissions.js";
+export type { SessionError } from "./modules/sessions/store/sessions.js";
+
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
+  SidebarAgentsSlice &
   AgentsSlice &
   SessionsSlice &
+  ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
-  PermissionsSlice;
+  PermissionsSlice &
+  PacksSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createSidebarSlice(...a),
+  ...createSidebarAgentsSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
+  ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createPacksSlice(...a),
 }));
 
 let draftSyncStarted = false;
@@ -64,10 +86,7 @@ let draftSyncStarted = false;
 export function startDraftSync(ownerId: string): void {
   if (draftSyncStarted) return;
   draftSyncStarted = true;
-  if (claimDraftsFor(ownerId)) {
-    removeAllUndelivered();
-    useStore.setState({ drafts: {} });
-  }
+  if (claimDraftsFor(ownerId)) useStore.setState({ drafts: {} });
   onForeignDraftChange((key, draft) =>
     useStore.getState().applyForeignDraft(key, draft),
   );

@@ -31,7 +31,6 @@ export interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   kind?: ConfirmDialogKind;
-  icon?: typeof Warning;
   title: ReactNode;
   description?: ReactNode;
   confirmLabel?: string;
@@ -45,7 +44,6 @@ export function ConfirmDialog({
   open,
   onOpenChange,
   kind = "default",
-  icon,
   title,
   description,
   confirmLabel,
@@ -55,7 +53,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const destructive = kind === "destructive";
-  const Icon = icon ?? KIND_ICON[kind];
+  const Icon = KIND_ICON[kind];
   const resolvedConfirmLabel =
     confirmLabel ?? (showCancel ? (destructive ? "Remove" : "Confirm") : "OK");
 

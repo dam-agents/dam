@@ -19,19 +19,6 @@ import { routeExtNotification } from "../../modules/acp/ext-notifications.js";
 
 describe("routeExtNotification", () => {
   /**
-   * TEST_SCENARIO: A replayed frame may name the harness's own id for the
-   * prompt; the routed frame must surface it so the projection can key the
-   * reply by it.
-   */
-  it("should surface the harness prompt id stamped on a frame", () => {
-    const routed = routeExtNotification("platform/turnEnded", {
-      sessionId: "sess-1",
-      _meta: { platform: { telemetryPromptId: "otel-9" } },
-    });
-    expect(routed?.frame).toEqual({ telemetryPromptId: "otel-9" });
-  });
-
-  /**
    * TEST_SCENARIO: A replayed turnEnded carries the stamp of the load that
    * asked for it; the routed update must surface that token so the collector
    * can claim the frame for the replay instead of leaking it to the live
@@ -45,7 +32,7 @@ describe("routeExtNotification", () => {
     expect(routed).toEqual({
       update: { sessionUpdate: "platform_turn_ended", sessionId: "sess-1" },
       sessionId: "sess-1",
-      frame: { replayFor: "load-token-7" },
+      replayFor: "load-token-7",
     });
   });
 
@@ -61,7 +48,7 @@ describe("routeExtNotification", () => {
     expect(routed).toEqual({
       update: { sessionUpdate: "platform_turn_ended", sessionId: "sess-1" },
       sessionId: "sess-1",
-      frame: {},
+      replayFor: undefined,
     });
   });
 
@@ -83,7 +70,7 @@ describe("routeExtNotification", () => {
       promptId: "p-1",
       queued: true,
     });
-    expect(accepted?.frame).toEqual({ replayFor: "load-token-7" });
+    expect(accepted?.replayFor).toBe("load-token-7");
 
     const started = routeExtNotification("platform/promptStarted", {
       sessionId: "sess-1",

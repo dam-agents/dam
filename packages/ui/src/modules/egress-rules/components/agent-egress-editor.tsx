@@ -65,7 +65,7 @@ export interface StagedNetworkAccessController {
   connectionLabels: ReadonlyMap<string, string>;
 }
 
-interface ConnectionGrantPreview {
+export interface ConnectionGrantPreview {
   connectionId: string;
   host: string;
   label: string;

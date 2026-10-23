@@ -1,17 +1,14 @@
 import type { ProviderPresetType } from "../../../types.js";
 
-interface ProviderRowDef {
+export interface ProviderRowDef {
   type: ProviderPresetType;
   description: string;
 }
 
-export const IBM_LITELLM_DESCRIPTION =
-  "IBM's external LiteLLM proxy — Claude on watsonx-routed AWS.";
-
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "ibm-litellm",
-    description: IBM_LITELLM_DESCRIPTION,
+    description: "IBM's internal LiteLLM proxy — Claude on watsonx-routed AWS.",
   },
   {
     type: "bob",

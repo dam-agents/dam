@@ -1,4 +1,3 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
 import type {
   LocalSkill,
   ScanFailure,
@@ -11,32 +10,16 @@ import type {
   SkillsState,
 } from "api-server-api";
 import { skillKey } from "api-server-api";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
 import { toScanFailure } from "@/lib/scan-failure";
 
 import { api } from "../../../api.js";
+import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
-import { queryClient } from "../../../query-client.js";
-import { trpc } from "../../../trpc.js";
-import { useSkillSources, useSkillsState } from "../../agents/api/skills.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
-
-const SCAN_STALE_MS = 60_000;
-const SCAN_GC_MS = 24 * 60 * 60_000;
-const STATE_POLL_MS = 5_000;
-
-const NO_SOURCES: SkillSource[] = [];
-const NO_SETS: SkillSet[] = [];
-const NO_REFS: SkillRef[] = [];
-const NO_LOCAL: LocalSkill[] = [];
-const NO_PUBLISHES: SkillPublishRecord[] = [];
-
-function scanInput(sourceId: string, agentId: string | null) {
-  return agentId ? { sourceId, agentId } : { sourceId };
-}
 
 function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
   const count = (reason: SkillSetApplyResult["skipped"][number]["reason"]) =>
@@ -61,7 +44,6 @@ export interface SkillsSurface {
   stateLoaded: boolean;
   skillsBySource: Record<string, Skill[]>;
   loadingBySource: Record<string, boolean>;
-  revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   scannedAtBySource: Record<string, string>;
   visibilityBySource: Record<string, "public" | "private">;
@@ -118,93 +100,139 @@ export function useSkillsSurface(
   opts: {
     readOnly: boolean;
     isError: boolean;
+    onStateChange?: (state: SkillsState) => void;
   },
 ): SkillsSurface {
-  const { readOnly, isError } = opts;
+  const { readOnly, isError, onStateChange } = opts;
 
+  const [sources, setSources] = useState<SkillSource[]>([]);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const [skillsBySource, setSkillsBySource] = useState<Record<string, Skill[]>>(
+    {},
+  );
+  const [loadingBySource, setLoadingBySource] = useState<
+    Record<string, boolean>
+  >({});
+  const [errorBySource, setErrorBySource] = useState<
+    Record<string, ScanFailure | null>
+  >({});
+  const [scannedAtBySource, setScannedAtBySource] = useState<
+    Record<string, string>
+  >({});
+  const [visibilityBySource, setVisibilityBySource] = useState<
+    Record<string, "public" | "private">
+  >({});
+  const [installed, setInstalled] = useState<SkillRef[]>([]);
+  const [standalone, setStandalone] = useState<LocalSkill[]>([]);
+  const [standaloneSnapshot, setStandaloneSnapshot] =
+    useState<SkillsState["standaloneSnapshot"]>(undefined);
+  const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [busySourceId, setBusySourceId] = useState<string | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
+  const [sets, setSets] = useState<SkillSet[]>([]);
+  const [setsFailed, setSetsFailed] = useState(false);
   const [applyingSets, setApplyingSets] = useState(false);
 
-  const sourcesQuery = useSkillSources(agentId);
-  const sources = sourcesQuery.data ?? NO_SOURCES;
-  const sourcesLoaded = agentId === null || !sourcesQuery.isPending;
+  useEffect(() => {
+    if (!stateLoaded) return;
+    onStateChange?.({
+      installed,
+      standalone,
+      instancePublishes: publishes,
+      standaloneSnapshot,
+    });
+  }, [
+    stateLoaded,
+    installed,
+    standalone,
+    publishes,
+    standaloneSnapshot,
+    onStateChange,
+  ]);
 
-  const scans = useQueries({
-    queries: sources.map((src) => ({
-      ...trpc.skills.listWithScan.queryOptions(scanInput(src.id, agentId)),
-      retry: false,
-      staleTime: SCAN_STALE_MS,
-      gcTime: SCAN_GC_MS,
-      refetchOnWindowFocus: false,
-    })),
-    combine: (results) => {
-      const skillsBySource: Record<string, Skill[]> = {};
-      const loadingBySource: Record<string, boolean> = {};
-      const revalidatingBySource: Record<string, boolean> = {};
-      const errorBySource: Record<string, ScanFailure | null> = {};
-      const scannedAtBySource: Record<string, string> = {};
-      const visibilityBySource: Record<string, "public" | "private"> = {};
-      results.forEach((result, index) => {
-        const src = sources[index];
-        if (!src) return;
-        const painted = result.data !== undefined;
-        loadingBySource[src.id] = result.isFetching && !painted;
-        revalidatingBySource[src.id] = result.isFetching && painted;
-        if (result.isError) errorBySource[src.id] = toScanFailure(result.error);
-        if (!result.data) return;
-        skillsBySource[src.id] = result.data.skills;
-        scannedAtBySource[src.id] = result.data.scannedAt;
-        if (result.data.visibility) {
-          visibilityBySource[src.id] = result.data.visibility;
-        }
-      });
-      return {
-        skillsBySource,
-        loadingBySource,
-        revalidatingBySource,
-        errorBySource,
-        scannedAtBySource,
-        visibilityBySource,
-      };
-    },
-  });
-
-  const stateQuery = useSkillsState(agentId, { pollMs: STATE_POLL_MS });
-  const stateLoaded = agentId === null || !stateQuery.isPending;
-  const installed = stateQuery.data?.installed ?? NO_REFS;
-  const standalone = stateQuery.data?.standalone ?? NO_LOCAL;
-  const publishes = stateQuery.data?.instancePublishes ?? NO_PUBLISHES;
-  const standaloneSnapshot = stateQuery.data?.standaloneSnapshot;
-
-  const setsQuery = useQuery({
-    ...trpc.skills.sets.list.queryOptions(),
-    retry: false,
-    staleTime: SCAN_STALE_MS,
-    gcTime: SCAN_GC_MS,
-  });
-  const sets = setsQuery.data ?? NO_SETS;
-
-  const patchState = useCallback(
-    async (patch: (prev: SkillsState) => SkillsState) => {
+  const loadSkills = useCallback(
+    async (sourceId: string) => {
       if (!agentId) return;
-      const key = trpc.skills.state.queryKey({ agentId });
-      await queryClient.cancelQueries({ queryKey: key });
-      const prev = queryClient.getQueryData(key);
-      if (!prev) {
-        void queryClient.refetchQueries({ queryKey: key });
-        return;
+      setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
+      setErrorBySource((e) => ({ ...e, [sourceId]: null }));
+      try {
+        const { skills, scannedAt, visibility } =
+          await api.skills.listWithScan.query({ sourceId, agentId });
+        setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
+        setScannedAtBySource((m) => ({ ...m, [sourceId]: scannedAt }));
+        if (visibility) {
+          setVisibilityBySource((m) => ({ ...m, [sourceId]: visibility }));
+        }
+      } catch (err) {
+        setErrorBySource((e) => ({ ...e, [sourceId]: toScanFailure(err) }));
+        setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
+      } finally {
+        setLoadingBySource((l) => ({ ...l, [sourceId]: false }));
       }
-      queryClient.setQueryData(key, patch(prev));
     },
     [agentId],
   );
 
-  const commitInstalled = useCallback(
-    (next: SkillRef[]) => patchState((prev) => ({ ...prev, installed: next })),
-    [patchState],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setSourcesLoaded(false);
+    setStateLoaded(false);
+
+    const refreshInstalled = async () => {
+      if (!agentId) {
+        if (!cancelled) {
+          setInstalled([]);
+          setStandalone([]);
+          setPublishes([]);
+          setStandaloneSnapshot(undefined);
+          setStateLoaded(true);
+        }
+        return;
+      }
+      try {
+        const state = await api.skills.state.query({ agentId });
+        if (!cancelled) {
+          setInstalled(state.installed);
+          setStandalone(state.standalone);
+          setPublishes(state.instancePublishes);
+          setStandaloneSnapshot(state.standaloneSnapshot);
+        }
+      } catch {
+      } finally {
+        if (!cancelled) setStateLoaded(true);
+      }
+    };
+
+    (async () => {
+      try {
+        const srcs = await api.skills.sources.list.query(
+          agentId ? { agentId } : undefined,
+        );
+        if (!cancelled) setSources(srcs);
+      } catch {
+        if (!cancelled) setSources([]);
+      } finally {
+        if (!cancelled) setSourcesLoaded(true);
+      }
+    })();
+    refreshInstalled();
+
+    const iv = setInterval(refreshInstalled, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [agentId]);
+
+  useEffect(() => {
+    for (const src of sources) {
+      if (skillsBySource[src.id] === undefined && !loadingBySource[src.id]) {
+        loadSkills(src.id);
+      }
+    }
+  }, [sources, skillsBySource, loadingBySource, loadSkills]);
 
   const installedRef = useCallback(
     (source: string, name: string) =>
@@ -235,10 +263,10 @@ export function useSkillsSurface(
               }),
         `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
       );
-      if (result !== ACTION_FAILED) await commitInstalled(result);
+      if (result !== ACTION_FAILED) setInstalled(result);
       setBusyKey(null);
     },
-    [agentId, isError, readOnly, installedRef, commitInstalled],
+    [agentId, isError, readOnly, installedRef],
   );
 
   const update = useCallback(
@@ -257,11 +285,11 @@ export function useSkillsSurface(
           }),
         `Failed to update ${skill.name}`,
       );
-      if (result !== ACTION_FAILED) await commitInstalled(result);
+      if (result !== ACTION_FAILED) setInstalled(result);
       setBusyKey(null);
       return result !== ACTION_FAILED;
     },
-    [agentId, isError, readOnly, commitInstalled],
+    [agentId, isError, readOnly],
   );
 
   const toggleSource = useCallback(
@@ -290,10 +318,10 @@ export function useSkillsSurface(
           }),
         `Failed to ${on ? "enable" : "disable"} all skills`,
       );
-      if (result !== ACTION_FAILED) await commitInstalled(result);
+      if (result !== ACTION_FAILED) setInstalled(result);
       setBusySourceId(null);
     },
-    [agentId, isError, readOnly, installedRef, commitInstalled],
+    [agentId, isError, readOnly, installedRef],
   );
 
   const updateAll = useCallback(
@@ -314,11 +342,28 @@ export function useSkillsSurface(
           }),
         "Failed to update all skills",
       );
-      if (result !== ACTION_FAILED) await commitInstalled(result);
+      if (result !== ACTION_FAILED) setInstalled(result);
       setUpdatingAll(false);
     },
-    [agentId, isError, readOnly, commitInstalled],
+    [agentId, isError, readOnly],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    api.skills.sets.list
+      .query()
+      .then((s) => {
+        if (cancelled) return;
+        setSets(s);
+        setSetsFailed(false);
+      })
+      .catch(() => {
+        if (!cancelled) setSetsFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const createSet = useCallback(
     async (input: {
@@ -330,9 +375,10 @@ export function useSkillsSurface(
         `Failed to save ${input.name}`,
       );
       if (result === ACTION_FAILED) return false;
-      queryClient.setQueryData(trpc.skills.sets.list.queryKey(), (prev) =>
-        [...(prev ?? []), result].sort((a, b) => a.name.localeCompare(b.name)),
+      setSets((prev) =>
+        [...prev, result].sort((a, b) => a.name.localeCompare(b.name)),
       );
+      setSetsFailed(false);
       emitToast({ kind: "success", message: `Saved skill set ${result.name}` });
       return true;
     },
@@ -345,9 +391,7 @@ export function useSkillsSurface(
       "Failed to delete skill set",
     );
     if (result === ACTION_FAILED) return false;
-    queryClient.setQueryData(trpc.skills.sets.list.queryKey(), (prev) =>
-      (prev ?? []).filter((s) => s.id !== id),
-    );
+    setSets((prev) => prev.filter((s) => s.id !== id));
     return true;
   }, []);
 
@@ -361,7 +405,7 @@ export function useSkillsSurface(
       );
       setApplyingSets(false);
       if (result === ACTION_FAILED) return false;
-      await commitInstalled(result.installed);
+      setInstalled(result.installed);
 
       const { added } = result;
       const skipped = result.skipped.length;
@@ -384,7 +428,7 @@ export function useSkillsSurface(
       });
       return true;
     },
-    [agentId, isError, readOnly, commitInstalled],
+    [agentId, isError, readOnly],
   );
 
   const createSource = useCallback(
@@ -399,16 +443,10 @@ export function useSkillsSurface(
         "Failed to add source",
       );
       if (result === ACTION_FAILED) return null;
-      if (agentId) {
-        queryClient.setQueryData(
-          trpc.skills.sources.list.queryKey({ agentId }),
-          (prev) => [...(prev ?? []), result],
-        );
-      }
-      void queryClient.invalidateQueries(trpc.skills.sources.list.pathFilter());
+      setSources((s) => [...s, result]);
       return result;
     },
-    [agentId],
+    [],
   );
 
   const createLocalSkills = useCallback(
@@ -425,10 +463,10 @@ export function useSkillsSurface(
           agentId,
           skills,
         });
-        await patchState((prev) => {
-          const byName = new Map(prev.standalone.map((s) => [s.name, s]));
+        setStandalone((prev) => {
+          const byName = new Map(prev.map((s) => [s.name, s]));
           for (const s of created) byName.set(s.name, s);
-          return { ...prev, standalone: [...byName.values()] };
+          return [...byName.values()];
         });
         emitToast({
           kind: "success",
@@ -450,7 +488,7 @@ export function useSkillsSurface(
         return { ok: false as const, conflictNames, message };
       }
     },
-    [agentId, patchState],
+    [agentId],
   );
 
   const deleteStandalone = useCallback(
@@ -461,11 +499,11 @@ export function useSkillsSurface(
         `Failed to delete ${skill.name}`,
       );
       if (result === ACTION_FAILED) return false;
-      await patchState((prev) => ({ ...prev, standalone: result }));
+      setStandalone(result);
       emitToast({ kind: "success", message: `Deleted ${skill.name}` });
       return true;
     },
-    [agentId, patchState],
+    [agentId],
   );
 
   const downloadStandalone = useCallback(
@@ -480,40 +518,40 @@ export function useSkillsSurface(
     [agentId],
   );
 
-  const removeSource = useCallback(
-    async (id: string) => {
-      const result = await runAction(
-        () => api.skills.sources.delete.mutate({ id }),
-        "Failed to remove source",
-      );
-      if (result === ACTION_FAILED) return false;
-      if (agentId) {
-        queryClient.setQueryData(
-          trpc.skills.sources.list.queryKey({ agentId }),
-          (prev) => (prev ?? []).filter((s) => s.id !== id),
-        );
-      }
-      queryClient.removeQueries({
-        queryKey: trpc.skills.listWithScan.queryKey(scanInput(id, agentId)),
-      });
-      void queryClient.invalidateQueries(trpc.skills.sources.list.pathFilter());
-      return true;
-    },
-    [agentId],
-  );
+  const removeSource = useCallback(async (id: string) => {
+    const result = await runAction(
+      () => api.skills.sources.delete.mutate({ id }),
+      "Failed to remove source",
+    );
+    if (result === ACTION_FAILED) return false;
+    setSources((s) => s.filter((x) => x.id !== id));
+    setSkillsBySource((s) => {
+      const next = { ...s };
+      delete next[id];
+      return next;
+    });
+    setScannedAtBySource((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
+    return true;
+  }, []);
 
   const refreshSource = useCallback(
     async (id: string) => {
+      setLoadingBySource((l) => ({ ...l, [id]: true }));
       const ok = await runAction(
         () => api.skills.sources.refresh.mutate({ id }),
         "Failed to re-scan source",
       );
-      if (ok === ACTION_FAILED) return;
-      await queryClient.invalidateQueries({
-        queryKey: trpc.skills.listWithScan.queryKey(scanInput(id, agentId)),
-      });
+      if (ok === ACTION_FAILED) {
+        setLoadingBySource((l) => ({ ...l, [id]: false }));
+        return;
+      }
+      await loadSkills(id);
     },
-    [agentId],
+    [loadSkills],
   );
 
   const publish = useCallback(
@@ -542,28 +580,24 @@ export function useSkillsSurface(
           ttl: 10_000,
         });
         const src = sources.find((s) => s.id === input.sourceId);
-        await patchState((prev) => ({
-          ...prev,
-          instancePublishes: [
-            ...prev.instancePublishes,
-            {
-              skillName: input.name,
-              sourceId: input.sourceId,
-              sourceName: src?.name ?? "",
-              sourceGitUrl: src?.gitUrl ?? "",
-              prUrl: result.prUrl,
-              publishedAt: new Date().toISOString(),
-              prState: null,
-              prStateCheckedAt: null,
-            },
-          ],
-        }));
+        setPublishes((p) => [
+          ...p,
+          {
+            skillName: input.name,
+            sourceId: input.sourceId,
+            sourceName: src?.name ?? "",
+            sourceGitUrl: src?.gitUrl ?? "",
+            prUrl: result.prUrl,
+            publishedAt: new Date().toISOString(),
+            prState: null,
+            prStateCheckedAt: null,
+          },
+        ]);
         void refreshSource(input.sourceId);
         return true;
       } catch (err) {
         const raw = getErrorMessage(err, `Failed to publish ${input.name}`);
-        const cta = raw.match(/platform-cta:(\S+)/)?.[1] ?? null;
-        const message = raw.replace(/\nplatform-cta:\S+/, "").trim();
+        const { message, cta } = parsePlatformCta(raw);
         emitToast({
           kind: "error",
           message,
@@ -575,19 +609,18 @@ export function useSkillsSurface(
         return false;
       }
     },
-    [agentId, sources, refreshSource, patchState],
+    [agentId, sources, refreshSource],
   );
 
   return {
     sources,
     sourcesLoaded,
     stateLoaded,
-    skillsBySource: scans.skillsBySource,
-    loadingBySource: scans.loadingBySource,
-    revalidatingBySource: scans.revalidatingBySource,
-    errorBySource: scans.errorBySource,
-    scannedAtBySource: scans.scannedAtBySource,
-    visibilityBySource: scans.visibilityBySource,
+    skillsBySource,
+    loadingBySource,
+    errorBySource,
+    scannedAtBySource,
+    visibilityBySource,
     installed,
     standalone,
     standaloneSnapshot,
@@ -602,7 +635,7 @@ export function useSkillsSurface(
     toggleSource,
     updateAll,
     sets,
-    setsFailed: setsQuery.isError,
+    setsFailed,
     createSet,
     deleteSet,
     applySets,

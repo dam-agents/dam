@@ -1,55 +1,35 @@
-import type { DismissedEntry } from "api-server-api";
-
 import type { FeedItem } from "./feed-item.js";
 
-export interface DismissalTarget {
-  kind: DismissedEntry["kind"];
-  id: string;
-}
+const STORAGE_KEY = "platform-home-dismissed";
+const MAX_KEYS = 300;
 
-export function dismissalTarget(item: FeedItem): DismissalTarget | null {
+export function dismissalKey(item: FeedItem): string | null {
   switch (item.kind) {
     case "approval":
-      return { kind: "approval", id: item.approval.id };
+      return `approval:${item.approval.id}:${item.approval.createdAt}`;
     case "unread":
-      return {
-        kind: "session",
-        id: `${item.agentId}:${item.session.sessionId}`,
-      };
+      return `session:${item.agentId}:${item.session.sessionId}:${item.at ?? ""}`;
     case "in-progress":
       return null;
   }
 }
 
-export function dismissalsByKey(
-  entries: readonly DismissedEntry[],
-): ReadonlyMap<string, number> {
-  const byKey = new Map<string, number>();
-  for (const entry of entries) {
-    const at = Date.parse(entry.at);
-    if (Number.isNaN(at)) continue;
-    byKey.set(`${entry.kind}:${entry.id}`, at);
+export function loadDismissed(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    return [];
   }
-  return byKey;
 }
 
-export function isDismissedItem(
-  item: FeedItem,
-  byKey: ReadonlyMap<string, number>,
-): boolean {
-  const target = dismissalTarget(item);
-  if (!target) return false;
-  const at = byKey.get(`${target.kind}:${target.id}`);
-  if (at === undefined) return false;
-  if (item.kind === "approval") return true;
-  const activity = item.at === null ? null : Date.parse(item.at);
-  return activity === null || Number.isNaN(activity) || activity <= at;
-}
-
-export function sessionDismissedAt(
-  byKey: ReadonlyMap<string, number>,
-  agentId: string,
-  sessionId: string,
-): number | null {
-  return byKey.get(`session:${agentId}:${sessionId}`) ?? null;
+export function saveDismissed(keys: readonly string[]): string[] {
+  const capped = keys.slice(-MAX_KEYS);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
+  } catch {}
+  return capped;
 }

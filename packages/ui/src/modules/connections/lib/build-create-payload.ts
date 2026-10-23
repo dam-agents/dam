@@ -3,15 +3,9 @@ import type {
   ConnectionTemplateView,
 } from "api-server-api";
 
-import { validateConnectionName } from "./connection-name.js";
+import { compact } from "@/lib/compact";
 
-function compact<T extends Record<string, unknown>>(
-  obj: T,
-): { [K in keyof T]: Exclude<T[K], undefined> } {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined),
-  ) as { [K in keyof T]: Exclude<T[K], undefined> };
-}
+import { validateConnectionName } from "./connection-name.js";
 
 export interface CreateFormValues {
   name: string;

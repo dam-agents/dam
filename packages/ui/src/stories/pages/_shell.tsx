@@ -1,59 +1,44 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 import {
   Add,
-  Checkmark,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Close,
   Cube,
-  Filter,
   Folders,
   Help,
   Home,
-  NewTab,
   OverflowMenuVertical,
   Settings,
   Time,
-  TrashCan,
 } from "@carbon/icons-react";
-import type { Decorator } from "@storybook/react-vite";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { AgentAvatar } from "@/modules/agents/components/avatar/agent-avatar";
+
+interface ShellProps {
+  children: ReactNode;
+  activeNav?: "home" | "artifacts" | "starter-kits" | "settings";
+  maxWidth?: "960" | "1200" | "full";
+}
 
 type AgentState = "running" | "hibernated" | "hibernating";
 
-interface MockSession {
-  id: string;
-  title: string;
-  running: boolean;
-  unread: boolean;
-  time: string;
-  slack?: string;
-  schedule?: boolean;
-}
-
-interface MockAgent {
+const mockAgents: {
   id: string;
   name: string;
   state: AgentState;
-  sessions: MockSession[];
-}
-
-const mockAgents: MockAgent[] = [
+  sessions: {
+    id: string;
+    title: string;
+    running: boolean;
+    unread: boolean;
+    time: string;
+    slack?: string;
+  }[];
+}[] = [
   {
     id: "a1",
     name: "ci-pipeline",
@@ -79,20 +64,6 @@ const mockAgents: MockAgent[] = [
         running: false,
         unread: false,
         time: "1h ago",
-      },
-      {
-        id: "s4x",
-        title: "Deploy staging v2.3.1",
-        running: false,
-        unread: false,
-        time: "2h ago",
-      },
-      {
-        id: "s4y",
-        title: "Run migration dry-run",
-        running: false,
-        unread: false,
-        time: "4h ago",
       },
     ],
   },
@@ -149,362 +120,44 @@ const mockAgents: MockAgent[] = [
   { id: "a5", name: "pm-standup", state: "hibernating", sessions: [] },
 ];
 
-type ChannelType = "chat" | "slack" | "telegram" | "schedule" | "terminal";
-
-const CHANNEL_TYPES: readonly ChannelType[] = [
-  "chat",
-  "slack",
-  "telegram",
-  "schedule",
-  "terminal",
-];
-
-const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
-  chat: "Chat",
-  slack: "Slack",
-  telegram: "Telegram",
-  schedule: "Schedule",
-  terminal: "Terminal",
-};
-
-type StateFilter = "any" | "attention" | "in-progress" | "unread";
-
-const STATE_FILTERS: readonly StateFilter[] = [
-  "any",
-  "attention",
-  "in-progress",
-  "unread",
-];
-
-const STATE_FILTER_LABELS: Record<StateFilter, string> = {
-  any: "All",
-  attention: "Needs attention",
-  "in-progress": "In progress",
-  unread: "Unread",
-};
-
-interface ActivityFilter {
-  channelTypes: ReadonlySet<ChannelType>;
-  state: StateFilter;
-}
-
-function defaultActivityFilter(): ActivityFilter {
-  return { channelTypes: new Set(CHANNEL_TYPES), state: "any" };
-}
-
-function isActivityFiltered(filter: ActivityFilter): boolean {
-  return (
-    filter.channelTypes.size < CHANNEL_TYPES.length || filter.state !== "any"
-  );
-}
-
-interface MockActivityItem {
-  id: string;
-  title: string;
-  agentId: string;
-  agentName: string;
-  time: string;
-  running: boolean;
-  unread: boolean;
-  slack?: boolean;
-  schedule?: boolean;
-  channelType: ChannelType;
-}
-
-const mockActivity: MockActivityItem[] = [
+const mockActivity = [
   {
-    id: "act1",
     title: "Fix login redirect loop",
-    agentId: "a1",
-    agentName: "ci-pipeline",
+    agent: "ci-pipeline",
     time: "2m ago",
     running: true,
-    unread: false,
-    channelType: "chat",
   },
   {
-    id: "act2",
     title: "Audit PR #501 perf regression",
-    agentId: "a2",
-    agentName: "code-review-bot",
+    agent: "code-review-bot",
     time: "8m ago",
     running: true,
-    unread: false,
     slack: true,
-    channelType: "slack",
   },
   {
-    id: "act3",
     title: "Triage issue #1204",
-    agentId: "a3",
-    agentName: "bug-triage",
+    agent: "bug-triage",
     time: "3h ago",
-    running: false,
     unread: true,
-    channelType: "chat",
   },
   {
-    id: "act4",
     title: "Update API reference v3",
-    agentId: "a4",
-    agentName: "api-docs",
+    agent: "api-docs",
     time: "5h ago",
-    running: false,
-    unread: false,
-    channelType: "chat",
   },
   {
-    id: "act5",
     title: "Weekly dep audit",
-    agentId: "a1",
-    agentName: "ci-pipeline",
+    agent: "ci-pipeline",
     time: "1d ago",
-    running: false,
-    unread: false,
     schedule: true,
-    channelType: "schedule",
-  },
-  {
-    id: "act6",
-    title: "Deploy canary to staging",
-    agentId: "a2",
-    agentName: "code-review-bot",
-    time: "1d ago",
-    running: false,
-    unread: false,
-    channelType: "terminal",
-  },
-  {
-    id: "act7",
-    title: "Slack thread: billing question",
-    agentId: "a3",
-    agentName: "bug-triage",
-    time: "2d ago",
-    running: false,
-    unread: false,
-    slack: true,
-    channelType: "slack",
   },
 ];
 
-const AGENT_SESSION_PAGE = 3;
-
-const stateLabel: Record<AgentState, string> = {
-  running: "Working",
-  hibernated: "Hibernated",
-  hibernating: "Hibernating",
-};
-
 const stateDotClass: Record<AgentState, string> = {
-  running:
-    "border-[1.5px] border-[#198038] bg-[#defbe6] dark:border-[#42be65] dark:bg-[#022d0d]",
+  running: "bg-green-700 dark:bg-success",
   hibernated: "bg-[#4589ff] dark:bg-[#60a5fa]",
   hibernating: "bg-[#878d96] dark:bg-[#a8a29e]",
 };
-
-function matchesFilter(
-  item: MockActivityItem,
-  filter: ActivityFilter,
-): boolean {
-  if (!filter.channelTypes.has(item.channelType)) return false;
-  switch (filter.state) {
-    case "any":
-      return true;
-    case "attention":
-      return false;
-    case "in-progress":
-      return item.running;
-    case "unread":
-      return item.unread;
-  }
-}
-
-function ActivityFilterMenu({
-  value,
-  onChange,
-}: {
-  value: ActivityFilter;
-  onChange: (value: ActivityFilter) => void;
-}) {
-  const active = isActivityFiltered(value);
-  const toggleType = (type: ChannelType) => {
-    const next = new Set(value.channelTypes);
-    if (next.has(type)) next.delete(type);
-    else next.add(type);
-    onChange({ ...value, channelTypes: next });
-  };
-  return (
-    <DropdownMenu>
-      <Tooltip content="Filter activity" side="right">
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={
-              active ? "Filter activity, filtered" : "Filter activity"
-            }
-            className={cn(
-              "flex size-6 items-center justify-center rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground",
-              active
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground",
-            )}
-          >
-            <Filter size={16} />
-          </button>
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent
-        align="end"
-        className="max-h-[80vh] w-auto min-w-[360px] overflow-y-auto"
-      >
-        <div className="flex items-center justify-between px-2 py-1.5">
-          <span className="text-sm font-medium text-foreground">Filters</span>
-          <button
-            type="button"
-            onClick={() => onChange(defaultActivityFilter())}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Reset to default
-          </button>
-        </div>
-        <DropdownMenuSeparator />
-        <div className="flex gap-4 px-2 py-1">
-          <div className="min-w-[160px] shrink-0">
-            <p className="px-0 py-1.5 text-xs font-medium text-muted-foreground">
-              Status
-            </p>
-            {STATE_FILTERS.map((state) => {
-              const selected = value.state === state;
-              return (
-                <DropdownMenuItem
-                  key={state}
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    onChange({ ...value, state });
-                  }}
-                  className={cn(
-                    "flex items-center justify-between gap-3",
-                    selected && "bg-muted",
-                  )}
-                >
-                  <span>{STATE_FILTER_LABELS[state]}</span>
-                  {selected && (
-                    <Checkmark size={16} className="shrink-0 text-foreground" />
-                  )}
-                </DropdownMenuItem>
-              );
-            })}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="px-0 py-1.5 text-xs font-medium text-muted-foreground">
-              Type
-            </p>
-            {CHANNEL_TYPES.map((type) => (
-              <DropdownMenuCheckboxItem
-                key={type}
-                checked={value.channelTypes.has(type)}
-                onCheckedChange={() => toggleType(type)}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {CHANNEL_TYPE_LABELS[type]}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </div>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function AgentOverflowMenu({ state }: { state: AgentState }) {
-  const canStart = state === "hibernated" || state === "hibernating";
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="More actions"
-        >
-          <OverflowMenuVertical size={16} />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {canStart ? (
-          <DropdownMenuItem>Wake</DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem>Restart</DropdownMenuItem>
-        )}
-        {state === "running" && (
-          <>
-            <DropdownMenuItem>Pause — wakes on next use</DropdownMenuItem>
-            <DropdownMenuItem>Stop — until started again</DropdownMenuItem>
-          </>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem tone="danger">
-          <TrashCan size={13} /> Delete agent
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function FocusedAgentCard({
-  agent,
-  onNewChat,
-  onClose,
-}: {
-  agent: MockAgent;
-  onNewChat: () => void;
-  onClose: () => void;
-}) {
-  const unreadCount = agent.sessions.filter((s) => s.unread).length;
-  return (
-    <div className="my-1 rounded-xl bg-background px-3 py-2.5 shadow-sm ring-1 ring-border">
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "size-2 shrink-0 rounded-full",
-            stateDotClass[agent.state],
-          )}
-        />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-          {agent.name}
-        </span>
-        <Tooltip content="New chat" side="right">
-          <button
-            type="button"
-            onClick={onNewChat}
-            className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label={`New chat with ${agent.name}`}
-          >
-            <NewTab size={16} />
-          </button>
-        </Tooltip>
-        <AgentOverflowMenu state={agent.state} />
-        <span className="mx-0.5 h-4 w-px bg-border" />
-        <Tooltip content="Show all activity (Esc)" side="right">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Show all activity"
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Close size={16} />
-          </button>
-        </Tooltip>
-      </div>
-      <p className="mt-1 pl-4 text-sm text-muted-foreground">
-        {stateLabel[agent.state]} · {agent.sessions.length} session
-        {agent.sessions.length === 1 ? "" : "s"}
-        {unreadCount > 0 && ` · ${unreadCount} unread`}
-      </p>
-    </div>
-  );
-}
 
 function NavItem({
   icon: Icon,
@@ -531,98 +184,163 @@ function NavItem({
   );
 }
 
-export function ExpandedSidebar({
+function SessionRow({
+  title,
+  running,
+  unread,
+  time,
+  slack,
+  active,
+}: {
+  title: string;
+  running: boolean;
+  unread: boolean;
+  time: string;
+  slack?: string;
+  active?: boolean;
+}) {
+  const isRead = !running && !unread;
+
+  return (
+    <div
+      className={cn(
+        "group/session flex w-full gap-3 rounded-xl px-4 py-3 text-left transition-colors cursor-pointer hover:bg-muted/50",
+        active && "bg-muted",
+        (unread || running) &&
+          !active &&
+          "bg-[#f4f4f4]/50 dark:bg-white/[0.03]",
+      )}
+    >
+      <div className="relative shrink-0 pt-1">
+        {running && (
+          <span className="working-dots flex items-center -space-x-[1px]">
+            <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+            <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+            <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+          </span>
+        )}
+        {unread && !running && (
+          <span className="size-2.5 rounded-full border-2 border-background bg-accent" />
+        )}
+        {isRead && <span className="size-2.5" />}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1 text-sm leading-snug">
+          <p
+            className={cn(
+              "min-w-0 truncate",
+              !isRead
+                ? "font-semibold text-foreground"
+                : "text-muted-foreground",
+            )}
+          >
+            {title}
+          </p>
+          {slack && (
+            <span className="shrink-0 text-muted-foreground/60">
+              #{slack}
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{time}</p>
+      </div>
+
+      <div className="flex shrink-0 items-start pt-0.5 opacity-0 transition-opacity group-hover/session:opacity-100">
+        <button
+          type="button"
+          className="flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+        >
+          <OverflowMenuVertical size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AgentRow({
+  agent,
+  expandedId,
+  onToggle,
+}: {
+  agent: (typeof mockAgents)[number];
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+}) {
+  const expanded = expandedId === agent.id;
+  const active = false;
+
+  return (
+    <div className="mb-2">
+      <div
+        className={cn(
+          "group/agent relative flex w-full items-center gap-1.5 px-4 py-2.5 text-left transition-colors",
+          active ? "bg-muted/60 dark:bg-white/[0.04]" : "hover:bg-muted/40",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => onToggle(agent.id)}
+          className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            stateDotClass[agent.state],
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground leading-snug hover:text-primary transition-colors cursor-pointer">
+          {agent.name}
+        </span>
+        <div className="shrink-0 opacity-0 transition-opacity group-hover/agent:opacity-100">
+          <button
+            type="button"
+            className="flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          >
+            <OverflowMenuVertical size={16} />
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="ml-4">
+          {agent.sessions.length === 0 && (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground">
+              No sessions yet
+            </p>
+          )}
+          {agent.sessions.map((s) => (
+            <SessionRow
+              key={s.id}
+              title={s.title}
+              running={s.running}
+              unread={s.unread}
+              time={s.time}
+              slack={s.slack}
+            />
+          ))}
+          {agent.sessions.length > 3 && (
+            <button
+              type="button"
+              className="px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              View all sessions
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExpandedSidebar({
   activeNav,
 }: {
-  activeNav?: "home" | "artifacts" | "starter-kits" | "settings";
+  activeNav?: ShellProps["activeNav"];
 }) {
-  const [expandedAgentIds, setExpandedAgentIds] = useState<Set<string>>(
-    () => new Set(["a1"]),
-  );
-  const [scopedAgentId, setScopedAgentId] = useState<string | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
-    defaultActivityFilter,
-  );
-  const [showAllAgents, setShowAllAgents] = useState(false);
-  const [agentSessionLimits, setAgentSessionLimits] = useState<
-    Record<string, number>
-  >({});
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const agentSentinelRef = useRef<HTMLDivElement>(null);
-  const activitySentinelRef = useRef<HTMLDivElement>(null);
-  const [agentsStuck, setAgentsStuck] = useState(false);
-  const [activityStuck, setActivityStuck] = useState(false);
-
-  const toggleAgent = useCallback((id: string) => {
-    setExpandedAgentIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-        setAgentSessionLimits((c) => {
-          const next = { ...c };
-          delete next[id];
-          return next;
-        });
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-
-  const setScope = useCallback((id: string | null) => {
-    setScopedAgentId(id);
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && scopedAgentId) {
-        setScope(null);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [scopedAgentId, setScope]);
-
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.target === agentSentinelRef.current) {
-            setAgentsStuck(!entry.isIntersecting);
-          }
-          if (entry.target === activitySentinelRef.current) {
-            setActivityStuck(!entry.isIntersecting);
-          }
-        }
-      },
-      { root, threshold: 0 },
-    );
-
-    if (agentSentinelRef.current) observer.observe(agentSentinelRef.current);
-    if (activitySentinelRef.current)
-      observer.observe(activitySentinelRef.current);
-
-    return () => observer.disconnect();
-  }, []);
-
-  const focusing = scopedAgentId !== null;
-  const focusIndex = focusing
-    ? mockAgents.findIndex((a) => a.id === scopedAgentId)
-    : -1;
-
-  const activeAgents = mockAgents.filter((a) => a.state === "running");
-  const visibleAgents = showAllAgents ? mockAgents : activeAgents;
-  const hasHiddenAgents = activeAgents.length < mockAgents.length;
-
-  const filteredActivity = mockActivity
-    .filter((item) => matchesFilter(item, activityFilter))
-    .filter((item) => (!scopedAgentId ? true : item.agentId === scopedAgentId));
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>("a1");
 
   return (
     <nav className="flex h-full w-[320px] shrink-0 flex-col border-r border-border bg-card">
@@ -659,301 +377,40 @@ export function ExpandedSidebar({
         />
       </div>
 
-      <div
-        ref={scrollRef}
-        className="mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto"
-      >
+      <div className="mt-6 flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div>
-          <div ref={agentSentinelRef} className="h-0" />
-          <div
-            className={cn(
-              "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
-              agentsStuck
-                ? "border-b border-[#dde1e6] dark:border-white/10"
-                : "border-b border-transparent",
-            )}
-          >
+          <div className="sticky top-0 z-10 mb-3 flex items-center justify-between bg-card px-5 pb-2 pt-3 border-b border-transparent">
             <SectionLabel>Agents</SectionLabel>
-            <Tooltip content="Create agent" side="right">
-              <button
-                type="button"
-                aria-label="Create agent"
-                className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Add size={16} />
-              </button>
-            </Tooltip>
-          </div>
-          <div className="flex flex-col gap-px px-2">
-            {visibleAgents.map((agent, agentIndex) => {
-              const isExpanded = expandedAgentIds.has(agent.id);
-              const sessionLimit =
-                agentSessionLimits[agent.id] ?? AGENT_SESSION_PAGE;
-              const visibleSessions = agent.sessions.slice(0, sessionLimit);
-              const hasMoreSessions = sessionLimit < agent.sessions.length;
-              const hasUnread = agent.sessions.some((s) => s.unread);
-              const isFocused = focusing && agent.id === scopedAgentId;
-              const folded = focusing && !isFocused;
-              const isSelected =
-                !!activeSessionId &&
-                agent.sessions.some((s) => s.id === activeSessionId);
-
-              return (
-                <div
-                  key={agent.id}
-                  inert={folded || undefined}
-                  className={cn(
-                    "grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
-                    folded
-                      ? "grid-rows-[0fr] opacity-0"
-                      : "grid-rows-[1fr] opacity-100",
-                  )}
-                  style={{
-                    transitionDelay: `${Math.min(Math.abs(agentIndex - focusIndex), 6) * 35}ms`,
-                  }}
-                >
-                  <div
-                    className={cn(
-                      "min-h-0",
-                      isFocused ? "overflow-visible" : "overflow-hidden",
-                    )}
-                  >
-                    {isFocused ? (
-                      <FocusedAgentCard
-                        agent={agent}
-                        onNewChat={() => setActiveSessionId(null)}
-                        onClose={() => setScope(null)}
-                      />
-                    ) : (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => toggleAgent(agent.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            toggleAgent(agent.id);
-                          }
-                        }}
-                        className={cn(
-                          "group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
-                          isSelected && "bg-muted",
-                        )}
-                      >
-                        <AgentAvatar
-                          name={agent.name}
-                          agentId={agent.id}
-                          sleeping={
-                            agent.state === "hibernated" ||
-                            agent.state === "hibernating"
-                          }
-                          className="!size-6"
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                          {agent.name}
-                        </span>
-                        {isExpanded ? (
-                          <ChevronDown
-                            size={16}
-                            className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100"
-                          />
-                        ) : (
-                          <>
-                            {hasUnread && !isSelected && (
-                              <span
-                                aria-label="Unread sessions"
-                                className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
-                              />
-                            )}
-                            <ChevronRight
-                              size={16}
-                              className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/agent:opacity-100"
-                            />
-                          </>
-                        )}
-                        <span
-                          className={cn(
-                            "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
-                            isSelected ? "opacity-100" : "opacity-0",
-                          )}
-                        >
-                          <Tooltip content="New chat" side="right">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveSessionId(null);
-                              }}
-                              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                              aria-label={`New chat with ${agent.name}`}
-                            >
-                              <NewTab size={16} />
-                            </button>
-                          </Tooltip>
-                          <AgentOverflowMenu state={agent.state} />
-                        </span>
-                      </div>
-                    )}
-                    {isExpanded && visibleSessions.length > 0 && (
-                      <div className="mt-2 mb-3 flex flex-col gap-1">
-                        {visibleSessions.map((session) => (
-                          <div
-                            key={session.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => setActiveSessionId(session.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                setActiveSessionId(session.id);
-                              }
-                            }}
-                            className={cn(
-                              "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2.5 pl-12 pr-8 text-left transition-colors hover:bg-muted cursor-pointer",
-                              activeSessionId === session.id && "bg-muted",
-                            )}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <span className="min-w-0 truncate text-sm text-foreground">
-                                {session.title}
-                              </span>
-                              {session.running && (
-                                <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px] group-hover/agentsession:invisible">
-                                  <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                                  <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                                  <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                                </span>
-                              )}
-                              {session.unread && !session.running && (
-                                <span className="ml-auto size-2 shrink-0 rounded-full bg-accent group-hover/agentsession:invisible" />
-                              )}
-                            </span>
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <span className="min-w-0 truncate">
-                                {session.time}
-                              </span>
-                              {session.slack && (
-                                <>
-                                  <span>·</span>
-                                  <img
-                                    src="/icons/slack.svg"
-                                    alt="Slack"
-                                    className="size-3.5 shrink-0"
-                                  />
-                                </>
-                              )}
-                              {session.schedule && (
-                                <>
-                                  <span>·</span>
-                                  <span className="shrink-0 text-muted-foreground">
-                                    <Time size={16} />
-                                  </span>
-                                </>
-                              )}
-                            </span>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-xs"
-                                  className="absolute right-3 top-1.5 opacity-0 transition-opacity group-hover/agentsession:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                                  onClick={(e) => e.stopPropagation()}
-                                  aria-label="More actions"
-                                >
-                                  <OverflowMenuVertical size={16} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem tone="danger">
-                                  <TrashCan size={13} /> Delete session
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        ))}
-                        {hasMoreSessions && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAgentSessionLimits((prev) => ({
-                                ...prev,
-                                [agent.id]:
-                                  (prev[agent.id] ?? AGENT_SESSION_PAGE) +
-                                  AGENT_SESSION_PAGE,
-                              }))
-                            }
-                            className="w-full py-1 pl-12 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
-                          >
-                            View more
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {isExpanded && visibleSessions.length === 0 && (
-                      <p className="mb-3 py-1 pl-12 pr-3 text-sm text-muted-foreground">
-                        No sessions yet
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {hasHiddenAgents && (
             <button
               type="button"
-              inert={focusing || undefined}
-              onClick={() => setShowAllAgents((v) => !v)}
-              className={cn(
-                "mt-1 block overflow-hidden px-5 text-left text-sm text-muted-foreground transition-all duration-300 hover:text-foreground motion-reduce:transition-none",
-                focusing ? "max-h-0 py-0 opacity-0" : "max-h-10 py-1.5",
-              )}
+              className="flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              {showAllAgents
-                ? "Show less"
-                : `See all (${mockAgents.length - activeAgents.length} hibernating)`}
+              <Add size={16} />
             </button>
-          )}
+          </div>
+          <div className="flex flex-col gap-px px-2">
+            {mockAgents.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                expandedId={expandedAgentId}
+                onToggle={(id) =>
+                  setExpandedAgentId((prev) => (prev === id ? null : id))
+                }
+              />
+            ))}
+          </div>
         </div>
 
         <div className="mt-6 pb-4">
-          <div ref={activitySentinelRef} className="h-0" />
-          <div
-            className={cn(
-              "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
-              activityStuck
-                ? "border-b border-[#dde1e6] dark:border-white/10"
-                : "border-b border-transparent",
-            )}
-          >
-            <SectionLabel>Activity</SectionLabel>
-            <ActivityFilterMenu
-              value={activityFilter}
-              onChange={(f) => setActivityFilter(f)}
-            />
-          </div>
-          {filteredActivity.length === 0 && (
-            <p className="px-5 py-2 text-sm text-muted-foreground">
-              No matching activity
-            </p>
-          )}
-          <div className="flex flex-col gap-1 px-2">
-            {filteredActivity.map((item) => (
+          <SectionLabel className="sticky top-0 z-10 mb-3 block bg-card px-5 pb-2 pt-3 border-b border-transparent">
+            Activity
+          </SectionLabel>
+          <div className="flex flex-col gap-px px-2">
+            {mockActivity.map((item) => (
               <div
-                key={item.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setActiveSessionId(item.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setActiveSessionId(item.id);
-                  }
-                }}
-                className={cn(
-                  "group/activity relative flex w-full flex-col gap-0.5 rounded-lg py-2.5 pl-3 pr-8 text-left transition-colors hover:bg-muted cursor-pointer",
-                  activeSessionId === item.id && "bg-muted",
-                )}
+                key={item.title}
+                className="group/activity relative flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted cursor-pointer"
               >
                 <span className="flex items-center gap-1.5">
                   <span className="min-w-0 truncate text-sm text-foreground">
@@ -972,51 +429,33 @@ export function ExpandedSidebar({
                 </span>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <span className="min-w-0 truncate">
-                    {scopedAgentId
-                      ? item.time
-                      : `${item.agentName} · ${item.time}`}
+                    {item.agent} &middot; {item.time}
                   </span>
                   {item.slack && (
                     <>
-                      <span>·</span>
-                      <Tooltip content="Slack channel" side="right">
-                        <img
-                          src="/icons/slack.svg"
-                          alt="Slack"
-                          className="size-3.5 shrink-0"
-                        />
-                      </Tooltip>
+                      <span>&middot;</span>
+                      <img
+                        src="/icons/slack.svg"
+                        alt="Slack"
+                        className="size-3.5 shrink-0"
+                      />
                     </>
                   )}
                   {item.schedule && (
                     <>
-                      <span>·</span>
-                      <Tooltip content="Scheduled" side="right">
-                        <span className="shrink-0 text-muted-foreground">
-                          <Time size={16} />
-                        </span>
-                      </Tooltip>
+                      <span>&middot;</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        <Time size={14} />
+                      </span>
                     </>
                   )}
                 </span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="absolute right-3 top-1.5 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                      onClick={(e) => e.stopPropagation()}
-                      aria-label="More actions"
-                    >
-                      <OverflowMenuVertical size={16} />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem tone="danger">
-                      <TrashCan size={13} /> Delete session
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/activity:opacity-100 hover:text-foreground"
+                >
+                  <OverflowMenuVertical size={16} />
+                </button>
               </div>
             ))}
           </div>
@@ -1037,12 +476,52 @@ export function ExpandedSidebar({
   );
 }
 
-export const withExpandedSidebar: Decorator = (Story) => (
-  <div className="flex h-screen w-full">
-    <style>{`[data-testid="app-sidebar"] { display: none !important; }`}</style>
-    <ExpandedSidebar />
-    <div className="min-w-0 flex-1">
-      <Story />
+export function PageShell({
+  children,
+  activeNav,
+  maxWidth = "960",
+}: ShellProps) {
+  const maxWidthClass = {
+    "960": "max-w-[960px]",
+    "1200": "max-w-[1200px]",
+    full: "",
+  }[maxWidth];
+
+  return (
+    <div className="flex h-screen bg-background">
+      <ExpandedSidebar activeNav={activeNav} />
+      <main className="relative flex-1 overflow-y-auto">
+        <div
+          className={cn(
+            "mx-auto w-full px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10",
+            maxWidthClass,
+          )}
+        >
+          {children}
+        </div>
+      </main>
     </div>
-  </div>
-);
+  );
+}
+
+export function ChatShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      <ExpandedSidebar />
+      <div className="relative flex flex-1 flex-col min-w-0">{children}</div>
+    </div>
+  );
+}
+
+export function SetupShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-screen bg-background">
+      <ExpandedSidebar />
+      <main className="relative flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[720px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}

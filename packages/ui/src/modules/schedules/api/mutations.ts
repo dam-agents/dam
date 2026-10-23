@@ -7,7 +7,7 @@ const invalidatesScheduleList = {
   invalidates: [trpc.schedules.pathKey()],
 };
 
-interface CreateScheduleInput {
+export interface CreateScheduleInput {
   agentId: string;
   name: string;
   rrule: string;
@@ -15,7 +15,6 @@ interface CreateScheduleInput {
   quietHours: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
-  precheck?: string;
 }
 
 export function useCreateSchedule() {
@@ -34,7 +33,7 @@ export function useCreateSchedule() {
   });
 }
 
-interface UpdateScheduleInput {
+export interface UpdateScheduleInput {
   id: string;
   name: string;
   rrule: string;
@@ -42,7 +41,6 @@ interface UpdateScheduleInput {
   quietHours: { startTime: string; endTime: string; enabled: boolean }[];
   task: string;
   sessionMode: "fresh" | "continuous";
-  precheck: string | null;
 }
 
 export function useUpdateSchedule() {

@@ -11,7 +11,7 @@ import { useStore } from "../../store.js";
 
 const IDLE_CLOSE_MS = 30_000;
 
-type AgentTrpcClient = ReturnType<typeof createTRPCClient<AppRouter>>;
+export type AgentTrpcClient = ReturnType<typeof createTRPCClient<AppRouter>>;
 
 function isAbnormalClose(code: number | undefined): boolean {
   return code !== undefined && code !== 1000 && code !== 1005;
@@ -63,6 +63,7 @@ export function agentTrpcHttp(agentId: string): AgentTrpcClient {
 }
 
 export function agentTrpc(agentId: string): AgentTrpcClient {
+  if (import.meta.env.VITE_MOCK) return agentTrpcHttp(agentId);
   let client = clients.get(agentId);
   if (!client) {
     client = createAgentTrpc(agentId);

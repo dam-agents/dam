@@ -18,17 +18,12 @@ import {
   sandboxSubtitleParts,
 } from "../../agents/utils/sandbox-subtitle.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
-import {
-  useAppConnections,
-  useConnectionTemplates,
-} from "../../connections/api/queries.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
 import { useAgentMonthSpend } from "../../metrics/api/queries.js";
 import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
-import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
-import { useTelegramChats } from "../../telegram/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -54,8 +49,6 @@ export function useSectionSummaries(agent: AgentView | null): {
   const { data: templates = [] } = useTemplates();
   const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
-  const { data: satellites = NO_SATELLITES } = useSatellites();
-  const agentId = agent?.id;
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
   const { data: configStatus } = useHarnessConfigStatus(agent?.id ?? null);
@@ -98,18 +91,12 @@ export function useSectionSummaries(agent: AgentView | null): {
     const lookup: SandboxSubtitleLookup = {
       templateNameById: new Map(templates.map((t) => [t.id, t.name])),
       connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
-      slotUnit: null,
     };
     const { harness, provider } = sandboxSubtitleParts(agent, lookup);
     const base = [harness, provider, modelName].filter(Boolean).join(", ");
     return staleModel.stale ? `${base} · not offered` : base;
   }, [agent, templates, apps, modelName, staleModel.stale]);
 
-  const connectionTemplates = useConnectionTemplates();
-  const templateById = useMemo(
-    () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
-    [connectionTemplates.data],
-  );
   const connections = useMemo(() => {
     if (!connectionsQuery.data) return undefined;
     const titles = connectionsQuery.data.connections
@@ -117,26 +104,9 @@ export function useSectionSummaries(agent: AgentView | null): {
       .filter((id) => !providerAppIds.has(id))
       .map((id) => apps.find((a) => a.id === id))
       .filter((a) => a !== undefined)
-      .map(
-        (a) => catalogProviderTitle(templateById.get(a.templateId)) ?? a.name,
-      );
-    const satelliteNames = satellites
-      .filter(
-        (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
-      )
-      .map((s) => s.name);
-    return (
-      formatNameList([...new Set(titles), ...satelliteNames]) ??
-      "No connections added"
-    );
-  }, [
-    connectionsQuery.data,
-    apps,
-    providerAppIds,
-    templateById,
-    satellites,
-    agentId,
-  ]);
+      .map((a) => catalogProviderTitle(a.templateId) ?? a.name);
+    return formatNameList([...new Set(titles)]) ?? "No connections added";
+  }, [connectionsQuery.data, apps, providerAppIds]);
 
   const skills = useMemo(() => {
     if (configPending) return undefined;
@@ -152,19 +122,17 @@ export function useSectionSummaries(agent: AgentView | null): {
   }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
-  const telegramChatCount = useTelegramChats(
-    availableChannels?.telegram ? agent?.id : undefined,
-  ).data?.chats.length;
   const channelsSummary = useMemo(() => {
     if (!agent || !availableChannels) return undefined;
     if (!availableChannels.slack && !availableChannels.telegram)
       return "No messenger configured";
     const kinds = [
-      ...(agent.channels.length > 0 ? ["Slack"] : []),
-      ...(telegramChatCount ? ["Telegram"] : []),
+      ...new Set(
+        agent.channels.map((c) => (c.type === "slack" ? "Slack" : "Telegram")),
+      ),
     ];
     return kinds.length > 0 ? kinds.join(", ") : "No channels connected";
-  }, [agent, availableChannels, telegramChatCount]);
+  }, [agent, availableChannels]);
 
   const schedulesSummary = useMemo(() => {
     if (!agent) return undefined;
@@ -179,7 +147,9 @@ export function useSectionSummaries(agent: AgentView | null): {
   const artifactsSummary = useMemo(() => {
     if (!agent || !agentArtifacts) return undefined;
     if (agentArtifacts.length === 0) return "No artifacts";
-    const shared = agentArtifacts.filter((a) => a.shareUrl !== null).length;
+    const shared = agentArtifacts.filter(
+      (a) => a.visibility === "public",
+    ).length;
     const base = `${agentArtifacts.length} artifact${agentArtifacts.length === 1 ? "" : "s"}`;
     return shared > 0 ? `${base} · ${shared} shared` : base;
   }, [agent, agentArtifacts]);

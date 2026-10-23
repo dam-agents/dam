@@ -104,8 +104,8 @@ export function SaveSkillSetModal({
         }}
       >
         {}
-        <DialogBody flush>
-          <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-6">
+        <DialogBody flush className="py-0">
+          <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-7">
             {omittedCount > 0 && (
               <p className="pb-2 text-sm text-warning-fg">
                 {omittedCount} skill{omittedCount === 1 ? "" : "s"} that{" "}
@@ -134,7 +134,7 @@ export function SaveSkillSetModal({
           </div>
 
           {}
-          <div className="flex items-center gap-2 border-y border-border bg-muted/40 px-5 py-2.5 text-sm text-muted-foreground md:px-6">
+          <div className="flex items-center gap-2 border-y border-border bg-muted/40 px-5 py-2.5 text-sm text-muted-foreground md:px-7">
             <span>
               {marked.size} skill{marked.size === 1 ? "" : "s"} selected
             </span>
@@ -157,7 +157,7 @@ export function SaveSkillSetModal({
             {snapshot.groups.map((group) => (
               <div key={group.source.id}>
                 {}
-                <div className="sticky top-0 bg-card px-5 pt-3 pb-1 md:px-6">
+                <div className="sticky top-0 bg-card px-5 pt-3 pb-1 md:px-7">
                   <SectionLabel>{group.source.name}</SectionLabel>
                 </div>
                 {group.skills.map((skill) => {
@@ -165,7 +165,7 @@ export function SaveSkillSetModal({
                   return (
                     <div
                       key={key}
-                      className="flex items-center gap-2 px-5 py-1.5 transition-colors hover:bg-muted md:px-6"
+                      className="flex items-center gap-2 px-5 py-1.5 transition-colors hover:bg-muted md:px-7"
                     >
                       <CheckboxItem
                         className="min-w-0 flex-1 items-center"
@@ -187,7 +187,7 @@ export function SaveSkillSetModal({
             ))}
           </div>
 
-          <p className="px-5 py-4 text-sm text-muted-foreground md:px-6">
+          <p className="px-5 py-4 text-sm text-muted-foreground md:px-7">
             Only skills from a connected source can go in a set — a set installs
             by name, and skills authored here or shipped with the image have
             nowhere to install from.
@@ -195,7 +195,7 @@ export function SaveSkillSetModal({
         </DialogBody>
 
         <DialogActions
-          divided
+          className="border-t border-border"
           onCancel={onClose}
           label="Create"
           pendingLabel="Creating…"

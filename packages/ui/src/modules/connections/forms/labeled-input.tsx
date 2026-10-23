@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +14,7 @@ export function LabeledInput({
   help,
   error,
   autoFocus,
+  inset,
 }: {
   label: string;
   testId?: string;
@@ -25,12 +24,19 @@ export function LabeledInput({
   value: string;
   onChange: (v: string) => void;
   onBlur?: () => void;
-  help?: ReactNode;
+  help?: string;
   error?: string;
   autoFocus?: boolean;
+  inset?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help} error={error} disableInset>
+    <FormField
+      label={label}
+      hint={help}
+      error={error}
+      disableInset={!inset}
+      labelInset={inset}
+    >
       {multiline ? (
         <Textarea
           variant={error ? "invalid" : "monospace"}

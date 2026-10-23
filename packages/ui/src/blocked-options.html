@@ -1,0 +1,718 @@
+<title>Home Dashboard — 10 Layout Options</title>
+<style>
+:root {
+  --bg: #0f1114;
+  --surface: #181b20;
+  --surface-raised: #1f2329;
+  --border: #2a2f37;
+  --border-light: #353b44;
+  --text: #e8eaed;
+  --text-muted: #8b919a;
+  --text-dim: #5f656e;
+  --accent: #4e8fff;
+  --accent-muted: rgba(78,143,255,0.12);
+  --danger: #ef4444;
+  --danger-muted: rgba(239,68,68,0.12);
+  --danger-surface: rgba(239,68,68,0.05);
+  --warning: #f59e0b;
+  --warning-muted: rgba(245,158,11,0.12);
+  --success: #22c55e;
+  --success-muted: rgba(34,197,94,0.12);
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-raised: #f8f9fa;
+    --border: #e2e5e9;
+    --border-light: #eceef1;
+    --text: #1a1d21;
+    --text-muted: #5f656e;
+    --text-dim: #8b919a;
+    --accent: #2563eb;
+    --accent-muted: rgba(37,99,235,0.08);
+    --danger: #dc2626;
+    --danger-muted: rgba(220,38,38,0.08);
+    --danger-surface: rgba(220,38,38,0.03);
+    --warning: #d97706;
+    --warning-muted: rgba(217,119,6,0.08);
+    --success: #16a34a;
+    --success-muted: rgba(22,163,74,0.08);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-raised: #f8f9fa;
+  --border: #e2e5e9;
+  --border-light: #eceef1;
+  --text: #1a1d21;
+  --text-muted: #5f656e;
+  --text-dim: #8b919a;
+  --accent: #2563eb;
+  --accent-muted: rgba(37,99,235,0.08);
+  --danger: #dc2626;
+  --danger-muted: rgba(220,38,38,0.08);
+  --danger-surface: rgba(220,38,38,0.03);
+  --warning: #d97706;
+  --warning-muted: rgba(217,119,6,0.08);
+  --success: #16a34a;
+  --success-muted: rgba(22,163,74,0.08);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 40px 24px 80px;
+}
+
+.page-header {
+  max-width: 1200px;
+  margin: 0 auto 48px;
+}
+.page-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  margin-bottom: 6px;
+}
+.page-subtitle {
+  color: var(--text-muted);
+  font-size: 15px;
+  max-width: 640px;
+}
+
+.option-wrap {
+  max-width: 1200px;
+  margin: 0 auto 72px;
+}
+.option-label {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.option-number {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.option-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+.option-desc {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 20px;
+  margin-left: 32px;
+  max-width: 600px;
+}
+
+/* ═══════════ Shared card primitives ═══════════ */
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 0;
+}
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.card-link {
+  font-size: 13px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.card-body { padding: 16px 20px 20px; }
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+.badge-danger { background: var(--danger); color: #fff; }
+.badge-warning { background: var(--warning-muted); color: var(--warning); }
+.badge-accent { background: var(--accent-muted); color: var(--accent); }
+.badge-success { background: var(--success-muted); color: var(--success); }
+.big-num {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.mono { font-family: var(--mono); }
+.muted { color: var(--text-muted); }
+.dim { color: var(--text-dim); }
+.small { font-size: 13px; }
+.xs { font-size: 12px; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-raised);
+  border-radius: 99px;
+  padding: 3px;
+}
+.pill-tab {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 99px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.pill-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+/* ═══════ MOCK ELEMENTS ═══════ */
+.blocked-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.blocked-row + .blocked-row { margin-top: 6px; }
+.severity-bar {
+  width: 3px;
+  height: 24px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.severity-bar.crit { background: var(--danger); }
+.severity-bar.warn { background: var(--warning); }
+.severity-bar.info { background: var(--accent); }
+.running-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+.bar-chart-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.bar-chart-row:last-child { margin-bottom: 0; }
+.bar-chart-label { font-size: 13px; min-width: 100px; color: var(--text); }
+.bar-chart-track { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-raised); overflow: hidden; }
+.bar-chart-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.bar-chart-val { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 50px; text-align: right; }
+.slot-row { display: flex; gap: 3px; }
+.slot { height: 14px; flex: 1; border-radius: 3px; }
+.slot.on { background: var(--success); }
+.slot.hibernate { background: var(--text-dim); }
+.slot.empty { background: var(--surface-raised); border: 1px solid var(--border-light); }
+.ready-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.ready-item + .ready-item { margin-top: 6px; }
+.running-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.running-item + .running-item { margin-top: 6px; }
+.progress-bar { height: 4px; flex: 1; border-radius: 2px; background: var(--border); overflow: hidden; max-width: 80px; }
+.progress-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+
+/* ═══════════════════════════════════════════════════
+   DASHBOARD LAYOUTS
+   ═══════════════════════════════════════════════════ */
+
+/* Option 1: Classic 2-col grid */
+.dash-1 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 12px;
+}
+.dash-1 .blocked-card { grid-column: 1 / -1; }
+
+/* Option 2: 3-col top row, 2-col bottom */
+.dash-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.dash-2 .blocked-card { grid-column: 1 / -1; }
+.dash-2 .running-card { grid-column: span 2; }
+
+/* Option 3: Sidebar emphasis */
+.dash-3 {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 12px;
+}
+.dash-3 .blocked-card { grid-column: 1 / -1; }
+.dash-3 .spend-card { grid-row: 2; grid-column: 1; }
+.dash-3 .compute-card { grid-row: 2; grid-column: 2; }
+.dash-3 .running-card { grid-row: 3; grid-column: 1; }
+.dash-3 .ready-card { grid-row: 3; grid-column: 2; }
+
+/* Option 4: Blocked banner + 4-col grid */
+.dash-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.dash-4 .blocked-card { grid-column: 1 / -1; }
+.dash-4 .spend-card { grid-column: span 1; }
+.dash-4 .compute-card { grid-column: span 1; }
+.dash-4 .running-card { grid-column: span 1; }
+.dash-4 .ready-card { grid-column: span 1; }
+
+/* Option 5: Blocked left column, everything else right */
+.dash-5 {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  grid-template-rows: auto auto;
+  gap: 12px;
+}
+.dash-5 .blocked-card { grid-column: 1; grid-row: 1 / 3; }
+.dash-5 .spend-card { grid-column: 2; grid-row: 1; }
+.dash-5 .compute-card { grid-column: 2; grid-row: 1; }
+.dash-5 .right-grid { grid-column: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dash-5 .bottom-grid { grid-column: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Option 6: Full-width stacked rows */
+.dash-6 {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dash-6 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dash-6 .row-3 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Option 7: Dense 3-col, blocked as tall left rail */
+.dash-7 {
+  display: grid;
+  grid-template-columns: 280px 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 12px;
+}
+.dash-7 .blocked-card { grid-column: 1; grid-row: 1 / 3; }
+.dash-7 .spend-card { grid-column: 2; }
+.dash-7 .compute-card { grid-column: 3; }
+.dash-7 .running-card { grid-column: 2; }
+.dash-7 .ready-card { grid-column: 3; }
+
+/* Option 8: Blocked banner + masonry-ish */
+.dash-8 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+.dash-8 .blocked-card { grid-column: 1 / -1; }
+.dash-8 .running-card { grid-column: 1; grid-row: span 2; }
+
+/* Option 9: Horizontal scroll top + grid below */
+.dash-9 .top-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+.dash-9 .top-scroll .card { min-width: 260px; flex-shrink: 0; }
+.dash-9 .bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* Option 10: Asymmetric — big blocked, compact everything else */
+.dash-10 {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 12px;
+}
+.dash-10 .blocked-card { grid-column: 1; grid-row: 1 / 3; }
+.dash-10 .stats-stack { grid-column: 2; display: flex; flex-direction: column; gap: 12px; }
+</style>
+
+<div class="page-header">
+  <h1 class="page-title">Home Dashboard — 10 Layout Options</h1>
+  <p class="page-subtitle">Each shows the same 4 blocks — Blocked (top priority), Spend, Compute, Running, Ready — arranged differently. All blocks are styled as dashboard cards.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 1: Classic 2-col
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">01</span><span class="option-name">Classic 2-Column</span></div>
+  <p class="option-desc">Blocked spans full width as a banner. Spend + Compute side by side. Running + Ready side by side. The most conventional dashboard grid.</p>
+  <div class="dash-1">
+    <div class="card blocked-card">
+      <div class="card-header"><span class="card-title">Blocked <span class="badge badge-danger" style="margin-left:6px">3</span></span><span class="card-link">Past decisions</span></div>
+      <div class="card-body">
+        <div class="blocked-row"><div class="severity-bar crit"></div><span class="small" style="flex:1">codex-research → <span class="mono xs muted">GET api.github.com</span></span><span class="xs dim">2m</span></div>
+        <div class="blocked-row"><div class="severity-bar warn"></div><span class="small" style="flex:1">claude-code-main → <span class="mono xs muted">POST registry.npmjs.org</span></span><span class="xs dim">5m</span></div>
+        <div class="blocked-row"><div class="severity-bar info"></div><span class="small" style="flex:1">gemini-pipeline → <span class="mono xs muted">execute_shell_command</span></span><span class="xs dim">8m</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Spend</span><span class="card-link">1M</span></div>
+      <div class="card-body">
+        <div class="big-num" style="color:var(--text)">$482</div>
+        <div class="stat-label">~$16/day this month</div>
+        <div style="margin-top:14px">
+          <div class="bar-chart-row"><span class="bar-chart-label">codex-research</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:80%"></div></div><span class="bar-chart-val">$210</span></div>
+          <div class="bar-chart-row"><span class="bar-chart-label">claude-code</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:55%"></div></div><span class="bar-chart-val">$145</span></div>
+          <div class="bar-chart-row"><span class="bar-chart-label">gemini-pipeline</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:30%"></div></div><span class="bar-chart-val">$82</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Compute</span><span class="card-link">Request more</span></div>
+      <div class="card-body">
+        <div class="big-num" style="color:var(--text)">5/8</div>
+        <div class="stat-label">slots in use</div>
+        <div class="slot-row" style="margin-top:14px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Running now <span class="badge badge-success" style="margin-left:6px">4</span></span></div>
+      <div class="card-body">
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>codex-research</strong> <span class="muted">· morning sync</span></span><span class="xs dim">12m</span></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>claude-code</strong> <span class="muted">· release prep</span></span><span class="xs dim">4m</span></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>prompt-sweep</strong> <span class="muted">· Run 14/20</span></span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>product-docs</strong> <span class="muted">· indexing</span></span><span class="xs dim">2m</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Ready for you <span class="badge badge-accent" style="margin-left:6px">4</span></span></div>
+      <div class="card-body">
+        <div class="ready-item"><span class="small" style="flex:1"><strong>PR #142</strong> <span class="muted">Refactor auth middleware</span></span><span class="badge badge-accent">PR</span></div>
+        <div class="ready-item"><span class="small" style="flex:1"><strong>Weekly digest</strong> <span class="muted">12 papers</span></span><span class="badge badge-accent">Artifact</span></div>
+        <div class="ready-item"><span class="small" style="flex:1"><strong>Enable streaming</strong> <span class="muted">TTFB → 340ms</span></span><span class="badge badge-warning">Suggestion</span></div>
+        <div class="ready-item"><span class="small" style="flex:1"><strong>Pipeline refresh</strong> <span class="muted">2,847 records</span></span><span class="badge badge-success">Done</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 2: 3-col top, 2-col bottom
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">02</span><span class="option-name">Dense 3-Column</span></div>
+  <p class="option-desc">Blocked full-width. Spend, Compute, and Ready as three equal columns. Running takes 2/3 width below. Maximum information density.</p>
+  <div class="dash-2">
+    <div class="card blocked-card" style="border-left:4px solid var(--danger)">
+      <div class="card-body" style="display:flex;align-items:center;gap:16px;padding:16px 20px">
+        <div><div class="big-num" style="color:var(--danger);font-size:28px">3</div><div class="stat-label">blocked</div></div>
+        <div style="flex:1;display:flex;gap:8px;overflow-x:auto">
+          <div class="blocked-row" style="flex:1;min-width:180px"><div class="severity-bar crit"></div><span class="xs truncate" style="flex:1">codex-research → GET api.github.com</span><span class="xs dim">2m</span></div>
+          <div class="blocked-row" style="flex:1;min-width:180px"><div class="severity-bar warn"></div><span class="xs truncate" style="flex:1">claude-code → POST npmjs.org</span><span class="xs dim">5m</span></div>
+          <div class="blocked-row" style="flex:1;min-width:180px"><div class="severity-bar info"></div><span class="xs truncate" style="flex:1">gemini → execute_shell</span><span class="xs dim">8m</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Spend</span></div>
+      <div class="card-body"><div class="big-num" style="color:var(--text)">$482</div><div class="stat-label">~$16/day</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Compute</span></div>
+      <div class="card-body"><div class="big-num" style="color:var(--text)">5/8</div><div class="stat-label">slots used</div><div class="slot-row" style="margin-top:10px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Ready</span></div>
+      <div class="card-body">
+        <div class="ready-item"><span class="xs" style="flex:1"><strong>PR #142</strong></span><span class="badge badge-accent">PR</span></div>
+        <div class="ready-item"><span class="xs" style="flex:1"><strong>Weekly digest</strong></span><span class="badge badge-accent">Artifact</span></div>
+      </div>
+    </div>
+    <div class="card running-card">
+      <div class="card-header"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div>
+      <div class="card-body">
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>codex-research</strong> <span class="muted">· morning sync</span></span><span class="xs dim">12m</span></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>prompt-sweep</strong> <span class="muted">· Run 14/20</span></span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">History</span></div>
+      <div class="card-body"><span class="xs muted">3 decisions today · all allowed</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 3: Blocked prominence + balanced grid
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">03</span><span class="option-name">Urgency-First Banner + Grid</span></div>
+  <p class="option-desc">Blocked gets a colored surface treatment spanning full width. Remaining sections are a balanced 2×2 grid with consistent card sizing.</p>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="card" style="background:var(--danger-surface);border-color:color-mix(in srgb, var(--danger) 25%, var(--border))">
+      <div class="card-body" style="padding:20px 24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--danger);animation:pulse 2s infinite"></div>
+          <span style="font-size:13px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:0.5px">3 Blocked</span>
+          <span class="card-link" style="margin-left:auto">Past decisions</span>
+        </div>
+        <div class="blocked-row"><div class="severity-bar crit"></div><span class="small" style="flex:1"><strong>codex-research</strong> → <span class="mono xs muted">GET api.github.com/repos/acme-org/my-repo</span></span><span class="xs dim">2m</span></div>
+        <div class="blocked-row"><div class="severity-bar warn"></div><span class="small" style="flex:1"><strong>claude-code-main</strong> → <span class="mono xs muted">POST registry.npmjs.org</span></span><span class="xs dim">5m</span></div>
+        <div class="blocked-row"><div class="severity-bar info"></div><span class="small" style="flex:1"><strong>gemini-pipeline</strong> → <span class="mono xs muted">execute_shell_command</span></span><span class="xs dim">8m</span></div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="card"><div class="card-header"><span class="card-title">Spend</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">$482</div><div class="stat-label">~$16/day this month</div><div style="margin-top:12px"><div class="bar-chart-row"><span class="bar-chart-label">codex-research</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:80%"></div></div><span class="bar-chart-val">$210</span></div><div class="bar-chart-row"><span class="bar-chart-label">claude-code</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:55%"></div></div><span class="bar-chart-val">$145</span></div></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Compute</span><span class="card-link">Request more</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">5/8</div><div class="stat-label">slots in use</div><div class="slot-row" style="margin-top:12px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>codex-research</strong> · morning sync</span><span class="xs dim">12m</span></div><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>prompt-sweep</strong> · Run 14/20</span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>product-docs</strong> · indexing</span><span class="xs dim">2m</span></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="ready-item"><span class="small" style="flex:1"><strong>PR #142</strong> Refactor auth</span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="small" style="flex:1"><strong>Weekly digest</strong></span><span class="badge badge-accent">Artifact</span></div><div class="ready-item"><span class="small" style="flex:1"><strong>Enable streaming</strong></span><span class="badge badge-warning">Suggestion</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 4: 4-Column Equal
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">04</span><span class="option-name">4-Column Equal Width</span></div>
+  <p class="option-desc">Blocked banner full width, then four equal-width tall cards. Each card is self-contained with its own metric and detail. Most "at a glance" density.</p>
+  <div class="dash-4">
+    <div class="card blocked-card">
+      <div class="card-body" style="display:flex;align-items:center;gap:20px;padding:14px 20px">
+        <span style="font-weight:600;font-size:14px;white-space:nowrap">Blocked <span class="badge badge-danger" style="margin-left:4px">3</span></span>
+        <div style="flex:1;display:flex;gap:6px;overflow-x:auto">
+          <div class="blocked-row" style="flex:1;min-width:160px"><div class="severity-bar crit"></div><span class="xs truncate" style="flex:1">codex → GET github</span></div>
+          <div class="blocked-row" style="flex:1;min-width:160px"><div class="severity-bar warn"></div><span class="xs truncate" style="flex:1">claude → POST npm</span></div>
+          <div class="blocked-row" style="flex:1;min-width:160px"><div class="severity-bar info"></div><span class="xs truncate" style="flex:1">gemini → shell cmd</span></div>
+        </div>
+        <span class="card-link" style="white-space:nowrap">Resolve all</span>
+      </div>
+    </div>
+    <div class="card"><div class="card-body" style="text-align:center;padding:24px 16px"><div class="stat-label">Spend</div><div class="big-num" style="color:var(--text);margin:4px 0">$482</div><div class="xs dim">~$16/day</div></div></div>
+    <div class="card"><div class="card-body" style="text-align:center;padding:24px 16px"><div class="stat-label">Compute</div><div class="big-num" style="color:var(--text);margin:4px 0">5/8</div><div class="xs dim">slots used</div></div></div>
+    <div class="card"><div class="card-body" style="text-align:center;padding:24px 16px"><div class="stat-label">Running</div><div class="big-num" style="color:var(--success);margin:4px 0">4</div><div class="xs dim">agents active</div></div></div>
+    <div class="card"><div class="card-body" style="text-align:center;padding:24px 16px"><div class="stat-label">Ready</div><div class="big-num" style="color:var(--accent);margin:4px 0">4</div><div class="xs dim">awaiting review</div></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 5: Blocked left rail
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">05</span><span class="option-name">Blocked Left Rail</span></div>
+  <p class="option-desc">Blocked is a tall card on the left spanning full height. Everything else lives in a 2×2 grid to the right. Good if blocked items grow long.</p>
+  <div class="dash-5">
+    <div class="card blocked-card" style="min-height:280px">
+      <div class="card-header"><span class="card-title">Blocked <span class="badge badge-danger" style="margin-left:4px">3</span></span></div>
+      <div class="card-body">
+        <div class="blocked-row"><div class="severity-bar crit"></div><div style="flex:1;min-width:0"><div class="xs"><strong>codex-research</strong></div><div class="mono xs muted truncate">GET api.github.com</div></div><span class="xs dim">2m</span></div>
+        <div class="blocked-row"><div class="severity-bar warn"></div><div style="flex:1;min-width:0"><div class="xs"><strong>claude-code</strong></div><div class="mono xs muted truncate">POST registry.npmjs.org</div></div><span class="xs dim">5m</span></div>
+        <div class="blocked-row"><div class="severity-bar info"></div><div style="flex:1;min-width:0"><div class="xs"><strong>gemini-pipeline</strong></div><div class="mono xs muted truncate">execute_shell_command</div></div><span class="xs dim">8m</span></div>
+        <div style="margin-top:12px"><span class="card-link xs">See past decisions →</span></div>
+      </div>
+    </div>
+    <div class="right-grid">
+      <div class="card"><div class="card-body"><div class="stat-label">Spend</div><div class="big-num" style="color:var(--text)">$482</div><div class="xs dim">~$16/day</div></div></div>
+      <div class="card"><div class="card-body"><div class="stat-label">Compute</div><div class="big-num" style="color:var(--text)">5/8</div><div class="slot-row" style="margin-top:8px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div></div></div>
+    </div>
+    <div class="bottom-grid">
+      <div class="card"><div class="card-header"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="running-item"><div class="running-dot"></div><span class="xs" style="flex:1"><strong>codex</strong> · sync</span><span class="xs dim">12m</span></div><div class="running-item"><div class="running-dot"></div><span class="xs" style="flex:1"><strong>sweep</strong> · 14/20</span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="ready-item"><span class="xs" style="flex:1"><strong>PR #142</strong></span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="xs" style="flex:1"><strong>Digest</strong></span><span class="badge badge-accent">Artifact</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 6: Clean stacked rows
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">06</span><span class="option-name">Stacked Rows</span></div>
+  <p class="option-desc">Full-width blocked card, then each row is a 2-col split. Tall and scrollable. Simplest to read, best for narrow viewports.</p>
+  <div class="dash-6">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Blocked <span class="badge badge-danger" style="margin-left:6px">3</span></span><span class="card-link">Past decisions</span></div>
+      <div class="card-body">
+        <div class="blocked-row"><div class="severity-bar crit"></div><span class="small" style="flex:1"><strong>codex-research</strong> → <span class="mono xs muted">GET api.github.com</span></span><span class="xs dim">2m</span><span class="card-link xs">Allow</span></div>
+        <div class="blocked-row"><div class="severity-bar warn"></div><span class="small" style="flex:1"><strong>claude-code</strong> → <span class="mono xs muted">POST registry.npmjs.org</span></span><span class="xs dim">5m</span><span class="card-link xs">Allow</span></div>
+        <div class="blocked-row"><div class="severity-bar info"></div><span class="small" style="flex:1"><strong>gemini-pipeline</strong> → <span class="mono xs muted">execute_shell_command</span></span><span class="xs dim">8m</span><span class="card-link xs">Allow</span></div>
+      </div>
+    </div>
+    <div class="row-2">
+      <div class="card"><div class="card-header"><span class="card-title">Spend</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">$482</div><div class="stat-label">~$16/day this month</div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Compute</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">5/8</div><div class="stat-label">slots</div><div class="slot-row" style="margin-top:10px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div></div></div>
+    </div>
+    <div class="row-3">
+      <div class="card"><div class="card-header"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>codex-research</strong> · morning sync</span><span class="xs dim">12m</span></div><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>prompt-sweep</strong> · 14/20</span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>product-docs</strong> · indexing</span><span class="xs dim">2m</span></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="ready-item"><span class="small" style="flex:1"><strong>PR #142</strong> Refactor auth</span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="small" style="flex:1"><strong>Weekly digest</strong></span><span class="badge badge-accent">Artifact</span></div><div class="ready-item"><span class="small" style="flex:1"><strong>Enable streaming</strong></span><span class="badge badge-warning">Suggestion</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 7: Dense 3-col with tall blocked rail
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">07</span><span class="option-name">3-Column with Blocked Sidebar</span></div>
+  <p class="option-desc">Fixed-width blocked column on the left (like a notification drawer). The rest of the dashboard flows in 2 columns beside it. High density, always-visible urgency.</p>
+  <div class="dash-7">
+    <div class="card blocked-card" style="border-top:3px solid var(--danger)">
+      <div class="card-body">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px"><div style="width:8px;height:8px;border-radius:50%;background:var(--danger);animation:pulse 2s infinite"></div><span style="font-size:12px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:0.5px">3 Blocked</span></div>
+        <div class="blocked-row"><div class="severity-bar crit"></div><div style="flex:1;min-width:0"><div class="xs"><strong>codex</strong></div><div class="mono xs muted truncate">GET api.github.com</div></div></div>
+        <div class="blocked-row"><div class="severity-bar warn"></div><div style="flex:1;min-width:0"><div class="xs"><strong>claude</strong></div><div class="mono xs muted truncate">POST npmjs.org</div></div></div>
+        <div class="blocked-row"><div class="severity-bar info"></div><div style="flex:1;min-width:0"><div class="xs"><strong>gemini</strong></div><div class="mono xs muted truncate">shell cmd</div></div></div>
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border-light)"><span class="card-link xs">Past decisions</span></div>
+      </div>
+    </div>
+    <div class="card spend-card"><div class="card-header"><span class="card-title">Spend</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">$482</div><div class="stat-label">~$16/day</div></div></div>
+    <div class="card compute-card"><div class="card-header"><span class="card-title">Compute</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">5/8</div><div class="stat-label">slots</div></div></div>
+    <div class="card running-card"><div class="card-header"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="running-item"><div class="running-dot"></div><span class="xs" style="flex:1"><strong>codex</strong> · sync</span><span class="xs dim">12m</span></div><div class="running-item"><div class="running-dot"></div><span class="xs" style="flex:1"><strong>sweep</strong> · 14/20</span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div></div></div>
+    <div class="card ready-card"><div class="card-header"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="ready-item"><span class="xs" style="flex:1"><strong>PR #142</strong></span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="xs" style="flex:1"><strong>Digest</strong></span><span class="badge badge-accent">Artifact</span></div></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 8: Big running + lean stats
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">08</span><span class="option-name">Running Emphasis</span></div>
+  <p class="option-desc">Blocked banner on top. Running gets 2/3 width (it's the "what's happening now" focus). Spend + Compute + Ready stack in a narrow right column.</p>
+  <div class="dash-8">
+    <div class="card blocked-card">
+      <div class="card-body" style="display:flex;align-items:center;gap:16px;padding:14px 20px">
+        <span style="font-weight:600;font-size:14px;white-space:nowrap"><span class="badge badge-danger">3</span> Blocked</span>
+        <span class="small muted" style="flex:1">codex-research, claude-code-main, gemini-pipeline waiting</span>
+        <span class="card-link">Resolve</span>
+      </div>
+    </div>
+    <div class="card running-card">
+      <div class="card-header"><span class="card-title">Running now <span class="badge badge-success" style="margin-left:4px">4</span></span><div class="pill-tabs"><button class="pill-tab active">All</button><button class="pill-tab">Agents</button><button class="pill-tab">Experiments</button><button class="pill-tab">KBs</button></div></div>
+      <div class="card-body">
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>codex-research</strong> <span class="muted">· Running daily morning research sync</span></span><span class="xs dim">12m</span></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>claude-code-main</strong> <span class="muted">· Executing nightly release prep</span></span><span class="xs dim">4m</span></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>prompt-tuning-sweep</strong> <span class="muted">· CoT vs Direct prompting</span></span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div><span class="xs dim" style="margin-left:6px">13/20</span></div>
+        <div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>product-docs</strong> <span class="muted">· Indexing 3 new pages</span></span><span class="xs dim">2m</span></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-body" style="padding:16px 20px"><div class="stat-label">Spend</div><div class="big-num" style="color:var(--text);font-size:26px">$482</div><div class="xs dim">~$16/day</div></div></div>
+    <div class="card"><div class="card-body" style="padding:16px 20px"><div class="stat-label">Compute</div><div class="big-num" style="color:var(--text);font-size:26px">5/8</div><div class="xs dim">slots</div></div></div>
+    <div class="card"><div class="card-header"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="ready-item"><span class="xs" style="flex:1"><strong>PR #142</strong></span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="xs" style="flex:1"><strong>Digest</strong></span><span class="badge badge-accent">Artifact</span></div></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 9: Horizontal scroll blocked + grid
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">09</span><span class="option-name">Scroll Cards Top + Grid</span></div>
+  <p class="option-desc">Blocked items as individually scrollable mini-cards in a horizontal row at the top. Below: a standard 2-col grid. Each blocked item is actionable independently.</p>
+  <div class="dash-9">
+    <div class="top-scroll">
+      <div class="card" style="min-width:280px;border-left:3px solid var(--danger)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><strong class="xs">codex-research</strong><span class="badge badge-warning" style="font-size:10px">Network</span></div>
+          <div class="mono xs muted truncate">GET api.github.com/repos/acme-org/my-repo</div>
+          <div style="display:flex;gap:6px;margin-top:10px"><button style="font-size:12px;padding:4px 10px;border-radius:4px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--sans)">Allow</button><button style="font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-family:var(--sans)">Deny</button></div>
+        </div>
+      </div>
+      <div class="card" style="min-width:280px;border-left:3px solid var(--warning)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><strong class="xs">claude-code-main</strong><span class="badge badge-warning" style="font-size:10px">Network</span></div>
+          <div class="mono xs muted truncate">POST registry.npmjs.org/v2/@acme/shared-lib</div>
+          <div style="display:flex;gap:6px;margin-top:10px"><button style="font-size:12px;padding:4px 10px;border-radius:4px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--sans)">Allow</button><button style="font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-family:var(--sans)">Deny</button></div>
+        </div>
+      </div>
+      <div class="card" style="min-width:280px;border-left:3px solid var(--accent)">
+        <div class="card-body" style="padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><strong class="xs">gemini-pipeline</strong><span class="badge badge-accent" style="font-size:10px">Tool</span></div>
+          <div class="mono xs muted truncate">execute_shell_command pip install pandas</div>
+          <div style="display:flex;gap:6px;margin-top:10px"><button style="font-size:12px;padding:4px 10px;border-radius:4px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--sans)">Allow</button><button style="font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-family:var(--sans)">Deny</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="bottom-grid">
+      <div class="card"><div class="card-header"><span class="card-title">Spend</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">$482</div><div class="stat-label">~$16/day</div><div style="margin-top:12px"><div class="bar-chart-row"><span class="bar-chart-label">codex-research</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:80%"></div></div><span class="bar-chart-val">$210</span></div><div class="bar-chart-row"><span class="bar-chart-label">claude-code</span><div class="bar-chart-track"><div class="bar-chart-fill" style="width:55%"></div></div><span class="bar-chart-val">$145</span></div></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Compute</span></div><div class="card-body"><div class="big-num" style="color:var(--text)">5/8</div><div class="stat-label">slots</div><div class="slot-row" style="margin-top:12px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>codex-research</strong> · sync</span><span class="xs dim">12m</span></div><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>prompt-sweep</strong> · 14/20</span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div><div class="running-item"><div class="running-dot"></div><span class="small" style="flex:1"><strong>product-docs</strong></span><span class="xs dim">2m</span></div></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body"><div class="ready-item"><span class="small" style="flex:1"><strong>PR #142</strong> Refactor auth</span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="small" style="flex:1"><strong>Weekly digest</strong></span><span class="badge badge-accent">Artifact</span></div><div class="ready-item"><span class="small" style="flex:1"><strong>Enable streaming</strong></span><span class="badge badge-warning">Suggestion</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     OPTION 10: Asymmetric — big blocked focus
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="option-wrap">
+  <div class="option-label"><span class="option-number">10</span><span class="option-name">Asymmetric — Blocked Dominates</span></div>
+  <p class="option-desc">Blocked takes ~60% width as the primary interaction zone. Everything else is a compact stacked sidebar on the right. Best when blocked items are the core user task on this page.</p>
+  <div class="dash-10">
+    <div class="card blocked-card" style="border-top:3px solid var(--danger)">
+      <div class="card-header">
+        <span class="card-title">Needs your attention <span class="badge badge-danger" style="margin-left:4px">3</span></span>
+        <div class="pill-tabs"><button class="pill-tab active">All</button><button class="pill-tab">Network</button><button class="pill-tab">Tool</button></div>
+      </div>
+      <div class="card-body">
+        <div style="padding:14px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong class="small">codex-research</strong><span class="badge badge-warning" style="font-size:10px">Network</span><span class="xs dim" style="margin-left:auto">2m ago</span></div>
+          <div class="mono xs muted" style="margin-bottom:10px">GET api.github.com /repos/acme-org/my-repo/contents/README.md</div>
+          <div style="display:flex;gap:8px"><button style="font-size:12px;padding:5px 12px;border-radius:4px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-family:var(--sans);font-weight:500">Allow</button><button style="font-size:12px;padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-family:var(--sans)">Deny</button><span class="card-link xs" style="margin-left:auto;align-self:center">Allow permanently</span></div>
+        </div>
+        <div style="padding:14px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong class="small">claude-code-main</strong><span class="badge badge-warning" style="font-size:10px">Network</span><span class="xs dim" style="margin-left:auto">5m ago</span></div>
+          <div class="mono xs muted">POST registry.npmjs.org /v2/@acme/shared-lib</div>
+        </div>
+        <div style="padding:14px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><strong class="small">gemini-pipeline</strong><span class="badge badge-accent" style="font-size:10px">Tool</span><span class="xs dim" style="margin-left:auto">8m ago</span></div>
+          <div class="mono xs muted">execute_shell_command → pip install pandas==2.1.0</div>
+        </div>
+        <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border-light)"><span class="card-link xs">See past decisions →</span></div>
+      </div>
+    </div>
+    <div class="stats-stack">
+      <div class="card"><div class="card-body" style="padding:16px 20px"><div class="stat-label">Spend this month</div><div class="big-num" style="color:var(--text);font-size:26px">$482</div><div class="xs dim">~$16/day · 3 agents</div></div></div>
+      <div class="card"><div class="card-body" style="padding:16px 20px"><div class="stat-label">Compute</div><div class="big-num" style="color:var(--text);font-size:26px">5/8</div><div class="slot-row" style="margin-top:8px"><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot on"></div><div class="slot hibernate"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div></div></div></div>
+      <div class="card"><div class="card-header" style="padding:14px 20px 0"><span class="card-title">Running <span class="badge badge-success" style="margin-left:4px">4</span></span></div><div class="card-body" style="padding:10px 20px 16px"><div class="running-item"><div class="running-dot"></div><span class="xs" style="flex:1"><strong>codex</strong> · sync</span><span class="xs dim">12m</span></div><div class="running-item"><div class="running-dot"></div><span class="xs" style="flex:1"><strong>sweep</strong> · 14/20</span><div class="progress-bar"><div class="progress-fill" style="width:65%"></div></div></div></div></div>
+      <div class="card"><div class="card-header" style="padding:14px 20px 0"><span class="card-title">Ready <span class="badge badge-accent" style="margin-left:4px">4</span></span></div><div class="card-body" style="padding:10px 20px 16px"><div class="ready-item"><span class="xs" style="flex:1"><strong>PR #142</strong></span><span class="badge badge-accent">PR</span></div><div class="ready-item"><span class="xs" style="flex:1"><strong>Digest</strong></span><span class="badge badge-accent">Artifact</span></div></div></div>
+    </div>
+  </div>
+</div>

@@ -1,74 +1,36 @@
 import type { FeatureId } from "api-server-api";
-import type { ReactNode } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-import {
-  useFeatures,
-  useInstallCapabilities,
-  useSetFeature,
-} from "../api/queries.js";
-import { isFeatureOffered } from "../lib/visible-features.js";
+import { useFeatures, useSetFeature } from "../api/queries.js";
 
 interface FeatureRow {
   id: FeatureId;
   label: string;
-  description: ReactNode;
+  description: string;
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
   {
-    id: "interactive-artifacts",
-    label: "Interactive artifacts",
-    description:
-      "Lets buttons in a private HTML artifact send prompts to its agent's open chat. The agent replies in chat.",
-  },
-  {
     id: "advanced-connections",
     label: "Advanced connections",
     description:
-      "Reveals the pre-release connection catalog (Google services, Spotify, YouTube, custom client-credentials).",
+      "Reveals the pre-release connection catalog (Google services, Spotify, YouTube, GitHub App installations, custom client-credentials).",
   },
   {
     id: "vm-sandboxes",
-    label: "New sandbox runtime",
-    description: (
-      <>
-        Use a new sandbox runtime based on{" "}
-        <a
-          href="https://github.com/smol-machines/smolvm"
-          target="_blank"
-          rel="noreferrer"
-          className="underline hover:text-foreground"
-          onClick={(event) => event.stopPropagation()}
-        >
-          smolvm
-        </a>
-        . Starts much faster, and supports running containers (Docker,
-        Kubernetes).
-      </>
-    ),
+    label: "VM sandboxes",
+    description:
+      "Reveals images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container, in the coding agent’s image list.",
   },
   {
     id: "session-costs",
     label: "Session costs",
     description:
-      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned, and adds a spend-by-session-type breakdown to the Usage tab.",
-  },
-  {
-    id: "agent-telemetry",
-    label: "Agent telemetry",
-    description:
-      "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
-  },
-  {
-    id: "agent-avatars",
-    label: "Agent avatars",
-    description:
-      "Gives every agent a robot-head avatar drawn from its name and owner, shown in the agents list, the chat and the Home feed. Renaming an agent gives it a new face.",
+      "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned.",
   },
 ];
 
@@ -103,7 +65,6 @@ function FeatureRowCard({
 
 export function FeaturesTab() {
   const { data: flags } = useFeatures();
-  const { data: install } = useInstallCapabilities();
   const setFeature = useSetFeature();
 
   return (
@@ -114,18 +75,16 @@ export function FeaturesTab() {
       />
 
       <div className="flex flex-col gap-3">
-        {FEATURE_ROWS.filter((row) => isFeatureOffered(row.id, install)).map(
-          (row) => (
-            <FeatureRowCard
-              key={row.id}
-              row={row}
-              enabled={flags?.[row.id] ?? false}
-              onToggle={(enabled) =>
-                setFeature.mutate({ feature: row.id, enabled })
-              }
-            />
-          ),
-        )}
+        {FEATURE_ROWS.map((row) => (
+          <FeatureRowCard
+            key={row.id}
+            row={row}
+            enabled={flags?.[row.id] ?? false}
+            onToggle={(enabled) =>
+              setFeature.mutate({ feature: row.id, enabled })
+            }
+          />
+        ))}
       </div>
     </div>
   );

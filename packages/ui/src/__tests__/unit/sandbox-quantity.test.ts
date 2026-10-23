@@ -4,6 +4,7 @@ import { formatCores } from "../../modules/budgets/lib/format.js";
 import {
   parseCpuMilli,
   parseMemoryMi,
+  sizeToQuantities,
 } from "../../modules/sandboxes/lib/quantity.js";
 
 describe("parseCpuMilli", () => {
@@ -43,6 +44,13 @@ describe("parseMemoryMi", () => {
     expect(parseMemoryMi("abc")).toBeNull();
     expect(parseMemoryMi("0Gi")).toBeNull();
     expect(parseMemoryMi("1Xi")).toBeNull();
+  });
+
+  it("round-trips a slider-written size exactly", () => {
+    const q = sizeToQuantities(1500, 1536);
+    expect(q).toEqual({ cpu: "1500m", memory: "1536Mi" });
+    expect(parseCpuMilli(q?.cpu)).toBe(1500);
+    expect(parseMemoryMi(q?.memory)).toBe(1536);
   });
 });
 

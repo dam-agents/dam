@@ -73,25 +73,9 @@ export function useUpdateArtifact() {
   );
 }
 
-export function useSaveArtifactContent() {
-  return useMutation({
-    ...trpc.artifactLibrary.update.mutationOptions(),
-    meta: {
-      invalidates: invalidatesLibraryAndContent,
-      suppressErrorToast: true,
-    },
-  });
-}
-
 export function useSetArtifactSharing() {
   return useMutation({
     ...trpc.artifactLibrary.setSharing.mutationOptions(),
-    onSuccess: (saved) => {
-      queryClient.setQueryData(
-        trpc.artifactLibrary.get.queryKey({ id: saved.id }),
-        saved,
-      );
-    },
     meta: {
       invalidates: invalidatesLibraryAndArtifact,
       errorToast: "Failed to update sharing",
@@ -136,12 +120,5 @@ export function useDeleteFolder() {
       invalidates: invalidatesLibrary,
       errorToast: "Failed to delete folder",
     },
-  });
-}
-
-export function useCallAgentApi() {
-  return useMutation({
-    ...trpc.artifactLibrary.callAgentApi.mutationOptions(),
-    meta: { suppressErrorToast: true },
   });
 }

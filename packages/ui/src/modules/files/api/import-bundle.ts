@@ -7,6 +7,32 @@ import { authFetch } from "../../../auth.js";
 
 export type BundleEntry = { path: string; file: File };
 
+const EXCLUDE_FROM_IMPORT = new Set([
+  "node_modules",
+  ".venv",
+  "__pycache__",
+  ".DS_Store",
+]);
+
+export interface FilterReport {
+  kept: BundleEntry[];
+  dropped: number;
+}
+
+export function filterImportEntries(entries: BundleEntry[]): FilterReport {
+  let dropped = 0;
+  const kept: BundleEntry[] = [];
+  for (const e of entries) {
+    const segs = e.path.split("/");
+    if (segs.some((s) => EXCLUDE_FROM_IMPORT.has(s))) {
+      dropped++;
+      continue;
+    }
+    kept.push(e);
+  }
+  return { kept, dropped };
+}
+
 export async function walkDataTransfer(
   items: DataTransferItemList,
 ): Promise<BundleEntry[]> {
@@ -25,6 +51,14 @@ export async function walkDataTransfer(
     seen.add(e.path);
     out.push(e);
   }
+  return out;
+}
+
+export async function walkFileSystemEntry(
+  entry: FileSystemEntry,
+): Promise<BundleEntry[]> {
+  const out: BundleEntry[] = [];
+  await walkEntry(entry, "", out);
   return out;
 }
 
@@ -71,13 +105,11 @@ function readAll(
 const MAX_TAR_NAME_BYTES = 100;
 const MAX_TAR_PREFIX_BYTES = 155;
 const TAR_ENCODER = new TextEncoder();
-const TAR_TYPE_FILE = 0x30;
-const TAR_TYPE_PAX = 0x78;
 
 type UstarPath = { name: string; prefix: string };
 
-function splitUstarPath(path: string): UstarPath | null {
-  if (TAR_ENCODER.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
+function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
+  if (enc.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
     return { name: path, prefix: "" };
   }
   let slash = path.lastIndexOf("/");
@@ -85,8 +117,8 @@ function splitUstarPath(path: string): UstarPath | null {
     const namePart = path.slice(slash + 1);
     const prefixPart = path.slice(0, slash);
     if (
-      TAR_ENCODER.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES &&
-      TAR_ENCODER.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
+      enc.encode(namePart).byteLength <= MAX_TAR_NAME_BYTES &&
+      enc.encode(prefixPart).byteLength <= MAX_TAR_PREFIX_BYTES
     ) {
       return { name: namePart, prefix: prefixPart };
     }
@@ -96,54 +128,29 @@ function splitUstarPath(path: string): UstarPath | null {
 }
 
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
-  const tarParts: BlobPart[] = [];
-  for (const [index, ent] of entries.entries()) {
-    const split = splitUstarPath(ent.path);
-    if (split) {
-      tarParts.push(tarHeader(split, ent.file.size, TAR_TYPE_FILE));
-    } else {
-      const record = paxRecord("path", ent.path);
-      tarParts.push(
-        tarHeader(
-          { name: "PaxHeader", prefix: "" },
-          record.byteLength,
-          TAR_TYPE_PAX,
-        ),
-      );
-      tarParts.push(record.buffer as ArrayBuffer);
-      pushPadding(tarParts, record.byteLength);
-      tarParts.push(
-        tarHeader(
-          { name: `PaxFallback/${index}`, prefix: "" },
-          ent.file.size,
-          TAR_TYPE_FILE,
-        ),
+  const splits: UstarPath[] = entries.map((ent) => {
+    const split = splitUstarPath(ent.path, TAR_ENCODER);
+    if (!split) {
+      throw new Error(
+        `path too long for USTAR tar header (name>${MAX_TAR_NAME_BYTES}B and no /-split fits within prefix ${MAX_TAR_PREFIX_BYTES}B): ${ent.path}`,
       );
     }
+    return split;
+  });
+
+  const tarParts: BlobPart[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const ent = entries[i];
+    tarParts.push(tarHeader(splits[i], ent.file.size).buffer as ArrayBuffer);
     tarParts.push(ent.file);
-    pushPadding(tarParts, ent.file.size);
+    const pad = (512 - (ent.file.size % 512)) % 512;
+    if (pad) tarParts.push(new Uint8Array(pad).buffer as ArrayBuffer);
   }
   tarParts.push(new Uint8Array(1024).buffer as ArrayBuffer);
   return new Blob(tarParts, { type: "application/x-tar" });
 }
 
-function pushPadding(tarParts: BlobPart[], size: number) {
-  const pad = (512 - (size % 512)) % 512;
-  if (pad) tarParts.push(new Uint8Array(pad).buffer as ArrayBuffer);
-}
-
-function paxRecord(key: string, value: string): Uint8Array {
-  const body = TAR_ENCODER.encode(` ${key}=${value}\n`);
-  let digits = 1;
-  while (String(body.byteLength + digits).length > digits) digits++;
-  const length = TAR_ENCODER.encode(String(body.byteLength + digits));
-  const record = new Uint8Array(length.byteLength + body.byteLength);
-  record.set(length, 0);
-  record.set(body, length.byteLength);
-  return record;
-}
-
-function tarHeader(path: UstarPath, size: number, type: number): ArrayBuffer {
+function tarHeader(path: UstarPath, size: number): Uint8Array {
   const buf = new Uint8Array(512);
   writeStr(buf, 0, path.name, 100);
   writeOct(buf, 100, 0o666, 8);
@@ -152,7 +159,7 @@ function tarHeader(path: UstarPath, size: number, type: number): ArrayBuffer {
   writeOct(buf, 124, size, 12);
   writeOct(buf, 136, Math.floor(Date.now() / 1000), 12);
   for (let i = 148; i < 156; i++) buf[i] = 0x20;
-  buf[156] = type;
+  buf[156] = 0x30;
   writeStr(buf, 257, "ustar", 6);
   buf[263] = 0x30;
   buf[264] = 0x30;
@@ -161,7 +168,7 @@ function tarHeader(path: UstarPath, size: number, type: number): ArrayBuffer {
   for (let i = 0; i < 512; i++) sum += buf[i];
   writeOct(buf, 148, sum, 7);
   buf[155] = 0x20;
-  return buf.buffer;
+  return buf;
 }
 
 function writeStr(buf: Uint8Array, off: number, s: string, len: number) {
@@ -175,7 +182,7 @@ function writeOct(buf: Uint8Array, off: number, n: number, len: number) {
   buf[off + len - 1] = 0;
 }
 
-type ImportBundleArgs = {
+export type ImportBundleArgs = {
   agentId: string;
   entries: BundleEntry[];
 };
@@ -230,7 +237,7 @@ export async function importBundle({
   return postBundle(agentId, tar, "bundle.tar");
 }
 
-type ImportRawBundleArgs = {
+export type ImportRawBundleArgs = {
   agentId: string;
   bundle: Blob | File;
 };
@@ -241,4 +248,13 @@ export async function importRawBundle({
 }: ImportRawBundleArgs): Promise<ImportBundleResult> {
   const filename = bundle instanceof File ? bundle.name : "bundle.tar.gz";
   return postBundle(agentId, bundle, filename);
+}
+
+export function isTarballName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    lower.endsWith(".tar") ||
+    lower.endsWith(".tar.gz") ||
+    lower.endsWith(".tgz")
+  );
 }

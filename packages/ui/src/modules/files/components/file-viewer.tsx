@@ -1,14 +1,6 @@
-import {
-  Close,
-  DocumentExport,
-  Download,
-  Edit,
-  Maximize,
-  Save,
-} from "@carbon/icons-react";
-import { useCallback, useEffect, useState } from "react";
+import { Close, Download, Edit, Maximize, Save } from "@carbon/icons-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -16,7 +8,6 @@ import { TruncateStart } from "../../../components/truncate-start.js";
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
-import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
 import {
   fetchFileContent,
   type FileContent,
@@ -25,6 +16,7 @@ import {
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { FilePreviewBody } from "./file-preview-body.js";
 import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
+import { RenderToggle } from "./render-toggle.js";
 
 interface Props {
   file: FileContent;
@@ -43,7 +35,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const editable = !binary && !tooLarge;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
-  const promotion = useFilePromotion(selectedAgent, file);
   const setOpenFileDirty = useStore((s) => s.setOpenFileDirty);
   const showConfirm = useStore((s) => s.showConfirm);
   const openFileEdit = useStore((s) => s.openFileEdit);
@@ -132,7 +123,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     showConfirm,
   ]);
 
-  const cancelEdit = async () => {
+  const cancelEdit = useCallback(async () => {
     if (dirty) {
       const ok = await showConfirm(
         "Discard unsaved changes?",
@@ -142,7 +133,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     }
     setDraft(content);
     setEditMode(false);
-  };
+  }, [dirty, content, showConfirm]);
 
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -154,6 +145,10 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     setPdfBlobUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [content, isPdf]);
+
+  const downloadFile = useCallback(() => downloadFileContent(file), [file]);
+
+  const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
 
   const isRenderedPreview =
     !editMode &&
@@ -185,14 +180,14 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           className="text-sm font-medium text-foreground flex-1"
           title={path}
         >
-          {dirty ? `● ${path}` : path}
+          {pathLabel}
         </TruncateStart>
         {editMode ? (
           <>
             <Button
               variant="ghost"
               size="xs"
-              className="text-sm font-normal"
+              className="text-sm"
               onClick={cancelEdit}
             >
               <Close size={14} /> Cancel
@@ -200,7 +195,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             <Button
               variant="outline"
               size="xs"
-              className="text-sm font-normal"
+              className="text-sm"
               onClick={save}
               disabled={!dirty || writeMutation.isPending}
               tooltip="Save (Cmd/Ctrl+S)"
@@ -210,30 +205,11 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           </>
         ) : (
           <>
-            <Button
-              variant="outline"
-              size="xs"
-              className="text-sm font-normal"
-              disabled={!promotion.promotable || promotion.pending}
-              tooltip={
-                promotion.promotable || !promotion.linkReady
-                  ? undefined
-                  : "Binary and oversized files can't be promoted from the panel"
-              }
-              onClick={() => void promotion.promote()}
-            >
-              <DocumentExport size={14} />
-              {promotion.pending
-                ? "Publishing…"
-                : promotion.linked
-                  ? "Sync to artifact"
-                  : "Create artifact"}
-            </Button>
             {editable && (
               <Button
                 variant="outline"
                 size="xs"
-                className="text-sm font-normal"
+                className="text-sm"
                 onClick={() => setEditMode(true)}
               >
                 <Edit size={14} /> Edit
@@ -243,8 +219,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <Button
                 variant="outline"
                 size="xs"
-                className="text-sm font-normal"
-                onClick={() => downloadFileContent(file)}
+                className="text-sm"
+                onClick={downloadFile}
               >
                 <Download size={14} /> Download
               </Button>
@@ -253,21 +229,18 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
-                className="text-sm"
               />
             )}
             {isMarkdown && (
               <RenderToggle
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
-                className="text-sm"
               />
             )}
             {isHtml && (
               <RenderToggle
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
-                className="text-sm"
               />
             )}
             {isRenderedPreview && (

@@ -1,12 +1,6 @@
 import type { StateCreator } from "zustand";
 
-import {
-  readPersistedFlag,
-  writePersistedFlag,
-} from "../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../store.js";
-
-const FILES_SECTION_OPEN_STORAGE_KEY = "platform-files-open";
 
 export interface FilesSlice {
   openFilePath: string | null;
@@ -55,7 +49,7 @@ export const createFilesSlice: StateCreator<
   FilesSlice
 > = (set) => ({
   openFilePath: null,
-  filesSectionOpen: readPersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, true),
+  filesSectionOpen: true,
   openFileDirty: false,
   openFileEdit: false,
   expandedDirs: {},
@@ -65,15 +59,10 @@ export const createFilesSlice: StateCreator<
       openFilePath: path,
       openFileDirty: false,
       openFileEdit: opts?.edit ?? false,
-      ...(path !== null
-        ? { openArtifactId: null, openArtifactDirty: false }
-        : {}),
+      ...(path !== null ? { openArtifactId: null } : {}),
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
-  setFilesSectionOpen: (open) => {
-    writePersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, open);
-    set({ filesSectionOpen: open });
-  },
+  setFilesSectionOpen: (open) => set({ filesSectionOpen: open }),
   setOpenFileDirty: (dirty) => set({ openFileDirty: dirty }),
   toggleExpandedDir: (agentId, path) => {
     set((state) => {

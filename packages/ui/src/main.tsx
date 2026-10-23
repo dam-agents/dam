@@ -8,32 +8,90 @@ import { createRoot } from "react-dom/client";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import { api } from "./api.js";
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
 import { rememberReturnPath } from "./lib/return-path.js";
 import {
   parsePublicAgentPath,
-  parseRoute,
   routeToPath,
 } from "./modules/platform/lib/routes.js";
+import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
-async function preflightTermsGate(): Promise<boolean> {
-  if (parseRoute(window.location.pathname).view === "terms") return true;
-  try {
-    const [current, latest] = await Promise.all([
-      api.terms.current.query(),
-      api.terms.latestAcceptance.query(),
-    ]);
-    return !!latest && latest.version === current.version;
-  } catch {
-    return true;
-  }
-}
-
 async function main() {
+  if (import.meta.env.VITE_MOCK) {
+    try {
+      const { worker } = await import("./mock/browser.js");
+      await worker.start({ onUnhandledRequest: "warn" });
+    } catch (err) {
+      console.error("[mock] MSW failed to start:", err);
+    }
+
+    const { mockSessions } = await import("./mock/data/sessions.js");
+    const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
+    (window as any).__mockListAgentSessions = (agentId: string) =>
+      Promise.resolve(sessionsByAgent[agentId] ?? []);
+
+    (window as any).__mockCreateSession = (agentId: string) => {
+      const sessionId = `sess-new-${Date.now()}`;
+      const session = {
+        sessionId,
+        agentId,
+        type: "regular",
+        mode: "chat",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        title: "New chat",
+        running: true,
+        seenAt: null,
+      };
+      if (!sessionsByAgent[agentId]) sessionsByAgent[agentId] = [];
+      sessionsByAgent[agentId].unshift(session);
+      const fresh = sessionsByAgent[agentId];
+      queryClient.setQueriesData(
+        { queryKey: ["acp-sessions", agentId] },
+        () => fresh,
+      );
+      (window as any).__lastMockSessionId = sessionId;
+      return sessionId;
+    };
+
+    for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
+      queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+    }
+
+    {
+      const { REAL_PACKS } = await import("./modules/packs/data/packs.js");
+      const { agents } = await import("./mock/data/agents.js");
+      const pack = REAL_PACKS[0];
+      const agentId = agents[0]?.id;
+      if (pack && agentId) {
+        useStore.getState().initOnboarding(agentId, pack);
+      }
+    }
+
+    await loadBrand().then(applyBrand);
+    const { default: App } = await import("./app.js");
+    const { MockStateBar } = await import("./mock/state-bar.js");
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <div className="flex h-dvh flex-col overflow-hidden">
+              <MockStateBar />
+              <div className="flex-1 min-h-0">
+                <App />
+              </div>
+            </div>
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    return;
+  }
+
   const publicAgentId = parsePublicAgentPath(window.location.pathname);
   if (publicAgentId !== null) {
     await loadBrand().then(applyBrand);
@@ -50,8 +108,9 @@ async function main() {
     window.history.replaceState({}, "", routeToPath({ view: "terms" }));
   }
 
-  useStore.getState().hydrateRoute();
   startDraftSync(user.profile.sub);
+
+  useStore.getState().hydrateRoute();
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

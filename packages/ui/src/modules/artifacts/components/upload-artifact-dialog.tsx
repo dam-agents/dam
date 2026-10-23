@@ -14,20 +14,23 @@ import { Select } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/errors";
 
 import { useCreateArtifact } from "../api/mutations.js";
-import { folderDisplayNames } from "../lib/folders.js";
 import { uploadArtifactFile } from "../lib/transfer.js";
 
 interface Props {
   folders: ArtifactFolder[];
+  defaultFolderId?: string;
   onClose: () => void;
 }
 
-export function UploadArtifactDialog({ folders, onClose }: Props) {
-  const folderNames = folderDisplayNames(folders);
+export function UploadArtifactDialog({
+  folders,
+  defaultFolderId,
+  onClose,
+}: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
-  const [folderId, setFolderId] = useState("");
+  const [folderId, setFolderId] = useState(defaultFolderId ?? "");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useCreateArtifact();
@@ -95,7 +98,7 @@ export function UploadArtifactDialog({ folders, onClose }: Props) {
               <option value="">No folder</option>
               {folders.map((folder) => (
                 <option key={folder.id} value={folder.id}>
-                  {folderNames.get(folder.id) ?? folder.name}
+                  {folder.name}
                 </option>
               ))}
             </Select>
