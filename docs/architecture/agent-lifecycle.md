@@ -286,10 +286,11 @@ It is otherwise an ordinary hibernated Agent: the mark self-clears when a delibe
 
 The api-server deletes the Agent's definition — the custom resource before the switch, the row after it — and the rows that belong to it go with it.
 The controller's reconciler tears down the owned gateway StatefulSet, Services, NetworkPolicies and Secret, and asks the VM runner to delete the machine and its disk, from a retrying queue; the [orphan sweep](vm-runner.md#runner-lifecycle) collects what a down runner leaves.
+The anchor is what owns those children once the switch has run, so the delete protocol is the only thing that removes them.
 After the switch the per-Agent children are owned by an anchor ConfigMap (`<agent>-anchor`) instead of by the definition, and the deletion protocol is what keeps the record: the machine, the PVCs and the release-namespace objects go first, the anchor last.
-A failure anywhere in between leaves the anchor, so the delete queue retries it, and the startup anchor pass finds a deletion the controller never saw.
+A failure anywhere in between leaves the anchor, so the delete queue retries it, and the anchor sweep — after its own grace — finds a deletion the controller never saw.
 Sessions are agent-owned files on the machine's disk and disappear with it; an Invocation target's conversation is first copied, best effort and only if the root driver is up, to that root's volume.
-In-flight Runs are owner-refed to that anchor once the switch has run, so Kubernetes garbage-collects them automatically.
+In-flight Runs are gone; nothing else that outlives the Agent is owned by it.
 The api-server owns none of this: it never touches the machine's disk, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
 
 Agent-scoped Postgres rows go with it on any deletion path ([persistence](persistence.md#lifetime)).

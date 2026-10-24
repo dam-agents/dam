@@ -36,6 +36,7 @@ No artifact content or viewer allowlist is lost; Postgres stays the source of tr
 
 **Choosing between Postgres and the K8s API.** Platform state belongs in Postgres.
 The Kubernetes API holds what is rendered from it — the machines, their Services, credentials and policies, and one anchor ConfigMap per Agent whose reference owns those children so a deletion still cascades — and what the cluster itself owns: Events, Leases, and the infrastructure an operator installs.
+The anchor also keeps a deletion's record: it is removed last, after the machine, the PVCs and the release-namespace objects, so a failure leaves something for the delete queue to retry.
 One rule replaced the earlier "a resource belongs on a CRD iff the controller reconciles it", which was right while the state lived there: a resource the controller reconciles is now a database row the controller observes, and putting platform state in the API server is using a shared, cluster-scoped object as a general store — the CRD is one kind for every install in the cluster, so nothing in it separates one install's records from another's.
 It is the same reasoning that keeps api-server-only state off the Kubernetes API, carried the rest of the way.
 This is why schedules live in Postgres, templates never became a CRD, and Agents and budgets are moving there too.

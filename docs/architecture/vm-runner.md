@@ -179,7 +179,7 @@ What the check cannot see is said as a **warning**, logged only and never on an 
 ## Runner lifecycle
 
 **One lock per owner.** An agent's reconcile builds its owner's runner and ensures its machine under the owner's lock, and the orphan sweep takes the same lock before it looks at that runner, so the two never interleave.
-The sweep removes a machine only when a fresh List of the owner's Agents and the controller's cache both fail to name it, and only while the controller's Agent store answers: a feed that is down is no basis for collecting a machine, and the next sweep that reads the fleet decides again.
+The sweep removes a machine only when a fresh List of the owner's Agents and the controller's cache both fail to name it, and only while the controller's Agent store answers: a store that has not answered lately is no basis for collecting a machine, and the next sweep that reads the fleet decides again.
 After the switch that cache and the live List are the store's rows and its change feed, and the per-Agent anchor ConfigMap is the durable record of a deletion the controller did not see.
 A sweep that finds it so only records the time: it goes once no sweep has seen an Agent for it in half an hour, since on a cluster that shares its CRDs the List can read empty for a while, and an Agent's workspace has no backup.
 It removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no Agent and the runner lists no machine.
