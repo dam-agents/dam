@@ -96,40 +96,6 @@ it("caps the count at 9+", () => {
   );
 });
 
-// TEST_SCENARIO: An Agent's configuration keeps a tab of its own beside the chat, so Connections, Channels, Skills and Schedules open without leaving the conversation; each tab shows its own name, above the tabs that belong to every page.
-it("lists the Agent's configuration tabs", () => {
-  const html = renderToStaticMarkup(
-    createElement(
-      TooltipProvider,
-      null,
-      createElement(SidePanelBar, {
-        active: null,
-        hidden: new Set<never>(),
-        onSelect: () => {},
-      }),
-    ),
-  );
-  for (const [tab, label] of [
-    ["connections", "Connections"],
-    ["channels", "Channels"],
-    ["skills", "Skills"],
-    ["schedules", "Schedules"],
-  ] as const) {
-    expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
-    expect(html).toContain(`aria-label="${label}"`);
-  }
-  const order = [
-    "processes",
-    "connections",
-    "channels",
-    "skills",
-    "schedules",
-    "getting-started",
-  ].map((tab) => html.indexOf(`data-testid="side-panel-tab-${tab}"`));
-  expect(order[0]).toBeGreaterThan(-1);
-  expect(order).toEqual([...order].sort((a, b) => a - b));
-});
-
 // TEST_SCENARIO: The tiled rail keeps the Agent's configuration behind one Configure tile, since the Experiment added ten panels; the classic bar, which only ever shows with the experiment off, keeps a button per tab.
 it("puts the configuration behind one Configure tile", () => {
   const tiles = renderToStaticMarkup(
@@ -149,6 +115,7 @@ it("puts the configuration behind one Configure tile", () => {
   expect(tiles).not.toContain('data-testid="side-panel-tab-schedules"');
   expect(tiles).toContain('data-testid="side-panel-tab-artifacts"');
 
+  // UNIT_BOUNDARY_DESCRIPTION: the configuration exists only with the tiled rail, so the classic bar never draws its tabs.
   const classic = renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -161,7 +128,7 @@ it("puts the configuration behind one Configure tile", () => {
     ),
   );
   expect(classic).not.toContain('data-testid="side-panel-configure"');
-  expect(classic).toContain('data-testid="side-panel-tab-schedules"');
+  expect(classic).not.toContain('data-testid="side-panel-tab-schedules"');
 });
 
 // TEST_SCENARIO: With the experiment off, the rail carries no Configure tile at all, so a chat without it looks exactly as before.

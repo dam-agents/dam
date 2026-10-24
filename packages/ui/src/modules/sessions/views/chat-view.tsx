@@ -88,7 +88,10 @@ import {
   useEnvironmentsEnabled,
 } from "../../environments/api/queries.js";
 import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
-import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
+import {
+  environmentsPanelShown,
+  environmentsTabShown,
+} from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
@@ -740,14 +743,20 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    environments:
-      environmentsTabShown({
-        newLayout,
-        enabled: environmentsEnabled,
-        vm: agentView?.vm === true,
-        count: environments.data?.length,
-      }) ||
-      (environments.isLoading && sidePanelTab === "environments"),
+    // UNIT_BOUNDARY_DESCRIPTION: the experiment offers the Environments panel once the agent owns one, and while its access list is open before that; every other shell keeps the tab it had, which waits for neither.
+    environments: rightToolbar
+      ? environmentsPanelShown({
+          enabled: environmentsEnabled,
+          vm: agentView?.vm === true,
+          count: environments.data?.length,
+          open: sidePanelTab === "environments",
+        })
+      : environmentsTabShown({
+          newLayout,
+          enabled: environmentsEnabled,
+          vm: agentView?.vm === true,
+          count: environments.data?.length,
+        }),
     configuration: rightToolbar,
     gettingStarted,
   });

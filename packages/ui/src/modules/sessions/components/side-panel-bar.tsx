@@ -246,14 +246,6 @@ export function SidePanelBar({
           onSelect={props.onSelect}
         />
       )}
-      {!tiles && (
-        <SidePanelTabButtons
-          tabs={SIDE_PANEL_TABS.filter(
-            ({ tab }) => CONFIG_TABS.has(tab) && !hidden.has(tab),
-          )}
-          {...props}
-        />
-      )}
       <div
         className={cn(
           "mt-auto flex flex-col",

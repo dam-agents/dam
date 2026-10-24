@@ -3,6 +3,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
+import { environmentsPanelShown } from "../../modules/environments/lib/environments-tab.js";
 import { createFeaturesSlice } from "../../modules/features/store.js";
 import type { SandboxSection } from "../../modules/platform/lib/routes.js";
 import { createNavigationSlice } from "../../modules/platform/store/navigation.js";
@@ -137,4 +138,20 @@ it("hides every configuration panel with the experiment off", () => {
   }
   // UNIT_BOUNDARY_DESCRIPTION: Environments was a panel of its own before this experiment, so the environments feature, not the toolbar, decides whether it exists.
   expect(off.has("environments")).toBe(false);
+});
+
+// TEST_SCENARIO: the Environments panel is offered once the agent owns one, and the Manage row's access-list link opens it before that; with the feature off or on a container agent it never appears, open or not.
+it("offers the Environments panel only once the agent owns one, or when its access list is opened", () => {
+  const shown = (count: number | undefined, open = false) =>
+    environmentsPanelShown({ enabled: true, vm: true, count, open });
+  expect(shown(1)).toBe(true);
+  expect(shown(0)).toBe(false);
+  expect(shown(0, true)).toBe(true);
+  expect(shown(undefined, true)).toBe(true);
+  expect(
+    environmentsPanelShown({ enabled: false, vm: true, count: 1, open: true }),
+  ).toBe(false);
+  expect(
+    environmentsPanelShown({ enabled: true, vm: false, count: 1, open: true }),
+  ).toBe(false);
 });
