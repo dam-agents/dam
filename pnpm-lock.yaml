@@ -37,7 +37,7 @@ importers:
         version: 8.71.2(eslint@10.12.0(jiti@2.7.0))(typescript@6.0.3)
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
   packages/agent-runtime:
     dependencies:
@@ -104,7 +104,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -428,7 +428,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -486,7 +486,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
   packages/e2e/agents/mock:
     dependencies:
@@ -597,8 +597,8 @@ importers:
         specifier: workspace:*
         version: link:../dev-config
       happy-dom:
-        specifier: ^21.0.1
-        version: 21.0.1
+        specifier: ^21.0.4
+        version: 21.0.4
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -610,7 +610,7 @@ importers:
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
   packages/ui:
     dependencies:
@@ -787,8 +787,8 @@ importers:
         specifier: workspace:*
         version: link:../dev-config
       happy-dom:
-        specifier: ^21.0.1
-        version: 21.0.1
+        specifier: ^21.0.4
+        version: 21.0.4
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -797,7 +797,7 @@ importers:
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
 packages:
 
@@ -4457,8 +4457,8 @@ packages:
     resolution: {integrity: sha512-0sttMUxThNIkCTJq5qI0xXMz5zWqV2u3yG1kR3Sj9OokGIoyRBFjoInK9NyW7x5fH7knj48Roh1gq5xbl0VoDQ==}
     hasBin: true
 
-  happy-dom@21.0.1:
-    resolution: {integrity: sha512-pRBs/u9fhrncyByOl58DMex0R2uAj6ZPKWIjV5j5yNGZBqLw3P6BTRhlc0DD5b/Ht4/6JYTMuE2LJhUWRC6SGw==}
+  happy-dom@21.0.4:
+    resolution: {integrity: sha512-tFm+GaLBgo6o0awHnvHaNoraVo27qJ+2tZEtZ+cIa08hXbeitrxAJajLI05hsUy/2/YTKcUjQYzHe5mCcraLBw==}
     engines: {node: '>=20.0.0'}
 
   has-symbols@1.1.0:
@@ -10090,7 +10090,7 @@ snapshots:
       - encoding
       - supports-color
 
-  happy-dom@21.0.1:
+  happy-dom@21.0.4:
     dependencies:
       '@types/node': 26.6.5
       '@types/whatwg-mimetype': 3.0.2
@@ -12099,7 +12099,7 @@ snapshots:
       tsx: 4.23.15
       yaml: 2.9.0
 
-  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
+  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
@@ -12118,11 +12118,11 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 26.6.5
-      happy-dom: 21.0.1
+      happy-dom: 21.0.4
     transitivePeerDependencies:
       - msw
 
-  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
+  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
@@ -12141,7 +12141,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 26.6.5
-      happy-dom: 21.0.1
+      happy-dom: 21.0.4
     transitivePeerDependencies:
       - msw
 
