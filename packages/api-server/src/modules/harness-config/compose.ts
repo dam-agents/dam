@@ -1,5 +1,6 @@
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
+import type { StoredProfileResolver } from "../profiles/index.js";
 import type {
   DefaultKind,
   HarnessCatalog,
@@ -80,10 +81,11 @@ export function composeHarnessConfigModule(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
+  profiles: StoredProfileResolver;
 }): { service: HarnessConfigService } {
-  const { db, outboxRepo, ...serviceDeps } = deps;
+  const { db, outboxRepo, profiles, ...serviceDeps } = deps;
   const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
-  const pairRepo = createSessionPairRepo(db);
+  const pairRepo = createSessionPairRepo(db, profiles);
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
@@ -106,10 +108,11 @@ export function composeSessionChoicesValidator(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   firePair: FirePair;
+  profiles: StoredProfileResolver;
 }): SessionChoicesValidator {
   return createSessionChoicesValidator({
     catalog: deps.catalog,
-    pairRepo: createSessionPairRepo(deps.db),
+    pairRepo: createSessionPairRepo(deps.db, deps.profiles),
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
     getCapabilities: deps.getCapabilities,
     firePair: deps.firePair,
@@ -127,10 +130,11 @@ export function composeFirePair(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  profiles: StoredProfileResolver;
 }): FirePair {
   const resolver = {
     ...deps,
-    pairRepo: createSessionPairRepo(deps.db),
+    pairRepo: createSessionPairRepo(deps.db, deps.profiles),
   };
   return (agentId, kind, preferred) =>
     resolveFirePair(resolver, agentId, kind, preferred);
@@ -151,9 +155,10 @@ export function composeDefaultConverter(deps: {
   ownerOf: (agentId: string) => Promise<string | undefined>;
   runtimeMutator: RuntimeMutator;
   log: (msg: string) => void;
+  profiles: StoredProfileResolver;
 }): { converter: DefaultConverter; helloSaga: Subscription } {
-  const { db, namespace, ownerOf, runtimeMutator, ...rest } = deps;
-  const pairRepo = createSessionPairRepo(db);
+  const { db, namespace, ownerOf, runtimeMutator, profiles, ...rest } = deps;
+  const pairRepo = createSessionPairRepo(db, profiles);
   const publishDefaults = createSessionDefaultsPublisher({
     db,
     pairRepo,

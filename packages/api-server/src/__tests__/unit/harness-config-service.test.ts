@@ -75,6 +75,10 @@ function makeService(opts?: {
     },
     pairRepo: {
       read: async () => null,
+      readReferences: async () => ({
+        sessionProfile: null,
+        platformSubagentProfile: null,
+      }),
       readSaved: async () => ({ chat: null, channel: null, scheduled: null }),
       write: async (_agentId, _kind, pair) => {
         calls.pairs.push(pair);

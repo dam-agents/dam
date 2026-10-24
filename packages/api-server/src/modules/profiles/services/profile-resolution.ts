@@ -40,6 +40,16 @@ export interface ProfileResolver {
     owner: string;
     agentId?: string;
   }): Promise<ResolvedProfile | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: a reference already stored on an agent row was written by its owner through an owner-scoped write, so resolving it needs only the id and the agent's grants; the row is the authority, not a caller's claim. */
+  resolveStored(input: {
+    profileId: string;
+    agentId: string;
+  }): Promise<ResolvedProfile | null>;
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the shape a reader of stored references needs — the harness-config repository and the schedules repository resolve through it — so neither has to know what a profile is. */
+export interface StoredProfileResolver {
+  resolveStored: ProfileResolver["resolveStored"];
 }
 
 export function createProfileResolver(
@@ -52,6 +62,39 @@ export function createProfileResolver(
       const provider = await resolveProvider(
         deps.repo,
         owner,
+        agentId,
+        profile,
+      );
+      return {
+        profile: {
+          id: profile.id,
+          name: profile.name,
+          harness: profile.harness,
+          providerTemplate: profile.providerTemplate,
+          model: profile.model,
+          settings: profile.settings,
+        },
+        pair: {
+          harness: profile.harness,
+          provider: provider.connectionId,
+          model: profile.model,
+          ...(Object.keys(profile.settings).length > 0 && {
+            settings: profile.settings,
+          }),
+        },
+        grantableProvider: provider.grantable,
+        unavailable:
+          provider.unavailable ??
+          (await checkRuntime(deps, agentId, profile.harness, profile.model)),
+      };
+    },
+
+    async resolveStored({ profileId, agentId }) {
+      const profile = await deps.repo.getById(profileId);
+      if (!profile) return null;
+      const provider = await resolveProvider(
+        deps.repo,
+        profile.owner,
         agentId,
         profile,
       );

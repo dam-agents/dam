@@ -165,7 +165,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
     });
-    const { profiles } = composeProfilesForOwner({
+    const {
+      profiles,
+      resolver: profileResolver,
+      bindDefaultAgentProfile,
+    } = composeProfilesForOwner({
       db,
       owner: user.sub,
       agentBinding: user.agentIds,
@@ -219,6 +223,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       contributionsProgress,
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(connections, harnesses),
+      defaultProfileBinder: { bindDefaultAgentProfile },
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;
@@ -367,6 +372,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
     const { service: harnessConfig } = composeHarnessConfigModule({
       catalog: harnesses,
+      profiles: profileResolver,
       db,
       outboxRepo,
       ownerSub: user.sub,

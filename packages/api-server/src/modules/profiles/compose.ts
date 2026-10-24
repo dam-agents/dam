@@ -9,6 +9,7 @@ import {
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
 import {
   createProfilesService,
+  type BindDefaultAgentProfile,
   type SeededProvider,
 } from "./services/profiles-service.js";
 import { createProfileResolver } from "./services/profile-resolution.js";
@@ -34,18 +35,21 @@ export function composeProfilesForOwner(deps: {
 }): {
   profiles: ReturnType<typeof createProfilesService>;
   resolver: ReturnType<typeof createProfileResolver>;
+  bindDefaultAgentProfile: BindDefaultAgentProfile;
 } {
   const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
-  return {
-    profiles: createProfilesService({
-      repo,
-      owner: deps.owner,
-      ...(deps.agentBinding !== undefined && {
-        agentBinding: deps.agentBinding,
-      }),
-      catalog: deps.catalog,
-      seededProvider: seededProvider(deps.sharedProvider),
+  const profiles = createProfilesService({
+    repo,
+    owner: deps.owner,
+    ...(deps.agentBinding !== undefined && {
+      agentBinding: deps.agentBinding,
     }),
+    catalog: deps.catalog,
+    seededProvider: seededProvider(deps.sharedProvider),
+  });
+  return {
+    profiles,
     resolver: createProfileResolver({ repo }),
+    bindDefaultAgentProfile: profiles.bindDefaultAgentProfile,
   };
 }

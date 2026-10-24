@@ -554,6 +554,16 @@ export function createAgentsService(deps: {
   defaultHarness?: string;
   telemetry?: boolean;
   storageGate?: StorageGatePort;
+  /* UNIT_BOUNDARY_DESCRIPTION: a new Agent starts on its owner's seeded profile
+   * when that profile fits it, instead of waiting for the first-hello
+   * conversion to write a custom default. */
+  defaultProfileBinder?: {
+    bindDefaultAgentProfile(input: {
+      agentId: string;
+      harness: string;
+      grantedConnectionIds: readonly string[];
+    }): Promise<void>;
+  };
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -1271,6 +1281,27 @@ export function createAgentsService(deps: {
 
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
+      }
+
+      if (
+        deps.defaultProfileBinder &&
+        typeof spec.harness === "string" &&
+        input.starterKitDefaultModel === undefined &&
+        input.environmentOf === undefined
+      ) {
+        await deps.defaultProfileBinder
+          .bindDefaultAgentProfile({
+            agentId: infra.id,
+            harness: spec.harness,
+            grantedConnectionIds:
+              (spec.grantedConnectionIds as string[] | undefined) ?? [],
+          })
+          .catch((err: unknown) => {
+            getLogger().warn(
+              { err, agentId: infra.id },
+              "agent create: binding the default profile failed; its first hello converts the default as before",
+            );
+          });
       }
 
       const agent = assembleAgent(

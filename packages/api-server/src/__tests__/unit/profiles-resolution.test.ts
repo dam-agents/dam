@@ -43,6 +43,10 @@ function repo(opts: {
   return {
     list: async () => [],
     get: async () => (opts.profile === undefined ? row() : opts.profile),
+    getById: async () => (opts.profile === undefined ? row() : opts.profile),
+    seeded: async () => null,
+    bindChatProfile: async () => undefined,
+    holdsTemplate: async () => false,
     insert: async () => row(),
     update: async () => null,
     deleteIfUnused: async (): Promise<DeleteOutcome> => ({

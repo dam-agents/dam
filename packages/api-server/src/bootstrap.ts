@@ -379,6 +379,10 @@ import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
+  createProfileResolver,
+  createProfilesRepository,
+} from "./modules/profiles/index.js";
+import {
   composeSatellitesModule,
   createOutcomeDelivery,
   createOutcomeWakeRetry,
@@ -925,9 +929,18 @@ export async function bootstrap() {
     if (!(await runtimeDelivery.contributionsProgress(agentId)).settled)
       await runtimeDelivery.queue.enqueue(agentId);
   };
+  const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
+  /* UNIT_BOUNDARY_DESCRIPTION: one resolver for the whole process, because a
+   * stored reference is resolved on behalf of the row that holds it, not of a
+   * caller: the agent, channel and schedule paths all read through it. */
+  const profileResolver = createProfileResolver({
+    repo: createProfilesRepository(db, subPseudonymizer),
+  });
+
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
+    profiles: profileResolver,
     getCapabilities: async (agentId) =>
       (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
         ?.runtimeCapabilities ?? null,
@@ -1043,8 +1056,6 @@ export async function bootstrap() {
     progress: runtimeDelivery.contributionsProgress,
     retryWorkspaceMutation: runtimeDelivery.retryWorkspaceMutation,
   };
-  const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
-
   const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
@@ -1308,6 +1319,7 @@ export async function bootstrap() {
       db,
       namespace: config.namespace,
       catalog: harnessCatalog,
+      profiles: profileResolver,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
@@ -1901,6 +1913,7 @@ export async function bootstrap() {
     validateSessionChoices: composeSessionChoicesValidator({
       db,
       catalog: harnessCatalog,
+      profiles: profileResolver,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,

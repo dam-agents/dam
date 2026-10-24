@@ -342,6 +342,10 @@ describe("the one-time default conversion", () => {
           channel: null,
           scheduled: null,
         }),
+        readReferences: async () => ({
+          sessionProfile: null,
+          platformSubagentProfile: null,
+        }),
         write: async () => {},
         clear: async () => {},
         writeIfEmpty: async (_id, pair, note) => {

@@ -62,6 +62,19 @@ export type DeleteOutcome =
 export interface ProfilesRepository {
   list(owner: string): Promise<ProfileRow[]>;
   get(owner: string, id: string): Promise<ProfileRow | null>;
+  /** UNIT_BOUNDARY_DESCRIPTION: for resolving a reference that is already stored on a row, where the stored id is the authority and no caller claims ownership. */
+  getById(id: string): Promise<ProfileRow | null>;
+  seeded(owner: string): Promise<ProfileRow | null>;
+  bindChatProfile(
+    owner: string,
+    agentId: string,
+    profileId: string,
+  ): Promise<void>;
+  holdsTemplate(
+    owner: string,
+    connectionIds: readonly string[],
+    templateId: string,
+  ): Promise<boolean>;
   insert(owner: string, profile: ProfileWrite): Promise<ProfileRow>;
   update(
     owner: string,
@@ -149,6 +162,14 @@ export function createProfilesRepository(
         ? []
         : [...binding];
 
+  async function seeded(owner: string): Promise<ProfileRow | null> {
+    const rows = await db
+      .select()
+      .from(profiles)
+      .where(and(eq(profiles.owner, owner), eq(profiles.seed, SEEDED_DEFAULT)));
+    return rows[0] ? rowToProfile(rows[0]) : null;
+  }
+
   async function usageOf(
     executor: Db | DbTx,
     owner: string,
@@ -234,6 +255,13 @@ export function createProfilesRepository(
     },
 
     get: read,
+
+    async getById(id) {
+      const rows = await db.select().from(profiles).where(eq(profiles.id, id));
+      return rows[0] ? rowToProfile(rows[0]) : null;
+    },
+
+    seeded,
 
     async insert(owner, profile) {
       const rows = await db
@@ -372,6 +400,39 @@ export function createProfilesRepository(
           })
           .onConflictDoNothing();
       });
+    },
+
+    /* UNIT_BOUNDARY_DESCRIPTION: a row is bound only when it names neither
+     * shape, so a restored Agent (whose references a deletion cleared) and a
+     * new one take the same path, and a custom pair is never overwritten. */
+    async bindChatProfile(owner, agentId, profileId) {
+      await db
+        .update(agents)
+        .set({ sessionProfile: profileId, sessionPair: null })
+        .where(
+          and(
+            eq(agents.id, agentId),
+            eq(agents.ownerSub, agentOwner(owner)),
+            isNull(agents.sessionProfile),
+            isNull(agents.sessionPair),
+          ),
+        );
+    },
+
+    async holdsTemplate(owner, connectionIds, templateId) {
+      if (connectionIds.length === 0) return false;
+      const rows = await db
+        .select({ id: connections.id })
+        .from(connections)
+        .where(
+          and(
+            eq(connections.owner, owner),
+            inArray(connections.id, [...connectionIds]),
+            eq(connections.templateId, templateId),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
     },
 
     async ownerConnections(owner) {
