@@ -2225,6 +2225,7 @@ export async function bootstrap() {
     spendCeilingsForOperator: spend.ceilingsForOperator,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
+      agentStore: { authority: config.agentStore, db },
       users: {
         subByEmail: (email) => userDirectory.resolveByEmail(email),
         emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),

@@ -150,10 +150,13 @@ The api-server is the sole writer for all of it, and for the per-Agent record be
   The definition's generation advances on exactly the columns the controller renders, and a host or grant change still advances it, as both were spec fields.
   Grants are the boundary: the controller's login writes only its own observation tables and the two reclaim columns of the signals row.
   It reads the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns — and no column it does not render, no other schema, and no other install's database.
-  A change feed carries every write that matters to the controller, which listens on it rather than watching the API server.
+  A change feed carries every write that matters, and the api-server's own cache of the fleet reads it while the custom resources are still authoritative.
 
 The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup, serialized across replicas on a Postgres advisory lock so concurrent boots queue behind one migrator instead of racing the same DDL — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
 Two non-schema steps follow the migrations in the same startup sequence: a privilege reconcile for the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views), and one for the controller's grants, which re-issues them on every start because the role may be created before or after this build's migrations — by the chart on the bundled database, by an operator on an external one.
+
+Before any of that, a component reads one marker ConfigMap — `<release>-agent-store` in the agent namespace — and refuses to start when it names a store the build cannot serve.
+The marker is written by the switch, so a build on the custom resources stops as soon as the authority has moved, and a build on Postgres starts only once the switch has absorbed them.
 
 ### Object store
 
