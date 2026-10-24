@@ -96,6 +96,37 @@ it("caps the count at 9+", () => {
   );
 });
 
+// TEST_SCENARIO: An Agent's configuration keeps a tab of its own beside the chat, so Connections, Channels, Skills and Schedules open without leaving the conversation; each tab shows its own name and is reachable by the keyboard.
+it("lists the Agent's configuration tabs", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  for (const [tab, label] of [
+    ["connections", "Connections"],
+    ["channels", "Channels"],
+    ["skills", "Skills"],
+    ["schedules", "Schedules"],
+  ] as const) {
+    expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
+    expect(html).toContain(`aria-label="${label}"`);
+  }
+  const order = ["processes", "connections", "channels", "skills", "schedules"]
+    .map((tab) => html.indexOf(`data-testid="side-panel-tab-${tab}"`))
+    .concat(html.indexOf("mt-auto"));
+  expect(order.slice(0, 5)).toEqual(
+    [...order.slice(0, 5)].sort((a, b) => a - b),
+  );
+  expect(order[0]).toBeGreaterThan(-1);
+});
+
 // TEST_SCENARIO: The icon bar lists the views by how often users reach for them, Artifacts first.
 it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   const html = renderToStaticMarkup(
@@ -131,6 +162,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           changes: false,
           processesEnabled: true,
           environments: true,
+          configuration: false,
           gettingStarted: true,
         }),
         onSelect: () => {},

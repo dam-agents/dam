@@ -136,6 +136,10 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import {
+  ConfigSidePanel,
+  isConfigPanelTab,
+} from "../components/config-side-panel.js";
+import {
   ContinuedFromPrelude,
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
@@ -286,6 +290,7 @@ export function ChatView() {
   );
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSession = useStore((s) => s.openAgentSession);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
@@ -724,6 +729,7 @@ export function ChatView() {
       enabled: environmentsEnabled,
       vm: agentView?.vm === true,
     }),
+    configuration: rightToolbar,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
@@ -1288,6 +1294,16 @@ export function ChatView() {
               )}
               {activeTab === "environments" && selectedAgent && (
                 <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
+              )}
+              {isConfigPanelTab(activeTab) && selectedAgent && agentView && (
+                <ConfigSidePanel
+                  key={activeTab}
+                  tab={activeTab}
+                  agent={agentView}
+                  agentId={selectedAgent}
+                  focusScheduleId={null}
+                  onResumeSession={(id) => openAgentSession(selectedAgent, id)}
+                />
               )}
             </>
           }

@@ -1,12 +1,16 @@
 import {
   Book,
+  Brainstorm,
   Branch,
   type CarbonIconType,
+  ChatOperational,
   Cloud,
   DocumentAttachment,
+  EventSchedule,
   Folder,
   Gears,
   Notification,
+  Plug,
   Task,
   Wikis,
 } from "@carbon/icons-react";
@@ -46,6 +50,10 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
   { tab: "environments", label: "Environments", icon: Cloud },
+  { tab: "connections", label: "Connections", icon: Plug },
+  { tab: "channels", label: "Channels", icon: ChatOperational },
+  { tab: "skills", label: "Skills", icon: Brainstorm },
+  { tab: "schedules", label: "Schedules", icon: EventSchedule },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];

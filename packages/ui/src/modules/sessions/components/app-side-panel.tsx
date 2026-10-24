@@ -45,6 +45,7 @@ export function AppSidePanelButtons({
           changes: false,
           processesEnabled: false,
           environments: false,
+          configuration: false,
           gettingStarted,
         }),
         withArtifacts,
@@ -85,6 +86,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
     changes: false,
     processesEnabled: false,
     environments: false,
+    configuration: false,
     gettingStarted,
   });
   const activeTab =

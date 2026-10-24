@@ -1,5 +1,5 @@
 import { Add } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
@@ -21,10 +21,12 @@ export function SchedulesPanel({
   agentId,
   header,
   onResumeSession,
+  focusId,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
   onResumeSession: (sessionId: string) => void;
+  focusId?: string | null;
 }) {
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
@@ -37,8 +39,11 @@ export function SchedulesPanel({
   const [pastOpen, setPastOpen] = useState(false);
 
   const [form, setForm] = useState<FormState>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(focusId ?? null);
   const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
+  useEffect(() => {
+    if (focusId) setExpandedId(focusId);
+  }, [focusId]);
 
   const closeForm = () => setForm(null);
 
