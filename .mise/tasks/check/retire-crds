@@ -36,12 +36,15 @@ markers() { # $1 = JSON data of each marker, or - for no marker at all
     return
   fi
   cat >"$WORK/markers.json" <<JSON
-{"items":[{"metadata":{"namespace":"platform","name":"platform-agent-store"},"data":{$1}}]}
+{"items":[{"metadata":{"namespace":"platform-agents","name":"platform-agent-store"},"data":{$1}}]}
 JSON
 }
-deploys() {
-  cat >"$WORK/deployments.json" <<'JSON'
-{"items":[{"metadata":{"namespace":"platform","name":"platform-apiserver"}}]}
+deploys() { # $1 = the namespace the marker lives in, or - for an install with no marker
+  cat >"$WORK/deployments.json" <<JSON
+{"items":[{"metadata":{"namespace":"platform","name":"platform-apiserver","labels":{"app.kubernetes.io/instance":"platform"}},
+  "spec":{"template":{"spec":{"containers":[{"name":"apiserver","env":[
+    {"name":"PLATFORM_AGENT_STORE_MARKER","value":"platform-agent-store"},
+    {"name":"PLATFORM_AGENT_NAMESPACE","value":"platform-agents"}]}]}}}}]}
 JSON
 }
 scenario() { # $1 name, $2 markers json data, $3 crd-exists yes|no, $4 expected exit, $5 expected text

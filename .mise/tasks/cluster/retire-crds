@@ -26,25 +26,27 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-problems=()
-markers=$("$KUBECTL" get configmaps -A -o json |
-  jq -r '.items[] | select(.metadata.name | endswith("-agent-store")) |
-    "\(.metadata.namespace) \(.metadata.name) \(.data.store // "") \(.data["contract-at"] // "")"')
-while read -r namespace name store contracted; do
-  [ -n "${namespace:-}" ] || continue
-  if [ "$contracted" = "" ]; then
-    problems+=("$namespace/$name: store ${store:-unset} with no contract-at, so this install is still on the custom resources or still inside its rollback window")
-  fi
-done <<<"$markers"
+deployments=$("$KUBECTL" get deployments -A -l app.kubernetes.io/component=apiserver -o json)
+markers=$("$KUBECTL" get configmaps -A -o json)
 
-namespaces=$("$KUBECTL" get deployments -A -l app.kubernetes.io/component=apiserver -o json |
-  jq -r '.items[].metadata.namespace' | sort -u)
-while read -r namespace; do
-  [ -n "${namespace:-}" ] || continue
-  if ! grep -q "^$namespace " <<<"$markers"; then
-    problems+=("$namespace: an api-server runs with no Agent store marker, so this install never switched")
+problems=()
+while IFS=$'\x1f' read -r release name namespace store contracted; do
+  [ -n "${release:-}" ] || continue
+  if [ "$name" = "" ]; then
+    problems+=("$release (namespace $namespace): an api-server runs with no Agent store marker, so this install never switched")
+  elif [ "$contracted" = "" ]; then
+    problems+=("$release ($namespace/$name): store ${store:-unset} with no contract-at, so this install is still on the custom resources or still inside its rollback window")
   fi
-done <<<"$namespaces"
+done < <(jq -r --argjson markers "$markers" '
+  .items[] | . as $d
+  | ($d.metadata.namespace) as $ns
+  | ([.spec.template.spec.containers[].env[]? | {key: .name, value: .value}] | from_entries) as $env
+  | ($env.PLATFORM_AGENT_NAMESPACE // $env.NAMESPACE // $ns) as $markerNs
+  | ($env.PLATFORM_AGENT_STORE_MARKER // (($d.metadata.name | sub("-apiserver$"; "")) + "-agent-store")) as $markerName
+  | (first($markers.items[] | select(.metadata.namespace == $markerNs and .metadata.name == $markerName)) // null) as $m
+  | [$d.metadata.labels["app.kubernetes.io/instance"] // $d.metadata.name,
+     (if $m == null then "" else $markerName end), $markerNs,
+     ($m.data.store // ""), ($m.data["contract-at"] // "")] | join("\u001f")' <<<"$deployments")
 
 if [ "${#problems[@]}" -gt 0 ]; then
   echo "retire-crds refuses: every install on the cluster must pass its contract gate first." >&2
@@ -78,7 +80,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   digest=$(shasum -a 256 "$BACKUP" | cut -d' ' -f1)
 fi
-echo "backed up $count custom resource(s) across $(wc -w <<<"$namespaces") install namespace(s) to $BACKUP (sha256 $digest)"
+echo "backed up $count custom resource(s) to $BACKUP (sha256 $digest)"
 
 "$KUBECTL" delete crd agents.agent-platform.ai userbudgets.agent-platform.ai --ignore-not-found
 echo "the CRDs are retired. Every install reads Postgres; read the rows with \`agent-store-cli export-crds\`."

@@ -999,14 +999,19 @@ echo "Installing/upgrading Platform chart..."
 # this single-env local cluster the freeze has no value, so apply them directly.
 # The explicit Established wait keeps the helm install below race-free even if
 # the chart ever grows a CR instance (today it deliberately ships none).
-kubectl apply --server-side --force-conflicts -f helm/crds/
-# A CRD read before the apiserver writes its first status has no conditions
-# list, and kubectl wait fails on it at once instead of waiting — retry that.
-for attempt in 1 2 3 4 5; do
-  kubectl wait --for=condition=Established --timeout=60s -f helm/crds/ && break
-  [ "$attempt" -lt 5 ] || exit 1
-  sleep 2
-done
+# A cluster that ran `cluster:retire-crds` keeps its kinds retired: set
+# PLATFORM_CRDS_RETIRED=1 for every later install or upgrade there until the
+# chart stops shipping crds/ (an upgrade must not resurrect a retired kind).
+if [ "${PLATFORM_CRDS_RETIRED:-}" != 1 ]; then
+  kubectl apply --server-side --force-conflicts -f helm/crds/
+  # A CRD read before the apiserver writes its first status has no conditions
+  # list, and kubectl wait fails on it at once instead of waiting — retry that.
+  for attempt in 1 2 3 4 5; do
+    kubectl wait --for=condition=Established --timeout=60s -f helm/crds/ && break
+    [ "$attempt" -lt 5 ] || exit 1
+    sleep 2
+  done
+fi
 
 # ClickStack operators + CRDs — installed out-of-band (Helm won't upgrade crds/), gated on
 # CLICKSTACK=1; when set, also enable the clickstack workload below. Operator images from
@@ -1068,7 +1073,12 @@ fi
 # --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
 # object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
 # the upgrade with an ownership conflict. The chart is the source of truth here.
-helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+# An existing release upgrades without touching the chart's crds/ (a dam-ops
+# HelmRelease says upgrade.crds: Skip for the same reason), so a chart upgrade
+# cannot undo a retirement; a fresh install still gets them.
+CRD_ARGS=()
+if helm status platform >/dev/null 2>&1; then CRD_ARGS+=(--skip-crds); fi
+helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}" "${CRD_ARGS[@]}"
 
 e2e_mark "chart applied"
 if [ -n "${AGENT_LOAD_PID:-}" ]; then

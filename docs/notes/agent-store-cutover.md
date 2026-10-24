@@ -223,6 +223,9 @@ Only after every install is past its window, in the same order dev, staging, pro
    The same script is mirrored into dam-ops as `retire-crds.sh`, where a prod cluster runs it with `KUBECTL=` pointing at that cluster.
    No install's chart or hook ever deletes a shared CRD.
 
+   After this, nothing may apply the chart's `crds/` again: a dam-ops HelmRelease already sets `upgrade.crds: Skip`, and `mise run cluster:install` takes `PLATFORM_CRDS_RETIRED=1` on a local cluster.
+   A new install on a retired cluster starts on the rows and takes `authority: contract` with `agentStore.contract.emptyArchive: true`.
+
 5. An install created after that point starts on the rows and takes `contract` with `agentStore.contract.emptyArchive: true` (it never absorbed a custom resource, so there is no archive to attest).
 
 What replaces the old operator habits:
