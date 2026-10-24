@@ -13,10 +13,16 @@ metadata:
 spec:
   replicas: {{ .Values.controller.replicas | default 1 }}
   {{- if eq .Values.agentStore.authority "postgres" }}
-  # The switch recreates: the old controller is gone before the new one starts,
-  # so two controllers never read the store the absorb is filling.
+  # The switch takes the old controller down before it starts the new one (no
+  # surge). Recreate itself cannot replace an install's Deployment whose
+  # strategy the API server defaulted, so no-surge is how the same ordering is
+  # reached declaratively; the Lease and the api-server's barrier are what
+  # still keep two controllers from acting on the same store.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   {{- end }}
   selector:
     matchLabels:

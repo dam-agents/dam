@@ -9,7 +9,7 @@ import {
   sql,
 } from "db";
 import * as k8s from "@kubernetes/client-node";
-import { loadConfig } from "./config.js";
+
 import { configureLogger, getLogger } from "./core/logger.js";
 import { securityLog } from "./core/security-log.js";
 import {
@@ -271,8 +271,42 @@ const isAnchorOrAgent = (ref: k8s.V1OwnerReference): boolean =>
   ref.kind === "Agent" ||
   (ref.kind === "ConfigMap" && ref.name.endsWith("-anchor"));
 
+const env = (name: string): string | undefined => {
+  const value = process.env[name];
+  return value === undefined || value === "" ? undefined : value;
+};
+
+const expandEnvRefs = (value: string): string =>
+  value.replace(/\$\(([A-Z0-9_]+)\)/gu, (_, name: string) => {
+    const resolved = process.env[name];
+    if (resolved === undefined || resolved === "")
+      throw new Error(
+        `the connection string names $(${name}), which the environment does not carry`,
+      );
+    return resolved;
+  });
+
 const main = async (): Promise<void> => {
-  const config = loadConfig();
+  const config = {
+    databaseUrl: expandEnvRefs(
+      env("DATABASE_URL") ??
+        (() => {
+          throw new Error("DATABASE_URL must be set");
+        })(),
+    ),
+    databaseCaCertPath: env("DATABASE_CA_CERT_PATH"),
+    namespace: env("NAMESPACE") ?? "platform-agents",
+    releaseName:
+      env("PLATFORM_RELEASE_NAME") ??
+      (() => {
+        throw new Error("PLATFORM_RELEASE_NAME must be set");
+      })(),
+    agentStoreMarker: env("PLATFORM_AGENT_STORE_MARKER"),
+    agentStoreFrozen: env("PLATFORM_AGENT_STORE_FROZEN") === "true",
+    agentStoreBackupRecipient: env("AGENT_STORE_BACKUP_RECIPIENT"),
+    logLevel: (env("LOG_LEVEL") ?? "info") as
+      "error" | "warn" | "info" | "debug",
+  };
   configureLogger({ level: config.logLevel, base: { command } });
   const log = getLogger();
   const { db } = createDb(config.databaseUrl, {
@@ -361,24 +395,28 @@ const main = async (): Promise<void> => {
         };
       };
       const before = await previewOnce();
-      for (const refusal of before.preview.connectionGrants.onlyInDatabase) {
-        const desired = [
-          ...(before.byAgent.get(refusal.id) ?? new Set()),
-        ].sort();
+      const mismatched = new Map(
+        [
+          ...before.preview.connectionGrants.onlyInResource,
+          ...before.preview.connectionGrants.onlyInDatabase,
+        ].map((one) => [one.id, one.reason]),
+      );
+      for (const [id, reason] of mismatched) {
+        const desired = [...(before.byAgent.get(id) ?? new Set())].sort();
         process.stderr.write(
-          `${dryRun ? "would re-grant" : "re-granting"} ${refusal.id}: ${desired.join(", ") || "(nothing)"}\n`,
+          `${dryRun ? "would re-grant" : "re-granting"} ${id}: ${desired.join(", ") || "(nothing)"}\n`,
         );
         if (dryRun) continue;
-        await client.patchCustomObject(AGENTS_PLURAL, refusal.id, {
+        await client.patchCustomObject(AGENTS_PLURAL, id, {
           spec: { grantedConnectionIds: desired },
         });
         securityLog("warn", "agentStore.grantFanOutRepair", {
           category: "credential",
           actor: "agent-store-cli",
           actorKind: "system",
-          agentId: refusal.id,
+          agentId: id,
           decision: "allow",
-          reason: `the resource and the database disagreed (${refusal.reason}); the database's set was projected onto the resource`,
+          reason: `the resource and the database disagreed (${reason}); the database's set was projected onto the resource`,
         });
       }
       const after = dryRun ? before : await previewOnce();
@@ -404,10 +442,12 @@ const main = async (): Promise<void> => {
       const byName = new Map(resources.map((one) => [one.name, one]));
 
       const existingAgents = await client.listCustomObjects(AGENTS_PLURAL);
+      const existingBudgets =
+        await client.listCustomObjects(USERBUDGETS_PLURAL);
       for (const resource of resources) {
-        const exists = existingAgents.some(
-          (one) => one.metadata?.name === resource.name,
-        );
+        const exists = (
+          resource.kind === "Agent" ? existingAgents : existingBudgets
+        ).some((one) => one.metadata?.name === resource.name);
         process.stderr.write(
           `${exists ? "updating" : "creating"} ${resource.kind} ${resource.name}\n`,
         );
@@ -489,7 +529,7 @@ const main = async (): Promise<void> => {
         if (resource.kind !== "Agent") continue;
         const anchor = `${resource.name}-anchor`;
         process.stderr.write(
-          `deleting the anchor ${anchor}, orphaning nothing\n`,
+          `${dryRun ? "would delete" : "deleting"} the anchor ${anchor}, orphaning nothing\n`,
         );
         if (dryRun) continue;
         try {
@@ -503,7 +543,7 @@ const main = async (): Promise<void> => {
         }
       }
 
-      for (const resource of resources) {
+      for (const resource of dryRun ? [] : resources) {
         if (resource.kind !== "Agent") continue;
         const labelSelector = `${LABEL_AGENT_REF}=${resource.name}`;
         for (const kind of CHILD_KINDS) {

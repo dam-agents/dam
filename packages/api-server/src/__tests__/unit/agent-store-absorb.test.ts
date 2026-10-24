@@ -131,6 +131,31 @@ describe("the switch's archive", () => {
   });
 });
 
+describe("the marks a switch carries", () => {
+  // TEST_SCENARIO: A stop or a disable is stamped when it happened, not when the switch read it, so the rollback restores the moment an operator saw.
+  it("keeps the stamp a stop and a disable carry", () => {
+    const mapped = rowsFromResource(
+      agent("agent-marked", {
+        metadata: {
+          annotations: {
+            "agent-platform.ai/disabled": "2026-10-20T09:00:00Z",
+            "agent-platform.ai/stop-requested": "2026-10-21T09:00:00Z",
+            "agent-platform.ai/last-activity": "2026-10-19T09:00:00Z",
+          },
+        } as unknown as KubeObject["metadata"],
+      }),
+      DEFAULTS,
+      AT,
+    );
+    expect(mapped.rows?.signals.disabledAt?.toISOString()).toBe(
+      "2026-10-20T09:00:00.000Z",
+    );
+    expect(mapped.rows?.signals.stopRequestedAt?.toISOString()).toBe(
+      "2026-10-21T09:00:00.000Z",
+    );
+  });
+});
+
 describe("what stops an absorb", () => {
   // TEST_SCENARIO: A record that would stop existing as the platform reads it blocks the switch and is named; the two that would become no row anyway only get reported. A grant that disagrees, or a secret granted by id the store cannot hold, blocks too.
   it("names every finding that would lose a record or a credential", () => {

@@ -67,10 +67,11 @@ Write the encrypted file and keep it where the key holder can reach it:
 ```sh
 kubectl exec deploy/<release>-apiserver -- \
   node dist/js/agent-store-cli.js export-snapshot --out /tmp/agent-store.age
-kubectl cp <namespace>/<apiserver-pod>:/tmp/agent-store.age ./<install>-agent-store.age
+kubectl exec deploy/<release>-apiserver -- cat /tmp/agent-store.age > ./<install>-agent-store.age
 ```
 
 The command prints the archive's SHA-256 and writes ciphertext, or prints ciphertext to stdout without `--out`.
+The image carries no `tar`, so `kubectl cp` fails; `exec -- cat` is the form that works.
 The plaintext is never printed.
 The file is mandatory before the contract release; `agentStore.contract.backupSha256` carries its digest, and `agent-store-cli contract-check --sha256 <digest>` refuses a mismatch.
 
@@ -82,8 +83,8 @@ A rollback is a restore of the custom resources from the rows, not a restore of 
    Both components exit instead of serving, so nothing writes rows while the exporter runs.
    This is another short outage.
 2. Restore:
-   - `kubectl exec deploy/<release>-apiserver -- node dist/js/agent-store-cli.js rollback --dry-run` first, and read it.
-   - then the same without `--dry-run`.
+   - `node dist/js/agent-store-cli.js rollback --dry-run` first, from a machine with the cluster credentials and a database connection; it prints what it would do and changes nothing.
+   - then the same without `--dry-run`, from a one-off pod or the same machine.
      It writes each row back to a custom resource (new UIDs), deletes the resources whose rows are gone, re-points every child of each Agent to its restored custom resource, deletes the anchors with orphan propagation, verifies that no child still references an anchor, clears the rows and the absorb stamp, and deletes the marker.
      It refuses unless the components are frozen, and it refuses while any child still names an anchor.
 3. Pin the previous (expand) release and clear `agentStore.frozen`.

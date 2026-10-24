@@ -69,6 +69,7 @@ spec:
   # exists only in rows.
   strategy:
     type: Recreate
+    rollingUpdate: null
   {{- else }}
   strategy:
     type: RollingUpdate

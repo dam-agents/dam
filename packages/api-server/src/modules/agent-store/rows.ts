@@ -476,8 +476,11 @@ export function rowsFromResource(
   );
 
   const lastActivityAt = parseTime(annotations[LAST_ACTIVITY_KEY]);
-  const flaggedAt = (flag: string | undefined) =>
-    flag ? (lastActivityAt ?? new Date(switchedAt)) : null;
+  // UNIT_BOUNDARY_DESCRIPTION: the stop and disable marks carry their own stamp; a resource written before they did carries a bare flag, which is dated from the last activity or the switch rather than invented as now.
+  const flaggedAt = (flag: string | undefined) => {
+    if (!flag) return null;
+    return parseTime(flag) ?? lastActivityAt ?? new Date(switchedAt);
+  };
 
   return {
     id,

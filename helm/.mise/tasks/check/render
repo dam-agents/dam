@@ -548,12 +548,14 @@ jq -e '.["apiserver"].PLATFORM_AGENT_STORE == "postgres"
   and .["controller"].PLATFORM_DATABASE_URL != null
   and .["apiserver"].PLATFORM_AGENT_STORE_FROZEN == "false"' <<<"$switched" >/dev/null ||
   { echo "the switch render does not run both components on the rows, or not in its unfrozen state: $switched" >&2; exit 1; }
-# Both Deployments recreate in the switch: a rolling overlap would leave an old
-# writer acting on a fleet that exists only in rows.
-strategies=$(helm template platform . "${COMMON[@]}"   --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true |
-  yq -o=json 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" == "apiserver" or .metadata.labels."app.kubernetes.io/component" == "controller")) | {"component": .metadata.labels."app.kubernetes.io/component", "type": .spec.strategy.type}' | jq -s 'map({(.component): .type}) | add')
-jq -e '.["apiserver"] == "Recreate" and .["controller"] == "Recreate"' <<<"$strategies" >/dev/null ||
-  { echo "the switch render does not recreate both Deployments: $strategies" >&2; exit 1; }
+# The switch takes every old writer down before the new ones start: the
+# api-server recreates, and the controller rolls with no surge (Recreate cannot
+# replace a Deployment whose strategy the API server defaulted).
+strategies=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true |
+  yq -o=json 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" == "apiserver" or .metadata.labels."app.kubernetes.io/component" == "controller")) | {"component": .metadata.labels."app.kubernetes.io/component", "type": .spec.strategy.type, "surge": .spec.strategy.rollingUpdate.maxSurge}' | jq -s 'map({(.component): {type: .type, surge: .surge}}) | add')
+jq -e '.["apiserver"].type == "Recreate" and .["controller"].type == "RollingUpdate" and (.["controller"].surge | tostring) == "0"' <<<"$strategies" >/dev/null ||
+  { echo "the switch render does not take every old writer down first: $strategies" >&2; exit 1; }
 frozen=$(store_env --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true --set agentStore.frozen=true)
 jq -e '.["apiserver"].PLATFORM_AGENT_STORE_FROZEN == "true" and .["controller"].PLATFORM_AGENT_STORE_FROZEN == "true"' <<<"$frozen" >/dev/null ||
   { echo "a frozen render does not freeze both components: $frozen" >&2; exit 1; }
