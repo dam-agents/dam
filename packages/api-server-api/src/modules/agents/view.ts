@@ -1,4 +1,4 @@
-import type { Agent } from "./types.js";
+import type { Agent, AgentWithAccess } from "./types.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agents a caller sees when it lists agents:
@@ -72,4 +72,11 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
       ? { onboardingSteps: agent.onboardingSteps }
       : {}),
   };
+}
+
+export function toListedAgentView(
+  { agent, access }: AgentWithAccess,
+  spawnedBy: string | null = null,
+) {
+  return { ...toAgentView(agent, spawnedBy), access };
 }

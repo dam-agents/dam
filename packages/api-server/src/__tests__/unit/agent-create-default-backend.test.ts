@@ -64,6 +64,9 @@ async function createdBackend(
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused<AgentsDeps["editors"]>(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
   });
   await agents.create({
     name: "test-agent",

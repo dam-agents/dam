@@ -311,8 +311,35 @@ export interface RuntimeFleet {
   outdated: RuntimeFleetAgent[];
 }
 
+export type AgentAccess =
+  | { role: "owner"; editors: string[] }
+  | { role: "editor"; ownerEmail: string | null; editors: string[] };
+
+export interface AgentWithAccess {
+  agent: Agent;
+  access: AgentAccess;
+}
+
+export type AgentListScope = "mine" | "all";
+
+export type SetAgentEditorsError =
+  { type: "AgentNotFound" } | { type: "OwnEmail" };
+
+export type SetAgentEditorsResult =
+  { ok: true; value: string[] } | { ok: false; error: SetAgentEditorsError };
+
+export type LeaveAgentError =
+  { type: "AgentNotFound" } | { type: "NotAnEditor" };
+
+export type LeaveAgentResult =
+  { ok: true; value: { name: string } } | { ok: false; error: LeaveAgentError };
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
+  listWithAccess: (scope: AgentListScope) => Promise<AgentWithAccess[]>;
+  getWithAccess: (id: string) => Promise<AgentWithAccess | null>;
+  setEditors: (id: string, editors: string[]) => Promise<SetAgentEditorsResult>;
+  leave: (id: string) => Promise<LeaveAgentResult>;
   runtimeFleet: (agentIds?: readonly string[]) => Promise<RuntimeFleet>;
   get: (id: string) => Promise<Agent | null>;
   backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;

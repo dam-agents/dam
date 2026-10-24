@@ -1,11 +1,17 @@
 import type { PendingRestart } from "agent-runtime-api";
+import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
 import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
-import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
+import {
+  findAgent,
+  useAgents,
+  useIsAgentInaccessible,
+} from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
@@ -23,6 +29,8 @@ import { AgentManagementActions } from "../components/agent-management-actions.j
 import { AgentUpdateRow } from "../components/agent-update-row.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
+import { EditorAgentHome } from "../components/editor-agent-home.js";
+import { PeopleSection } from "../components/people-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import {
   SandboxHomeHeader,
@@ -50,16 +58,35 @@ const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
-  const section = useStore((s) => s.sandboxSection);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsQuery = useAgents();
-  const agent = agentId
-    ? (agentsQuery.data?.list.find((a) => a.id === agentId) ?? null)
-    : null;
+  const agent = agentId ? findAgent(agentsQuery.data, agentId) : null;
 
   const agentInaccessible = useIsAgentInaccessible(agentId);
   usePublicAgentFallback(agentId, agentInaccessible);
+
+  if (!agent) {
+    return (
+      <div>
+        {!agentId && (
+          <p className="text-sm text-muted-foreground">No agent selected.</p>
+        )}
+        {agentId && agentsQuery.data !== undefined && (
+          <p className="text-sm text-muted-foreground">Agent not found.</p>
+        )}
+      </div>
+    );
+  }
+  return match(agent.access.role)
+    .with("owner", () => <OwnerAgentHome key={agent.id} agent={agent} />)
+    .with("editor", () => <EditorAgentHome agent={agent} />)
+    .exhaustive();
+}
+
+function OwnerAgentHome({ agent }: { agent: AgentView }) {
+  const agentId = agent.id;
+  const section = useStore((s) => s.sandboxSection);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSession = useStore((s) => s.openAgentSession);
 
   const display = useResolvedAgentDisplay(agent);
   const newLayout = useNewLayout();
@@ -78,30 +105,18 @@ export function SandboxHomeView() {
   const sectionEntry = SECTIONS.find((e) => e.section === section);
   const SectionPictogram = sectionEntry?.pictogram;
 
-  const header: SectionHeaderSlot = (actions) =>
-    agent && (
-      <SandboxHomeHeader
-        agent={agent}
-        title={sectionEntry?.title ?? ""}
-        description={sectionEntry?.description}
-        pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
-        actions={actions}
-        showUpdate={!(newLayout && section === "setup")}
-      />
-    );
+  const header: SectionHeaderSlot = (actions) => (
+    <SandboxHomeHeader
+      agent={agent}
+      title={sectionEntry?.title ?? ""}
+      description={sectionEntry?.description}
+      pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
+      actions={actions}
+      showUpdate={!(newLayout && section === "setup")}
+    />
+  );
 
-  if (!agent || !display) {
-    return (
-      <div>
-        {!agentId && (
-          <p className="text-sm text-muted-foreground">No agent selected.</p>
-        )}
-        {agentId && agentsQuery.data !== undefined && !agent && (
-          <p className="text-sm text-muted-foreground">Agent not found.</p>
-        )}
-      </div>
-    );
-  }
+  if (!display) return null;
 
   return (
     <>
@@ -123,6 +138,8 @@ export function SandboxHomeView() {
               <SandboxSetupSection agent={agent} />
               <AgentManagementActions agent={agent} display={display} />
             </>
+          ) : section === "people" ? (
+            <PeopleSection agent={agent} />
           ) : section === "providers" ? (
             <SandboxProvidersSection agentId={agent.id} header={header} />
           ) : section === "network" ? (

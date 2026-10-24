@@ -30,10 +30,12 @@ import {
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
+import { SharedAgentIcon } from "../../../agents/components/shared-agent-icon.js";
 import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on-sidebar-open.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
+import { isSharedAgent } from "../../../agents/lib/agent-editors.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
@@ -64,6 +66,7 @@ import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { NewAgentMenu } from "./new-agent-menu.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
+import { SharedAgentNodes } from "./shared-agent-nodes.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
@@ -252,6 +255,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </div>
           )}
         </section>
+        {groupBy === "agents" && <SharedAgentNodes onNavigate={onNavigate} />}
       </div>
       <SettingsFooter onNavigate={onNavigate} />
     </div>
@@ -296,6 +300,7 @@ function AgentNode({
 }) {
   useAutoWakeOnSidebarOpen(agent, expanded);
   const newSessionPage = useStore((s) => current && s.view === "chat");
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const startSession = useStartSession();
   const mood = avatarMood(agent.state, agent);
   const drag = useOrderDrag({
@@ -371,8 +376,19 @@ function AgentNode({
                 TREE_AGENT_NAME_MAX,
               )}
             >
-              <span title={agent.name} className="truncate text-sm font-medium">
-                {agent.name}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span
+                  title={agent.name}
+                  className="min-w-0 truncate text-sm font-medium"
+                >
+                  {agent.name}
+                </span>
+                {isSharedAgent(agent) && (
+                  <SharedAgentIcon
+                    editors={agent.access.editors}
+                    onOpen={go(() => navigateToSandboxHome(agent.id, "people"))}
+                  />
+                )}
               </span>
               <span
                 id={sublineId}

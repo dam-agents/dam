@@ -10,31 +10,39 @@ import {
   agentReadiness,
   untilAgentReady,
 } from "../lib/agent-start.js";
-import { vanishedAgentIds } from "../lib/deleted-agent.js";
+import { departedAgents } from "../lib/deleted-agent.js";
 
 export const agentsKeys = {
   root: ["agents"] as const,
   listWithChannels: () => [...agentsKeys.root, "list-with-channels"] as const,
 };
 
+interface AgentsData {
+  list: readonly AgentView[];
+  shared: readonly AgentView[];
+}
+
 export function useAgents() {
   return useQuery({
     queryKey: agentsKeys.listWithChannels(),
     queryFn: async () => {
-      const [list, availableChannels] = await Promise.all([
-        api.agents.list.query(),
+      const [listed, availableChannels] = await Promise.all([
+        api.agents.list.query({ scope: "all" }),
         api.channels.available.query(),
       ]);
-      const previous = queryClient.getQueryData<{
-        list: readonly AgentView[];
-      }>(agentsKeys.listWithChannels())?.list;
-      for (const id of vanishedAgentIds(previous, list)) {
-        useStore.getState().markAgentDeleted(id);
+      const list = listed.filter((a) => a.access.role === "owner");
+      const shared = listed.filter((a) => a.access.role === "editor");
+      const previous = queryClient.getQueryData<AgentsData>(
+        agentsKeys.listWithChannels(),
+      );
+      const before = previous && [...previous.list, ...previous.shared];
+      for (const { id, notice } of departedAgents(before, listed)) {
+        useStore.getState().markAgentDeparted(id, notice);
         void queryClient.invalidateQueries({
           queryKey: trpc.agents.get.queryKey({ id }),
         });
       }
-      return { list, availableChannels };
+      return { list, shared, availableChannels };
     },
     staleTime: 5000,
     meta: { errorToast: "Can't reach the server — agent list may be stale" },
@@ -46,6 +54,22 @@ const EMPTY_AGENTS: readonly AgentView[] = Object.freeze([]);
 export function useAgentsList(): readonly AgentView[] {
   const { data } = useAgents();
   return data?.list ?? EMPTY_AGENTS;
+}
+
+export function useSharedAgents(): readonly AgentView[] {
+  const { data } = useAgents();
+  return data?.shared ?? EMPTY_AGENTS;
+}
+
+export function findAgent(
+  data: AgentsData | undefined,
+  agentId: string,
+): AgentView | null {
+  return (
+    data?.list.find((a) => a.id === agentId) ??
+    data?.shared.find((a) => a.id === agentId) ??
+    null
+  );
 }
 
 export function useAgentLacksLiveUpdates(agentId: string | null): boolean {

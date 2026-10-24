@@ -121,6 +121,11 @@ export type {
   ChannelConfig,
   RuntimeFleet,
   RuntimeFleetAgent,
+  AgentAccess,
+  AgentWithAccess,
+  AgentListScope,
+  SetAgentEditorsResult,
+  LeaveAgentResult,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
@@ -141,7 +146,12 @@ export {
   isStartRefusal,
   TerminationCode,
 } from "./modules/agents/types.js";
-export { listedAgents, toAgentView } from "./modules/agents/view.js";
+export {
+  listedAgents,
+  toAgentView,
+  toListedAgentView,
+} from "./modules/agents/view.js";
+export { editorEmailOf } from "./modules/agents/editor-email.js";
 export {
   budgetCpuSchema,
   budgetSizeSchema,

@@ -5,7 +5,9 @@ import {
 } from "../../templates/index.js";
 import {
   isProtectedAgentEnvName,
+  type Agent,
   type AgentsService,
+  type AgentWithAccess,
   type AgentCreateInput,
   type EgressPreset,
   type AgentUpdateInput,
@@ -30,8 +32,11 @@ import {
   ChannelType,
 } from "api-server-api";
 import { TRPCError } from "@trpc/server";
+import { match } from "ts-pattern";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import type { AgentEditorsRepository } from "../infrastructure/agent-editors-repository.js";
+import { accessTo, namesOwner } from "../domain/agent-access.js";
 import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import { getLogger } from "../../../core/logger.js";
@@ -634,6 +639,9 @@ export function createAgentsService(deps: {
   readSlackLoopGuardDrops?: (
     slackChannelIds: string[],
   ) => Promise<Map<string, SlackLoopGuardDrops>>;
+  editors: AgentEditorsRepository;
+  editorEmail: string | null;
+  resolveUserEmail: (sub: string) => Promise<string | null>;
 }): AgentsService {
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
@@ -942,73 +950,195 @@ export function createAgentsService(deps: {
     );
   };
 
-  return {
-    async list() {
-      const [infraAgents, channelMap] = await Promise.all([
-        deps.repo.list(deps.owner),
-        deps.listChannelsByOwner(),
+  async function listOwned(): Promise<Agent[]> {
+    const [infraAgents, channelMap] = await Promise.all([
+      deps.repo.list(deps.owner),
+      deps.listChannelsByOwner(),
+    ]);
+
+    const infraIds = new Set(infraAgents.map((a) => a.id));
+    const orphans = [...channelMap.keys()].filter((id) => !infraIds.has(id));
+    if (orphans.length > 0) {
+      securityLog("warn", "agent.channels.orphan_purge", {
+        category: "authz-list",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        detail: { agentIds: orphans },
+      });
+      await deps.deleteChannelsByAgentIds(orphans);
+      for (const id of orphans) {
+        channelMap.delete(id);
+      }
+    }
+
+    const [failuresMap, envMap, channelLabels, checklistMap] =
+      await Promise.all([
+        deps.contributionsProgress
+          .statusMany([...infraIds])
+          .catch(() => new Map<string, ContributionsStatus>()),
+        deps.agentEnvRepo.listMany([...infraIds]),
+        slackChannelNotes([...channelMap.values()]),
+        deps.onboardingChecklists.readMany([...infraIds]),
       ]);
 
-      const infraIds = new Set(infraAgents.map((a) => a.id));
-      const orphans = [...channelMap.keys()].filter((id) => !infraIds.has(id));
-      if (orphans.length > 0) {
-        securityLog("warn", "agent.channels.orphan_purge", {
-          category: "authz-list",
-          actor: deps.owner ?? null,
-          actorKind: "user",
-          detail: { agentIds: orphans },
-        });
-        await deps.deleteChannelsByAgentIds(orphans);
-        for (const id of orphans) {
-          channelMap.delete(id);
-        }
-      }
+    const templateIds = [
+      ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
+    ];
+    const templateImages = new Map<string, string>();
+    await Promise.all(
+      templateIds.map(async (tid) => {
+        const tmpl = await deps.readTemplateSpec(tid);
+        if (tmpl) templateImages.set(tid, tmpl.spec.image);
+      }),
+    );
 
-      const [failuresMap, envMap, channelLabels, checklistMap] =
-        await Promise.all([
-          deps.contributionsProgress
-            .statusMany([...infraIds])
-            .catch(() => new Map<string, ContributionsStatus>()),
-          deps.agentEnvRepo.listMany([...infraIds]),
-          slackChannelNotes([...channelMap.values()]),
-          deps.onboardingChecklists.readMany([...infraIds]),
-        ]);
-
-      const templateIds = [
-        ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
-      ];
-      const templateImages = new Map<string, string>();
-      await Promise.all(
-        templateIds.map(async (tid) => {
-          const tmpl = await deps.readTemplateSpec(tid);
-          if (tmpl) templateImages.set(tid, tmpl.spec.image);
-        }),
+    return infraAgents.map((infra) => {
+      const status = failuresMap.get(infra.id);
+      const templateImage = infra.templateId
+        ? templateImages.get(infra.templateId)
+        : undefined;
+      return assembleAgent(
+        withUserEnv(infra, envMap.get(infra.id) ?? []),
+        withSlackChannelNotes(channelMap.get(infra.id) ?? [], channelLabels),
+        status?.failures ?? [],
+        deps.agentIdleTimeoutMinutes,
+        status?.preparingWorkspace ?? false,
+        templateImage
+          ? templateImageUpdate(
+              infra.spec.image,
+              templateImage,
+              infra.imageUpdateRefused,
+            )
+          : undefined,
+        status?.features ?? runtimeFeaturesOf(null),
+        status?.unsupportedKinds ?? [],
+        status?.workspaceFailures ?? [],
+        checklistMap.get(infra.id),
       );
+    });
+  }
 
-      return infraAgents.map((infra) => {
-        const status = failuresMap.get(infra.id);
-        const templateImage = infra.templateId
-          ? templateImages.get(infra.templateId)
-          : undefined;
-        return assembleAgent(
-          withUserEnv(infra, envMap.get(infra.id) ?? []),
-          withSlackChannelNotes(channelMap.get(infra.id) ?? [], channelLabels),
-          status?.failures ?? [],
-          deps.agentIdleTimeoutMinutes,
-          status?.preparingWorkspace ?? false,
-          templateImage
-            ? templateImageUpdate(
-                infra.spec.image,
-                templateImage,
-                infra.imageUpdateRefused,
-              )
-            : undefined,
-          status?.features ?? runtimeFeaturesOf(null),
-          status?.unsupportedKinds ?? [],
-          status?.workspaceFailures ?? [],
-          checklistMap.get(infra.id),
-        );
+  async function editorAccess(infra: InfraAgent, editors: string[]) {
+    return {
+      role: "editor" as const,
+      ownerEmail: infra.owner
+        ? await deps.resolveUserEmail(infra.owner).catch(() => null)
+        : null,
+      editors,
+    };
+  }
+
+  async function listShared(): Promise<AgentWithAccess[]> {
+    if (deps.editorEmail === null || deps.owner === undefined) return [];
+    const caller = { sub: deps.owner, editorEmail: deps.editorEmail };
+    const shared = await Promise.all(
+      (await deps.editors.agentIdsFor(deps.editorEmail)).map(async (id) => {
+        const infra = await deps.repo.get(id);
+        if (!infra) return [];
+        const editors = await deps.editors.list(id);
+        if (accessTo(infra.owner, editors, caller) !== "editor") return [];
+        const [agent, access] = await Promise.all([
+          project(infra),
+          editorAccess(infra, editors),
+        ]);
+        return [{ agent, access }];
+      }),
+    );
+    return shared.flat();
+  }
+
+  return {
+    list: listOwned,
+
+    async listWithAccess(scope) {
+      const owned = await listOwned();
+      const editors = await deps.editors.listMany(owned.map((a) => a.id));
+      const mine = owned.map((agent) => ({
+        agent,
+        access: {
+          role: "owner" as const,
+          editors: editors.get(agent.id) ?? [],
+        },
+      }));
+      return match(scope)
+        .with("mine", () => mine)
+        .with("all", async () => [...mine, ...(await listShared())])
+        .exhaustive();
+    },
+
+    async getWithAccess(id) {
+      const infra = await deps.repo.get(id);
+      if (!infra) return null;
+      const editors = await deps.editors.list(id);
+      const role =
+        deps.owner === undefined
+          ? "owner"
+          : accessTo(infra.owner, editors, {
+              sub: deps.owner,
+              editorEmail: deps.editorEmail,
+            });
+      if (role === null) return null;
+      const agent = await project(infra);
+      return {
+        agent,
+        access:
+          role === "owner"
+            ? { role, editors }
+            : await editorAccess(infra, editors),
+      };
+    },
+
+    async setEditors(id, emails) {
+      if (!deps.owner || !(await ownsOrDeny(id, "set-editors")))
+        return { ok: false, error: { type: "AgentNotFound" } };
+      const ownerEmail = await deps.resolveUserEmail(deps.owner);
+      if (namesOwner(emails, [ownerEmail, deps.editorEmail]))
+        return { ok: false, error: { type: "OwnEmail" } };
+      const change = await deps.editors.replace(id, emails);
+      securityLog("info", "agent.editors_set", {
+        category: "authz-list",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+        detail: {
+          added: change.added,
+          removed: change.removed,
+          count: change.editors.length,
+        },
       });
+      const changed = [...change.added, ...change.removed];
+      if (changed.length > 0)
+        emit({
+          type: EventType.AgentEditorsChanged,
+          agentId: id,
+          ownerSub: deps.owner,
+          emails: changed,
+        });
+      return { ok: true, value: change.editors };
+    },
+
+    async leave(id) {
+      if (deps.editorEmail === null)
+        return { ok: false, error: { type: "NotAnEditor" } };
+      const infra = await deps.repo.get(id);
+      if (!infra) return { ok: false, error: { type: "AgentNotFound" } };
+      if (!(await deps.editors.remove(id, deps.editorEmail)))
+        return { ok: false, error: { type: "NotAnEditor" } };
+      securityLog("info", "agent.editor_leave", {
+        category: "authz-list",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      emit({
+        type: EventType.AgentEditorsChanged,
+        agentId: id,
+        ...(infra.owner ? { ownerSub: infra.owner } : {}),
+        emails: [deps.editorEmail],
+      });
+      return { ok: true, value: { name: infra.name } };
     },
 
     /**

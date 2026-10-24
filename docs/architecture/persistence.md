@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-22
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -280,6 +280,7 @@ It re-reads the candidate's CR right before reaping, so a row written after its 
 The sweep is what makes a deletion done directly in the cluster, or one the api-server crashed halfway through, end in the same state as an API delete.
 The attention record is trimmed on age as well as on delete: a periodic job removes rows past 90 days, so feed cost tracks recent activity rather than an Agent's whole history.
 Kept on purpose: the usage row (soft-deleted, its runtime and config snapshots cleared so a later Agent under the same name starts clean), library artifacts, the activity log, the session directory (kept so spend stays attributable), and the spend ledger.
+An Agent's Editor List is one of these kinds; its cleanup also tells each removed [Agent Editor](agent-editors.md).
 Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
 
 Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion.

@@ -1,5 +1,5 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType } from "api-server-api";
+import { ChannelType, editorEmailOf } from "api-server-api";
 import {
   composeAgentsModule,
   connectionGrantProvisioner,
@@ -114,6 +114,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     apiKeysModule,
     satellitesBoot,
     liveEvents,
+    userDirectory,
     wakeAgent,
     artifactLibraryFor,
   } = boot;
@@ -182,6 +183,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       resizeGate,
       storageGate,
       owner: user.sub,
+      editorEmail: editorEmailOf(user),
+      resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
       db,
       telegramBinding: telegramBindFlows
         ? {

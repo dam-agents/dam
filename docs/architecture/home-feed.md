@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -209,6 +209,7 @@ The sidebar lists Sessions as they are and reads no dismissals.
 Read state is still **per session, not per person**.
 An Agent currently has a single driving user, so the distinction has no observable effect today; the shared-agent work is what must revisit it.
 The dismissal watermarks are already keyed per user, so that half needs no migration when it does.
+An [Agent Editor](agent-editors.md) gets no Home feed items or unread marks for a Shared Agent yet.
 
 ## Terminal sessions
 

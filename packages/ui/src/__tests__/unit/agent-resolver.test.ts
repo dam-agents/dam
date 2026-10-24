@@ -37,6 +37,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
+  access: { role: "owner", editors: [] },
 });
 
 describe("resolveAgentDisplay", () => {

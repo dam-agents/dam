@@ -11,6 +11,7 @@ import {
   Network_02,
   Robot,
   Slack,
+  Teammates,
   UserInterface,
 } from "@carbon/pictograms-react";
 import { type ReactNode, useEffect, useRef } from "react";
@@ -34,6 +35,13 @@ export const SECTIONS: SectionEntry[] = [
     pictogram: Robot,
     title: "General",
     description: "Use and manage this agent.",
+  },
+  {
+    section: "people",
+    pictogram: Teammates,
+    title: "People",
+    description:
+      "People who can change and use this agent with you. You stay its owner.",
   },
   {
     section: "providers",

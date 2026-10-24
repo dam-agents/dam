@@ -36,6 +36,7 @@ const agent: AgentView = {
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
+  access: { role: "owner", editors: [] },
 };
 
 const slotUnit = { cpuMilli: 1000, memoryMi: 1024 };

@@ -1,4 +1,8 @@
-import type { PromptBlock, ProviderPresetType } from "api-server-api";
+import type {
+  AgentAccess,
+  PromptBlock,
+  ProviderPresetType,
+} from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
@@ -200,6 +204,7 @@ export interface AgentView {
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
   kind?: AgentKind;
+  access: AgentAccess;
 }
 
 export type RuntimeMigrationPhase =

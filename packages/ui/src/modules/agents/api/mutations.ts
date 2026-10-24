@@ -18,6 +18,7 @@ import {
 import { trackImport } from "../../files/track-import.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import { seedEmptySessionList } from "../../sessions/api/queries.js";
+import { AGENT_DELETED_NOTICE } from "../lib/deleted-agent.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
@@ -63,12 +64,13 @@ export function useCreateAgent() {
         egressPreset,
         connectionIds: appConnectionIds,
       });
-      queryClient.setQueryData<{ list: readonly AgentView[] }>(
-        agentsKeys.listWithChannels(),
-        (prev) =>
-          prev && !prev.list.some((a) => a.id === agent.id)
-            ? { ...prev, list: [...prev.list, agent] }
-            : prev,
+      queryClient.setQueryData<{
+        list: readonly AgentView[];
+        shared: readonly AgentView[];
+      }>(agentsKeys.listWithChannels(), (prev) =>
+        prev && !prev.list.some((a) => a.id === agent.id)
+          ? { ...prev, list: [...prev.list, agent] }
+          : prev,
       );
       for (const queryKey of invalidatesAgentsAndBudget.invalidates)
         void queryClient.invalidateQueries({ queryKey });
@@ -120,7 +122,7 @@ export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
     onMutate: (variables): undefined => {
-      useStore.getState().markAgentDeleted(variables.id);
+      useStore.getState().markAgentDeparted(variables.id, AGENT_DELETED_NOTICE);
     },
     onSuccess: (_data, variables) => {
       useStore.getState().clearAgentDrafts(variables.id);
@@ -269,6 +271,30 @@ export function useSetAgentConnections() {
         trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't update app connections",
+    },
+  });
+}
+
+export function useSetAgentEditors() {
+  return useMutation({
+    ...trpc.agents.setEditors.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Couldn't save the editors",
+    },
+  });
+}
+
+export function useLeaveAgent() {
+  return useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const left = await api.agents.leave.mutate({ id });
+      useStore.getState().markAgentDeparted(id, `You left ${left.name}.`);
+      return left;
+    },
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Couldn't leave the agent",
     },
   });
 }

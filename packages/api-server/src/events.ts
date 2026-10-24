@@ -19,6 +19,7 @@ export enum EventType {
   AgentCreated = "AgentCreated",
   AgentUpdated = "AgentUpdated",
   AgentDeleted = "AgentDeleted",
+  AgentEditorsChanged = "AgentEditorsChanged",
   AgentRestarted = "AgentRestarted",
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
@@ -101,6 +102,13 @@ export type AgentDeleted = {
   type: EventType.AgentDeleted;
   agentId: string;
   ownerSub?: string;
+};
+
+export type AgentEditorsChanged = {
+  type: EventType.AgentEditorsChanged;
+  agentId: string;
+  ownerSub?: string;
+  emails: string[];
 };
 
 export type AgentRestarted = {
@@ -533,6 +541,7 @@ export type DomainEvent =
   | AgentCreated
   | AgentUpdated
   | AgentDeleted
+  | AgentEditorsChanged
   | AgentRestarted
   | AgentWoken
   | SlackConnected

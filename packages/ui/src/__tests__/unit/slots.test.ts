@@ -55,6 +55,7 @@ const agent = (
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
+  access: { role: "owner", editors: [] },
 });
 
 describe("slots", () => {

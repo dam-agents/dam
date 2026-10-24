@@ -6,9 +6,11 @@ import { cn } from "@/lib/utils";
 import type { AgentView } from "../../../types.js";
 import { useAutoWakeOnSidebarOpen } from "../hooks/use-auto-wake-on-sidebar-open.js";
 import { useOrderDrag } from "../hooks/use-order-drag.js";
+import { isSharedAgent } from "../lib/agent-editors.js";
 import type { OrderDrop } from "../lib/sidebar-order.js";
 import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
 import { OrderDropIndicator } from "./order-drop-indicator.js";
+import { SharedAgentIcon } from "./shared-agent-icon.js";
 
 interface Props {
   agent: AgentView;
@@ -20,6 +22,7 @@ interface Props {
   onMove: (agentId: string, drop: OrderDrop) => void;
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
+  onOpenPeople: () => void;
   actions: ReactNode;
   actionCount: 3 | 4;
   filter: ReactNode;
@@ -47,6 +50,7 @@ export function SidebarAgentRow({
   onMove,
   onStep,
   onSelect,
+  onOpenPeople,
   actions,
   actionCount,
   filter,
@@ -96,11 +100,19 @@ export function SidebarAgentRow({
             mood={mood}
             className="shrink-0"
           />
-          <span
-            title={agent.name}
-            className="min-w-0 flex-1 truncate text-sm font-medium"
-          >
-            {agent.name}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span
+              title={agent.name}
+              className="min-w-0 truncate text-sm font-medium"
+            >
+              {agent.name}
+            </span>
+            {isSharedAgent(agent) && (
+              <SharedAgentIcon
+                editors={agent.access.editors}
+                onOpen={onOpenPeople}
+              />
+            )}
           </span>
           {unread && (
             <>

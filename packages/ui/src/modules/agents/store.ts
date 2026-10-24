@@ -22,8 +22,8 @@ export interface AgentsSlice {
   unreachableAgents: ReadonlySet<string>;
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
-  deletedAgents: ReadonlySet<string>;
-  markAgentDeleted: (id: string) => void;
+  departedAgents: ReadonlyMap<string, string>;
+  markAgentDeparted: (id: string, notice: string) => void;
   selectAgent: (id: string) => void;
   openAgentSession: (
     agentId: string,
@@ -76,13 +76,13 @@ export const createAgentsSlice: StateCreator<
       return { unreachableAgents: next };
     }),
 
-  deletedAgents: new Set(),
-  markAgentDeleted: (id) =>
+  departedAgents: new Map(),
+  markAgentDeparted: (id, notice) =>
     set((s) => {
-      if (s.deletedAgents.has(id)) return {};
-      const next = new Set(s.deletedAgents);
-      next.add(id);
-      return { deletedAgents: next };
+      if (s.departedAgents.has(id)) return {};
+      const next = new Map(s.departedAgents);
+      next.set(id, notice);
+      return { departedAgents: next };
     }),
 
   selectAgent: (id) =>
