@@ -314,7 +314,7 @@ dam connection scope github --clear
 A flag you leave out keeps that part of the scope; `--clear` removes the limit.
 A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
 `dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
-A GitHub App is checked again with a token minted for the new scope: read the `check` in the `--json` output of `dam connection scope … --repositories/--permissions`.
+A GitHub App is checked again with a token minted for the new scope: after a change with `--repositories` or `--permissions`, read the `check` in the `--json` output.
 
 When a DAM agent's calls with a connection fail, for example GitHub answers `401 Bad credentials`, check the stored credential before you look elsewhere:
 
