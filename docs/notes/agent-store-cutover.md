@@ -1,6 +1,6 @@
 # Agent store cutover and rollback
 
-Last verified: 2026-10-25
+Last verified: 2026-10-24
 
 This is the operator's procedure for moving Agents and user budgets out of the Kubernetes API and into Postgres, and for rolling one install back inside its window.
 [persistence](../architecture/persistence.md) describes what the components do; this page is what a person does.
