@@ -61,10 +61,11 @@ spec:
               value: {{ include "platform.agentStore.markerName" . | quote }}
             - name: PLATFORM_AGENT_STORE_FROZEN
               value: {{ .Values.agentStore.frozen | quote }}
-            {{- if eq .Values.agentStore.authority "postgres" }}
+            {{- if ne .Values.agentStore.authority "crd" }}
             # The controller's own login, on the api-server's database: it
             # reads definitions and writes observations, and nothing else. The
-            # credential is rendered only by a release that reads Postgres.
+            # credential is rendered only by a release that reads Postgres —
+            # the switch and the contract release both do.
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -246,13 +247,13 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.controller.resources | nindent 12 }}
-          {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}
+          {{- if and (ne .Values.agentStore.authority "crd") .Values.apiServer.db.caCert }}
           volumeMounts:
             - name: pg-ca
               mountPath: /etc/platform/pg-ca
               readOnly: true
           {{- end }}
-      {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}
+      {{- if and (ne .Values.agentStore.authority "crd") .Values.apiServer.db.caCert }}
       volumes:
         - name: pg-ca
           configMap:

@@ -57,6 +57,17 @@ export const isConflict = (err: unknown) =>
 const isDnsSubdomainName = (name: string) =>
   /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/.test(name);
 
+export async function listCustomObjectsOrEmpty<T>(
+  list: () => Promise<T[]>,
+): Promise<T[]> {
+  try {
+    return await list();
+  } catch (err) {
+    if (is404(err)) return [];
+    throw err;
+  }
+}
+
 let cachedKubeConfig: k8s.KubeConfig | undefined;
 
 function loadKubeConfig(): k8s.KubeConfig {
@@ -140,11 +151,13 @@ export function createK8sClient(
     },
 
     async listCustomObjects(plural, labelSelector) {
-      const res = await co.listNamespacedCustomObject({
-        ...crArgs(plural),
-        ...(labelSelector ? { labelSelector } : {}),
+      return listCustomObjectsOrEmpty(async () => {
+        const res = await co.listNamespacedCustomObject({
+          ...crArgs(plural),
+          ...(labelSelector ? { labelSelector } : {}),
+        });
+        return ((res as { items?: KubeObject[] }).items ?? []) as KubeObject[];
       });
-      return ((res as { items?: KubeObject[] }).items ?? []) as KubeObject[];
     },
 
     async createCustomObject(plural, body) {

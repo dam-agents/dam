@@ -18,7 +18,7 @@ import {
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
 import { createControlAgentsRepository } from "../agent-store/agents-repository.js";
-import type { AgentStoreMode } from "../agent-store/fence.js";
+import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
@@ -102,13 +102,12 @@ export function composeAgentsModule(deps: {
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo =
-    deps.agentStore.authority === "postgres"
-      ? createControlAgentsRepository(
-          deps.db,
-          deps.agentStateCache as RunningAgentStateCache,
-        )
-      : createAgentsRepository(k8s, deps.agentStateCache);
+  const repo = readsRows(deps.agentStore.authority)
+    ? createControlAgentsRepository(
+        deps.db,
+        deps.agentStateCache as RunningAgentStateCache,
+      )
+    : createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);

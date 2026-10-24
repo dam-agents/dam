@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createDb } from "db";
 import {
   controlAgentStore,
+  controlAgentStoreExports,
   controlAgents,
   controlCrdSnapshots,
   controlUserBudgets,
@@ -40,7 +41,6 @@ import {
   type RestoreBody,
 } from "./modules/agent-store/rollback.js";
 import type { InstallIdentity } from "./modules/agent-store/absorb.js";
-import { orderDocuments } from "./modules/agent-store/snapshot.js";
 import { readAgentRows } from "./modules/agent-store/control-read.js";
 import {
   archiveOf,
@@ -53,14 +53,27 @@ import {
   previewAgentStore,
   readConnectionGrants,
 } from "./modules/agent-store/preview.js";
+import {
+  contractVerdict,
+  deleteCrsRefusal,
+  deleteCustomResources,
+  describeContract,
+  readArchive,
+  readContractFacts,
+} from "./modules/agent-store/contract.js";
+import { createObjectStoreReader } from "./modules/agent-store/object-store.js";
+import { CONTRACT_MARKER_KEY } from "./modules/agent-store/fence.js";
 
 const usage = `usage: agent-store-cli <command>
 
   export-snapshot [--recipient <age public key>] [--force-recipient] [--out <file>]
       Write the switch's archive, encrypted to the install's
       agentStore.backup.recipient (or --recipient), from the database's snapshot
-      table. Prints ciphertext. A --recipient that differs from the chart's is
-      refused unless --force-recipient is given.
+      table, and record the export (recipient, both digests, time) in the
+      database. Prints ciphertext, or writes it to --out and prints the
+      plaintext and ciphertext SHA-256. The ciphertext digest is the value the
+      contract release must be given. A --recipient that differs from the
+      chart's is refused unless --force-recipient is given.
 
   export-crds [--out <directory>]
       Write the custom resources the rows currently describe, for inspection
@@ -77,8 +90,20 @@ const usage = `usage: agent-store-cli <command>
       controller holding the Lease. A rerun after a finished rollback does
       nothing.
 
-  contract-check --sha256 <hex>
-      Refuse unless the install's archive is the one the operator attests.`;
+  contract-check [--sha256 <hex>] [--now <iso>]
+      The gate the contract release arms: refuse unless the install was switched,
+      its rollback window has closed, its archive and the object-store copy read
+      back to the digest the absorb recorded, an operator export is recorded for
+      this install, and --sha256 is that export's ciphertext digest.
+      --sha256 defaults to agentStore.contract.backupSha256; --now moves the
+      clock on a rehearsal cluster.
+
+  delete-crs [--dry-run] [--rehearsal]
+      Delete this install's Agent and UserBudget custom resources, orphaning
+      their children (the anchors own them). Refuses unless the install's
+      contract gate passed on the real clock (--rehearsal accepts a rehearsal
+      clock), so the archive is attested first. Idempotent: a second run, or a
+      cluster whose CRDs are already gone, deletes nothing.`;
 
 const args = process.argv.slice(2);
 const command = args[0] ?? "";
@@ -372,9 +397,11 @@ const main = async (): Promise<void> => {
   const config = {
     databaseUrl: expandEnvRefs(
       env("DATABASE_URL") ??
-        (() => {
-          throw new Error("DATABASE_URL must be set");
-        })(),
+        (command === "delete-crs"
+          ? "postgresql://unused@127.0.0.1:1/unused"
+          : (() => {
+              throw new Error("DATABASE_URL must be set");
+            })()),
     ),
     databaseCaCertPath: env("DATABASE_CA_CERT_PATH"),
     namespace: env("NAMESPACE") ?? "platform-agents",
@@ -387,6 +414,26 @@ const main = async (): Promise<void> => {
     agentStoreMarker: env("PLATFORM_AGENT_STORE_MARKER"),
     agentStoreFrozen: env("PLATFORM_AGENT_STORE_FROZEN") === "true",
     agentStoreBackupRecipient: env("AGENT_STORE_BACKUP_RECIPIENT"),
+    agentStoreContractSha256: env("AGENT_STORE_CONTRACT_BACKUP_SHA256"),
+    agentStoreContractEmptyArchive:
+      env("AGENT_STORE_CONTRACT_EMPTY_ARCHIVE") === "true",
+    objectStorage: env("OBJECT_STORAGE_ENDPOINT")
+      ? {
+          endpoint: expandEnvRefs(env("OBJECT_STORAGE_ENDPOINT")!),
+          region: env("OBJECT_STORAGE_REGION") ?? "us-east-1",
+          bucket: env("OBJECT_STORAGE_BUCKET") ?? "platform-artifacts",
+          forcePathStyle:
+            (env("OBJECT_STORAGE_FORCE_PATH_STYLE") ?? "true") !== "false",
+          credentials:
+            env("OBJECT_STORAGE_ACCESS_KEY_ID") !== undefined &&
+            env("OBJECT_STORAGE_SECRET_ACCESS_KEY") !== undefined
+              ? {
+                  accessKeyId: env("OBJECT_STORAGE_ACCESS_KEY_ID")!,
+                  secretAccessKey: env("OBJECT_STORAGE_SECRET_ACCESS_KEY")!,
+                }
+              : null,
+        }
+      : null,
     logLevel: (env("LOG_LEVEL") ?? "info") as
       "error" | "warn" | "info" | "debug",
   };
@@ -474,29 +521,22 @@ const main = async (): Promise<void> => {
           "export-snapshot needs agentStore.backup.recipient (AGENT_STORE_BACKUP_RECIPIENT) or --recipient <age public key>",
         );
       process.stderr.write(`encrypting to ${recipient}\n`);
-      const captured = await db
-        .select({ at: controlCrdSnapshots.capturedAt })
-        .from(controlCrdSnapshots)
-        .orderBy(sql`${controlCrdSnapshots.capturedAt} DESC`)
-        .limit(1);
-      const at = captured[0]?.at;
-      if (!at) throw new Error("the database holds no absorb snapshot");
-      const docs = orderDocuments(
-        await db
-          .select()
-          .from(controlCrdSnapshots)
-          .where(eq(controlCrdSnapshots.capturedAt, at)),
-      );
-      const archive = Buffer.from(
-        docs.map((doc) => doc.yaml).join("---\n"),
-        "utf8",
-      );
-      const ciphertext = await encryptToRecipient(archive, recipient);
+      const snapshot = await readArchive(db);
+      if (snapshot === null)
+        throw new Error("the database holds no absorb snapshot");
+      const plaintext = Buffer.from(snapshot.yaml, "utf8");
+      const ciphertext = await encryptToRecipient(plaintext, recipient);
+      const recorded = {
+        recipient,
+        plaintextSha256: sha256Of(plaintext),
+        ciphertextSha256: sha256Of(ciphertext),
+      };
+      await db.insert(controlAgentStoreExports).values(recorded);
       const out = flag("--out");
       if (out) {
         writeFileSync(out, ciphertext, { mode: 0o600 });
         process.stderr.write(
-          `wrote ${docs.length} document(s), sha256 ${sha256Of(archive)}, to ${out} as age ciphertext to ${recipient}\n`,
+          `wrote ${snapshot.documents} document(s) to ${out} as age ciphertext to ${recipient}: plaintext sha256 ${recorded.plaintextSha256}, ciphertext sha256 ${recorded.ciphertextSha256}. The ciphertext digest is the one agentStore.contract.backupSha256 attests.\n`,
         );
       } else process.stdout.write(ciphertext);
       await finish();
@@ -618,6 +658,7 @@ const main = async (): Promise<void> => {
         absorbedAt: store.absorbedAt,
         markerStore: marker?.store ?? null,
         markerAbsorbedAt: marker?.["absorbed-at"] ?? null,
+        markerContracted: marker?.[CONTRACT_MARKER_KEY] !== undefined,
         install: recordedInstall,
         liveInstall,
         agentRows: agents.length,
@@ -866,26 +907,70 @@ const main = async (): Promise<void> => {
     }
 
     case "contract-check": {
-      const expected = flag("--sha256");
-      if (!expected) throw new Error("contract-check needs --sha256 <hex>");
-      const rows = await db
-        .select({
-          backupRef: controlAgentStore.backupRef,
-          absorbReport: controlAgentStore.absorbReport,
-        })
-        .from(controlAgentStore)
-        .where(eq(controlAgentStore.id, 1))
-        .limit(1);
-      const backupRef = rows[0]?.backupRef ?? null;
-      const report = rows[0]?.absorbReport as
-        { backup?: { sha256?: string } } | null | undefined;
-      const recorded = report?.backup?.sha256 ?? null;
-      if (backupRef === null || !attestedDigestMatches(recorded, expected))
-        throw new Error(
-          `the install's verified archive is ${backupRef ?? "absent"} with digest ${recorded ?? "absent"}, not the one attesting sha256 ${expected}: the contract release must not delete the custom resources`,
-        );
+      const clock = flag("--now");
+      const verdict = contractVerdict(
+        await readContractFacts(db, {
+          now: clock ? new Date(clock) : new Date(),
+          attestedSha256:
+            flag("--sha256") ?? config.agentStoreContractSha256 ?? null,
+          emptyArchive: config.agentStoreContractEmptyArchive,
+          expectedRecipient: config.agentStoreBackupRecipient ?? null,
+          readObject: config.objectStorage
+            ? createObjectStoreReader(config.objectStorage)
+            : null,
+        }),
+      );
+      if (!verdict.ok)
+        throw new Error(`contract-check refuses: ${verdict.reason}`);
+      process.stderr.write(`${describeContract(verdict)}\n`);
+      await finish();
+      return;
+    }
+
+    case "delete-crs": {
+      const marker = await readMarker(api, config.namespace, markerName);
+      const refusal = deleteCrsRefusal(marker, {
+        rehearsal: has("--rehearsal"),
+      });
+      if (refusal) throw new Error(`delete-crs refuses: ${refusal}`);
+      const dryRun = has("--dry-run");
+      const removed = await deleteCustomResources({
+        dryRun,
+        list: async (plural) =>
+          (
+            await listDynamic({
+              group: "agent-platform.ai",
+              version: "v1",
+              plural,
+              namespace: config.namespace,
+              labelSelector: "",
+            })
+          ).map((item) => ({
+            name: String(
+              (item.metadata as { name?: string } | undefined)?.name ?? "",
+            ),
+          })),
+        remove: async (plural, name) => {
+          try {
+            await dynamicApi.deleteNamespacedCustomObject({
+              group: "agent-platform.ai",
+              version: "v1",
+              plural,
+              namespace: config.namespace,
+              name,
+              propagationPolicy: "Orphan",
+            });
+          } catch (cause) {
+            if (!is404(cause)) throw cause;
+          }
+        },
+      });
       process.stderr.write(
-        "the install's archive matches the attested digest\n",
+        `${dryRun ? "would delete" : "deleted"} ${removed.length} custom resource(s)${
+          removed.length > 0 ? `: ${removed.join(", ")}` : ""
+        }; the anchors own the children, so none is cascaded. ${
+          dryRun ? "Nothing was touched." : "A rerun is a no-op."
+        }\n`,
       );
       await finish();
       return;

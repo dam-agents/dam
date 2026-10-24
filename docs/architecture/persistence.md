@@ -159,6 +159,7 @@ Two non-schema steps follow the migrations in the same startup sequence: a privi
 
 Before any of that, a component reads one marker ConfigMap — `<release>-agent-store` in the agent namespace — and refuses to start when it names a store the build cannot serve.
 The marker is written by the switch, so a build on the custom resources stops as soon as the authority has moved, and a build on Postgres starts only once the switch has absorbed them.
+The contract release adds one stamp to it: `contract-at`, written by the api-server only when the contract gate passes, and what the operator's tooling reads to know this install is past its window.
 The store is then bound to that install: the absorb records the release, namespace and API server it ran against, and the absorb, the barrier and a rollback refuse a database whose absorb stamp or install does not match the cluster's marker.
 
 The switch is one api-server startup behind that marker ([agent-store cutover](../notes/agent-store-cutover.md) is the operator's procedure).
@@ -169,6 +170,12 @@ The object-store copy is plaintext in the platform's own bucket; only the operat
 A rerun finds `absorbed_at` and imports nothing again, whatever point a kill interrupted.
 It serves only once the new controller leads the Lease and has recorded that every Agent has its anchor — the store row's `controller_holder` and `anchors_ensured_at` — and it records `switch_completed_at` so a later controller outage never keeps the api-server down.
 The archive is exported, encrypted to the operator's age key, by the api-server's own command; the plaintext never leaves the database, a pod's filesystem or a terminal.
+
+The contract release is the one that stops reading the custom resources, and it is armed rather than trusted.
+Its api-server refuses to start until `switch_completed_at` is set, at least a week has passed since it (the rollback window), the snapshot table and the object-store copy both read back to the digest the absorb recorded, an operator export is recorded in `control` and encrypted to the install's key, and `agentStore.contract.backupSha256` is that export's ciphertext digest — or `emptyArchive` for an install that never absorbed a custom resource.
+It then writes `contract-at` into the marker and serves from the rows with no RBAC on `agent-platform.ai` at all; the controller in the same release skips the CRD schema check and holds no verb on the group either.
+A rehearsal may move that gate's clock with `agentStore.contract.now`; an install never sets it.
+The install's own `Agent` and `UserBudget` resources may be deleted by `agent-store-cli delete-crs`, which refuses without the marker's `contract-at` and orphans the children because the anchors own them; the kinds themselves stay for every install on the cluster that still reads them.
 
 ### Object store
 
@@ -190,7 +197,8 @@ Until the move's switch they carry the whole record: the api-server writes a `sp
 Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
 From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
 A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
-They are deleted per install, and the kinds themselves only after every install is past its rollback window, by an operator action rather than by any install's release.
+An install may delete its own resources with `delete-crs`, an optional cleanup that refuses without a real-clock contract gate and orphans the children through their anchors.
+The kinds themselves stay on the cluster: another install in another namespace may still read them, and each install chooses its own authority, so no release, chart, hook or operator command ever deletes a shared CRD.
 
 Two domain resources are deliberately not custom resources:
 

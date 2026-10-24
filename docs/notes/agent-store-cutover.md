@@ -74,7 +74,10 @@ The command encrypts to the install's `agentStore.backup.recipient` and refuses 
 The image carries no `tar`, so `kubectl cp` fails; `exec -- cat` is the form that works, and the pod's `/tmp` ciphertext is deleted after it.
 The plaintext is never printed.
 The switch's object-store copy is plaintext YAML in the platform's own bucket (it can carry a legacy `spec.env`); this encrypted file is the copy that leaves the platform.
-It is mandatory before the contract release; `agentStore.contract.backupSha256` carries the digest of the YAML archive (not of the ciphertext, which is randomized), and `agent-store-cli contract-check --sha256 <digest>` compares it exactly.
+`export-snapshot` also records the export in `control.agent_store_exports` — recipient, both digests and the moment — and prints the **ciphertext** digest.
+That digest is what `agentStore.contract.backupSha256` attests: only someone holding the file (or who ran the export) knows it, so the contract release cannot be armed without the file existing.
+The key holder decrypts the file and checks that its plaintext digest equals the one the export printed, which is the digest the absorb recorded.
+It is mandatory before the contract release; the release re-reads the object-store copy and compares it too, when the install has one.
 
 ## Rollback, inside the one-week window
 
@@ -172,17 +175,71 @@ Remove the ServiceAccount, the two Roles and the two RoleBindings after the wind
 
 A later re-upgrade re-absorbs with the custom resources authoritative.
 
-## Retiring the custom resources (contract release)
+## The contract release
 
-Only after every install is past its window, in the same order dev, staging, prod:
+Only after this install's window has closed, in the same order dev, staging, prod.
+Other installs on the cluster move on their own schedule: the kinds stay, and one install's contract release does not touch another's resources.
 
-- the contract release stops writing the custom resources and refuses to delete them unless `agentStore.contract.backupSha256` is the install's recorded archive digest (`contract-check`);
-- deleting the two CRDs is a separate cluster-wide action, taken once, after the last install's window: `kubectl delete crd agents.agent-platform.ai userbudgets.agent-platform.ai`.
-  No install's chart or hook ever deletes a shared CRD.
+1. Check the gate before the release, in the switch release's api-server pod:
+
+   ```sh
+   kubectl exec -n <ns> deploy/<release>-apiserver -- \
+     node dist/js/agent-store-cli.js contract-check --sha256 <ciphertext digest>
+   ```
+
+   It refuses until the install was switched, a week has passed since `switch_completed_at`, the snapshot table and the object-store copy both read back to the digest the absorb recorded, an operator export is recorded for this install and encrypted to `agentStore.backup.recipient`, and `--sha256` is that export's **ciphertext** digest.
+   `--sha256` defaults to `agentStore.contract.backupSha256`; `--now <iso>` moves the clock, and needs `agentStore.contract.rehearsal: true` in the values — a rehearsal cluster only.
+
+2. Release the contract values, which are the switch's plus the attested digest:
+
+   ```yaml
+   agentStore:
+     authority: contract
+     cutover:
+       acknowledged: true
+     contract:
+       backupSha256: <the ciphertext digest export-snapshot printed>
+   ```
+
+   The api-server refuses to start if the gate does not pass, so a value set too early is a crash-loop for a second, then the release before it keeps serving.
+   The release reads no custom resource and renders no RBAC for the group; the controller skips the CRD schema check.
+   Once it runs, the marker carries `contract-at`, and `agent-store-cli contract-check` says the same thing the startup gate did.
+
+3. Optionally delete this install's frozen resources, with a kubeconfig whose identity may delete them (the contract release's own ServiceAccount may not, deliberately):
+
+   ```sh
+   PLATFORM_RELEASE_NAME=<release> NAMESPACE=<agentNamespace> \
+     node dist/js/agent-store-cli.js delete-crs --dry-run
+   # then the same without --dry-run
+   ```
+
+   It refuses without the marker's `contract-at`, or when that stamp came from a rehearsal clock or is later than the real clock.
+   It deletes only this install's `Agent` and `UserBudget` resources, with `Orphan` propagation — the anchors own the children, so no machine, Service or Secret goes with them — and a rerun deletes nothing.
+   Skipping it is safe: the resources are frozen and nothing reads them.
+   It never touches the CRD definitions or another namespace.
+
+The kinds themselves stay on the cluster, for as long as any install anywhere reads them.
+Nothing in this procedure deletes a shared CRD, and no release, chart or hook does either.
+An install that still runs on the custom resources keeps working in its own namespace beside a contracted one.
+
+## A new install beside the others
+
+A new install's namespace holds no custom resource, so the switch release is already an empty absorb:
+
+```yaml
+agentStore:
+  authority: postgres
+  cutover:
+    acknowledged: true
+```
+
+It absorbs zero documents, records its switch and serves the rows.
+It can move to `contract` after its own week, and an install that never had a custom resource says so with `agentStore.contract.emptyArchive: true` instead of attesting an archive.
+The CRDs stay installed and untouched either way; the contract release holds no verb on them.
 
 What replaces the old operator habits:
 
-- `upgrade-crds.sh` is gone with the CRDs; schema changes are migrations the api-server runs on startup.
+- Schema changes are migrations the api-server runs on startup: an install on the rows needs no CRD schema generation or `upgrade-crds.sh` step, while one still on the CRDs keeps the operator's upgrade until it moves.
 - `kubectl get agents` becomes `kubectl exec … -- node dist/js/agent-store-cli.js export-crds` (plaintext YAML of what the rows hold) or a read-only SQL view; the Agent's own page and the API stay the operator's read path.
 - `kubectl annotate agent …` for lifecycle signals is gone; the owner and operator APIs write the signals columns.
 - `dam budget` replaces `create-user-budget.sh`; the `user_budgets` table is what it writes.

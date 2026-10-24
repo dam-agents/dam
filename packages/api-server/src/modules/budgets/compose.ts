@@ -1,6 +1,7 @@
 import type { BudgetsService, UserBudgetDefaults } from "api-server-api";
 import type { Db } from "db";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import {
   deleteUserBudget as deleteStoredUserBudget,
   listUserBudgets as listStoredUserBudgets,
@@ -57,10 +58,10 @@ export function composeUserBudgetsAdmin(deps: {
   k8s: K8sClient;
   users: BudgetUsers;
   defaults: UserBudgetDefaults;
-  agentStore?: { authority: "crd" | "postgres"; db: Db } | undefined;
+  agentStore?: { authority: AgentStoreMode; db: Db } | undefined;
 }): UserBudgetsForOperator {
   const store =
-    deps.agentStore?.authority === "postgres"
+    deps.agentStore !== undefined && readsRows(deps.agentStore.authority)
       ? {
           list: () => listStoredUserBudgets(deps.agentStore!.db),
           get: (ownerSub: string) =>

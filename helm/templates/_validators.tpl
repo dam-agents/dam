@@ -574,9 +574,11 @@ never happens — or, worse, a later one without the operator's timing.
 */}}
 {{- define "platform.validate.agentStore" -}}
 {{- $store := .Values.agentStore | default dict -}}
-{{- if not (has ($store.authority | toString) (list "crd" "postgres")) -}}
-{{- fail (printf "agentStore.authority must be crd or postgres, got %q." ($store.authority | toString)) -}}
+{{- $authority := $store.authority | toString -}}
+{{- if not (has $authority (list "crd" "postgres" "contract")) -}}
+{{- fail (printf "agentStore.authority must be crd, postgres or contract, got %q." $authority) -}}
 {{- end -}}
+{{- $contract := $store.contract | default dict -}}
 {{- /* The switch release recreates both Deployments and absorbs the custom
        resources, and a production install auto-upgrades on a semver range: the
        operator times it by acknowledging it, and the render is where that is
@@ -584,17 +586,26 @@ never happens — or, worse, a later one without the operator's timing.
        the custom resources, so it fails there instead of being carried
        forward into a later one. */ -}}
 {{- $cutover := $store.cutover | default dict -}}
-{{- if eq ($store.authority | toString) "postgres" -}}
+{{- if ne $authority "crd" -}}
 {{- if not $cutover.acknowledged -}}
+{{- if eq $authority "postgres" -}}
 {{- fail "agentStore.authority=postgres is the cutover: it recreates both Deployments, absorbs the custom resources and serves a minute or two of api-server unavailability. Set agentStore.cutover.acknowledged=true to pick the time. A failed render leaves the previous release running, and nothing rolls back on its own." -}}
+{{- else -}}
+{{- fail "agentStore.authority=contract is the release after the cutover: the operator times it with agentStore.cutover.acknowledged=true, because it stops reading the custom resources the rollback window kept. A failed render leaves the previous release running." -}}
+{{- end -}}
 {{- end -}}
 {{- else -}}
 {{- if $cutover.acknowledged -}}
 {{- fail "agentStore.cutover.acknowledged is set, but agentStore.authority is crd: the acknowledgement times a cutover this release does not perform. Unset it, or set authority=postgres." -}}
 {{- end -}}
 {{- end -}}
-{{- if and $store.frozen (not $cutover.acknowledged) -}}
+{{- if $store.frozen -}}
+{{- if eq $authority "contract" -}}
+{{- fail "agentStore.frozen=true is a rollback, and a contract install has no rollback: the window closed before its custom resources were deleted. Pin the switch release instead." -}}
+{{- end -}}
+{{- if not $cutover.acknowledged -}}
 {{- fail "agentStore.frozen=true freezes a rollback in progress. Set it with agentStore.authority=postgres and agentStore.cutover.acknowledged=true, so the release renders as the switch with both components down." -}}
+{{- end -}}
 {{- end -}}
 {{- /* The api-server grants the controller's privileges to one fixed login
        name, so a chart that let the identity be configured separately would
@@ -606,9 +617,34 @@ never happens — or, worse, a later one without the operator's timing.
 {{- fail (printf "postgres.controllerUser and controller.db.user must both be %s: the api-server grants the controller's privileges to that login, so another name would render a controller with none. Got %q." $granted .) -}}
 {{- end -}}
 {{- end -}}
-{{- $contract := $store.contract | default dict -}}
-{{- if $contract.backupSha256 -}}
-{{- fail "agentStore.contract.backupSha256 is set, but no release in this chart deletes custom resources yet: the contract release checks it against the archive it must not delete without." -}}
+{{- $digest := $contract.backupSha256 | default "" | toString -}}
+{{- $emptyArchive := $contract.emptyArchive | default false -}}
+{{- if $contract.now -}}
+{{- if ne $authority "contract" -}}
+{{- fail "agentStore.contract.now moves the contract gate's clock, and this release's authority is not contract: set it for a rehearsal's contract release only." -}}
+{{- end -}}
+{{- if not ($contract.rehearsal | default false) -}}
+{{- fail "agentStore.contract.now moves the contract gate's clock past the one-week rollback window, and an install must never do that: set agentStore.contract.rehearsal=true on a rehearsal cluster, where the marker it writes tells delete-crs to refuse it." -}}
+{{- end -}}
+{{- if not (regexMatch "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$" ($contract.now | toString)) -}}
+{{- fail (printf "agentStore.contract.now must be an RFC 3339 UTC instant such as 2026-10-25T00:00:00Z, got %q." ($contract.now | toString)) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $contract.rehearsal (ne $authority "contract") -}}
+{{- fail "agentStore.contract.rehearsal marks a rehearsal's contract release, and this release's authority is not contract: remove it." -}}
+{{- end -}}
+{{- if eq $authority "contract" -}}
+{{- if $emptyArchive -}}
+{{- if $digest -}}
+{{- fail "agentStore.contract.emptyArchive and agentStore.contract.backupSha256 are exclusive: an install that never absorbed a custom resource has no archive to attest." -}}
+{{- end -}}
+{{- else if not (regexMatch "^[0-9a-f]{64}$" $digest) -}}
+{{- fail (printf "agentStore.authority=contract needs agentStore.contract.backupSha256, the digest export-snapshot printed (agentStore.contract.emptyArchive marks an install that never had custom resources). Got %q." $digest) -}}
+{{- end -}}
+{{- else -}}
+{{- if or $digest $emptyArchive -}}
+{{- fail "agentStore.contract values are set, but agentStore.authority is not contract: the digest and the empty-archive marker belong to the release that stops reading the custom resources." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

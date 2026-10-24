@@ -1751,10 +1751,12 @@ apiServer:
 
 # -- Where Agents and user budgets are authoritative.
 #
-# A move out of the Kubernetes API into Postgres, in three releases: this chart
-# carries the tables, the controller's database login and the startup fences;
-# the switch release absorbs the custom resources and both components read
-# Postgres; the contract release stops writing the custom resources.
+# A move out of the Kubernetes API into Postgres, in three releases: the expand
+# release carries the tables, the controller's database login and the startup
+# fences; the switch release absorbs the custom resources and both components
+# read Postgres; the contract release stops reading or writing them, drops
+# their RBAC, and refuses to start until the rollback window has closed and the
+# archive is attested.
 #
 # The two components refuse to start rather than serve the wrong store. A build
 # still on the custom resources exits once the switch has marked the store as
@@ -1762,11 +1764,14 @@ apiServer:
 # absorbed the resources. The marker is a ConfigMap `<release>-agent-store` the
 # switch writes into the agent namespace.
 agentStore:
-  # -- Which store is authoritative: `crd` (the custom resources) or
-  # `postgres`. `postgres` is the switch release: both Deployments recreate, the
-  # api-server absorbs the custom resources in one transaction, and it serves
-  # only once the new controller leads and has ensured every anchor. It refuses
-  # to render without `cutover.acknowledged`.
+  # -- Which store is authoritative: `crd` (the custom resources), `postgres`
+  # (the switch release) or `contract` (past the rollback window). `postgres`
+  # recreates both Deployments, the api-server absorbs the custom resources in
+  # one transaction, and it serves only once the new controller leads and has
+  # ensured every anchor. `contract` reads no custom resource and renders no
+  # RBAC for them; its api-server refuses to start until `contract-check`
+  # passes, then records `contract-at` in the marker for the operator. Both
+  # refuse to render without `cutover.acknowledged`.
   authority: crd
   # -- Freeze both components for a rollback: both Deployments render zero
   # replicas, so nothing writes rows while the reverse exporter restores the
@@ -1792,12 +1797,29 @@ agentStore:
     # when `authority` is `crd`, so it is never carried into a later release.
     acknowledged: false
   contract:
-    # -- SHA-256 of the archive the switch absorbed (the digest `export-snapshot`
-    # prints and the absorb recorded), attested by the operator before the
-    # contract release may delete the custom resources on this install. It is the
-    # digest of the YAML, not of the encrypted file: age ciphertext is
-    # randomized. Empty until that release exists.
+    # -- SHA-256 of the encrypted file `export-snapshot` wrote, taken from the
+    # file itself (the export records it when it runs). The contract release
+    # refuses to start until this is the ciphertext digest of the export the
+    # platform recorded for this install, encrypted to the install's
+    # `backup.recipient` — which is what makes the operator's file, not a digest
+    # copied from a log, the attestation D79A asks for. Required by
+    # `authority: contract`, unless `emptyArchive` says the install never
+    # absorbed a custom resource.
     backupSha256: ""
+    # -- An install that never had a custom resource (a new namespace beside the
+    # others): the contract release checks that the archive is empty instead of
+    # waiting for a digest. Never set it on an install that absorbed something.
+    emptyArchive: false
+    # -- A rehearsal's clock (`2026-10-25T00:00:00Z`), so the one-week rollback
+    # window is proved without waiting it out. It fails the render unless
+    # `rehearsal` is true, and the marker the gate then writes carries
+    # `contract-clock: rehearsal`, which `delete-crs` refuses
+    # without `--rehearsal`. Empty in an install.
+    now: ""
+    # -- Set it true only on a rehearsal cluster, beside `now`: it is what
+    # makes moving the window an explicit act, and what marks the install's
+    # gate as one no real deletion may trust.
+    rehearsal: false
 
 # -- Controller (Go reconciler + scheduler)
 controller:

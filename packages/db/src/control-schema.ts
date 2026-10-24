@@ -343,6 +343,16 @@ export const controlAgentStore = control.table(
   (table) => [check("control_agent_store_single_row", sql`${table.id} = 1`)],
 );
 
+export const controlAgentStoreExports = control.table("agent_store_exports", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  exportedAt: timestamp("exported_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  recipient: text("recipient").notNull(),
+  plaintextSha256: text("plaintext_sha256").notNull(),
+  ciphertextSha256: text("ciphertext_sha256").notNull(),
+});
+
 export const controlCrdSnapshots = control.table(
   "crd_snapshots",
   {

@@ -26,12 +26,22 @@ import {
 } from "./modules/agent-store/control-read.js";
 import { createControlAgentL7HostsPort } from "./modules/agent-store/l7-hosts.js";
 import {
+  CONTRACT_MARKER_KEY,
+  CONTRACT_REHEARSAL_KEY,
+  CONTRACT_REHEARSAL_VALUE,
   agentStoreMarkerName,
   agentStoreRefusal,
   readAgentStoreMarker,
+  readsRows,
   verifyAgentStoreWriteFence,
   writeAgentStoreMarker,
 } from "./modules/agent-store/fence.js";
+import {
+  contractVerdict,
+  describeContract,
+  readContractFacts,
+} from "./modules/agent-store/contract.js";
+import { createObjectStoreReader } from "./modules/agent-store/object-store.js";
 import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
 import { absorbAgentStore } from "./modules/agent-store/absorb.js";
 import { passCutoverBarrier } from "./modules/agent-store/barrier.js";
@@ -483,17 +493,26 @@ export async function bootstrap() {
       },
     });
 
-  if (config.agentStore === "postgres") {
+  if (readsRows(config.agentStore)) {
     const writeFence = await verifyAgentStoreWriteFence(
       createAuthorizationApi(),
       config.namespace,
     );
     if (writeFence) throw new Error(writeFence);
+  }
+  const absorbsEmpty = config.agentStoreContractEmptyArchive;
+  if (
+    readsRows(config.agentStore) &&
+    (config.agentStore === "postgres" || absorbsEmpty)
+  ) {
     if (agentStoreMarker?.store !== "postgres")
       await absorbAgentStore({
         db,
         logger: getLogger(),
-        listCustomObjects: (plural) => k8sClient.listCustomObjects(plural),
+        listCustomObjects:
+          config.agentStore === "contract"
+            ? async () => []
+            : (plural) => k8sClient.listCustomObjects(plural),
         writeMarker: (data) =>
           writeAgentStoreMarker(api, config.namespace, markerName, data),
         readMarker: () =>
@@ -515,6 +534,9 @@ export async function bootstrap() {
         absorbedByVersion: config.appVersion,
         now: new Date(),
       });
+  }
+
+  if (readsRows(config.agentStore)) {
     const switched = await readAgentStoreMarker(
       api,
       config.namespace,
@@ -530,6 +552,58 @@ export async function bootstrap() {
       markerAbsorbedAt: switched?.["absorbed-at"] ?? null,
       log: (message, fields) => getLogger().info(fields ?? {}, message),
     });
+    if (config.agentStore === "contract") {
+      const objectStore = config.objectStorageEndpoint
+        ? createObjectStoreReader({
+            endpoint: config.objectStorageEndpoint,
+            region: config.objectStorageRegion,
+            bucket: config.objectStorageBucket,
+            forcePathStyle: config.objectStorageForcePathStyle,
+            credentials:
+              config.objectStorageAccessKeyId !== null &&
+              config.objectStorageSecretAccessKey !== null
+                ? {
+                    accessKeyId: config.objectStorageAccessKeyId,
+                    secretAccessKey: config.objectStorageSecretAccessKey,
+                  }
+                : null,
+          })
+        : null;
+      const rehearsalClock = config.agentStoreContractNow;
+      const now = rehearsalClock ? new Date(rehearsalClock) : new Date();
+      const verdict = contractVerdict(
+        await readContractFacts(db, {
+          now,
+          attestedSha256: config.agentStoreContractSha256 ?? null,
+          emptyArchive: config.agentStoreContractEmptyArchive,
+          expectedRecipient: config.agentStoreBackupRecipient ?? null,
+          readObject: objectStore,
+        }),
+      );
+      if (!verdict.ok)
+        throw new Error(
+          `the contract release refuses: ${verdict.reason}. This install keeps its custom resources until it can.`,
+        );
+      await writeAgentStoreMarker(api, config.namespace, markerName, {
+        ...(switched ?? {}),
+        [CONTRACT_MARKER_KEY]:
+          switched?.[CONTRACT_MARKER_KEY] ?? now.toISOString(),
+        ...(verdict.archived
+          ? { "contract-sha256": verdict.sha256 }
+          : { "contract-empty-archive": "true" }),
+        ...(rehearsalClock
+          ? { [CONTRACT_REHEARSAL_KEY]: CONTRACT_REHEARSAL_VALUE }
+          : {}),
+      });
+      getLogger().info(
+        {
+          agentStore: config.agentStore,
+          release: config.releaseName,
+          contract: describeContract(verdict),
+        },
+        "agentStore.contract.armed",
+      );
+    }
   }
 
   if (!config.redisUrl)
@@ -569,48 +643,45 @@ export async function bootstrap() {
     const ownerSub = obj.metadata?.labels?.[LABEL_OWNER];
     if (agentId && ownerSub) agentHint(agentId, ownerSub);
   }) as (kind: "add" | "update" | "delete", obj: KubeObject) => void;
-  const agentStateCache =
-    config.agentStore === "postgres"
-      ? (() => {
-          let refresh: () => Promise<void> = async () => {};
-          let invalidate: (id: string | null) => void = () => {};
-          const feed = createAgentChangeFeed({
-            source: postgresChangeSource(sql),
-            snapshot: () => refresh(),
-            onChange: (id) => invalidate(id),
-            log: (message, fields) =>
-              getLogger().warn(fields ?? {}, `[agents] ${message}`),
-          });
-          const cache = createControlAgentStateCache({
-            db,
-            feed,
-            observe,
-            log: (message, fields) =>
-              getLogger().warn(fields ?? {}, `[agents] ${message}`),
-          });
-          refresh = cache.snapshot;
-          invalidate = cache.invalidate;
-          return cache;
-        })()
-      : startAgentStateCache({
-          informer: createAgentInformer(config.namespace),
-          live: k8sClient,
-          namespace: config.namespace,
-          log: (m) => getLogger().warn(`[agents] ${m}`),
-          observe,
+  const agentStateCache = readsRows(config.agentStore)
+    ? (() => {
+        let refresh: () => Promise<void> = async () => {};
+        let invalidate: (id: string | null) => void = () => {};
+        const feed = createAgentChangeFeed({
+          source: postgresChangeSource(sql),
+          snapshot: () => refresh(),
+          onChange: (id) => invalidate(id),
+          log: (message, fields) =>
+            getLogger().warn(fields ?? {}, `[agents] ${message}`),
         });
-  const agentsRepo =
-    config.agentStore === "postgres"
-      ? createControlAgentsRepository(db, agentStateCache)
-      : createAgentsRepository(k8sClient, agentStateCache);
+        const cache = createControlAgentStateCache({
+          db,
+          feed,
+          observe,
+          log: (message, fields) =>
+            getLogger().warn(fields ?? {}, `[agents] ${message}`),
+        });
+        refresh = cache.snapshot;
+        invalidate = cache.invalidate;
+        return cache;
+      })()
+    : startAgentStateCache({
+        informer: createAgentInformer(config.namespace),
+        live: k8sClient,
+        namespace: config.namespace,
+        log: (m) => getLogger().warn(`[agents] ${m}`),
+        observe,
+      });
+  const agentsRepo = readsRows(config.agentStore)
+    ? createControlAgentsRepository(db, agentStateCache)
+    : createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createDelegationFramesClient({
     namespace: config.namespace,
     isReady: (agentId) => agentsRepo.isReady(agentId),
   });
-  const liveAgentsRepo =
-    config.agentStore === "postgres"
-      ? agentsRepo
-      : createAgentsRepository(k8sClient, createLiveAgentStateCache(k8sClient));
+  const liveAgentsRepo = readsRows(config.agentStore)
+    ? agentsRepo
+    : createAgentsRepository(k8sClient, createLiveAgentStateCache(k8sClient));
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -800,7 +871,7 @@ export async function bootstrap() {
 
   const l7PromotionReconcile = createL7PromotionReconcile(
     db,
-    config.agentStore === "postgres"
+    readsRows(config.agentStore)
       ? {
           l7Hosts: createControlAgentL7HostsPort(db),
           listAgentL7State: async () =>
@@ -1177,10 +1248,9 @@ export async function bootstrap() {
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
     listK8sAgents: async () => {
-      const agents =
-        config.agentStore === "postgres"
-          ? await agentStateCache.list()
-          : await k8sClient.listCustomObjects(AGENTS_PLURAL);
+      const agents = readsRows(config.agentStore)
+        ? await agentStateCache.list()
+        : await k8sClient.listCustomObjects(AGENTS_PLURAL);
       return agents
         .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
         .map((a) => {
@@ -1287,16 +1357,14 @@ export async function bootstrap() {
   // UNIT_BOUNDARY_DESCRIPTION: after the switch the hints come from the row feed, through the cache's
   // UNIT_BOUNDARY_DESCRIPTION: observe hook, because the custom resources are frozen and the watch has nothing
   // UNIT_BOUNDARY_DESCRIPTION: to watch (and no `watch` verb). In CR mode the watch is the source.
-  agentHint =
-    config.agentStore === "postgres"
-      ? (agentId, ownerSub) => liveEventsModule.agentChanged(agentId, ownerSub)
-      : () => {};
+  agentHint = readsRows(config.agentStore)
+    ? (agentId, ownerSub) => liveEventsModule.agentChanged(agentId, ownerSub)
+    : () => {};
   const agentWatchRole: LeaderRole = {
     name: "live-events-agent-watch",
-    onAcquired:
-      config.agentStore === "postgres"
-        ? () => {}
-        : () => liveEventsModule.startAgentWatch(),
+    onAcquired: readsRows(config.agentStore)
+      ? () => {}
+      : () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
   };
 
@@ -2102,7 +2170,7 @@ export async function bootstrap() {
   ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
     listAgentIds: async () =>
-      config.agentStore === "postgres"
+      readsRows(config.agentStore)
         ? (await db.select({ id: controlAgents.id }).from(controlAgents)).map(
             (row) => row.id,
           )
@@ -2110,7 +2178,7 @@ export async function bootstrap() {
             .map((a) => a.metadata?.name)
             .filter((n): n is string => Boolean(n)),
     hasAgent: async (agentId) =>
-      config.agentStore === "postgres"
+      readsRows(config.agentStore)
         ? (await readOneAgent(db, agentId)) !== null
         : (await k8sClient.getCustomObject(AGENTS_PLURAL, agentId)) !== null,
     sources: agentCleanupSources,

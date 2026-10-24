@@ -23,6 +23,7 @@ export function rollbackVerdict(input: {
   absorbedAt: Date | null;
   markerStore: string | null;
   markerAbsorbedAt: string | null;
+  markerContracted?: boolean;
   install: InstallIdentity | null;
   liveInstall: InstallIdentity;
   agentRows: number;
@@ -42,6 +43,12 @@ export function rollbackVerdict(input: {
     };
   }
   // UNIT_BOUNDARY_DESCRIPTION: a missing marker with a stamp is the one window a killed rollback leaves (the marker is deleted before the rows), so it finishes rather than refuses; any other marker value is a cluster that was pinned without rolling back.
+  if (input.markerStore === "postgres" && input.markerContracted === true)
+    return {
+      action: "refuse",
+      reason:
+        "the cluster's marker records a passed contract gate, and no rollback exists after the window closed: pin the switch release instead",
+    };
   if (input.markerStore !== null && input.markerStore !== "postgres")
     return {
       action: "refuse",

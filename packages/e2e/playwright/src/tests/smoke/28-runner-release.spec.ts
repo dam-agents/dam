@@ -22,6 +22,8 @@ import {
 import {
   AGENT_NS,
   kubectl,
+  kubectlLarge,
+  kubectlOrEmpty,
   podField,
   RELEASE,
   RELEASE_NS,
@@ -220,18 +222,22 @@ function rebootLines(image: string): Map<string, number> | undefined {
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
   let out: string;
   try {
-    out = kubectl(
+    out = kubectlLarge(
       "-n",
       RELEASE_NS,
       "logs",
       "-l",
       selector,
+      "-c",
+      "controller",
       "--prefix=true",
       "--tail=-1",
     );
-  } catch {
+  } catch (cause) {
+    console.log(`[e2e] the controller log read failed: ${String(cause)}`);
     return undefined;
   }
+  let onlyPod = "";
   const seen = new Map<string, number>();
   for (const logged of out.split("\n")) {
     if (
@@ -240,9 +246,27 @@ function rebootLines(image: string): Map<string, number> | undefined {
       !logged.includes(`"release":"${image}"`)
     )
       continue;
-    const pod = /^\[[^/\]]+\/([^/\]]+)\/[^/\]]+\] /.exec(logged)?.[1];
-    if (pod === undefined) return undefined;
-    seen.set(pod, (seen.get(pod) ?? 0) + 1);
+    const prefixed = /^\[[^/\]]+\/([^/\]]+)\/[^/\]]+\] /.exec(logged)?.[1];
+    if (prefixed !== undefined) {
+      seen.set(prefixed, (seen.get(prefixed) ?? 0) + 1);
+      continue;
+    }
+    if (onlyPod === "")
+      onlyPod = kubectlOrEmpty(
+        "-n",
+        RELEASE_NS,
+        "get",
+        "pods",
+        "-l",
+        selector,
+        "-o",
+        "jsonpath={.items[0].metadata.name}",
+      ).trim();
+    if (onlyPod === "") {
+      console.log(`[e2e] an unattributable controller line: ${logged}`);
+      return undefined;
+    }
+    seen.set(onlyPod, (seen.get(onlyPod) ?? 0) + 1);
   }
   return seen;
 }

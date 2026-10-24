@@ -634,6 +634,9 @@ grep -Fq "POSTGRES_CONTROLLER_USER" <<<"$roles" &&
 for refused in 'agentStore.authority=sqlite' \
   'agentStore.cutover.acknowledged=true' \
   'agentStore.contract.backupSha256=0000' \
+  'agentStore.contract.backupSha256=0000000000000000000000000000000000000000000000000000000000000000' \
+  'agentStore.contract.emptyArchive=true' \
+  'agentStore.contract.now=2026-10-25T00:00:00Z' \
   'postgres.controllerUser=someone-else' \
   'controller.db.user=someone-else'; do
   if helm template platform . "${COMMON[@]}" --set "$refused" >/dev/null 2>&1; then
@@ -641,3 +644,65 @@ for refused in 'agentStore.authority=sqlite' \
     exit 1
   fi
 done
+# The contract release is the one that stops reading the custom resources: it
+# needs the attested digest (or the empty-archive marker), renders no RBAC on
+# the platform's group at all, drops the controller's CRD schema read, and
+# rolls normally because nothing it does depends on the order the old replicas
+# go away. The three modes stay distinct: the same values fail on postgres, and
+# a contract install cannot be frozen for a rollback the window has closed.
+DIGEST=1111111111111111111111111111111111111111111111111111111111111111
+contract=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=contract \
+  --set agentStore.cutover.acknowledged=true \
+  --set agentStore.contract.backupSha256=$DIGEST | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "Role" or .kind == "ClusterRole")) | map(.rules // []) | add
+    | map(select((.apiGroups // []) | index("agent-platform.ai"))) | length) == 0
+  and (map(select(.kind == "ClusterRole" and (.metadata.name | endswith("-crd-read")))) | length) == 0
+  and (map(select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "controller")) | length) > 0
+  and (map(select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "apiserver"))[0]
+    | .spec.strategy.type == "RollingUpdate")
+  and (map(select(.kind == "Deployment") | .spec.template.spec.containers | add | .env // [])
+    | add | map(select(.name == "AGENT_STORE_CONTRACT_BACKUP_SHA256"))[0].value
+    | length > 0)
+  and (map(select(.kind == "Deployment") | .spec.template.spec.containers | add | .env // [])
+    | add | map(select(.name == "PLATFORM_AGENT_STORE"))[0].value == "contract")
+  and (map(select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "controller")
+      | .spec.template.spec.containers | add | .env // [])
+    | add | map(select(.name == "PLATFORM_DATABASE_URL"))[0].value | length > 0)' <<<"$contract" >/dev/null ||
+  { echo "the contract release keeps a custom-resource grant, the CRD read, the switch's strategy or the digest out" >&2; exit 1; }
+for refused in \
+  "agentStore.authority=contract,agentStore.cutover.acknowledged=true" \
+  "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.emptyArchive=true,agentStore.contract.backupSha256=$DIGEST" \
+  "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST,agentStore.frozen=true" \
+  "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST,agentStore.contract.now=yesterday" \
+  "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST,agentStore.contract.now=2026-11-02T00:00:00Z" \
+  "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST" \
+  "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.emptyArchive=true" \
+  "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.rehearsal=true"; do
+  if helm template platform . "${COMMON[@]}" $(printf -- "--set %s " ${refused//,/ }) >/dev/null 2>&1; then
+    echo "a render setting $refused succeeded, but only the contract release reads those values" >&2
+    exit 1
+  fi
+done
+# A rehearsal moves the gate's clock, so it is an explicit value beside the
+# clock, and the release carries it into the pod's environment; the marker the
+# gate writes then says so, which is what the operator commands refuse.
+rehearsal=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=contract \
+  --set agentStore.cutover.acknowledged=true \
+  --set agentStore.contract.backupSha256=$DIGEST \
+  --set agentStore.contract.rehearsal=true \
+  --set agentStore.contract.now=2026-11-02T00:00:00Z | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "apiserver")
+    | .spec.template.spec.containers | add | .env // []) | add
+    | map(select(.name == "AGENT_STORE_CONTRACT_NOW"))[0].value) == "2026-11-02T00:00:00Z"' <<<"$rehearsal" >/dev/null ||
+  { echo "a rehearsal contract render does not carry its clock into the api-server" >&2; exit 1; }
+# An install whose namespace never held a custom resource absorbed nothing:
+# the empty-archive marker is the way it says so, and it needs no digest.
+helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=contract \
+  --set agentStore.cutover.acknowledged=true \
+  --set agentStore.contract.emptyArchive=true >/dev/null \
+  || { echo "a contract render with an empty archive failed, but that install has nothing to attest" >&2; exit 1; }

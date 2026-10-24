@@ -115,14 +115,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := crdcheck.Assert(ctx, dynClient); err != nil {
-		slog.Error("CRD schema check failed", "error", err)
-		os.Exit(1)
+	if !agentstore.ReadsRows(cfg.AgentStore) {
+		if err := crdcheck.Assert(ctx, dynClient); err != nil {
+			slog.Error("CRD schema check failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// UNIT_BOUNDARY_DESCRIPTION: the store is opened before leadership, not inside it. A leader whose database could not be opened held the Lease while serving nothing, and the next candidate never got a turn; a process that cannot open its store now exits and is restarted, and the Lease is never held by a controller with no fleet.
 	var postgres *store.Store
-	if cfg.AgentStore == agentstore.ModePostgres {
+	if agentstore.ReadsRows(cfg.AgentStore) {
 		postgres = openStore(ctx, cfg)
 		defer postgres.Close()
 		if err := awaitAbsorbed(ctx, postgres, marker[agentstore.KeyAbsorbed]); err != nil {

@@ -27,6 +27,10 @@ import {
 import { parseInfraAgent } from "../src/modules/agents/infrastructure/agent-mappers.js";
 import { absorbAgentStore } from "../src/modules/agent-store/absorb.js";
 import { passCutoverBarrier } from "../src/modules/agent-store/barrier.js";
+import {
+  contractVerdict,
+  readContractFacts,
+} from "../src/modules/agent-store/contract.js";
 import { buildAgentStoreSnapshot } from "../src/modules/agent-store/snapshot.js";
 import { createHash } from "node:crypto";
 import type { KubeObject } from "../src/modules/agents/infrastructure/k8s.js";
@@ -940,6 +944,53 @@ async function absorbChecks(): Promise<void> {
     deadlineMs: 100,
   });
   check("a completed switch never waits again", again === "already");
+
+  // TEST_SCENARIO: an install whose cluster does not serve the kinds lists nothing at all (the client answers 404 with nothing), absorbs zero documents, and its contract gate accepts the empty archive it declares. The same store can never pass that claim once it has absorbed something.
+  await db.execute(sql`DELETE FROM control.agents`);
+  await db.execute(sql`DELETE FROM control.user_budgets`);
+  await db.execute(sql`DELETE FROM control.crd_snapshots`);
+  await db.execute(sql`DELETE FROM control.agent_store`);
+  markerData.length = 0;
+  const fresh = await absorbAgentStore({
+    db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+    listCustomObjects: async () => [],
+    writeMarker: async (data) => void markerData.push(data),
+    readMarker: async () => markerData.at(-1) ?? null,
+    install: INSTALL,
+    store: null,
+    backupKeyPrefix: "crd-snapshots/test",
+    backupRefPrefix: "s3://bucket",
+    defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+    absorbedByVersion: "test",
+    now: new Date("2026-10-24T13:00:00.000Z"),
+  });
+  check(
+    "a fresh install with no custom resources absorbs nothing",
+    fresh.status === "absorbed" && (await snapshotCount()) === 0,
+  );
+  await db.execute(
+    sql`UPDATE control.agent_store SET switch_completed_at = now() WHERE id = 1`,
+  );
+  const factsAt = (emptyArchive: boolean) =>
+    readContractFacts(db, {
+      now: new Date("2026-10-24T14:00:00.000Z"),
+      attestedSha256: null,
+      emptyArchive,
+      expectedRecipient: null,
+      readObject: null,
+    });
+  const freshVerdict = contractVerdict(await factsAt(true));
+  check(
+    "the contract gate accepts an install that never absorbed a resource",
+    freshVerdict.ok && !freshVerdict.archived,
+    freshVerdict.ok ? "" : freshVerdict.reason,
+  );
+  const withoutTheClaim = contractVerdict(await factsAt(false));
+  check(
+    "the gate refuses an unclaimed empty archive",
+    !withoutTheClaim.ok,
+  );
 
   await db.execute(sql`DELETE FROM control.agents`);
   await db.execute(sql`DELETE FROM control.user_budgets`);

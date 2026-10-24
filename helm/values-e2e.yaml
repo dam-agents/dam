@@ -53,3 +53,16 @@ postgres:
   resources:
     limits:
       cpu: "1"
+
+# The e2e lanes run the rows path end to end, so CI exercises the control
+# tables, the anchors, the change feed and every writer the switch release
+# leaves behind. The install takes the switch's values on its first boot: it
+# absorbs an empty custom-resource set (the CRDs still ship with the chart, but
+# nothing here creates an Agent through them), records the marker, and serves
+# from `control`. The CRD-mode pairing the fence refuses is not a lane of its
+# own: nothing in the suite writes a custom resource.
+agentStore:
+  authority: postgres
+  cutover:
+    acknowledged: true
+  previewReport: false
