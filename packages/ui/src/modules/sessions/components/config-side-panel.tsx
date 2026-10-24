@@ -2,6 +2,7 @@ import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
@@ -28,10 +29,7 @@ import {
 import { SIDE_PANEL_TABS } from "./side-panel-bar.js";
 import { SidebarSection } from "./sidebar-section.js";
 
-export type ConfigPanelTab = Exclude<
-  ConfigurationTab,
-  "environments" | "environment"
->;
+export type ConfigPanelTab = Exclude<ConfigurationTab, "environments">;
 
 // UNIT_BOUNDARY_DESCRIPTION: each session default sits with the surface it governs — the chat default on the providers with the providers it runs on, a channel thread's on Channels, a schedule's on Schedules — so the one setting is set where its effect is read.
 export const DEFAULTS_BY_PANEL: Partial<
@@ -50,6 +48,8 @@ const SECTION_OF_TAB: Record<ConfigPanelTab, SandboxSection> = {
   schedules: "schedules",
   providers: "providers",
   network: "network",
+  environment: "environment",
+  "chat-forms": "chat-forms",
 };
 
 export function configPanelTitle(tab: SidePanelTab): string {
@@ -118,16 +118,6 @@ export function ConfigSidePanel({
                 })}
                 onGoToChannels={() => setSidePanelTab("channels")}
               />
-              {/* UNIT_BOUNDARY_DESCRIPTION: environment variables are set where the secrets they must not hold are set, below the connections, in one panel; the separate section keeps its warning. */}
-              <section className="mt-8 border-t border-border pt-6">
-                <p className="mb-4 text-sm text-muted-foreground">
-                  {
-                    SECTIONS.find((entry) => entry.section === "environment")
-                      ?.description
-                  }
-                </p>
-                <EnvTab agent={agent} header={() => null} />
-              </section>
             </>
           ))
           .with("channels", () => (
@@ -172,6 +162,10 @@ export function ConfigSidePanel({
           .with("network", () => (
             <AgentEgressEditor agentId={agentId} header={() => null} />
           ))
+          .with("environment", () => (
+            <EnvTab agent={agent} header={() => null} />
+          ))
+          .with("chat-forms", () => <ChatFormSettings agentId={agentId} />)
           .exhaustive(() => null)}
       </div>
     </SidebarSection>

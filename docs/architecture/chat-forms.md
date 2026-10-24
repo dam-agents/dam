@@ -54,8 +54,7 @@ In the user's own message the chat shows a short summary — the action's human-
 
 ## Chat form settings per agent
 
-Under the Unified right toolbar experiment the settings are the built-in defaults and nothing offers to change them: the panel is gone with the rest of the configuration page, and the chat announces the defaults instead of an agent's stored ones.
-Everywhere else the owner sets, for each agent, how it may use forms, in the agent's Chat forms section; the section is listed while the feature is on, and the platform-chat-forms skill on the Skills page links to it:
+The owner sets, for each agent, how it may use forms, in the agent's Chat forms section — a tile of its own on the chat's rail under the Unified right toolbar experiment; the section is listed while the feature is on, and the platform-chat-forms skill on the Skills page links to it:
 
 - **Forms** — whenever they help, only to ask for input, or off.
 - **Questions** — the agent decides, all in one form, or one question per form.

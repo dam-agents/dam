@@ -63,16 +63,16 @@ beforeEach(() => {
 // TEST_SCENARIO: every section of the configuration page has a panel that carries its knobs, so no setting is left without a home once the page is gone. The Environments panel keeps its own renderer, and Documentation is no section of the page.
 it("maps every configuration section to a panel", () => {
   const panels = SECTIONS.map(configTabForSection);
-  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share eight panels: General and Usage are the Agent panel, and Environment vars and Chat forms have none of their own — the first sits under Connections, the second is built in under the experiment.
-  expect(new Set(panels).size).toBe(8);
+  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share ten panels: General and Usage are the Agent panel.
+  expect(new Set(panels).size).toBe(10);
   expect(panels).toEqual([
     "agent",
     "providers",
     "connections",
     "network",
-    "connections",
+    "environment",
     "channels",
-    "agent",
+    "chat-forms",
     "skills",
     "schedules",
     "environments",
@@ -144,6 +144,7 @@ it("hides every configuration panel with the experiment off", () => {
     processesEnabled: true,
     environments: true,
     channels: true,
+    chatForms: true,
     gettingStarted: true,
   };
   const on = hiddenSidePanelTabs({ ...available, configuration: true });

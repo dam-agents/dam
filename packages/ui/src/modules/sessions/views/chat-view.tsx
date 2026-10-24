@@ -31,7 +31,6 @@ import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
 import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
 import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
-import { chatFormPreferencesFor } from "../../a2ui/lib/chat-form-preferences.js";
 import { composerLocked } from "../../a2ui/lib/composer-lock.js";
 import {
   conversationEmpty,
@@ -513,13 +512,9 @@ export function ChatView() {
     sendPrompt: sendAndFollow,
   });
   const chatFormsEnabled = useChatFormsEnabled();
-  const { data: storedFormPreferences } = useChatFormPreferences(
+  const { data: chatFormPreferences } = useChatFormPreferences(
     chatFormsEnabled ? selectedAgent : null,
     { quiet: true },
-  );
-  const chatFormPreferences = chatFormPreferencesFor(
-    rightToolbar,
-    storedFormPreferences,
   );
   const a2uiConversation = useA2uiConversation(
     messages,
@@ -763,6 +758,7 @@ export function ChatView() {
         }) ||
         (environments.isLoading && sidePanelTab === "environments"),
     configuration: rightToolbar,
+    chatForms: chatFormsEnabled,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);

@@ -47,6 +47,7 @@ export function AppSidePanelButtons({
           environments: false,
           configuration: false,
           channels: true,
+          chatForms: false,
           gettingStarted,
         }),
         withArtifacts,
@@ -89,6 +90,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
     environments: false,
     configuration: false,
     channels: true,
+    chatForms: false,
     gettingStarted,
   });
   const activeTab =

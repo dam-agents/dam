@@ -48,6 +48,7 @@ const ALL_AVAILABLE = hiddenSidePanelTabs({
   environments: true,
   configuration: true,
   channels: true,
+  chatForms: true,
   gettingStarted: true,
 });
 
@@ -92,6 +93,7 @@ describe("which tab the side panel shows", () => {
       environments: false,
       configuration: true,
       channels: true,
+      chatForms: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
@@ -108,6 +110,7 @@ describe("which tab the side panel shows", () => {
       environments: true,
       configuration: true,
       channels: true,
+      chatForms: true,
       gettingStarted: true,
     });
     expect(ALL_AVAILABLE.has("changes")).toBe(false);
@@ -141,6 +144,7 @@ describe("the Environments tab", () => {
         environments: environmentsTabShown(o),
         configuration: true,
         channels: true,
+        chatForms: true,
         gettingStarted: true,
       });
     expect(
@@ -172,6 +176,7 @@ describe("an Agent's configuration tabs", () => {
       processesEnabled: true,
       environments: true,
       channels: true,
+      chatForms: true,
       gettingStarted: true,
     };
     const tabs = ["connections", "channels", "skills", "schedules"] as const;
@@ -199,6 +204,7 @@ describe("an Agent's configuration tabs", () => {
             agent: false,
             configuration: true,
             channels: true,
+            chatForms: true,
           }),
         ),
       ).toBe(null);
@@ -217,6 +223,7 @@ describe("the panels outside an Agent's chat", () => {
       environments: true,
       configuration: true,
       channels: true,
+      chatForms: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
@@ -240,6 +247,7 @@ describe("the panels outside an Agent's chat", () => {
       environments: true,
       configuration: true,
       channels: true,
+      chatForms: true,
       gettingStarted: false,
     });
     expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(

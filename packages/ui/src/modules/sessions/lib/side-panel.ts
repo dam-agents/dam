@@ -14,6 +14,8 @@ export type SidePanelTab =
   | "agent"
   | "providers"
   | "network"
+  | "environment"
+  | "chat-forms"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -44,6 +46,7 @@ export type SidePanelAvailability = {
   processesEnabled: boolean;
   environments: boolean;
   channels: boolean;
+  chatForms: boolean;
   configuration: boolean;
   gettingStarted: boolean;
 };
@@ -66,6 +69,9 @@ export function hiddenSidePanelTabs(
     agent: available.agent && available.configuration,
     providers: available.agent && available.configuration,
     network: available.agent && available.configuration,
+    environment: available.agent && available.configuration,
+    "chat-forms":
+      available.agent && available.configuration && available.chatForms,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -112,6 +118,8 @@ export type ConfigurationTab = Extract<
   | "environments"
   | "providers"
   | "network"
+  | "environment"
+  | "chat-forms"
 >;
 
 const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
@@ -119,8 +127,8 @@ const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
   providers: "providers",
   connections: "connections",
   network: "network",
-  environment: "connections",
-  "chat-forms": "agent",
+  environment: "environment",
+  "chat-forms": "chat-forms",
   channels: "channels",
   skills: "skills",
   schedules: "schedules",

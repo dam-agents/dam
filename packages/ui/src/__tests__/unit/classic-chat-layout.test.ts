@@ -27,6 +27,7 @@ const SHOWN = hiddenSidePanelTabs({
   environments: true,
   configuration: false,
   channels: true,
+  chatForms: true,
   gettingStarted: true,
 });
 
@@ -61,6 +62,7 @@ describe("what the right-hand slot shows", () => {
       environments: true,
       configuration: false,
       channels: true,
+      chatForms: true,
       gettingStarted: false,
     });
     expect(classicPanel("getting-started", hidden, true)).toBe("dock");
