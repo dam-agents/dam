@@ -107,6 +107,34 @@ describe("agent mapping", () => {
     expect(rows.hosts).toEqual(["*.example.test"]);
   });
 
+  // TEST_SCENARIO: The nesting ask lives under `spec.backend.vm` in the custom resource and in its own column here, and the controller reads it from the spec. A report that looked only at the flat field would tell an operator every Agent asks for no nesting, which is the evidence the switch is judged on.
+  it("reads the nesting ask from where the resource keeps it", () => {
+    const nested = mapAgent(
+      agent({
+        spec: {
+          image: "agent:1",
+          backend: { type: "vm", vm: { nestedVirtualization: true } },
+        },
+      }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(
+      (nested.rows as unknown as { agent: Record<string, unknown> }).agent
+        .nestedVirtualization,
+    ).toBe(true);
+
+    const flat = mapAgent(
+      agent({ spec: { image: "agent:1", nestedVirtualization: true } }),
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(
+      (flat.rows as unknown as { agent: Record<string, unknown> }).agent
+        .nestedVirtualization,
+    ).toBe(true);
+  });
+
   // TEST_SCENARIO: A limit an Agent never set falls back to the chart's legacy value, because the column is not nullable and the machine today is sized from the same default.
   it("fills a missing limit from the chart's legacy default", () => {
     const mapped = mapAgent(agent({}), DEFAULTS, SWITCHED_AT);

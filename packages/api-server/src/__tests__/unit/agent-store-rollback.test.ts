@@ -160,6 +160,16 @@ describe("the object a rollback writes", () => {
       DEFAULTS,
       AT,
     );
+    const nested = rowsFromResource(
+      agent({
+        spec: {
+          image: "agent:1",
+          backend: { type: "vm", vm: { nestedVirtualization: true } },
+        },
+      }),
+      DEFAULTS,
+      AT,
+    );
     expect(spaced.rows).toBeDefined();
     expect(cleared.rows).toBeDefined();
     const [exported] = exportCrds({
@@ -181,7 +191,7 @@ describe("the object a rollback writes", () => {
     const spec = restored.body.spec as Record<string, unknown>;
     expect(spec.grantedConnectionIds).toEqual([]);
     expect(spec.l7Hosts).toEqual([]);
-    expect(spec.nestedVirtualization).toBe(false);
+    expect(spec.backend).toBeUndefined();
     expect(spec.requireConnectionAddress).toBe(false);
     expect(spec.whispersOff).toBe(false);
     expect(restored.body.metadata).toMatchObject({
@@ -192,6 +202,15 @@ describe("the object a rollback writes", () => {
     expect(
       (restored.body.metadata as Record<string, unknown>).uid,
     ).toBeUndefined();
+    const [nestedExport] = exportCrds({ agents: [nested.rows!], budgets: [] });
+    const nestedRestored = restoreBody({
+      resource: nestedExport!,
+      live: null,
+      namespace: "platform-agents",
+    });
+    expect(nestedRestored.body.spec).toMatchObject({
+      backend: { type: "vm", vm: { nestedVirtualization: true } },
+    });
     expect(restored.status?.conditions).toEqual([]);
     expect(statusBody(restored.status)).toEqual({
       conditions: [],

@@ -229,6 +229,17 @@ const parseJson = <T>(raw: string | undefined): T | undefined => {
   }
 };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one field whose home differs between the
+ * custom resource and its column.
+ * The resource keeps the nesting ask under `spec.backend.vm` and the controller
+ * reads it there, while the column has a row of its own; both shapes are read,
+ * and the rebuild writes the shape the controller reads.
+ */
+const nestedVirtualizationOf = (spec: Spec): boolean =>
+  (spec.backend as { vm?: { nestedVirtualization?: unknown } } | undefined)?.vm
+    ?.nestedVirtualization === true || spec.nestedVirtualization === true;
+
 const mountList = (spec: Spec): Array<Record<string, unknown>> =>
   Array.isArray(spec.mounts)
     ? (spec.mounts as Array<Record<string, unknown>>)
@@ -502,7 +513,7 @@ export function rowsFromResource(
         imagePullSecretRef: nullable(spec.imagePullSecretRef),
         secretRef: nullable(spec.secretRef),
         hibernationTimeoutNs: timeoutNs === null ? null : Number(timeoutNs),
-        nestedVirtualization: spec.nestedVirtualization === true,
+        nestedVirtualization: nestedVirtualizationOf(spec),
         requireConnectionAddress: spec.requireConnectionAddress === true,
         telemetryAttributionId: nullable(spec.telemetryAttributionId),
         cpuLimit,
@@ -664,8 +675,8 @@ export function resourceFromRows(
       ? undefined
       : goDuration(agent.hibernationTimeoutNs),
   );
-  if (agent.nestedVirtualization || complete)
-    spec.nestedVirtualization = agent.nestedVirtualization;
+  if (agent.nestedVirtualization)
+    spec.backend = { type: "vm", vm: { nestedVirtualization: true } };
   if (agent.requireConnectionAddress || complete)
     spec.requireConnectionAddress = agent.requireConnectionAddress;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);

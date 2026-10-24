@@ -36,6 +36,9 @@ When a ticket's criteria walk a journey that meets the rules above, copy them in
 
 - **At most ten journeys.** An eleventh means merging two journeys or removing one.
 - **Extend before you add.** A new step of an existing journey is a new criterion in its file, not a new file.
+- **Tested once.** A criterion checks only what no other journey and no per-PR e2e test already checks.
+  A step another journey or the per-PR suite covers is the criterion's Given, never a criterion of its own; the QA agent freezes such a criterion as not testable and names where it is tested.
+  The per-PR flows are listed in the profile's `SKILL.md` under `## Tested elsewhere`.
 - **Thirty minutes at most.** Each journey ends within thirty minutes, waits included.
 - **The test accounts' words.** Name what the QA agent owns: the sandbox repository, the sandbox Slack channel, the test person, the owner.
   Name everything a journey creates with this run's id, so a run leaves nothing that the next run mistakes for its own.

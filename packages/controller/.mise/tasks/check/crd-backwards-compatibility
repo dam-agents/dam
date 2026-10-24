@@ -21,14 +21,6 @@ status=0
 # an explicit in-cluster cleanup (the retired definition carries
 # helm.sh/resource-policy: keep, so Helm never deletes it itself).
 removed_ok="agent-platform.ai_forks.yaml agent-platform.ai_runs.yaml" # #2987: person-scoped forks removed; runs: dam-run executor removed (local exec shim)
-# CRD fields deliberately retired, as <file>:<path under every version's
-# openAPIV3Schema>. crdify models a removed field as breaking, and it is right
-# to: the field is dropped from every stored object on that object's next
-# write. A path here must therefore be one nothing reads any more, and the PR
-# that removes it must say what happens to a stored value. The baseline copy is
-# stripped of these paths, so the comparison sees the same absent field on both
-# sides instead of a removal.
-removed_fields="agent-platform.ai_agents.yaml:properties.spec.properties.backend agent-platform.ai_agents.yaml:properties.spec.properties.runtimeClassName agent-platform.ai_agents.yaml:properties.spec.properties.nodeSelector agent-platform.ai_agents.yaml:properties.status.properties.runtimeMigrationAttempts" # the container backend and its per-template scheduling are gone; every Agent is a machine, and backend.vm.nestedVirtualization moved to spec.nestedVirtualization
 for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" $legacy); do
   if [ ! -f "$crds/$(basename "$f")" ]; then
     case " $removed_ok " in
@@ -53,11 +45,6 @@ for f in "$crds"/*.yaml; do
   base=""
   for dir in "$crds" $legacy; do
     if git show "$baseline:$dir/$name" >"$tmp/$name" 2>/dev/null; then base="$dir/$name"; break; fi
-  done
-  for entry in $removed_fields; do
-    [ "${entry%%:*}" = "$name" ] || continue
-    yq -i "del(.spec.versions[].schema.openAPIV3Schema.${entry#*:})" "$tmp/$name"
-    echo "crd-compat: $name ${entry#*:} retired deliberately — allowed"
   done
   if [ -z "$base" ]; then
     echo "crd-compat: $f is new since $baseline — skipped"
