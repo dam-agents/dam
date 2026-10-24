@@ -21,7 +21,6 @@ Platform persists state on four durable substrates, split cleanly between the pl
   An install with no object store cannot store artifact content — the feature fails closed.
 - **Custom resources** — on their way out.
   The two kinds the platform kept there, `Agent` and `UserBudget`, become rows in Postgres; until that switch the resources remain the authority and the tables stay empty, and from it they are a frozen copy kept only for the rollback window.
-  Until the switch the resources remain the authority and the tables stay empty; from the switch they are a frozen copy, kept only for the rollback window.
   `Runs`, named here until the container backend went, are gone.
 
 **Agent-owned**:
@@ -149,7 +148,8 @@ The api-server is the sole writer for all of it, and for the per-Agent record be
   A budget row per owner subject overrides the chart's pool field by field; a budget with no override does not exist, and a row written outside the platform carries no invented audit time.
   A store row records where an install is in the move, and the snapshot table holds the archive the rollback window depends on.
   The definition's generation advances on exactly the columns the controller renders, and a host or grant change still advances it, as both were spec fields.
-  Grants are the boundary: the controller's login reaches the definition columns it renders, the two reclaim columns of the signals row, and its own observation tables.
+  Grants are the boundary: the controller's login writes only its own observation tables and the two reclaim columns of the signals row.
+  It reads the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns — and no column it does not render, no other schema, and no other install's database.
   A change feed carries every write that matters to the controller, which listens on it rather than watching the API server.
 
 The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup, serialized across replicas on a Postgres advisory lock so concurrent boots queue behind one migrator instead of racing the same DDL — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).

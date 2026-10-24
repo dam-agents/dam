@@ -229,7 +229,8 @@ Four login roles, not one:
 - **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of the `platform` and `keycloak` databases respectively, each the only role its service connects as.
   `CONNECT` is revoked from `PUBLIC` and granted back only to that owner, plus the credential-less `usage_readers` group on `platform` ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked api-server credential can neither read Keycloak's database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) — it can only do DDL/DML within the `platform` database it already owns.
 - **`platform_controller`** — the controller's identity once Agents and user budgets live in Postgres: `NOSUPERUSER`, owning nothing.
-  The api-server, as the owner of the tables that hold them, grants it the definition columns the controller renders, two reclaim columns of one shared row, and its own observation tables — and re-issues those grants on every start, so a role created before or after a migration converges.
+  The api-server, as the owner of the tables that hold them, grants it what it reconciles: writes on its own observation tables and on two reclaim columns of one shared row, and reads on the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns.
+  It re-issues those grants on every start, so a role created before or after a migration converges.
   It still reads and writes the Kubernetes API; what its login cannot do is reach a column it does not render, another schema, or another install's database ([persistence](persistence.md)).
 - **`platform`** — the lone `SUPERUSER`, used only for DBA work.
   It is the image's bootstrap superuser, because Postgres forbids demoting that role and so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
