@@ -9,7 +9,7 @@ export const AGENT_STORE_ABSORBED_KEY = "absorbed-at";
 export const agentStoreMarkerName = (releaseName: string): string =>
   `${releaseName}-agent-store`;
 
-export const AGENT_STORE_BUILD_READS_POSTGRES = false;
+export const AGENT_STORE_BUILD_READS_POSTGRES = true;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Says whether this build may serve, given the store
@@ -53,6 +53,26 @@ export function agentStoreRefusal(
   if (!marker?.[AGENT_STORE_ABSORBED_KEY])
     return "the Agent store is configured as Postgres but the absorb did not complete: the store's absorbed-at stamp is missing from its marker.";
   return null;
+}
+
+const isAlreadyExists = (cause: unknown): boolean =>
+  cause instanceof Error &&
+  "code" in cause &&
+  (cause as { code: unknown }).code === 409;
+
+export async function writeAgentStoreMarker(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  name: string,
+  data: Record<string, string>,
+): Promise<void> {
+  const body = { metadata: { name }, data };
+  try {
+    await api.createNamespacedConfigMap({ namespace, body });
+  } catch (cause) {
+    if (!isAlreadyExists(cause)) throw cause;
+    await api.replaceNamespacedConfigMap({ name, namespace, body });
+  }
 }
 
 export async function readAgentStoreMarker(

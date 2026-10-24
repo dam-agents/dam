@@ -10,12 +10,16 @@ import type {
   ToolApprovalReports,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type {
+  K8sClient,
+  KubeObject,
+} from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
 import { MAX_TRPC_BATCH_SIZE } from "../../core/request-body-bounds.js";
 
 export interface RuntimeTrpcDeps {
   k8s: K8sClient;
+  readAgent: (id: string) => Promise<KubeObject | null>;
   hello: RuntimeDeliveryService;
   sessionDirectory: SessionDirectoryService;
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
@@ -27,7 +31,7 @@ export interface RuntimeTrpcDeps {
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
   app.all("/api/agents/:id/trpc/*", async (c) => {
     const agentId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, agentId);
+    const verified = await resolveAgent(deps.readAgent, agentId);
     if (!verified) {
       return c.json({ error: "not found" }, 404);
     }

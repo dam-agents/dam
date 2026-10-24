@@ -4,6 +4,7 @@ import type {
   RunningAgentStateCache,
 } from "../agents/infrastructure/agent-state-cache.js";
 import type { KubeObject } from "../agents/infrastructure/k8s.js";
+import type { AgentObservation } from "../agents/infrastructure/out-of-memory-watch.js";
 import { LABEL_OWNER } from "../agents/infrastructure/labels.js";
 import type { AgentChangeFeed } from "./feed.js";
 import { readAgentRows, readOneAgent } from "./control-read.js";
@@ -29,6 +30,7 @@ const OBSERVE_TIMEOUT_MS = 2_000;
 export function createControlAgentStateCache(deps: {
   db: Db;
   feed: AgentChangeFeed;
+  observe?: (kind: AgentObservation, obj: KubeObject) => void;
   log: (message: string, fields?: Record<string, unknown>) => void;
 }): RunningAgentStateCache & {
   snapshot(): Promise<void>;
@@ -58,6 +60,12 @@ export function createControlAgentStateCache(deps: {
     }
     const next = new Map<string, KubeObject>();
     for (const row of rows) next.set(row.agent.id, resourceFromRows(row));
+    if (deps.observe) {
+      for (const [id, obj] of cached)
+        if (!next.has(id)) deps.observe("delete", obj);
+      for (const [id, obj] of next)
+        deps.observe(cached.has(id) ? "update" : "add", obj);
+    }
     cached = next;
     listed = true;
     stale.clear();
@@ -69,9 +77,13 @@ export function createControlAgentStateCache(deps: {
     const row = await readOneAgent(deps.db, id);
     const resource = row === null ? null : resourceFromRows(row);
     if (generation === epoch) {
+      const before = cached.get(id);
       if (resource === null) cached.delete(id);
       else cached.set(id, resource);
       stale.delete(id);
+      if (deps.observe && resource !== null)
+        deps.observe(before ? "update" : "add", resource);
+      else if (deps.observe && before) deps.observe("delete", before);
     }
     return resource;
   };

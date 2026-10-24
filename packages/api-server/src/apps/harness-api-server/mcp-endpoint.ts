@@ -35,7 +35,10 @@ import type {
   ChannelManager,
   ChannelAttachment,
 } from "./../../modules/channels/services/channel-manager.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type {
+  K8sClient,
+  KubeObject,
+} from "../../modules/agents/infrastructure/k8s.js";
 import { agentServiceClient } from "../../core/agent-service-client.js";
 import type {
   SubAgentAwaitMarks,
@@ -1497,6 +1500,7 @@ function localTime(iso: string, timeZone: string): string {
 export interface MountMcpDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
+  readAgent: (id: string) => Promise<KubeObject | null>;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   markOnboardingComplete: OnboardingMarker;
@@ -1535,7 +1539,7 @@ export interface MountMcpDeps {
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/agents/:id/mcp", async (c) => {
     const agentId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, agentId);
+    const verified = await resolveAgent(deps.readAgent, agentId);
     if (!verified) {
       securityLog("warn", "mcp.resolve_fail", {
         category: "authn",

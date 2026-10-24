@@ -167,6 +167,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       api,
       resolveSlackWorkspace: boot.resolveSlackWorkspace,
       agentStateCache: boot.agentStateCache,
+      agentStore: { authority: config.agentStore },
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,

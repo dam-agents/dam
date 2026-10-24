@@ -233,7 +233,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const kbMcp = composeKbShareServing({
     db,
     store: artifacts,
-    k8s: k8sClient,
+    getAgent: (id) => deps.agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
   const kbPublishGate = composeKbPublishGate({
@@ -267,6 +267,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   mountMcpRoutes(app, {
     channelManager,
     k8s: k8sClient,
+    readAgent: (id) => deps.agentStateCache.get(id),
     composeSkills,
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({
@@ -291,7 +292,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         agentId,
         async () => (await featureFlagsFor(owner))["chat-forms"],
       ),
-    agentImage: createAgentImageReader(k8sClient),
+    agentImage: createAgentImageReader((id) => deps.agentStateCache.get(id)),
     environments: async (owner, agentId) => {
       const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
@@ -309,13 +310,18 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,
+    readAgent: (id) => deps.agentStateCache.get(id),
     kbMcp,
     connections: connectionsRepo,
     secretStore,
   });
-  mountInvocationRoutes(app, { k8s: k8sClient, ...driverOpsDeps });
+  mountInvocationRoutes(app, {
+    readAgent: (id) => deps.agentStateCache.get(id),
+    ...driverOpsDeps,
+  });
   mountRuntimeTrpc(app, {
     k8s: k8sClient,
+    readAgent: (id) => deps.agentStateCache.get(id),
     hello: runtimeHello,
     sessionDirectory,
     artifactTouchesFor: (owner): ArtifactTouchService => ({

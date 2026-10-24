@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createDb, runMigrations } from "db";
+import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
@@ -19,11 +19,19 @@ import {
 import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
 import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
 import {
+  readAgentRows,
+  readOneAgent,
+} from "./modules/agent-store/control-read.js";
+import { createControlAgentL7HostsPort } from "./modules/agent-store/l7-hosts.js";
+import {
   agentStoreMarkerName,
   agentStoreRefusal,
   readAgentStoreMarker,
+  writeAgentStoreMarker,
 } from "./modules/agent-store/fence.js";
 import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
+import { absorbAgentStore } from "./modules/agent-store/absorb.js";
+import { passCutoverBarrier } from "./modules/agent-store/barrier.js";
 import {
   composeStorageGate,
   composeUserBudgetsAdmin,
@@ -308,6 +316,7 @@ import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
+  createK8sAgentL7Source,
   createL7PromotionReconcile,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
@@ -372,17 +381,29 @@ export async function bootstrap() {
   getLogger().info("api-server starting");
 
   const { api } = createApi(config.namespace);
+  const markerName =
+    config.agentStoreMarker ?? agentStoreMarkerName(config.releaseName);
+  const k8sClient = createK8sClient(api, config.namespace);
+  const leaseApi = createLeaseApi();
   const agentStoreMarker = await readAgentStoreMarker(
     api,
     config.namespace,
-    config.agentStoreMarker ?? agentStoreMarkerName(config.releaseName),
+    markerName,
   );
-  const refusal = agentStoreRefusal(config.agentStore, agentStoreMarker);
-  if (refusal) {
-    getLogger().error(
-      { agentStore: config.agentStore, release: config.releaseName },
-      refusal,
-    );
+  if (config.agentStore === "crd") {
+    const refusal = agentStoreRefusal(config.agentStore, agentStoreMarker);
+    if (refusal) {
+      getLogger().error(
+        { agentStore: config.agentStore, release: config.releaseName },
+        refusal,
+      );
+      throw new Error(refusal);
+    }
+  }
+  if (config.agentStoreFrozen) {
+    const refusal =
+      "the Agent store is frozen for a rollback: this build serves and writes nothing until the rollback clears the freeze.";
+    getLogger().error({ agentStore: config.agentStore }, refusal);
     throw new Error(refusal);
   }
   const dbTls = {
@@ -406,17 +427,6 @@ export async function bootstrap() {
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
   reportControlGrants(getLogger(), await reconcileControlGrants(db));
-  if (config.agentStorePreviewReport && config.agentStore === "crd")
-    await reportAbsorbPreview({
-      listCustomObjects: (plural) =>
-        createK8sClient(api, config.namespace).listCustomObjects(plural),
-      db,
-      logger: getLogger(),
-      defaults: {
-        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
-        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
-      },
-    });
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
@@ -446,6 +456,65 @@ export async function bootstrap() {
     bootRetry,
   );
   const artifacts = artifactsModule.service;
+  const snapshotStore = artifactsModule.store
+    ? {
+        put: (key: string, body: Buffer) =>
+          artifactsModule.store!.put({
+            key,
+            content: body,
+            contentType: "application/yaml",
+          }),
+        get: async (key: string) =>
+          (await artifactsModule.store!.get(key))?.content ?? null,
+      }
+    : null;
+
+  if (config.agentStorePreviewReport && config.agentStore === "crd")
+    await reportAbsorbPreview({
+      listCustomObjects: (plural) => k8sClient.listCustomObjects(plural),
+      db,
+      logger: getLogger(),
+      defaults: {
+        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
+        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+      },
+    });
+
+  if (config.agentStore === "postgres") {
+    if (agentStoreMarker?.store !== "postgres")
+      await absorbAgentStore({
+        db,
+        logger: getLogger(),
+        listCustomObjects: (plural) => k8sClient.listCustomObjects(plural),
+        writeMarker: (data) =>
+          writeAgentStoreMarker(api, config.namespace, markerName, data),
+        store: snapshotStore,
+        backupKeyPrefix: `crd-snapshots/${config.releaseName}`,
+        backupRefPrefix: config.objectStorageEndpoint
+          ? `s3://${config.objectStorageBucket}`
+          : "",
+        defaults: {
+          cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
+          memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+        },
+        absorbedByVersion: config.appVersion,
+        now: new Date(),
+      });
+    const switched = await readAgentStoreMarker(
+      api,
+      config.namespace,
+      markerName,
+    );
+    const refusal = agentStoreRefusal(config.agentStore, switched);
+    if (refusal) throw new Error(refusal);
+    await passCutoverBarrier({
+      db,
+      leases: leaseApi,
+      namespace: config.namespace,
+      leaseName: `${config.releaseName}-controller`,
+      log: (message, fields) => getLogger().info(fields ?? {}, message),
+    });
+  }
 
   if (!config.redisUrl)
     throw new Error("REDIS_URL is required (Redis is a platform primitive)");
@@ -465,8 +534,6 @@ export async function bootstrap() {
     log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
   });
 
-  const k8sClient = createK8sClient(api, config.namespace);
-  const leaseApi = createLeaseApi();
   const outOfMemoryWatch = createOutOfMemoryWatch();
   let deliverOnReady: (agentId: string) => Promise<void> = async () => {};
   const readyWatch = createReadyWatch((agentId) => {
@@ -497,6 +564,7 @@ export async function bootstrap() {
           const cache = createControlAgentStateCache({
             db,
             feed,
+            observe,
             log: (message, fields) =>
               getLogger().warn(fields ?? {}, `[agents] ${message}`),
           });
@@ -710,8 +778,22 @@ export async function bootstrap() {
     sessionPresence.reconcile(),
   );
 
-  const l7PromotionReconcile = createL7PromotionReconcile(db, k8sClient, (m) =>
-    getLogger().info(`[l7-reconcile] ${m}`),
+  const l7PromotionReconcile = createL7PromotionReconcile(
+    db,
+    config.agentStore === "postgres"
+      ? {
+          l7Hosts: createControlAgentL7HostsPort(db),
+          listAgentL7State: async () =>
+            (await readAgentRows(db)).map((row) => ({
+              agentId: row.agent.id,
+              current: row.hosts,
+              ...(row.agent.environmentOf
+                ? { environmentOf: row.agent.environmentOf }
+                : {}),
+            })),
+        }
+      : createK8sAgentL7Source(k8sClient),
+    (m) => getLogger().info(`[l7-reconcile] ${m}`),
   );
   await periodicJobs.register(
     "l7-promotion-reconcile",
@@ -1075,7 +1157,10 @@ export async function bootstrap() {
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
     listK8sAgents: async () => {
-      const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
+      const agents =
+        config.agentStore === "postgres"
+          ? await agentStateCache.list()
+          : await k8sClient.listCustomObjects(AGENTS_PLURAL);
       return agents
         .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
         .map((a) => {
@@ -1200,6 +1285,7 @@ export async function bootstrap() {
     resolveSlackWorkspace: (slackChannelId) =>
       resolveSlackWorkspace(slackChannelId),
     agentStateCache,
+    agentStore: { authority: config.agentStore },
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
@@ -1447,7 +1533,7 @@ export async function bootstrap() {
   const kbShareServing = composeKbShareServing({
     db,
     store: artifacts,
-    k8s: k8sClient,
+    getAgent: (id) => agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
   const shareHostGate = createByLinkHostGate(
@@ -1985,7 +2071,18 @@ export async function bootstrap() {
     findKbShareOwnerByAgent(db),
   ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
-    k8s: k8sClient,
+    listAgentIds: async () =>
+      config.agentStore === "postgres"
+        ? (await db.select({ id: controlAgents.id }).from(controlAgents)).map(
+            (row) => row.id,
+          )
+        : (await k8sClient.listCustomObjects(AGENTS_PLURAL))
+            .map((a) => a.metadata?.name)
+            .filter((n): n is string => Boolean(n)),
+    hasAgent: async (agentId) =>
+      config.agentStore === "postgres"
+        ? (await readOneAgent(db, agentId)) !== null
+        : (await k8sClient.getCustomObject(AGENTS_PLURAL, agentId)) !== null,
     sources: agentCleanupSources,
     resolveOwner: async (agentId) => {
       for (const lookup of orphanOwnerLookups) {
@@ -2050,6 +2147,7 @@ export async function bootstrap() {
       storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
+      agentStore: { authority: config.agentStore },
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       install: agentsInstallSettings(config),

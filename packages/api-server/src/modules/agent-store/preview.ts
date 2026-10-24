@@ -1,4 +1,4 @@
-import { connectionGrants, inArray, type Db } from "db";
+import { connectionGrants, inArray, type Db, controlUserBudgets } from "db";
 import type { Logger } from "../../core/logger.js";
 import type { KubeObject } from "../agents/infrastructure/k8s.js";
 import {
@@ -10,14 +10,21 @@ import {
 const QUANTITY =
   /^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$/u;
 
-export type Refusal = { id: string; reason: string };
+export type Refusal = {
+  id: string;
+  reason: string;
+  skipped?: boolean;
+};
+
+type BudgetInsert = typeof controlUserBudgets.$inferInsert;
 
 export interface MappedBudget {
   ownerSub: string;
-  row: Record<string, unknown> | undefined;
+  row: BudgetInsert | undefined;
   dropped: string[];
   normalized: string[];
   refusal?: string;
+  skipped?: boolean;
 }
 
 export interface AbsorbPreview {
@@ -36,6 +43,7 @@ export interface AbsorbPreview {
     normalized: Record<string, number>;
   };
   connectionGrants: { onlyInResource: Refusal[]; onlyInDatabase: Refusal[] };
+  grantedSecretIds: Refusal[];
 }
 
 export { type AgentStoreDefaults } from "./rows.js";
@@ -56,16 +64,17 @@ export function mapBudget(cr: KubeObject): MappedBudget {
     text(spec.owner) ?? (metadata.name ?? "").replace(/^budget-/u, "");
   const dropped: string[] = [];
   const normalized: string[] = [];
-  const refuse = (reason: string): MappedBudget => ({
+  const refuse = (reason: string, skipped = false): MappedBudget => ({
     ownerSub,
     row: undefined,
     dropped,
     normalized,
     refusal: reason,
+    ...(skipped && { skipped }),
   });
 
   if (metadata.deletionTimestamp)
-    return refuse("the resource is being deleted");
+    return refuse("the resource is being deleted", true);
   if (!ownerSub || ownerSub.length > 246)
     return refuse("the budget names no owner subject the column can hold");
 
@@ -80,11 +89,23 @@ export function mapBudget(cr: KubeObject): MappedBudget {
   const cpu = quantity("cpu");
   const memory = quantity("memory");
   const storage = quantity("storage");
-  for (const field of [cpu, memory, storage])
-    if (field instanceof Error) return refuse(field.message);
+  if (cpu instanceof Error) return refuse(cpu.message);
+  if (memory instanceof Error) return refuse(memory.message);
+  if (storage instanceof Error) return refuse(storage.message);
   if (cpu === null && memory === null && storage === null)
-    return refuse("the budget carries no override, so it would be deleted");
+    return refuse(
+      "the budget carries no override, so it would be deleted",
+      true,
+    );
   if (cr.status !== undefined) dropped.push("status");
+  const parsedCreatedAt =
+    metadata.creationTimestamp === undefined
+      ? null
+      : new Date(metadata.creationTimestamp);
+  const createdAt =
+    parsedCreatedAt !== null && !Number.isNaN(parsedCreatedAt.getTime())
+      ? parsedCreatedAt
+      : null;
 
   return {
     ownerSub,
@@ -97,8 +118,7 @@ export function mapBudget(cr: KubeObject): MappedBudget {
       storage,
       setBySub: null,
       operatorUpdatedAt: null,
-      createdAt: metadata.creationTimestamp,
-      updatedAt: metadata.creationTimestamp,
+      ...(createdAt ? { createdAt, updatedAt: createdAt } : {}),
     },
   };
 }
@@ -195,7 +215,48 @@ export function previewAgentStore(input: {
       normalized: counted(mappedBudgets, "normalized"),
     },
     connectionGrants: { onlyInResource, onlyInDatabase },
+    grantedSecretIds: input.agents
+      .filter((cr) =>
+        Array.isArray((cr.spec as Spec | undefined)?.grantedSecretIds),
+      )
+      .filter(
+        (cr) => ((cr.spec as Spec).grantedSecretIds as unknown[]).length > 0,
+      )
+      .map((cr) => ({
+        id: cr.metadata?.name ?? "",
+        reason:
+          "the spec grants secrets by id, which the store has no column for: the credentials would stop being injected",
+      })),
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the preview's findings that block the absorb, and
+ * the ones it only reports.
+ *
+ * The switch may drop a resource that is being deleted, or a budget that repeats
+ * the chart's defaults — those would become no row anyway and the state after
+ * the switch is the one the operator asked for. Everything else is a record that
+ * would stop existing as the platform reads it, so the absorb refuses and names
+ * them rather than importing a smaller fleet than the cluster runs.
+ */
+export function blockingRefusals(preview: AbsorbPreview): string[] {
+  const lines: string[] = [];
+  for (const refusal of preview.agents.refused)
+    if (!refusal.skipped) lines.push(`Agent ${refusal.id}: ${refusal.reason}`);
+  for (const refusal of preview.budgets.refused)
+    if (!refusal.skipped) lines.push(`budget ${refusal.id}: ${refusal.reason}`);
+  for (const refusal of preview.connectionGrants.onlyInResource)
+    lines.push(
+      `Agent ${refusal.id}: connection grants disagree with the database (${refusal.reason}); run the grant fan-out repair first`,
+    );
+  for (const refusal of preview.connectionGrants.onlyInDatabase)
+    lines.push(
+      `Agent ${refusal.id}: connection grants disagree with the database (${refusal.reason}); run the grant fan-out repair first`,
+    );
+  for (const refusal of preview.grantedSecretIds)
+    lines.push(`Agent ${refusal.id}: ${refusal.reason}`);
+  return lines;
 }
 
 export async function readConnectionGrants(
