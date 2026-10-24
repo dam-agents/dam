@@ -91,6 +91,8 @@ interface AgentStatusObject {
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
+  signalVersion?: number;
+  statusVersion?: number;
 }
 
 export interface InfraAgent {
@@ -134,6 +136,8 @@ export interface InfraAgent {
   startFailure?: AgentStartFailure;
   podRestarts: number;
   podRestartReason?: string;
+  signalVersion?: number;
+  statusVersion?: number;
   agentPodNotReadyReason?: string;
   agentPodReady?: boolean;
   gatewayPodReady?: boolean;
@@ -372,6 +376,12 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
         ? restarts
         : 0,
+    ...(typeof status.signalVersion === "number" && {
+      signalVersion: status.signalVersion,
+    }),
+    ...(typeof status.statusVersion === "number" && {
+      statusVersion: status.statusVersion,
+    }),
     podRestartReason: status.agentPodRestartReason || undefined,
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,

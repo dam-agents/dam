@@ -10,7 +10,14 @@ import {
   createK8sClient,
   createLeaseApi,
   agentServiceAddress,
+  type KubeObject,
 } from "./modules/agents/infrastructure/k8s.js";
+import {
+  createAgentChangeFeed,
+  postgresChangeSource,
+} from "./modules/agent-store/feed.js";
+import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
+import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
 import {
   agentStoreMarkerName,
   agentStoreRefusal,
@@ -470,26 +477,52 @@ export async function bootstrap() {
       ),
     );
   });
-  const agentStateCache = startAgentStateCache({
-    informer: createAgentInformer(config.namespace),
-    live: k8sClient,
-    namespace: config.namespace,
-    log: (m) => getLogger().warn(`[agents] ${m}`),
-    observe: (kind, obj) => {
-      outOfMemoryWatch(kind, obj);
-      readyWatch(kind, obj);
-      agentRemovalWatch(kind, obj);
-    },
-  });
-  const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  const observe = ((kind: "add" | "update" | "delete", obj: KubeObject) => {
+    outOfMemoryWatch(kind, obj);
+    readyWatch(kind, obj);
+    agentRemovalWatch(kind, obj);
+  }) as (kind: "add" | "update" | "delete", obj: KubeObject) => void;
+  const agentStateCache =
+    config.agentStore === "postgres"
+      ? (() => {
+          let refresh: () => Promise<void> = async () => {};
+          let invalidate: (id: string | null) => void = () => {};
+          const feed = createAgentChangeFeed({
+            source: postgresChangeSource(sql),
+            snapshot: () => refresh(),
+            onChange: (id) => invalidate(id),
+            log: (message, fields) =>
+              getLogger().warn(fields ?? {}, `[agents] ${message}`),
+          });
+          const cache = createControlAgentStateCache({
+            db,
+            feed,
+            log: (message, fields) =>
+              getLogger().warn(fields ?? {}, `[agents] ${message}`),
+          });
+          refresh = cache.snapshot;
+          invalidate = cache.invalidate;
+          return cache;
+        })()
+      : startAgentStateCache({
+          informer: createAgentInformer(config.namespace),
+          live: k8sClient,
+          namespace: config.namespace,
+          log: (m) => getLogger().warn(`[agents] ${m}`),
+          observe,
+        });
+  const agentsRepo =
+    config.agentStore === "postgres"
+      ? createControlAgentsRepository(db, agentStateCache)
+      : createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createDelegationFramesClient({
     namespace: config.namespace,
     isReady: (agentId) => agentsRepo.isReady(agentId),
   });
-  const liveAgentsRepo = createAgentsRepository(
-    k8sClient,
-    createLiveAgentStateCache(k8sClient),
-  );
+  const liveAgentsRepo =
+    config.agentStore === "postgres"
+      ? agentsRepo
+      : createAgentsRepository(k8sClient, createLiveAgentStateCache(k8sClient));
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -2195,6 +2228,7 @@ export async function bootstrap() {
     spendCeilingsForOperator: spend.ceilingsForOperator,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
+      agentStore: { authority: config.agentStore, db },
       users: {
         subByEmail: (email) => userDirectory.resolveByEmail(email),
         emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
