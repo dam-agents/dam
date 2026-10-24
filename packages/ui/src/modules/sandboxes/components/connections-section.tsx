@@ -1,5 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 
+import { SectionHeading } from "@/components/ui/section-heading";
+
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
@@ -21,6 +23,7 @@ interface Props {
   header: SectionHeaderSlot;
   leading?: ReactNode;
   onGoToChannels?: () => void;
+  panelHeading?: string;
 }
 
 export function ConnectionsSection({
@@ -29,6 +32,7 @@ export function ConnectionsSection({
   header,
   leading,
   onGoToChannels,
+  panelHeading,
 }: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
@@ -77,6 +81,13 @@ export function ConnectionsSection({
     <>
       {header()}
       {leading}
+      {panelHeading && (
+        <SectionHeading
+          label={panelHeading}
+          addLabel="Add connection"
+          onAdd={() => setCatalogOpen(true)}
+        />
+      )}
       <GrantedConnectionsPanel
         groups={groups}
         granted={granted}
@@ -88,6 +99,7 @@ export function ConnectionsSection({
           setPreferred.mutate({ agentId, connectionId })
         }
         preferPending={setPreferred.isPending}
+        addRowHidden={panelHeading !== undefined}
         extraGroups={
           satellites.granted.length > 0 && (
             <SatellitesGroup

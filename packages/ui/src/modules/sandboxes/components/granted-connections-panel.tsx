@@ -25,6 +25,7 @@ interface Props {
   title?: string;
   leading?: React.ReactNode;
   extraGroups?: React.ReactNode;
+  addRowHidden?: boolean;
 }
 
 export function GrantedConnectionsPanel({
@@ -39,6 +40,7 @@ export function GrantedConnectionsPanel({
   title,
   leading,
   extraGroups,
+  addRowHidden = false,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
@@ -63,17 +65,19 @@ export function GrantedConnectionsPanel({
         newLabel="Add connection"
         newTestId="open-connection-catalog"
         addRow={
-          <AddRow onClick={onOpenCatalog} testId="open-connection-catalog">
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium text-foreground">
-                Add connection
-              </p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                Add a service this agent can reach.
-              </p>
-            </div>
-          </AddRow>
+          addRowHidden ? undefined : (
+            <AddRow onClick={onOpenCatalog} testId="open-connection-catalog">
+              <Add size={16} className="shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-md font-medium text-foreground">
+                  Add connection
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  Add a service this agent can reach.
+                </p>
+              </div>
+            </AddRow>
+          )
         }
       >
         {extraGroups}

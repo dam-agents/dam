@@ -1,11 +1,11 @@
-import { SectionLabel } from "@/components/ui/section-label";
+import { SectionHeading } from "@/components/ui/section-heading";
 
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { SandboxProvidersSection } from "./sandbox-providers-section.js";
-import { SECTIONS } from "./sandbox-section-nav.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Services panel of the unified toolbar: the
@@ -22,13 +22,15 @@ export function ServicesPanel({
   sessionId: string | null;
   onGoToChannels: () => void;
 }) {
-  const envDescription = SECTIONS.find(
-    (entry) => entry.section === "environment",
-  )?.description;
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   return (
     <div className="flex flex-col gap-8">
       <section>
-        <SectionLabel spaced>Providers</SectionLabel>
+        <SectionHeading
+          label="Providers"
+          addLabel="Add provider"
+          onAdd={() => navigateToSettings("providers")}
+        />
         <SandboxProvidersSection
           agentId={agent.id}
           header={() => null}
@@ -37,6 +39,7 @@ export function ServicesPanel({
       </section>
       <section>
         <ConnectionsSection
+          panelHeading="Connections"
           agentId={agent.id}
           header={() => null}
           oauthReturnView={routeToPath({
@@ -48,13 +51,12 @@ export function ServicesPanel({
         />
       </section>
       <section>
-        <SectionLabel spaced>Environment variables</SectionLabel>
-        {envDescription && (
-          <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-            {envDescription}
-          </p>
-        )}
-        <EnvTab agent={agent} header={() => null} />
+        <EnvTab
+          agent={agent}
+          header={() => null}
+          panelHeading="Environment variables"
+          panelDescription="Exposed to the sandbox. Use Connections for injected secrets."
+        />
       </section>
     </div>
   );

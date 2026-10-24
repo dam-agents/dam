@@ -22,6 +22,7 @@ import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { AddRow, LIST_ROW, ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { cn } from "@/lib/utils";
 
 import { sanitizeEnvVars } from "../../../../components/env-vars-editor.js";
@@ -63,9 +64,13 @@ function shadowWarnings(
 export function EnvTab({
   agent,
   header,
+  panelHeading,
+  panelDescription,
 }: {
   agent: AgentView;
   header: SectionHeaderSlot;
+  panelHeading?: string;
+  panelDescription?: string;
 }) {
   const updateAgent = useUpdateAgent();
   const { data: apps = [] } = useAppConnections();
@@ -129,28 +134,43 @@ export function EnvTab({
         </Callout>
       )}
 
+      {panelHeading && (
+        <SectionHeading
+          label={panelHeading}
+          addLabel="Create variable"
+          onAdd={() => setEditing("new")}
+          description={panelDescription}
+        />
+      )}
+
       <ListSection
-        isEmpty={envVars.length === 0}
+        isEmpty={
+          panelHeading
+            ? envVars.length === 0 && shownInherited.length === 0
+            : envVars.length === 0
+        }
         empty="No variables yet. Create one for configuration the agent reads from its environment."
         onNew={() => setEditing("new")}
         newLabel="Create variable"
         newTestId="env-var-new"
         newDisabled={saving}
         addRow={
-          <AddRow
-            onClick={() => setEditing("new")}
-            disabled={saving}
-            testId="env-var-new"
-            className="text-xs"
-          >
-            <Add size={14} className="shrink-0" />
-            <span className="font-mono font-semibold text-foreground">
-              Create variable
-            </span>
-            <span className="flex-1 truncate text-muted-foreground">
-              Name and value the agent reads from its environment.
-            </span>
-          </AddRow>
+          panelHeading ? undefined : (
+            <AddRow
+              onClick={() => setEditing("new")}
+              disabled={saving}
+              testId="env-var-new"
+              className="text-xs"
+            >
+              <Add size={14} className="shrink-0" />
+              <span className="font-mono font-semibold text-foreground">
+                Create variable
+              </span>
+              <span className="flex-1 truncate text-muted-foreground">
+                Name and value the agent reads from its environment.
+              </span>
+            </AddRow>
+          )
         }
       >
         {envVars.map((v, i) => (
@@ -200,9 +220,14 @@ export function EnvTab({
             />
           </div>
         ))}
+        {/* UNIT_BOUNDARY_DESCRIPTION: in a panel the inherited entries join the manual ones in one list, since they are the same concept — a variable the Agent reads — and only their source differs. */}
+        {panelHeading &&
+          shownInherited.map((e, i) => (
+            <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
+          ))}
       </ListSection>
 
-      {shownInherited.length > 0 && (
+      {!panelHeading && shownInherited.length > 0 && (
         <ListSection
           label="Inherited"
           description="Set by the platform and by this agent's providers and connections. Read-only."
