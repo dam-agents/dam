@@ -35,6 +35,7 @@ import {
 import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
+import { composeProfilesForOwner } from "../../../modules/profiles/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import {
   composeChatFormPreferencesForOwner,
@@ -163,6 +164,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
     });
+    const { profiles, bindDefaultAgentProfile } = composeProfilesForOwner({
+      db,
+      owner: user.sub,
+      catalog: harnesses,
+      sharedProvider: config.curveBenderDeployment !== null,
+    });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       resolveSlackWorkspace: boot.resolveSlackWorkspace,
@@ -209,6 +216,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       contributionsProgress,
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(connections, harnesses),
+      defaultProfileBinder: { bindDefaultAgentProfile },
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;
@@ -438,6 +446,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kbShares,
       artifactLibrary,
       caseStudies,
+      profiles,
       features,
       chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
