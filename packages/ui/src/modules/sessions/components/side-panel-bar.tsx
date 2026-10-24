@@ -1,14 +1,12 @@
 import {
   Branch,
   type CarbonIconType,
-  ChatOperational,
   Cloud,
   DataStructured,
   DocumentAttachment,
   EventSchedule,
   Folder,
   Gears,
-  KeyValues,
   LogoSlack,
   MachineLearningModel,
   Model,
@@ -67,8 +65,6 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "schedules", label: "Schedules", icon: EventSchedule },
   { tab: "providers", label: "Providers", icon: Model },
   { tab: "network", label: "Network access", icon: Network_2 },
-  { tab: "environment", label: "Environment variables", icon: KeyValues },
-  { tab: "chat-forms", label: "Chat forms", icon: ChatOperational },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];

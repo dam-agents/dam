@@ -13,22 +13,12 @@ function LocalSkillRow({
   onOpen?: () => void;
   trailing?: ReactNode;
 }) {
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
+  const body = (
+    <>
       <div className="min-w-0 flex-1">
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="max-w-full truncate text-left text-md font-medium text-foreground hover:underline"
-          >
-            {skill.name}
-          </button>
-        ) : (
-          <p className="truncate text-md font-medium text-foreground">
-            {skill.name}
-          </p>
-        )}
+        <p className="truncate text-md font-medium text-foreground">
+          {skill.name}
+        </p>
       </div>
       {trailing}
       {skill.origin === "system-modified" && (
@@ -40,7 +30,20 @@ function LocalSkillRow({
           Modified
         </Badge>
       )}
-    </div>
+    </>
+  );
+  // UNIT_BOUNDARY_DESCRIPTION: the whole row opens the skill's info, not only its name, so a reader with a mouse or a screen reader has one target for the whole list item.
+  return onOpen ? (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`About ${skill.name}`}
+      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      {body}
+    </button>
+  ) : (
+    <div className="flex items-center gap-3 px-4 py-3">{body}</div>
   );
 }
 

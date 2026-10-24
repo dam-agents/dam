@@ -19,14 +19,19 @@ import { providerHarnesses } from "../../sessions/lib/session-pair-options.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
-import { SessionDefaultsSection } from "./session-defaults-section.js";
+import {
+  type SessionDefaultKind,
+  SessionDefaultsSection,
+} from "./session-defaults-section.js";
 
 export function SandboxProvidersSection({
   agentId,
   header,
+  defaultsKinds,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
+  defaultsKinds?: readonly SessionDefaultKind[];
 }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -97,7 +102,7 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      <SessionDefaultsSection agentId={agentId} />
+      <SessionDefaultsSection agentId={agentId} kinds={defaultsKinds} />
     </div>
   );
 }

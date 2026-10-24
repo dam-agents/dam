@@ -15,6 +15,9 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({ navigateToSandboxHome: () => {}, setView: () => {} }),
 }));
+vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
+  useUnifiedRightToolbar: () => false,
+}));
 vi.mock("../../modules/agents/hooks/use-update-sandbox.js", () => ({
   useUpdateSandbox: () => ({ updateOne: vi.fn(), updatingId: null }),
 }));
@@ -28,7 +31,7 @@ vi.mock(
 
 const { AgentUpdateDot } =
   await import("../../modules/agents/components/update-available-action.js");
-const { AgentMenuItems } =
+const { AgentMenuItems, agentMenuEntries } =
   await import("../../modules/platform/components/sidebar-v2/agent-row-actions.js");
 const { AgentUpdateRow } =
   await import("../../modules/sandboxes/components/agent-update-row.js");
@@ -66,8 +69,13 @@ describe("an Agent's actions menu", () => {
       const items = (updateAvailable: boolean) =>
         (
           AgentMenuItems({
+            agent: { id: "a1", name: "A", avatar: null } as AgentView,
+            entries: agentMenuEntries(false),
             onConfigure: () => {},
+            onRename: () => {},
             onRemove: () => {},
+            onToggleDisabled: () => {},
+            onRestart: () => {},
             updateAvailable,
             menu,
           }) as ReactElement<{ children: ReactNode }>

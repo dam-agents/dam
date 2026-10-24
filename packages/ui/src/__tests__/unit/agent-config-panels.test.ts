@@ -7,6 +7,7 @@ import { environmentsPanelShown } from "../../modules/environments/lib/environme
 import { createFeaturesSlice } from "../../modules/features/store.js";
 import type { SandboxSection } from "../../modules/platform/lib/routes.js";
 import { createNavigationSlice } from "../../modules/platform/store/navigation.js";
+import { channelsPanelShown } from "../../modules/sandboxes/lib/channels-surface.js";
 import { SIDE_PANEL_TABS } from "../../modules/sessions/components/side-panel-bar.js";
 import {
   configRedirectTab,
@@ -62,15 +63,16 @@ beforeEach(() => {
 // TEST_SCENARIO: every section of the configuration page has a panel that carries its knobs, so no setting is left without a home once the page is gone. The Environments panel keeps its own renderer, and Documentation is no section of the page.
 it("maps every configuration section to a panel", () => {
   const panels = SECTIONS.map(configTabForSection);
-  expect(new Set(panels).size).toBe(panels.length - 1);
+  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share eight panels: General and Usage are the Agent panel, and Environment vars and Chat forms have none of their own — the first sits under Connections, the second is built in under the experiment.
+  expect(new Set(panels).size).toBe(8);
   expect(panels).toEqual([
     "agent",
     "providers",
     "connections",
     "network",
-    "environment",
+    "connections",
     "channels",
-    "chat-forms",
+    "agent",
     "skills",
     "schedules",
     "environments",
@@ -80,9 +82,7 @@ it("maps every configuration section to a panel", () => {
     [
       "agent",
       "channels",
-      "chat-forms",
       "connections",
-      "environment",
       "environments",
       "network",
       "providers",
@@ -90,26 +90,6 @@ it("maps every configuration section to a panel", () => {
       "skills",
     ].sort(),
   );
-});
-
-// TEST_SCENARIO: with the Chat forms experiment off, its panel is not offered while the toolbar is on, exactly as its page section is left out.
-it("hides Chat forms without the chat-forms experiment", () => {
-  const available = {
-    agent: true,
-    artifacts: true,
-    canOpenBrowser: true,
-    changes: true,
-    processesEnabled: true,
-    environments: true,
-    configuration: true,
-    gettingStarted: true,
-  };
-  expect(
-    hiddenSidePanelTabs({ ...available, chatForms: false }).has("chat-forms"),
-  ).toBe(true);
-  expect(
-    hiddenSidePanelTabs({ ...available, chatForms: true }).has("chat-forms"),
-  ).toBe(false);
 });
 
 // TEST_SCENARIO: the rail names every panel the configuration holds, so the Configure menu and the panels agree on one list.
@@ -146,6 +126,14 @@ it("redirects a configuration address only with the install's flag", () => {
   expect(configRedirectTab(false, "network")).toBe(null);
 });
 
+// TEST_SCENARIO: the Channels panel is offered only where the install offers a messenger to bind, since that panel is the only place to bind one under the experiment.
+it("offers the Channels panel only when a messenger exists", () => {
+  expect(channelsPanelShown({ slack: true })).toBe(true);
+  expect(channelsPanelShown({ telegram: true })).toBe(true);
+  expect(channelsPanelShown({})).toBe(false);
+  expect(channelsPanelShown({ slack: false, telegram: false })).toBe(false);
+});
+
 // TEST_SCENARIO: with the experiment off, none of the configuration panels exists, so one left open closes; with it on, all of them do.
 it("hides every configuration panel with the experiment off", () => {
   const available = {
@@ -155,7 +143,7 @@ it("hides every configuration panel with the experiment off", () => {
     changes: true,
     processesEnabled: true,
     environments: true,
-    chatForms: true,
+    channels: true,
     gettingStarted: true,
   };
   const on = hiddenSidePanelTabs({ ...available, configuration: true });

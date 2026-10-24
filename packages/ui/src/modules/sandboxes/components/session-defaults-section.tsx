@@ -25,6 +25,8 @@ import { OffDefaultSchedules } from "./off-default-schedules.js";
 
 const KINDS: readonly DefaultKind[] = ["chat", "channel", "scheduled"];
 
+export type SessionDefaultKind = DefaultKind;
+
 const KIND_HINT: Record<DefaultKind, string> = {
   chat: "New chats start on this.",
   channel: "Slack and Telegram threads run on this.",
@@ -37,7 +39,13 @@ const KIND_HINT: Record<DefaultKind, string> = {
  * values they inherit; switching that off gives them a default of their own,
  * and switching it on again clears it.
  */
-export function SessionDefaultsSection({ agentId }: { agentId: string }) {
+export function SessionDefaultsSection({
+  agentId,
+  kinds = KINDS,
+}: {
+  agentId: string;
+  kinds?: readonly DefaultKind[];
+}) {
   const { data: status } = useHarnessConfigStatus(agentId);
   const operable = useIsAgentOperable(agentId);
   if (status && !status.harnesses && !operable)
@@ -50,7 +58,7 @@ export function SessionDefaultsSection({ agentId }: { agentId: string }) {
   if (!routesSessionPairs(status?.harnesses ?? [])) return null;
   return (
     <section className="mt-6 flex flex-col gap-6">
-      {KINDS.map((kind) => (
+      {kinds.map((kind) => (
         <KindDefault key={`${agentId}:${kind}`} agentId={agentId} kind={kind} />
       ))}
     </section>

@@ -14,8 +14,6 @@ export type SidePanelTab =
   | "agent"
   | "providers"
   | "network"
-  | "environment"
-  | "chat-forms"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -45,8 +43,8 @@ export type SidePanelAvailability = {
   changes: boolean;
   processesEnabled: boolean;
   environments: boolean;
+  channels: boolean;
   configuration: boolean;
-  chatForms: boolean;
   gettingStarted: boolean;
 };
 
@@ -62,15 +60,12 @@ export function hiddenSidePanelTabs(
     processes: available.agent && available.processesEnabled,
     environments: available.agent && available.environments,
     connections: available.agent && available.configuration,
-    channels: available.agent && available.configuration,
+    channels: available.agent && available.configuration && available.channels,
     skills: available.agent && available.configuration,
     schedules: available.agent && available.configuration,
     agent: available.agent && available.configuration,
     providers: available.agent && available.configuration,
     network: available.agent && available.configuration,
-    environment: available.agent && available.configuration,
-    "chat-forms":
-      available.agent && available.configuration && available.chatForms,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -117,8 +112,6 @@ export type ConfigurationTab = Extract<
   | "environments"
   | "providers"
   | "network"
-  | "environment"
-  | "chat-forms"
 >;
 
 const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
@@ -126,9 +119,9 @@ const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
   providers: "providers",
   connections: "connections",
   network: "network",
-  environment: "environment",
+  environment: "connections",
+  "chat-forms": "agent",
   channels: "channels",
-  "chat-forms": "chat-forms",
   skills: "skills",
   schedules: "schedules",
   environments: "environments",
@@ -161,8 +154,6 @@ export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
   "environments",
   "providers",
   "network",
-  "environment",
-  "chat-forms",
 ];
 
 export type SidePanelSelection =

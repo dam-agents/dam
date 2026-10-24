@@ -31,6 +31,7 @@ import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
 import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
 import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
+import { chatFormPreferencesFor } from "../../a2ui/lib/chat-form-preferences.js";
 import { composerLocked } from "../../a2ui/lib/composer-lock.js";
 import {
   conversationEmpty,
@@ -116,6 +117,7 @@ import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-liv
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { processesBadgeTone } from "../../processes/lib/process-summary.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
+import { channelsPanelShown } from "../../sandboxes/lib/channels-surface.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
@@ -512,9 +514,13 @@ export function ChatView() {
     sendPrompt: sendAndFollow,
   });
   const chatFormsEnabled = useChatFormsEnabled();
-  const { data: chatFormPreferences } = useChatFormPreferences(
+  const { data: storedFormPreferences } = useChatFormPreferences(
     chatFormsEnabled ? selectedAgent : null,
     { quiet: true },
+  );
+  const chatFormPreferences = chatFormPreferencesFor(
+    rightToolbar,
+    storedFormPreferences,
   );
   const a2uiConversation = useA2uiConversation(
     messages,
@@ -743,6 +749,7 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
+    channels: channelsPanelShown(agentsData?.availableChannels ?? {}),
     // UNIT_BOUNDARY_DESCRIPTION: the experiment offers the Environments panel once the agent owns one, and while its access list is open before that; every other shell keeps the tab it had, which waits for neither.
     environments: rightToolbar
       ? environmentsPanelShown({
@@ -759,7 +766,6 @@ export function ChatView() {
         }) ||
         (environments.isLoading && sidePanelTab === "environments"),
     configuration: rightToolbar,
-    chatForms: chatFormsEnabled,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);

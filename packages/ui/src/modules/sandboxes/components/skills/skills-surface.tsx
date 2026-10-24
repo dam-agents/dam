@@ -14,7 +14,6 @@ import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
-import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
@@ -220,26 +219,10 @@ export function SkillsSurface({
             />
 
             {}
-            {shownPlatform.length > 0 && (
-              <PlatformSkillsGroup
-                skills={shownPlatform}
-                onOpenSkill={
-                  agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
-                    : undefined
-                }
-                onOpenSection={
-                  agentId
-                    ? (section) => navigateToSandboxHome(agentId, section)
-                    : undefined
-                }
-              />
-            )}
-
-            {shownBuiltIn.length > 0 && (
+            {shownPlatform.length + shownBuiltIn.length > 0 && (
               <LocalSkillsGroup
-                label="Included with sandbox image"
-                skills={shownBuiltIn}
+                label="Platform features"
+                skills={[...shownPlatform, ...shownBuiltIn]}
                 onOpenSkill={
                   agentId
                     ? (skill) => setOpenModal({ kind: "render-local", skill })

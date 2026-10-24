@@ -47,7 +47,7 @@ const ALL_AVAILABLE = hiddenSidePanelTabs({
   processesEnabled: true,
   environments: true,
   configuration: true,
-  chatForms: true,
+  channels: true,
   gettingStarted: true,
 });
 
@@ -91,7 +91,7 @@ describe("which tab the side panel shows", () => {
       processesEnabled: false,
       environments: false,
       configuration: true,
-      chatForms: true,
+      channels: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
@@ -107,7 +107,7 @@ describe("which tab the side panel shows", () => {
       processesEnabled: true,
       environments: true,
       configuration: true,
-      chatForms: true,
+      channels: true,
       gettingStarted: true,
     });
     expect(ALL_AVAILABLE.has("changes")).toBe(false);
@@ -141,7 +141,7 @@ describe("the Environments tab", () => {
         processesEnabled: true,
         environments: environmentsTabShown(o),
         configuration: true,
-        chatForms: true,
+        channels: true,
         gettingStarted: true,
       });
     expect(
@@ -173,7 +173,7 @@ describe("an Agent's configuration tabs", () => {
       changes: true,
       processesEnabled: true,
       environments: true,
-      chatForms: true,
+      channels: true,
       gettingStarted: true,
     };
     const tabs = ["connections", "channels", "skills", "schedules"] as const;
@@ -200,7 +200,7 @@ describe("an Agent's configuration tabs", () => {
             ...available,
             agent: false,
             configuration: true,
-            chatForms: true,
+            channels: true,
           }),
         ),
       ).toBe(null);
@@ -218,7 +218,7 @@ describe("the panels outside an Agent's chat", () => {
       processesEnabled: true,
       environments: true,
       configuration: true,
-      chatForms: true,
+      channels: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
@@ -241,7 +241,7 @@ describe("the panels outside an Agent's chat", () => {
       processesEnabled: true,
       environments: true,
       configuration: true,
-      chatForms: true,
+      channels: true,
       gettingStarted: false,
     });
     expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(
