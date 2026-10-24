@@ -122,9 +122,7 @@ describe("CurveBender provider rows", () => {
     expect(html).toContain(`title="${SHARED}"`);
     expect(html).toContain("Configured · Connected");
     expect(html).toMatch(
-      new RegExp(
-        `<button[^>]*aria-label="About ${SHARED.replace(/[()]/g, "\\$&")}"`,
-      ),
+      /<button[^>]*aria-label="About CurveBender \(shared\)"/,
     );
     expect(html).not.toContain(`aria-label="Connect ${SHARED}"`);
     expect(html).not.toContain(`aria-label="Edit ${SHARED}"`);
