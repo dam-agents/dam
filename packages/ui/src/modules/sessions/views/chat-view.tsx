@@ -756,7 +756,8 @@ export function ChatView() {
           enabled: environmentsEnabled,
           vm: agentView?.vm === true,
           count: environments.data?.length,
-        }),
+        }) ||
+        (environments.isLoading && sidePanelTab === "environments"),
     configuration: rightToolbar,
     chatForms: chatFormsEnabled,
     gettingStarted,
