@@ -137,8 +137,8 @@ Its tiles carry no tooltips: the accessible name stays on the button and the ope
 A count badge keeps its place on the icon's top-right corner.
 The panel's top bar becomes a 40 px row 8 px below the top of the panel, with its rule under it, ending in a 40 px X tile that closes the panel and hands the keyboard back to the rail; the tile sits centered in a square cell in the top bar's top-right corner, from the panel's top down to the bar's rule and from the cell's border to the panel's edge, in a docked item's top bar too, and the panel's other controls keep their size.
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
-The tiled bar opens the Documentation panel, which frames the published docs and carries a button that opens the same page in a new tab, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
-The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.
+The tiled bar offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
+The left navigation drops its own Artifacts entry while the bar offers it; Documentation, which no surface of the bar shows, stays there.
 With the flag on, an Agent's chat also holds the whole of its configuration, and the configuration page has no way in: one Configure tile opens the list of panels — Agent, Connections, Channels, Skills, Schedules, Environments, Providers, Network access, Environment variables and Chat forms — and each panel is the section that page already renders.
 A link, a menu item or a deep link to the configuration page opens the chat on the panel that holds that section, so a bookmark keeps working, and the page itself redirects instead of drawing.
 Moving there takes nothing away: who may open an Agent's Environments is edited in its panel, and the model switcher's "set as default" sets the default the Providers panel lists beside the provider grants.
@@ -146,7 +146,7 @@ A recurring schedule created in that panel makes the browser add a line in the A
 That line is the browser's own: it is not part of the Session record, it is never sent to the Agent, and it goes when the conversation changes or the user writes again.
 A tool call of the platform's own MCP server that created or changed a schedule or a skill carries a card that opens its tab, and a schedule's card also expands that schedule.
 Both are part of the experiment, so with the flag off the chat shows neither.
-Apart from the configuration and Documentation panels, the rail's tab list and what each tab shows do not depend on this flag.
+Apart from the configuration panels, the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.
 The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
 A phone keeps that bar, carrying the navigation button, the running count and the buttons that open the panel, since the rail waits for a panel there.

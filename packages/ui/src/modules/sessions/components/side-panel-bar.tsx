@@ -1,5 +1,4 @@
 import {
-  Book,
   Branch,
   type CarbonIconType,
   ChatOperational,
@@ -74,12 +73,10 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "environment", label: "Environment variables", icon: KeyValues },
   { tab: "chat-forms", label: "Chat forms", icon: ChatOperational },
   { tab: "getting-started", label: "Get started", icon: Task },
-  { tab: "documentation", label: "Documentation", icon: Book },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
 
 const APP_TABS: ReadonlySet<SidePanelTab> = new Set([
-  "documentation",
   "getting-started",
   "approvals",
 ]);

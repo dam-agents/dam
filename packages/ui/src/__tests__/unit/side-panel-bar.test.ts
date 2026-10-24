@@ -274,7 +274,7 @@ it("scrolls the rail when the window cannot hold both clusters", () => {
   expect(nav).toContain("overflow-y-auto");
 });
 
-// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Documentation as a tile between Get started and Approvals.
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Get started above Approvals.
 it("draws JanUI's tiles at the sidebar strip's size", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -300,11 +300,10 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(open).toContain("size-10");
   expect(open).toContain("bg-muted");
   expect(html).toContain('width="22"');
-  const order = ["getting-started", "documentation", "approvals"].map((id) =>
+  const order = ["getting-started", "approvals"].map((id) =>
     html.indexOf(`data-testid="side-panel-tab-${id}"`),
   );
   expect(order[1]).toBeGreaterThan(order[0]!);
-  expect(order[2]).toBeGreaterThan(order[1]!);
 });
 
 // TEST_SCENARIO: The JanUI rail names a tab through its aria-label and the panel header, not a hover tooltip that would cover the panel, as the left rail does; the classic layout's icon bar keeps its tooltip.

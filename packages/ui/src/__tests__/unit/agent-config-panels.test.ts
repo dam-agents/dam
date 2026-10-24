@@ -1,16 +1,11 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: With the Unified right toolbar on, every knob of an Agent's configuration page moves into a side panel: each section the page holds maps to the panel that carries it, every link and deep link to the page opens that panel in the chat instead, and the Docs tile opens the published documentation in a panel with a way out to a new tab. With the experiment off, the links go to the page as before and the panels do not exist.
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+// TEST_OVERVIEW: With the Unified right toolbar on, every knob of an Agent's configuration page moves into a side panel: each section the page holds maps to the panel that carries it, and every link and deep link to the page opens that panel in the chat instead. With the experiment off, the links go to the page as before and the panels do not exist.
 import { beforeEach, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
-import { TooltipProvider } from "../../components/ui/tooltip.js";
-import { DOCS_URL } from "../../constants.js";
 import { createFeaturesSlice } from "../../modules/features/store.js";
 import type { SandboxSection } from "../../modules/platform/lib/routes.js";
 import { createNavigationSlice } from "../../modules/platform/store/navigation.js";
-import { DocumentationPanel } from "../../modules/sessions/components/documentation-panel.js";
 import { SIDE_PANEL_TABS } from "../../modules/sessions/components/side-panel-bar.js";
 import {
   configTabForSection,
@@ -135,25 +130,11 @@ it("hides every configuration panel with the experiment off", () => {
   };
   const on = hiddenSidePanelTabs({ ...available, configuration: true });
   const off = hiddenSidePanelTabs({ ...available, configuration: false });
-  const gated = [
-    ...CONFIGURATION_TABS.filter((tab) => tab !== "environments"),
-    "documentation",
-  ] as const;
+  const gated = CONFIGURATION_TABS.filter((tab) => tab !== "environments");
   for (const tab of gated) {
     expect(on.has(tab)).toBe(false);
     expect(off.has(tab)).toBe(true);
   }
   // UNIT_BOUNDARY_DESCRIPTION: Environments was a panel of its own before this experiment, so the environments feature, not the toolbar, decides whether it exists.
   expect(off.has("environments")).toBe(false);
-});
-
-// TEST_SCENARIO: the Documentation panel frames the published docs and offers the same page in a new tab from its top bar.
-it("frames the docs and offers them in a new window", () => {
-  const html = renderToStaticMarkup(
-    createElement(TooltipProvider, null, createElement(DocumentationPanel, {})),
-  );
-  expect(html).toContain(`src="${DOCS_URL}"`);
-  expect(html).toContain(`href="${DOCS_URL}"`);
-  expect(html).toContain('data-testid="documentation-open"');
-  expect(html).toContain('aria-label="Open documentation in a new window"');
 });

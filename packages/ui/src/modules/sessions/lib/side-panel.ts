@@ -14,7 +14,6 @@ export type SidePanelTab =
   | "network"
   | "environment"
   | "chat-forms"
-  | "documentation"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -68,7 +67,6 @@ export function hiddenSidePanelTabs(
     network: available.agent && available.configuration,
     environment: available.agent && available.configuration,
     "chat-forms": available.agent && available.configuration,
-    documentation: available.configuration,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
