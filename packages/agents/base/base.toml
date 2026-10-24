@@ -70,8 +70,8 @@ PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 # traffic is off by policy (/etc/opt/chrome_for_testing/policies).
 # agent-browser passes a --disable-features of its own (Translate), which this
 # one may replace; the policy turns Translate off either way.
-# It starts through platform-browser, which launches it the way the panel's
-# Browser testing mode switch chose, for every caller.
+# It starts through platform-browser, which launches it with its automation
+# report off, for every caller.
 AGENT_BROWSER_EXECUTABLE_PATH = "/usr/local/bin/platform-browser"
 AGENT_BROWSER_HEADED = "1"
 AGENT_BROWSER_NO_XVFB = "1"

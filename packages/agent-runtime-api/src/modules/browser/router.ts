@@ -4,7 +4,6 @@ import {
   browserActionInputSchema,
   browserNavigateInputSchema,
   browserTabInputSchema,
-  browserTestingModeInputSchema,
 } from "./schemas.js";
 import type { BrowserAction, BrowserDomainError, TabAction } from "./types.js";
 
@@ -89,10 +88,4 @@ export const browserRouter = t.router({
     }),
   restart: action("restart"),
   clearData: action("clearData"),
-  setTestingMode: t.procedure
-    .input(browserTestingModeInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const result = await ctx.browser.setTestingMode(input.on);
-      if (!result.ok) throw toTrpcError(result.error);
-    }),
 });
