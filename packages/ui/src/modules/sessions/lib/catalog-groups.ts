@@ -12,6 +12,7 @@ import {
 } from "api-server-api";
 
 import { providerName } from "../../providers/lib/provider-rows.js";
+import { prettyModelLabel } from "./model-families.js";
 import type { ProviderConnectionRef } from "./session-pair-options.js";
 
 export interface ModelGroup {
@@ -144,6 +145,23 @@ export function modelIndicatorLabel(
   const hit = findModel(groups, name);
   if (hit) return `${modelLabel(hit.model)} (${hit.group.displayName})`;
   return name;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what the chat shows for the session's model: the
+ * family's name for a model the menu recognises, and the upstream id with its
+ * provider for one it does not.
+ */
+export function sessionModelLabel(
+  groups: readonly ModelGroup[],
+  name: string | null,
+): string | null {
+  if (name === null) return null;
+  const hit = findModel(groups, name);
+  return (
+    (hit && prettyModelLabel(hit.model.name)) ??
+    (hit ? `${modelLabel(hit.model)} (${hit.group.displayName})` : name)
+  );
 }
 
 export interface AddableProvider {

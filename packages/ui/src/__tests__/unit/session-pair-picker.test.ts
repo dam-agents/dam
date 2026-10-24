@@ -596,9 +596,10 @@ describe("one model list on a runtime that routes by model name", () => {
   });
 
   /** TEST_SCENARIO: Before a session starts, every attached provider's
-   * models are one grouped list under the Connections' names, each entry
-   * the upstream id with its context window, and the per-provider model
-   * hooks of the old runtime are never asked. */
+   * models are one grouped list by family, a model of a known family with
+   * no recognised size behind that family's More, a model of no known
+   * family under Other, and the per-provider model hooks of the old runtime
+   * are never asked. */
   it("lists every provider's models in one grouped list", () => {
     const html = renderToStaticMarkup(
       createElement(SessionPairPicker, {
@@ -609,13 +610,15 @@ describe("one model list on a runtime that routes by model name", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain('aria-label="IBM"');
-    expect(html).toContain('aria-label="Curve"');
-    expect(html).toContain("gpt-5.5");
-    expect(html).toContain("rits/zai-org/glm-5-3");
-    expect(html).toContain("200K");
-    expect(html).toContain("128K");
-    expect(html).toContain('aria-label="Disconnect IBM"');
+    expect(html).toContain('aria-label="GPT"');
+    expect(html).toContain('aria-label="GLM"');
+    expect(html).toContain("2 models");
+    expect(html).toContain("5.3");
+    expect(html).toContain("More");
+    expect(html).not.toContain("Other");
+    expect(html).not.toContain('aria-label="IBM"');
+    expect(html).not.toContain('aria-label="Curve"');
+    expect(html).not.toContain("Disconnect IBM");
     expect(state.providersAsked).toEqual([]);
   });
 
@@ -644,19 +647,48 @@ describe("one model list on a runtime that routes by model name", () => {
     state.answerable = undefined;
   });
 
-  /** TEST_SCENARIO: A second IBM key the owner holds cannot be attached
-   * beside the one the agent already uses (one Connection per provider
-   * alias), so it is listed disabled with the reason, not as an attach that
-   * would fail. */
-  it("shows a conflicting provider disabled with the alias reason", () => {
-    state.owned = [
-      {
-        id: "ibm-2",
-        name: "IBM second key",
-        type: "ibm-litellm",
-        templateId: "ibm-litellm",
-      } as never,
-    ];
+  /** TEST_SCENARIO: Known models are grouped by family and size, one entry
+   * per size on the newest version with the providers that offer it, older
+   * versions behind More, and models of no known family last under Other. */
+  it("groups known models by family and size, with a provider choice", () => {
+    state.catalog = {
+      harness: "pi",
+      routed: true,
+      providers: [
+        {
+          connectionId: "ibm",
+          alias: "ibm",
+          template: "ibm-litellm",
+          displayName: "IBM",
+          status: "listed" as const,
+          listedAt: null,
+          models: [
+            model("ibm", "aws/claude-opus-5-5"),
+            model("ibm", "aws/claude-opus-5-1"),
+            model("ibm", "azure/gpt-5.6-sol"),
+            model("ibm", "rits/deepseek-ai/DeepSeek-V3.2"),
+          ],
+        },
+        {
+          connectionId: "anthropic",
+          alias: "anthropic",
+          template: "anthropic",
+          displayName: "Anthropic",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("anthropic", "claude-opus-5-5")],
+        },
+        {
+          connectionId: "curve",
+          alias: "cb",
+          template: "curve-bender",
+          displayName: "Curve",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("cb", "gpt-5.6-sol")],
+        },
+      ],
+    };
     const html = renderToStaticMarkup(
       createElement(SessionPairPicker, {
         agentId: "agent",
@@ -666,17 +698,27 @@ describe("one model list on a runtime that routes by model name", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain('aria-label="IBM second key"');
-    expect(html).toMatch(
-      /disabled=""[^>]*>[^<]*<svg[^>]*>.*?Attach this provider/s,
+    expect(html).toContain('aria-label="Claude"');
+    expect(html).toContain('aria-label="GPT"');
+    expect(html).toContain("Opus 5.5");
+    expect(html).not.toContain("Opus 5.1");
+    expect(html).toContain("More");
+    expect(html).toContain('aria-label="Provider for Opus 5.5: IBM"');
+    expect(html).toContain('aria-label="Provider for Sol 5.6: IBM"');
+    expect(html).toContain('aria-label="DeepSeek"');
+    expect(html).not.toContain("rits/deepseek-ai/DeepSeek-V3.2");
+    expect(html.indexOf('aria-label="Claude"')).toBeLessThan(
+      html.indexOf('aria-label="GPT"'),
     );
-    expect(html).toContain("Why IBM second key cannot be attached");
+    expect(html.indexOf('aria-label="GPT"')).toBeLessThan(
+      html.indexOf('aria-label="DeepSeek"'),
+    );
   });
 
   /** TEST_SCENARIO: In a running session the popover lists the same grouped
    * list across providers, with no new-session gate, and says a pick lands
    * on the next message while a turn runs; the label under the composer
-   * reads upstream id and Connection name. */
+   * reads the pretty family name. */
   it("offers every provider's models to a running session", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
@@ -694,11 +736,34 @@ describe("one model list on a runtime that routes by model name", () => {
         onNewSession: state.newSession,
       }),
     );
-    expect(html).toContain("gpt-5.5 (IBM)");
-    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).toContain("GPT 5.5");
+    expect(html).toContain('aria-label="GLM"');
     expect(html).toContain("applies to the next message");
     expect(html).not.toContain("start a new session");
     expect(html).not.toContain(">Change<");
+  });
+
+  /** TEST_SCENARIO: The label under the composer is the model family's pretty name for a matched model, not its provider. */
+  it("shows the pretty model name under the composer", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
+        agentId: "agent",
+        harness: "pi",
+        provider: "curve",
+        model: "cb/rits/zai-org/glm-5-3",
+        carried,
+        routed: true,
+        onChoose: vi.fn(),
+        onConfigure: vi.fn(),
+        onNewSession: state.newSession,
+      }),
+    );
+    const trigger =
+      /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(html)?.[1];
+    expect(trigger).toContain("GLM 5.3");
+    expect(trigger).not.toContain("Curve");
   });
 
   /** TEST_SCENARIO: The provider a running session's model names (the
@@ -735,7 +800,7 @@ describe("one model list on a runtime that routes by model name", () => {
     );
     expect(html).toContain("Provider removed");
     expect(html).toContain("Attach Anthropic old again");
-    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).toContain('aria-label="GLM"');
   });
 });
 
@@ -765,20 +830,18 @@ describe("JanUI's picker and the default's editor", () => {
       }),
     );
 
-  /** TEST_SCENARIO: In JanUI the picker neither attaches nor
-   * disconnects providers; one row counts the attached providers among the
-   * owner's and leads to the agent's Providers page. The current layout
-   * keeps its controls. */
-  it("swaps provider controls for one Manage providers row", () => {
-    const html = render({ newLayout: true });
-    expect(html).not.toContain("Disconnect IBM");
-    expect(html).not.toContain("Attach this provider");
-    expect(html).not.toContain("Configure providers and defaults");
-    expect(html.replace(/<!-- -->/g, "")).toMatch(
-      /data-testid="session-pair-manage-providers"[^>]*>Manage providers \(2\/3 connected\)/,
-    );
-    const current = render({});
-    expect(current).toContain("Disconnect IBM");
-    expect(current).not.toContain("session-pair-manage-providers");
+  /** TEST_SCENARIO: The routed model list ends with one Connect more
+   * providers row that leads to the Providers page; the separate attach
+   * rows, the manage-providers row and the disconnect controls are gone,
+   * in both layouts. */
+  it("offers one Connect more providers row", () => {
+    for (const props of [{ newLayout: true }, {}]) {
+      const html = render(props);
+      expect(html).toContain("Connect more providers");
+      expect(html).not.toContain("Disconnect IBM");
+      expect(html).not.toContain("Attach this provider");
+      expect(html).not.toContain("Manage providers");
+      expect(html).not.toContain("Configure providers and defaults");
+    }
   });
 });

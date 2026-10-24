@@ -18,13 +18,13 @@ import { topModelOf } from "../../modules/sessions/lib/top-model.js";
 
 const shared: ProviderConnectionRef = {
   id: "cb",
-  name: "CurveBender",
+  name: "CurveBender (shared)",
   type: "curve-bender",
   templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
 };
 const ownCurveBender: ProviderConnectionRef = {
   id: "cb-own",
-  name: "CurveBender custom key",
+  name: "CurveBender (own key)",
   type: "curve-bender",
   templateId: "curve-bender",
 };
