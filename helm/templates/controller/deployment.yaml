@@ -11,7 +11,13 @@ metadata:
     app.kubernetes.io/component: controller
   {{- include "platform.annotations" (dict "root" $ "component" .Values.controller) | nindent 2 }}
 spec:
+  {{- if .Values.agentStore.frozen }}
+  # Frozen for a rollback: no controller runs, so it cannot re-create an anchor
+  # or re-adopt a child while the exporter restores the custom resources.
+  replicas: 0
+  {{- else }}
   replicas: {{ .Values.controller.replicas | default 1 }}
+  {{- end }}
   {{- if eq .Values.agentStore.authority "postgres" }}
   # The switch takes the old controller down before it starts the new one (no
   # surge). Recreate itself cannot replace an install's Deployment whose

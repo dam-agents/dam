@@ -62,7 +62,13 @@ metadata:
     app.kubernetes.io/component: apiserver
   {{- include "platform.annotations" (dict "root" $ "component" .Values.apiServer) | nindent 2 }}
 spec:
+  {{- if .Values.agentStore.frozen }}
+  # Frozen for a rollback: no pod serves, so nothing writes rows the rollback is
+  # reading. The operator clears this with the previous release.
+  replicas: 0
+  {{- else }}
   replicas: {{ .Values.apiServer.replicas | default 1 }}
+  {{- end }}
   {{- if eq .Values.agentStore.authority "postgres" }}
   # The switch recreates: every old replica is gone before the absorb reads the
   # custom resources, so no old writer or periodic job can act on a fleet that

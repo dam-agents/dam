@@ -85,8 +85,10 @@ func ReadMarker(ctx context.Context, client kubernetes.Interface, namespace, nam
 func VerifyWriteFence(ctx context.Context, client kubernetes.Interface, namespace string) error {
 	checks := []struct{ group, resource, verb string }{
 		{"agent-platform.ai", "agents", "create"},
+		{"agent-platform.ai", "agents", "update"},
 		{"agent-platform.ai", "agents", "patch"},
 		{"agent-platform.ai", "agents", "delete"},
+		{"agent-platform.ai", "agents", "deletecollection"},
 		{"agent-platform.ai", "agents/status", "update"},
 		{"agent-platform.ai", "agents/status", "patch"},
 	}

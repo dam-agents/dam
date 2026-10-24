@@ -95,6 +95,20 @@ func (r *AgentReconciler) ensureChildrenOwnedByAnchor(ctx context.Context, agent
 		}
 	}
 
+	networkPolicies, err := r.client.NetworkingV1().NetworkPolicies(r.config.Namespace).List(ctx, selector)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("listing NetworkPolicies: %w", err))
+	} else {
+		for i := range networkPolicies.Items {
+			policy := &networkPolicies.Items[i]
+			converge("NetworkPolicy", policy, func() error {
+				policy.OwnerReferences = adoptOwnerRefs(policy.OwnerReferences, owner)
+				_, err := r.client.NetworkingV1().NetworkPolicies(r.config.Namespace).Update(ctx, policy, metav1.UpdateOptions{})
+				return err
+			})
+		}
+	}
+
 	secrets, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, selector)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("listing Secrets: %w", err))

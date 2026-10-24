@@ -1768,10 +1768,11 @@ agentStore:
   # only once the new controller leads and has ensured every anchor. It refuses
   # to render without `cutover.acknowledged`.
   authority: crd
-  # -- Freeze both components for a rollback: they exit instead of serving, so
-  # nothing writes rows while the reverse exporter restores the custom
-  # resources. Set it with `authority=postgres` and the acknowledgement, deploy,
-  # run the exporter, then pin the previous release and clear it.
+  # -- Freeze both components for a rollback: both Deployments render zero
+  # replicas, so nothing writes rows while the reverse exporter restores the
+  # custom resources. Set it with `authority=postgres` and the acknowledgement,
+  # wait for the rollout (Flux applies it on its interval, ten minutes by
+  # default), run the exporter, then pin the previous release and clear it.
   frozen: false
   # -- Log, at api-server startup, what an absorb would write: which records
   # would become rows, which would be refused and why, what the move would drop,
@@ -1791,9 +1792,11 @@ agentStore:
     # when `authority` is `crd`, so it is never carried into a later release.
     acknowledged: false
   contract:
-    # -- SHA-256 of the operator's encrypted archive of the custom resources,
-    # attested before the contract release may delete them on this install.
-    # Empty until that release exists.
+    # -- SHA-256 of the archive the switch absorbed (the digest `export-snapshot`
+    # prints and the absorb recorded), attested by the operator before the
+    # contract release may delete the custom resources on this install. It is the
+    # digest of the YAML, not of the encrypted file: age ciphertext is
+    # randomized. Empty until that release exists.
     backupSha256: ""
 
 # -- Controller (Go reconciler + scheduler)

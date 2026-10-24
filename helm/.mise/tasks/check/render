@@ -559,6 +559,11 @@ jq -e '.["apiserver"].type == "Recreate" and .["controller"].type == "RollingUpd
 frozen=$(store_env --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true --set agentStore.frozen=true)
 jq -e '.["apiserver"].PLATFORM_AGENT_STORE_FROZEN == "true" and .["controller"].PLATFORM_AGENT_STORE_FROZEN == "true"' <<<"$frozen" >/dev/null ||
   { echo "a frozen render does not freeze both components: $frozen" >&2; exit 1; }
+frozen_replicas=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true --set agentStore.frozen=true |
+  yq -o=json 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" == "apiserver" or .metadata.labels."app.kubernetes.io/component" == "controller")) | {"component": .metadata.labels."app.kubernetes.io/component", "replicas": .spec.replicas}' | jq -s 'map({(.component): .replicas}) | add')
+jq -e '.["apiserver"] == 0 and .["controller"] == 0' <<<"$frozen_replicas" >/dev/null ||
+  { echo "a frozen render leaves replicas running, so the old writers outlive the freeze: $frozen_replicas" >&2; exit 1; }
 # The marker's name is the chart's, and it is the one the api-server's Role pins:
 # a name the Role did not grant would fail closed on every boot.
 marker=$(jq -r '.["apiserver"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")
@@ -568,9 +573,17 @@ pinned=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver
   yq -o=json 'select(.kind == "Role") | .rules[]' |
   jq -s 'map(select(.resources == ["configmaps"]))')
 jq -e --arg marker "$marker" '
+  . == [{"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [$marker], "verbs": ["get"]}]' <<<"$pinned" >/dev/null ||
+  { echo "the custom-resource release's configmaps grant is more than the marker read: $pinned" >&2; exit 1; }
+switched_pinned=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/rbac.yaml \
+  --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true |
+  yq -o=json 'select(.kind == "Role") | .rules[]' |
+  jq -s 'map(select(.resources == ["configmaps"]))')
+jq -e --arg marker "$marker" '
   any(.[]; .resourceNames == [$marker] and (.verbs | index("get")))
-  and any(.[]; .verbs == ["create"])' <<<"$pinned" >/dev/null ||
-  { echo "the api-server's configmaps grant does not both create the marker and pin its name: $pinned" >&2; exit 1; }
+  and any(.[]; .verbs == ["create"])
+  and any(.[]; .resourceNames == [$marker] and (.verbs | index("update")))' <<<"$switched_pinned" >/dev/null ||
+  { echo "the switch render's configmaps grant does not both create the marker and pin its name: $switched_pinned" >&2; exit 1; }
 # The controller's role is created by the same SQL that creates the app roles,
 # and that SQL refuses to leave any of them a superuser.
 roles=$(helm template platform . "${COMMON[@]}" --show-only templates/postgres.yaml |

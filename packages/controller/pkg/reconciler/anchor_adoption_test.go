@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -59,6 +60,21 @@ func TestTheAnchorPassHandsChildrenToTheAnchor(t *testing.T) {
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
 
+	_, err = client.NetworkingV1().NetworkPolicies(r.config.Namespace).Create(ctx, &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-agent-gateway-ingress",
+			Namespace: r.config.Namespace,
+			Labels:    map[string]string{LabelAgent: "my-agent"},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: apiv1.GroupVersion.String(),
+				Kind:       "Agent",
+				Name:       "my-agent",
+				UID:        agent.UID,
+			}},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
 	pending, err := r.EnsureAnchors(ctx, func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 0, pending)
@@ -74,4 +90,8 @@ func TestTheAnchorPassHandsChildrenToTheAnchor(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, secret.OwnerReferences, 1)
 	assert.Equal(t, anchor.UID, secret.OwnerReferences[0].UID)
+	policy, err := client.NetworkingV1().NetworkPolicies(r.config.Namespace).Get(ctx, "my-agent-gateway-ingress", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, policy.OwnerReferences, 1)
+	assert.Equal(t, anchor.UID, policy.OwnerReferences[0].UID, "the gateway NetworkPolicy was left owned by the custom resource")
 }
