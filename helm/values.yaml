@@ -712,9 +712,10 @@ postgres:
   podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
 
-  # -- Three Postgres login roles: one per service plus a dedicated SUPERUSER
-  # for DBA work. The two app roles are NOSUPERUSER and own only their own
-  # database, so a leaked app credential is bounded to one service's data.
+  # -- Four Postgres login roles: one per service, the controller's, plus a
+  # dedicated SUPERUSER for DBA work. The app roles are NOSUPERUSER and own only
+  # their own database, so a leaked app credential is bounded to one service's
+  # data; the controller's owns nothing and is granted what it reconciles.
   # A fourth role, `usage_readers`, is a credential-less NOLOGIN group: it
   # holds SELECT on the usage_src_* source passthrough views and grants
   # nobody anything until an operator adds a member. The api-server
