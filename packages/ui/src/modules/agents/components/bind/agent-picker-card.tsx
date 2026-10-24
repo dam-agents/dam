@@ -8,7 +8,6 @@ import {
   StatusBadge,
 } from "../../../../components/status-indicator.js";
 import type { AgentView } from "../../../../types.js";
-import { formatCpuMemory, sizeInMi } from "../../../budgets/lib/slots.js";
 import { AgentChannelChips } from "../../../sandboxes/components/channels/agent-channel-chips.js";
 import { resolveAgentDisplay } from "../../utils/agent-resolver.js";
 import { AgentAvatar, avatarMood } from "../avatar/agent-avatar.js";
@@ -29,10 +28,8 @@ export function AgentPickerCard({
   activeSchedules,
   onSelect,
 }: Props) {
-  const { size, name, hibernationTimeoutMin, contributionFailures } = agent;
+  const { name, hibernationTimeoutMin, contributionFailures } = agent;
   const display = resolveAgentDisplay(agent, NO_IDS);
-  const sizeLabel =
-    size.cpu && size.memory ? formatCpuMemory(sizeInMi(size)) : null;
 
   return (
     <CardButton
@@ -53,11 +50,6 @@ export function AgentPickerCard({
           </span>
           <ContributionFailuresBadge failures={contributionFailures} />
         </span>
-        {sizeLabel && (
-          <span className="mt-1 block text-sm text-muted-foreground">
-            {sizeLabel}
-          </span>
-        )}
         <AgentChannelChips agent={agent} className="mt-3">
           {activeSchedules > 0 && (
             <Badge variant="muted">
