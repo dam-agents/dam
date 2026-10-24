@@ -106,7 +106,9 @@ The chart values under `agentStore` move an install through the three releases t
 
 Do not edit these values by hand outside a cutover: the switch is an acknowledged short outage, and the contract release refuses to start until the rollback window has closed and the install's archive is attested.
 The procedure is in [the cutover page](notes/agent-store-cutover.md); `docs/architecture/persistence.md` describes what the components do.
-An environment that installs into a cluster whose custom resource definitions were retired takes `authority: contract` with `contract.emptyArchive: true`.
+A new install starts with `authority: postgres` and an empty namespace: it absorbs nothing and serves the rows.
+An install that never had a custom resource can skip the switch and take `authority: contract` with `contract.emptyArchive: true`.
+The CRDs stay on the cluster and are not touched: another install in another namespace may still read them.
 
 ## Knowledge base sharing
 

@@ -175,9 +175,10 @@ Remove the ServiceAccount, the two Roles and the two RoleBindings after the wind
 
 A later re-upgrade re-absorbs with the custom resources authoritative.
 
-## Retiring the custom resources (contract release)
+## The contract release
 
-Only after every install is past its window, in the same order dev, staging, prod.
+Only after this install's window has closed, in the same order dev, staging, prod.
+Other installs on the cluster move on their own schedule: the kinds stay, and one install's contract release does not touch another's resources.
 
 1. Check the gate before the release, in the switch release's api-server pod:
 
@@ -204,7 +205,7 @@ Only after every install is past its window, in the same order dev, staging, pro
    The release reads no custom resource and renders no RBAC for the group; the controller skips the CRD schema check.
    Once it runs, the marker carries `contract-at`, and `agent-store-cli contract-check` says the same thing the startup gate did.
 
-3. Delete this install's custom resources, once, with a kubeconfig whose identity may delete them (the contract release's own ServiceAccount may not, deliberately):
+3. Optionally delete this install's frozen resources, with a kubeconfig whose identity may delete them (the contract release's own ServiceAccount may not, deliberately):
 
    ```sh
    PLATFORM_RELEASE_NAME=<release> NAMESPACE=<agentNamespace> \
@@ -212,31 +213,33 @@ Only after every install is past its window, in the same order dev, staging, pro
    # then the same without --dry-run
    ```
 
-   It refuses without the marker's `contract-at`, or when that stamp came from a rehearsal clock or is later than the real clock, deletes each `Agent` and `UserBudget` with `Orphan` propagation — the anchors own the children, so no machine, Service or Secret goes with them — and a rerun, or a cluster whose CRDs are already gone, deletes nothing.
-   This step is required before the retirement: that script refuses while any custom resource is left, because deleting a CRD cascades its resources and the children only Agents own would go with them.
+   It refuses without the marker's `contract-at`, or when that stamp came from a rehearsal clock or is later than the real clock.
+   It deletes only this install's `Agent` and `UserBudget` resources, with `Orphan` propagation — the anchors own the children, so no machine, Service or Secret goes with them — and a rerun deletes nothing.
+   Skipping it is safe: the resources are frozen and nothing reads them.
+   It never touches the CRD definitions or another namespace.
 
-4. Only when every install on the cluster is past step 2 (its marker has `contract-at`), retire the kinds cluster-wide, once:
+The kinds themselves stay on the cluster, for as long as any install anywhere reads them.
+Nothing in this procedure deletes a shared CRD, and no release, chart or hook does either.
+An install that still runs on the custom resources keeps working in its own namespace beside a contracted one.
 
-   ```sh
-   mise run cluster:retire-crds -- --backup ./crds-retired.yaml
-   ```
+## A new install beside the others
 
-   It refuses while any install's namespace runs an api-server with no store marker, or a marker without a real-clock `contract-at` — an install on the custom resources, or one inside its rollback window — and prints each of them.
-   It then, again, refuses while any `Agent` or `UserBudget` exists anywhere, naming them: those must be deleted by step 3 in each install first.
-   Once the kinds are empty it writes the (empty) backup file (mode 600) with its SHA-256 and deletes `agents.agent-platform.ai` and `userbudgets.agent-platform.ai`.
-   A second run reports them already retired.
-   The same script is mirrored into dam-ops as `retire-crds.sh`, where a prod cluster runs it with `KUBECTL=` pointing at that cluster.
-   No install's chart or hook ever deletes a shared CRD.
+A new install's namespace holds no custom resource, so the switch release is already an empty absorb:
 
-   After this, nothing may apply the chart's `crds/` again: a dam-ops HelmRelease already sets `upgrade.crds: Skip`, and `mise run cluster:install` takes `PLATFORM_CRDS_RETIRED=1` on a local cluster.
-   A new install on a retired cluster starts on the rows and takes `authority: contract` with `agentStore.contract.emptyArchive: true`.
+```yaml
+agentStore:
+  authority: postgres
+  cutover:
+    acknowledged: true
+```
 
-5. An install created after that point installs with `agentStore.authority: contract`, `cutover.acknowledged: true` and `agentStore.contract.emptyArchive: true`: it lists no kind (the CRDs are gone), absorbs zero documents, records its switch and passes the gate without an archive to attest.
-   A `--rehearsal` cluster is the only place a moved clock is allowed, and its installs' markers say so, so no real deletion trusts them.
+It absorbs zero documents, records its switch and serves the rows.
+It can move to `contract` after its own week, and an install that never had a custom resource says so with `agentStore.contract.emptyArchive: true` instead of attesting an archive.
+The CRDs stay installed and untouched either way; the contract release holds no verb on them.
 
 What replaces the old operator habits:
 
-- `upgrade-crds.sh` is gone once the CRDs are: schema changes are migrations the api-server runs on startup, and no CRD schema generation is applied any more.
+- Schema changes are migrations the api-server runs on startup: an install on the rows needs no CRD schema generation or `upgrade-crds.sh` step, while one still on the CRDs keeps the operator's upgrade until it moves.
 - `kubectl get agents` becomes `kubectl exec … -- node dist/js/agent-store-cli.js export-crds` (plaintext YAML of what the rows hold) or a read-only SQL view; the Agent's own page and the API stay the operator's read path.
 - `kubectl annotate agent …` for lifecycle signals is gone; the owner and operator APIs write the signals columns.
 - `dam budget` replaces `create-user-budget.sh`; the `user_budgets` table is what it writes.

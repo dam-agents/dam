@@ -197,7 +197,8 @@ Until the move's switch they carry the whole record: the api-server writes a `sp
 Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
 From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
 A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
-They are deleted per install by the operator's `delete-crs`, which refuses without a real-clock contract gate and orphans the children through their anchors; the kinds themselves only after every install on the cluster is past contract and no custom resource is left anywhere, by one operator action (`cluster:retire-crds`, mirrored into the dam-ops runbook) — never by a chart, a hook or a release.
+An install may delete its own resources with `delete-crs`, an optional cleanup that refuses without a real-clock contract gate and orphans the children through their anchors.
+The kinds themselves stay on the cluster: another install in another namespace may still read them, and each install chooses its own authority, so no release, chart, hook or operator command ever deletes a shared CRD.
 
 Two domain resources are deliberately not custom resources:
 

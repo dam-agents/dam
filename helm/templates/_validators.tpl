@@ -624,7 +624,7 @@ never happens — or, worse, a later one without the operator's timing.
 {{- fail "agentStore.contract.now moves the contract gate's clock, and this release's authority is not contract: set it for a rehearsal's contract release only." -}}
 {{- end -}}
 {{- if not ($contract.rehearsal | default false) -}}
-{{- fail "agentStore.contract.now moves the contract gate's clock past the one-week rollback window, and an install must never do that: set agentStore.contract.rehearsal=true on a rehearsal cluster, where the marker it writes tells delete-crs and retire-crds to refuse it." -}}
+{{- fail "agentStore.contract.now moves the contract gate's clock past the one-week rollback window, and an install must never do that: set agentStore.contract.rehearsal=true on a rehearsal cluster, where the marker it writes tells delete-crs to refuse it." -}}
 {{- end -}}
 {{- if not (regexMatch "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$" ($contract.now | toString)) -}}
 {{- fail (printf "agentStore.contract.now must be an RFC 3339 UTC instant such as 2026-10-25T00:00:00Z, got %q." ($contract.now | toString)) -}}

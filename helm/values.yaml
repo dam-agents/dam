@@ -1814,7 +1814,7 @@ agentStore:
     # -- A rehearsal's clock (`2026-10-25T00:00:00Z`), so the one-week rollback
     # window is proved without waiting it out. It fails the render unless
     # `rehearsal` is true, and the marker the gate then writes carries
-    # `contract-clock: rehearsal`, which `delete-crs` and `retire-crds` refuse
+    # `contract-clock: rehearsal`, which `delete-crs` refuses
     # without `--rehearsal`. Empty in an install.
     now: ""
     # -- Set it true only on a rehearsal cluster, beside `now`: it is what
