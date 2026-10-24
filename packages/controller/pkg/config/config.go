@@ -23,7 +23,7 @@ type Config struct {
 	AgentStore             string
 	AgentStoreMarker       string
 	DatabaseURL            string
-	DatabaseCAPath         string
+	HealthPort             int
 
 	AgentBase AgentBase
 
@@ -60,6 +60,18 @@ type Config struct {
 	GatewayUpstreamTrustBundle string
 	ExtraTrustedCAs            string
 	GatewayEgress              GatewayEgress
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the port the controller's health and readiness endpoints listen on. A wedged leader — one that holds the Lease while its store has not answered for minutes — is visible to the kubelet only through a probe, so the port has a default rather than being absent on an install that sets nothing.
+func healthPort(raw string) int {
+	if raw == "" {
+		return 8081
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port <= 0 || port > 65535 {
+		return 8081
+	}
+	return port
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -185,7 +197,7 @@ func LoadFromEnv() (*Config, error) {
 		AgentStore:             envOrDefault("PLATFORM_AGENT_STORE", "crd"),
 		AgentStoreMarker:       os.Getenv("PLATFORM_AGENT_STORE_MARKER"),
 		DatabaseURL:            os.Getenv("PLATFORM_DATABASE_URL"),
-		DatabaseCAPath:         os.Getenv("PLATFORM_DATABASE_CA_CERT_PATH"),
+		HealthPort:             healthPort(os.Getenv("PLATFORM_HEALTH_PORT")),
 	}
 	if cfg.AgentStore == "postgres" && cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("PLATFORM_DATABASE_URL is required when PLATFORM_AGENT_STORE is postgres")

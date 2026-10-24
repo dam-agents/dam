@@ -401,8 +401,23 @@ rather than a credential.
 */}}
 {{- define "platform.controller.postgres.dsn" -}}
 {{- $dsn := printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.controller.db.user (include "platform.apiserver.db.host" .) (int .Values.apiServer.db.port) .Values.apiServer.db.database -}}
-{{- if .Values.apiServer.db.sslmode -}}
-{{- $dsn = printf "%s?sslmode=%s" $dsn .Values.apiServer.db.sslmode -}}
+{{- /* The CA reaches the driver the way libpq reads it: sslrootcert in the
+       string. An install that sets one but no sslmode gets verify-full, since a
+       CA nobody verifies is decoration; require plus a root certificate then
+       verifies the chain as verify-ca, which is libpq's own rule. */ -}}
+{{- $sslmode := .Values.apiServer.db.sslmode -}}
+{{- if and .Values.apiServer.db.caCert (not $sslmode) -}}
+{{- $sslmode = "verify-full" -}}
+{{- end -}}
+{{- $params := list -}}
+{{- if $sslmode -}}
+{{- $params = append $params (printf "sslmode=%s" $sslmode) -}}
+{{- end -}}
+{{- if .Values.apiServer.db.caCert -}}
+{{- $params = append $params "sslrootcert=/etc/platform/pg-ca/ca.crt" -}}
+{{- end -}}
+{{- if $params -}}
+{{- $dsn = printf "%s?%s" $dsn (join "&" $params) -}}
 {{- end -}}
 {{- $dsn -}}
 {{- end }}

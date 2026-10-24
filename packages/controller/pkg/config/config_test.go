@@ -213,7 +213,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PLATFORM_TELEMETRY_COLLECTOR_HOST", "PLATFORM_TELEMETRY_COLLECTOR_PORT",
 		"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS",
 		"PLATFORM_AGENT_STORE", "PLATFORM_AGENT_STORE_MARKER",
-		"PLATFORM_DATABASE_URL", "PLATFORM_DATABASE_CA_CERT_PATH",
+		"PLATFORM_DATABASE_URL", "PLATFORM_HEALTH_PORT",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })
@@ -431,4 +431,5 @@ func TestLoadFromEnv_PostgresModeNeedsItsURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "postgres", cfg.AgentStore)
 	assert.Equal(t, "postgresql://controller@db/platform", cfg.DatabaseURL)
+	assert.Equal(t, 8081, cfg.HealthPort)
 }

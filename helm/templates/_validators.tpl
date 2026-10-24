@@ -576,10 +576,14 @@ never happens — or, worse, a later one without the operator's timing.
 {{- if not (has ($store.authority | toString) (list "crd" "postgres")) -}}
 {{- fail (printf "agentStore.authority must be crd or postgres, got %q." ($store.authority | toString)) -}}
 {{- end -}}
-{{- /* Both components read Postgres in this release. The store is only
-       authoritative once the absorb has run and written its marker; until
-       then each component refuses the mode itself, which is the same fence
-       that keeps a rollback off a switched cluster. */ -}}
+{{- /* Both components read Postgres, but no release in this chart performs
+       the absorb that makes a store authoritative. Rendering the mode now
+       would hand both components a store their own fences can only refuse,
+       so it fails here where an operator reads it, not in two
+       CrashLoopBackOffs; the switch release removes this refusal. */ -}}
+{{- if eq ($store.authority | toString) "postgres" -}}
+{{- fail "agentStore.authority=postgres is not served by any release in this chart yet: the absorb release fills the store and writes its marker. Leave it crd until that release exists." -}}
+{{- end -}}
 {{- $cutover := $store.cutover | default dict -}}
 {{- if $cutover.acknowledged -}}
 {{- fail "agentStore.cutover.acknowledged is set, but no release in this chart performs the cutover: the switch release that does refuses to render without it, and sets this value's meaning itself. Unset it." -}}

@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log/slog"
 	"maps"
+	"net/http"
 	"os"
 	"os/signal"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -112,6 +116,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	// UNIT_BOUNDARY_DESCRIPTION: the store is opened before leadership, not inside it. A leader whose database could not be opened held the Lease while serving nothing, and the next candidate never got a turn; a process that cannot open its store now exits and is restarted, and the Lease is never held by a controller with no fleet.
+	var postgres *store.Store
+	if cfg.AgentStore == agentstore.ModePostgres {
+		postgres = openStore(ctx, cfg)
+		defer postgres.Close()
+		if err := awaitAbsorbed(ctx, postgres, marker[agentstore.KeyAbsorbed]); err != nil {
+			slog.Error("refusing to start", "reason", err)
+			os.Exit(1)
+		}
+	}
+
+	health := newHealth(postgres)
+	go health.serve(ctx, cfg.HealthPort)
+	if postgres != nil {
+		go every(ctx, 5*time.Second, func() {
+			if postgres.Ping(ctx) == nil {
+				health.markContact()
+			}
+		})
+	}
+
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{Name: cfg.LeaseName, Namespace: cfg.Namespace},
 		Client:    client.CoordinationV1(),
@@ -128,7 +153,7 @@ func main() {
 		ReleaseOnCancel: true,
 		Callbacks: leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
-				run(ctx, client, dynClient, cfg)
+				run(ctx, client, dynClient, cfg, postgres, marker[agentstore.KeyAbsorbed], health)
 			},
 			OnStoppedLeading: func() {
 				slog.Info("lost leadership")
@@ -148,23 +173,12 @@ func logLevel() slog.Level {
 	return level
 }
 
-func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
+func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config, postgres *store.Store, absorbedStamp string, health *healthState) {
 	slog.Info("started leading", "namespace", cfg.Namespace, "agentStore", cfg.AgentStore)
 
 	// UNIT_BOUNDARY_DESCRIPTION: The rows are the Agent source in Postgres mode, so no informer watches
 	// UNIT_BOUNDARY_DESCRIPTION: the custom resources there. Everything else — pods, machines, Secrets,
 	// UNIT_BOUNDARY_DESCRIPTION: nodes — is still Kubernetes, and is wired the same in both modes.
-	var postgres *store.Store
-	if cfg.AgentStore == agentstore.ModePostgres {
-		var err error
-		postgres, err = store.Open(ctx, cfg.DatabaseURL, cfg.Namespace, cfg.DatabaseCAPath)
-		if err != nil {
-			slog.Error("opening the Agent store", "error", err)
-			return
-		}
-		defer postgres.Close()
-	}
-
 	var dynFactory dynamicinformer.DynamicSharedInformerFactory
 	var agentInformer informers.GenericInformer
 	if postgres == nil {
@@ -195,7 +209,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
 	if postgres != nil {
-		agentReconciler.WithAgentBackend(postgres).WithAgentCache(postgres.Lister()).WithAgentCacheSynced(postgres.Synced)
+		agentReconciler.WithAgentBackend(postgres).
+			WithAgentCache(postgres.Lister()).
+			WithAgentCacheSynced(postgres.Synced).
+			WithAbsorbedCheck(func(ctx context.Context) error {
+				return postgres.AssertAbsorbed(ctx, absorbedStamp)
+			})
 	} else {
 		agentReconciler.WithAgentCache(agentInformer.Lister()).WithAgentCacheSynced(agentInformer.Informer().HasSynced)
 	}
@@ -303,11 +322,11 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			}
 		})
 		waitForStore(ctx, postgres)
-		// UNIT_BOUNDARY_DESCRIPTION: the anchors come before any delete is worked: a deletion that happened while the controller was down is already in the queue, and removing the previous incarnation's children needs the anchor of the current one to exist first.
-		if err := agentReconciler.EnsureAnchors(ctx); err != nil {
-			slog.Warn("the startup anchor pass is incomplete; the anchor sweep retries it", "error", err)
-		} else if err := postgres.RecordAnchorsEnsured(ctx, cfg.PodName); err != nil {
-			slog.Warn("recording the startup anchor pass failed", "error", err)
+		// UNIT_BOUNDARY_DESCRIPTION: the anchors come before any delete is worked, and the pass retries until it
+		// UNIT_BOUNDARY_DESCRIPTION: lands: one transient API error at the switch would otherwise leave the
+		// UNIT_BOUNDARY_DESCRIPTION: barrier unopened for the whole leadership term.
+		if !awaitAnchorsEnsured(ctx, agentReconciler, postgres, cfg.PodName) {
+			return
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: a deletion that happened while no controller ran has its anchor and no row. It goes to the queue before any reconcile works, so the previous incarnation's children cannot be adopted by an Agent of the same name created since.
 		if err := agentReconciler.ReconcileOrphanAnchors(ctx, func(name string) {
@@ -415,6 +434,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	secretFactory.Start(ctx.Done())
 	go statefulSetInformer.RunWithContext(ctx)
 	synced := []cache.InformerSynced{podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced, runnerInformer.HasSynced, runnerPodInformer.HasSynced}
+	if postgres == nil {
+		// UNIT_BOUNDARY_DESCRIPTION: the workers and the memory and pool passes read the Agent cache without
+		// UNIT_BOUNDARY_DESCRIPTION: asking whether it has listed, exactly as before; the cache wait is what
+		// UNIT_BOUNDARY_DESCRIPTION: makes that true, so it stays in the list on the custom-resource path.
+		synced = append(synced, agentInformer.Informer().HasSynced)
+	}
 	// UNIT_BOUNDARY_DESCRIPTION: a cluster that cannot read nodes still runs every other backend, so the node watch is not waited for here — it reports nothing until it syncs, rather than holding every backend's reconcile behind a permission the node role alone grants.
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
@@ -736,6 +761,129 @@ func spreadStoreObjects(store cache.Store, queue interface{ AddAfter(string, tim
 		queue.AddAfter(u.GetName(), time.Duration(i)*over/time.Duration(len(items)))
 	}
 	return len(items)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: openStore rides out a database that is restarting with the controller and refuses to lead without one. Six attempts span about half a minute; past that the pod exits and comes back, which is visible where a zombie leader was not.
+func openStore(ctx context.Context, cfg *config.Config) *store.Store {
+	backoff := time.Second
+	for attempt := 1; ; attempt++ {
+		opened, err := store.Open(ctx, cfg.DatabaseURL, cfg.Namespace)
+		if err == nil {
+			return opened
+		}
+		slog.Error("opening the Agent store", "attempt", attempt, "error", err)
+		if attempt >= 6 {
+			os.Exit(1)
+		}
+		select {
+		case <-ctx.Done():
+			os.Exit(1)
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: awaitAbsorbed refuses a database this cluster never moved into. A store row without the marker's stamp is a fresh or foreign database whose empty fleet the sweeps would otherwise read as authoritative; an unreadable one is retried a few times and then refused too.
+func awaitAbsorbed(ctx context.Context, st *store.Store, expected string) error {
+	backoff := time.Second
+	var last error
+	for attempt := 1; attempt <= 5; attempt++ {
+		last = st.AssertAbsorbed(ctx, expected)
+		if last == nil {
+			return nil
+		}
+		if attempt == 5 {
+			break
+		}
+		slog.Warn("the Agent store is not the absorbed one yet; retrying", "attempt", attempt, "error", last)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return last
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: awaitAnchorsEnsured repeats the startup pass until every Agent has an anchor and the record is written. The api-server's barrier reads that record, so a pass that failed once must be tried again rather than left for a sweep that never records it.
+func awaitAnchorsEnsured(ctx context.Context, r *reconciler.AgentReconciler, st *store.Store, holder string) bool {
+	backoff := time.Second
+	for {
+		err := r.EnsureAnchors(ctx)
+		if err == nil {
+			err = st.RecordAnchorsEnsured(ctx, holder)
+			if err == nil {
+				return true
+			}
+		}
+		slog.Warn("the startup anchor pass failed; retrying", "error", err, "in", backoff)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(backoff):
+		}
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: healthState is what the kubelet reads. Ready means this replica leads and has listed its fleet; healthy means the store answered within the last two minutes, so a leader holding the Lease with no fleet behind it is restarted instead of waiting for an operator.
+type healthState struct {
+	storeHealthy func() error
+	lastOK       atomic.Int64
+}
+
+func newHealth(postgres *store.Store) *healthState {
+	h := &healthState{}
+	if postgres != nil {
+		h.storeHealthy = postgres.Healthy
+	}
+	h.markContact()
+	return h
+}
+
+func (h *healthState) markContact() { h.lastOK.Store(time.Now().Unix()) }
+
+func (h *healthState) mux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if h.storeHealthy != nil && time.Since(time.Unix(h.lastOK.Load(), 0)) > 2*time.Minute {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, "the Agent store has not answered\n")
+			return
+		}
+		_, _ = io.WriteString(w, "ok\n")
+	})
+	// UNIT_BOUNDARY_DESCRIPTION: readiness is not leadership. A standby replica must read as ready or a
+	// UNIT_BOUNDARY_DESCRIPTION: one-replica Deployment's rolling update never replaces the leader: the new pod
+	// UNIT_BOUNDARY_DESCRIPTION: cannot take the Lease while the old one holds it, and the rollout waits for the
+	// UNIT_BOUNDARY_DESCRIPTION: new pod's readiness before it stops the old one. Readiness here means the
+	// UNIT_BOUNDARY_DESCRIPTION: process can serve the moment it acquires the Lease, which is its store answering.
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if h.storeHealthy != nil && time.Since(time.Unix(h.lastOK.Load(), 0)) > 30*time.Second {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, "the Agent store has not answered lately\n")
+			return
+		}
+		_, _ = io.WriteString(w, "ok\n")
+	})
+	return mux
+}
+
+func (h *healthState) serve(ctx context.Context, port int) {
+	server := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: h.mux(), ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
+	}()
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Error("the health server stopped", "error", err)
+	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: waitForStore holds the controller's work until the first list has answered:

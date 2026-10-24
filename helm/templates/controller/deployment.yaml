@@ -33,6 +33,8 @@ spec:
           env:
             - name: LOG_LEVEL
               value: {{ .Values.controller.logLevel | default "info" | quote }}
+            - name: PLATFORM_HEALTH_PORT
+              value: {{ .Values.controller.healthPort | default 8081 | quote }}
             # Which store is authoritative for Agents and budgets. The binary
             # refuses to run the pairing the cluster's marker contradicts.
             - name: PLATFORM_AGENT_STORE
@@ -50,10 +52,6 @@ spec:
                   key: POSTGRES_CONTROLLER_PASSWORD
             - name: PLATFORM_DATABASE_URL
               value: {{ include "platform.controller.postgres.dsn" . | quote }}
-            {{- if .Values.apiServer.db.caCert }}
-            - name: PLATFORM_DATABASE_CA_CERT_PATH
-              value: /etc/platform/pg-ca/ca.crt
-            {{- end }}
             {{- end }}
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
@@ -200,6 +198,32 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          ports:
+            - name: health
+              containerPort: {{ .Values.controller.healthPort | default 8081 }}
+          {{- if .Values.probes.enabled }}
+          # UNIT_BOUNDARY_DESCRIPTION: the kubelet is what turns a leader that holds the Lease with no fleet behind it into a restart. Readiness is "leading and listed"; liveness is "the store answered in the last two minutes", and CRD mode has no store so it is always healthy. The startup budget covers the first list and, after the switch, the anchor pass.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
           resources:
             {{- toYaml .Values.controller.resources | nindent 12 }}
           {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}

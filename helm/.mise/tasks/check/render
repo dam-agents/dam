@@ -533,21 +533,14 @@ default_store=$(store_env)
 jq -e '.["controller"].PLATFORM_AGENT_STORE == "crd"
   and .["apiserver"].PLATFORM_AGENT_STORE == "crd"
   and .["controller"].PLATFORM_DATABASE_URL == null
-  and .["controller"].POSTGRES_PASSWORD == null
-  and .["controller"].PLATFORM_DATABASE_CA_CERT_PATH == null' <<<"$default_store" >/dev/null ||
+  and .["controller"].POSTGRES_PASSWORD == null' <<<"$default_store" >/dev/null ||
   { echo "the default render does not run on the custom resources, or hands the controller a database credential: $default_store" >&2; exit 1; }
-# The release that reads Postgres hands the controller the api-server's database
-# under its own login, and a CA to verify it against when the install sets one.
-pg_store=$(store_env --set agentStore.authority=postgres)
-jq -e '.["controller"].PLATFORM_AGENT_STORE == "postgres"
-  and .["apiserver"].PLATFORM_AGENT_STORE == "postgres"
-  and (.["controller"].PLATFORM_DATABASE_URL | startswith("postgresql://platform_controller:$(POSTGRES_PASSWORD)@"))
-  and .["controller"].POSTGRES_PASSWORD == "POSTGRES_CONTROLLER_PASSWORD"
-  and .["controller"].PLATFORM_DATABASE_CA_CERT_PATH == null' <<<"$pg_store" >/dev/null ||
-  { echo "the Postgres render does not give the controller its own login or its database URL: $pg_store" >&2; exit 1; }
-pg_tls=$(store_env --set agentStore.authority=postgres --set apiServer.db.caCert=test-ca)
-jq -e '.["controller"].PLATFORM_DATABASE_CA_CERT_PATH == "/etc/platform/pg-ca/ca.crt"' <<<"$pg_tls" >/dev/null ||
-  { echo "the Postgres render with a CA does not point the controller at it: $pg_tls" >&2; exit 1; }
+# No release in this chart absorbs the store, so the Postgres mode fails the
+# render instead of starting two components that can only refuse it.
+if helm template platform . "${COMMON[@]}" --set agentStore.authority=postgres >/dev/null 2>&1; then
+  echo "a render setting agentStore.authority=postgres succeeded, but no release in this chart absorbs the store" >&2
+  exit 1
+fi
 # The marker's name is the chart's, and it is the one the api-server's Role pins:
 # a name the Role did not grant would fail closed on every boot.
 marker=$(jq -r '.["apiserver"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")
