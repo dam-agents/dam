@@ -42,7 +42,7 @@ function runKubectl(
   }).trim();
 }
 
-function kubectlOrEmpty(...args: string[]): string {
+export function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);
   } catch {
