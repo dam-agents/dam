@@ -3,7 +3,10 @@
 #MISE raw=true
 # The script deletes the two shared CRDs, so its refusals are the whole safety
 # story: an install still on the custom resources, one inside its rollback
-# window, and a second run must all be told apart from a cluster that is ready.
+# window, one with a rehearsal clock, a custom resource still left, and a read
+# that failed must all be told apart from a cluster that is ready. The
+# ConfigMap bulk case is here because a cluster-wide ConfigMap list once went
+# into jq's argv, failed silently, and deleted the kinds.
 set -euo pipefail
 ROOT="${MISE_CONFIG_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 WORK=$(mktemp -d)
@@ -12,89 +15,169 @@ FAILED=0
 
 cat >"$WORK/kubectl" <<'FAKE'
 #!/usr/bin/env bash
+if [ -f "$FAKE_DIR/read-fails" ] && [ "$1 $2" = "$(cat "$FAKE_DIR/read-fails")" ]; then
+  echo "Error from server (Forbidden): the operator cannot read it" >&2
+  exit 1
+fi
 case "$1 $2" in
-  "get configmaps")
-    cat "$FAKE_DIR/markers.json" ;;
   "get deployments")
     cat "$FAKE_DIR/deployments.json" ;;
+  "get configmaps")
+    # A cluster-wide ConfigMap list is what once went into jq's argv and failed
+    # silently; the script must never ask for it.
+    echo "the script listed every ConfigMap in the cluster" >&2
+    exit 91 ;;
+  "get configmap")
+    [ -f "$FAKE_DIR/no-marker" ] || { cat "$FAKE_DIR/marker.json"; exit 0; }
+    echo "Error from server (NotFound): configmaps \"$4\" not found" >&2
+    exit 1 ;;
   "get crd")
-    [ -f "$FAKE_DIR/crd-exists" ] || { echo "Error from server (NotFound): customresourcedefinitions.apiextensions.k8s.io \"$3\" not found" >&2; exit 1; } ;;
-  "get agents.agent-platform.ai,userbudgets.agent-platform.ai")
-    cat "$FAKE_DIR/resources.yaml" ;;
+    [ -f "$FAKE_DIR/crd-$3" ] || { echo "Error from server (NotFound): customresourcedefinitions.apiextensions.k8s.io \"$3\" not found" >&2; exit 1; } ;;
+  "get agents.agent-platform.ai")
+    cat "$FAKE_DIR/agents.yaml" ;;
+  "get userbudgets.agent-platform.ai")
+    cat "$FAKE_DIR/userbudgets.yaml" ;;
   "delete crd")
-    [ -f "$FAKE_DIR/crd-exists" ] || exit 0
-    rm -f "$FAKE_DIR/crd-exists"
+    echo "$3" >>"$FAKE_DIR/deletes"
+    rm -f "$FAKE_DIR/crd-$3"
     echo "customresourcedefinition.apiextensions.k8s.io/$3 deleted" ;;
   *) echo "unexpected kubectl call: $*" >&2; exit 90 ;;
 esac
 FAKE
 chmod +x "$WORK/kubectl"
 
-markers() { # $1 = JSON data of each marker, or - for no marker at all
-  if [ "$1" = - ]; then
-    echo '{"items":[]}' >"$WORK/markers.json"
-    return
-  fi
-  cat >"$WORK/markers.json" <<JSON
-{"items":[{"metadata":{"namespace":"platform-agents","name":"platform-agent-store"},"data":{$1}}]}
-JSON
+no_crs() {
+  printf 'apiVersion: v1\nkind: List\nitems: []\n' >"$WORK/agents.yaml"
+  printf 'apiVersion: v1\nkind: List\nitems: []\n' >"$WORK/userbudgets.yaml"
 }
-deploys() { # $1 = the namespace the marker lives in, or - for an install with no marker
-  cat >"$WORK/deployments.json" <<JSON
-{"items":[{"metadata":{"namespace":"platform","name":"platform-apiserver","labels":{"app.kubernetes.io/instance":"platform"}},
-  "spec":{"template":{"spec":{"containers":[{"name":"apiserver","env":[
-    {"name":"PLATFORM_AGENT_STORE_MARKER","value":"platform-agent-store"},
-    {"name":"PLATFORM_AGENT_NAMESPACE","value":"platform-agents"}]}]}}}}]}
-JSON
-}
-scenario() { # $1 name, $2 markers json data, $3 crd-exists yes|no, $4 expected exit, $5 expected text
-  markers "$2"
-  deploys
-  [ "$3" = yes ] && touch "$WORK/crd-exists" || rm -f "$WORK/crd-exists"
-  cat >"$WORK/resources.yaml" <<'YAML'
+one_cr() {
+  cat >"$WORK/agents.yaml" <<'YAML'
 apiVersion: v1
 kind: List
 items:
 - apiVersion: agent-platform.ai/v1
   kind: Agent
-  metadata: {name: agent-a}
+  metadata:
+    name: agent-left
+    namespace: platform-agents
 YAML
+  printf 'apiVersion: v1\nkind: List\nitems: []\n' >"$WORK/userbudgets.yaml"
+}
+installs() { # $1 = release, $2 = namespace, $3 = marker namespace (empty = no marker)
+  if [ "$3" = "" ]; then
+    touch "$WORK/no-marker"
+    cat >"$WORK/deployments.json" <<JSON
+{"items":[{"metadata":{"namespace":"$2","name":"$1-apiserver","labels":{"app.kubernetes.io/instance":"$1"}},
+  "spec":{"template":{"spec":{"containers":[{"name":"apiserver","env":[
+    {"name":"PLATFORM_AGENT_STORE_MARKER","value":"$1-agent-store"},
+    {"name":"NAMESPACE","value":"$2"}]}]}}}}]}
+JSON
+    return
+  fi
+  rm -f "$WORK/no-marker"
+  cat >"$WORK/deployments.json" <<JSON
+{"items":[{"metadata":{"namespace":"$2","name":"$1-apiserver","labels":{"app.kubernetes.io/instance":"$1"}},
+  "spec":{"template":{"spec":{"containers":[{"name":"apiserver","env":[
+    {"name":"PLATFORM_AGENT_STORE_MARKER","value":"$1-agent-store"},
+    {"name":"NAMESPACE","value":"$3"}]}]}}}}]}
+JSON
+}
+marker() { # $1 = JSON data of the marker
+  cat >"$WORK/marker.json" <<JSON
+{"metadata":{"name":"platform-agent-store","namespace":"platform-agents"},"data":{$1}}
+JSON
+}
+crds() { # every argument present means that CRD exists
+  rm -f "$WORK"/crd-*
+  for kind in "$@"; do touch "$WORK/crd-$kind"; done
+}
+reset() {
+  rm -f "$WORK/deletes" "$WORK/read-fails" "$WORK/backup.yaml" "$WORK/no-marker"
+  no_crs
+  crds agents.agent-platform.ai userbudgets.agent-platform.ai
+}
+scenario() { # $1 name, $2 expected exit, $3 expected text, rest flags
+  local name="$1" want="$2" text="$3"
+  shift 3
   set +e
   out=$(FAKE_DIR="$WORK" KUBECTL="$WORK/kubectl" "$ROOT/.mise/tasks/cluster/retire-crds" \
-    --backup "$WORK/backup.yaml" 2>&1)
+    --backup "$WORK/backup.yaml" "$@" 2>&1)
   code=$?
   set -e
-  if [ "$code" != "$4" ]; then
-    echo "FAIL $1: exit $code, want $4" >&2
+  if [ "$code" != "$want" ]; then
+    echo "FAIL $name: exit $code, want $want" >&2
     echo "$out" >&2
     FAILED=1
     return
   fi
-  if ! grep -qF "$5" <<<"$out"; then
-    echo "FAIL $1: output does not say \"$5\"" >&2
+  if ! grep -qF "$text" <<<"$out"; then
+    echo "FAIL $name: output does not say \"$text\"" >&2
     echo "$out" >&2
     FAILED=1
     return
   fi
-  if [ "$4" != 0 ] && [ -f "$WORK/backup.yaml" ]; then
-    echo "FAIL $1: a refused run wrote a backup" >&2
-    FAILED=1
-    return
-  fi
-  rm -f "$WORK/backup.yaml"
-  echo "ok   $1"
+  echo "ok   $name"
 }
 
-scenario "an install still on the custom resources blocks it" \
-  '"store":"crd"' no 1 "no contract-at"
-scenario "an install inside its rollback window blocks it" \
-  '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z"' no 1 "rollback window"
-scenario "an api-server with no store marker blocks it" \
-  - no 1 "never switched"
-scenario "a fully contracted cluster retires once" \
-  '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z","contract-at":"2026-10-31T00:00:00Z"' \
-  yes 0 "the CRDs are retired"
-scenario "a second run finds nothing to retire" \
-  '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z","contract-at":"2026-10-31T00:00:00Z"' \
-  no 0 "already retired"
+reset
+installs platform platform platform-agents
+marker '"store":"crd"'
+scenario "an install still on the custom resources blocks it" 1 "no contract-at"
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z"'
+scenario "an install inside its rollback window blocks it" 1 "rollback window"
+
+reset
+installs platform platform ""
+scenario "an api-server with no store marker blocks it" 1 "never switched"
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","contract-at":"2026-10-01T00:00:00Z","contract-clock":"rehearsal"'
+scenario "a rehearsal clock blocks it without --rehearsal" 1 "rehearsal clock"
+scenario "a rehearsal clock passes with --rehearsal" 0 "the CRDs are retired" --rehearsal
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","contract-at":"2099-01-01T00:00:00Z"'
+scenario "a contract-at in the future blocks it" 1 "in the future"
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","contract-at":"2026-10-01T00:00:00Z"'
+one_cr
+scenario "a custom resource still present blocks it" 1 "still exist"
+if [ -f "$WORK/deletes" ] || [ -f "$WORK/backup.yaml" ]; then
+  echo "FAIL a refused run wrote a backup or deleted a CRD" >&2
+  FAILED=1
+fi
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","contract-at":"2026-10-01T00:00:00Z"'
+echo "get agents.agent-platform.ai" >"$WORK/read-fails"
+scenario "a failed custom-resource read blocks it" 1 "cannot read every"
+if [ -f "$WORK/deletes" ] || [ -f "$WORK/backup.yaml" ]; then
+  echo "FAIL the failed-read run wrote a backup or deleted a CRD" >&2
+  FAILED=1
+fi
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","contract-at":"2026-10-01T00:00:00Z"'
+scenario "a contracted install on a large cluster retires" 0 "the CRDs are retired"
+deleted=$(wc -l <"$WORK/deletes" | tr -d ' ')
+[ "$deleted" = 2 ] || { echo "FAIL the large-cluster run deleted $deleted CRD(s), want 2" >&2; FAILED=1; }
+scenario "a second run finds nothing to retire" 0 "already retired"
+
+reset
+installs platform platform platform-agents
+marker '"store":"postgres","contract-at":"2026-10-01T00:00:00Z"'
+crds agents.agent-platform.ai
+scenario "a half-retired cluster retires the kind it has left" 0 "the CRDs are retired"
+! grep -q "userbudgets.agent-platform.ai" "$WORK/deletes" ||
+  { echo "FAIL the half-retired run deleted a CRD that was not there" >&2; FAILED=1; }
+
 exit "$FAILED"
