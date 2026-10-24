@@ -142,7 +142,7 @@ The left navigation drops its own Artifacts entry and Documentation link while t
 With the flag on, an Agent's chat also offers its Connections, Channels, Skills and Schedules, each the section its configuration page already renders, so the settings that apply to the conversation sit beside it.
 A schedule created in that panel makes the chat add the Agent's own line naming the shortest prompt that would have made it, and a tool call that created or changed a schedule or a skill carries a card that opens its tab on that item.
 Both are part of the experiment, so with the flag off the chat shows neither.
-The rest of the rail's tab list and what each tab shows do not depend on this flag.
+Apart from those four, the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.
 The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
 A phone keeps that bar, carrying the navigation button, the running count and the buttons that open the panel, since the rail waits for a panel there.
