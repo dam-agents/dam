@@ -33,11 +33,11 @@ export const DEFAULTS_BY_PANEL: Partial<
   schedules: ["scheduled"],
 };
 
+// UNIT_BOUNDARY_DESCRIPTION: a panel shows the page's description only where it carries copy that stops a mistake; Network access keeps its rules in the editor, so no description sits above it.
 const SECTION_OF_TAB: Partial<Record<ConfigPanelTab, SandboxSection>> = {
   channels: "channels",
   skills: "skills",
   schedules: "schedules",
-  network: "network",
 };
 
 export function configPanelTitle(tab: SidePanelTab): string {
@@ -105,6 +105,8 @@ export function ConfigSidePanel({
               <SessionDefaultsSection
                 agentId={agentId}
                 kinds={DEFAULTS_BY_PANEL.channels}
+                label="Default model"
+                hint={false}
               />
             </>
           ))
@@ -125,6 +127,8 @@ export function ConfigSidePanel({
               <SessionDefaultsSection
                 agentId={agentId}
                 kinds={DEFAULTS_BY_PANEL.schedules}
+                label="Default model"
+                hint={false}
               />
             </>
           ))

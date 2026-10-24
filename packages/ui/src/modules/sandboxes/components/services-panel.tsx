@@ -3,11 +3,9 @@ import { SectionLabel } from "@/components/ui/section-label";
 import type { AgentView } from "../../../types.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import { AgentModelSettingsSection } from "./agent-config-sections.js";
 import { ConnectionsSection } from "./connections-section.js";
 import { SandboxProvidersSection } from "./sandbox-providers-section.js";
 import { SECTIONS } from "./sandbox-section-nav.js";
-import { ConnectionAddressingSection } from "./setup/setup-sections.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Services panel of the unified toolbar: the
@@ -34,16 +32,13 @@ export function ServicesPanel({
         <SandboxProvidersSection
           agentId={agent.id}
           header={() => null}
-          defaultsKinds={["chat"]}
+          defaultsKinds={[]}
         />
-        <AgentModelSettingsSection agentId={agent.id} />
       </section>
       <section>
-        <SectionLabel spaced>Connections</SectionLabel>
         <ConnectionsSection
           agentId={agent.id}
           header={() => null}
-          leading={<ConnectionAddressingSection agent={agent} />}
           oauthReturnView={routeToPath({
             view: "chat",
             agent: agent.id,

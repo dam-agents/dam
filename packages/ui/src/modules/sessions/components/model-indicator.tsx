@@ -36,7 +36,6 @@ import {
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
 import { settingDefaults, settingsForModel } from "../lib/session-settings.js";
-import { DefaultFollowState } from "./default-follow-state.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
@@ -281,15 +280,14 @@ export function ModelIndicator({
           </div>
         )}
         <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
-          {kind && routed && followsDefaults && (
-            <DefaultFollowState
-              kind={kind}
-              follows={follows}
-              harness={harness}
-              model={model}
-              target={remembered}
-              onFollow={() => onFollowDefault(false)}
-            />
+          {kind && routed && followsDefaults && follows !== kind && (
+            <button
+              type="button"
+              onClick={() => onFollowDefault(false)}
+              className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
+            >
+              Back to default
+            </button>
           )}
           {kind && !(followsDefaults && follows === kind) && (
             <SetAsDefault

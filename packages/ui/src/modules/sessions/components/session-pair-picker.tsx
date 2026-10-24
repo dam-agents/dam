@@ -435,25 +435,34 @@ export function SessionPairPicker(props: Props) {
             </div>
           )}
           {!manageProviders ? (
-            <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
-              {pair && routed && status?.followsDefaults && (
-                <NewSessionFollowState
-                  onDefault={
-                    chosen === null ||
-                    (!!remembered && samePair(pair, remembered))
-                  }
-                  onFollow={() => clearPair(agentId)}
-                />
-              )}
-              <PopoverClose asChild>
+            // UNIT_BOUNDARY_DESCRIPTION: the popover's last row holds the two acts on the default and nothing else: back to the default, and set the pick as it. Left on the default, the row is blank.
+            <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground empty:hidden">
+              {pair &&
+                routed &&
+                status?.followsDefaults &&
+                !onDefaultPair(pair, chosen, remembered) && (
+                  <button
+                    type="button"
+                    onClick={() => clearPair(agentId)}
+                    className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
+                  >
+                    Back to default
+                  </button>
+                )}
+              {pair && !onDefaultPair(pair, chosen, remembered) && (
                 <button
                   type="button"
-                  onClick={() => navigateToSandboxHome(agentId, "providers")}
-                  className="underline underline-offset-2 hover:text-foreground"
+                  data-testid="session-pair-set-default"
+                  onClick={() =>
+                    rememberSessionPair(agentId, pair, "chat", () =>
+                      clearPair(agentId),
+                    )
+                  }
+                  className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground"
                 >
-                  Configure providers and defaults
+                  Set as default
                 </button>
-              </PopoverClose>
+              )}
             </div>
           ) : (
             <div className="border-t border-border pt-1">
@@ -477,26 +486,13 @@ export function SessionPairPicker(props: Props) {
   );
 }
 
-function NewSessionFollowState({
-  onDefault,
-  onFollow,
-}: {
-  onDefault: boolean;
-  onFollow: () => void;
-}) {
-  if (onDefault) return <span>On the chat default</span>;
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span>Own choice</span>
-      <button
-        type="button"
-        onClick={onFollow}
-        className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
-      >
-        Back to default
-      </button>
-    </span>
-  );
+// UNIT_BOUNDARY_DESCRIPTION: whether the picker's pair is the chat default: nothing picked, or the pick the agent remembers. The row of acts on the default stays blank while it is.
+export function onDefaultPair(
+  pair: SessionPair,
+  chosen: SessionPair | null,
+  remembered: SessionPair | null | undefined,
+): boolean {
+  return chosen === null || (!!remembered && samePair(pair, remembered));
 }
 
 export function ConnectProvidersPrompt({ onClick }: { onClick: () => void }) {

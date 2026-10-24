@@ -42,12 +42,17 @@ const KIND_HINT: Record<DefaultKind, string> = {
 export function SessionDefaultsSection({
   agentId,
   kinds = KINDS,
+  label,
+  hint = true,
 }: {
   agentId: string;
   kinds?: readonly DefaultKind[];
+  label?: string;
+  hint?: boolean;
 }) {
   const { data: status } = useHarnessConfigStatus(agentId);
   const operable = useIsAgentOperable(agentId);
+  if (kinds.length === 0) return null;
   if (status && !status.harnesses && !operable)
     return (
       <section className="mt-6">
@@ -59,7 +64,13 @@ export function SessionDefaultsSection({
   return (
     <section className="mt-6 flex flex-col gap-6">
       {kinds.map((kind) => (
-        <KindDefault key={`${agentId}:${kind}`} agentId={agentId} kind={kind} />
+        <KindDefault
+          key={`${agentId}:${kind}`}
+          agentId={agentId}
+          kind={kind}
+          label={label}
+          hint={hint}
+        />
       ))}
     </section>
   );
@@ -68,9 +79,13 @@ export function SessionDefaultsSection({
 function KindDefault({
   agentId,
   kind,
+  label,
+  hint,
 }: {
   agentId: string;
   kind: DefaultKind;
+  label?: string;
+  hint: boolean;
 }) {
   const { data: saved } = useSessionDefaults(agentId);
   const { data: chat } = useRememberedPair(agentId);
@@ -93,10 +108,14 @@ function KindDefault({
 
   return (
     <div data-testid={`session-default-${kind}`}>
-      <SectionLabel spaced>{DEFAULT_KIND_TITLE[kind]} sessions</SectionLabel>
-      <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-        {KIND_HINT[kind]}
-      </p>
+      <SectionLabel spaced>
+        {label ?? `${DEFAULT_KIND_TITLE[kind]} sessions`}
+      </SectionLabel>
+      {hint && (
+        <p className="-mt-1 mb-3 text-sm text-muted-foreground">
+          {KIND_HINT[kind]}
+        </p>
+      )}
       {notice && (
         <p
           role="status"

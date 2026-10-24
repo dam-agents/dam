@@ -57,6 +57,7 @@ const state = vi.hoisted(() => ({
   } | null,
   configured: undefined as
     { mode: string | null; configOptions: Record<string, string> } | undefined,
+  followsDefaults: false,
   showConfirm: vi.fn(),
   revoke: vi.fn(),
   buttons: {} as Record<string, () => void>,
@@ -124,7 +125,9 @@ vi.mock("@/components/ui/tooltip", () => ({
 }));
 
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
-  useHarnessConfigStatus: () => ({ data: { followsDefaults: false } }),
+  useHarnessConfigStatus: () => ({
+    data: { followsDefaults: state.followsDefaults },
+  }),
 }));
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
@@ -164,6 +167,23 @@ vi.mock("../../modules/schedules/api/mutations.js", () => ({
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
+  samePair: (
+    a: {
+      harness: string;
+      provider?: string | null;
+      model?: string | null;
+    } | null,
+    b: {
+      harness: string;
+      provider?: string | null;
+      model?: string | null;
+    } | null,
+  ) =>
+    !!a &&
+    !!b &&
+    a.harness === b.harness &&
+    a.provider === b.provider &&
+    a.model === b.model,
   useHarnessCatalog: () => ({
     data: state.catalogLoaded && {
       harnesses: [
@@ -235,6 +255,40 @@ function renderPicker() {
   );
 }
 
+// TEST_SCENARIO: the popover's last row holds the two acts on the default — back to it, and set the pick as it — and is blank while the pick already is the default; the provider shortcut is not in that row.
+it("offers the two acts on the default only off it", () => {
+  state.followsDefaults = true;
+  state.chosen = { harness: "pi", provider: "curve", model: "glm" };
+  const off = renderToStaticMarkup(
+    createElement(SessionPairPicker, {
+      agentId: "agent",
+      defaultHarness: "pi",
+      carried,
+      routed: true,
+      onConnectProviders: state.connectProviders,
+    }),
+  );
+  expect(off).toContain("Back to default");
+  expect(off).toContain("Set as default");
+  expect(off).not.toContain("On the chat default");
+  expect(off).not.toContain("Own choice");
+  expect(off).not.toContain("Configure providers and defaults");
+
+  state.chosen = null;
+  const on = renderToStaticMarkup(
+    createElement(SessionPairPicker, {
+      agentId: "agent",
+      defaultHarness: "pi",
+      carried,
+      routed: true,
+      onConnectProviders: state.connectProviders,
+    }),
+  );
+  expect(on).not.toContain("Back to default");
+  expect(on).not.toContain("Set as default");
+  state.followsDefaults = false;
+});
+
 describe("session pair model choices", () => {
   beforeEach(() => {
     state.models = {};
@@ -266,8 +320,8 @@ describe("session pair model choices", () => {
     expect(html).not.toContain("Static model");
     expect(html).not.toContain("New session runs on");
     expect(html).not.toContain('aria-label="Close"');
-    expect(html).toContain("Configure providers and defaults");
-    expect(html).not.toContain("Set as default");
+    // UNIT_BOUNDARY_DESCRIPTION: the last row holds the two acts on the default and nothing else, so no provider shortcut sits there.
+    expect(html).not.toContain("Configure providers and defaults");
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(html).toContain('aria-label="Session settings"');
     expect(html).not.toContain("Harness default");
