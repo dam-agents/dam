@@ -143,7 +143,7 @@ Neither table can stand in for the other, and the pseudonymized one must not be 
 The api-server is the sole writer for all of it, and for the per-Agent record below.
 
 - **the Agent store** — one schema of its own (`control`), separate from the rest because its writers are separate and because the pseudonymized usage mirror in this one must keep its name and its readers.
-  A definition row per Agent carries what the controller renders: image, harness, resource limits as the quantity text an operator wrote, the idle timeout, the nested-virtualization and connection-address flags, the L7 hosts, and the compatibility values a machine still falls back on.
+  A definition row per Agent carries what the controller renders: image, harness, the install default's resource limits, the idle timeout, the nested-virtualization and connection-address flags, the L7 hosts, and the compatibility values a machine still falls back on.
   A signals row carries what changes without a spec write: last activity with the token that changes with it, the pins that keep a machine awake, a stop request, a disable, the restart revision, and the reclaim mark the controller writes.
   Observation tables carry what the controller sees — conditions with their original transition times, machine restarts and the OOM attribution that goes with them — and it is their only writer.
   A budget row per owner subject overrides the chart's pool field by field; a budget with no override does not exist, and a row written outside the platform carries no invented audit time.

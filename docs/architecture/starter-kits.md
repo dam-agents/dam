@@ -142,8 +142,8 @@ flowchart LR
   A bare command cannot do that job — it is stamped onboarded at create and has nothing to report with.
 - **Agent Setup** — the seed, install, env and external skills are one definition shared with spawning a sub-agent, so a target is set up exactly like a kit-created Agent ([invocations](invocations.md)).
   A new setup field lands there and works for both, or is kept kit-only on purpose.
-- **Kit Size** — optional `resources`: the CPU, memory and disk a kit declares for its workload, plus a `note` saying why.
-  It sizes nothing: every Agent is a machine with no CPU, memory or disk of its own, drawing on its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools, so the kit modal shows no size for any kit.
+- **Kit Disk** — optional `resources.storage`: the workspace disk a kit declares for its workload, plus a `note` saying why.
+  CPU and memory are not a kit's to declare: every Agent is a machine with no CPU, memory or disk of its own, drawing on its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools, so the kit modal shows no size for any kit.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.
   `into` says where: `work` (the default — the toolkit-as-workspace shape the wiki kits use) or `home` (a definition that wants to be `$HOME`, with `CLAUDE.md`, `scripts/` and `docs/` beside the platform's own dotfiles and `work/` as its git-ignored data directory — Code Guardian's shape).
