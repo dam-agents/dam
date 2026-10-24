@@ -1,11 +1,12 @@
 # Agent lifecycle
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
 An **Agent** is the durable, owned, runnable resource.
-It is a custom resource whose `spec` the api-server owns and whose `status` the controller writes; its machine runs on its owner's [VM runner](vm-runner.md) while the Agent is awake, and stops when it hibernates.
+It is a definition the api-server owns and a set of observations the controller writes; until the store's switch it is a custom resource, and after it those are `control` tables ([persistence](persistence.md#postgres)).
+Its machine runs on its owner's [VM runner](vm-runner.md) while the Agent is awake, and stops when it hibernates.
 **Sessions** live inside a running machine: each ACP session is a short-lived conversation that the machine's persistent agent process serves.
 The lifecycle is driven by three actors:
 
@@ -32,12 +33,12 @@ sequenceDiagram
   Note over U,K: Create — UI only
   U->>API: create agent
   API->>K: write pull Secret<br/>(if registry credential)
-  API->>K: write Agent CR (spec)
+  API->>K: write Agent definition<br/>(a CR until the switch)
   C->>K: reconcile<br/>Secret + Service + NetworkPolicy<br/>+ gateway StatefulSet(replicas=0)
 
   Note over U,M: Connect-driven wake — UI tab attach OR channel inbound message
   U->>API: ACP frame for session
-  API->>K: poke activity
+  API->>K: poke activity\n(a CR annotation, a row after)
   C->>K: scale gateway StatefulSet → 1
   C->>R: ensure power on
   R-->>M: guest boots, agent-runtime answers
@@ -45,7 +46,7 @@ sequenceDiagram
 
   Note over API,M: Schedule fire — RRULE match, not in quiet hours
   API->>API: insert trigger event into runtime outbox
-  API->>K: poke activity — the reconciler starts a hibernated Agent
+  API->>K: poke activity<br/>(a CR annotation, a row after)<br/>— the reconciler starts a hibernated Agent
   API->>M: applyState — delivered only once Ready
   Note over M: a fire with a Precheck settles on acceptance<br/>and decides afterwards; one without settles<br/>once the prompt is submitted
   M->>API: report the Precheck verdict, whichever it was
@@ -59,7 +60,7 @@ sequenceDiagram
 
   Note over U,K: Delete — UI only
   U->>API: delete agent
-  API->>K: delete Agent CR
+  API->>K: delete Agent definition
   C->>K: tear down owned resources
   C->>R: delete machine and disk
 ```
@@ -82,14 +83,14 @@ An agent that holds none while an older such provider exists was detached on pur
 A create may also name a repository to seed into the work directory before the first session; it rides the runtime channel rather than the Agent's spec ([runtime delivery](runtime-delivery.md#event)).
 See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top of what follows.
 
-The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs.
+The api-server writes a new Agent whose definition carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs — a custom resource before the switch, a definition row after it.
 There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity.
 The controller reconciles a paired set of owned resources: the gateway's StatefulSet, the Agent's Service and the `<agent>-gateway` proxy Service, the gateway-ingress NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
 The Agent's Service selects its owner's runner and maps the agent port onto the one the machine publishes there, so the api-server dials an Agent as it would any pod ([vm-runner](vm-runner.md)).
 The machine itself is the runner's to run, and its storage is one disk on that runner's claim, holding `HOME` and the machine's root ([vm storage](vm-storage.md#the-disk)).
 With the [owner gateway](credential-gateway.md#owner-gateway) on, an Agent has no gateway StatefulSet, bootstrap ConfigMap, leaf or gateway NetworkPolicies of its own: it keeps its `<agent>-gateway` Service, which selects the owner's gateway pod, and its ext-authz Service.
 
-When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the owner's runner.
+When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the owner's runner.
 It never enters the agent, and a bad one surfaces as a pull failure rather than a create-time error.
 See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
@@ -124,7 +125,8 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 ### Wake
 
 Every caller that sends work to an Agent — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
-The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this Agent?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler starts any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the Agent warm.
+The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this Agent?"** The primitive pokes activity by bumping the Agent's activity — the `agent-platform.ai/last-activity` annotation before the switch, the `last_activity_at` signals row with the token that changes with it after it — and the controller is woken by the store's change feed, or by the informer on the custom resources, so the reconciler starts any Agent with recent activity.
+It single-flights concurrent waits per Agent, and bumps the same signal on every successful call, so any caller implicitly keeps the Agent warm.
 Opening a sleeping Agent's chat or its sidebar session list in the web UI wakes it once per open (a list's open lasts until its sidebar row closes), a stopped Agent included but not a disabled one or one held over its budget.
 An Agent still falling asleep is woken once it is asleep, and a wake already running counts as the open's wake, so a chat and a list opened together wake it once.
 An Agent that falls asleep while the view stays open, or whose wake fails, shows a Start button, or a retry in its session list ([home-feed](home-feed.md)), until the next open.
@@ -207,7 +209,8 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
    The runtime is authoritative about its own idleness and reports one boolean; the controller reads nothing more into it.
    An unreachable machine counts as *not busy*, which permits hibernation.
 
-**What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
+**What counts as activity.** Those two checks rest on four signals, each catching something the others miss.
+The names below are the annotation forms the controller reads on a custom resource; after the switch the same signals are columns on the Agent's signals row (`session_pinned`, `last_activity_at` with its token, `invocation_pinned`), and the store's change feed is what tells the controller they moved.
 
 - **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while the harness works on in an [Autonomous Turn](sessions.md#session-inside-the-machine) after it answered one, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), while a script sub-agent's script runs ([invocations](invocations.md#script-runs)), while an [Environment Link](environments.md#the-environment-link) is open, on either machine, or while a terminal (PTY) is live.
   A terminal is live while a viewer is attached, inside its detach grace, or while it printed within the idle window its reap uses ([sessions](sessions.md)).
@@ -281,10 +284,12 @@ It is otherwise an ordinary hibernated Agent: the mark self-clears when a delibe
 
 ### Delete
 
-The api-server deletes the Agent custom resource.
+The api-server deletes the Agent's definition — the custom resource before the switch, the row after it — and the rows that belong to it go with it.
 The controller's reconciler tears down the owned gateway StatefulSet, Services, NetworkPolicies and Secret, and asks the VM runner to delete the machine and its disk, from a retrying queue; the [orphan sweep](vm-runner.md#runner-lifecycle) collects what a down runner leaves.
+After the switch the per-Agent children are owned by an anchor ConfigMap (`<agent>-anchor`) instead of by the definition, and the deletion protocol is what keeps the record: the machine, the PVCs and the release-namespace objects go first, the anchor last.
+A failure anywhere in between leaves the anchor, so the delete queue retries it, and the startup anchor pass finds a deletion the controller never saw.
 Sessions are agent-owned files on the machine's disk and disappear with it; an Invocation target's conversation is first copied, best effort and only if the root driver is up, to that root's volume.
-In-flight Runs are owner-refed to the Agent CR, so Kubernetes garbage-collects them automatically.
+In-flight Runs are owner-refed to that anchor once the switch has run, so Kubernetes garbage-collects them automatically.
 The api-server owns none of this: it never touches the machine's disk, and only deletes the Secrets it wrote — the per-channel credential Secrets and, via a cleanup hook, the agent-scoped image-pull Secret (a label-scoped orphan sweep backstops a missed delete).
 
 Agent-scoped Postgres rows go with it on any deletion path ([persistence](persistence.md#lifetime)).

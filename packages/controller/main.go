@@ -309,6 +309,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		} else if err := postgres.RecordAnchorsEnsured(ctx, cfg.PodName); err != nil {
 			slog.Warn("recording the startup anchor pass failed", "error", err)
 		}
+		// UNIT_BOUNDARY_DESCRIPTION: a deletion that happened while no controller ran has its anchor and no row. It goes to the queue before any reconcile works, so the previous incarnation's children cannot be adopted by an Agent of the same name created since.
+		if err := agentReconciler.ReconcileOrphanAnchors(ctx, func(name string) {
+			deleteQueue.Add(deletedAgent{name: name})
+		}); err != nil {
+			slog.Warn("the startup anchor sweep failed", "error", err)
+		}
 		go runDeleteWorker(ctx, agentReconciler, deleteQueue)
 	} else {
 		agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
