@@ -125,7 +125,8 @@ Its host names differ from the public ones, which the chart and the api-server b
 The cluster tasks then act on the Environment's k3s instead of their own host's: the node over the link, the API through a tunnel the tasks open and reuse.
 The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
 It runs no mesh, which the Environment's kernel cannot.
-Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`: an Agent asks for it with `spec.nestedVirtualization`, on an install and a node that allow nesting.
+Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
+Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.templateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
 An Environment without it refuses the install and names that.
 Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
 Beside the chart it installs two pieces the gate needs:
