@@ -30,6 +30,9 @@
 -- does will deadlock against this trigger until it follows the order.
 CREATE FUNCTION control.agents_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF NEW.id IS DISTINCT FROM OLD.id THEN
+    RAISE EXCEPTION 'control.agents.id is immutable (agent %)', OLD.id;
+  END IF;
   IF NEW.owner_sub IS DISTINCT FROM OLD.owner_sub THEN
     RAISE EXCEPTION 'control.agents.owner_sub is immutable (agent %)', OLD.id;
   END IF;
@@ -92,7 +95,13 @@ CREATE TRIGGER agent_kit_state_bump_version BEFORE UPDATE ON control.agent_kit_s
 
 -- Host lists and connection grants were spec fields until the move, so a change
 -- to either still has to advance the definition's generation: that is what
--- re-renders the Agent's gateway.
+-- re-renders the Agent's gateway. Only a change to the set does — a grant's
+-- `preferred` flag and `granted_at` are bookkeeping the gateway never sees, so
+-- the trigger names the two columns whose value is the membership.
+--
+-- One row at a time: inserting an Agent with its hosts leaves the generation
+-- above what the Agent's own writes set, so an importer that must preserve the
+-- source generation sets it after the children are in.
 CREATE FUNCTION control.bump_agents_generation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -100,6 +109,9 @@ BEGIN
     RETURN OLD;
   END IF;
   UPDATE control.agents SET generation = generation + 1 WHERE id = NEW.agent_id;
+  IF TG_OP = 'UPDATE' AND NEW.agent_id IS DISTINCT FROM OLD.agent_id THEN
+    UPDATE control.agents SET generation = generation + 1 WHERE id = OLD.agent_id;
+  END IF;
   RETURN NEW;
 END $$;
 --> statement-breakpoint
@@ -110,8 +122,31 @@ CREATE TRIGGER agent_l7_hosts_bump_generation
 --> statement-breakpoint
 
 CREATE TRIGGER connection_grants_bump_generation
-  AFTER INSERT OR UPDATE OR DELETE ON public.connection_grants
+  AFTER INSERT OR DELETE OR UPDATE OF connection_id, agent_id ON public.connection_grants
   FOR EACH ROW EXECUTE FUNCTION control.bump_agents_generation();
+--> statement-breakpoint
+
+-- The custom resource's admission caps an Agent at 256 L7 hosts, because each
+-- one is a name on the gateway's leaf certificate. A row constraint cannot
+-- count siblings, and a statement trigger would miss two statements that each
+-- stay under the cap, so the cap is a deferred constraint trigger: it counts at
+-- commit, where a set written in one transaction is complete.
+CREATE FUNCTION control.agent_l7_hosts_cap() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  total integer;
+BEGIN
+  SELECT count(*) INTO total FROM control.agent_l7_hosts WHERE agent_id = NEW.agent_id;
+  IF total > 256 THEN
+    RAISE EXCEPTION 'an Agent may carry at most 256 L7 hosts (agent % has %)', NEW.agent_id, total;
+  END IF;
+  RETURN NULL;
+END $$;
+--> statement-breakpoint
+
+CREATE CONSTRAINT TRIGGER agent_l7_hosts_cap
+  AFTER INSERT OR UPDATE ON control.agent_l7_hosts
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION control.agent_l7_hosts_cap();
 --> statement-breakpoint
 
 -- The change feed the controller listens on: one channel, a payload naming the

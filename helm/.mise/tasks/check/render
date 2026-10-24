@@ -535,16 +535,16 @@ jq -e '.["controller"].PLATFORM_AGENT_STORE == "crd"
   and .["controller"].PLATFORM_DATABASE_URL == null
   and .["controller"].POSTGRES_PASSWORD == null' <<<"$default_store" >/dev/null ||
   { echo "the default render does not run on the custom resources, or hands the controller a database credential: $default_store" >&2; exit 1; }
-# A release that reads Postgres points the controller at the database under its
-# own login, and takes the password from the Secret key and not from the
-# environment, so the DSN itself carries no credential.
-postgres_store=$(store_env --set agentStore.authority=postgres)
-jq -e '.["controller"].PLATFORM_AGENT_STORE == "postgres"
-  and (.["controller"].PLATFORM_DATABASE_URL | startswith("postgresql://platform_controller:"))
-  and (.["controller"].PLATFORM_DATABASE_URL | contains("$(POSTGRES_PASSWORD)"))
-  and .["controller"].POSTGRES_PASSWORD == "POSTGRES_CONTROLLER_PASSWORD"
-  and .["apiserver"].PLATFORM_AGENT_STORE == "postgres"' <<<"$postgres_store" >/dev/null ||
-  { echo "the Postgres render does not connect the controller as platform_controller through a secretKeyRef: $postgres_store" >&2; exit 1; }
+# The marker's name is the chart's, and it is the one the api-server's Role pins:
+# a name the Role did not grant would fail closed on every boot.
+marker=$(jq -r '.["apiserver"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")
+[ "$marker" = "platform-agent-store" ] && [ "$(jq -r '.["controller"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")" = "$marker" ] ||
+  { echo "the two components do not read one marker name, or it is not the release's: $default_store" >&2; exit 1; }
+pinned=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/rbac.yaml |
+  yq -o=json 'select(.kind == "Role") | .rules[]' |
+  jq -s 'map(select(.resources == ["configmaps"]))[0]')
+jq -e --arg marker "$marker" '.resourceNames == [$marker] and .verbs == ["get"]' <<<"$pinned" >/dev/null ||
+  { echo "the api-server's configmaps grant is not pinned to the marker it reads: $pinned" >&2; exit 1; }
 # The controller's role is created by the same SQL that creates the app roles,
 # and that SQL refuses to leave any of them a superuser.
 roles=$(helm template platform . "${COMMON[@]}" --show-only templates/postgres.yaml |

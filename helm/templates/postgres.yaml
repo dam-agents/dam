@@ -50,7 +50,7 @@ data:
     SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER PASSWORD %L', :'ctrl_user', :'ctrl_pwd')
     WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'ctrl_user')
     \gexec
-    ALTER ROLE :"ctrl_user" WITH LOGIN NOSUPERUSER PASSWORD :'ctrl_pwd';
+    ALTER ROLE :"ctrl_user" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'ctrl_pwd';
 
     -- Optional read-only consumer of the usage_src_* source passthrough
     -- views. NOLOGIN and password-less: the role is a group, it holds no

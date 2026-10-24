@@ -12,6 +12,7 @@ import {
   agentServiceAddress,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
+  agentStoreMarkerName,
   agentStoreRefusal,
   readAgentStoreMarker,
 } from "./modules/agent-store/fence.js";
@@ -367,7 +368,7 @@ export async function bootstrap() {
   const agentStoreMarker = await readAgentStoreMarker(
     api,
     config.namespace,
-    config.releaseName,
+    config.agentStoreMarker ?? agentStoreMarkerName(config.releaseName),
   );
   const refusal = agentStoreRefusal(config.agentStore, agentStoreMarker);
   if (refusal) {

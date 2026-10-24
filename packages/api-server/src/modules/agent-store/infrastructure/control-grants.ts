@@ -89,7 +89,11 @@ export const CONTROL_GRANTS: readonly Grant[] = [
   { object: "control.agent_l7_hosts", privileges: ["SELECT"] },
   { object: "control.agent_connection_grants", privileges: ["SELECT"] },
   { object: "control.user_budgets", privileges: ["SELECT"] },
-  { object: "control.agent_store", privileges: ["SELECT"] },
+  {
+    object: "control.agent_store",
+    columns: ["absorbed_at", "anchors_ensured_at", "switch_completed_at"],
+    privileges: ["SELECT"],
+  },
 ];
 
 const LOCK_KEY = "control-grants";

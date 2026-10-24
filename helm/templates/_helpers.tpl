@@ -384,6 +384,16 @@ API Server secrets name — chart-managed Secret holding operator-supplied crede
 API Server database password secret name — uses shared postgres secret when db.password is empty
 */}}
 {{/*
+The ConfigMap the switch leaves behind, and the one ConfigMap both components
+read at startup. The chart names it because the api-server's Role pins it by
+name; the truncation matches what any Kubernetes object name allows, so a long
+release name cannot render a marker nothing can create.
+*/}}
+{{- define "platform.agentStore.markerName" -}}
+{{- printf "%s-agent-store" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{/*
 The controller's connection string: the api-server's database and TLS — one
 platform database per install — under the controller's own login. The password
 arrives through the pod's POSTGRES_PASSWORD, so the string carries a reference

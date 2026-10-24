@@ -37,6 +37,8 @@ spec:
             # refuses to run the pairing the cluster's marker contradicts.
             - name: PLATFORM_AGENT_STORE
               value: {{ .Values.agentStore.authority | quote }}
+            - name: PLATFORM_AGENT_STORE_MARKER
+              value: {{ include "platform.agentStore.markerName" . | quote }}
             {{- if eq .Values.agentStore.authority "postgres" }}
             # The controller's own login, on the api-server's database: it
             # reads definitions and writes observations, and nothing else. The

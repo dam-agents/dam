@@ -183,6 +183,10 @@ const mountList = (spec: Spec): Array<Record<string, unknown>> =>
  * Annotations it does not recognize are counted, not carried and not listed by
  * name: an operator-authored key has no reader after the switch, and turning it
  * into one would create a configuration surface nobody asked for.
+ * The reclaim mark is dropped rather than carried: that column has exactly one
+ * writer, the controller, and a mark written by the absorb would be one the
+ * controller never made. It is a display hint until the next early hibernation
+ * sets it again.
  */
 export function mapAgent(
   cr: KubeObject,
@@ -387,6 +391,8 @@ export function mapAgent(
     ];
   });
 
+  if (annotations[RECLAIMED_AT_KEY] !== undefined)
+    normalized.push("reclaimMark.dropped");
   const lastActivityAt = nullable(annotations[LAST_ACTIVITY_KEY]);
   const flaggedAt = (flag: string | undefined) =>
     flag ? (lastActivityAt ?? switchedAt) : null;
@@ -442,7 +448,6 @@ export function mapAgent(
         stopRequestedAt: flaggedAt(annotations[STOP_REQUESTED_KEY]),
         disabledAt: flaggedAt(annotations[DISABLED_KEY]),
         rollRev: annotations[ANN_ROLL_REV] ?? "",
-        reclaimedAt: nullable(annotations[RECLAIMED_AT_KEY]),
       },
       kit: kitPresent ? kitState : undefined,
       status: {

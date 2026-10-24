@@ -146,6 +146,8 @@ spec:
             # dry-run report that tells an operator what a switch would do.
             - name: PLATFORM_AGENT_STORE
               value: {{ .Values.agentStore.authority | quote }}
+            - name: PLATFORM_AGENT_STORE_MARKER
+              value: {{ include "platform.agentStore.markerName" . | quote }}
             - name: AGENT_STORE_PREVIEW_REPORT
               value: {{ .Values.agentStore.previewReport | quote }}
             {{- if .Values.agentStore.previewReport }}

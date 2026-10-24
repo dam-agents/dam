@@ -41,6 +41,11 @@ INSERT INTO public.connection_grants (connection_id, agent_id) VALUES ('conn-1',
 DO $$ BEGIN ASSERT (SELECT generation = 5 FROM control.agents WHERE id = 'agent-abc'), 'grant change did not bump generation'; END $$;
 DO $$ BEGIN ASSERT (SELECT count(*) = 1 FROM control.agent_connection_grants WHERE agent_id = 'agent-abc'), 'grants projection empty'; END $$;
 
+-- a grant's own bookkeeping is not a change to the set the gateway renders
+UPDATE public.connection_grants SET preferred = true WHERE agent_id = 'agent-abc';
+UPDATE public.connection_grants SET granted_at = now() - interval '1 day' WHERE agent_id = 'agent-abc';
+DO $$ BEGIN ASSERT (SELECT generation = 5 FROM control.agents WHERE id = 'agent-abc'), 'a preferred flip or a granted_at touch bumped generation'; END $$;
+
 -- every write to a versioned row rotates its token
 UPDATE control.agent_signals SET last_activity_at = now() WHERE agent_id = 'agent-abc';
 DO $$ BEGIN ASSERT (SELECT version = 2 FROM control.agent_signals WHERE agent_id = 'agent-abc'), 'signals version did not rotate'; END $$;
@@ -58,6 +63,23 @@ INSERT INTO control.agent_conditions (agent_id, type, status, reason, observed_g
 VALUES ('agent-abc', 'Ready', 'True', 'Reconciled', 5, now());
 DELETE FROM control.agent_conditions WHERE agent_id = 'agent-abc';
 
+-- the leaf certificate a single Agent may demand is capped, as admission caps
+-- it; the trigger is deferred, so each set is checked when it is complete
+INSERT INTO control.agent_l7_hosts (agent_id, host)
+SELECT 'agent-abc', 'host' || i || '.test' FROM generate_series(1, 256) AS i;
+SET CONSTRAINTS ALL IMMEDIATE;
+DO $$ BEGIN ASSERT (SELECT count(*) = 256 FROM control.agent_l7_hosts WHERE agent_id = 'agent-abc'), '256 hosts were not admitted'; END $$;
+DO $$ BEGIN
+  BEGIN
+    INSERT INTO control.agent_l7_hosts (agent_id, host) VALUES ('agent-abc', 'one-too-many.test');
+    SET CONSTRAINTS ALL IMMEDIATE;
+    RAISE EXCEPTION '257 hosts were admitted';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM NOT LIKE '%at most 256 L7 hosts%' THEN RAISE; END IF;
+  END;
+END $$;
+DELETE FROM control.agent_l7_hosts WHERE agent_id = 'agent-abc';
+
 -- identity is immutable
 DO $$ BEGIN
   BEGIN UPDATE control.agents SET owner_sub = 'sub-2' WHERE id = 'agent-abc';
@@ -71,6 +93,13 @@ DO $$ BEGIN
     RAISE EXCEPTION 'incarnation change was allowed';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM NOT LIKE '%incarnation is immutable%' THEN RAISE; END IF;
+  END;
+END $$;
+DO $$ BEGIN
+  BEGIN UPDATE control.agents SET id = 'agent-elsewhere' WHERE id = 'agent-abc';
+    RAISE EXCEPTION 'id change was allowed';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM NOT LIKE '%id is immutable%' THEN RAISE; END IF;
   END;
 END $$;
 

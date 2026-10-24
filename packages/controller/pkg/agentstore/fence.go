@@ -30,12 +30,16 @@ func Refusal(mode string, marker map[string]string) string {
 }
 
 func RefusalFor(mode string, marker map[string]string, readsPostgres bool) string {
-	switched := marker[MarkerKey] == ModePostgres
+	marked := marker[MarkerKey]
+	switched := marked == ModePostgres
 
 	switch mode {
 	case ModeCRD:
 		if switched {
 			return "the Agent store has switched to Postgres: this build reconciles the custom resources, which nothing writes any more. Deploy the release that reads Postgres."
+		}
+		if marked != "" && marked != ModeCRD {
+			return fmt.Sprintf("the Agent store's marker names %q, which this build does not know: it understands %q and %q only, and a store it cannot read is one it must not serve.", marked, ModeCRD, ModePostgres)
 		}
 		return ""
 	case ModePostgres:
@@ -54,8 +58,8 @@ func RefusalFor(mode string, marker map[string]string, readsPostgres bool) strin
 	}
 }
 
-func ReadMarker(ctx context.Context, client kubernetes.Interface, namespace, releaseName string) (map[string]string, error) {
-	marker, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, MarkerName(releaseName), metav1.GetOptions{})
+func ReadMarker(ctx context.Context, client kubernetes.Interface, namespace, name string) (map[string]string, error) {
+	marker, err := client.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil, nil
 	}

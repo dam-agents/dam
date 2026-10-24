@@ -174,6 +174,7 @@ const configSchema = z.object({
   namespace: z.string().default("platform-agents"),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
   agentStore: z.enum(["crd", "postgres"]).default("crd"),
+  agentStoreMarker: z.string().optional(),
   agentStorePreviewReport: z
     .enum(["true", "false"])
     .default("false")
@@ -385,6 +386,7 @@ export function loadConfig(): Config {
     namespace: process.env.NAMESPACE,
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     agentStore: process.env.PLATFORM_AGENT_STORE,
+    agentStoreMarker: process.env.PLATFORM_AGENT_STORE_MARKER,
     agentStorePreviewReport: process.env.AGENT_STORE_PREVIEW_REPORT || "false",
     logLevel: process.env.LOG_LEVEL,
     port: process.env.PORT,

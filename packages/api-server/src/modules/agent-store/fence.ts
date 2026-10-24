@@ -1,4 +1,5 @@
 import type * as k8s from "@kubernetes/client-node";
+import { isNotFound } from "../agents/infrastructure/k8s.js";
 
 export type AgentStoreMode = "crd" | "postgres";
 
@@ -33,11 +34,14 @@ export function agentStoreRefusal(
   marker: Record<string, string> | null,
   options: { readsPostgres?: boolean } = {},
 ): string | null {
-  const switched = marker?.[AGENT_STORE_MARKER_KEY] === "postgres";
+  const marked = marker?.[AGENT_STORE_MARKER_KEY] ?? "";
+  const switched = marked === "postgres";
 
   if (mode === "crd") {
     if (switched)
       return "the Agent store has switched to Postgres: this build reconciles the custom resources, which nothing writes any more. Deploy the release that reads Postgres.";
+    if (marked !== "" && marked !== "crd")
+      return `the Agent store's marker names "${marked}", which this build does not know: it understands "crd" and "postgres" only, and a store it cannot read is one it must not serve.`;
     return null;
   }
 
@@ -54,22 +58,17 @@ export function agentStoreRefusal(
 export async function readAgentStoreMarker(
   api: k8s.CoreV1Api,
   namespace: string,
-  releaseName: string,
+  name: string,
 ): Promise<Record<string, string> | null> {
   try {
-    const marker = await api.readNamespacedConfigMap({
-      namespace,
-      name: agentStoreMarkerName(releaseName),
-    });
+    const marker = await api.readNamespacedConfigMap({ namespace, name });
     return (marker.data ?? {}) as Record<string, string>;
   } catch (cause) {
-    const code = (cause as { code?: number } | null)?.code;
-    if (code === 404) return null;
-    const name = agentStoreMarkerName(releaseName);
+    if (isNotFound(cause)) return null;
     throw new Error(
       `cannot read the Agent store marker ConfigMap ${namespace}/${name}: ${
         cause instanceof Error ? cause.message : String(cause)
-      }. The marker decides whether this build may serve, so a fence that cannot read it has not passed. Its Role must allow configmaps get in the agent namespace.`,
+      }. The marker decides whether this build may serve, so a fence that cannot read it has not passed. Its Role must allow getting this ConfigMap in the agent namespace.`,
     );
   }
 }

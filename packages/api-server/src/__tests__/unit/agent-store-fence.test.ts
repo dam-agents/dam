@@ -23,6 +23,18 @@ describe("agent store fence", () => {
     > = [
       ["custom resources, no marker", "crd", null, false],
       [
+        "custom resources, an explicit crd marker",
+        "crd",
+        { [AGENT_STORE_MARKER_KEY]: "crd" },
+        false,
+      ],
+      [
+        "custom resources, a state this build does not know",
+        "crd",
+        { [AGENT_STORE_MARKER_KEY]: "frozen" },
+        true,
+      ],
+      [
         "custom resources, switched",
         "crd",
         { [AGENT_STORE_MARKER_KEY]: "postgres" },
@@ -72,8 +84,8 @@ describe("agent store fence", () => {
     expect(agentStoreRefusal("crd", ABSORBED, readsPostgres)).toBeTruthy();
   });
 
-  // TEST_SCENARIO: The marker lives in the agent namespace under the release's own name, and a read that fails for any reason other than absence must stop the start: a fence that cannot read its fact has not passed.
-  it("reads the release's marker and treats only a 404 as absent", async () => {
+  // TEST_SCENARIO: The marker lives in the agent namespace under the name the chart pins the Role to, which falls back to the release's own name off-chart. A read that fails for any reason other than absence must stop the start: a fence that cannot read its fact has not passed, and must say which object it could not read.
+  it("reads the marker by name and treats only a 404 as absent", async () => {
     expect(agentStoreMarkerName("platform")).toBe("platform-agent-store");
 
     const asked: Array<{ namespace: string; name: string }> = [];
@@ -87,7 +99,11 @@ describe("agent store fence", () => {
       },
     } as unknown as k8s.CoreV1Api;
     expect(
-      await readAgentStoreMarker(absent, "platform-agents", "platform"),
+      await readAgentStoreMarker(
+        absent,
+        "platform-agents",
+        "platform-agent-store",
+      ),
     ).toBeNull();
     expect(asked).toEqual([
       { namespace: "platform-agents", name: "platform-agent-store" },
@@ -97,7 +113,7 @@ describe("agent store fence", () => {
       readNamespacedConfigMap: async () => ({ data: ABSORBED }),
     } as unknown as k8s.CoreV1Api;
     expect(
-      await readAgentStoreMarker(present, "platform-agents", "platform"),
+      await readAgentStoreMarker(present, "platform-agents", "dam-agent-store"),
     ).toEqual(ABSORBED);
 
     const broken = {
@@ -106,7 +122,7 @@ describe("agent store fence", () => {
       },
     } as unknown as k8s.CoreV1Api;
     await expect(
-      readAgentStoreMarker(broken, "platform-agents", "platform"),
-    ).rejects.toThrow("unreachable");
+      readAgentStoreMarker(broken, "platform-agents", "platform-agent-store"),
+    ).rejects.toThrow("platform-agents/platform-agent-store");
   });
 });

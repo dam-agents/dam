@@ -27,8 +27,13 @@ The api-server remains the sole writer of definitions, lifecycle signals and bud
 Kubernetes keeps what is rendered from those rows: the machines, their Services, credentials and policies, the Events published against them, and the controller's Lease.
 The controller learns of changes from the database's change feed rather than a watch on the API server.
 
-The move lands in three releases: one adds the tables, the login and a startup fence to both components; one absorbs the stored resources into rows and switches both components to them; one stops writing the custom resources and deletes the cluster-wide CRD only after every install has passed its rollback window.
+The move lands in three releases: one adds the tables, the login and a startup fence to both components; one absorbs the stored resources into rows and switches both components to them; one stops writing this install's custom resources.
+The kinds themselves outlive every install's releases: they are deleted cluster-wide by a separate operator action, once every install is past the third release and its rollback window, because no install's release may delete a kind the others still read.
 Each component refuses to start when the store it is configured for disagrees with the marker the switch leaves behind.
+
+The exclusion is structural on the controller's side only.
+Its login is granted observations and named columns, so a definition write is impossible for it; the api-server owns the schema, so its exclusion from the observation tables rests on the adapters that read them and a test that no other code writes them.
+That is a declared weakening of what the status subresource gave for free, taken for the cost of moving every migration out of api-server startup and holding a DDL credential for it.
 
 The rule that governed the choice changes with it: platform state belongs in Postgres, and the Kubernetes API holds only what is rendered from it, what the cluster itself owns (Events, Leases), and the infrastructure's own objects.
 
@@ -44,6 +49,7 @@ The rule that governed the choice changes with it: platform state belongs in Pos
   An Agent's definition, its signals and its observations are written by different writers with different privileges in the same store, so a query for one install's inventory is a query rather than a list across a namespace.
   Nothing needs a CRD schema generation, an `upgrade-crds.sh` step, or a cluster-wide delete per install.
 - **Harder:** the controller is now a database client: it needs a connection, a login created per install (chart-provisioned on the bundled database, operator-created on an external one), and a reconnect path, and a database outage makes it fail static rather than reconcile.
+  A compromised api-server can forge an observation, which the status subresource made impossible: its exclusion from those tables is enforced by its own code and a test, not by the database.
   The switch is an outage of a minute or two per install, with a coordinated stop of both components, a one-way absorb and a snapshot archive kept for a rollback window.
   Rolling back after the switch needs a reverse exporter, not a redeploy; below the release that added the fence there is no supported rollback at all.
-- **Committed-to:** the marker and its two startup refusals, the archive the rollback depends on, and the controller's login as the boundary that replaces the status subresource.
+- **Committed-to:** the marker and its two startup refusals, the archive the rollback depends on, and the controller's login as the one boundary that stays structural — along with a test standing in for the boundary that does not, until the schema is handed to an owner identity the api-server's runtime credential is not.
