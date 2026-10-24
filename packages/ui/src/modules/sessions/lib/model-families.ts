@@ -174,13 +174,22 @@ export function parseModelFamily(name: string): ParsedModel | null {
         ...(buildStamp !== undefined && { buildStamp }),
       };
   }
-  return null;
+  const tierless =
+    rest.length >= 1 && rest.length <= 2 ? versionOf(rest) : null;
+  return tierless === null
+    ? null
+    : {
+        family,
+        size: family.token,
+        version: tierless,
+        ...(buildStamp !== undefined && { buildStamp }),
+      };
 }
 
 const entryLabel = (parsed: ParsedModel) =>
   parsed.family.names
     ? parsed.size
-    : parsed.family.sizes.length === 0
+    : parsed.family.sizes.length === 0 || parsed.size === parsed.family.token
       ? parsed.version.join(".")
       : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`;
 
@@ -297,10 +306,9 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
       }
       if (
         entry.options.some((o) => o.group.connectionId === group.connectionId)
-      ) {
-        addLoose(family, group, model);
+      )
         continue;
-      }
+
       entry.options.push({ group, model });
     }
   }

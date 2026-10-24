@@ -60,13 +60,18 @@ describe("a model id's family, size and version", () => {
       4, 8,
     ]);
     expect(parseModelFamily("azure/gpt-5.6-terra")?.size).toBe("terra");
+    expect(parseModelFamily("azure/gpt-5.5")).toMatchObject({
+      family: { name: "GPT" },
+      size: "gpt",
+      version: [5, 5],
+    });
   });
 
   // TEST_SCENARIO: A model of no known family, or of a known family with no size, is not a family model.
   it("returns null for an unknown model", () => {
     expect(parseModelFamily("rits/moonshotai/Kimi-K2.5")).toBeNull();
     expect(parseModelFamily("meta/llama-4")).toBeNull();
-    expect(parseModelFamily("azure/gpt-5.5")).toBeNull();
+    expect(parseModelFamily("gpt-5.5-mini")).toBeNull();
   });
 
   // TEST_SCENARIO: GLM's ids carry no size word, so the family is one tier; DeepSeek's carry Flash, and the v in its version is not part of it.
@@ -83,7 +88,11 @@ describe("a model id's family, size and version", () => {
       size: "flash",
       version: [4, 1],
     });
-    expect(parseModelFamily("rits/deepseek-ai/DeepSeek-V3.2")).toBeNull();
+    expect(parseModelFamily("rits/deepseek-ai/DeepSeek-V3.2")).toMatchObject({
+      family: { name: "DeepSeek" },
+      size: "deepseek",
+      version: [3, 2],
+    });
   });
 
   // TEST_SCENARIO: A name that only looks like a family model is not one: a variant after the size and a size word in the middle stay distinct models.
@@ -141,7 +150,7 @@ describe("a model id's family, size and version", () => {
     expect(prettyModelLabel("ibm/aws/claude-opus-5-5")).toBe("Claude Opus 5.5");
     expect(prettyModelLabel("cb/rits/zai-org/glm-5-3")).toBe("GLM 5.3");
     expect(prettyModelLabel("bob/premium-ide")).toBe("Bob premium-ide");
-    expect(prettyModelLabel("ibm/azure/gpt-5.5")).toBeNull();
+    expect(prettyModelLabel("azure/gpt-5.5")).toBe("GPT 5.5");
   });
 
   // TEST_SCENARIO: Versions compare numerically, so 5.5 beats 5.1, 5.1 beats 5, and 5.10 beats 5.9.
@@ -246,12 +255,11 @@ describe("the menu's family groups", () => {
   });
 
   // TEST_SCENARIO: A model of a known family whose size or variant is not recognised goes behind that family's More, not into Other.
-  it("hides a known family's unrecognised model behind More", () => {
-    const { families, other } = familyModelGroups(groups);
+  it("keeps a tierless version behind More", () => {
+    const { families } = familyModelGroups(groups);
     const gpt = families.find((s) => s.family.name === "GPT")!;
-    expect(gpt.more.map((e) => e.label)).toEqual(["azure/gpt-5.5"]);
+    expect(gpt.more.map((e) => e.label)).toEqual(["5.5"]);
     expect(gpt.more[0]!.options[0]!.model.name).toBe("ibm/azure/gpt-5.5");
-    expect(other.models.some((e) => e.label === "azure/gpt-5.5")).toBe(false);
   });
 
   // TEST_SCENARIO: GLM has no size word, so it is one tier: the newest version collapsed and the older ones behind More. DeepSeek's Flash is its size and its unworded V3.2 sits behind More.
@@ -262,9 +270,7 @@ describe("the menu's family groups", () => {
     expect(glm.more.map((e) => e.label)).toEqual(["5.3"]);
     const deepseek = families.find((s) => s.family.name === "DeepSeek")!;
     expect(deepseek.newest.map((e) => e.label)).toEqual(["Flash 4.1"]);
-    expect(deepseek.more.map((e) => e.label)).toEqual([
-      "rits/deepseek-ai/DeepSeek-V3.2",
-    ]);
+    expect(deepseek.more.map((e) => e.label)).toEqual(["3.2"]);
   });
 
   // TEST_SCENARIO: Nemotron's Ultra is one entry, and Bob's tiers form their own group in the given order; gpt-oss keeps the GPT family and its More.
@@ -348,20 +354,25 @@ describe("the menu's family groups", () => {
     ]);
   });
 
-  // TEST_SCENARIO: A provider that lists its base model and its dated snapshot keeps both names selectable.
-  it("keeps a second snapshot name of the same provider selectable", () => {
+  // TEST_SCENARIO: A second recognized name for a version the provider already lists is that model, so it is not shown again.
+  it("absorbs a second recognized name for the same version", () => {
     const { families } = familyModelGroups([
       group(
         "ibm",
         "ibm/aws/claude-opus-5-5",
         "ibm/aws/claude-opus-5-5-20261001",
+        "ibm/claude-opus-4-8",
+        "ibm/aws/claude-opus-4-8",
       ),
     ]);
-    expect(families[0]!.newest[0]!.options.map((o) => o.model.name)).toEqual([
+    const claude = families.find((f) => f.family.name === "Claude")!;
+    expect(claude.newest[0]!.options.map((o) => o.model.name)).toEqual([
       "ibm/aws/claude-opus-5-5",
     ]);
-    expect(families[0]!.more.map((e) => e.label)).toEqual([
-      "aws/claude-opus-5-5-20261001",
+    const opus48 = claude.more.find((e) => e.label === "Opus 4.8")!;
+    expect(opus48.options.map((o) => o.model.name)).toEqual([
+      "ibm/claude-opus-4-8",
     ]);
+    expect(claude.more.map((e) => e.label)).toEqual(["Opus 4.8"]);
   });
 });

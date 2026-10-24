@@ -133,16 +133,16 @@ it("puts an unknown family under Other and offers no disconnect", () => {
   expect(container.textContent).not.toContain("Disconnect");
 });
 
-// TEST_SCENARIO: A model of a known family with no recognised size stays behind that family's More.
-it("keeps a known family's unrecognised model behind More", () => {
+// TEST_SCENARIO: A model of a known family with no size word is its version behind that family's More.
+it("keeps a tierless version behind More", () => {
   const { container } = render(() => {});
   const gpt = container.querySelector('section[aria-label="GPT"]')!;
-  expect(gpt.textContent).not.toContain("azure/gpt-5.5");
+  expect(gpt.textContent).not.toContain("5.5");
   const more = [...gpt.querySelectorAll("button")].find(
     (b) => b.textContent?.trim() === "More",
   );
   click(more!);
-  expect(gpt.textContent).toContain("azure/gpt-5.5");
+  expect(gpt.textContent).toContain("5.5");
 });
 
 // TEST_SCENARIO: A session on an older version opens that family expanded, so the current model is visible without opening More first.

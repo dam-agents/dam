@@ -718,7 +718,7 @@ describe("one model list on a runtime that routes by model name", () => {
   /** TEST_SCENARIO: In a running session the popover lists the same grouped
    * list across providers, with no new-session gate, and says a pick lands
    * on the next message while a turn runs; the label under the composer
-   * reads upstream id and Connection name. */
+   * reads the pretty family name. */
   it("offers every provider's models to a running session", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
@@ -736,7 +736,7 @@ describe("one model list on a runtime that routes by model name", () => {
         onNewSession: state.newSession,
       }),
     );
-    expect(html).toContain("gpt-5.5 (IBM)");
+    expect(html).toContain("GPT 5.5");
     expect(html).toContain('aria-label="GLM"');
     expect(html).toContain("applies to the next message");
     expect(html).not.toContain("start a new session");

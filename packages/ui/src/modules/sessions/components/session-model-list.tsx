@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "@carbon/icons-react";
+import { Add, ChevronDown } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -134,10 +134,10 @@ function ConnectMoreProviders({
       <button
         type="button"
         onClick={onManageProviders}
-        className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
       >
+        <Add size={14} aria-hidden />
         Connect more providers
-        <ChevronRight size={14} aria-hidden />
       </button>
     </PopoverClose>
   );
