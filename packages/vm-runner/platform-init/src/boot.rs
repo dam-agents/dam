@@ -4227,9 +4227,7 @@ mod tests {
         assert_eq!(
             (read.uid(), read.gid()),
             (0, 0),
-            "a file of the host runner's tree read as {}:{}",
-            read.uid(),
-            read.gid()
+            "a file of the host runner's tree did not read as root"
         );
         assert_eq!(
             fs::write(view.join("f"), b"y").unwrap_err().raw_os_error(),
@@ -4256,9 +4254,7 @@ mod tests {
         assert_eq!(
             (copied.uid(), copied.gid()),
             (0, 0),
-            "an overlay copied a file up as {}:{}",
-            copied.uid(),
-            copied.gid()
+            "an overlay copied a file up without the owner the guest reads"
         );
         // SAFETY: every path here is this test's own mount point, and umount2 reads only the path it is given.
         unsafe {
