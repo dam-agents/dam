@@ -8,7 +8,6 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -372,7 +371,7 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 	stamp := now.Format(time.RFC3339Nano)
 	hibernated := 0
 	for _, c := range chosen {
-		live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, c.name, metav1.GetOptions{})
+		live, err := r.backend.Get(ctx, c.name)
 		if err != nil {
 			return hibernated, fmt.Errorf("re-reading reclaimed agent %s: %w", c.name, err)
 		}
@@ -384,7 +383,7 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 			slog.InfoContext(ctx, "left an agent running: it stopped being idle while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
 			continue
 		}
-		if err := r.stampReclaimed(ctx, c.name, stamp, live.GetResourceVersion()); err != nil {
+		if err := r.stampAnnotation(ctx, c.name, annReclaimedAt, stamp, live.GetResourceVersion()); err != nil {
 			if apierrors.IsConflict(err) {
 				slog.InfoContext(ctx, "left an agent running: it changed while its reclaim was being decided", "agent", c.name, "for", forName, "owner", owner)
 				continue
@@ -394,7 +393,7 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 		if c.vmMiB > 0 {
 			r.vmRunning.Store(c.name, false)
 		}
-		down, err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name)
+		down, err := hibernateAgentPair(ctx, r.client, r.backend, r.HaltMachine, owner, r.config.Namespace, c.name)
 		if down {
 			hibernated++
 		}

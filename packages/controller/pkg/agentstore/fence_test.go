@@ -16,7 +16,7 @@ func TestRefusal(t *testing.T) {
 		{"a marked and absorbed store strands it too", ModeCRD, absorbedMarker, true},
 		{"a store configured as Postgres with nothing absorbed", ModePostgres, nil, true},
 		{"a switch that left no absorb stamp", ModePostgres, map[string]string{MarkerKey: ModePostgres}, true},
-		{"an absorbed store", ModePostgres, absorbedMarker, true},
+		{"an absorbed store", ModePostgres, absorbedMarker, false},
 		{"a marked store this build cannot read", ModeCRD, map[string]string{MarkerKey: "frozen"}, true},
 		{"an unknown mode", "sqlite", nil, true},
 	}

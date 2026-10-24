@@ -22,6 +22,8 @@ type Config struct {
 	PodName                string
 	AgentStore             string
 	AgentStoreMarker       string
+	DatabaseURL            string
+	DatabaseCAPath         string
 
 	AgentBase AgentBase
 
@@ -182,6 +184,11 @@ func LoadFromEnv() (*Config, error) {
 		PodName:                podName,
 		AgentStore:             envOrDefault("PLATFORM_AGENT_STORE", "crd"),
 		AgentStoreMarker:       os.Getenv("PLATFORM_AGENT_STORE_MARKER"),
+		DatabaseURL:            os.Getenv("PLATFORM_DATABASE_URL"),
+		DatabaseCAPath:         os.Getenv("PLATFORM_DATABASE_CA_CERT_PATH"),
+	}
+	if cfg.AgentStore == "postgres" && cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("PLATFORM_DATABASE_URL is required when PLATFORM_AGENT_STORE is postgres")
 	}
 
 	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {

@@ -386,9 +386,7 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	lock.Lock()
 	defer lock.Unlock()
 
-	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: envoyOwnerLabel + "=" + owner,
-	})
+	agents, err := r.backend.List(ctx, labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner}))
 	if err != nil {
 		slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", owner, "error", err)
 		return
@@ -398,12 +396,12 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 		ids, err = runner.client.List(ctx)
 	}
 	if runner.client == nil || err != nil {
-		r.collectUnreachableRunner(ctx, owner, len(agents.Items), err)
+		r.collectUnreachableRunner(ctx, owner, len(agents), err)
 		return
 	}
 	r.ownerless.Delete(owner)
-	r.sweepMachines(ctx, owner, ids, agents.Items, runner.client.Delete)
-	if len(agents.Items) > 0 || r.cachedOwnerAgents(ctx, owner) > 0 {
+	r.sweepMachines(ctx, owner, ids, agents, runner.client.Delete)
+	if len(agents) > 0 || r.cachedOwnerAgents(ctx, owner) > 0 {
 		return
 	}
 	r.deleteOwnerGateway(ctx, owner)
@@ -450,12 +448,12 @@ func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
 		slog.Warn("orphan machine GC: listing the host VM runner's machines failed", "error", err)
 		return
 	}
-	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{})
+	agents, err := r.backend.List(ctx, labels.Everything())
 	if err != nil {
 		slog.Warn("orphan machine GC: listing agents failed", "error", err)
 		return
 	}
-	r.sweepMachines(ctx, "", ids, agents.Items, runner.Delete)
+	r.sweepMachines(ctx, "", ids, agents, runner.Delete)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an Agent's workspace has no backup, and a live List of the owner's Agents can read empty for a while on a cluster that shares its CRDs, so a machine one sweep finds unclaimed may be live. The informer cache is a second opinion beside that List, and time is the third: a machine is deleted only when both name no Agent for it and no sweep has found one for the grace. The first sweep that finds it unclaimed records when, and a sweep that finds it claimed forgets that, so a machine claimed again waits the whole grace. Anything an Agent names as a machine an aborted migration left keeps its mark until the machine is gone. With no owner, the machines are those of the host runner, which serves every owner.
@@ -626,7 +624,7 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	if owner == "" {
 		return nil
 	}
-	agent, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	agent, err := r.backend.Get(ctx, name)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
@@ -657,7 +655,7 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	// UNIT_BOUNDARY_DESCRIPTION: the stop is stamped here, where the runner answers it, and not left to the next check: nothing reconciles the agent in between, so a kill of the runner landing in that window would name an agent whose machine had already stopped.
 	if agent.GetAnnotations()[annMachineDown] == "" {
 		down := time.Now().UTC().Format(time.RFC3339Nano)
-		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{annMachineDown: &down}); err != nil {
+		if err := r.patchAgent(ctx, name, map[string]*string{annMachineDown: &down}); err != nil {
 			slog.Warn("stamping the end of a machine's episode", "agent", name, "error", err)
 		}
 	}
@@ -838,7 +836,7 @@ func (r *AgentReconciler) runnerOOMAttribution(ctx context.Context, agent *apiv1
 // UNIT_BOUNDARY_DESCRIPTION: the kill's reason, written on AgentPodReady over the reason the agent wears on Ready, in one status update: a refusal, a wait for the node and a hibernation each read as their own reason on Ready, which is what the budget surfaces, the parked retry and the hibernation read, and the notice, the Slack alert and the history read AgentPodReady, so that is where the kill goes. The record of the attribution is written beside it, so the agent never reads this kill as a new one again, and the agent is looked at when the episode ends: a machine nothing else reconciles, because it is asleep, would otherwise keep the reason for ever.
 func (r *AgentReconciler) publishKill(ctx context.Context, agent *apiv1.Agent, own func(*apiv1.AgentStatus)) (bool, error) {
 	kill, record, publish := r.runnerOOMAttribution(ctx, agent, time.Now())
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	if err := r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
 		own(s)
 		if publish {
 			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonRunnerOutOfMemory, runnerOOMNotice, agent.Generation)
@@ -863,7 +861,7 @@ func (r *AgentReconciler) recordKill(ctx context.Context, agent *apiv1.Agent, ki
 		patch[annRunnerOOMDone] = new(kill.ID)
 	}
 	if len(patch) > 0 {
-		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, patch); err != nil {
+		if err := r.patchAgent(ctx, agent.Name, patch); err != nil {
 			return fmt.Errorf("recording what this pass decided about the kill that took this machine down: %w", err)
 		}
 	}
@@ -893,7 +891,7 @@ func (r *AgentReconciler) stampMachine(ctx context.Context, agent *apiv1.Agent, 
 	default:
 		return agent, nil
 	}
-	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, patch); err != nil {
+	if err := r.patchAgent(ctx, agent.Name, patch); err != nil {
 		return agent, err
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the caller gets a copy carrying the stamps just written, so the attribution later in this same pass reads the machine as it is now and not as it was before it, and the shared object the informer handed this pass is never written.
@@ -977,7 +975,7 @@ func (r *AgentReconciler) publishCertificateWait(ctx context.Context, agent *api
 		msg += ": " + detail
 	}
 	gen := agent.Generation
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	if err := r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
 	}); err != nil {
@@ -993,7 +991,7 @@ func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agen
 	}
 	msg := fmt.Sprintf("reconciling vm machine: %v", cause)
 	gen := agent.Generation
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	if err := r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
 	}); err != nil {

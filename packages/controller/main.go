@@ -35,6 +35,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/crdcheck"
 	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
+	"github.com/dam-agents/dam/packages/controller/pkg/store"
 	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
 )
 
@@ -148,10 +149,28 @@ func logLevel() slog.Level {
 }
 
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
-	slog.Info("started leading", "namespace", cfg.Namespace)
+	slog.Info("started leading", "namespace", cfg.Namespace, "agentStore", cfg.AgentStore)
 
-	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
-	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
+	// UNIT_BOUNDARY_DESCRIPTION: The rows are the Agent source in Postgres mode, so no informer watches
+	// UNIT_BOUNDARY_DESCRIPTION: the custom resources there. Everything else — pods, machines, Secrets,
+	// UNIT_BOUNDARY_DESCRIPTION: nodes — is still Kubernetes, and is wired the same in both modes.
+	var postgres *store.Store
+	if cfg.AgentStore == agentstore.ModePostgres {
+		var err error
+		postgres, err = store.Open(ctx, cfg.DatabaseURL, cfg.Namespace, cfg.DatabaseCAPath)
+		if err != nil {
+			slog.Error("opening the Agent store", "error", err)
+			return
+		}
+		defer postgres.Close()
+	}
+
+	var dynFactory dynamicinformer.DynamicSharedInformerFactory
+	var agentInformer informers.GenericInformer
+	if postgres == nil {
+		dynFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
+		agentInformer = dynFactory.ForResource(reconciler.AgentsGVR)
+	}
 
 	podFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
 		informers.WithNamespace(cfg.Namespace),
@@ -174,7 +193,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		stripManagedFields,
 	).Apps().V1().StatefulSets().Informer()
 
-	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithAgentCacheSynced(agentInformer.Informer().HasSynced).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
+	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
+	if postgres != nil {
+		agentReconciler.WithAgentBackend(postgres).WithAgentCache(postgres.Lister()).WithAgentCacheSynced(postgres.Synced)
+	} else {
+		agentReconciler.WithAgentCache(agentInformer.Lister()).WithAgentCacheSynced(agentInformer.Informer().HasSynced)
+	}
 
 	var runnerInformer, runnerPodInformer, nodeInformer cache.SharedIndexInformer
 	runnerFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
@@ -206,15 +230,34 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentReconciler.WithNodeCache(nodes.Lister(), nodeInformer.HasSynced)
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg).WithMachineHalt(agentReconciler.HaltMachine).WithOwnerLock(agentReconciler.OwnerLock)
+	if postgres != nil {
+		idleChecker.WithAgentBackend(postgres)
+	}
 	agentReconciler.CheckVMInstall(ctx)
 	go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
 	go idleChecker.RunLoop(ctx)
 
+	deleteQueue := workqueue.NewTypedRateLimitingQueueWithConfig(
+		workqueue.NewTypedItemExponentialFailureRateLimiter[deletedAgent](time.Second, 5*time.Minute),
+		workqueue.TypedRateLimitingQueueConfig[deletedAgent]{Name: "agent-delete"})
+	defer deleteQueue.ShutDown()
+
+	// UNIT_BOUNDARY_DESCRIPTION: a pass that collects machines or anchors makes a decision about a fleet it cannot see if the store stopped answering. Both the deletion record and the machine list are durable, so waiting costs nothing a later pass does not recover.
 	orphanSweep := func() {
 		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
 		start := time.Now()
+		if err := agentReconciler.StoreHealthy(); err != nil {
+			slog.WarnContext(sctx, "orphan sweep skipped: the Agent store is not answering", "error", err)
+			finish(err)
+			return
+		}
 		agentReconciler.ReconcileOrphanLeafSecrets(sctx)
 		agentReconciler.ReconcileOrphanMachines(sctx)
+		if err := agentReconciler.ReconcileOrphanAnchors(sctx, func(name string) {
+			deleteQueue.Add(deletedAgent{name: name})
+		}); err != nil {
+			slog.WarnContext(sctx, "anchor sweep failed", "error", err)
+		}
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
 		finish(nil)
 	}
@@ -232,7 +275,13 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		every(ctx, 10*time.Minute, rolloutSweep)
 	}()
 
-	agentQueue := newShardedAgentQueue(agentInformer.Lister().ByNamespace(cfg.Namespace))
+	var agentLister cache.GenericNamespaceLister
+	if postgres != nil {
+		agentLister = postgres.Lister().ByNamespace(cfg.Namespace)
+	} else {
+		agentLister = agentInformer.Lister().ByNamespace(cfg.Namespace)
+	}
+	agentQueue := newShardedAgentQueue(agentLister)
 	defer agentQueue.ShutDown()
 	agentReconciler.WithRequeue(ctx, func(name string, after time.Duration) {
 		if after == 0 {
@@ -242,32 +291,48 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		agentQueue.AddAfter(name, after)
 	})
 
-	deleteQueue := workqueue.NewTypedRateLimitingQueueWithConfig(
-		workqueue.NewTypedItemExponentialFailureRateLimiter[deletedAgent](time.Second, 5*time.Minute),
-		workqueue.TypedRateLimitingQueueConfig[deletedAgent]{Name: "agent-delete"})
-	defer deleteQueue.ShutDown()
-
-	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
-		AddFunc: func(obj interface{}, isInInitialList bool) {
-			if u := unstructuredFrom(obj); u != nil {
-				agentQueue.add(isInInitialList, u.GetName())
+	if postgres != nil {
+		go postgres.Run(ctx, func(event store.Notify) {
+			switch {
+			case event.Table == "user_budgets":
+				agentReconciler.ForgetVMPools()
+			case event.Delete:
+				deleteQueue.Add(deletedAgent{name: event.Name})
+			case event.Name != "":
+				agentQueue.add(!event.Urgent, event.Name)
 			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if !resourceVersionChanged(oldObj, newObj) {
-				return
-			}
-			if u := unstructuredFrom(newObj); u != nil {
-				agentQueue.add(!specOrAnnotationsChanged(unstructuredFrom(oldObj), u), u.GetName())
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if u := unstructuredFrom(obj); u != nil {
-				deleteQueue.Add(deletedAgent{name: u.GetName(), owner: reconciler.AgentOwner(u.GetLabels()), uid: u.GetUID()})
-			}
-		},
-	})
-	go runDeleteWorker(ctx, agentReconciler, deleteQueue)
+		})
+		waitForStore(ctx, postgres)
+		// UNIT_BOUNDARY_DESCRIPTION: the anchors come before any delete is worked: a deletion that happened while the controller was down is already in the queue, and removing the previous incarnation's children needs the anchor of the current one to exist first.
+		if err := agentReconciler.EnsureAnchors(ctx); err != nil {
+			slog.Warn("the startup anchor pass is incomplete; the anchor sweep retries it", "error", err)
+		} else if err := postgres.RecordAnchorsEnsured(ctx, cfg.PodName); err != nil {
+			slog.Warn("recording the startup anchor pass failed", "error", err)
+		}
+		go runDeleteWorker(ctx, agentReconciler, deleteQueue)
+	} else {
+		agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+			AddFunc: func(obj interface{}, isInInitialList bool) {
+				if u := unstructuredFrom(obj); u != nil {
+					agentQueue.add(isInInitialList, u.GetName())
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if !resourceVersionChanged(oldObj, newObj) {
+					return
+				}
+				if u := unstructuredFrom(newObj); u != nil {
+					agentQueue.add(!specOrAnnotationsChanged(unstructuredFrom(oldObj), u), u.GetName())
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if u := unstructuredFrom(obj); u != nil {
+					deleteQueue.Add(deletedAgent{name: u.GetName(), owner: reconciler.AgentOwner(u.GetLabels()), uid: u.GetUID()})
+				}
+			},
+		})
+		go runDeleteWorker(ctx, agentReconciler, deleteQueue)
+	}
 
 	requeueOwner := func(obj interface{}, isInInitialList bool) {
 		if m, err := meta.Accessor(obj); err == nil {
@@ -337,11 +402,13 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 	})
 
-	dynFactory.Start(ctx.Done())
+	if dynFactory != nil {
+		dynFactory.Start(ctx.Done())
+	}
 	podFactory.Start(ctx.Done())
 	secretFactory.Start(ctx.Done())
 	go statefulSetInformer.RunWithContext(ctx)
-	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced, runnerInformer.HasSynced, runnerPodInformer.HasSynced}
+	synced := []cache.InformerSynced{podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced, runnerInformer.HasSynced, runnerPodInformer.HasSynced}
 	// UNIT_BOUNDARY_DESCRIPTION: a cluster that cannot read nodes still runs every other backend, so the node watch is not waited for here — it reports nothing until it syncs, rather than holding every backend's reconcile behind a permission the node role alone grants.
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
@@ -351,7 +418,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	const driftInterval = 5 * time.Minute
 	go every(ctx, driftInterval, func() {
-		n := spreadStoreObjects(agentInformer.Informer().GetStore(), agentQueue, driftInterval)
+		var n int
+		if postgres != nil {
+			n = spreadNames(postgres.Names(), agentQueue, driftInterval)
+		} else {
+			n = spreadStoreObjects(agentInformer.Informer().GetStore(), agentQueue, driftInterval)
+		}
 		slog.DebugContext(ctx, "drift sweep enqueued agents", "count", n, "over", driftInterval)
 	})
 	go every(ctx, 30*time.Second, func() {
@@ -365,6 +437,10 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	})
 
 	go every(ctx, 30*time.Second, func() {
+		if err := agentReconciler.StoreHealthy(); err != nil {
+			slog.DebugContext(ctx, "memory and pool passes skipped: the Agent store is not answering", "error", err)
+			return
+		}
 		for _, name := range agentReconciler.MemoryPass(ctx) {
 			agentQueue.Add(name)
 		}
@@ -373,7 +449,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		}
 	})
 
-	agentQueue.run(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace))
+	agentQueue.run(ctx, agentReconciler, agentLister)
 }
 
 const maxReconcileRetries = 15
@@ -654,6 +730,32 @@ func spreadStoreObjects(store cache.Store, queue interface{ AddAfter(string, tim
 		queue.AddAfter(u.GetName(), time.Duration(i)*over/time.Duration(len(items)))
 	}
 	return len(items)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waitForStore holds the controller's work until the first list has answered:
+// UNIT_BOUNDARY_DESCRIPTION: an empty cache is not an empty fleet, and acting on it would tear down every
+// UNIT_BOUNDARY_DESCRIPTION: gateway.
+func waitForStore(ctx context.Context, s *store.Store) {
+	t := time.NewTicker(100 * time.Millisecond)
+	defer t.Stop()
+	for !s.Synced() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the drift pass hands every agent to the workers a little at a time, so a create arriving mid-pass is answered rather than queued behind the fleet. The store's own relist is what notices a change; this pass is the periodic re-check the controller has always done.
+func spreadNames(names []string, queue interface{ AddAfter(string, time.Duration) }, over time.Duration) int {
+	if len(names) == 0 {
+		return 0
+	}
+	for i, name := range names {
+		queue.AddAfter(name, time.Duration(i)*over/time.Duration(len(names)))
+	}
+	return len(names)
 }
 
 func every(ctx context.Context, interval time.Duration, fn func()) {
