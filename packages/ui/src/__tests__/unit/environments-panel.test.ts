@@ -27,6 +27,11 @@ vi.mock("../../modules/environments/api/mutations.js", () => ({
   useDeleteEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
   useSetEnvironmentAccessList: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+const flags = vi.hoisted(() => ({ rightToolbar: false }));
+
+vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
+  useUnifiedRightToolbar: () => flags.rightToolbar,
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
     select({ navigateToSandboxHome: vi.fn(), showConfirm: vi.fn() }),
@@ -74,7 +79,22 @@ it("lists the agent's Environments as their cards", () => {
   expect(html).toContain('href="https://app-pr-42-abcdef.env.example.com"');
   expect(html).toContain('target="_blank"');
   expect(html).toContain('aria-label="Actions for pr-42"');
-  expect(html).toContain('data-testid="environment-access"');
+  // UNIT_BOUNDARY_DESCRIPTION: JanUI with the experiment off keeps its link to the section, where the access list is edited, exactly as before this branch.
+  expect(html).not.toContain('data-testid="environment-access"');
+  expect(html).toContain('data-testid="environments-panel-manage"');
+});
+
+// TEST_SCENARIO: with the Unified right toolbar on there is no configuration page to link to, so the panel edits who may open them in place, above the cards, even before the agent owns one; the empty list says what will appear there.
+it("edits the access list in place with the experiment on", () => {
+  flags.rightToolbar = true;
+  state.environments = [];
+  const empty = render();
+  expect(empty).toContain('data-testid="environment-access"');
+  expect(empty).not.toContain('data-testid="environments-panel-manage"');
+  expect(empty).toContain("No Environments yet");
+  state.environments = [environment];
+  expect(render()).toContain('data-testid="environment-card"');
+  flags.rightToolbar = false;
 });
 
 // TEST_SCENARIO: switching to another vm agent's chat keeps the tab open while that agent's list arrives, so the panel says it is loading rather than closing and reopening.

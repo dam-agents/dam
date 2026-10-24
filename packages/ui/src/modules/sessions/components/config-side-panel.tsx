@@ -6,38 +6,51 @@ import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { routeToPath } from "../../platform/lib/routes.js";
+import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { AgentModelSettingsSection } from "../../sandboxes/components/agent-config-sections.js";
 import { AgentPanel } from "../../sandboxes/components/agent-panel.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
 import { SandboxProvidersSection } from "../../sandboxes/components/sandbox-providers-section.js";
+import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
-import { SessionDefaultsSection } from "../../sandboxes/components/session-defaults-section.js";
 import { ConnectionAddressingSection } from "../../sandboxes/components/setup/setup-sections.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { justAskPrompt } from "../../schedules/lib/just-ask.js";
-import type { ConfigurationTab, SidePanelTab } from "../lib/side-panel.js";
+import {
+  CONFIGURATION_TABS,
+  type ConfigurationTab,
+  type SidePanelTab,
+} from "../lib/side-panel.js";
+import { SIDE_PANEL_TABS } from "./side-panel-bar.js";
 import { SidebarSection } from "./sidebar-section.js";
 
 export type ConfigPanelTab = Exclude<ConfigurationTab, "environments">;
 
-export const CONFIG_PANEL_TITLES: Record<ConfigPanelTab, string> = {
-  agent: "Agent",
-  connections: "Connections",
-  channels: "Channels",
-  skills: "Skills",
-  schedules: "Schedules",
-  providers: "Providers",
-  network: "Network access",
-  environment: "Environment variables",
-  "chat-forms": "Chat forms",
+const SECTION_OF_TAB: Record<ConfigPanelTab, SandboxSection> = {
+  agent: "setup",
+  connections: "connections",
+  channels: "channels",
+  skills: "skills",
+  schedules: "schedules",
+  providers: "providers",
+  network: "network",
+  environment: "environment",
+  "chat-forms": "chat-forms",
 };
+
+export function configPanelTitle(tab: SidePanelTab): string {
+  return SIDE_PANEL_TABS.find((entry) => entry.tab === tab)?.label ?? tab;
+}
 
 export function isConfigPanelTab(
   tab: SidePanelTab | null,
 ): tab is ConfigPanelTab {
-  return tab !== null && tab in CONFIG_PANEL_TITLES;
+  return (
+    tab !== null &&
+    tab !== "environments" &&
+    (CONFIGURATION_TABS as readonly SidePanelTab[]).includes(tab)
+  );
 }
 
 /**
@@ -66,10 +79,17 @@ export function ConfigSidePanel({
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setSidePanelFocus = useStore((s) => s.setSidePanelFocus);
   const focus = useStore((s) => s.sidePanelFocus);
+  // UNIT_BOUNDARY_DESCRIPTION: the page's own description goes above every panel, because it carries the copy that stops a mistake there — env vars say they are plain text and secrets belong in Connections, and network says an unmatched request waits for approval on Home.
+  const description = SECTIONS.find(
+    (entry) => entry.section === SECTION_OF_TAB[tab],
+  )?.description;
 
   return (
-    <SidebarSection title={CONFIG_PANEL_TITLES[tab]} open className="flex-1">
+    <SidebarSection title={configPanelTitle(tab)} open className="flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        {description && (
+          <p className="mb-4 text-sm text-muted-foreground">{description}</p>
+        )}
         {match(tab)
           .with("agent", () => <AgentPanel agent={agent} display={display} />)
           .with("connections", () => (
@@ -103,7 +123,6 @@ export function ConfigSidePanel({
           .with("providers", () => (
             <>
               <SandboxProvidersSection agentId={agentId} header={() => null} />
-              <SessionDefaultsSection agentId={agentId} />
               <AgentModelSettingsSection agentId={agentId} />
             </>
           ))

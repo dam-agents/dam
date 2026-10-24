@@ -9,6 +9,7 @@ import type { SandboxSection } from "../../modules/platform/lib/routes.js";
 import { createNavigationSlice } from "../../modules/platform/store/navigation.js";
 import { SIDE_PANEL_TABS } from "../../modules/sessions/components/side-panel-bar.js";
 import {
+  configRedirectTab,
   configTabForSection,
   CONFIGURATION_TABS,
   hiddenSidePanelTabs,
@@ -91,6 +92,26 @@ it("maps every configuration section to a panel", () => {
   );
 });
 
+// TEST_SCENARIO: with the Chat forms experiment off, its panel is not offered while the toolbar is on, exactly as its page section is left out.
+it("hides Chat forms without the chat-forms experiment", () => {
+  const available = {
+    agent: true,
+    artifacts: true,
+    canOpenBrowser: true,
+    changes: true,
+    processesEnabled: true,
+    environments: true,
+    configuration: true,
+    gettingStarted: true,
+  };
+  expect(
+    hiddenSidePanelTabs({ ...available, chatForms: false }).has("chat-forms"),
+  ).toBe(true);
+  expect(
+    hiddenSidePanelTabs({ ...available, chatForms: true }).has("chat-forms"),
+  ).toBe(false);
+});
+
 // TEST_SCENARIO: the rail names every panel the configuration holds, so the Configure menu and the panels agree on one list.
 it("has a rail entry for every configuration panel", () => {
   const railTabs = SIDE_PANEL_TABS.map((entry) => entry.tab);
@@ -118,6 +139,13 @@ it("opens the panel instead of the page, and the page when the experiment is off
   expect(off.getState().sidePanelTab).toBe(null);
 });
 
+// TEST_SCENARIO: a configuration address becomes a panel only when the install's flag says so; a browser that stored the experiment on last does not redirect a page the install turned off.
+it("redirects a configuration address only with the install's flag", () => {
+  expect(configRedirectTab(true, "network")).toBe("network");
+  expect(configRedirectTab(true, "usage")).toBe("agent");
+  expect(configRedirectTab(false, "network")).toBe(null);
+});
+
 // TEST_SCENARIO: with the experiment off, none of the configuration panels exists, so one left open closes; with it on, all of them do.
 it("hides every configuration panel with the experiment off", () => {
   const available = {
@@ -127,6 +155,7 @@ it("hides every configuration panel with the experiment off", () => {
     changes: true,
     processesEnabled: true,
     environments: true,
+    chatForms: true,
     gettingStarted: true,
   };
   const on = hiddenSidePanelTabs({ ...available, configuration: true });

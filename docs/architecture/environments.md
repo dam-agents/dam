@@ -144,7 +144,8 @@ The section is in the page's section navigation only once the agent has an Envir
 While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
 The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
-With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, and a link to the section, where the list of people is edited.
+With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls.
+Who may open them is edited in that tab under the Unified right toolbar, where no configuration page holds the list, and a link to the section otherwise.
 The owner creates none there; the agent does.
 Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
 

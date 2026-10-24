@@ -1,3 +1,5 @@
+import type { SandboxSection } from "../../platform/lib/routes.js";
+
 export type SidePanelTab =
   | "files"
   | "changes"
@@ -44,6 +46,7 @@ export type SidePanelAvailability = {
   processesEnabled: boolean;
   environments: boolean;
   configuration: boolean;
+  chatForms: boolean;
   gettingStarted: boolean;
 };
 
@@ -66,7 +69,8 @@ export function hiddenSidePanelTabs(
     providers: available.agent && available.configuration,
     network: available.agent && available.configuration,
     environment: available.agent && available.configuration,
-    "chat-forms": available.agent && available.configuration,
+    "chat-forms":
+      available.agent && available.configuration && available.chatForms,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -103,8 +107,6 @@ export function visibleSidePanelTab(
   }
 }
 
-import type { SandboxSection } from "../../platform/lib/routes.js";
-
 export type ConfigurationTab = Extract<
   SidePanelTab,
   | "agent"
@@ -135,6 +137,19 @@ const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
 
 export function configTabForSection(section: SandboxSection): ConfigurationTab {
   return SECTION_TAB[section];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which panel a configuration address opens, or
+ * none: only the install's flag turns the page's own address into the panel
+ * that holds its section, so a browser that last stored the experiment on
+ * never redirects a page the install says is off.
+ */
+export function configRedirectTab(
+  flag: boolean,
+  section: SandboxSection,
+): ConfigurationTab | null {
+  return flag ? configTabForSection(section) : null;
 }
 
 export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [

@@ -148,14 +148,27 @@ export const createNavigationSlice: StateCreator<
         }),
   openConfigTab: (agentId, tab) => {
     const { view, selectedAgent } = get();
-    if (view !== "chat" || selectedAgent !== agentId) {
-      const path = routeToPath({ view: "chat", agent: agentId });
-      if (view === "sandbox-home") history.replaceState(null, "", path);
-      else history.pushState(null, "", path);
-      set({ view: "chat", selectedAgent: agentId, agentId: null });
+    if (view === "chat" && selectedAgent === agentId) {
+      set({ sidePanelTab: tab });
+      if (isMobile()) set({ mobileScreen: "files" });
+      return;
     }
-    set({ sidePanelTab: tab });
-    if (isMobile()) set({ mobileScreen: "files" });
+    const path = routeToPath({ view: "chat", agent: agentId });
+    const open = () => {
+      history.pushState(null, "", path);
+      set({ view: "chat", selectedAgent: agentId, agentId: null });
+      set({ sidePanelTab: tab });
+      if (isMobile()) set({ mobileScreen: "files" });
+    };
+    // UNIT_BOUNDARY_DESCRIPTION: coming from the configuration page's own address replaces it, so Back never returns to a page that redirects again; from another agent's chat the change goes through leaveView, which asks before dropping unsaved edits and clears that Agent's Session.
+    if (view === "sandbox-home") {
+      history.replaceState(null, "", path);
+      set({ view: "chat", selectedAgent: agentId, agentId: null });
+      set({ sidePanelTab: tab });
+      if (isMobile()) set({ mobileScreen: "files" });
+      return;
+    }
+    leaveView(get, open);
   },
   navigateToStarterKit: (catalog, kitId) =>
     leaveView(get, () => {

@@ -131,6 +131,23 @@ it("puts the configuration behind one Configure tile", () => {
   expect(classic).not.toContain('data-testid="side-panel-tab-schedules"');
 });
 
+// TEST_SCENARIO: JanUI with the experiment off keeps its Environments button in the rail, because that tab belongs to every shell and only the configuration tabs came with the experiment.
+it("keeps the Environments button in the classic bar", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: "environments",
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  expect(html).toContain('data-testid="side-panel-tab-environments"');
+  expect(html).toContain('aria-pressed="true"');
+});
+
 // TEST_SCENARIO: With the experiment off, the rail carries no Configure tile at all, so a chat without it looks exactly as before.
 it("shows no Configure tile without the configuration tabs", () => {
   const html = renderToStaticMarkup(
@@ -147,6 +164,7 @@ it("shows no Configure tile without the configuration tabs", () => {
           processesEnabled: true,
           environments: false,
           configuration: false,
+          chatForms: true,
           gettingStarted: true,
         }),
         onSelect: () => {},
@@ -194,6 +212,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           processesEnabled: true,
           environments: true,
           configuration: false,
+          chatForms: true,
           gettingStarted: true,
         }),
         onSelect: () => {},

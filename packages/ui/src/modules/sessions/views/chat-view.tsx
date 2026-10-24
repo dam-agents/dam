@@ -293,7 +293,7 @@ export function ChatView() {
   const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
-    newLayout && environmentsEnabled && agentView?.vm ? selectedAgent : null,
+    environmentsEnabled && agentView?.vm ? selectedAgent : null,
     { poll: false },
   );
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
@@ -758,6 +758,7 @@ export function ChatView() {
           count: environments.data?.length,
         }),
     configuration: rightToolbar,
+    chatForms: chatFormsEnabled,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
@@ -1257,7 +1258,7 @@ export function ChatView() {
                       tone="muted"
                       className="pl-3 text-sm"
                       onClick={() =>
-                        navigateToSandboxHome(choice.agentId, "setup")
+                        navigateToSandboxHome(choice.agentId, "providers")
                       }
                     >
                       {harnessCurrent?.model
@@ -1343,7 +1344,7 @@ export function ChatView() {
                 agentView &&
                 agentDisplay && (
                   <ConfigSidePanel
-                    key={activeTab}
+                    key={`${selectedAgent}:${activeTab}`}
                     tab={activeTab}
                     agent={agentView}
                     display={agentDisplay}

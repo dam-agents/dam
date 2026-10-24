@@ -16,6 +16,7 @@ import {
   Notification,
   SettingsAdjust,
   Task,
+  UserProfile,
   Wikis,
 } from "@carbon/icons-react";
 import { Fragment, type ReactNode } from "react";
@@ -39,11 +40,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
-import {
-  CONFIGURATION_TABS,
-  type ConfigurationTab,
-  type SidePanelTab,
-} from "../lib/side-panel.js";
+import { CONFIGURATION_TABS, type SidePanelTab } from "../lib/side-panel.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the tiled rail is the Unified right toolbar's own surface, so its Artifacts tile draws the document icon whatever shell the page has; every other button that opens the panel, and every artifact link and list, keeps the layout's own icon.
 export const SIDE_PANEL_TABS: readonly {
@@ -62,7 +59,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
-  { tab: "agent", label: "Agent", icon: SettingsAdjust },
+  { tab: "agent", label: "Agent", icon: UserProfile },
   { tab: "environments", label: "Environments", icon: Cloud },
   { tab: "connections", label: "Connections", icon: DataStructured },
   { tab: "channels", label: "Channels", icon: LogoSlack },
@@ -82,9 +79,6 @@ const APP_TABS: ReadonlySet<SidePanelTab> = new Set([
 ]);
 
 const CONFIG_TABS: ReadonlySet<SidePanelTab> = new Set(CONFIGURATION_TABS);
-
-const CONFIG_TAB_ENTRY = (tab: SidePanelTab) =>
-  SIDE_PANEL_TABS.find((entry) => entry.tab === tab);
 
 export interface SidePanelBadge {
   count: number;
@@ -246,6 +240,14 @@ export function SidePanelBar({
           onSelect={props.onSelect}
         />
       )}
+      {!tiles && (
+        <SidePanelTabButtons
+          tabs={SIDE_PANEL_TABS.filter(
+            ({ tab }) => tab === "environments" && !hidden.has(tab),
+          )}
+          {...props}
+        />
+      )}
       <div
         className={cn(
           "mt-auto flex flex-col",
@@ -297,7 +299,6 @@ function ConfigureTabs({
         <button
           type="button"
           aria-label="Configure"
-          aria-pressed={open}
           data-testid="side-panel-configure"
           className={railTile(open)}
         >
@@ -306,16 +307,17 @@ function ConfigureTabs({
       </DropdownMenuTrigger>
       <DropdownMenuContent side="left" align="start">
         {tabs.map((tab) => {
-          const entry = CONFIG_TAB_ENTRY(tab);
+          const entry = SIDE_PANEL_TABS.find((item) => item.tab === tab);
           const Icon = entry?.icon;
           return (
             <DropdownMenuItem
               key={tab}
+              aria-current={active === tab ? "true" : undefined}
               data-testid={`side-panel-config-item-${tab}`}
               onSelect={() => onSelect(tab)}
             >
               {Icon && <Icon size={16} aria-hidden />}
-              {CONFIG_TAB_LABELS[tab]}
+              {entry?.label ?? tab}
             </DropdownMenuItem>
           );
         })}
@@ -323,16 +325,3 @@ function ConfigureTabs({
     </DropdownMenu>
   );
 }
-
-const CONFIG_TAB_LABELS: Record<ConfigurationTab, string> = {
-  agent: "Agent",
-  connections: "Connections",
-  channels: "Channels",
-  skills: "Skills",
-  schedules: "Schedules",
-  environments: "Environments",
-  providers: "Providers",
-  network: "Network access",
-  environment: "Environment variables",
-  "chat-forms": "Chat forms",
-};
