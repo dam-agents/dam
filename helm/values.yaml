@@ -2141,7 +2141,7 @@ starterKits:
       gepa: { enabled: true }
       adaevolve: { enabled: true }
       evox: { enabled: false }
-      k-search: { enabled: true }
+      k-search: { enabled: false }
       spotlights: { enabled: true }
       software-developer: { enabled: false }
       micro-manager: { enabled: true }
