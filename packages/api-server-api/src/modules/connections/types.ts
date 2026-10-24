@@ -151,6 +151,9 @@ export const credentialCheck = z.object({
   account: z.string().optional(),
   expiresAt: z.string().optional(),
   scopes: z.array(z.string()).optional(),
+  installedOn: z.string().optional(),
+  repositories: z.array(z.string()).optional(),
+  repositoriesTruncated: z.boolean().optional(),
   reason: z.string().optional(),
   at: z.string(),
 });

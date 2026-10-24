@@ -180,7 +180,7 @@ export function buildConnectCommand(deps: {
     .option(
       "--json",
       "emit { ok, id, status, authKind, presetsApplied?, scope?, check? } as JSON; " +
-        "check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at } is the token check",
+        "check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at } is the token check",
     )
     .option(
       "--no-browser",
