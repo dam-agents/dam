@@ -83,15 +83,87 @@ A rollback is a restore of the custom resources from the rows, not a restore of 
 1. Freeze the install: deploy the switch release again with `agentStore.frozen: true`.
    Both components exit instead of serving, so nothing writes rows while the exporter runs.
    This is another short outage.
+
 2. Restore:
    - `node dist/js/agent-store-cli.js rollback --dry-run` first; it prints what it would do and changes nothing.
    - then the same without `--dry-run`.
-   - Run it in a one-off pod in the cluster (the api-server image, the rollback Role, the api-server's own database environment), not from a workstation: the store is bound to the install by the API server address the absorb used, and a workstation dials a different one.
+   - Run it in a one-off pod in the cluster (the api-server image, the rollback Role below, the api-server's own database environment), not from a workstation: the store is bound to the install by the API server address the absorb used, and a workstation dials a different one.
      The pod also keeps the database credential off a laptop.
-   - It refuses unless the database was absorbed and the cluster's marker says so; a wrong `DATABASE_URL` is a refusal, not a fleet that vanished.
+   - It refuses unless the database was absorbed *by this install* and the cluster's marker names the same absorb stamp; a wrong `DATABASE_URL` is a refusal, not a fleet that vanished.
+     When a killed rollback already deleted the marker, the install recorded in the absorb report lets the rerun finish.
      A rerun after a finished rollback does nothing.
-     It writes each row back to a custom resource (whole: a grant revoked, a host removed or a flag turned off after the switch comes back cleared, and the status is restored), creates the ones that were created after the switch (new UIDs), deletes only resources the absorb recorded and whose rows are gone — Agents and UserBudgets alike, so a budget removed in row mode does not come back — re-points every child of each Agent — NetworkPolicies included — to its restored custom resource, deletes the anchors with orphan propagation, verifies that no child still references an anchor, deletes the marker, and only then clears the rows and the absorb stamp.
-     It refuses unless the components are frozen, and it refuses while any child still names an anchor.
+   - It refuses unless the cluster shows the freeze: both Deployments render it, run no replica, have no pod left, and the controller's Lease is not renewed.
+   - It writes each row back to a custom resource (whole: a grant revoked, a host removed or a flag turned off after the switch comes back cleared, and the status is restored), creates the ones that were created after the switch (new UIDs), deletes only resources the absorb recorded and whose rows are gone — Agents and UserBudgets alike, so a budget removed in row mode does not come back — re-points every child of each Agent — NetworkPolicies included — to its restored custom resource, verifies that no child still references an anchor, deletes the anchors with orphan propagation, deletes the marker, and only then clears the rows and the absorb stamp.
+
+   The Role is a one-off, bound to a ServiceAccount that only the rollback pod uses.
+   It carries every verb the command calls: the release-namespace reads that observe the freeze, and the agent-namespace reads and writes that restore, re-point, orphan and clear.
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: agent-store-rollback, namespace: <release namespace> }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: agent-store-rollback, namespace: <release namespace> }
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: agent-store-rollback, namespace: <release namespace> }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: agent-store-rollback }
+subjects: [{ kind: ServiceAccount, name: agent-store-rollback, namespace: <release namespace> }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: agent-store-rollback, namespace: <agent namespace> }
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get"]
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["agents", "userbudgets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["agents/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["agents/finalizers"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services", "serviceaccounts", "secrets"]
+    verbs: ["get", "list", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "update", "patch"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "update", "patch"]
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies"]
+    verbs: ["get", "list", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: agent-store-rollback, namespace: <agent namespace> }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: agent-store-rollback }
+subjects: [{ kind: ServiceAccount, name: agent-store-rollback, namespace: <release namespace> }]
+```
+
+Remove the ServiceAccount, the two Roles and the two RoleBindings after the window closes.
+
 3. Pin the previous (expand) release and clear `agentStore.frozen`.
    Its fence accepts the custom resources again because the marker is gone.
    Do not roll back below the expand release: a build older than the fence cannot recognise a switched store, which is what the fence exists to prevent.
