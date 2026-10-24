@@ -65,6 +65,7 @@ export type {
 
 export type {
   HarnessConfigChange,
+  SessionPairReferences,
   HarnessConfigStatus,
   DefaultKind,
   SessionDefaults,

@@ -15,6 +15,14 @@ export type SessionPair = z.infer<typeof sessionPairSchema>;
 export type DefaultKind = z.infer<typeof defaultKindSchema>;
 export type SessionDefaults = z.infer<typeof sessionDefaultsSchema>;
 
+/* UNIT_BOUNDARY_DESCRIPTION: a chat default is a profile reference or an inline
+ * pair; a reference names a profile the agent's owner holds, and the runtime is
+ * sent the pair it resolves to. */
+export interface SessionPairReferences {
+  profileId?: string | null;
+  platformSubagentProfileId?: string | null;
+}
+
 export interface HarnessConfigChange {
   harness?: string;
   model?: string;
@@ -61,6 +69,7 @@ export interface HarnessConfigService {
     agentId: string,
     kind: DefaultKind,
     pair: SessionPair,
+    references?: SessionPairReferences,
   ): Promise<void>;
   clearSessionDefault(
     agentId: string,

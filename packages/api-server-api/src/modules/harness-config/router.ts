@@ -75,8 +75,14 @@ export const harnessConfigRouter = t.router({
   rememberSessionPair: manageAgentsProcedure
     .input(rememberSessionPairInputSchema)
     .mutation(({ ctx, input }) => {
-      const { agentId, kind, ...pair } = input;
-      return ctx.harnessConfig.rememberSessionPair(agentId, kind, pair);
+      const { agentId, kind, profileId, platformSubagentProfileId, ...pair } =
+        input;
+      return ctx.harnessConfig.rememberSessionPair(agentId, kind, pair, {
+        ...(profileId !== undefined && { profileId }),
+        ...(platformSubagentProfileId !== undefined && {
+          platformSubagentProfileId,
+        }),
+      });
     }),
 
   clearSessionDefault: manageAgentsProcedure

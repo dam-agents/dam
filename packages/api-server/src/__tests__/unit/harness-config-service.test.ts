@@ -40,6 +40,7 @@ function makeService(opts?: {
   let holdingLock = false;
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
+    profiles: { resolveStored: async () => null },
     surface: "ui",
     eventQueue: {
       queue: async (agentId, change, tx) => {

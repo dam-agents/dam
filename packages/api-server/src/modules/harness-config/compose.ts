@@ -89,6 +89,7 @@ export function composeHarnessConfigModule(deps: {
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
+      profiles: deps.profiles,
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
       pairRepo,
       eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),

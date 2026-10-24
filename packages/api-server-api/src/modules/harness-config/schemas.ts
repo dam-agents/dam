@@ -56,9 +56,14 @@ export const sessionPairSchema = z.object({
   settings: sessionSettingsSchema.optional(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: a chat default is a profile reference or an inline
+ * pair. A reference names the profile instead of the values, and the runtime is
+ * sent the pair it resolves to, so the two never travel as one record. */
 export const rememberSessionPairInputSchema = sessionPairSchema.extend({
   agentId: z.string().min(1),
   kind: defaultKindSchema.default("chat"),
+  profileId: z.string().min(1).nullable().optional(),
+  platformSubagentProfileId: z.string().min(1).nullable().optional(),
 });
 
 export const clearSessionDefaultInputSchema = z.object({
