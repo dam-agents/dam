@@ -1,6 +1,14 @@
-import { Unlink } from "@carbon/icons-react";
+import { ChevronDown, Unlink } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { labelVariants } from "@/components/ui/label";
 import { PopoverClose } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
@@ -13,6 +21,13 @@ import {
   modelLabel,
   sameModel,
 } from "../lib/catalog-groups.js";
+import {
+  type FamilyModel,
+  familyModelGroups,
+  type FamilySection,
+  type LeftoverModels,
+  type ModelOption,
+} from "../lib/model-families.js";
 import { AwakeModelsGate } from "./awake-models-gate.js";
 
 interface Props {
@@ -38,8 +53,10 @@ const firstListing = (group: ModelGroup, waiting: boolean) =>
   waiting && group.status === "unavailable" && group.listedAt === null;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, with its
- * listing state said in place rather than a provider silently missing.
+ * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, grouped by
+ * model family and size with older versions behind More, the providers of a
+ * model picked on the entry itself, and everything the families do not know
+ * with its provider below.
  */
 export function SessionModelList({ agentId, ...listed }: Props) {
   return (
@@ -86,19 +103,42 @@ function ListedModels({
         )}
       </p>
     );
+  const { families, leftovers } = familyModelGroups(groups);
   return (
     <>
-      {groups.map((group) => (
+      {families.map((section) => (
+        <FamilyModelSection
+          key={section.family.token}
+          section={section}
+          current={current}
+          onChoose={onChoose}
+        />
+      ))}
+      {leftovers.map((leftover) => (
+        <LeftoverSection
+          key={leftover.group.connectionId}
+          leftover={leftover}
+          current={current}
+          loading={loading}
+          waiting={waiting}
+          harnessName={harnessName}
+          onRetry={onRetry}
+          onChoose={onChoose}
+        />
+      ))}
+      {onDisconnect && (
         <section
-          key={group.connectionId}
-          aria-label={group.displayName}
-          className="flex flex-col px-1"
+          aria-label="Providers"
+          className="flex flex-col border-t border-border px-1 pt-1"
         >
-          <div className="group/provider flex h-6 items-center justify-between gap-2">
-            <h3 className={cn("truncate", labelVariants())}>
-              {group.displayName}
-            </h3>
-            {onDisconnect && (
+          {groups.map((group) => (
+            <div
+              key={group.connectionId}
+              className="flex h-6 items-center justify-between gap-2"
+            >
+              <span className="truncate text-muted-foreground">
+                {group.displayName}
+              </span>
               <Tooltip content="Disconnect">
                 <PopoverClose asChild>
                   <button
@@ -106,73 +146,250 @@ function ListedModels({
                     disabled={disconnecting}
                     aria-label={`Disconnect ${group.displayName}`}
                     onClick={() => onDisconnect(group)}
-                    className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/provider:opacity-100 disabled:opacity-50"
+                    className="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-50"
                   >
                     <Unlink size={14} />
                   </button>
                 </PopoverClose>
               </Tooltip>
-            )}
-          </div>
-          <ul className="flex flex-col">
-            {group.models.map((m) => (
-              <li key={m.name}>
-                <PopoverClose asChild>
-                  <button
-                    type="button"
-                    aria-current={
-                      sameModel(current, m.name) ? "true" : undefined
-                    }
-                    title={m.name}
-                    onClick={() => onChoose(m.name, group)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
-                      sameModel(current, m.name) &&
-                        "font-medium text-foreground",
-                    )}
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {modelLabel(m)}
-                    </span>
-                    {contextLabel(m) && (
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                        {contextLabel(m)}
-                      </span>
-                    )}
-                  </button>
-                </PopoverClose>
-              </li>
-            ))}
-            {group.models.length === 0 && (
-              <li className="px-2 py-1 text-muted-foreground">
-                {group.status === "unsupported" ? (
-                  `Not compatible with ${harnessName ?? "this harness"}.`
-                ) : loading || firstListing(group, waiting) ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Spinner size={12} className="text-muted-foreground" />
-                    Loading models…
-                  </span>
-                ) : group.status === "unavailable" ? (
-                  "Couldn't list this provider's models."
-                ) : (
-                  "No models listed."
-                )}
-                {group.status === "unavailable" &&
-                  !firstListing(group, waiting) && (
-                    <Button
-                      variant="link"
-                      size="inline"
-                      className="ml-1"
-                      onClick={onRetry}
-                    >
-                      Retry
-                    </Button>
-                  )}
-              </li>
-            )}
-          </ul>
+            </div>
+          ))}
         </section>
-      ))}
+      )}
     </>
+  );
+}
+
+function FamilyModelSection({
+  section,
+  current,
+  onChoose,
+}: {
+  section: FamilySection;
+  current: string | null;
+  onChoose: (model: string, group: ModelGroup) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <section aria-label={section.family.name} className="flex flex-col px-1">
+      <div className="flex h-6 items-center">
+        <h3 className={cn("truncate", labelVariants())}>
+          {section.family.name}
+        </h3>
+      </div>
+      <ul className="flex flex-col">
+        {section.newest.map((entry) => (
+          <FamilyModelRow
+            key={entry.key}
+            entry={entry}
+            current={current}
+            onChoose={onChoose}
+          />
+        ))}
+        {expanded &&
+          section.older.map((entry) => (
+            <FamilyModelRow
+              key={entry.key}
+              entry={entry}
+              current={current}
+              onChoose={onChoose}
+            />
+          ))}
+        {section.older.length > 0 && (
+          <li>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded(!expanded)}
+              className="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ChevronDown
+                size={14}
+                aria-hidden
+                className={cn("transition-transform", expanded && "rotate-180")}
+              />
+              {expanded ? "Less" : "More"}
+            </button>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+function FamilyModelRow({
+  entry,
+  current,
+  onChoose,
+}: {
+  entry: FamilyModel;
+  current: string | null;
+  onChoose: (model: string, group: ModelGroup) => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const isCurrent = entry.options.some((o) => sameModel(current, o.model.name));
+  const option =
+    entry.options.find((o) => o.group.connectionId === picked) ??
+    entry.options.find((o) => sameModel(current, o.model.name)) ??
+    entry.options[0]!;
+  return (
+    <li className="flex items-center gap-1">
+      <PopoverClose asChild>
+        <button
+          type="button"
+          aria-current={isCurrent ? "true" : undefined}
+          title={option.model.name}
+          onClick={() => onChoose(option.model.name, option.group)}
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
+            isCurrent && "font-medium text-foreground",
+          )}
+        >
+          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+          {contextLabel(option.model) && (
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {contextLabel(option.model)}
+            </span>
+          )}
+        </button>
+      </PopoverClose>
+      {entry.options.length > 1 && (
+        <ProviderChoice
+          label={entry.label}
+          options={entry.options}
+          selected={option}
+          onPick={(next) => {
+            setPicked(next.group.connectionId);
+            onChoose(next.model.name, next.group);
+          }}
+        />
+      )}
+    </li>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one model, several providers: the entry keeps
+ * the provider's model name for the router, so picking a provider here is
+ * picking its model, exactly as its own row would.
+ */
+function ProviderChoice({
+  label,
+  options,
+  selected,
+  onPick,
+}: {
+  label: string;
+  options: readonly ModelOption[];
+  selected: ModelOption;
+  onPick: (option: ModelOption) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Provider for ${label}`}
+          className="flex shrink-0 items-center gap-0.5 rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <span className="max-w-24 truncate">
+            {selected.group.displayName}
+          </span>
+          <ChevronDown size={12} aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuRadioGroup value={selected.group.connectionId}>
+          {options.map((option) => (
+            <DropdownMenuRadioItem
+              key={option.group.connectionId}
+              value={option.group.connectionId}
+              onSelect={() => onPick(option)}
+            >
+              {option.group.displayName}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function LeftoverSection({
+  leftover,
+  current,
+  loading,
+  waiting,
+  harnessName,
+  onRetry,
+  onChoose,
+}: {
+  leftover: LeftoverModels;
+  current: string | null;
+  loading: boolean;
+  waiting: boolean;
+  harnessName: string | undefined;
+  onRetry: () => void;
+  onChoose: (model: string, group: ModelGroup) => void;
+}) {
+  const { group, models } = leftover;
+  return (
+    <section aria-label={group.displayName} className="flex flex-col px-1">
+      <div className="flex h-6 items-center">
+        <h3 className={cn("truncate", labelVariants())}>{group.displayName}</h3>
+      </div>
+      <ul className="flex flex-col">
+        {models.map((m) => (
+          <li key={m.name}>
+            <PopoverClose asChild>
+              <button
+                type="button"
+                aria-current={sameModel(current, m.name) ? "true" : undefined}
+                title={m.name}
+                onClick={() => onChoose(m.name, group)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
+                  sameModel(current, m.name) && "font-medium text-foreground",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+                {contextLabel(m) && (
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    {contextLabel(m)}
+                  </span>
+                )}
+              </button>
+            </PopoverClose>
+          </li>
+        ))}
+        {models.length === 0 && (
+          <li className="px-2 py-1 text-muted-foreground">
+            {group.status === "unsupported" ? (
+              `Not compatible with ${harnessName ?? "this harness"}.`
+            ) : loading || firstListing(group, waiting) ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner size={12} className="text-muted-foreground" />
+                Loading models…
+              </span>
+            ) : group.status === "unavailable" ? (
+              "Couldn't list this provider's models."
+            ) : (
+              "No models listed."
+            )}
+            {group.status === "unavailable" &&
+              !firstListing(group, waiting) && (
+                <Button
+                  variant="link"
+                  size="inline"
+                  className="ml-1"
+                  onClick={onRetry}
+                >
+                  Retry
+                </Button>
+              )}
+          </li>
+        )}
+      </ul>
+    </section>
   );
 }

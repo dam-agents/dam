@@ -644,6 +644,71 @@ describe("one model list on a runtime that routes by model name", () => {
     state.answerable = undefined;
   });
 
+  /** TEST_SCENARIO: Known models are grouped by family and size, one entry
+   * per size on the newest version with the providers that offer it, older
+   * versions behind More, and models of no known family last under their
+   * provider. */
+  it("groups known models by family and size, with a provider choice", () => {
+    state.catalog = {
+      harness: "pi",
+      routed: true,
+      providers: [
+        {
+          connectionId: "ibm",
+          alias: "ibm",
+          template: "ibm-litellm",
+          displayName: "IBM",
+          status: "listed" as const,
+          listedAt: null,
+          models: [
+            model("ibm", "aws/claude-opus-5-5"),
+            model("ibm", "aws/claude-opus-5-1"),
+            model("ibm", "azure/gpt-5.6-sol"),
+            model("ibm", "rits/deepseek-ai/DeepSeek-V3.2"),
+          ],
+        },
+        {
+          connectionId: "anthropic",
+          alias: "anthropic",
+          template: "anthropic",
+          displayName: "Anthropic",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("anthropic", "claude-opus-5-5")],
+        },
+        {
+          connectionId: "curve",
+          alias: "cb",
+          template: "curve-bender",
+          displayName: "Curve",
+          status: "listed" as const,
+          listedAt: null,
+          models: [model("cb", "gpt-5.6-sol")],
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain('aria-label="Claude"');
+    expect(html).toContain('aria-label="GPT"');
+    expect(html).toContain("Opus 5.5");
+    expect(html).not.toContain("Opus 5.1");
+    expect(html).toContain("More");
+    expect(html).toContain('aria-label="Provider for Opus 5.5"');
+    expect(html).toContain('aria-label="Provider for Sol 5.6"');
+    expect(html).toContain("rits/deepseek-ai/DeepSeek-V3.2");
+    expect(html.indexOf('aria-label="Claude"')).toBeLessThan(
+      html.indexOf('aria-label="IBM"'),
+    );
+  });
+
   /** TEST_SCENARIO: A second IBM key the owner holds cannot be attached
    * beside the one the agent already uses (one Connection per provider
    * alias), so it is listed disabled with the reason, not as an attach that
