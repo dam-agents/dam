@@ -75,7 +75,8 @@ export function buildUpdateCommand(deps: {
       new Option(
         "--value <value>",
         "the new secret — the injected value, client secret, or private key, " +
-          "depending on the connection's auth kind — omit to enter it on a DAM web page",
+          "depending on the connection's auth kind — omit to enter it on a DAM web page " +
+          "(an OAuth client secret: at a hidden prompt)",
       ).helpGroup(SECRETS_GROUP),
     )
     .addOption(

@@ -153,7 +153,7 @@ export function buildConnectCommand(deps: {
     .addOption(
       new Option(
         "--value <value>",
-        "input: header secret value — omit to enter it on a DAM web page",
+        "input: header secret value (header credentials: omit to enter it on a DAM web page)",
       ).helpGroup(SECRETS_GROUP),
     )
     .option(
