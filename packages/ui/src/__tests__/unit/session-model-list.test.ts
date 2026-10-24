@@ -73,11 +73,11 @@ function render(
   act(() =>
     root.render(
       createElement(SessionModelList, {
+        agentId: "agent",
         groups: [ibm, anthropic],
         current,
         loading: false,
         failed: false,
-        operable: true,
         onRetry: () => {},
         onChoose,
       }),
