@@ -53,6 +53,7 @@ describe("what a rollback may do", () => {
     absorbedAt: new Date(AT) as Date | null,
     markerStore: "postgres" as string | null,
     markerAbsorbedAt: AT as string | null,
+    markerContracted: false,
     install: liveInstall as typeof liveInstall | null,
     liveInstall,
     agentRows: 9,
@@ -69,6 +70,7 @@ describe("what a rollback may do", () => {
     );
     expect(verdict({ markerStore: "crd" })).toBe("refuse");
     expect(verdict({ markerStore: null })).toBe("restore");
+    expect(verdict({ markerContracted: true })).toBe("refuse");
     expect(verdict({ absorbReport: undefined } as never)).toBe("restore");
     expect(verdict({ agentRows: 0 })).toBe("refuse");
     expect(verdict({ agentRows: 0, liveAgents: 0 })).toBe("restore");

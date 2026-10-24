@@ -62,6 +62,7 @@ import {
   readContractFacts,
 } from "./modules/agent-store/contract.js";
 import { createObjectStoreReader } from "./modules/agent-store/object-store.js";
+import { CONTRACT_MARKER_KEY } from "./modules/agent-store/fence.js";
 
 const usage = `usage: agent-store-cli <command>
 
@@ -657,6 +658,7 @@ const main = async (): Promise<void> => {
         absorbedAt: store.absorbedAt,
         markerStore: marker?.store ?? null,
         markerAbsorbedAt: marker?.["absorbed-at"] ?? null,
+        markerContracted: marker?.[CONTRACT_MARKER_KEY] !== undefined,
         install: recordedInstall,
         liveInstall,
         agentRows: agents.length,
