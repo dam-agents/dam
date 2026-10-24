@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createDb } from "db";
 import {
   controlAgentStore,
+  controlAgentStoreExports,
   controlAgents,
   controlCrdSnapshots,
   controlUserBudgets,
@@ -45,6 +46,7 @@ import {
   archiveOf,
   encryptToRecipient,
   exportCrds,
+  sha256Of,
 } from "./modules/agent-store/exporter.js";
 import {
   blockingRefusals,
@@ -59,15 +61,18 @@ import {
   readArchive,
   readContractFacts,
 } from "./modules/agent-store/contract.js";
-import { CONTRACT_MARKER_KEY } from "./modules/agent-store/fence.js";
+import { createObjectStoreReader } from "./modules/agent-store/object-store.js";
 
 const usage = `usage: agent-store-cli <command>
 
   export-snapshot [--recipient <age public key>] [--force-recipient] [--out <file>]
       Write the switch's archive, encrypted to the install's
       agentStore.backup.recipient (or --recipient), from the database's snapshot
-      table. Prints ciphertext. A --recipient that differs from the chart's is
-      refused unless --force-recipient is given.
+      table, and record the export (recipient, both digests, time) in the
+      database. Prints ciphertext, or writes it to --out and prints the
+      plaintext and ciphertext SHA-256. The ciphertext digest is the value the
+      contract release must be given. A --recipient that differs from the
+      chart's is refused unless --force-recipient is given.
 
   export-crds [--out <directory>]
       Write the custom resources the rows currently describe, for inspection
@@ -86,16 +91,18 @@ const usage = `usage: agent-store-cli <command>
 
   contract-check [--sha256 <hex>] [--now <iso>]
       The gate the contract release arms: refuse unless the install was switched,
-      its rollback window has closed, its archive still reads back to the digest
-      the absorb recorded, and the operator attested that digest from the
-      encrypted file that left the platform. --sha256 defaults to
-      agentStore.contract.backupSha256; --now moves the clock for a rehearsal.
+      its rollback window has closed, its archive and the object-store copy read
+      back to the digest the absorb recorded, an operator export is recorded for
+      this install, and --sha256 is that export's ciphertext digest.
+      --sha256 defaults to agentStore.contract.backupSha256; --now moves the
+      clock on a rehearsal cluster.
 
-  delete-crs [--dry-run]
+  delete-crs [--dry-run] [--rehearsal]
       Delete this install's Agent and UserBudget custom resources, orphaning
       their children (the anchors own them). Refuses unless the install's
-      contract gate passed, so the archive is attested first. Idempotent: a
-      second run, or a cluster whose CRDs are already gone, deletes nothing.`;
+      contract gate passed on the real clock (--rehearsal accepts a rehearsal
+      clock), so the archive is attested first. Idempotent: a second run, or a
+      cluster whose CRDs are already gone, deletes nothing.`;
 
 const args = process.argv.slice(2);
 const command = args[0] ?? "";
@@ -409,6 +416,23 @@ const main = async (): Promise<void> => {
     agentStoreContractSha256: env("AGENT_STORE_CONTRACT_BACKUP_SHA256"),
     agentStoreContractEmptyArchive:
       env("AGENT_STORE_CONTRACT_EMPTY_ARCHIVE") === "true",
+    objectStorage: env("OBJECT_STORAGE_ENDPOINT")
+      ? {
+          endpoint: expandEnvRefs(env("OBJECT_STORAGE_ENDPOINT")!),
+          region: env("OBJECT_STORAGE_REGION") ?? "us-east-1",
+          bucket: env("OBJECT_STORAGE_BUCKET") ?? "platform-artifacts",
+          forcePathStyle:
+            (env("OBJECT_STORAGE_FORCE_PATH_STYLE") ?? "true") !== "false",
+          credentials:
+            env("OBJECT_STORAGE_ACCESS_KEY_ID") !== undefined &&
+            env("OBJECT_STORAGE_SECRET_ACCESS_KEY") !== undefined
+              ? {
+                  accessKeyId: env("OBJECT_STORAGE_ACCESS_KEY_ID")!,
+                  secretAccessKey: env("OBJECT_STORAGE_SECRET_ACCESS_KEY")!,
+                }
+              : null,
+        }
+      : null,
     logLevel: (env("LOG_LEVEL") ?? "info") as
       "error" | "warn" | "info" | "debug",
   };
@@ -499,15 +523,19 @@ const main = async (): Promise<void> => {
       const snapshot = await readArchive(db);
       if (snapshot === null)
         throw new Error("the database holds no absorb snapshot");
-      const ciphertext = await encryptToRecipient(
-        Buffer.from(snapshot.yaml, "utf8"),
+      const plaintext = Buffer.from(snapshot.yaml, "utf8");
+      const ciphertext = await encryptToRecipient(plaintext, recipient);
+      const recorded = {
         recipient,
-      );
+        plaintextSha256: sha256Of(plaintext),
+        ciphertextSha256: sha256Of(ciphertext),
+      };
+      await db.insert(controlAgentStoreExports).values(recorded);
       const out = flag("--out");
       if (out) {
         writeFileSync(out, ciphertext, { mode: 0o600 });
         process.stderr.write(
-          `wrote ${snapshot.documents} document(s), sha256 ${snapshot.sha256}, to ${out} as age ciphertext to ${recipient}\n`,
+          `wrote ${snapshot.documents} document(s) to ${out} as age ciphertext to ${recipient}: plaintext sha256 ${recorded.plaintextSha256}, ciphertext sha256 ${recorded.ciphertextSha256}. The ciphertext digest is the one agentStore.contract.backupSha256 attests.\n`,
         );
       } else process.stdout.write(ciphertext);
       await finish();
@@ -884,6 +912,10 @@ const main = async (): Promise<void> => {
           attestedSha256:
             flag("--sha256") ?? config.agentStoreContractSha256 ?? null,
           emptyArchive: config.agentStoreContractEmptyArchive,
+          expectedRecipient: config.agentStoreBackupRecipient ?? null,
+          readObject: config.objectStorage
+            ? createObjectStoreReader(config.objectStorage)
+            : null,
         }),
       );
       if (!verdict.ok)
@@ -895,7 +927,9 @@ const main = async (): Promise<void> => {
 
     case "delete-crs": {
       const marker = await readMarker(api, config.namespace, markerName);
-      const refusal = deleteCrsRefusal(marker);
+      const refusal = deleteCrsRefusal(marker, {
+        rehearsal: has("--rehearsal"),
+      });
       if (refusal) throw new Error(`delete-crs refuses: ${refusal}`);
       const dryRun = has("--dry-run");
       const removed = await deleteCustomResources({

@@ -70,6 +70,7 @@ export {
   controlAgentKitState,
   controlUserBudgets,
   controlAgentStore,
+  controlAgentStoreExports,
   controlCrdSnapshots,
 } from "./control-schema.js";
 export {

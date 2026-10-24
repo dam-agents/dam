@@ -27,6 +27,8 @@ import {
 import { createControlAgentL7HostsPort } from "./modules/agent-store/l7-hosts.js";
 import {
   CONTRACT_MARKER_KEY,
+  CONTRACT_REHEARSAL_KEY,
+  CONTRACT_REHEARSAL_VALUE,
   agentStoreMarkerName,
   agentStoreRefusal,
   readAgentStoreMarker,
@@ -490,17 +492,26 @@ export async function bootstrap() {
       },
     });
 
-  if (config.agentStore === "postgres") {
+  if (readsRows(config.agentStore)) {
     const writeFence = await verifyAgentStoreWriteFence(
       createAuthorizationApi(),
       config.namespace,
     );
     if (writeFence) throw new Error(writeFence);
+  }
+  const absorbsEmpty = config.agentStoreContractEmptyArchive;
+  if (
+    readsRows(config.agentStore) &&
+    (config.agentStore === "postgres" || absorbsEmpty)
+  ) {
     if (agentStoreMarker?.store !== "postgres")
       await absorbAgentStore({
         db,
         logger: getLogger(),
-        listCustomObjects: (plural) => k8sClient.listCustomObjects(plural),
+        listCustomObjects:
+          config.agentStore === "contract"
+            ? async () => []
+            : (plural) => k8sClient.listCustomObjects(plural),
         writeMarker: (data) =>
           writeAgentStoreMarker(api, config.namespace, markerName, data),
         readMarker: () =>
@@ -532,15 +543,26 @@ export async function bootstrap() {
     );
     const refusal = agentStoreRefusal(config.agentStore, switched);
     if (refusal) throw new Error(refusal);
+    await passCutoverBarrier({
+      db,
+      leases: leaseApi,
+      namespace: config.namespace,
+      leaseName: `${config.releaseName}-controller`,
+      markerAbsorbedAt: switched?.["absorbed-at"] ?? null,
+      log: (message, fields) => getLogger().info(fields ?? {}, message),
+    });
     if (config.agentStore === "contract") {
-      const now = config.agentStoreContractNow
-        ? new Date(config.agentStoreContractNow)
-        : new Date();
+      const rehearsalClock = config.agentStoreContractNow;
+      const now = rehearsalClock ? new Date(rehearsalClock) : new Date();
       const verdict = contractVerdict(
         await readContractFacts(db, {
           now,
           attestedSha256: config.agentStoreContractSha256 ?? null,
           emptyArchive: config.agentStoreContractEmptyArchive,
+          expectedRecipient: config.agentStoreBackupRecipient ?? null,
+          readObject: snapshotStore
+            ? (ref) => snapshotStore.get(ref).then((body) => body ?? null)
+            : null,
         }),
       );
       if (!verdict.ok)
@@ -554,6 +576,9 @@ export async function bootstrap() {
         ...(verdict.archived
           ? { "contract-sha256": verdict.sha256 }
           : { "contract-empty-archive": "true" }),
+        ...(rehearsalClock
+          ? { [CONTRACT_REHEARSAL_KEY]: CONTRACT_REHEARSAL_VALUE }
+          : {}),
       });
       getLogger().info(
         {
@@ -564,14 +589,6 @@ export async function bootstrap() {
         "agentStore.contract.armed",
       );
     }
-    await passCutoverBarrier({
-      db,
-      leases: leaseApi,
-      namespace: config.namespace,
-      leaseName: `${config.releaseName}-controller`,
-      markerAbsorbedAt: switched?.["absorbed-at"] ?? null,
-      log: (message, fields) => getLogger().info(fields ?? {}, message),
-    });
   }
 
   if (!config.redisUrl)

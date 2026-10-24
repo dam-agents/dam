@@ -6,6 +6,8 @@ export type AgentStoreMode = "crd" | "postgres" | "contract";
 export const AGENT_STORE_MARKER_KEY = "store";
 export const AGENT_STORE_ABSORBED_KEY = "absorbed-at";
 export const CONTRACT_MARKER_KEY = "contract-at";
+export const CONTRACT_REHEARSAL_KEY = "contract-clock";
+export const CONTRACT_REHEARSAL_VALUE = "rehearsal";
 
 export const readsRows = (mode: AgentStoreMode): boolean => mode !== "crd";
 

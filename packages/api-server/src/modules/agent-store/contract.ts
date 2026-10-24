@@ -1,21 +1,45 @@
 import { createHash } from "node:crypto";
-import { controlAgentStore, controlCrdSnapshots, eq, sql, type Db } from "db";
-import { CONTRACT_MARKER_KEY } from "./fence.js";
+import {
+  controlAgentStore,
+  controlAgentStoreExports,
+  controlCrdSnapshots,
+  eq,
+  sql,
+  type Db,
+} from "db";
+import {
+  CONTRACT_MARKER_KEY,
+  CONTRACT_REHEARSAL_KEY,
+  CONTRACT_REHEARSAL_VALUE,
+} from "./fence.js";
 import { orderDocuments } from "./snapshot.js";
 
 export const CONTRACT_WINDOW_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
+export interface ExportedArchive {
+  exportedAt: Date;
+  recipient: string;
+  plaintextSha256: string;
+  ciphertextSha256: string;
+}
+
 export interface ContractFacts {
   now: Date;
   switchedAt: Date | null;
+  emptyArchive: boolean;
+  absorbedDocuments: number | null;
+  absorbedAgents: number | null;
+  absorbedBudgets: number | null;
   documents: number;
   recordedSha256: string | null;
   archiveSha256: string | null;
   backupRef: string | null;
+  objectStoreSha256: string | null;
+  exported: ExportedArchive | null;
+  expectedRecipient: string | null;
   attestedSha256: string | null;
-  emptyArchive: boolean;
 }
 
 export type ContractVerdict =
@@ -26,6 +50,9 @@ export type ContractVerdict =
       archived: true;
       sha256: string;
       backupRef: string | null;
+      objectStoreVerified: boolean;
+      exportedAt: Date;
+      recipient: string;
     }
   | { ok: false; reason: string };
 
@@ -36,12 +63,14 @@ const refused = (reason: string): ContractVerdict => ({ ok: false, reason });
  * reading the custom resources the rollback window exists for.
  *
  * The release that deletes an install's custom resources is the first
- * irreversible step, so it refuses on four facts instead of trusting its
- * values: the install was switched, the window has closed, the archive the
- * switch stored still reads back to the digest the absorb recorded, and the
- * operator attested that digest from the copy that left the platform. An
- * install that never absorbed a custom resource has nothing to roll back and
- * says so instead of silencing the same checks.
+ * irreversible step, so it refuses on facts instead of trusting its values:
+ * the install was switched, the window has closed, the archive the switch
+ * stored still reads back to the digest the absorb recorded, the object store
+ * answers with those same bytes, an operator exported that archive through the
+ * platform, and the digest attesting the export is the one of the encrypted
+ * file that left the platform. An install that never absorbed a custom
+ * resource has nothing to roll back and says so instead of silencing the same
+ * checks.
  */
 export function contractVerdict(
   input: ContractFacts,
@@ -52,9 +81,14 @@ export function contractVerdict(
       "the Agent store was never switched: the contract release follows a completed cutover, and this database holds no switch stamp",
     );
   if (input.emptyArchive) {
-    if (input.documents > 0)
+    if (
+      input.documents > 0 ||
+      input.absorbedDocuments !== 0 ||
+      input.absorbedAgents !== 0 ||
+      input.absorbedBudgets !== 0
+    )
       return refused(
-        `this install absorbed ${input.documents} custom resource document(s), so it has an archive to attest: clear agentStore.contract.emptyArchive and set agentStore.contract.backupSha256 instead`,
+        "this install absorbed custom resources, so it has an archive to export and attest: clear agentStore.contract.emptyArchive and set agentStore.contract.backupSha256 to the export's ciphertext digest instead",
       );
     return { ok: true, switchedAt: input.switchedAt, archived: false };
   }
@@ -73,19 +107,41 @@ export function contractVerdict(
     );
   if (input.archiveSha256 !== input.recordedSha256)
     return refused(
-      `the snapshot table reads back to sha256 ${input.archiveSha256}, not the ${input.recordedSha256} the absorb recorded: the archive is not the one the switch verified, so it is not one to delete the custom resources against`,
+      "the snapshot table does not read back to the digest the absorb recorded: the archive is not the one the switch verified, so it is not one to delete the custom resources against",
+    );
+  if (input.backupRef !== null && input.objectStoreSha256 === null)
+    return refused(
+      `the absorb recorded an object-store copy (${input.backupRef}) and it does not read back now: the install's second copy is gone, so the operator's file would be the only one`,
+    );
+  if (
+    input.backupRef !== null &&
+    input.objectStoreSha256 !== input.recordedSha256
+  )
+    return refused(
+      `the object-store copy ${input.backupRef} does not hold the bytes the absorb recorded: the two copies disagree, so neither is one to delete the custom resources against`,
+    );
+  if (input.exported === null)
+    return refused(
+      "no operator export is recorded: run `agent-store-cli export-snapshot` (it writes the encrypted file and records the export) before releasing the contract values",
+    );
+  if (input.exported.plaintextSha256 !== input.recordedSha256)
+    return refused(
+      "the recorded export is not of this install's archive: the operator exported another store's documents, or a snapshot the absorb did not write",
+    );
+  if (
+    input.expectedRecipient === null ||
+    input.exported.recipient !== input.expectedRecipient
+  )
+    return refused(
+      `the recorded export was encrypted to ${input.exported.recipient}, not to this install's agentStore.backup.recipient: the key holder cannot open it, so it is not the copy D79A asks for`,
     );
   if (input.attestedSha256 === null)
     return refused(
-      `the archive is ${input.recordedSha256} but no operator attested it: set agentStore.contract.backupSha256 to the digest export-snapshot printed, from the encrypted file the key holder keeps`,
+      "the export is not attested: set agentStore.contract.backupSha256 to the ciphertext digest `export-snapshot` printed, taken from the file the key holder keeps",
     );
-  if (input.attestedSha256 !== input.recordedSha256)
+  if (input.attestedSha256 !== input.exported.ciphertextSha256)
     return refused(
-      `the operator attests sha256 ${input.attestedSha256}, but the absorb recorded ${input.recordedSha256}${
-        input.backupRef === null
-          ? " and no object store holds a second copy"
-          : ` and the object-store copy is ${input.backupRef}`
-      }: the attested file and the archive are not the same bytes, so one of the two is not this install's archive`,
+      `the attested digest is not this install's exported file: the record says another ciphertext was written (${input.exported.exportedAt.toISOString()}), so the file the operator holds is a different one`,
     );
   return {
     ok: true,
@@ -93,6 +149,9 @@ export function contractVerdict(
     archived: true,
     sha256: input.recordedSha256,
     backupRef: input.backupRef,
+    objectStoreVerified: input.backupRef !== null,
+    exportedAt: input.exported.exportedAt,
+    recipient: input.exported.recipient,
   };
 }
 
@@ -127,11 +186,8 @@ export async function readArchive(db: Db): Promise<ArchiveRead | null> {
       .from(controlCrdSnapshots)
       .where(eq(controlCrdSnapshots.capturedAt, at)),
   );
-  return {
-    documents: documents.length,
-    sha256: sha256(documents.map((doc) => doc.yaml).join("---\n")),
-    yaml: documents.map((doc) => doc.yaml).join("---\n"),
-  };
+  const yaml = documents.map((doc) => doc.yaml).join("---\n");
+  return { documents: documents.length, sha256: sha256(yaml), yaml };
 }
 
 export async function readContractFacts(
@@ -140,6 +196,8 @@ export async function readContractFacts(
     now: Date;
     attestedSha256: string | null;
     emptyArchive: boolean;
+    expectedRecipient: string | null;
+    readObject: ((ref: string) => Promise<Buffer | null>) | null;
   },
 ): Promise<ContractFacts> {
   const rows = await db
@@ -152,17 +210,57 @@ export async function readContractFacts(
     .where(eq(controlAgentStore.id, 1))
     .limit(1);
   const report = rows[0]?.absorbReport as
-    { backup?: { sha256?: string } } | null | undefined;
+    | {
+        backup?: { sha256?: string };
+        snapshot?: { documents?: number };
+        agents?: { seen?: number; imported?: number };
+        budgets?: { seen?: number; imported?: number };
+      }
+    | null
+    | undefined;
   const archive = await readArchive(db);
+  const exported = await db
+    .select({
+      exportedAt: controlAgentStoreExports.exportedAt,
+      recipient: controlAgentStoreExports.recipient,
+      plaintextSha256: controlAgentStoreExports.plaintextSha256,
+      ciphertextSha256: controlAgentStoreExports.ciphertextSha256,
+    })
+    .from(controlAgentStoreExports)
+    .orderBy(sql`${controlAgentStoreExports.exportedAt} DESC`)
+    .limit(1);
+  const backupRef = rows[0]?.backupRef ?? null;
+  const readObject = input.readObject;
+  const objectStoreSha256 =
+    backupRef === null || readObject === null
+      ? null
+      : await (async (): Promise<string | null> => {
+          const content = await readObject(backupRef);
+          return content === null ? null : sha256(content.toString("utf8"));
+        })();
   return {
     now: input.now,
     switchedAt: rows[0]?.switchedAt ?? null,
+    emptyArchive: input.emptyArchive,
+    absorbedDocuments: report?.snapshot?.documents ?? null,
+    absorbedAgents: report?.agents?.seen ?? null,
+    absorbedBudgets: report?.budgets?.seen ?? null,
     documents: archive?.documents ?? 0,
     recordedSha256: report?.backup?.sha256 ?? null,
     archiveSha256: archive?.sha256 ?? null,
-    backupRef: rows[0]?.backupRef ?? null,
+    backupRef,
+    objectStoreSha256,
+    exported:
+      exported[0] === undefined
+        ? null
+        : {
+            exportedAt: exported[0].exportedAt,
+            recipient: exported[0].recipient,
+            plaintextSha256: exported[0].plaintextSha256,
+            ciphertextSha256: exported[0].ciphertextSha256,
+          },
+    expectedRecipient: input.expectedRecipient,
     attestedSha256: input.attestedSha256,
-    emptyArchive: input.emptyArchive,
   };
 }
 
@@ -170,10 +268,10 @@ export const describeContract = (verdict: ContractVerdict): string => {
   if (!verdict.ok) return verdict.reason;
   if (!verdict.archived)
     return `the contract gate passes: the store was switched at ${verdict.switchedAt.toISOString()} and this install never absorbed a custom resource, so it has no archive to attest`;
-  return `the contract gate passes: switched at ${verdict.switchedAt.toISOString()}, archive sha256 ${verdict.sha256} attested, ${
-    verdict.backupRef === null
-      ? "no object store, so the operator's encrypted file is the only copy"
-      : `object-store copy ${verdict.backupRef}`
+  return `the contract gate passes: switched at ${verdict.switchedAt.toISOString()}, the operator's export of ${verdict.exportedAt.toISOString()} to ${verdict.recipient} is attested, and ${
+    verdict.objectStoreVerified
+      ? `the object-store copy ${verdict.backupRef} reads back to the same bytes`
+      : "no object store is configured, so the operator's encrypted file is the only copy"
   }`;
 };
 
@@ -189,10 +287,23 @@ export const describeContract = (verdict: ContractVerdict): string => {
  */
 export const deleteCrsRefusal = (
   marker: Record<string, string> | null,
-): string | null =>
-  marker?.[CONTRACT_MARKER_KEY]
-    ? null
-    : "this install's marker records no passing contract gate (contract-at). Deploy the contract release first: its api-server writes that stamp only once the rollback window has closed and the archive is attested.";
+  options: { now?: Date; rehearsal?: boolean } = {},
+): string | null => {
+  const contracted = marker?.[CONTRACT_MARKER_KEY];
+  if (!contracted)
+    return "this install's marker records no passing contract gate (contract-at). Deploy the contract release first: its api-server writes that stamp only once the rollback window has closed and the archive is attested.";
+  if (!options.rehearsal) {
+    if (marker?.[CONTRACT_REHEARSAL_KEY] === CONTRACT_REHEARSAL_VALUE)
+      return "this install's contract gate ran on a rehearsal clock (contract-clock: rehearsal), so its window was not the real one: a rehearsal cluster passes --rehearsal, an install never has one.";
+    const at = Date.parse(contracted);
+    const now = (options.now ?? new Date()).getTime();
+    if (Number.isNaN(at))
+      return `the marker's contract-at is not a timestamp: ${contracted}`;
+    if (at > now)
+      return "the marker's contract-at is in the future: the gate did not run on the real clock, and a window that has not closed is not one to delete custom resources on.";
+  }
+  return null;
+};
 
 export async function deleteCustomResources(deps: {
   list: (plural: string) => Promise<Array<{ name: string }>>;
