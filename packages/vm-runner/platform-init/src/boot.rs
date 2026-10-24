@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
@@ -485,12 +485,19 @@ fn fresh_root(disk: &Path, machine: &vm::Machine) {
         }
         (Some(reason), None) => announce(&format!("booting on a fresh root: {reason}")),
     }
-    if let Err(e) = layers.fresh_scratch(&machine.image, stamp) {
+    let stager = Path::new(guest::STAGE0_SHARE).join(
+        Path::new(guest::UNPACKED_AS_PATH)
+            .strip_prefix(guest::SHARE_PATH)
+            .expect("the stager's record is in the share"),
+    );
+    let owners = image_read_as_root(&machine.image, &stager);
+    let image = owners.as_deref().unwrap_or(&machine.image);
+    if let Err(e) = layers.fresh_scratch(image, stamp) {
         fatal!("{e}");
     }
     let accounts = machine.image.with_file_name("accounts");
-    let mut lowers = vec![machine.image.as_path()];
-    match accounts_layer(&machine.image, &accounts) {
+    let mut lowers = vec![image];
+    match accounts_layer(image, &accounts) {
         Ok(true) => lowers.insert(0, &accounts),
         Ok(false) => {}
         Err(e) => logf!(
@@ -530,6 +537,200 @@ fn fresh_root(disk: &Path, machine: &vm::Machine) {
         "what the image writes outside {} stays until the machine boots another image",
         guest::AGENT_HOME
     );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the image tree as the guest must read it: the tree itself when the runner staged nothing about an unprivileged unpack, which is every tree a runner in the cluster unpacks as root, or a view of it that turns the one owner the host runner's unprivileged unpack gave every file into the guest's root. The host runner cannot restore an image's owners on a Mac, so ssh, sudo and sudoers refuse their configuration as not root's; one owner and one mapping repair the whole tree without copying it. The owner comes from the stager's positive record and never from the tree's own metadata: a privileged unpack can leave a foreign-owned top directory over files it kept root's, and mapping those would turn the system files this repair is for into nobody. A kernel or platform that cannot map the tree is a warning and the tree as it is: a machine without root-owned configuration still runs, and a boot that fails would lose the agent's work.
+fn image_read_as_root(image: &Path, marker: &Path) -> Option<PathBuf> {
+    let owner = match unpacked_without_privilege(marker) {
+        Ok(Some(owner)) => owner,
+        Ok(None) => return None,
+        Err(e) => {
+            logf!(
+                "WARNING: reading {} ({e}); the image's files keep the owners the stager gave them",
+                marker.display()
+            );
+            return None;
+        }
+    };
+    match idmapped(image, owner) {
+        Ok(view) => Some(view),
+        Err(e) => {
+            logf!(
+                "WARNING: reading {} as root ({e}); ssh and sudo may refuse its files as not root's",
+                image.display()
+            );
+            None
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the uid and gid the stager unpacked a tree as, from the record it wrote beside that tree: one line, two numbers. Nothing is when the record is absent, which is how a tree unpacked with privilege asks for no mapping, and an unreadable or malformed record is an error the caller warns about and boots without, since a record nobody can read is no proof of who owns the tree.
+fn unpacked_without_privilege(marker: &Path) -> io::Result<Option<(u32, u32)>> {
+    let text = match fs::read_to_string(marker) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut ids = text.split_whitespace();
+    let owner = ids.next().and_then(|id| id.parse().ok());
+    let gid = ids.next().and_then(|id| id.parse().ok());
+    match (owner, gid) {
+        (Some(uid), Some(gid)) if ids.next().is_none() => Ok(Some((uid, gid))),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a record that is not a uid and a gid",
+        )),
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a clone of the image mount whose files the guest reads as root's. A mount is idmapped by a user namespace instead of by a chown: the VMM shares the tree read-only, so nothing in the guest may write it, and a mapping costs no copy. The mapping holds one id, `owner`, so every file the stager's unprivileged unpack made its own reads as root's; a file of another owner reads as nobody rather than as a wrong owner, and restoring an image's named owners instead takes a manifest of them and a copy-up of its metadata, which no platform image needs today.
+fn idmapped(image: &Path, owner: (u32, u32)) -> io::Result<PathBuf> {
+    let (userns, _child) = one_owner_namespace(owner)?;
+    let tree = cloned_mount(image)?;
+    set_idmap(&tree, &userns)?;
+    let view = image.with_file_name("image-owners");
+    mkdir_all(&view)?;
+    move_mount(&tree, &view)?;
+    announce(&format!(
+        "the image's files are owned by {}:{}, as the host runner unpacked them; the guest reads them as root's",
+        owner.0, owner.1
+    ));
+    Ok(view)
+}
+
+const MOUNT_ATTR_IDMAP: u64 = 0x0010_0000;
+const OPEN_TREE_CLONE: libc::c_int = 0x01;
+const MOVE_MOUNT_F_EMPTY_PATH: libc::c_int = 0x04;
+const AT_EMPTY_PATH: libc::c_int = 0x1000;
+
+// UNIT_BOUNDARY_DESCRIPTION: mount_setattr(2)'s argument, which libc does not export. The id set and the user namespace are the two fields a mapping uses; the mount keeps its flags, so the view is read-only as the image mount is.
+#[repr(C)]
+struct MountAttr {
+    attr_set: u64,
+    attr_clr: u64,
+    propagation: u64,
+    userns_fd: u64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a child that has unshared a user namespace with one id, kept only until the mount that reads through it has its mapping: `fork` is the one way into a namespace, and the mapping must be written by a process that still holds CAP_SETUID over the id, which after the unshare only the parent does. The child makes no call that a fork may not, and a signal this process blocked is no obstacle to the SIGKILL that ends it. The mapping outlives the child: the mount holds its own reference to the namespace.
+fn one_owner_namespace(owner: (u32, u32)) -> io::Result<(OwnedFd, Child)> {
+    let mut ready = [0; 2];
+    // SAFETY: pipe2 writes two descriptors into the array, which holds exactly two, and reads nothing else.
+    if unsafe { libc::pipe2(ready.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fork takes no arguments; the child below only unshares, writes to its own pipe and sleeps.
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        let e = io::Error::last_os_error();
+        // SAFETY: both descriptors are this process's own and are closed once.
+        unsafe {
+            libc::close(ready[0]);
+            libc::close(ready[1]);
+        }
+        return Err(e);
+    }
+    if pid == 0 {
+        // SAFETY: the child closes its parent's end and writes one byte to its own; nothing outlives the call.
+        unsafe {
+            libc::close(ready[0]);
+            if libc::unshare(libc::CLONE_NEWUSER) == 0 {
+                libc::write(ready[1], b"1".as_ptr().cast(), 1);
+            }
+            libc::close(ready[1]);
+            loop {
+                libc::pause();
+            }
+        }
+    }
+    let child = Child(pid);
+    // SAFETY: the parent keeps the read end, which it closes once.
+    unsafe { libc::close(ready[1]) };
+    let mut unshared = 0u8;
+    // SAFETY: the read end is closed below, the buffer is one byte, and the child writes at most one.
+    let read = unsafe { libc::read(ready[0], (&mut unshared as *mut u8).cast(), 1) };
+    // SAFETY: the same read end, closed once.
+    unsafe { libc::close(ready[0]) };
+    if read != 1 {
+        return Err(io::Error::other(
+            "the guest could not create the namespace that reads the image's files as root's",
+        ));
+    }
+    let proc = |file: &str| format!("/proc/{pid}/{file}");
+    fs::write(proc("setgroups"), b"deny")?;
+    fs::write(proc("uid_map"), format!("{} 0 1\n", owner.0))?;
+    fs::write(proc("gid_map"), format!("{} 0 1\n", owner.1))?;
+    let userns = File::open(proc("ns/user"))?;
+    Ok((userns.into(), child))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the child a mapping was read from, ended and reaped when the mapping is no longer needed. A child of the guest's init is nobody's to reap but this process, and one left alive would hold the namespace open for the machine's whole life.
+struct Child(libc::pid_t);
+
+impl Drop for Child {
+    fn drop(&mut self) {
+        // SAFETY: the pid is this process's own child and nothing else waits for it; kill and waitpid read no memory.
+        unsafe {
+            libc::kill(self.0, libc::SIGKILL);
+            libc::waitpid(self.0, std::ptr::null_mut(), 0);
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a detached copy of a mount, which is the only kind a mapping may be set on: the image mount itself stays where the VMM put it, and the overlay reads the copy.
+fn cloned_mount(path: &Path) -> io::Result<OwnedFd> {
+    let path = cstring(path.as_os_str())?;
+    // SAFETY: `path` is NUL-terminated and outlives the call, and the call returns a descriptor this process owns and closes once.
+    let fd = unsafe {
+        libc::syscall(
+            libc::SYS_open_tree,
+            libc::AT_FDCWD,
+            path.as_ptr(),
+            OPEN_TREE_CLONE,
+        )
+    };
+    succeeded(fd >= 0)?;
+    // SAFETY: the call returned a live descriptor and nothing else holds it.
+    Ok(unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: gives a detached mount `userns` as its idmap, so the ids the filesystem holds are read through the one mapping it names.
+fn set_idmap(mount: &OwnedFd, userns: &OwnedFd) -> io::Result<()> {
+    let attr = MountAttr {
+        attr_set: MOUNT_ATTR_IDMAP,
+        attr_clr: 0,
+        propagation: 0,
+        userns_fd: userns.as_raw_fd() as u64,
+    };
+    // SAFETY: the descriptor names the detached mount, the path is an empty NUL-terminated string with AT_EMPTY_PATH, and `attr` is a live struct of exactly the size given.
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_mount_setattr,
+            mount.as_raw_fd(),
+            c"".as_ptr(),
+            AT_EMPTY_PATH,
+            &attr as *const MountAttr,
+            std::mem::size_of::<MountAttr>(),
+        )
+    };
+    succeeded(rc == 0)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: attaches a detached mount at `target`, which the guest then reads through it.
+fn move_mount(tree: &OwnedFd, target: &Path) -> io::Result<()> {
+    let target = cstring(target.as_os_str())?;
+    // SAFETY: the descriptor names the detached mount, the source path is an empty NUL-terminated string with MOVE_MOUNT_F_EMPTY_PATH, and `target` is NUL-terminated and outlives the call.
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_move_mount,
+            tree.as_raw_fd(),
+            c"".as_ptr(),
+            libc::AT_FDCWD,
+            target.as_ptr(),
+            MOVE_MOUNT_F_EMPTY_PATH,
+        )
+    };
+    succeeded(rc == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the mounts the image's root gets from the VM before the pivot. Each mount point is made in the new root, which is the overlay's upper layer, so an image that lacks one still gets it.
@@ -3935,6 +4136,145 @@ mod tests {
             .store
             .join(format!("var-tmp{DISCARDED_INFIX}1"))
             .exists());
+    }
+
+    // TEST_SCENARIO: the stager's record is the only thing that selects the mapping, so reading it must be exact. An absent file asks for no mapping, one line of two numbers names the owner to map, and anything else asks for nothing rather than a guess. This runs on the ordinary non-root lane, where the selector's behaviour would otherwise go unseen.
+    #[test]
+    fn only_an_unprivileged_unpack_is_recorded() {
+        let dir = TempDir::new("unpacked-as");
+        let marker = dir.path().join("unpacked-as");
+        assert_eq!(
+            unpacked_without_privilege(&marker).unwrap(),
+            None,
+            "a tree without a record asked for a mapping"
+        );
+        fs::write(&marker, b"501 20\n").unwrap();
+        assert_eq!(
+            unpacked_without_privilege(&marker).unwrap(),
+            Some((501, 20))
+        );
+        for bad in [&b""[..], b"501", b"501 20 30", b"a b", b"501 20 extra\n"] {
+            fs::write(&marker, bad).unwrap();
+            assert!(
+                unpacked_without_privilege(&marker).is_err(),
+                "{:?} read as an owner",
+                String::from_utf8_lossy(bad)
+            );
+        }
+    }
+
+    // TEST_SCENARIO: only a tree the stager recorded as unpacked without privilege is read as root's. A privileged unpack can leave a foreign-owned top directory over files it kept root's, and mapping that tree would turn those files into nobody, which is the failure this repair exists to remove; so a top directory's owner selects nothing, and the record alone does. With the record, the one owner it names reads as root, the view stays read-only, and an overlay copies a file up with the owner the guest reads. Root only: it clones and idmaps a mount, which needs CAP_SYS_ADMIN.
+    #[test]
+    #[ignore]
+    fn a_tree_is_mapped_only_where_the_stager_recorded_an_unprivileged_unpack() {
+        use std::os::unix::fs::chown;
+        let dir = TempDir::new("image-owners");
+        let image = dir.path().join("image");
+        fs::create_dir_all(&image).unwrap();
+        fs::write(image.join("f"), b"x").unwrap();
+        let marker = dir.path().join("unpacked-as");
+
+        chown(&image, Some(1000), Some(1000)).unwrap();
+        assert_eq!(fs::metadata(image.join("f")).unwrap().uid(), 0);
+        assert!(
+            image_read_as_root(&image, &marker).is_none(),
+            "a foreign-owned top directory selected a mapping without a record: the root-owned file below it would read as nobody"
+        );
+
+        chown(&image, Some(0), Some(20)).unwrap();
+        assert!(
+            image_read_as_root(&image, &marker).is_none(),
+            "a foreign group selected a mapping without a record"
+        );
+
+        chown(&image, Some(501), Some(20)).unwrap();
+        chown(image.join("f"), Some(501), Some(20)).unwrap();
+        fs::write(&marker, b"501 20\n").unwrap();
+        let read_only = dir.path().join("image-read-only");
+        fs::create_dir_all(&read_only).unwrap();
+        // SAFETY: both paths are this test's own, and mount(2) reads only the strings it is given.
+        unsafe {
+            let from = cstring(image.as_os_str()).unwrap();
+            let to = cstring(read_only.as_os_str()).unwrap();
+            assert_eq!(
+                libc::mount(
+                    from.as_ptr(),
+                    to.as_ptr(),
+                    std::ptr::null(),
+                    libc::MS_BIND,
+                    std::ptr::null()
+                ),
+                0,
+                "binding the tree read-only: {}",
+                io::Error::last_os_error()
+            );
+            assert_eq!(
+                libc::mount(
+                    std::ptr::null(),
+                    to.as_ptr(),
+                    std::ptr::null(),
+                    libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY,
+                    std::ptr::null()
+                ),
+                0,
+                "making the binding read-only: {}",
+                io::Error::last_os_error()
+            );
+        }
+        let view = image_read_as_root(&read_only, &marker)
+            .expect("a recorded unprivileged unpack is read as root");
+        let read = fs::metadata(view.join("f")).unwrap();
+        assert_eq!(
+            (read.uid(), read.gid()),
+            (0, 0),
+            "a file of the host runner's tree read as {}:{}",
+            read.uid(),
+            read.gid()
+        );
+        assert_eq!(
+            fs::write(view.join("f"), b"y").unwrap_err().raw_os_error(),
+            Some(libc::EROFS),
+            "the view of a read-only image mount was writable"
+        );
+
+        let upper = dir.path().join("upper");
+        let work = dir.path().join("work");
+        let merged = dir.path().join("merged");
+        for at in [&upper, &work, &merged] {
+            fs::create_dir_all(at).unwrap();
+        }
+        let options = format!(
+            "lowerdir={},upperdir={},workdir={},metacopy=off",
+            view.display(),
+            upper.display(),
+            work.display()
+        );
+        vm::mount_typed("overlay", &merged, "overlay", 0, &options)
+            .expect("mounting an overlay on the mapped view");
+        fs::write(merged.join("f"), b"z").unwrap();
+        let copied = fs::metadata(upper.join("f")).unwrap();
+        assert_eq!(
+            (copied.uid(), copied.gid()),
+            (0, 0),
+            "an overlay copied a file up as {}:{}",
+            copied.uid(),
+            copied.gid()
+        );
+        // SAFETY: every path here is this test's own mount point, and umount2 reads only the path it is given.
+        unsafe {
+            libc::umount2(
+                cstring(merged.as_os_str()).unwrap().as_ptr(),
+                libc::MNT_DETACH,
+            );
+            libc::umount2(
+                cstring(view.as_os_str()).unwrap().as_ptr(),
+                libc::MNT_DETACH,
+            );
+            libc::umount2(
+                cstring(read_only.as_os_str()).unwrap().as_ptr(),
+                libc::MNT_DETACH,
+            );
+        }
     }
 
     struct TempDir(PathBuf);
