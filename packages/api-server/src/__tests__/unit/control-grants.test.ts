@@ -169,6 +169,29 @@ describe("control grant reconcile", () => {
     }
   });
 
+  // TEST_SCENARIO: The controller records its half of the switch's barrier in the store row: the pod that holds the Lease and the moment every Agent's anchor existed. It may write those two columns and nothing else on the row, so the absorb's report and the backup reference stay the api-server's.
+  it("lets the controller record the anchor pass and nothing else on the store row", async () => {
+    const { db, executed } = fakeDb(catalogReply({}));
+
+    await reconcileControlGrants(db);
+
+    const updates = grants(executed).filter(
+      (text) =>
+        text.includes("UPDATE") && text.includes('"control"."agent_store"'),
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toContain('"controller_holder"');
+    expect(updates[0]).toContain('"anchors_ensured_at"');
+    for (const withheld of [
+      "absorb_report",
+      "backup_ref",
+      "absorbed_at",
+      "switch_completed_at",
+    ]) {
+      expect(updates[0]).not.toContain(`"${withheld}"`);
+    }
+  });
+
   // TEST_SCENARIO: Three surfaces must stay unreachable however the grants are edited: the kit bookkeeping the api-server owns, the snapshot archive that holds the pre-move credentials, and the connection itself, whose credentials and inputs the controller never sees. It reads the connection-grant projection instead.
   it("never grants the api-server's own tables or the connection", async () => {
     const { db, executed } = fakeDb(catalogReply({}));

@@ -149,10 +149,10 @@ func hydrate(namespace string, row agentRow, children agentChildren) *unstructur
 		spec["storageSize"] = disk
 	}
 	if len(children.hosts) > 0 {
-		spec["l7Hosts"] = children.hosts
+		spec["l7Hosts"] = anyList(children.hosts)
 	}
 	if len(children.grants) > 0 {
-		spec["grantedConnectionIds"] = children.grants
+		spec["grantedConnectionIds"] = anyList(children.grants)
 	}
 
 	status := map[string]any{}
@@ -170,7 +170,7 @@ func hydrate(namespace string, row agentRow, children agentChildren) *unstructur
 		for _, condition := range children.conditions {
 			conditions = append(conditions, map[string]any{
 				"type":               condition.Type,
-				"status":             condition.Status,
+				"status":             string(condition.Status),
 				"reason":             condition.Reason,
 				"message":            condition.Message,
 				"observedGeneration": condition.ObservedGeneration,
@@ -218,6 +218,15 @@ func diskOf(row agentRow) string {
 		return floor.String()
 	}
 	return *row.DiskSize
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an unstructured object holds only JSON values, and a []string is not one. Everything below that reads it deep-copies the map, which panics on anything else.
+func anyList(values []string) []any {
+	out := make([]any, len(values))
+	for i, value := range values {
+		out[i] = value
+	}
+	return out
 }
 
 func putTime(into map[string]any, key string, value *time.Time) {

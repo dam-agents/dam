@@ -1763,9 +1763,10 @@ apiServer:
 # switch writes into the agent namespace.
 agentStore:
   # -- Which store is authoritative: `crd` (the custom resources) or
-  # `postgres`. This chart serves `crd` only — no binary in it reads Postgres,
-  # so `postgres` fails the render rather than crash-looping both components.
-  # The switch release removes that refusal.
+  # `postgres`. Both components read the rows in this release; either mode is
+  # served only once the store's marker and its absorb stamp agree with it, so a
+  # Postgres render before the switch refuses to start rather than serve half a
+  # fleet.
   authority: crd
   # -- Log, at api-server startup, what an absorb would write: which records
   # would become rows, which would be refused and why, what the move would drop,

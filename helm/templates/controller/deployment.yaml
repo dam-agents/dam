@@ -50,6 +50,10 @@ spec:
                   key: POSTGRES_CONTROLLER_PASSWORD
             - name: PLATFORM_DATABASE_URL
               value: {{ include "platform.controller.postgres.dsn" . | quote }}
+            {{- if .Values.apiServer.db.caCert }}
+            - name: PLATFORM_DATABASE_CA_CERT_PATH
+              value: /etc/platform/pg-ca/ca.crt
+            {{- end }}
             {{- end }}
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
@@ -198,3 +202,15 @@ spec:
                   fieldPath: metadata.name
           resources:
             {{- toYaml .Values.controller.resources | nindent 12 }}
+          {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}
+          volumeMounts:
+            - name: pg-ca
+              mountPath: /etc/platform/pg-ca
+              readOnly: true
+          {{- end }}
+      {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}
+      volumes:
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-db-ca
+      {{- end }}
