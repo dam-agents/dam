@@ -96,7 +96,7 @@ it("caps the count at 9+", () => {
   );
 });
 
-// TEST_SCENARIO: An Agent's configuration keeps a tab of its own beside the chat, so Connections, Channels, Skills and Schedules open without leaving the conversation; each tab shows its own name and is reachable by the keyboard.
+// TEST_SCENARIO: An Agent's configuration keeps a tab of its own beside the chat, so Connections, Channels, Skills and Schedules open without leaving the conversation; each tab shows its own name, above the tabs that belong to every page.
 it("lists the Agent's configuration tabs", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -118,13 +118,16 @@ it("lists the Agent's configuration tabs", () => {
     expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
     expect(html).toContain(`aria-label="${label}"`);
   }
-  const order = ["processes", "connections", "channels", "skills", "schedules"]
-    .map((tab) => html.indexOf(`data-testid="side-panel-tab-${tab}"`))
-    .concat(html.indexOf("mt-auto"));
-  expect(order.slice(0, 5)).toEqual(
-    [...order.slice(0, 5)].sort((a, b) => a - b),
-  );
+  const order = [
+    "processes",
+    "connections",
+    "channels",
+    "skills",
+    "schedules",
+    "getting-started",
+  ].map((tab) => html.indexOf(`data-testid="side-panel-tab-${tab}"`));
   expect(order[0]).toBeGreaterThan(-1);
+  expect(order).toEqual([...order].sort((a, b) => a - b));
 });
 
 // TEST_SCENARIO: The icon bar lists the views by how often users reach for them, Artifacts first.

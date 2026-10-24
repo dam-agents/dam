@@ -1,3 +1,5 @@
+import { createContext } from "react";
+
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
@@ -5,10 +7,17 @@ import type { AgentChange } from "../lib/agent-change.js";
 import { SIDE_PANEL_TABS } from "./side-panel-bar.js";
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: whether a transcript shows what an Agent changed
+ * on itself. The chat sets it from the experiment's flag, and a delegation
+ * transcript sets it false, because the changes in it belong to the sub-agent
+ * and no tab of the driver's panel holds them.
+ */
+export const AgentChangeCards = createContext(false);
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: the one-click way from the Agent's tool call to
- * the item it made, in the side panel tab that holds it. It opens the tab the
- * change belongs to and points the panel at the item's id, so the panel shows
- * the new schedule rather than the top of a list.
+ * the side panel tab that holds the item it made. A schedule is also focused:
+ * the panel expands it, opening its Past group when it sits there.
  */
 export function AgentChangeCard({ change }: { change: AgentChange }) {
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
@@ -20,10 +29,13 @@ export function AgentChangeCard({ change }: { change: AgentChange }) {
       variant="outline"
       size="sm"
       data-testid="agent-change-card"
-      aria-label={`Open ${change.kind} ${change.name}`}
       className="h-auto w-full justify-start gap-2 py-2 text-left font-normal"
       onClick={() => {
-        setSidePanelFocus({ tab: change.tab, id: change.id });
+        setSidePanelFocus(
+          change.tab === "schedules"
+            ? { tab: change.tab, id: change.id }
+            : null,
+        );
         setSidePanelTab(change.tab);
       }}
     >

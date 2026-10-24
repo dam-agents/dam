@@ -5,6 +5,7 @@ import { Modal } from "@/components/modal";
 import type { Schedule } from "../../../types.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import type { ExactCronConversion } from "../lib/cron-conversion.js";
+import type { CreatedSchedule } from "../lib/just-ask.js";
 import { ConvertCronStep } from "./convert-cron-step.js";
 import { CronScheduleForm } from "./cron-schedule-form.js";
 import { OnceScheduleForm } from "./once-schedule-form.js";
@@ -19,7 +20,7 @@ interface Props {
   agentId: string;
   existing?: Schedule;
   onClose: () => void;
-  onCreated?: (draft: { rrule: string; task: string }) => void;
+  onCreated?: (draft: CreatedSchedule) => void;
 }
 
 interface Converting {

@@ -14,11 +14,11 @@ function chip(title: string, output: string, status = "completed"): ToolChip {
   };
 }
 
-// TEST_SCENARIO: the Agent creates a schedule through the platform's MCP server; the chat can name it and open it because the tool's result carries the id and the name.
+// TEST_SCENARIO: the Agent creates a schedule through the platform's own MCP server; the chat can name it and open it because the tool's result carries the id and the name.
 it("reads a created schedule from the tool result", () => {
   const change = agentChangeOf(
     chip(
-      "mcp__platform__create_schedule",
+      "mcp__platform-outbound__create_schedule",
       JSON.stringify({ id: "sched-1", name: "Daily triage" }),
     ),
   );
@@ -36,7 +36,7 @@ it("reads a one-time schedule and a toggle", () => {
   expect(
     agentChangeOf(
       chip(
-        "mcp__platform__schedule_once",
+        "mcp__platform-outbound__schedule_once",
         JSON.stringify({ id: "sched-2", name: "Check the build" }),
       ),
     )?.verb,
@@ -44,7 +44,7 @@ it("reads a one-time schedule and a toggle", () => {
   expect(
     agentChangeOf(
       chip(
-        "mcp__platform__toggle_schedule",
+        "mcp__platform-outbound__toggle_schedule",
         JSON.stringify({
           id: "sched-3",
           name: "Weekly review",
@@ -60,7 +60,7 @@ it("reads an installed skill from its answer", () => {
   expect(
     agentChangeOf(
       chip(
-        "mcp__platform__install_skill",
+        "mcp__platform-outbound__install_skill",
         "Installed release-notes @ 4f2a1c3b. Agent now has 2 skill(s).",
       ),
     ),
@@ -78,15 +78,19 @@ it("has no card without an item the chat can open", () => {
   const created = JSON.stringify({ id: "sched-1", name: "Daily triage" });
   expect(
     agentChangeOf(
-      chip("mcp__platform__create_schedule", created, "in_progress"),
+      chip("mcp__platform-outbound__create_schedule", created, "in_progress"),
     ),
   ).toBe(null);
   expect(
-    agentChangeOf(chip("mcp__platform__create_schedule", created, "failed")),
+    agentChangeOf(
+      chip("mcp__platform-outbound__create_schedule", created, "failed"),
+    ),
   ).toBe(null);
   expect(
-    agentChangeOf(chip("mcp__platform__create_schedule", "not json")),
+    agentChangeOf(chip("mcp__platform-outbound__create_schedule", "not json")),
   ).toBe(null);
-  expect(agentChangeOf(chip("mcp__platform__list_schedules", "[]"))).toBe(null);
+  expect(
+    agentChangeOf(chip("mcp__platform-outbound__list_schedules", "[]")),
+  ).toBe(null);
   expect(agentChangeOf(chip("Bash", created))).toBe(null);
 });

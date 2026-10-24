@@ -6,6 +6,7 @@ import type { SidePanelTab } from "../lib/side-panel.js";
 
 export interface JustAskHint {
   agentId: string;
+  sessionId: string | null;
   prompt: string;
 }
 

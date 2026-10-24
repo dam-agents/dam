@@ -1,9 +1,30 @@
-import { ALL_DAYS, detectPreset, type FrequencyPreset } from "api-server-api";
+import {
+  ALL_DAYS,
+  buildRRule,
+  detectPreset,
+  type FrequencyPreset,
+} from "api-server-api";
+import { match } from "ts-pattern";
 
-const DAY_NAMES = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_NAMES = [
+  "",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const WEEKEND = [6, 7];
-const TASK_MAX = 100;
+
+export interface CreatedSchedule {
+  rrule: string;
+  timezone: string;
+  task: string;
+  advanced: boolean;
+}
 
 function timeOf(hour: number, minute: number): string {
   const h = hour % 12 === 0 ? 12 : hour % 12;
@@ -26,34 +47,12 @@ function sameDays(
 function daysOf(days: readonly number[]): string {
   if (sameDays(days, ALL_DAYS)) return "daily";
   if (sameDays(days, WEEKDAYS)) return "every weekday";
-  if (sameDays(days, WEEKEND)) return "every weekend day";
+  if (sameDays(days, WEEKEND)) return "on weekends";
   if (days.length === 1) return `every ${DAY_NAMES[days[0] ?? 1]}`;
   return `on ${days
     .map((d) => DAY_NAMES[d] ?? "")
     .filter(Boolean)
     .join(", ")}`;
-}
-
-function lowerStart(text: string): string {
-  const [first = ""] = text.split(" ");
-  return first.length > 1 && first.slice(1) === first.slice(1).toLowerCase()
-    ? text.charAt(0).toLowerCase() + text.slice(1)
-    : text;
-}
-
-function shortTask(task: string): string {
-  const first =
-    task
-      .trim()
-      .split(/\n/)[0]
-      ?.split(/(?<=[.!?])\s/)[0] ?? "";
-  const text = first
-    .replace(/\s+/g, " ")
-    .replace(/[.!?]+$/, "")
-    .trim();
-  if (text.length <= TASK_MAX) return text;
-  const cut = text.slice(0, TASK_MAX);
-  return `${cut.slice(0, cut.lastIndexOf(" ")) || cut}…`;
 }
 
 function every(interval: number, unit: string): string {
@@ -62,32 +61,46 @@ function every(interval: number, unit: string): string {
     : `every ${String(interval)} ${unit}s`;
 }
 
-function cadenceOf(preset: FrequencyPreset): string | null {
-  switch (preset.kind) {
-    case "daily":
-      return `${timeOf(preset.hour, preset.minute)} ${daysOf(preset.days)}`;
-    case "hourly":
-      return sameDays(preset.days, ALL_DAYS)
-        ? every(preset.interval, "hour")
-        : null;
-    case "minutely":
-      return sameDays(preset.days, ALL_DAYS)
-        ? every(preset.interval, "minute")
-        : null;
-    case "custom":
-      return null;
-  }
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the cadence in the user's own terms, with the zone
+ * the form saved for a time of day, because a bare "3pm" means another schedule
+ * to an Agent that thinks in UTC. A cadence the presets do not name gets none.
+ */
+function cadenceOf(preset: FrequencyPreset, timezone: string): string | null {
+  return match(preset)
+    .with({ kind: "daily" }, (p) =>
+      timezone === ""
+        ? null
+        : `${timeOf(p.hour, p.minute)} ${timezone} ${daysOf(p.days)}`,
+    )
+    .with({ kind: "hourly" }, (p) =>
+      sameDays(p.days, ALL_DAYS) ? every(p.interval, "hour") : null,
+    )
+    .with({ kind: "minutely" }, (p) =>
+      sameDays(p.days, ALL_DAYS) ? every(p.interval, "minute") : null,
+    )
+    .with({ kind: "custom" }, () => null)
+    .exhaustive(() => null);
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the shortest sentence that gives a schedule back
- * when it is typed into the chat instead of filled into the form: its cadence
- * in the user's own terms and the task it runs. Cadences no preset describes
- * have no reliable prompt, so they get none rather than a wrong one.
+ * when it is typed into the chat instead of filled into the form: its cadence,
+ * its zone and its whole task. It emits nothing when any part of the schedule
+ * is one the sentence cannot carry — an advanced field the form set, or an
+ * rrule the presets only partly describe — because a prompt that builds another
+ * schedule is worse than no prompt.
  */
-export function justAskPrompt(rrule: string, task: string): string | null {
-  const when = cadenceOf(detectPreset(rrule));
-  const what = lowerStart(shortTask(task));
-  if (when === null || what === "") return null;
+export function justAskPrompt({
+  rrule,
+  timezone,
+  task,
+  advanced,
+}: CreatedSchedule): string | null {
+  const preset = detectPreset(rrule);
+  if (buildRRule(preset) !== rrule) return null;
+  const when = cadenceOf(preset, timezone);
+  const what = task.replace(/\s+/g, " ").trim();
+  if (advanced || when === null || what === "") return null;
   return `${when} ${what}`;
 }

@@ -1,3 +1,5 @@
+import { match } from "ts-pattern";
+
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -25,7 +27,8 @@ export function isConfigPanelTab(
  * panel, from the sections its configuration page already renders. The panel
  * supplies the heading and the scrolling, so each section keeps one
  * implementation and one set of forms whether it is opened from the page or
- * from the conversation.
+ * from the conversation, and every way out of it leads back to the
+ * conversation rather than to the configuration page.
  */
 export function ConfigSidePanel({
   tab,
@@ -39,37 +42,43 @@ export function ConfigSidePanel({
   onResumeSession: (sessionId: string) => void;
 }) {
   const showJustAskHint = useStore((s) => s.showJustAskHint);
+  const sessionId = useStore((s) => s.sessionId);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setSidePanelFocus = useStore((s) => s.setSidePanelFocus);
   const focus = useStore((s) => s.sidePanelFocus);
 
   return (
     <SidebarSection title={CONFIG_PANEL_TITLES[tab]} open className="flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        {tab === "connections" ? (
-          <ConnectionsSection
-            agentId={agentId}
-            header={() => null}
-            oauthReturnView={routeToPath({
-              view: "sandbox-home",
-              agentId,
-              sandboxSection: "connections",
-            })}
-          />
-        ) : tab === "channels" ? (
-          <SandboxChannelsSection agentId={agentId} />
-        ) : tab === "skills" ? (
-          <SandboxSkillsSection agent={agent} />
-        ) : (
-          <SchedulesPanel
-            agentId={agentId}
-            header={() => null}
-            onResumeSession={onResumeSession}
-            focusId={focus?.tab === "schedules" ? focus.id : null}
-            onCreated={({ rrule, task }) => {
-              const prompt = justAskPrompt(rrule, task);
-              if (prompt) showJustAskHint({ agentId, prompt });
-            }}
-          />
-        )}
+        {match(tab)
+          .with("connections", () => (
+            <ConnectionsSection
+              agentId={agentId}
+              header={() => null}
+              oauthReturnView={routeToPath({
+                view: "chat",
+                agent: agentId,
+                ...(sessionId ? { session: sessionId } : {}),
+              })}
+              onGoToChannels={() => setSidePanelTab("channels")}
+            />
+          ))
+          .with("channels", () => <SandboxChannelsSection agentId={agentId} />)
+          .with("skills", () => <SandboxSkillsSection agent={agent} />)
+          .with("schedules", () => (
+            <SchedulesPanel
+              agentId={agentId}
+              header={() => null}
+              onResumeSession={onResumeSession}
+              focusId={focus?.tab === "schedules" ? focus.id : null}
+              onFocusApplied={() => setSidePanelFocus(null)}
+              onCreated={(draft) => {
+                const prompt = justAskPrompt(draft);
+                if (prompt) showJustAskHint({ agentId, sessionId, prompt });
+              }}
+            />
+          ))
+          .exhaustive(() => null)}
       </div>
     </SidebarSection>
   );

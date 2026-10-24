@@ -1,7 +1,7 @@
 const SERVER_PREFIXES = [
-  /^mcp__(?:[A-Za-z0-9-]|_(?!_))+__(?<tool>.+)$/,
-  /^mcp\.[\w-]+\.(?<tool>.+)$/,
-  /^Tool: [\w-]+\/(?<tool>.+)$/,
+  /^mcp__(?<server>(?:[A-Za-z0-9-]|_(?!_))+?)__(?<tool>.+)$/,
+  /^mcp\.(?<server>[\w-]+)\.(?<tool>.+)$/,
+  /^Tool: (?<server>[\w-]+)\/(?<tool>.+)$/,
 ];
 const BOB_LABEL = /^Running (?<tool>[\w ]+) \([\w:-]+\)$/;
 
@@ -72,6 +72,15 @@ export function terminalOutputPart(update: unknown): string | null {
     objectOf(meta?.terminal_output_delta) ?? objectOf(meta?.terminal_output);
   const data = output?.data;
   return typeof data === "string" && data !== "" ? data : null;
+}
+
+export function toolServerOf(title: string): string | null {
+  const trimmed = title.trim();
+  for (const prefix of SERVER_PREFIXES) {
+    const server = prefix.exec(trimmed)?.groups?.server;
+    if (server) return server;
+  }
+  return null;
 }
 
 export function toolNameOf(title: string): string {

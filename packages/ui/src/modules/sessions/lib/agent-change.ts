@@ -1,4 +1,5 @@
-import { toolNameOf } from "agent-runtime-api";
+import { toolNameOf, toolServerOf } from "agent-runtime-api";
+import { PLATFORM_OUTBOUND_MCP_SERVER } from "api-server-api";
 
 import type { ToolChip } from "../../../types.js";
 
@@ -57,13 +58,15 @@ function skillChange(chip: ToolChip): AgentChange | null {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what the Agent changed on itself, read from the
- * tool call the chat already shows: the platform's MCP tools answer with the
- * item's id and name, and no other signal in the conversation names the item.
- * A call that failed, is still running, or answers in a shape not read here
- * gets no card rather than a card nothing stands behind.
+ * tool call the chat already shows: the platform's own MCP server answers with
+ * the item's id and name, and no other signal in the conversation names the
+ * item. A tool of a user's own MCP server that happens to share a name, a call
+ * that failed or is still running, or an answer in a shape not read here gets no
+ * card rather than a card nothing stands behind.
  */
 export function agentChangeOf(chip: ToolChip): AgentChange | null {
   if (chip.status !== "completed") return null;
+  if (toolServerOf(chip.title) !== PLATFORM_OUTBOUND_MCP_SERVER) return null;
   const tool = toolNameOf(chip.title);
   switch (tool) {
     case "create_schedule":

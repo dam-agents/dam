@@ -140,7 +140,9 @@ The bar scrolls when the window is too short to hold every tile, so the bottom o
 The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
 The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.
 With the flag on, an Agent's chat also offers its Connections, Channels, Skills and Schedules, each the section its configuration page already renders, so the settings that apply to the conversation sit beside it.
-A schedule created in that panel makes the chat add the Agent's own line naming the shortest prompt that would have made it, and a tool call that created or changed a schedule or a skill carries a card that opens its tab on that item.
+A schedule created in that panel makes the browser add a line in the Agent's voice naming the shortest prompt that would have made that schedule — its cadence, its zone and its whole task, and nothing at all when the form set an advanced field or typed an rrule the presets only partly describe.
+That line is the browser's own: it is not part of the Session record, it is never sent to the Agent, and it goes when the conversation changes or the user writes again.
+A tool call of the platform's own MCP server that created or changed a schedule or a skill carries a card that opens its tab, and a schedule's card also expands that schedule.
 Both are part of the experiment, so with the flag off the chat shows neither.
 Apart from those four, the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.

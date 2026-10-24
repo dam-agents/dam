@@ -20,6 +20,10 @@ Icons come from `@carbon/icons-react`.
 | Create agent                                                | `Add`                                                    |
 | Create agent from a starter kit                             | `DataEnrichmentAdd`                                      |
 | Starter kits destination, a starter kit                     | `Gift`                                                   |
+| Connections destination, a connection                       | `Plug`                                                   |
+| Channels destination                                        | `LogoSlack`                                              |
+| Skills destination                                          | `ToolKit`                                                |
+| Schedules destination                                       | `EventSchedule`                                          |
 | External link, open in new tab                              | `Launch` (only for a link that leaves the app)           |
 | Back                                                        | `ArrowLeft`                                              |
 | Restart agent                                               | `Restart`                                                |
