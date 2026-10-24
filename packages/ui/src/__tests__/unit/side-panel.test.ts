@@ -46,6 +46,7 @@ const ALL_AVAILABLE = hiddenSidePanelTabs({
   changes: true,
   processesEnabled: true,
   environments: true,
+  configuration: true,
   gettingStarted: true,
 });
 
@@ -88,6 +89,7 @@ describe("which tab the side panel shows", () => {
       changes: true,
       processesEnabled: false,
       environments: false,
+      configuration: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
@@ -102,6 +104,7 @@ describe("which tab the side panel shows", () => {
       changes: false,
       processesEnabled: true,
       environments: true,
+      configuration: true,
       gettingStarted: true,
     });
     expect(ALL_AVAILABLE.has("changes")).toBe(false);
@@ -134,6 +137,7 @@ describe("the Environments tab", () => {
         changes: true,
         processesEnabled: true,
         environments: environmentsTabShown(o),
+        configuration: true,
         gettingStarted: true,
       });
     expect(
@@ -156,6 +160,48 @@ describe("the Environments tab", () => {
   });
 });
 
+describe("an Agent's configuration tabs", () => {
+  it("TEST_SCENARIO: with the Unified right toolbar on, the chat also offers Connections, Channels, Skills and Schedules, each beside its own panel; with the experiment off, or outside an Agent's chat, none of them exists, so a tab left open closes", () => {
+    const available = {
+      agent: true,
+      artifacts: true,
+      canOpenBrowser: true,
+      changes: true,
+      processesEnabled: true,
+      environments: true,
+      gettingStarted: true,
+    };
+    const tabs = ["connections", "channels", "skills", "schedules"] as const;
+    for (const tab of tabs) {
+      expect(
+        visibleSidePanelTab(
+          tab,
+          NOTHING_DOCKED,
+          hiddenSidePanelTabs({ ...available, configuration: true }),
+        ),
+      ).toBe(tab);
+      expect(
+        visibleSidePanelTab(
+          tab,
+          NOTHING_DOCKED,
+          hiddenSidePanelTabs({ ...available, configuration: false }),
+        ),
+      ).toBe(null);
+      expect(
+        visibleSidePanelTab(
+          tab,
+          NOTHING_DOCKED,
+          hiddenSidePanelTabs({
+            ...available,
+            agent: false,
+            configuration: true,
+          }),
+        ),
+      ).toBe(null);
+    }
+  });
+});
+
 describe("the panels outside an Agent's chat", () => {
   it("TEST_SCENARIO: a page that is not an Agent's chat offers only Get started and Approvals, so an Agent's tab left open there shows nothing, and Artifacts stays on the Artifacts page instead of opening a second time", () => {
     const hidden = hiddenSidePanelTabs({
@@ -165,6 +211,7 @@ describe("the panels outside an Agent's chat", () => {
       changes: false,
       processesEnabled: true,
       environments: true,
+      configuration: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
@@ -186,6 +233,7 @@ describe("the panels outside an Agent's chat", () => {
       changes: true,
       processesEnabled: true,
       environments: true,
+      configuration: true,
       gettingStarted: false,
     });
     expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(

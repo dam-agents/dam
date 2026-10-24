@@ -131,6 +131,7 @@ import {
   useHarnessCatalogModels,
   useProviderConnections,
 } from "../api/session-pair.js";
+import { AgentChangeCards } from "../components/agent-change-card.js";
 import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
@@ -139,10 +140,15 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import {
+  ConfigSidePanel,
+  isConfigPanelTab,
+} from "../components/config-side-panel.js";
+import {
   ContinuedFromPrelude,
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
 import { CurveBenderAlert } from "../components/curve-bender-alert.js";
+import { JustAskHint } from "../components/just-ask-hint.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -293,9 +299,17 @@ export function ChatView() {
   );
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openAgentSession = useStore((s) => s.openAgentSession);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
+  const justAskHint = useStore((s) => s.justAskHint);
+  const dismissJustAskHint = useStore((s) => s.dismissJustAskHint);
+  // UNIT_BOUNDARY_DESCRIPTION: the hint is the browser's own line about one schedule in one conversation, so it goes when the conversation changes or the user writes again, rather than trailing every session of the Agent.
+  useEffect(
+    () => dismissJustAskHint(),
+    [selectedAgent, sessionId, dismissJustAskHint],
+  );
   const hasPendingPermission = useHasPendingPermission();
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
@@ -734,6 +748,7 @@ export function ChatView() {
         count: environments.data?.length,
       }) ||
       (environments.isLoading && sidePanelTab === "environments"),
+    configuration: rightToolbar,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
@@ -1079,6 +1094,18 @@ export function ChatView() {
                   claimed={delegationOwners}
                 />
               )}
+              {rightToolbar &&
+                justAskHint &&
+                justAskHint.agentId === selectedAgent &&
+                justAskHint.sessionId === sessionId &&
+                agentView && (
+                  <JustAskHint
+                    hint={justAskHint}
+                    agentName={agentView.name}
+                    avatar={agentView.avatar}
+                    onDismiss={dismissJustAskHint}
+                  />
+                )}
               <QueuedPrompts onFileClick={openFileHandler} />
               {telemetryEnabled && sessionTurns.isError && (
                 <p className="py-1 text-2xs text-muted-foreground/70">
@@ -1124,7 +1151,10 @@ export function ChatView() {
             textareaRef={textareaRef}
             busy={busy}
             loadingSession={loadingSession}
-            onSend={sendPrepared}
+            onSend={(text, attachments) => {
+              dismissJustAskHint();
+              return sendPrepared(text, attachments);
+            }}
             onStop={stopAgent}
             onTakeBack={takeBack}
             blockedReason={block?.reason ?? null}
@@ -1299,6 +1329,15 @@ export function ChatView() {
               {activeTab === "environments" && selectedAgent && (
                 <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
               )}
+              {isConfigPanelTab(activeTab) && selectedAgent && agentView && (
+                <ConfigSidePanel
+                  key={activeTab}
+                  tab={activeTab}
+                  agent={agentView}
+                  agentId={selectedAgent}
+                  onResumeSession={(id) => openAgentSession(selectedAgent, id)}
+                />
+              )}
             </>
           }
           dock={dockPanel}
@@ -1382,7 +1421,9 @@ export function ChatView() {
             </header>
           )}
           <div className="empty:hidden">{notices}</div>
-          {conversation}
+          <AgentChangeCards.Provider value={rightToolbar}>
+            {conversation}
+          </AgentChangeCards.Provider>
         </SidePanelShell>
       ) : (
         <ClassicChatLayout
@@ -1462,7 +1503,9 @@ export function ChatView() {
             setMobileScreen("chat");
           }}
         >
-          {conversation}
+          <AgentChangeCards.Provider value={rightToolbar}>
+            {conversation}
+          </AgentChangeCards.Provider>
         </ClassicChatLayout>
       )}
 

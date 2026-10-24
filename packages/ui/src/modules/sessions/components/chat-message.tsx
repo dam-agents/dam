@@ -4,6 +4,7 @@ import {
   memo,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,7 +14,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import type { Message } from "../../../types.js";
+import type { Message, ToolChip } from "../../../types.js";
 import { partKey } from "../../a2ui/lib/collect-blocks.js";
 import { withoutAgentMarkup } from "../../acp/agent-markup.js";
 import { describeSendError } from "../../acp/errors.js";
@@ -21,10 +22,12 @@ import { hasAgentContent } from "../../acp/session-projection.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { activityItems } from "../lib/activity-groups.js";
+import { agentChangeOf } from "../lib/agent-change.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import { repliesOnlyWithError } from "../lib/replies-only-with-error.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ActivityGroup } from "./activity-group.js";
+import { AgentChangeCards } from "./agent-change-card.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import {
   AgentSpeaker,
@@ -142,12 +145,18 @@ export const ChatMessage = memo(function ChatMessage({
   sessionId,
 }: Props) {
   const isFanOut = useIsFanOutChip();
+  const changeCards = useContext(AgentChangeCards);
+  const standalone = useCallback(
+    (chip: ToolChip) =>
+      isFanOut(chip) || (changeCards && agentChangeOf(chip) !== null),
+    [isFanOut, changeCards],
+  );
   const items = useMemo(
     () =>
       message.role === "assistant"
-        ? activityItems(withoutAgentMarkup(message.parts), isFanOut)
+        ? activityItems(withoutAgentMarkup(message.parts), standalone)
         : activityItems(message.parts, () => true),
-    [message.role, message.parts, isFanOut],
+    [message.role, message.parts, standalone],
   );
   if (message.notice) {
     if (message.loadOlderBefore !== undefined && onLoadOlder) {

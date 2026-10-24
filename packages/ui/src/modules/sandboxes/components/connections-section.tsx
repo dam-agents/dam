@@ -20,6 +20,7 @@ interface Props {
   oauthReturnView: string;
   header: SectionHeaderSlot;
   leading?: ReactNode;
+  onGoToChannels?: () => void;
 }
 
 export function ConnectionsSection({
@@ -27,6 +28,7 @@ export function ConnectionsSection({
   oauthReturnView,
   header,
   leading,
+  onGoToChannels,
 }: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
@@ -103,7 +105,8 @@ export function ConnectionsSection({
         <ConnectionCatalogModal
           onGoToChannels={() => {
             setCatalogOpen(false);
-            navigateToSandboxHome(agentId, "channels");
+            if (onGoToChannels) onGoToChannels();
+            else navigateToSandboxHome(agentId, "channels");
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}

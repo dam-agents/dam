@@ -5,6 +5,10 @@ export type SidePanelTab =
   | "browser"
   | "processes"
   | "environments"
+  | "connections"
+  | "channels"
+  | "skills"
+  | "schedules"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -34,6 +38,7 @@ export type SidePanelAvailability = {
   changes: boolean;
   processesEnabled: boolean;
   environments: boolean;
+  configuration: boolean;
   gettingStarted: boolean;
 };
 
@@ -48,6 +53,10 @@ export function hiddenSidePanelTabs(
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
     environments: available.agent && available.environments,
+    connections: available.agent && available.configuration,
+    channels: available.agent && available.configuration,
+    skills: available.agent && available.configuration,
+    schedules: available.agent && available.configuration,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
