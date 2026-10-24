@@ -1,4 +1,4 @@
-import { Power, Restart, TrashCan } from "@carbon/icons-react";
+import { Cloud, Power, Restart, TrashCan } from "@carbon/icons-react";
 import { useEffect } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
@@ -12,6 +12,10 @@ import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-age
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { AGENT_ENABLE_ANCHOR } from "../../agents/lib/overlay-copy.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import {
+  useEnvironments,
+  useEnvironmentsEnabled,
+} from "../../environments/api/queries.js";
 import { type Action, ActionList } from "./action-list.js";
 
 export function AgentManagementActions({
@@ -22,11 +26,18 @@ export function AgentManagementActions({
   display: AgentDisplay;
 }) {
   const setView = useStore((s) => s.setView);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const confirmDelete = useConfirmDeleteAgent();
   const deleteAgent = useDeleteAgent();
   const setDisabled = useSetAgentDisabled();
   const { restart } = useRestartAgent();
+  const environmentsEnabled = useEnvironmentsEnabled();
+  const environments = useEnvironments(
+    environmentsEnabled && agent.vm ? agent.id : null,
+    { poll: false },
+  );
+  const accessListReach = environments.data?.length === 0;
 
   useEffect(() => {
     if (location.hash === `#${AGENT_ENABLE_ANCHOR}`)
@@ -108,6 +119,18 @@ export function AgentManagementActions({
         onClick: () => void onRestart(),
       },
     },
+    ...(accessListReach
+      ? [
+          {
+            kind: "link" as const,
+            icon: <Cloud />,
+            title: "Choose who may open Environments",
+            description:
+              "This agent has none yet and creates them itself. Name the people who may open the ones it creates.",
+            onClick: () => navigateToSandboxHome(agent.id, "environments"),
+          },
+        ]
+      : []),
     {
       kind: "button",
       icon: <TrashCan />,

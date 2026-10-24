@@ -83,7 +83,10 @@ import { DockedChangesPanel } from "../../changes/components/docked-changes-pane
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
-import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
+import {
+  useEnvironments,
+  useEnvironmentsEnabled,
+} from "../../environments/api/queries.js";
 import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
 import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -280,6 +283,10 @@ export function ChatView() {
   const newLayout = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
+  const environments = useEnvironments(
+    newLayout && environmentsEnabled && agentView?.vm ? selectedAgent : null,
+    { poll: false },
+  );
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const runningProcesses = useRunningProcesses(
     processesEnabled ? selectedAgent : null,
@@ -719,11 +726,14 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    environments: environmentsTabShown({
-      newLayout,
-      enabled: environmentsEnabled,
-      vm: agentView?.vm === true,
-    }),
+    environments:
+      environmentsTabShown({
+        newLayout,
+        enabled: environmentsEnabled,
+        vm: agentView?.vm === true,
+        count: environments.data?.length,
+      }) ||
+      (environments.isLoading && sidePanelTab === "environments"),
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
