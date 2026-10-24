@@ -13,6 +13,10 @@ import {
 } from "../../modules/sessions/components/side-panel-bar.js";
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
 
+vi.mock(
+  "../../modules/links/api/queries.js",
+  () => import("./support/fake-links.js"),
+);
 vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
   useNewLayout: () => true,
 }));

@@ -24,8 +24,8 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { DOCS_URL } from "../../../constants.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
+import { useDocsUrl } from "../../links/api/queries.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the tiled rail is the Unified right toolbar's own surface, so its Artifacts tile draws the document icon whatever shell the page has; every other button that opens the panel, and every artifact link and list, keeps the layout's own icon.
@@ -236,9 +236,11 @@ export function SidePanelBar({
 }
 
 function DocsLink() {
+  const href = useDocsUrl("home");
+  if (!href) return null;
   return (
     <a
-      href={DOCS_URL}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Documentation"

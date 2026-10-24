@@ -15,6 +15,10 @@ export default defineConfig({
         { name: "PLATFORM_ALLOW_PASSWORD", default: "true" },
         { name: "PLATFORM_SHARE_CLIENT_ID", default: "platform-share" },
         { name: "PLATFORM_BRAND_NAME_MEANINGS", default: "[]" },
+        {
+          name: "PLATFORM_DOCS_URL",
+          default: "https://pages.github.ibm.com/dam-agents/docs/",
+        },
       ],
     }),
   ],
