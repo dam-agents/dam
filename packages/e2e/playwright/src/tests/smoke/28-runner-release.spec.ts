@@ -22,6 +22,7 @@ import {
 import {
   AGENT_NS,
   kubectl,
+  kubectlLarge,
   kubectlOrEmpty,
   podField,
   RELEASE,
@@ -221,7 +222,7 @@ function rebootLines(image: string): Map<string, number> | undefined {
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
   let out: string;
   try {
-    out = kubectl(
+    out = kubectlLarge(
       "-n",
       RELEASE_NS,
       "logs",

@@ -169,7 +169,7 @@ describe("the contract gate", () => {
     );
   });
 
-  // TEST_SCENARIO: An install created after the CRDs were retired never absorbed a resource. It says so instead of attesting an export of nothing, and the gate refuses that claim if the store holds documents, agents or budgets — a lost snapshot table cannot pass as "never had anything".
+  // TEST_SCENARIO: An install whose namespace never held a custom resource absorbed nothing. It says so instead of attesting an export of nothing, and the gate refuses that claim if the store holds documents, agents or budgets — a lost snapshot table cannot pass as "never had anything".
   it("says so instead of attesting when there was nothing to archive", () => {
     const empty = contractVerdict(
       facts({

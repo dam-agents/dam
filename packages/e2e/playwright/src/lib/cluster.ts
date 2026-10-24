@@ -42,6 +42,15 @@ function runKubectl(
   }).trim();
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a whole log read, which can be larger than the 1 MiB a buffered child process allows by default: the controller logs every reconcile at debug, and a tail of the run's log is several megabytes. A read that hits that limit throws ENOBUFS, which is a read that failed, not a log with no lines.
+export function kubectlLarge(...args: string[]): string {
+  return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
+  }).trim();
+}
+
 export function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);

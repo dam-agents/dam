@@ -945,7 +945,7 @@ async function absorbChecks(): Promise<void> {
   });
   check("a completed switch never waits again", again === "already");
 
-  // TEST_SCENARIO: an install created after the cluster's CRDs were retired lists no kind at all (the client answers 404 with nothing), absorbs zero documents, and its contract gate accepts the empty archive it declares. The same store can never pass that claim once it has absorbed something.
+  // TEST_SCENARIO: an install whose cluster does not serve the kinds lists nothing at all (the client answers 404 with nothing), absorbs zero documents, and its contract gate accepts the empty archive it declares. The same store can never pass that claim once it has absorbed something.
   await db.execute(sql`DELETE FROM control.agents`);
   await db.execute(sql`DELETE FROM control.user_budgets`);
   await db.execute(sql`DELETE FROM control.crd_snapshots`);
@@ -966,7 +966,7 @@ async function absorbChecks(): Promise<void> {
     now: new Date("2026-10-24T13:00:00.000Z"),
   });
   check(
-    "a fresh install on a retired cluster absorbs nothing",
+    "a fresh install with no custom resources absorbs nothing",
     fresh.status === "absorbed" && (await snapshotCount()) === 0,
   );
   await db.execute(
