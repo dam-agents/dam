@@ -580,7 +580,11 @@ export function rowsFromResource(
  * reports is the definition's generation, which is what the custom resource's
  * resourceVersion stood in for at every call site that compares one.
  */
-export function resourceFromRows(rows: AgentRows): KubeObject {
+export function resourceFromRows(
+  rows: AgentRows,
+  options: { complete?: boolean } = {},
+): KubeObject {
+  const complete = options.complete === true;
   const { agent, signals, kit, status, conditions, hosts, grants } = rows;
   const annotations: Record<string, string> = {};
   const put = (key: string, value: string | undefined) => {
@@ -650,7 +654,7 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
   };
   putSpec("description", agent.description);
   putSpec("avatar", agent.avatar);
-  if (agent.whispersOff) spec.whispersOff = true;
+  if (agent.whispersOff || complete) spec.whispersOff = agent.whispersOff;
   putSpec("harness", agent.harness);
   putSpec("imagePullSecretRef", agent.imagePullSecretRef);
   putSpec("secretRef", agent.secretRef);
@@ -660,13 +664,15 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
       ? undefined
       : goDuration(agent.hibernationTimeoutNs),
   );
-  if (agent.nestedVirtualization) spec.nestedVirtualization = true;
-  if (agent.requireConnectionAddress) spec.requireConnectionAddress = true;
+  if (agent.nestedVirtualization || complete)
+    spec.nestedVirtualization = agent.nestedVirtualization;
+  if (agent.requireConnectionAddress || complete)
+    spec.requireConnectionAddress = agent.requireConnectionAddress;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);
   putSpec("environmentOf", agent.environmentOf);
   putSpec("storageSize", agent.diskSize);
-  if (hosts.length > 0) spec.l7Hosts = hosts;
-  if (grants.length > 0) spec.grantedConnectionIds = grants;
+  if (hosts.length > 0 || complete) spec.l7Hosts = hosts;
+  if (grants.length > 0 || complete) spec.grantedConnectionIds = grants;
 
   const labels: Record<string, string> = { [LABEL_OWNER]: agent.ownerSub };
   if (agent.templateId !== null) labels[LABEL_TEMPLATE_REF] = agent.templateId;
@@ -694,15 +700,15 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
     } as Meta,
     spec,
     status: {
-      ...(observed.length > 0 && { conditions: observed }),
+      ...((observed.length > 0 || complete) && { conditions: observed }),
       signalVersion: signals.version,
       statusVersion: status?.version ?? 0,
       ...(status && {
         observedGeneration: status.observedGeneration,
-        ...(status.machineRestarts > 0 && {
+        ...((status.machineRestarts > 0 || complete) && {
           agentPodRestarts: status.machineRestarts,
         }),
-        ...(status.machineRestartReason !== null && {
+        ...((status.machineRestartReason !== null || complete) && {
           agentPodRestartReason: status.machineRestartReason,
         }),
       }),

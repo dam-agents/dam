@@ -45,6 +45,21 @@ const sanitize = (resource: KubeObject): Document => {
 const sha256 = (text: string): string =>
   createHash("sha256").update(text, "utf8").digest("hex");
 
+// UNIT_BOUNDARY_DESCRIPTION: one ordering for every archive the platform builds, so the digest an
+// UNIT_BOUNDARY_DESCRIPTION: operator reads is the digest the store recorded. The database's collation is
+// UNIT_BOUNDARY_DESCRIPTION: not the platform's: under glibc `en_US.UTF-8` a hyphen sorts differently from a
+// UNIT_BOUNDARY_DESCRIPTION: byte comparison, and the archive read back with `ORDER BY kind, name` would hash
+// UNIT_BOUNDARY_DESCRIPTION: to another value.
+export function orderDocuments<T extends { kind: string; name: string }>(
+  documents: T[],
+): T[] {
+  return [...documents].sort((a, b) => {
+    const kind = a.kind.localeCompare(b.kind);
+    if (kind !== 0) return kind;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the switch's archive of the custom resources it
  * absorbs, built from what the API server listed so it holds every resource
@@ -61,14 +76,13 @@ export function buildAgentStoreSnapshot(input: {
   agents: KubeObject[];
   budgets: KubeObject[];
 }): AgentStoreSnapshot {
-  const resources = [...input.agents, ...input.budgets].map(sanitize);
-  resources.sort((a, b) => {
-    const kind = (a.kind ?? "").localeCompare(b.kind ?? "");
-    if (kind !== 0) return kind;
-    return String(a.metadata?.name ?? "").localeCompare(
-      String(b.metadata?.name ?? ""),
-    );
-  });
+  const resources = orderDocuments(
+    [...input.agents, ...input.budgets].map(sanitize).map((resource) => ({
+      ...resource,
+      kind: resource.kind ?? "",
+      name: String(resource.metadata?.name ?? ""),
+    })),
+  );
 
   const documents: SnapshotDocument[] = resources.map((resource) => {
     const yaml = dump(resource, { noRefs: true, lineWidth: -1 });

@@ -108,11 +108,15 @@ export async function verifyAgentStoreWriteFence(
 ): Promise<string | null> {
   const checks = [
     { resource: "agents", verb: "create" },
+    { resource: "agents", verb: "update" },
     { resource: "agents", verb: "patch" },
     { resource: "agents", verb: "delete" },
+    { resource: "agents", verb: "deletecollection" },
     { resource: "userbudgets", verb: "create" },
+    { resource: "userbudgets", verb: "update" },
     { resource: "userbudgets", verb: "patch" },
     { resource: "userbudgets", verb: "delete" },
+    { resource: "userbudgets", verb: "deletecollection" },
   ];
   for (const check of checks) {
     const review = await client.createSelfSubjectAccessReview({

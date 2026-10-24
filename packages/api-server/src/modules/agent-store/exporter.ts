@@ -35,8 +35,7 @@ export function exportCrds(input: {
   budgets: BudgetRow[];
 }): ExportedResource[] {
   const agents = input.agents.map((rows) => {
-    const resource = resourceFromRows(rows);
-    delete resource.status;
+    const resource = resourceFromRows(rows, { complete: true });
     if (resource.metadata) {
       const metadata = resource.metadata as Record<string, unknown>;
       delete metadata.uid;

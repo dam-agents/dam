@@ -24,6 +24,18 @@ import {
 
 const USERBUDGETS_PLURAL = "userbudgets";
 import { agentStoreMarkerName } from "./modules/agent-store/fence.js";
+import {
+  frozenRefusals,
+  readFrozenState,
+} from "./modules/agent-store/frozen.js";
+import {
+  attestedDigestMatches,
+  restoreBody,
+  rollbackVerdict,
+  statusBody,
+  type RestoreBody,
+} from "./modules/agent-store/rollback.js";
+import { orderDocuments } from "./modules/agent-store/snapshot.js";
 import { readAgentRows } from "./modules/agent-store/control-read.js";
 import {
   archiveOf,
@@ -39,22 +51,26 @@ import {
 
 const usage = `usage: agent-store-cli <command>
 
-  export-snapshot --recipient <age public key> [--out <file>]
-      Write the switch's archive, encrypted to the operator's key, from the
-      database's snapshot table. Prints ciphertext.
+  export-snapshot [--recipient <age public key>] [--force-recipient] [--out <file>]
+      Write the switch's archive, encrypted to the install's
+      agentStore.backup.recipient (or --recipient), from the database's snapshot
+      table. Prints ciphertext. A --recipient that differs from the chart's is
+      refused unless --force-recipient is given.
 
   export-crds [--out <directory>]
       Write the custom resources the rows currently describe, for inspection
       or diffing. Prints plaintext.
 
-  repair-grants [--dry-run]
+  repair-grants [--agent <id>] [--dry-run]
       Re-run the SQL -> custom-resource connection-grant fan-out for every
-      Agent whose two sets disagree, and report what remains.
+      Agent whose two sets disagree (or just --agent's), and report what remains.
 
   rollback [--dry-run]
       Restore the custom resources, re-point their children to the new UIDs,
-      remove the anchors and clear the absorb. Refuses unless the components
-      are frozen.
+      remove the anchors and clear the absorb. Refuses unless the store was
+      absorbed and the cluster shows both Deployments frozen with no pod and no
+      controller holding the Lease. A rerun after a finished rollback does
+      nothing.
 
   contract-check --sha256 <hex>
       Refuse unless the install's archive is the one the operator attests.`;
@@ -110,6 +126,7 @@ const patchDynamic = async (input: {
 const listLabelled = async (input: {
   api: k8s.CoreV1Api;
   apps: k8s.AppsV1Api;
+  networking: k8s.NetworkingV1Api;
   kind: ChildKind;
   namespace: string;
   labelSelector: string;
@@ -165,6 +182,16 @@ const listLabelled = async (input: {
         owners: one.metadata?.ownerReferences ?? [],
       }));
     }
+    case "NetworkPolicy": {
+      const list = await input.networking.listNamespacedNetworkPolicy({
+        namespace: input.namespace,
+        labelSelector: input.labelSelector,
+      });
+      return (list.items ?? []).map((one) => ({
+        name: one.metadata?.name ?? "",
+        owners: one.metadata?.ownerReferences ?? [],
+      }));
+    }
     default: {
       const list = await listDynamic({
         group:
@@ -193,6 +220,7 @@ const listLabelled = async (input: {
 const patchOwners = async (input: {
   api: k8s.CoreV1Api;
   apps: k8s.AppsV1Api;
+  networking: k8s.NetworkingV1Api;
   kind: ChildKind;
   namespace: string;
   name: string;
@@ -230,6 +258,12 @@ const patchOwners = async (input: {
         k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.MergePatch),
       );
       return;
+    case "NetworkPolicy":
+      await input.networking.patchNamespacedNetworkPolicy(
+        { name: input.name, namespace: input.namespace, body },
+        k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.MergePatch),
+      );
+      return;
     default:
       await patchDynamic({
         group:
@@ -254,15 +288,17 @@ type ChildKind =
   | "ServiceAccount"
   | "ConfigMap"
   | "Secret"
+  | "NetworkPolicy"
   | "Certificate"
   | "AuthorizationPolicy";
 
-const CHILD_KINDS: ChildKind[] = [
+export const CHILD_KINDS: ChildKind[] = [
   "StatefulSet",
   "Service",
   "ServiceAccount",
   "ConfigMap",
   "Secret",
+  "NetworkPolicy",
   "Certificate",
   "AuthorizationPolicy",
 ];
@@ -286,6 +322,47 @@ const expandEnvRefs = (value: string): string =>
     return resolved;
   });
 
+const replaceDynamic = async (input: {
+  plural: string;
+  namespace: string;
+  name: string;
+  body: unknown;
+}): Promise<string | undefined> => {
+  const replaced = (await dynamicApi.replaceNamespacedCustomObject({
+    group: "agent-platform.ai",
+    version: "v1",
+    ...input,
+  })) as { metadata?: { resourceVersion?: string } };
+  return replaced.metadata?.resourceVersion;
+};
+
+const replaceDynamicStatus = async (input: {
+  plural: string;
+  namespace: string;
+  name: string;
+  body: unknown;
+}): Promise<void> => {
+  await dynamicApi.replaceNamespacedCustomObjectStatus({
+    group: "agent-platform.ai",
+    version: "v1",
+    ...input,
+  });
+};
+
+const readMarker = async (
+  api: k8s.CoreV1Api,
+  namespace: string,
+  name: string,
+): Promise<Record<string, string> | null> => {
+  try {
+    const marker = await api.readNamespacedConfigMap({ name, namespace });
+    return (marker.data ?? {}) as Record<string, string>;
+  } catch (cause) {
+    if (is404(cause)) return null;
+    throw cause;
+  }
+};
+
 const main = async (): Promise<void> => {
   const config = {
     databaseUrl: expandEnvRefs(
@@ -296,6 +373,7 @@ const main = async (): Promise<void> => {
     ),
     databaseCaCertPath: env("DATABASE_CA_CERT_PATH"),
     namespace: env("NAMESPACE") ?? "platform-agents",
+    releaseNamespace: env("PLATFORM_RELEASE_NAMESPACE") ?? "default",
     releaseName:
       env("PLATFORM_RELEASE_NAME") ??
       (() => {
@@ -309,23 +387,110 @@ const main = async (): Promise<void> => {
   };
   configureLogger({ level: config.logLevel, base: { command } });
   const log = getLogger();
-  const { db } = createDb(config.databaseUrl, {
+  const { db, sql: sqlClient } = createDb(config.databaseUrl, {
     tls: config.databaseCaCertPath
       ? { ca: readFileSync(config.databaseCaCertPath, "utf8") }
       : undefined,
   });
+  // UNIT_BOUNDARY_DESCRIPTION: the pool's idle timeout keeps the process alive for half a
+  // UNIT_BOUNDARY_DESCRIPTION: minute after the command is done, which a person waiting on a
+  // UNIT_BOUNDARY_DESCRIPTION: rollback reads as a hung command. Every successful path closes it.
+  const finish = async (): Promise<void> => {
+    await sqlClient.end({ timeout: 5 }).catch(() => {});
+  };
   const { api } = createApi(config.namespace);
   const client = createK8sClient(api, config.namespace);
   const markerName =
     config.agentStoreMarker ?? agentStoreMarkerName(config.releaseName);
 
+  const createComplete = async (
+    plural: string,
+    resource: { name: string },
+    restored: RestoreBody,
+  ): Promise<void> => {
+    const created = await client.createCustomObject(plural, restored.body);
+    const status = statusBody(restored.status);
+    if (plural === AGENTS_PLURAL && status !== undefined)
+      await replaceDynamicStatus({
+        plural,
+        namespace: config.namespace,
+        name: String(created.metadata?.name ?? resource.name),
+        body: {
+          apiVersion: "agent-platform.ai/v1",
+          kind: "Agent",
+          metadata: {
+            name: String(created.metadata?.name ?? resource.name),
+            namespace: config.namespace,
+            resourceVersion: created.metadata?.resourceVersion,
+          },
+          status,
+        },
+      });
+  };
+
+  const replaceComplete = async (
+    plural: string,
+    name: string,
+    restored: RestoreBody,
+  ): Promise<void> => {
+    const resourceVersion = await replaceDynamic({
+      plural,
+      namespace: config.namespace,
+      name,
+      body: restored.body,
+    });
+    const status = statusBody(restored.status);
+    if (plural === AGENTS_PLURAL && status !== undefined)
+      await replaceDynamicStatus({
+        plural,
+        namespace: config.namespace,
+        name,
+        body: {
+          apiVersion: "agent-platform.ai/v1",
+          kind: "Agent",
+          metadata: { name, namespace: config.namespace, resourceVersion },
+          status,
+        },
+      });
+  };
+
+  const wasAbsorbed = async (
+    kind: string,
+    name: string,
+    uid: string,
+  ): Promise<boolean> => {
+    const latest = await db
+      .select({ at: controlCrdSnapshots.capturedAt })
+      .from(controlCrdSnapshots)
+      .orderBy(sql`${controlCrdSnapshots.capturedAt} DESC`)
+      .limit(1);
+    const at = latest[0]?.at;
+    if (at === undefined) return false;
+    const rows = await db
+      .select({ name: controlCrdSnapshots.name })
+      .from(controlCrdSnapshots)
+      .where(
+        sql`${controlCrdSnapshots.capturedAt} = ${at} and ${controlCrdSnapshots.kind} = ${kind} and ${controlCrdSnapshots.name} = ${name} and ${controlCrdSnapshots.uid} = ${uid}`,
+      )
+      .limit(1);
+    return rows.length > 0;
+  };
+
   switch (command) {
     case "export-snapshot": {
-      const recipient = flag("--recipient") ?? config.agentStoreBackupRecipient;
+      const configured = config.agentStoreBackupRecipient;
+      const requested = flag("--recipient");
+      if (requested && configured && requested !== configured) {
+        const message = `--recipient ${requested} is not the install's agentStore.backup.recipient ${configured}: a file encrypted to another key is one the install's key holder cannot open. Print this and pass --force-recipient if that is really intended.`;
+        if (!has("--force-recipient")) throw new Error(message);
+        process.stderr.write(`warning: ${message}\n`);
+      }
+      const recipient = requested ?? configured;
       if (!recipient)
         throw new Error(
-          "export-snapshot needs --recipient <age public key> or AGENT_STORE_BACKUP_RECIPIENT (agentStore.backup.recipient)",
+          "export-snapshot needs agentStore.backup.recipient (AGENT_STORE_BACKUP_RECIPIENT) or --recipient <age public key>",
         );
+      process.stderr.write(`encrypting to ${recipient}\n`);
       const captured = await db
         .select({ at: controlCrdSnapshots.capturedAt })
         .from(controlCrdSnapshots)
@@ -333,11 +498,12 @@ const main = async (): Promise<void> => {
         .limit(1);
       const at = captured[0]?.at;
       if (!at) throw new Error("the database holds no absorb snapshot");
-      const docs = await db
-        .select()
-        .from(controlCrdSnapshots)
-        .where(eq(controlCrdSnapshots.capturedAt, at))
-        .orderBy(controlCrdSnapshots.kind, controlCrdSnapshots.name);
+      const docs = orderDocuments(
+        await db
+          .select()
+          .from(controlCrdSnapshots)
+          .where(eq(controlCrdSnapshots.capturedAt, at)),
+      );
       const archive = Buffer.from(
         docs.map((doc) => doc.yaml).join("---\n"),
         "utf8",
@@ -347,9 +513,10 @@ const main = async (): Promise<void> => {
       if (out) {
         writeFileSync(out, ciphertext, { mode: 0o600 });
         process.stderr.write(
-          `wrote ${docs.length} document(s), sha256 ${sha256Of(archive)}, to ${out} as age ciphertext\n`,
+          `wrote ${docs.length} document(s), sha256 ${sha256Of(archive)}, to ${out} as age ciphertext to ${recipient}\n`,
         );
       } else process.stdout.write(ciphertext);
+      await finish();
       return;
     }
 
@@ -363,18 +530,23 @@ const main = async (): Promise<void> => {
           writeFileSync(
             `${out.replace(/\/+$/u, "")}/${resource.kind}-${resource.name}.yaml`,
             resource.yaml,
+            { mode: 0o600 },
           );
         process.stderr.write(
           `wrote ${resources.length} resource(s) to ${out}; the YAML is plaintext\n`,
         );
       } else process.stdout.write(archiveOf(resources));
+      await finish();
       return;
     }
 
     case "repair-grants": {
       const dryRun = has("--dry-run");
+      const only = flag("--agent");
       const previewOnce = async () => {
-        const agents = await client.listCustomObjects(AGENTS_PLURAL);
+        const agents = (await client.listCustomObjects(AGENTS_PLURAL)).filter(
+          (cr) => only === undefined || cr.metadata?.name === only,
+        );
         const ids = agents.map((cr) => cr.metadata?.name ?? "").filter(Boolean);
         const grants = await readConnectionGrants(db, ids);
         const byAgent = new Map<string, Set<string>>();
@@ -427,52 +599,103 @@ const main = async (): Promise<void> => {
         `${remaining.length} mismatch(es) remain${dryRun ? " (dry run)" : ""}\n`,
       );
       if (!dryRun && remaining.length > 0) process.exitCode = 1;
+      await finish();
       return;
     }
 
     case "rollback": {
-      if (!config.agentStoreFrozen)
-        throw new Error(
-          "rollback refuses: set PLATFORM_AGENT_STORE_FROZEN=true and roll both components down first, or their writes race the restore",
-        );
       const dryRun = has("--dry-run");
+      const state = await db
+        .select()
+        .from(controlAgentStore)
+        .where(eq(controlAgentStore.id, 1))
+        .limit(1);
+      const store = state[0];
+      if (store === undefined)
+        throw new Error(
+          "the database has no control.agent_store row: this is not an install's database",
+        );
+      const marker = await readMarker(api, config.namespace, markerName);
       const agents = await readAgentRows(db);
       const budgets = await db.select().from(controlUserBudgets);
       const resources = exportCrds({ agents, budgets });
-      const byName = new Map(resources.map((one) => [one.name, one]));
-
+      const restored = new Map(resources.map((one) => [one.name, one]));
       const existingAgents = await client.listCustomObjects(AGENTS_PLURAL);
       const existingBudgets =
         await client.listCustomObjects(USERBUDGETS_PLURAL);
+      const verdict = rollbackVerdict({
+        absorbedAt: store.absorbedAt,
+        markerStore: marker?.store ?? null,
+        agentRows: agents.length,
+        liveAgents: existingAgents.length,
+      });
+      if (verdict.action === "noop") {
+        process.stderr.write(`nothing to roll back: ${verdict.reason}\n`);
+        await finish();
+        return;
+      }
+      if (verdict.action === "refuse")
+        throw new Error(`rollback refuses: ${verdict.reason}`);
+
+      const frozen = await readFrozenState({
+        apps: kubeConfig.makeApiClient(k8s.AppsV1Api),
+        api,
+        leases: kubeConfig.makeApiClient(k8s.CoordinationV1Api),
+        namespace: config.releaseNamespace,
+        leaseNamespace: config.namespace,
+        releaseName: config.releaseName,
+        leaseName: `${config.releaseName}-controller`,
+      });
+      const frozenProblems = frozenRefusals(frozen);
+      if (frozenProblems.length > 0)
+        throw new Error(
+          `rollback refuses: the cluster is not frozen. ${frozenProblems.join(" ")}`,
+        );
+      process.stderr.write(
+        "the cluster is frozen: both Deployments render the freeze, run no replica and have no pod, and no controller holds the Lease\n",
+      );
+
+      const apps = kubeConfig.makeApiClient(k8s.AppsV1Api);
+      const networking = kubeConfig.makeApiClient(k8s.NetworkingV1Api);
       for (const resource of resources) {
-        const exists = (
-          resource.kind === "Agent" ? existingAgents : existingBudgets
-        ).some((one) => one.metadata?.name === resource.name);
+        const kind =
+          resource.kind === "Agent" ? AGENTS_PLURAL : USERBUDGETS_PLURAL;
+        const live = await client.getCustomObject(kind, resource.name);
         process.stderr.write(
-          `${exists ? "updating" : "creating"} ${resource.kind} ${resource.name}\n`,
+          `${live ? "replacing" : "creating"} ${resource.kind} ${resource.name}\n`,
         );
         if (dryRun) continue;
-        const body = resource.resource;
-        if (exists)
-          await client.patchCustomObject(
-            resource.kind === "Agent" ? AGENTS_PLURAL : USERBUDGETS_PLURAL,
-            resource.name,
-            { metadata: body.metadata, spec: body.spec },
-          );
-        else
-          await client.createCustomObject(
-            resource.kind === "Agent" ? AGENTS_PLURAL : USERBUDGETS_PLURAL,
-            body,
-          );
+        const body = restoreBody({
+          resource,
+          live,
+          namespace: config.namespace,
+        });
+        if (live === null) await createComplete(kind, resource, body);
+        else await replaceComplete(kind, resource.name, body);
       }
       for (const cr of existingAgents) {
         const name = cr.metadata?.name ?? "";
-        if (name === "" || byName.has(name)) continue;
-        process.stderr.write(`deleting Agent ${name}: it has no row\n`);
+        if (name === "" || restored.has(name)) continue;
+        const uid = cr.metadata?.uid;
+        if (uid === undefined || !(await wasAbsorbed("Agent", name, uid))) {
+          process.stderr.write(
+            `leaving Agent ${name}: it has no row but was not part of an absorbed fleet\n`,
+          );
+          continue;
+        }
+        process.stderr.write(
+          `deleting Agent ${name}: it was absorbed and its row is gone\n`,
+        );
         if (!dryRun) await client.deleteCustomObject(AGENTS_PLURAL, name);
       }
+      for (const cr of existingBudgets) {
+        const name = cr.metadata?.name ?? "";
+        if (name === "" || restored.has(name)) continue;
+        process.stderr.write(
+          `leaving UserBudget ${name}: it was not part of the absorbed fleet\n`,
+        );
+      }
 
-      const apps = kubeConfig.makeApiClient(k8s.AppsV1Api);
       for (const resource of resources) {
         if (resource.kind !== "Agent") continue;
         const live = await client.getCustomObject(AGENTS_PLURAL, resource.name);
@@ -494,6 +717,7 @@ const main = async (): Promise<void> => {
           const children = await listLabelled({
             api,
             apps,
+            networking,
             kind,
             namespace: config.namespace,
             labelSelector,
@@ -504,11 +728,6 @@ const main = async (): Promise<void> => {
             const owners = child.owners.filter(
               (ref) => !isAnchorOrAgent(ref) && ref.uid !== uid,
             );
-            if (
-              owners.length === child.owners.length &&
-              child.owners.some((ref) => ref.uid === uid)
-            )
-              continue;
             process.stderr.write(
               `re-pointing ${kind} ${child.name} to Agent ${resource.name} (${uid})\n`,
             );
@@ -516,12 +735,37 @@ const main = async (): Promise<void> => {
             await patchOwners({
               api,
               apps,
+              networking,
               kind,
               namespace: config.namespace,
               name: child.name,
               owners: [...owners, reference],
             });
           }
+        }
+      }
+
+      for (const resource of dryRun ? [] : resources) {
+        if (resource.kind !== "Agent") continue;
+        const labelSelector = `${LABEL_AGENT_REF}=${resource.name}`;
+        for (const kind of CHILD_KINDS) {
+          const children = await listLabelled({
+            api,
+            apps,
+            networking,
+            kind,
+            namespace: config.namespace,
+            labelSelector,
+          });
+          const stale = children.find((child) =>
+            child.owners.some(
+              (ref) => ref.kind === "ConfigMap" && ref.name.endsWith("-anchor"),
+            ),
+          );
+          if (stale)
+            throw new Error(
+              `${kind} ${stale.name} still references an anchor after the re-point: refusing to clear the absorb`,
+            );
         }
       }
 
@@ -543,30 +787,15 @@ const main = async (): Promise<void> => {
         }
       }
 
-      for (const resource of dryRun ? [] : resources) {
-        if (resource.kind !== "Agent") continue;
-        const labelSelector = `${LABEL_AGENT_REF}=${resource.name}`;
-        for (const kind of CHILD_KINDS) {
-          const children = await listLabelled({
-            api,
-            apps,
-            kind,
-            namespace: config.namespace,
-            labelSelector,
-          });
-          const stale = children.find((child) =>
-            child.owners.some(
-              (ref) => ref.kind === "ConfigMap" && ref.name.endsWith("-anchor"),
-            ),
-          );
-          if (stale)
-            throw new Error(
-              `${kind} ${stale.name} still references an anchor after the re-point: refusing to clear the absorb`,
-            );
-        }
-      }
-
       if (!dryRun) {
+        try {
+          await api.deleteNamespacedConfigMap({
+            name: markerName,
+            namespace: config.namespace,
+          });
+        } catch (cause) {
+          if (!is404(cause)) throw cause;
+        }
         await db.transaction(async (tx) => {
           await tx.delete(controlAgents);
           await tx.delete(controlUserBudgets);
@@ -580,14 +809,6 @@ const main = async (): Promise<void> => {
             })
             .where(eq(controlAgentStore.id, 1));
         });
-        try {
-          await api.deleteNamespacedConfigMap({
-            name: markerName,
-            namespace: config.namespace,
-          });
-        } catch (cause) {
-          if (!is404(cause)) throw cause;
-        }
       }
       log.info(
         { dryRun, resources: resources.length },
@@ -598,8 +819,9 @@ const main = async (): Promise<void> => {
           config.agentStoreFrozen
             ? " and clear agentStore.frozen when you deploy it"
             : ""
-        }\n`,
+        }, and expect the composition to create no anchors in CR mode\n`,
       );
+      await finish();
       return;
     }
 
@@ -607,24 +829,32 @@ const main = async (): Promise<void> => {
       const expected = flag("--sha256");
       if (!expected) throw new Error("contract-check needs --sha256 <hex>");
       const rows = await db
-        .select({ backupRef: controlAgentStore.backupRef })
+        .select({
+          backupRef: controlAgentStore.backupRef,
+          absorbReport: controlAgentStore.absorbReport,
+        })
         .from(controlAgentStore)
         .where(eq(controlAgentStore.id, 1))
         .limit(1);
       const backupRef = rows[0]?.backupRef ?? null;
-      if (backupRef === null || !backupRef.includes(expected))
+      const report = rows[0]?.absorbReport as
+        { backup?: { sha256?: string } } | null | undefined;
+      const recorded = report?.backup?.sha256 ?? null;
+      if (backupRef === null || !attestedDigestMatches(recorded, expected))
         throw new Error(
-          `the install's verified archive is ${backupRef ?? "absent"}, not the one attesting sha256 ${expected}: the contract release must not delete the custom resources`,
+          `the install's verified archive is ${backupRef ?? "absent"} with digest ${recorded ?? "absent"}, not the one attesting sha256 ${expected}: the contract release must not delete the custom resources`,
         );
       process.stderr.write(
         "the install's archive matches the attested digest\n",
       );
+      await finish();
       return;
     }
 
     default:
       process.stderr.write(`${usage}\n`);
       process.exitCode = 2;
+      await finish();
   }
 };
 
