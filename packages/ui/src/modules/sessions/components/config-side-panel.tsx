@@ -4,11 +4,9 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
-import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { AgentModelSettingsSection } from "../../sandboxes/components/agent-config-sections.js";
-import { AgentPanel } from "../../sandboxes/components/agent-panel.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
 import { SandboxProvidersSection } from "../../sandboxes/components/sandbox-providers-section.js";
@@ -19,6 +17,7 @@ import {
   SessionDefaultsSection,
 } from "../../sandboxes/components/session-defaults-section.js";
 import { ConnectionAddressingSection } from "../../sandboxes/components/setup/setup-sections.js";
+import { SpendingPanel } from "../../sandboxes/components/spending-panel.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { justAskPrompt } from "../../schedules/lib/just-ask.js";
 import {
@@ -40,8 +39,7 @@ export const DEFAULTS_BY_PANEL: Partial<
   schedules: ["scheduled"],
 };
 
-const SECTION_OF_TAB: Record<ConfigPanelTab, SandboxSection> = {
-  agent: "setup",
+const SECTION_OF_TAB: Partial<Record<ConfigPanelTab, SandboxSection>> = {
   connections: "connections",
   channels: "channels",
   skills: "skills",
@@ -77,13 +75,11 @@ export function isConfigPanelTab(
 export function ConfigSidePanel({
   tab,
   agent,
-  display,
   agentId,
   onResumeSession,
 }: {
   tab: ConfigPanelTab;
   agent: AgentView;
-  display: AgentDisplay;
   agentId: string;
   onResumeSession: (sessionId: string) => void;
 }) {
@@ -93,9 +89,10 @@ export function ConfigSidePanel({
   const setSidePanelFocus = useStore((s) => s.setSidePanelFocus);
   const focus = useStore((s) => s.sidePanelFocus);
   // UNIT_BOUNDARY_DESCRIPTION: the page's own description goes above every panel, because it carries the copy that stops a mistake there — env vars say they are plain text and secrets belong in Connections, and network says an unmatched request waits for approval on Home.
-  const description = SECTIONS.find(
-    (entry) => entry.section === SECTION_OF_TAB[tab],
-  )?.description;
+  const section = SECTION_OF_TAB[tab];
+  const description = section
+    ? SECTIONS.find((entry) => entry.section === section)?.description
+    : undefined;
 
   return (
     <SidebarSection title={configPanelTitle(tab)} open className="flex-1">
@@ -104,7 +101,7 @@ export function ConfigSidePanel({
           <p className="mb-4 text-sm text-muted-foreground">{description}</p>
         )}
         {match(tab)
-          .with("agent", () => <AgentPanel agent={agent} display={display} />)
+          .with("agent", () => <SpendingPanel agentId={agentId} />)
           .with("connections", () => (
             <>
               <ConnectionsSection

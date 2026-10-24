@@ -1339,21 +1339,15 @@ export function ChatView() {
               {activeTab === "environments" && selectedAgent && (
                 <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
               )}
-              {isConfigPanelTab(activeTab) &&
-                selectedAgent &&
-                agentView &&
-                agentDisplay && (
-                  <ConfigSidePanel
-                    key={`${selectedAgent}:${activeTab}`}
-                    tab={activeTab}
-                    agent={agentView}
-                    display={agentDisplay}
-                    agentId={selectedAgent}
-                    onResumeSession={(id) =>
-                      openAgentSession(selectedAgent, id)
-                    }
-                  />
-                )}
+              {isConfigPanelTab(activeTab) && selectedAgent && agentView && (
+                <ConfigSidePanel
+                  key={`${selectedAgent}:${activeTab}`}
+                  tab={activeTab}
+                  agent={agentView}
+                  agentId={selectedAgent}
+                  onResumeSession={(id) => openAgentSession(selectedAgent, id)}
+                />
+              )}
             </>
           }
           dock={dockPanel}

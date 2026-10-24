@@ -14,8 +14,8 @@ import {
   Model,
   Network_2,
   Notification,
+  PricingQuickProposal,
   Task,
-  UserProfile,
   Wikis,
 } from "@carbon/icons-react";
 import { Fragment, type ReactNode } from "react";
@@ -52,7 +52,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
-  { tab: "agent", label: "Agent", icon: UserProfile },
+  { tab: "agent", label: "Spending", icon: PricingQuickProposal },
   { tab: "environments", label: "Environments", icon: Cloud },
   { tab: "connections", label: "Connections", icon: DataStructured },
   { tab: "channels", label: "Channels", icon: LogoSlack },
