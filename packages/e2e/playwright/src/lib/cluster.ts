@@ -70,12 +70,31 @@ export function podField(name: string, jsonpath: string): string {
   return get("pod", name, jsonpath);
 }
 
+export function psql(query: string): string {
+  return kubectl(
+    "-n",
+    RELEASE_NS,
+    "exec",
+    "platform-postgres-0",
+    "--",
+    "psql",
+    "-U",
+    "platform",
+    "-d",
+    "platform",
+    "-tAc",
+    query,
+  );
+}
+
 function conditionPath(type: string): string {
   return `.status.conditions[?(@.type=="${type}")].status`;
 }
 
 export function agentConditionStatus(agent: string, type: string): string {
-  return get("agents.agent-platform.ai", agent, conditionPath(type));
+  return psql(
+    `select status from control.agent_conditions where agent_id = '${agent}' and type = '${type}'`,
+  );
 }
 
 export function podIsReady(name: string): boolean {
@@ -96,14 +115,20 @@ export function podEvents(name: string): string {
   );
 }
 
-export function deleteAgentCr(name: string): void {
+export function deleteAgentRow(name: string): void {
   kubectlOrEmpty(
     "-n",
-    AGENT_NS,
-    "delete",
-    "agents.agent-platform.ai",
-    name,
-    "--ignore-not-found",
+    RELEASE_NS,
+    "exec",
+    "platform-postgres-0",
+    "--",
+    "psql",
+    "-U",
+    "platform",
+    "-d",
+    "platform",
+    "-c",
+    `delete from control.agents where id = '${name}'`,
   );
 }
 

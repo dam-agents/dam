@@ -6,7 +6,7 @@ import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import {
   AGENT_NS,
   agentConditionStatus,
-  deleteAgentCr,
+  deleteAgentRow,
   kubectl,
   podEvents,
   podField,
@@ -141,7 +141,7 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
       try {
         await api.agents.delete.mutate({ id: agentId });
       } catch {
-        deleteAgentCr(agentId);
+        deleteAgentRow(agentId);
       }
     }
   }

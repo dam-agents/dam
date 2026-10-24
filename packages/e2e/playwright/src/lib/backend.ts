@@ -206,10 +206,11 @@ function agentOwner(agentId: string): string {
     "-n",
     AGENT_NS,
     "get",
-    "agents.agent-platform.ai",
-    agentId,
+    "configmaps",
+    "-l",
+    `agent-platform.ai/agent=${agentId}`,
     "-o",
-    "jsonpath={.metadata.labels.agent-platform\\.ai/owner}",
+    "jsonpath={.items[0].metadata.labels.agent-platform\\.ai/owner}",
   );
 }
 
