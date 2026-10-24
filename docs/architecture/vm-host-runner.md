@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 On a Mac, the local cluster runs its agents on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -42,7 +42,11 @@ A build that could reach a system-wide copy would record that one instead, leavi
 
 **Images and disks.** The host runner is the one runner with no node image cache: no cache service runs beside it, so it fetches nothing from a registry and boots only the image trees the install stages onto a case-sensitive volume it owns.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
-Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
+Trees are unpacked without privilege, so the runner's own user owns every file of one: a Mac gives an unprivileged unpack no way to restore the owners the image names.
+The stager records that owner beside the tree, and platform-init boots such a tree on an idmapped view of it, which shows the owner as the guest's root, so the system files ssh, sudo and sudoers check are root's.
+A tree with no record, which is every tree a reference runner unpacks with privilege, keeps the owners its image names and boots as before.
+A kernel that cannot map the view leaves the tree as the stager left it, and the boot goes on with a warning in the boot log.
+Where the view is applied, an image file someone else owns reads as nobody; restoring the owners an image names instead takes a manifest of them, which no platform image carries.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.
 platform-init and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
 

@@ -19,6 +19,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
 {{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
+{{- include "platform.validate.templatesRenamedFromAgentTemplates" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -600,5 +601,19 @@ never happens — or, worse, a later one without the operator's timing.
 {{- $contract := $store.contract | default dict -}}
 {{- if $contract.backupSha256 -}}
 {{- fail "agentStore.contract.backupSha256 is set, but no release in this chart deletes custom resources yet: the contract release checks it against the archive it must not delete without." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The Templates were renamed from `agentTemplates` with no alias. Helm keeps the
+old map and reads none of it, so an install that kept the key renders no
+Template it declares and no pull Secret one of them brings, while the Agents
+created from those Templates still name that Secret — their machines then
+fetch the image anonymously and fail. Fail at render instead, naming the key
+to rename.
+*/}}
+{{- define "platform.validate.templatesRenamedFromAgentTemplates" -}}
+{{- if hasKey .Values "agentTemplates" -}}
+{{- fail "agentTemplates is no longer read: the key was renamed to harnessTemplates with no alias, so this install would render none of the Templates it declares and no pull Secret one of them brings, while the Agents created from those Templates still name it. Rename the key to harnessTemplates in every values file." -}}
 {{- end -}}
 {{- end -}}

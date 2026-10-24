@@ -441,9 +441,11 @@ export function createAgentsRepository(
     },
 
     async patchAnnotations(id, annotations) {
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: { annotations },
       });
+      const written = updated.metadata?.resourceVersion;
+      if (written) await cache.awaitObserved(id, written);
     },
 
     async listAgentIdsWithAnnotation(key, value) {

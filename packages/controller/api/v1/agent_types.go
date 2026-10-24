@@ -10,7 +10,11 @@ import (
 //
 // There is no desiredState field: running-vs-hibernated is not stored intent
 // but observed status the controller derives from activity. Security context
-// and scheduling are chart-only (config.AgentBase, config.VM).
+// is chart-only (config.AgentBase); scheduling is chart-wide except
+// RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
+// +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
+// +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
 // +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
 type AgentSpec struct {
 	// Image is the agent container image.
@@ -65,14 +69,25 @@ type AgentSpec struct {
 	// +optional
 	AgentHome string `json:"agentHome,omitempty"`
 
-	// NestedVirtualization asks for this Agent's machine to get the node's
-	// virtualization extensions, so the guest can run KVM itself. It takes
-	// effect only on an install with virtualization.runner.nestedVirtualization
-	// and a node whose KVM allows nesting; the NestedVirtualization condition
-	// says whether it did. Other machines on the same runner are unaffected.
-	// Changing it restarts the machine.
+	// RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+	// Selects among *container* runtimes only — rejected on the vm backend.
 	// +optional
-	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
+	RuntimeClassName string `json:"runtimeClassName,omitempty"`
+	// NodeSelector overrides the chart-wide node selector; empty = inherit.
+	// Container backend only — rejected on the vm backend, whose machine is
+	// placed with its owner's VM runner.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Backend selects the isolation substrate the agent workload runs on;
+	// nil = container. Immutable after create (enforced by the api-server,
+	// the sole spec writer), except that a runtime migration moves a
+	// container agent to `vm`, never back. `vm` runs the agent as a persistent microVM on
+	// its owner's VM runner instead of a StatefulSet: the controller
+	// drives the runner's machine API, and the agent Service resolves to the
+	// machine's published port; the paired gateway is unaffected.
+	// +optional
+	Backend *Backend `json:"backend,omitempty"`
 
 	// Harness names the harness the agent image runs (claude-code, codex,
 	// pi, bob, copilot, mock). One image serves every harness, and the agent reads
@@ -153,6 +168,35 @@ type AgentSpec struct {
 	RequireConnectionAddress bool `json:"requireConnectionAddress,omitempty"`
 }
 
+// Backend is a discriminated union selecting the agent's isolation substrate
+// (K8s convention: `type` plus a sub-block named after the variant).
+// +kubebuilder:validation:XValidation:rule="self.type == 'vm' || !has(self.vm)",message="vm block requires type: vm"
+type Backend struct {
+	// +kubebuilder:validation:Enum=container;vm
+	Type string `json:"type"`
+	// VM carries vm-backend props; present only when type == "vm".
+	// +optional
+	VM *VMBackend `json:"vm,omitempty"`
+}
+
+// VMBackend carries the props only a vm-backend agent has. Scratch sizing and
+// placement are chart-level policy (config.VM).
+type VMBackend struct {
+	// NestedVirtualization asks for this agent's machine to get the node's
+	// virtualization extensions, so the guest can run KVM itself. It takes
+	// effect only on an install with virtualization.runner.nestedVirtualization
+	// and a node whose KVM allows nesting; the NestedVirtualization condition
+	// says whether it did. Other machines on the same runner are unaffected.
+	// Changing it restarts the agent's machine.
+	// +optional
+	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
+}
+
+// IsVM reports whether the spec selects the vm backend.
+func (s *AgentSpec) IsVM() bool {
+	return s.Backend != nil && s.Backend.Type == "vm"
+}
+
 // Condition types on an Agent's status. Conditions are the source of truth for
 // operational state; the api-server routes on ConditionReady. There is no phase
 // field — the conditions are the only status the api-server reads.
@@ -171,6 +215,12 @@ const (
 	// ConditionReconciled reports whether the controller accepted and rendered
 	// the spec; its message carries the last reconcile error, if any.
 	ConditionReconciled = "Reconciled"
+	// ConditionRuntimeMigrating reports a runtime migration from the
+	// container backend to the vm backend. It is absent when none runs.
+	// True while the migration is under way, its reason naming the phase;
+	// False with ReasonRuntimeMigrationFailed once it gave up. The api-server
+	// switches the Backend when the reason is ReasonRuntimeMigrationVerified.
+	ConditionRuntimeMigrating = "RuntimeMigrating"
 	// ConditionNestedVirtualization is present only on an Agent that asks for
 	// spec.backend.vm.nestedVirtualization, and says whether its machine got it.
 	ConditionNestedVirtualization = "NestedVirtualization"
@@ -206,6 +256,31 @@ const (
 	// ReasonNeverReady: the current pod's agent container, or the machine,
 	// has run for ten minutes on this spec without becoming ready.
 	ReasonNeverReady = "NeverReady"
+	// ReasonAdmissionDenied: an admission webhook or policy refused the agent
+	// StatefulSet with this spec's image, so the old pod keeps running.
+	ReasonAdmissionDenied = "AdmissionDenied"
+)
+
+// Reasons on ConditionRuntimeMigrating. Until Verified the container spec is
+// still the Agent's spec, so the migration can be aborted back to it.
+const (
+	// ReasonRuntimeMigrationRequested: the owner's runner and a stopped
+	// machine are being made while the container keeps running (preflight).
+	ReasonRuntimeMigrationRequested = "Requested"
+	// ReasonRuntimeMigrationStopping: preflight passed; the container is
+	// being stopped so its volumes can be copied.
+	ReasonRuntimeMigrationStopping = "Stopping"
+	// ReasonRuntimeMigrationCopying: the copy Job is streaming the volumes to
+	// the runner as the machine's seed.
+	ReasonRuntimeMigrationCopying = "Copying"
+	// ReasonRuntimeMigrationBooting: the machine boots from the seed.
+	ReasonRuntimeMigrationBooting = "Booting"
+	// ReasonRuntimeMigrationVerified: the guest answered after booting from
+	// the seed. The migration can no longer be aborted.
+	ReasonRuntimeMigrationVerified = "Verified"
+	// ReasonRuntimeMigrationFailed: the copy attempts or the time budget ran
+	// out. Terminal until an operator retries or aborts.
+	ReasonRuntimeMigrationFailed = "Failed"
 )
 
 // ReasonHibernated is stamped on the readiness conditions when the idle checker
@@ -328,7 +403,9 @@ type AgentStatus struct {
 	// and status are the whole of what it sees (see
 	// docs/architecture/platform-topology.md).
 	//
-	// Counts the guest's restarts within one machine.
+	// Counts container restarts within one pod, so it resets when the pod
+	// itself is replaced rather than restarted; the vm backend has no
+	// container statuses and never reports here.
 	// +optional
 	AgentPodRestarts int32 `json:"agentPodRestarts,omitempty"`
 	// AgentPodRestartReason is the classified cause behind the most recent of
@@ -337,6 +414,11 @@ type AgentStatus struct {
 	// cause is one the classifier does not name.
 	// +optional
 	AgentPodRestartReason string `json:"agentPodRestartReason,omitempty"`
+	// RuntimeMigrationAttempts counts the copy attempts of the runtime
+	// migration in progress; the migration fails once they run out. Zero when
+	// no migration runs.
+	// +optional
+	RuntimeMigrationAttempts int32 `json:"runtimeMigrationAttempts,omitempty"`
 }
 
 // Mount declares a volume mounted into the agent container.
@@ -372,7 +454,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=21
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=20
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

@@ -216,7 +216,7 @@ const PRESETS: { value: EgressPreset; title: string; description: string }[] = [
     value: "trusted",
     title: "Trusted defaults",
     description:
-      "Allows common package registries and APIs: npm, PyPI, GitHub, Anthropic, …",
+      "Allows common registries and APIs: npm, PyPI, GitHub, Anthropic, …",
   },
   {
     value: "none",

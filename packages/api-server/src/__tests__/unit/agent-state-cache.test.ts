@@ -8,7 +8,10 @@ import type { AgentInformer } from "../../modules/agents/infrastructure/k8s.js";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import { createAgentsRepository } from "../../modules/agents/index.js";
 import { pollUntilReady } from "../../modules/agents/infrastructure/poll-until-ready.js";
-import { LABEL_OWNER } from "../../modules/agents/infrastructure/labels.js";
+import {
+  ANN_KIT_UPDATE_PENDING,
+  LABEL_OWNER,
+} from "../../modules/agents/infrastructure/labels.js";
 
 const NS = "test-agents";
 
@@ -266,6 +269,46 @@ describe("agent state cache", () => {
     f.fire("update", after);
     await update;
     expect((await repo.get("a1"))?.spec.description).toBe("new");
+  });
+
+  // TEST_SCENARIO: A finished Kit Update clears its pending annotation and raises the agents hint, and the UI refetches the update statuses at once. The annotation write returns only once the cache holds it, so that refetch no longer sees the update pending.
+  it("returns from an annotation write only once the cache holds it", async () => {
+    const pending = {
+      ...agent("a1"),
+      metadata: {
+        ...agent("a1").metadata,
+        resourceVersion: "5",
+        annotations: {
+          [ANN_KIT_UPDATE_PENDING]: JSON.stringify({
+            targetCommit: "abc",
+            startedAt: "2026-10-23T00:00:00.000Z",
+          }),
+        },
+      },
+    };
+    const cleared = {
+      ...pending,
+      metadata: { ...pending.metadata, resourceVersion: "6", annotations: {} },
+    };
+    const { client } = fakeK8s([pending]);
+    const live = { ...client, patchCustomObject: async () => cleared };
+    const f = cacheOver([pending], live);
+    await settled(null);
+    const repo = createAgentsRepository(live, f.cache);
+
+    let returned = false;
+    const write = repo
+      .patchAnnotations("a1", { [ANN_KIT_UPDATE_PENDING]: null })
+      .then(() => {
+        returned = true;
+      });
+    await settled(null);
+    expect(returned).toBe(false);
+
+    f.cached.set("a1", cleared);
+    f.fire("update", cleared);
+    await write;
+    expect((await repo.get("a1"))?.kitUpdatePending).toBeUndefined();
   });
 
   // TEST_SCENARIO: An agent just created is not in the cache until the informer delivers its add, and the create's connection grant checks ownership against the cache right after. The wait covers an agent the cache has not seen yet, so that check finds it.

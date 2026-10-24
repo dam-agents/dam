@@ -5,7 +5,7 @@ import { agentContextBlock, type AgentFooter } from "./agent-footer.js";
 import type { SlackBlock, SlackGateway } from "./slack-gateway.js";
 
 const THINKING = "is thinking…";
-const WAKING = "is waking the agent — this can take a minute or two…";
+const WAKING = "is waking the agent…";
 
 export interface TurnPresenterOpts {
   channel: string;
