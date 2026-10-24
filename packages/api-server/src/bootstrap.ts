@@ -12,6 +12,12 @@ import {
   agentServiceAddress,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
+  agentStoreMarkerName,
+  agentStoreRefusal,
+  readAgentStoreMarker,
+} from "./modules/agent-store/fence.js";
+import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
+import {
   composeStorageGate,
   composeUserBudgetsAdmin,
   listRunnerUsageOwners,
@@ -189,6 +195,8 @@ import { composeTermsModule } from "./modules/terms/index.js";
 import { agentsInstallSettings, loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
+import { reconcileControlGrants } from "./modules/agent-store/infrastructure/control-grants.js";
+import { reportControlGrants } from "./modules/agent-store/infrastructure/control-grants-report.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
 import {
@@ -357,6 +365,19 @@ export async function bootstrap() {
   getLogger().info("api-server starting");
 
   const { api } = createApi(config.namespace);
+  const agentStoreMarker = await readAgentStoreMarker(
+    api,
+    config.namespace,
+    config.agentStoreMarker ?? agentStoreMarkerName(config.releaseName),
+  );
+  const refusal = agentStoreRefusal(config.agentStore, agentStoreMarker);
+  if (refusal) {
+    getLogger().error(
+      { agentStore: config.agentStore, release: config.releaseName },
+      refusal,
+    );
+    throw new Error(refusal);
+  }
   const dbTls = {
     ca: config.databaseCaCertPath
       ? readFileSync(config.databaseCaCertPath, "utf8")
@@ -377,6 +398,18 @@ export async function bootstrap() {
     poolMax: config.databasePoolMax,
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
+  reportControlGrants(getLogger(), await reconcileControlGrants(db));
+  if (config.agentStorePreviewReport && config.agentStore === "crd")
+    await reportAbsorbPreview({
+      listCustomObjects: (plural) =>
+        createK8sClient(api, config.namespace).listCustomObjects(plural),
+      db,
+      logger: getLogger(),
+      defaults: {
+        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
+        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+      },
+    });
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,

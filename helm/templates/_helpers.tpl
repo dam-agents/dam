@@ -383,6 +383,43 @@ API Server secrets name — chart-managed Secret holding operator-supplied crede
 {{/*
 API Server database password secret name — uses shared postgres secret when db.password is empty
 */}}
+{{/*
+The ConfigMap the switch leaves behind, and the one ConfigMap both components
+read at startup. The chart names it because the api-server's Role pins it by
+name; the truncation matches what any Kubernetes object name allows, so a long
+release name cannot render a marker nothing can create.
+*/}}
+{{- define "platform.agentStore.markerName" -}}
+{{- printf "%s-agent-store" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{/*
+The controller's connection string: the api-server's database and TLS — one
+platform database per install — under the controller's own login. The password
+arrives through the pod's POSTGRES_PASSWORD, so the string carries a reference
+rather than a credential.
+*/}}
+{{- define "platform.controller.postgres.dsn" -}}
+{{- $dsn := printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.controller.db.user (include "platform.apiserver.db.host" .) (int .Values.apiServer.db.port) .Values.apiServer.db.database -}}
+{{- if .Values.apiServer.db.sslmode -}}
+{{- $dsn = printf "%s?sslmode=%s" $dsn .Values.apiServer.db.sslmode -}}
+{{- end -}}
+{{- $dsn -}}
+{{- end }}
+
+{{/*
+Where the controller's password comes from: the api-server's credentials Secret
+when an operator supplies one (an external database, usually through ESO), and
+the bundled database's Secret otherwise.
+*/}}
+{{- define "platform.controller.db.password.secretName" -}}
+{{- if .Values.controller.db.password }}
+{{- include "platform.apiserver.secrets.fullname" . }}
+{{- else }}
+{{- include "platform.postgres.secrets.fullname" . }}
+{{- end }}
+{{- end }}
+
 {{- define "platform.apiserver.db.password.secretName" -}}
 {{- if .Values.apiServer.db.password }}
 {{- include "platform.apiserver.secrets.fullname" . }}

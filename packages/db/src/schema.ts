@@ -1346,3 +1346,5 @@ export const spendCeilings = pgTable("spend_ceilings", {
     .defaultNow()
     .notNull(),
 });
+
+export * from "./control-schema.js";
