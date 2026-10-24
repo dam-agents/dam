@@ -162,6 +162,8 @@ export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
   "environments",
   "providers",
   "network",
+  "environment",
+  "chat-forms",
 ];
 
 export type SidePanelSelection =

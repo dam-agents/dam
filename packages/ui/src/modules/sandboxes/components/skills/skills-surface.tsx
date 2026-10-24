@@ -9,11 +9,13 @@ import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
 import { useResolvedHarnessConfig } from "../../../agents/api/harness-config.js";
 import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
+import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
+import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
@@ -36,6 +38,7 @@ export function SkillsSurface({
   comingUp?: boolean;
 }) {
   const isError = agentState === "error";
+  const rightToolbar = useUnifiedRightToolbar();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
@@ -219,16 +222,51 @@ export function SkillsSurface({
             />
 
             {}
-            {shownPlatform.length + shownBuiltIn.length > 0 && (
-              <LocalSkillsGroup
-                label="Platform features"
-                skills={[...shownPlatform, ...shownBuiltIn]}
-                onOpenSkill={
-                  agentId
-                    ? (skill) => setOpenModal({ kind: "render-local", skill })
-                    : undefined
-                }
-              />
+            {/* UNIT_BOUNDARY_DESCRIPTION: with the experiment on, the platform's own skills are one list with one whole-row target each; every other shell keeps the two named groups and the name-only target it had. */}
+            {rightToolbar ? (
+              shownPlatform.length + shownBuiltIn.length > 0 && (
+                <LocalSkillsGroup
+                  label="Platform features"
+                  skills={[...shownPlatform, ...shownBuiltIn]}
+                  wholeRows
+                  onOpenSkill={
+                    agentId
+                      ? (skill) => setOpenModal({ kind: "render-local", skill })
+                      : undefined
+                  }
+                />
+              )
+            ) : (
+              <>
+                {shownPlatform.length > 0 && (
+                  <PlatformSkillsGroup
+                    skills={shownPlatform}
+                    onOpenSkill={
+                      agentId
+                        ? (skill) =>
+                            setOpenModal({ kind: "render-local", skill })
+                        : undefined
+                    }
+                    onOpenSection={
+                      agentId
+                        ? (section) => navigateToSandboxHome(agentId, section)
+                        : undefined
+                    }
+                  />
+                )}
+                {shownBuiltIn.length > 0 && (
+                  <LocalSkillsGroup
+                    label="Included with sandbox image"
+                    skills={shownBuiltIn}
+                    onOpenSkill={
+                      agentId
+                        ? (skill) =>
+                            setOpenModal({ kind: "render-local", skill })
+                        : undefined
+                    }
+                  />
+                )}
+              </>
             )}
           </div>
         </>

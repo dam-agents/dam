@@ -8,10 +8,12 @@ function LocalSkillRow({
   skill,
   onOpen,
   trailing,
+  wholeRow = false,
 }: {
   skill: LocalSkill;
   onOpen?: () => void;
   trailing?: ReactNode;
+  wholeRow?: boolean;
 }) {
   const body = (
     <>
@@ -32,7 +34,31 @@ function LocalSkillRow({
       )}
     </>
   );
-  // UNIT_BOUNDARY_DESCRIPTION: the whole row opens the skill's info, not only its name, so a reader with a mouse or a screen reader has one target for the whole list item.
+  if (onOpen && !wholeRow)
+    return (
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={onOpen}
+            className="max-w-full truncate text-left text-md font-medium text-foreground hover:underline"
+          >
+            {skill.name}
+          </button>
+        </div>
+        {trailing}
+        {skill.origin === "system-modified" && (
+          <Badge
+            variant="warning"
+            className="shrink-0"
+            title="This skill's files differ from the copy shipped in the sandbox image"
+          >
+            Modified
+          </Badge>
+        )}
+      </div>
+    );
+  // UNIT_BOUNDARY_DESCRIPTION: under the experiment the whole row opens the skill's info, not only its name, so a reader with a mouse or a screen reader has one target for the whole list item.
   return onOpen ? (
     <button
       type="button"
@@ -53,12 +79,14 @@ export function LocalSkillsGroup({
   skills,
   onOpenSkill,
   trailingFor,
+  wholeRows = false,
 }: {
   label: string;
   description?: ReactNode;
   skills: LocalSkill[];
   onOpenSkill?: (skill: LocalSkill) => void;
   trailingFor?: (skill: LocalSkill) => ReactNode;
+  wholeRows?: boolean;
 }) {
   return (
     <ListSection
@@ -74,6 +102,7 @@ export function LocalSkillsGroup({
           skill={skill}
           onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
           trailing={trailingFor?.(skill)}
+          wholeRow={wholeRows}
         />
       ))}
     </ListSection>

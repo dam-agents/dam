@@ -88,11 +88,13 @@ it("maps every configuration section to a panel", () => {
       "providers",
       "schedules",
       "skills",
+      "environment",
+      "chat-forms",
     ].sort(),
   );
 });
 
-// TEST_SCENARIO: the rail names every panel the configuration holds, so the Configure menu and the panels agree on one list.
+// TEST_SCENARIO: every configuration tab has a rail tile and a panel, so a tile never opens an empty panel.
 it("has a rail entry for every configuration panel", () => {
   const railTabs = SIDE_PANEL_TABS.map((entry) => entry.tab);
   for (const tab of CONFIGURATION_TABS) expect(railTabs).toContain(tab);
