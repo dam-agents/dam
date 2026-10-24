@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -224,14 +224,19 @@ Short-lived or dynamically-minted registry tokens (e.g. ECR) are out of scope.
 
 The credentials above are *upstream* secrets the platform injects on behalf of agents.
 The platform's own backing store has a separate credential boundary: the bundled Postgres splits application connection identities from DBA authority.
-Three login roles, not one:
+Four login roles, not one:
 
 - **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of the `platform` and `keycloak` databases respectively, each the only role its service connects as.
   `CONNECT` is revoked from `PUBLIC` and granted back only to that owner, plus the credential-less `usage_readers` group on `platform` ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked api-server credential can neither read Keycloak's database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) — it can only do DDL/DML within the `platform` database it already owns.
+- **`platform_controller`** — the controller's identity once Agents and user budgets live in Postgres: `NOSUPERUSER`, owning nothing.
+  The api-server, as the owner of the tables that hold them, grants it the definition columns the controller renders, two reclaim columns of one shared row, and its own observation tables — and re-issues those grants on every start, so a role created before or after a migration converges.
+  It still reads and writes the Kubernetes API; what its login cannot do is reach a column it does not render, another schema, or another install's database ([persistence](persistence.md)).
 - **`platform`** — the lone `SUPERUSER`, used only for DBA work.
   It is the image's bootstrap superuser, because Postgres forbids demoting that role and so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
   An existing single-role cluster already bootstrapped under this name, so it is kept in place rather than renamed — Postgres forbids renaming the role you are connected as.
   A per-role `log_statement` default puts every admin-session statement into the audit trail, and every role and grant change is audited whoever issues it ([persistence](persistence.md)).
+
+A fifth role, `usage_readers`, is not a connection identity: it cannot log in, holds no password, and carries `SELECT` on the usage source passthrough views for whichever login an operator adds to it ([usage-tracking](usage-tracking.md#source-passthrough-views)).
 
 The admin credential lives in the same `platform-postgres-secrets` Secret and must be treated as high-value.
 The statement audit is best-effort, not enforced — a superuser session can `SET log_statement` mid-session.

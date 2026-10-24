@@ -14,13 +14,13 @@ Platform persists state on four durable substrates, split cleanly between the pl
   Session metadata is *not* here — it is agent-owned, save for the one dimension the spend read path cannot lose to hibernation or agent deletion (see the session directory below).
   The bundled instance runs under four login roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`), the controller's own login `platform_controller` that owns nothing, plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate, and the controller's cannot read a definition column it does not render.
   Admin sessions carry a per-role `log_statement` default that puts every statement they issue into the pod log for the cluster collector; the server-wide default logs DDL only, so routine application DML stays out of the audit trail while every role and grant change is captured whoever issues it.
-  A fourth role, `usage_readers`, carries no credential and cannot log in: it is the group an operator grants membership in to give a read-only login access to the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views).
+  A group role beside them, `usage_readers`, carries no credential and cannot log in: it is the group an operator grants membership in to give a read-only login access to the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views).
 - **Object store** — bulk binary blobs behind an S3-compatible API; consumers: artifact-library content and the published read-only snapshots of shared knowledge bases.
   The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload or download (through its paired gateway) or a browser download directly, after ownership checks — each link signed for the authority its audience dials, since it is only valid on that one — an agent has no access to the store beyond a link the platform issued.
   The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead.
   An install with no object store cannot store artifact content — the feature fails closed.
 - **Custom resources** — on their way out.
-  The two kinds the platform kept there, `Agent` and `UserBudget`, become rows in Postgres across three releases: one that adds the tables, the controller's login and a startup fence in both components, one that absorbs the stored resources and switches both components to the rows, and one that stops writing the resources and retires the kinds.
+  The two kinds the platform kept there, `Agent` and `UserBudget`, become rows in Postgres; until that switch the resources remain the authority and the tables stay empty, and from it they are a frozen copy kept only for the rollback window.
   Until the switch the resources remain the authority and the tables stay empty; from the switch they are a frozen copy, kept only for the rollback window.
   `Runs`, named here until the container backend went, are gone.
 
@@ -78,7 +78,7 @@ flowchart LR
   agent-runtime -->|read/write| disk
 ```
 
-Until the move's switch release, the two custom resources sit where the diagram has Postgres: the api-server writes their specs and the controller their status, and the `control` tables stay empty.
+Until the move's switch, the two custom resources sit where the diagram has Postgres: the api-server writes their specs and the controller their status, and the `control` tables stay empty.
 
 ## Substrates
 
@@ -171,9 +171,9 @@ An install with no object store fails closed: bulk-blob features are unavailable
 ### Custom resources
 
 The two kinds the platform keeps in the Kubernetes API, `Agent` and `UserBudget` under `agent-platform.ai/v1`, are being replaced by rows in the Agent store above.
-Until the move's switch release they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
+Until the move's switch they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
 Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
-From the switch release they are frozen: nothing writes them, they hold what the snapshot archive holds, and they exist only so a rollback within its window has a state to restore.
+From the switch they are frozen: nothing writes them, they hold what the snapshot archive holds, and they exist only so a rollback within its window has a state to restore.
 They are deleted per install, and the kinds themselves only after every install is past its rollback window, by an operator action rather than by any install's release.
 
 Two domain resources are deliberately not custom resources:

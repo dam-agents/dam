@@ -716,9 +716,9 @@ postgres:
   # dedicated SUPERUSER for DBA work. The app roles are NOSUPERUSER and own only
   # their own database, so a leaked app credential is bounded to one service's
   # data; the controller's owns nothing and is granted what it reconciles.
-  # A fourth role, `usage_readers`, is a credential-less NOLOGIN group: it
-  # holds SELECT on the usage_src_* source passthrough views and grants
-  # nobody anything until an operator adds a member. The api-server
+  # A group role beside them, `usage_readers`, is a credential-less NOLOGIN
+  # group: it holds SELECT on the usage_src_* source passthrough views and
+  # grants nobody anything until an operator adds a member. The api-server
   # reconciles those grants after every migration run, naming this role, so
   # the name is fixed rather than configurable.
   # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
