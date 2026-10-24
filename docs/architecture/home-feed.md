@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -139,6 +139,9 @@ The panel's top bar becomes a 40 px row 8 px below the top of the panel, with it
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
 The tiled bar adds the Documentation tile, and it offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
 The left navigation drops its own Artifacts entry and Documentation link while the bar offers both.
+With the flag on, an Agent's chat also offers its Connections, Channels, Skills and Schedules, each the section its configuration page already renders, so the settings that apply to the conversation sit beside it.
+A schedule created in that panel makes the chat add the Agent's own line naming the shortest prompt that would have made it, and a tool call that created or changed a schedule or a skill carries a card that opens its tab on that item.
+Both are part of the experiment, so with the flag off the chat shows neither.
 The rest of the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.
 The chat's own bar goes with that column, so a wide window reads as JanUI's chat does and nothing repeats the Agent's name; it comes back there only while the status has a badge to show.
