@@ -1,4 +1,4 @@
-import { and, eq, inArray, type Db } from "db";
+import { and, eq, inArray, type Db, type DbTx } from "db";
 import {
   controlAgentConditions,
   controlAgentKitState,
@@ -53,7 +53,7 @@ const signalOf = (agentId: string): AgentRows["signals"] => ({
  * second yet must not report the first as absent.
  */
 export async function readAgentRows(
-  db: Db,
+  db: Db | DbTx,
   ids?: string[],
 ): Promise<AgentRows[]> {
   const definitions =
@@ -137,7 +137,7 @@ export async function readAgentRows(
 }
 
 export async function readOneAgent(
-  db: Db,
+  db: Db | DbTx,
   id: string,
 ): Promise<AgentRows | null> {
   const rows = await readAgentRows(db, [id]);
@@ -145,7 +145,7 @@ export async function readOneAgent(
 }
 
 export async function agentExists(
-  db: Db,
+  db: Db | DbTx,
   id: string,
   ownerSub?: string,
 ): Promise<boolean> {

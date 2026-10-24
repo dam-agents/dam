@@ -30,7 +30,7 @@ export function createControlAgentStateCache(deps: {
   db: Db;
   feed: AgentChangeFeed;
   log: (message: string, fields?: Record<string, unknown>) => void;
-}): RunningAgentStateCache {
+}): RunningAgentStateCache & { snapshot(): Promise<void> } {
   let cached = new Map<string, KubeObject>();
   let listed = false;
   let stopped = false;
@@ -104,6 +104,7 @@ export function createControlAgentStateCache(deps: {
         if (!stopped) await live(id);
       }
     },
+    snapshot,
     async stop() {
       stopped = true;
       cached = new Map();

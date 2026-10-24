@@ -117,8 +117,16 @@ export type AgentSpecWriteResult =
   | { ok: true; value: InfraAgent }
   | { ok: false; reason: "not-found" | "conflict" };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what an activity write replaced, so a rollback can
+ * put exactly it back.
+ * The custom resource identified the write by its timestamp; the store
+ * identifies it by the token that changes with it, and carries the previous
+ * timestamp when there is one.
+ */
 export interface AgentActivityStamp {
   previous: string | null;
+  previousAt?: string | null;
   written: string;
 }
 

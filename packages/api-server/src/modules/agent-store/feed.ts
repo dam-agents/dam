@@ -15,6 +15,19 @@ export interface AgentChange {
   id?: string;
 }
 
+export interface ListenCapableClient {
+  listen(
+    channel: string,
+    onNotify: (payload: string) => void,
+  ): Promise<{ unlisten: () => Promise<void> }>;
+}
+
+export const postgresChangeSource = (
+  client: ListenCapableClient,
+): ReadOnlyChangeSource => ({
+  listen: (channel, onPayload) => client.listen(channel, onPayload),
+});
+
 export interface AgentChangeFeed {
   start(): Promise<void>;
   stop(): Promise<void>;
