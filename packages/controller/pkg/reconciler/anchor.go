@@ -30,6 +30,9 @@ const (
 	anchorIncarnation = "incarnation"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: errAnchorStale marks the anchor of a previous incarnation. Its cleanup is the delete worker's, and a startup pass that treated it as a failure would retry for ever while the worker that could remove it waits for that same pass.
+var errAnchorStale = stderrors.New("the anchor belongs to a previous Agent")
+
 func anchorName(agent string) string { return agent + anchorSuffix }
 
 func (r *AgentReconciler) childrenOwner(ctx context.Context, agent *apiv1.Agent) (metav1.OwnerReference, error) {
@@ -70,7 +73,7 @@ func (r *AgentReconciler) ensureAnchor(ctx context.Context, agent *apiv1.Agent) 
 	}
 	if existing.Data[anchorIncarnation] != string(agent.UID) {
 		return metav1.OwnerReference{}, fmt.Errorf(
-			"agent %s: the anchor still belongs to the previous Agent of that name; waiting for its cleanup", agent.Name)
+			"%w: agent %s: the anchor still belongs to the previous Agent of that name", errAnchorStale, agent.Name)
 	}
 	if existing.Labels[envoyOwnerLabel] != desired.Labels[envoyOwnerLabel] || existing.Labels[LabelAgent] != agent.Name {
 		updated := existing.DeepCopy()
@@ -257,13 +260,13 @@ func (r *AgentReconciler) eventReference(ctx context.Context, agent *apiv1.Agent
 // UNIT_BOUNDARY_DESCRIPTION: EnsureAnchors is the startup pass: every Agent the store holds has its anchor
 // UNIT_BOUNDARY_DESCRIPTION: before any work is served, so a deletion that happened while the controller
 // UNIT_BOUNDARY_DESCRIPTION: was down always has a record to find.
-func (r *AgentReconciler) EnsureAnchors(ctx context.Context) error {
+func (r *AgentReconciler) EnsureAnchors(ctx context.Context, enqueue func(name string)) (pending int, err error) {
 	if !r.anchors {
-		return nil
+		return 0, nil
 	}
 	agents, err := r.backend.List(ctx, labels.Everything())
 	if err != nil {
-		return fmt.Errorf("listing Agents to ensure their anchors: %w", err)
+		return 0, fmt.Errorf("listing Agents to ensure their anchors: %w", err)
 	}
 	var errs []error
 	for i := range agents {
@@ -273,10 +276,18 @@ func (r *AgentReconciler) EnsureAnchors(ctx context.Context) error {
 			continue
 		}
 		if _, err := r.ensureAnchor(ctx, agent); err != nil {
+			if stderrors.Is(err, errAnchorStale) {
+				// UNIT_BOUNDARY_DESCRIPTION: the previous incarnation's anchor is a deletion to work, not a
+				// UNIT_BOUNDARY_DESCRIPTION: failure to retry: the delete worker removes it, and the pass reports
+				// UNIT_BOUNDARY_DESCRIPTION: that the fleet is not ready for its record yet.
+				enqueue(agent.Name)
+				pending++
+				continue
+			}
 			errs = append(errs, err)
 		}
 	}
-	return stderrors.Join(errs...)
+	return pending, stderrors.Join(errs...)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: StoreHealthy is the gate the passes outside a reconcile ask before deciding

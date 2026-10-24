@@ -362,3 +362,36 @@ func TestCRDModeKeepsAnExistingOwnerReference(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, sa.OwnerReferences, 2, "the CR path adopted an owner reference away")
 }
+
+// TEST_SCENARIO: A re-created Agent can find its predecessor's anchor at startup, before any reconcile ran.
+// TEST_SCENARIO: The anchor pass must not loop on it: it reports the Agent as pending and hands the name to the
+// TEST_SCENARIO: delete worker, and only records the pass once that anchor is gone and the new one exists.
+func TestAnchorPassHandsAStaleAnchorToTheDeleteWorker(t *testing.T) {
+	agent := agentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: "owner-1"}
+	r, client := setupReconciler(t, agent)
+	backend := newRecordingBackend(crAgentBackend{dynamic: r.dynamic, namespace: r.config.Namespace})
+	r.WithAgentBackend(backend)
+	_, err := client.CoreV1().ConfigMaps(r.config.Namespace).Create(context.Background(), &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: anchorName("my-agent"), Namespace: r.config.Namespace,
+			Labels: map[string]string{envoyOwnerLabel: "owner-1", LabelAgent: "my-agent"},
+		},
+		Data: map[string]string{anchorIncarnation: "previous-agent-uid"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	var enqueued []string
+	pending, err := r.EnsureAnchors(context.Background(), func(name string) { enqueued = append(enqueued, name) })
+	require.NoError(t, err)
+	assert.Equal(t, 1, pending)
+	assert.Equal(t, []string{"my-agent"}, enqueued)
+
+	require.NoError(t, client.CoreV1().ConfigMaps(r.config.Namespace).Delete(context.Background(), anchorName("my-agent"), metav1.DeleteOptions{}))
+	pending, err = r.EnsureAnchors(context.Background(), func(name string) { enqueued = append(enqueued, name) })
+	require.NoError(t, err)
+	assert.Zero(t, pending)
+	anchor, err := client.CoreV1().ConfigMaps(r.config.Namespace).Get(context.Background(), anchorName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "agent-uid", anchor.Data[anchorIncarnation])
+}

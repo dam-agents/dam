@@ -202,7 +202,7 @@ spec:
             - name: health
               containerPort: {{ .Values.controller.healthPort | default 8081 }}
           {{- if .Values.probes.enabled }}
-          # UNIT_BOUNDARY_DESCRIPTION: the kubelet is what turns a leader that holds the Lease with no fleet behind it into a restart. Readiness is "leading and listed"; liveness is "the store answered in the last two minutes", and CRD mode has no store so it is always healthy. The startup budget covers the first list and, after the switch, the anchor pass.
+          # UNIT_BOUNDARY_DESCRIPTION: the kubelet is what turns a leader that holds the Lease with no fleet behind it into a restart. Readiness is the store answering in the last half minute, not leadership — a standby must read ready or a one-replica rollout waits for a leader it cannot have; liveness allows two minutes of silence. CRD mode has no store, so both are always healthy. The startup budget covers the first list and, after the switch, the anchor pass.
           startupProbe:
             httpGet:
               path: /readyz
