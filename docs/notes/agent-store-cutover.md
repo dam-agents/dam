@@ -70,10 +70,11 @@ kubectl exec deploy/<release>-apiserver -- \
 kubectl exec deploy/<release>-apiserver -- cat /tmp/agent-store.age > ./<install>-agent-store.age
 ```
 
-The command prints the archive's SHA-256 and writes ciphertext, or prints ciphertext to stdout without `--out`.
-The image carries no `tar`, so `kubectl cp` fails; `exec -- cat` is the form that works.
+The command encrypts to the install's `agentStore.backup.recipient` and refuses a `--recipient` that differs from it unless `--force-recipient` says so, printing both.
+The image carries no `tar`, so `kubectl cp` fails; `exec -- cat` is the form that works, and the pod's `/tmp` ciphertext is deleted after it.
 The plaintext is never printed.
-The file is mandatory before the contract release; `agentStore.contract.backupSha256` carries its digest, and `agent-store-cli contract-check --sha256 <digest>` refuses a mismatch.
+The switch's object-store copy is plaintext YAML in the platform's own bucket (it can carry a legacy `spec.env`); this encrypted file is the copy that leaves the platform.
+It is mandatory before the contract release; `agentStore.contract.backupSha256` carries the digest of the YAML archive (not of the ciphertext, which is randomized), and `agent-store-cli contract-check --sha256 <digest>` compares it exactly.
 
 ## Rollback, inside the one-week window
 
@@ -85,12 +86,15 @@ A rollback is a restore of the custom resources from the rows, not a restore of 
 2. Restore:
    - `node dist/js/agent-store-cli.js rollback --dry-run` first, from a machine with the cluster credentials and a database connection; it prints what it would do and changes nothing.
    - then the same without `--dry-run`, from a one-off pod or the same machine.
-     It writes each row back to a custom resource (new UIDs), deletes the resources whose rows are gone, re-points every child of each Agent to its restored custom resource, deletes the anchors with orphan propagation, verifies that no child still references an anchor, clears the rows and the absorb stamp, and deletes the marker.
+   - It refuses unless the database was absorbed and the cluster's marker says so; a wrong `DATABASE_URL` is a refusal, not a fleet that vanished.
+     A rerun after a finished rollback does nothing.
+     It writes each row back to a custom resource (whole: a grant revoked, a host removed or a flag turned off after the switch comes back cleared, and the status is restored), creates the ones that were created after the switch (new UIDs), deletes only resources the absorb recorded and whose rows are gone, re-points every child of each Agent — NetworkPolicies included — to its restored custom resource, deletes the anchors with orphan propagation, verifies that no child still references an anchor, deletes the marker, and only then clears the rows and the absorb stamp.
      It refuses unless the components are frozen, and it refuses while any child still names an anchor.
 3. Pin the previous (expand) release and clear `agentStore.frozen`.
    Its fence accepts the custom resources again because the marker is gone.
    Do not roll back below the expand release: a build older than the fence cannot recognise a switched store, which is what the fence exists to prevent.
-4. Re-run the grant fan-out repair if the connections module changed anything in the database during the outage, and expect the controller to re-create the anchors and adopt the children on its first reconcile.
+4. Re-run the grant fan-out repair if the connections module changed anything in the database during the outage.
+   In CR mode there are no anchors: the controller renders from the custom resources again and adopts the children on its first reconcile, and owner references to a custom resource are what it expects.
 
 A later re-upgrade re-absorbs with the custom resources authoritative.
 
@@ -98,7 +102,7 @@ A later re-upgrade re-absorbs with the custom resources authoritative.
 
 Only after every install is past its window, in the same order dev, staging, prod:
 
-- the contract release stops writing the custom resources and refuses to delete them unless `agentStore.contract.backupSha256` matches the installed archive (`contract-check`);
+- the contract release stops writing the custom resources and refuses to delete them unless `agentStore.contract.backupSha256` is the install's recorded archive digest (`contract-check`);
 - deleting the two CRDs is a separate cluster-wide action, taken once, after the last install's window: `kubectl delete crd agents.agent-platform.ai userbudgets.agent-platform.ai`.
   No install's chart or hook ever deletes a shared CRD.
 

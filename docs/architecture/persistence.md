@@ -163,6 +163,7 @@ The switch is one api-server startup behind that marker ([agent-store cutover](.
 It recreates both Deployments instead of rolling them, so no old replica or periodic job acts on a fleet that exists only in rows.
 The api-server then reads every `Agent` and `UserBudget`, refuses any record it cannot carry as rows — a refusal names the record, and a connection grant that disagrees with `connection_grants` is one of them — and writes the rows, the archive in `crd_snapshots` and the store row's `absorbed_at` in one transaction.
 The archive's independent copy is written to the object store and read back before that transaction opens, so an install with an object store aborts rather than absorb with one copy; an install without one carries the in-database copy only, and the operator's encrypted file before the contract release is what replaces it.
+The object-store copy is plaintext in the platform's own bucket; only the operator's file leaves the platform, encrypted to the install's age key.
 A rerun finds `absorbed_at` and imports nothing again, whatever point a kill interrupted.
 It serves only once the new controller leads the Lease and has recorded that every Agent has its anchor — the store row's `controller_holder` and `anchors_ensured_at` — and it records `switch_completed_at` so a later controller outage never keeps the api-server down.
 The archive is exported, encrypted to the operator's age key, by the api-server's own command; the plaintext never leaves the database, a pod's filesystem or a terminal.
