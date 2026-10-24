@@ -174,15 +174,60 @@ A later re-upgrade re-absorbs with the custom resources authoritative.
 
 ## Retiring the custom resources (contract release)
 
-Only after every install is past its window, in the same order dev, staging, prod:
+Only after every install is past its window, in the same order dev, staging, prod.
 
-- the contract release stops writing the custom resources and refuses to delete them unless `agentStore.contract.backupSha256` is the install's recorded archive digest (`contract-check`);
-- deleting the two CRDs is a separate cluster-wide action, taken once, after the last install's window: `kubectl delete crd agents.agent-platform.ai userbudgets.agent-platform.ai`.
-  No install's chart or hook ever deletes a shared CRD.
+1. Check the gate before the release, in the switch release's api-server pod:
+
+   ```sh
+   kubectl exec -n <ns> deploy/<release>-apiserver -- \
+     node dist/js/agent-store-cli.js contract-check --sha256 <digest>
+   ```
+
+   It refuses until the install was switched, a week has passed since `switch_completed_at`, the snapshot table still reads back to the digest the absorb recorded, and `--sha256` is that digest.
+   `--sha256` defaults to `agentStore.contract.backupSha256`; `--now <iso>` moves the clock, for a rehearsal only.
+
+2. Release the contract values, which are the switch's plus the attested digest:
+
+   ```yaml
+   agentStore:
+     authority: contract
+     cutover:
+       acknowledged: true
+     contract:
+       backupSha256: <the digest export-snapshot printed>
+   ```
+
+   The api-server refuses to start if the gate does not pass, so a value set too early is a crash-loop for a second, then the release before it keeps serving.
+   The release reads no custom resource and renders no RBAC for the group; the controller skips the CRD schema check.
+   Once it runs, the marker carries `contract-at`, and `agent-store-cli contract-check` says the same thing the startup gate did.
+
+3. Delete this install's custom resources, once, with a kubeconfig whose identity may delete them (the contract release's own ServiceAccount may not, deliberately):
+
+   ```sh
+   PLATFORM_RELEASE_NAME=<release> NAMESPACE=<agentNamespace> \
+     node dist/js/agent-store-cli.js delete-crs --dry-run
+   # then the same without --dry-run
+   ```
+
+   It refuses without the marker's `contract-at`, deletes each `Agent` and `UserBudget` with `Orphan` propagation — the anchors own the children, so no machine, Service or Secret goes with them — and a rerun, or a cluster whose CRDs are already gone, deletes nothing.
+
+4. Only when every install on the cluster is past step 2 (its marker has `contract-at`), retire the kinds cluster-wide, once:
+
+   ```sh
+   mise run cluster:retire-crds -- --backup ./crds-retired.yaml
+   ```
+
+   It refuses while any install's namespace runs an api-server with no store marker, or a marker without `contract-at` — an install on the custom resources, or one inside its rollback window — and prints each of them.
+   It writes every remaining `Agent` and `UserBudget` across installs to the backup file (mode 600: a legacy `spec.env` may be in it), prints the file's SHA-256, then deletes `agents.agent-platform.ai` and `userbudgets.agent-platform.ai`.
+   A second run reports them already retired.
+   The same script is mirrored into dam-ops as `retire-crds.sh`, where a prod cluster runs it with `KUBECTL=` pointing at that cluster.
+   No install's chart or hook ever deletes a shared CRD.
+
+5. An install created after that point starts on the rows and takes `contract` with `agentStore.contract.emptyArchive: true` (it never absorbed a custom resource, so there is no archive to attest).
 
 What replaces the old operator habits:
 
-- `upgrade-crds.sh` is gone with the CRDs; schema changes are migrations the api-server runs on startup.
+- `upgrade-crds.sh` is gone once the CRDs are: schema changes are migrations the api-server runs on startup, and no CRD schema generation is applied any more.
 - `kubectl get agents` becomes `kubectl exec … -- node dist/js/agent-store-cli.js export-crds` (plaintext YAML of what the rows hold) or a read-only SQL view; the Agent's own page and the API stay the operator's read path.
 - `kubectl annotate agent …` for lifecycle signals is gone; the owner and operator APIs write the signals columns.
 - `dam budget` replaces `create-user-budget.sh`; the `user_budgets` table is what it writes.
