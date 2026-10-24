@@ -63,9 +63,26 @@ describe("a model id's family, size and version", () => {
 
   // TEST_SCENARIO: A model of no known family, or of a known family with no size, is not a family model.
   it("returns null for an unknown model", () => {
-    expect(parseModelFamily("rits/zai-org/glm-5-3")).toBeNull();
-    expect(parseModelFamily("rits/deepseek-ai/DeepSeek-V3.2")).toBeNull();
+    expect(parseModelFamily("rits/moonshotai/Kimi-K2.5")).toBeNull();
+    expect(parseModelFamily("meta/llama-4")).toBeNull();
     expect(parseModelFamily("azure/gpt-5.5")).toBeNull();
+  });
+
+  // TEST_SCENARIO: GLM's ids carry no size word, so the family is one tier; DeepSeek's carry Flash, and the v in its version is not part of it.
+  it("reads a family with no size word and a v-marked version", () => {
+    expect(parseModelFamily("rits/zai-org/glm-5-3")).toMatchObject({
+      family: { name: "GLM" },
+      size: "glm",
+      version: [5, 3],
+    });
+    expect(
+      parseModelFamily("rits/deepseek-ai/DeepSeek-V4.1-Flash"),
+    ).toMatchObject({
+      family: { name: "DeepSeek" },
+      size: "flash",
+      version: [4, 1],
+    });
+    expect(parseModelFamily("rits/deepseek-ai/DeepSeek-V3.2")).toBeNull();
   });
 
   // TEST_SCENARIO: A name that only looks like a family model is not one: a variant after the size and a size word in the middle stay distinct models.
@@ -75,17 +92,24 @@ describe("a model id's family, size and version", () => {
     expect(parseModelFamily("claude-opus-5-5-mini")).toBeNull();
   });
 
-  // TEST_SCENARIO: A snapshot date after the version is kept apart from it, so the dated snapshot is the same version and not a newer one.
-  it("reads a snapshot date apart from the version", () => {
+  // TEST_SCENARIO: A build stamp after the version, a snapshot date or a build number, is kept apart from it, so a stamped model is the same version and not a newer one.
+  it("reads a build stamp apart from the version", () => {
     expect(parseModelFamily("claude-opus-5-5-20261001")).toMatchObject({
       size: "opus",
       version: [5, 5],
-      snapshotDate: "20261001",
+      buildStamp: "20261001",
     });
     expect(parseModelFamily("claude-3-5-sonnet-20241022")).toMatchObject({
       size: "sonnet",
       version: [3, 5],
-      snapshotDate: "20241022",
+      buildStamp: "20241022",
+    });
+    expect(
+      parseModelFamily("rits/deepseek-ai/DeepSeek-V4.1-Flash-1017"),
+    ).toMatchObject({
+      size: "flash",
+      version: [4, 1],
+      buildStamp: "1017",
     });
   });
 
@@ -119,7 +143,13 @@ describe("the menu's family groups", () => {
       "anthropic/claude-opus-5-5",
       "anthropic/claude-haiku-4-5",
     ),
-    group("curve", "cb/gpt-5.6-sol", "cb/rits/zai-org/glm-5-3"),
+    group(
+      "curve",
+      "cb/gpt-5.6-sol",
+      "cb/rits/zai-org/glm-5-3",
+      "cb/rits/zai-org/glm-5-4",
+      "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash",
+    ),
   ];
 
   // TEST_SCENARIO: Collapsed, one entry per size, largest size first, the newest version on the entry. Open, the whole family is ordered by version newest first, then by size largest first.
@@ -193,19 +223,30 @@ describe("the menu's family groups", () => {
     expect(other.models.some((e) => e.label === "azure/gpt-5.5")).toBe(false);
   });
 
+  // TEST_SCENARIO: GLM has no size word, so it is one tier: the newest version collapsed and the older ones behind More. DeepSeek's Flash is its size and its unworded V3.2 sits behind More.
+  it("groups the single-tier GLM and DeepSeek families", () => {
+    const { families } = familyModelGroups(groups);
+    const glm = families.find((s) => s.family.name === "GLM")!;
+    expect(glm.newest.map((e) => e.label)).toEqual(["5.4"]);
+    expect(glm.more.map((e) => e.label)).toEqual(["5.3"]);
+    const deepseek = families.find((s) => s.family.name === "DeepSeek")!;
+    expect(deepseek.newest.map((e) => e.label)).toEqual(["Flash 4.1"]);
+    expect(deepseek.more.map((e) => e.label)).toEqual([
+      "rits/deepseek-ai/DeepSeek-V3.2",
+    ]);
+  });
+
   // TEST_SCENARIO: Models of no known family are their own entries under Other, grouped by upstream id across providers.
   it("puts an unknown family under Other", () => {
     const { other } = familyModelGroups([
       ...groups,
-      group("other-provider", "x/rits/deepseek-ai/DeepSeek-V3.2"),
+      group("other-provider", "x/rits/moonshotai/Kimi-K2.5"),
     ]);
     expect(other.models.map((e) => e.label)).toEqual([
-      "rits/deepseek-ai/DeepSeek-V3.2",
-      "rits/zai-org/glm-5-3",
+      "rits/moonshotai/Kimi-K2.5",
     ]);
-    const deepseek = other.models[0]!;
-    expect(deepseek.options.map((o) => o.group.connectionId)).toEqual([
-      "ibm",
+    const kimi = other.models[0]!;
+    expect(kimi.options.map((o) => o.group.connectionId)).toEqual([
       "other-provider",
     ]);
   });

@@ -11,7 +11,8 @@ export interface ModelFamily {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the families and their size tiers, smallest to
  * largest, which is what makes a size one menu entry and orders it; a new
- * size is one string here, in that order.
+ * size is one string here, in that order. A family whose ids carry no size
+ * word has no tiers, so it reads as one tier of its own.
  */
 export const MODEL_FAMILIES: readonly ModelFamily[] = [
   {
@@ -24,17 +25,27 @@ export const MODEL_FAMILIES: readonly ModelFamily[] = [
     token: "gpt",
     sizes: ["luna", "terra", "sol", "astra"],
   },
+  {
+    name: "GLM",
+    token: "glm",
+    sizes: [],
+  },
+  {
+    name: "DeepSeek",
+    token: "deepseek",
+    sizes: ["flash"],
+  },
 ];
 
 export interface ParsedModel {
   family: ModelFamily;
   size: string;
   version: readonly number[];
-  snapshotDate?: string;
+  buildStamp?: string;
 }
 
-const SNAPSHOT = /^\d{8}$/;
-const VERSION_PART = /^\d{1,2}$/;
+const BUILD_STAMP = /^\d{4,8}$/;
+const VERSION_PART = /^v?\d{1,2}$/;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: gateways prefix a model id with their own path
@@ -50,11 +61,13 @@ const familyOf = (tokens: readonly string[]): ModelFamily | null =>
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a name is a family model only in one of the
  * shapes builders publish: `claude-opus-5-5`, `claude-3-5-sonnet` and
- * `gpt-6.1-sol`, with 1–2 version parts and an optional snapshot date after
- * them. Any other token (a variant such as `-mini`, a size in the middle)
- * leaves it out, so it stays a distinct model instead of merging with the
- * model it resembles. The snapshot date stays apart from the version, so a
- * dated snapshot is the same version.
+ * `gpt-6.1-sol`, with 1–2 version parts and an optional build stamp after
+ * them, or, for a family with no size word, the version parts alone; a
+ * version may carry the `v` marker (`DeepSeek-V4.1-Flash`). Any other token
+ * (a variant such as `-mini`, a size in the middle) leaves it out, so it
+ * stays a distinct model instead of merging with the model it resembles.
+ * The stamp, a snapshot date or a build number, stays apart from the
+ * version, so a stamped snapshot is the same model.
  */
 export function parseModelFamily(name: string): ParsedModel | null {
   const tokens = tokensOf(name);
@@ -62,13 +75,27 @@ export function parseModelFamily(name: string): ParsedModel | null {
   if (family === null) return null;
   const after = tokens.slice(tokens.indexOf(family.token) + 1);
   const last = after[after.length - 1];
-  const snapshotDate =
-    after.length > 1 && last !== undefined && SNAPSHOT.test(last)
+  const buildStamp =
+    after.length > 1 && last !== undefined && BUILD_STAMP.test(last)
       ? last
       : undefined;
-  const rest = snapshotDate === undefined ? after : after.slice(0, -1);
+  const rest = buildStamp === undefined ? after : after.slice(0, -1);
   const versionOf = (parts: readonly string[]) =>
-    parts.every((p) => VERSION_PART.test(p)) ? parts.map(Number) : null;
+    parts.every((p) => VERSION_PART.test(p))
+      ? parts.map((p) => Number(p.replace(/^v/, "")))
+      : null;
+  if (family.sizes.length === 0) {
+    if (rest.length < 1 || rest.length > 2) return null;
+    const version = versionOf(rest);
+    return version === null
+      ? null
+      : {
+          family,
+          size: family.token,
+          version,
+          ...(buildStamp !== undefined && { buildStamp }),
+        };
+  }
   for (const size of family.sizes) {
     if (rest.length < 2 || rest.length > 3) continue;
     const version =
@@ -82,7 +109,7 @@ export function parseModelFamily(name: string): ParsedModel | null {
         family,
         size,
         version,
-        ...(snapshotDate !== undefined && { snapshotDate }),
+        ...(buildStamp !== undefined && { buildStamp }),
       };
   }
   return null;
@@ -184,7 +211,10 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
         entry = {
           ...parsed,
           key,
-          label: `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`,
+          label:
+            parsed.family.sizes.length === 0
+              ? parsed.version.join(".")
+              : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`,
           options: [],
         };
         recognized.set(key, entry);
@@ -207,7 +237,9 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
           family.sizes.indexOf(b.size) - family.sizes.indexOf(a.size),
       );
     const newest: FamilyModel[] = [];
-    for (const size of [...family.sizes].reverse()) {
+    const sizes =
+      family.sizes.length === 0 ? [family.token] : [...family.sizes].reverse();
+    for (const size of sizes) {
       const entry = versioned.find((e) => e.size === size);
       if (entry !== undefined) newest.push(entry);
     }

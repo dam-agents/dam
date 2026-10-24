@@ -44,7 +44,7 @@ const ibm: ModelGroup = {
     model("ibm/aws/claude-opus-5-5", 200_000),
     model("ibm/aws/claude-opus-5-1", 200_000),
     model("ibm/azure/gpt-5.5", 1_100_000),
-    model("ibm/rits/zai-org/glm-5-3", 128_000),
+    model("ibm/rits/moonshotai/Kimi-K2.5", 128_000),
   ],
 };
 const anthropic: ModelGroup = {
@@ -126,7 +126,7 @@ it("puts an unknown family under Other and offers no disconnect", () => {
     s.getAttribute("aria-label"),
   );
   expect(sections).toEqual(["Claude", "GPT", "Other"]);
-  expect(container.textContent).toContain("rits/zai-org/glm-5-3");
+  expect(container.textContent).toContain("rits/moonshotai/Kimi-K2.5");
   expect(container.textContent).not.toContain("Disconnect");
 });
 
