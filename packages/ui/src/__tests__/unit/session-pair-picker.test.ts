@@ -611,9 +611,10 @@ describe("one model list on a runtime that routes by model name", () => {
       }),
     );
     expect(html).toContain('aria-label="GPT"');
-    expect(html).toContain('aria-label="Other"');
+    expect(html).toContain('aria-label="GLM"');
+    expect(html).toContain("5.3");
     expect(html).toContain("More");
-    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).not.toContain("Other");
     expect(html).not.toContain('aria-label="IBM"');
     expect(html).not.toContain('aria-label="Curve"');
     expect(html).not.toContain("Disconnect IBM");
@@ -703,13 +704,13 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).toContain("More");
     expect(html).toContain('aria-label="Provider for Opus 5.5: IBM"');
     expect(html).toContain('aria-label="Provider for Sol 5.6: IBM"');
-    expect(html).toContain("rits/deepseek-ai/DeepSeek-V3.2");
-    expect(html).toContain('aria-label="Other"');
+    expect(html).toContain('aria-label="DeepSeek"');
+    expect(html).not.toContain("rits/deepseek-ai/DeepSeek-V3.2");
     expect(html.indexOf('aria-label="Claude"')).toBeLessThan(
       html.indexOf('aria-label="GPT"'),
     );
     expect(html.indexOf('aria-label="GPT"')).toBeLessThan(
-      html.indexOf('aria-label="Other"'),
+      html.indexOf('aria-label="DeepSeek"'),
     );
   });
 
@@ -764,7 +765,7 @@ describe("one model list on a runtime that routes by model name", () => {
       }),
     );
     expect(html).toContain("gpt-5.5 (IBM)");
-    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).toContain('aria-label="GLM"');
     expect(html).toContain("applies to the next message");
     expect(html).not.toContain("start a new session");
     expect(html).not.toContain(">Change<");
@@ -804,7 +805,7 @@ describe("one model list on a runtime that routes by model name", () => {
     );
     expect(html).toContain("Provider removed");
     expect(html).toContain("Attach Anthropic old again");
-    expect(html).toContain("rits/zai-org/glm-5-3");
+    expect(html).toContain('aria-label="GLM"');
   });
 });
 

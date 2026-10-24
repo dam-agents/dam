@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers offers CurveBender twice: the user-keyed integration reads "(custom key)" and keeps its Connect action, while the deployment's integration, named without the suffix, appears only where the install configures it and reads Connected once its connection exists; its row opens a read-only explainer rather than a form, so an unconfigured install offers nothing it cannot serve.
+// TEST_OVERVIEW: Settings / Providers offers CurveBender twice: the user-keyed integration reads "(own key)" and keeps its Connect action, while the deployment's integration, named "(shared)", appears only where the install configures it and reads Connected once its connection exists; its row opens a read-only explainer rather than a form, so an unconfigured install offers nothing it cannot serve.
 import { CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -83,8 +83,8 @@ const render = () =>
     ),
   );
 
-const CUSTOM = "CurveBender custom key";
-const SHARED = "CurveBender";
+const CUSTOM = "CurveBender (own key)";
+const SHARED = "CurveBender (shared)";
 
 const deploymentConfigured = () =>
   (state.templates = [{ id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID }]);
@@ -122,7 +122,9 @@ describe("CurveBender provider rows", () => {
     expect(html).toContain(`title="${SHARED}"`);
     expect(html).toContain("Configured · Connected");
     expect(html).toMatch(
-      new RegExp(`<button[^>]*aria-label="About ${SHARED}"`),
+      new RegExp(
+        `<button[^>]*aria-label="About ${SHARED.replace(/[()]/g, "\\$&")}"`,
+      ),
     );
     expect(html).not.toContain(`aria-label="Connect ${SHARED}"`);
     expect(html).not.toContain(`aria-label="Edit ${SHARED}"`);

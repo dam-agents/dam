@@ -371,11 +371,11 @@ describe("provider errors", () => {
       text: "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center></body></html>",
       dialect: "anthropic-messages",
       harness: "claude-code",
-      provider: "CurveBender",
+      provider: "CurveBender (shared)",
       upstreamId: "rits/zai-org/glm-5-3",
     });
     expect(JSON.parse(html).error.message).toBe(
-      "CurveBender refused rits/zai-org/glm-5-3 with HTTP 403 on the Anthropic Messages API, which claude-code uses. The provider said: 403 Forbidden 403 Forbidden",
+      "CurveBender (shared) refused rits/zai-org/glm-5-3 with HTTP 403 on the Anthropic Messages API, which claude-code uses. The provider said: 403 Forbidden 403 Forbidden",
     );
   });
 });
