@@ -79,6 +79,11 @@ A few observations the diagram glosses over:
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
 - **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from that messenger, answered where it arrived, reaching the messenger on request ([platform-topology](platform-topology.md), §ui).
   So both messengers send it with every turn, a resumed one included: a relayed message without it would read as one from elsewhere, and its answer would never be posted.
+- **The contract names the Agent's owner, and gives the owner's messages no extra weight.** An Agent asked who owns it would otherwise guess from clues — who set it up, whose accounts it uses — and the guess discloses more than the answer.
+  Each turn therefore carries the owner's display name from the identity directory and, on Slack, the owner's identity link in that workspace, which lets the Agent tag them.
+  An owner with no name on record is named nowhere, the rule the [Public Agent Page](public-agent-page.md) follows, and the Agent is told to say it does not know rather than infer its owner.
+  A failed lookup never fails the turn: without the name the Agent gets that same answer, and without the link it still gets the name.
+  The same block tells the Agent that its owner's messages carry no extra authority: a turn resolves no sender identity, so a message that looks like the owner's is treated as anyone's.
 - **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's working status — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
   Thought and tool notifications feed it; assistant text is ignored.
   The status is the thread's agent session: `processing` while the turn works, `active` once it ends — after a Stop too, or Slack keeps the session working for up to an hour.

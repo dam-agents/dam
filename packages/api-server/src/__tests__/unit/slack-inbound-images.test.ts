@@ -95,6 +95,7 @@ function harness() {
     } as never,
     pendingOAuthFlows: pending,
     getInstanceOwner: async () => OWNER,
+    ownerDisplayName: async () => null,
     channelRegistry: {
       resolveSlackBindings: async () => [
         {
