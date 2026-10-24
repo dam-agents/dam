@@ -132,22 +132,39 @@ export function createAgentChangeFeed(deps: {
     return false;
   }
 
+  let refreshing: Promise<void> | undefined;
+
   async function refresh(): Promise<void> {
-    buffering = true;
-    buffered.clear();
-    try {
-      await deps.snapshot();
-    } catch (cause) {
-      deps.log("agent store: the cache could not be listed", {
-        error: cause instanceof Error ? cause.message : String(cause),
-      });
-    } finally {
-      buffering = false;
-      const pending = [...buffered];
+    if (refreshing !== undefined) return refreshing;
+    refreshing = (async () => {
+      buffering = true;
       buffered.clear();
-      if (pending.includes(null)) releaseAll();
-      for (const id of pending) if (id !== null) release(id);
-    }
+      let drained: Array<string | null> = [];
+      try {
+        await deps.snapshot();
+      } catch (cause) {
+        deps.log("agent store: the cache could not be listed", {
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      } finally {
+        buffering = false;
+        drained = [...buffered];
+        buffered.clear();
+      }
+      /**
+       * UNIT_BOUNDARY_DESCRIPTION: what arrived while the snapshot ran committed
+       * after the reads the snapshot is made of, so it is not in the snapshot.
+       * It invalidates, and only then are the waiters released onto the entry
+       * that invalidation left behind.
+       */
+      if (drained.includes(null)) deps.onChange?.(null);
+      for (const id of drained) deps.onChange?.(id);
+      if (drained.includes(null)) releaseAll();
+      for (const id of drained) if (id !== null) release(id);
+    })().finally(() => {
+      refreshing = undefined;
+    });
+    return refreshing;
   }
 
   let subscribedBefore = false;

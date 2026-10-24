@@ -37,28 +37,54 @@ export function createControlAgentStateCache(deps: {
   let cached = new Map<string, KubeObject>();
   let listed = false;
   let stopped = false;
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a read that started before a commit must not
+   * overwrite the invalidation that commit's notification caused.
+   * Every invalidation bumps a counter, and a read captures it and stores only
+   * when it has not moved.
+   */
+  let generation = 0;
+  const stale = new Set<string>();
+  let staleAll = false;
 
   const snapshot = async () => {
-    const rows = await readAgentRows(deps.db);
+    const epoch = generation;
+    const rows = await deps.db.transaction(async (tx) => readAgentRows(tx), {
+      isolationLevel: "repeatable read",
+    });
+    if (generation !== epoch) {
+      listed = true;
+      return;
+    }
     const next = new Map<string, KubeObject>();
     for (const row of rows) next.set(row.agent.id, resourceFromRows(row));
     cached = next;
     listed = true;
+    stale.clear();
+    staleAll = false;
   };
 
   const live = async (id: string): Promise<KubeObject | null> => {
+    const epoch = generation;
     const row = await readOneAgent(deps.db, id);
     const resource = row === null ? null : resourceFromRows(row);
-    if (resource === null) cached.delete(id);
-    else cached.set(id, resource);
+    if (generation === epoch) {
+      if (resource === null) cached.delete(id);
+      else cached.set(id, resource);
+    }
+    stale.delete(id);
     return resource;
   };
 
   const stopFeed = () => deps.feed.stop();
 
   const invalidate = (id: string | null) => {
-    if (id === null) cached = new Map();
-    else cached.delete(id);
+    generation += 1;
+    if (id === null) {
+      staleAll = true;
+      return;
+    }
+    stale.add(id);
   };
 
   void deps.feed.start().catch((cause) => {
@@ -70,7 +96,7 @@ export function createControlAgentStateCache(deps: {
   return {
     async get(id) {
       if (stopped) return null;
-      if (listed) {
+      if (listed && !staleAll && !stale.has(id)) {
         const hit = cached.get(id);
         if (hit) return hit;
       }
@@ -82,7 +108,7 @@ export function createControlAgentStateCache(deps: {
     },
     async list(owner) {
       if (stopped) return [];
-      if (!listed) await snapshot();
+      if (!listed || staleAll || stale.size > 0) await snapshot();
       const all = [...cached.values()];
       return owner
         ? all.filter((obj) => obj.metadata?.labels?.[LABEL_OWNER] === owner)

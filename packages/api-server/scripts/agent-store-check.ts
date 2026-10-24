@@ -13,7 +13,10 @@
 import { createDb, sql } from "db";
 import { createControlAgentsRepository } from "../src/modules/agent-store/agents-repository.js";
 import { createControlAgentStateCache } from "../src/modules/agent-store/cache.js";
-import { createAgentChangeFeed } from "../src/modules/agent-store/feed.js";
+import {
+  createAgentChangeFeed,
+  postgresChangeSource,
+} from "../src/modules/agent-store/feed.js";
 import {
   deleteUserBudget,
   listUserBudgets,
@@ -32,6 +35,7 @@ if (!url) {
 }
 
 const { db, sql: client } = createDb(url, { poolMax: 4 });
+const other = createDb(url, { poolMax: 1 });
 const failures: string[] = [];
 let checked = 0;
 
@@ -50,17 +54,17 @@ const reasonOf = (cause: unknown): string =>
 const AGENT = "agent-store-check";
 const OWNER = "sub-store-check";
 
-const cache = createControlAgentStateCache({
-  db,
-  feed: createAgentChangeFeed({
-    source: {
-      listen: async () => ({ unlisten: async () => {} }),
-    },
-    snapshot: async () => {},
-    log: () => {},
-  }),
+const feed = createAgentChangeFeed({
+  source: postgresChangeSource(client),
+  snapshot: () => cache.snapshot(),
+  onChange: (id) => cache.invalidate(id),
   log: () => {},
+  relistIntervalMs: 60_000,
 });
+const cache = createControlAgentStateCache({ db, feed, log: () => {} });
+process.stderr.write("starting the change feed\n");
+await feed.start();
+process.stderr.write("feed listening\n");
 const repo = createControlAgentsRepository(db, cache);
 
 async function cleanup(): Promise<void> {
@@ -227,6 +231,118 @@ async function main(): Promise<void> {
   await writeUserBudget(db, { ownerSub: OWNER, change: { storage: "20Gi" }, setBySub: "operator-1" });
   check("a delete reports what it removed", (await deleteUserBudget(db, OWNER))?.storage === "20Gi");
 
+  // TEST_SCENARIO: the change feed is the platform's, not a stub's: a kit write and a disable both arrive through the real listener, and the cache serves the row after them rather than the one before.
+  const listened = new Promise<void>((resolve) => {
+    const subscription = feed.whenChanged(AGENT);
+    void subscription.changed.then(() => {
+      subscription.cancel();
+      resolve();
+    });
+  });
+  await repo.patchAnnotation(AGENT, "agent-platform.ai/starter-kit-onboarded", "2026-10-24T00:00:00Z");
+  const heard = await Promise.race([
+    listened.then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ]);
+  check("a kit write publishes on the change feed", heard);
+  const kitSeen = await cache.get(AGENT);
+  check(
+    "the cache serves the kit write it was notified of",
+    kitSeen?.metadata?.annotations?.["agent-platform.ai/starter-kit-onboarded"] !==
+      undefined,
+    JSON.stringify(kitSeen?.metadata?.annotations ?? {}),
+  );
+
+  await repo.setDisabled(AGENT, true);
+  const hidden = await cache.get(AGENT);
+  check(
+    "the cache serves the disable it was notified of",
+    hidden?.metadata?.annotations?.["agent-platform.ai/disabled"] !== undefined,
+    JSON.stringify(hidden?.metadata?.annotations ?? {}),
+  );
+  await repo.setDisabled(AGENT, false);
+
+  // TEST_SCENARIO: two writers interleaved, not sequential — the competing write holds its lock uncommitted while the repository call starts, then commits. PostgreSQL re-checks the predicate after the wait, so the loser must see the winner's row, which a read-then-write could not.
+  await db.execute(
+    sql`UPDATE control.agent_signals SET stop_requested_at = NULL, disabled_at = NULL WHERE agent_id = ${AGENT}`,
+  );
+  await other.sql`BEGIN`;
+  await other.sql`UPDATE control.agent_signals SET disabled_at = now() WHERE agent_id = ${AGENT}`;
+  const racing = repo.wake(AGENT);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  await other.sql`COMMIT`;
+  const raced = await racing;
+  check(
+    "a wake that raced a committed disable is refused",
+    !raced.ok && raced.error.type === "AgentDisabled",
+    JSON.stringify(raced),
+  );
+  await db.execute(
+    sql`UPDATE control.agent_signals SET disabled_at = NULL, stop_requested_at = NULL WHERE agent_id = ${AGENT}`,
+  );
+
+  // TEST_SCENARIO: an observation the controller writes advances the version a decision compares, so a rollback decided before a condition changed is refused instead of landing on state it never saw.
+  await db.execute(sql`
+    INSERT INTO control.agent_status (agent_id, observed_generation) VALUES (${AGENT}, 1)
+    ON CONFLICT (agent_id) DO NOTHING
+  `);
+  const beforeCondition = (await repo.getLive(AGENT, OWNER))!;
+  await db.execute(sql`
+    INSERT INTO control.agent_conditions (agent_id, type, status, reason, observed_generation, last_transition_at)
+    VALUES (${AGENT}, 'StartFailed', 'True', 'CrashLoop', 1, now())
+    ON CONFLICT (agent_id, type) DO UPDATE SET status = 'True', last_transition_at = now()
+  `);
+  const conditioned = await repo.writeAgentSpec(AGENT, OWNER, {
+    spec: { image: "agent:2" },
+    annotations: {},
+    resourceVersion: beforeCondition.resourceVersion,
+    signalVersion: beforeCondition.signalVersion,
+    statusVersion: beforeCondition.statusVersion,
+  });
+  check(
+    "a write decided before a condition changed is refused",
+    !conditioned.ok && conditioned.reason === "conflict",
+    JSON.stringify(conditioned),
+  );
+
+  // TEST_SCENARIO: the reclaim columns are the controller's alone, and no api-server writer is allowed to touch them however it is written. The check pre-sets a mark the way the controller would, runs every writer, and asserts the columns are byte-identical afterwards — independent of how the code spells it.
+  await db.execute(sql`
+    UPDATE control.agent_signals
+       SET reclaimed_at = now(), reclaimed_activity_token = gen_random_uuid()
+     WHERE agent_id = ${AGENT}
+  `);
+  const reclaimOf = async () => {
+    const rows = await db.execute<{ at: string | null; token: string | null }>(
+      sql`SELECT reclaimed_at::text AS at, reclaimed_activity_token::text AS token
+            FROM control.agent_signals WHERE agent_id = ${AGENT}`,
+    );
+    const row = (rows as unknown as Array<{ at: string | null; token: string | null }>)[0];
+    return `${row?.at ?? ""}|${row?.token ?? ""}`;
+  };
+  const reclaimBefore = await reclaimOf();
+  const reclaimStamp = await repo.wakeIfHibernated(AGENT);
+  await repo.wake(AGENT);
+  await repo.wakeUnlessStopped(AGENT);
+  await repo.requestStop(AGENT);
+  await repo.setDisabled(AGENT, true);
+  await repo.setDisabled(AGENT, false);
+  await repo.setInvocationPin(AGENT);
+  const pin = await repo.readInvocationPin(AGENT);
+  await repo.releaseInvocationPin(AGENT, pin ?? "");
+  await repo.restart(AGENT, OWNER);
+  await repo.patchAnnotation(AGENT, "agent-platform.ai/kit-update-skipped", "0123456789abcdef0123456789abcdef01234567");
+  await repo.patchSpec(AGENT, { name: "renamed" });
+  if (reclaimStamp !== null)
+    await repo.restoreActivityIfUnchanged(AGENT, reclaimStamp);
+  check(
+    "no api-server writer touches the reclaim columns",
+    (await reclaimOf()) === reclaimBefore,
+    `${reclaimBefore} -> ${await reclaimOf()}`,
+  );
+  await db.execute(
+    sql`UPDATE control.agent_signals SET reclaimed_at = NULL, reclaimed_activity_token = NULL WHERE agent_id = ${AGENT}`,
+  );
+
   // TEST_SCENARIO: the cache lists what the store holds, and a delete takes the children with it.
   const listed = await cache.list(OWNER);
   check("the cache lists the Agent by owner", listed.some((obj) => obj.metadata?.name === AGENT));
@@ -265,4 +381,7 @@ await main()
       process.exitCode = 1;
     }
   })
-  .finally(() => client.end({ timeout: 5 }));
+  .finally(async () => {
+    await other.sql.end({ timeout: 5 });
+    await client.end({ timeout: 5 });
+  });

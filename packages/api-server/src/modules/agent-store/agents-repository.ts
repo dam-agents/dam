@@ -346,7 +346,7 @@ export function createControlAgentsRepository(
       )
       .returning({ agentId: controlAgentSignals.agentId });
     if (updated.length === 0) return null;
-    const live = await agentOf(id);
+    const live = await readLive(id);
     if (!live) return null;
     return { agent: parseInfraAgent(live), stamp: token };
   };
@@ -372,11 +372,8 @@ export function createControlAgentsRepository(
 
   const repo: AgentsRepository = {
     async list(owner?) {
-      const rows = await readAgentRows(db);
-      const all = rows.map((row) => parseInfraAgent(resourceFromRows(row)));
-      return owner === undefined
-        ? all
-        : all.filter((agent) => agent.owner === owner);
+      const objs = await cache.list(owner);
+      return objs.map((obj) => parseInfraAgent(obj));
     },
 
     async get(id, owner?) {
@@ -438,7 +435,7 @@ export function createControlAgentsRepository(
 
     async updateSpec(id, owner, patch) {
       const now = new Date();
-      return db.transaction(async (tx) => {
+      const written = await db.transaction(async (tx) => {
         const row = await ownedRow(tx, id, owner);
         if (!row) return null;
         await applySpec(tx, id, specOf(patch), now);
@@ -451,6 +448,9 @@ export function createControlAgentsRepository(
         const read = await readAgentRows(tx, [id]);
         return read[0] ? parseInfraAgent(resourceFromRows(read[0])) : null;
       });
+      if (written !== null)
+        await cache.awaitObserved(id, written.resourceVersion ?? "");
+      return written;
     },
 
     async patchSpec(id, patch) {
@@ -720,6 +720,13 @@ export function createControlAgentsRepository(
     },
 
     async listAgentIdsWithAnnotation(key, value) {
+      if (key === ACTIVE_SESSION_KEY && value === "true")
+        return (
+          await db
+            .select({ id: controlAgentSignals.agentId })
+            .from(controlAgentSignals)
+            .where(eq(controlAgentSignals.sessionPinned, true))
+        ).map((row) => row.id);
       if (key === INVOCATIONS_ACTIVE_KEY && value === "true")
         return (
           await db
