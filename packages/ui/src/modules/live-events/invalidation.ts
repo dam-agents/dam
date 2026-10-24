@@ -39,6 +39,7 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
       agentsKeys.root,
       trpc.starterKits.updates.queryKey(),
       trpc.budgets.pathKey(),
+      trpc.environments.pathKey(),
       harnessConfigOf(agentId),
     ],
     schedules: () => [trpc.schedules.pathKey(), trpc.attention.pathKey()],
