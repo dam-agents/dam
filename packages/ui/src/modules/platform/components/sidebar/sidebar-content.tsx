@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
+import { SidebarSharedAgents } from "../../../agents/components/sidebar-shared-agents.js";
 import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
 import {
   type SidebarDestination,
@@ -43,6 +44,10 @@ export function SidebarContent({
             onNavigate={onNavigate}
           />
         </div>
+        <SidebarSharedAgents
+          stickyHeaderClassName={sticky}
+          onNavigate={onNavigate}
+        />
         <div className="mt-6" data-testid="sidebar-activity-section">
           <SidebarActivity
             stickyHeaderClassName={sticky}

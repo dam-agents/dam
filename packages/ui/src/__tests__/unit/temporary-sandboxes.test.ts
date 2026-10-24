@@ -36,6 +36,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
+  access: { role: "owner", editors: [] },
   ...overrides,
 });
 

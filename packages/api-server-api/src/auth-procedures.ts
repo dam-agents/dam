@@ -73,6 +73,16 @@ export const browserOnlyProcedure = t.procedure.use(({ ctx, next }) => {
   return next();
 });
 
+export const signedInProcedure = t.procedure.use(({ ctx, next }) => {
+  if (ctx.user.keyId !== undefined) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This needs a person signed in, not an API key.",
+    });
+  }
+  return next();
+});
+
 export function checkAgentBinding(ctx: ApiContext, agentId: string): void {
   if (ctx.user.agentIds === "*") return;
   if (!ctx.user.agentIds.includes(agentId)) {

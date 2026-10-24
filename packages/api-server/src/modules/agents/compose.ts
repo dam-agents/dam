@@ -4,6 +4,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
+import { emit, EventType } from "../../events.js";
 import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import type { IdleTimeoutMinutes } from "./domain/spec-assembly.js";
@@ -18,6 +19,7 @@ import {
 } from "./infrastructure/agents-repository.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
+import { createAgentEditorsRepository } from "./infrastructure/agent-editors-repository.js";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -96,6 +98,8 @@ export function composeAgentsModule(deps: {
     AgentsServiceDeps["readSlackLoopGuardDrops"]
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
+  editorEmail: string | null;
+  resolveUserEmail: (sub: string) => Promise<string | null>;
 }): {
   agents: AgentsService;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
@@ -150,6 +154,9 @@ export function composeAgentsModule(deps: {
       slackBinding: deps.slackBinding,
       resolveSlackConversationLabels: deps.resolveSlackConversationLabels,
       readSlackLoopGuardDrops: deps.readSlackLoopGuardDrops,
+      editors: createAgentEditorsRepository(deps.db),
+      editorEmail: deps.editorEmail,
+      resolveUserEmail: deps.resolveUserEmail,
     }),
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
@@ -325,4 +332,27 @@ export async function attachProviderToBareAgents(
   }
   if (failed.length > 0)
     throw new AggregateError(failed, `${failed.length} agent(s) not attached`);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Editor Lists as the rest of the server needs
+ * them: who edits an Agent, for live hints, and the cleanup that drops an
+ * Agent's list when the Agent goes. The cleanup tells each removed Agent
+ * Editor, so the Agent leaves their sidebar too.
+ */
+export function composeAgentEditors(db: Db): {
+  editorsOf: (agentId: string) => Promise<string[]>;
+  listAgentIds: () => Promise<string[]>;
+  cleanup: (agentId: string) => Promise<void>;
+} {
+  const repo = createAgentEditorsRepository(db);
+  return {
+    editorsOf: (agentId) => repo.list(agentId),
+    listAgentIds: () => repo.listAgentIds(),
+    async cleanup(agentId) {
+      const emails = await repo.deleteForAgent(agentId);
+      if (emails.length > 0)
+        emit({ type: EventType.AgentEditorsChanged, agentId, emails });
+    },
+  };
 }

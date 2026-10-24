@@ -2,14 +2,17 @@ import type { Subscription } from "rxjs";
 import { events$, EventType, type DomainEvent } from "../../../events.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
-import type {
-  LiveEventsBus,
-  PublishableLiveEvent,
+import {
+  editorAudience,
+  type PublishableLiveEvent,
 } from "../services/live-events-service.js";
+import type { EditorFanoutBus } from "../infrastructure/editor-fanout-bus.js";
 
-export function hintFor(
-  event: DomainEvent,
-): { ownerSub: string; hint: PublishableLiveEvent } | null {
+export function hintFor(event: DomainEvent): {
+  ownerSub: string | null;
+  hint: PublishableLiveEvent;
+  editorEmails?: readonly string[];
+} | null {
   switch (event.type) {
     case EventType.AgentCreated:
     case EventType.RuntimeHelloReceived:
@@ -27,6 +30,12 @@ export function hintFor(
             hint: { topic: "agents", agentId: event.agentId },
           }
         : null;
+    case EventType.AgentEditorsChanged:
+      return {
+        ownerSub: event.ownerSub ?? null,
+        hint: { topic: "agents", agentId: event.agentId },
+        editorEmails: event.emails,
+      };
     case EventType.ApprovalRequested:
     case EventType.ApprovalResolved:
       return {
@@ -129,11 +138,16 @@ export function hintFor(
   }
 }
 
-export function startLiveHintsSaga(bus: LiveEventsBus): Subscription {
+export function startLiveHintsSaga(bus: EditorFanoutBus): Subscription {
   return events$().subscribe((event) => {
     try {
+      if (event.type === EventType.AgentEditorsChanged)
+        bus.forgetEditors(event.agentId);
       const projected = hintFor(event);
-      if (projected) bus.publish(projected.ownerSub, projected.hint);
+      if (!projected) return;
+      if (projected.ownerSub) bus.publish(projected.ownerSub, projected.hint);
+      for (const email of projected.editorEmails ?? [])
+        bus.publish(editorAudience(email), projected.hint);
     } catch (err) {
       getLogger().error(
         { sourceEvent: event.type, reason: formatError(err) },

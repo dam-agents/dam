@@ -18,6 +18,7 @@ import {
   useSkillsState,
 } from "../../agents/api/skills.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
+import { peopleSummary } from "../../agents/lib/agent-editors.js";
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -254,6 +255,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   return {
     summaries: {
       setup,
+      ...(agent && { people: peopleSummary(agent.access) }),
       "chat-forms": chatFormsSummary,
       providers: providersSummary,
       connections,

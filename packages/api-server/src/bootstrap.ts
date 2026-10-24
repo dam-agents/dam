@@ -29,6 +29,7 @@ import {
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
+  composeAgentEditors,
   composeAgentsModule,
   composePublicAgentPage,
   attachProviderToBareAgents,
@@ -1107,8 +1108,10 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[attention] ${m}`),
   });
 
+  const agentEditors = composeAgentEditors(db);
   const liveEventsModule = composeLiveEventsModule({
     bus: redisBus,
+    editorsOf: agentEditors.editorsOf,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
     onAgentChanged: (agentId) => {
@@ -1146,6 +1149,8 @@ export async function bootstrap() {
       memory: config.agentDefaultMemoryLimit,
     },
     owner: undefined,
+    editorEmail: null,
+    resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
     db,
     readTemplateSpec: async () => null,
     runtimeMutator: runtimeDelivery.runtimeMutator,
@@ -1853,6 +1858,11 @@ export async function bootstrap() {
       cleanup: (agentId: string) => sidebarOrder.deleteForAgent(agentId),
     },
     {
+      name: "agent-editors",
+      listAgentIds: agentEditors.listAgentIds,
+      cleanup: agentEditors.cleanup,
+    },
+    {
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),
@@ -2007,6 +2017,8 @@ export async function bootstrap() {
         memory: config.agentDefaultMemoryLimit,
       },
       owner,
+      editorEmail: null,
+      resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
       db,
       readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
@@ -2263,6 +2275,7 @@ export async function bootstrap() {
     artifacts,
     delegationFrames,
     liveEvents: liveEventsModule.liveEvents,
+    userDirectory,
     k8sClient,
     agentsRepo,
     connectionsBoot,

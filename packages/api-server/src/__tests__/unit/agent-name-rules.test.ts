@@ -79,6 +79,9 @@ function setup(existing: ReturnType<typeof agent>[]) {
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused<AgentsDeps["editors"]>(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
   });
   return { agents, create, updateSpec };
 }

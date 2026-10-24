@@ -115,6 +115,7 @@ describe("SandboxIdentity", () => {
     name: "a",
     avatar: null,
     hibernationTimeoutMin: 30,
+    access: { role: "owner", editors: [] },
   } as unknown as AgentView;
   const renderIdentity = () =>
     renderToStaticMarkup(

@@ -27,6 +27,7 @@ import type {
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
+import type { KeycloakUserDirectory } from "../../modules/agents/infrastructure/keycloak-user-directory.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type { composeApiKeysModule } from "../../modules/api-keys/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
@@ -129,6 +130,7 @@ export interface ApiServerDeps {
   artifacts: ArtifactService;
   delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
+  userDirectory: Pick<KeycloakUserDirectory, "resolveBySub">;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;
