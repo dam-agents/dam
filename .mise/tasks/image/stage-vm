@@ -62,7 +62,7 @@ jq \
 # copied, which skips re-reading, re-compressing and flattening the layers.
 # xattrs are left out, as tar leaves them out of the tar path's tree.
 place='set -e
-dest="$1"; src="$2"; launch="$3"
+dest="$1"; src="$2"; launch="$3"; unpacked_as="${4:-}"
 rm -rf "$dest.new" "$dest.old"
 mkdir -p "$dest.new/rootfs"
 case "$src" in
@@ -74,6 +74,7 @@ case "$src" in
     k3s ctr images unmount --rm "$mnt" >/dev/null; rmdir "$mnt"
     [ "$rc" = 0 ] ;;
 esac
+[ -z "$unpacked_as" ] || printf "%s\n" "$unpacked_as" > "$dest.new/unpacked-as"
 install -m 644 "$launch" "$dest.new/launch.json"
 chmod a+rx "$dest.new"
 [ ! -e "$dest" ] || mv "$dest" "$dest.old"
@@ -126,10 +127,13 @@ rm -rf "$layout"
 if [ -n "${VM_HOST_RUNNER:-}" ]; then
   # The runner on this Mac reads its own image volume, as the user it runs
   # as, so the tree is placed there unprivileged. tar cannot restore the
-  # image's owners without root; the guest sees every file as the runner's.
+  # image's owners without root, so every file is the runner's, and the guest
+  # must read them all as root's: the record written beside the tree names the
+  # one owner the unpack gave them, and platform-init maps it. A tree staged
+  # with privilege carries no record and keeps the image's own owners.
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   IMAGE_DIR="$(host_runner_images)"
-  sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
+  sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json" "$(id -u) $(id -g)"
 elif [ -n "${IS_SANDBOX:-}" ]; then
   as_root sh -c "$place" _ "$IMAGE_DIR/$name" "$work/rootfs.tar" "$work/launch.json"
 else
