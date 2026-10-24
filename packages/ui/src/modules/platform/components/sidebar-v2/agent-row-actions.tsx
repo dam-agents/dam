@@ -16,16 +16,14 @@ import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { cn } from "@/lib/utils";
 
-import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
-import {
-  useDeleteAgent,
-  useSetAgentDisabled,
-} from "../../../agents/api/mutations.js";
 import { RenameAgentDialog } from "../../../agents/components/rename-agent-dialog.js";
 import { AgentUpdateDot } from "../../../agents/components/update-available-action.js";
-import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
-import { useRestartAgent } from "../../../agents/hooks/use-restart-agent.js";
+import { useAgentMenuActions } from "../../../agents/hooks/use-agent-menu-actions.js";
+import {
+  agentMenuEntries,
+  type AgentMenuEntry,
+} from "../../../agents/lib/agent-menu.js";
 import { useUnifiedRightToolbar } from "../../../features/hooks/use-unified-right-toolbar.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { defaultActivityFilters } from "../../../home/lib/activity-filter.js";
@@ -116,23 +114,6 @@ export function AgentRowActions({
   );
 }
 
-export type AgentMenuEntry =
-  "rename" | "configure" | "disable" | "restart" | "remove";
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: what an Agent's row menu offers: with the Unified
- * right toolbar experiment on, its name and avatar, its power and its removal,
- * because its configuration is one rail tile away; with the experiment off, the
- * way into its configuration page.
- */
-export function agentMenuEntries(
-  rightToolbar: boolean,
-): readonly AgentMenuEntry[] {
-  return rightToolbar
-    ? ["rename", "disable", "restart", "remove"]
-    : ["configure", "remove"];
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An Agent's row-menu items, drawn by its row's "⋯" menu and by the menu a right click on its row opens, with the rename dialog they open.
  */
@@ -188,67 +169,6 @@ export function AgentMenuItems({
       </Item>
     </>
   );
-}
-
-function useAgentMenuActions({
-  agent,
-  current,
-  onNavigate,
-}: {
-  agent: AgentView;
-  current: boolean;
-  onNavigate: (() => void) | undefined;
-}) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
-  const showConfirm = useStore((s) => s.showConfirm);
-  const confirmDelete = useConfirmDeleteAgent();
-  const deleteAgent = useDeleteAgent();
-  const setDisabled = useSetAgentDisabled();
-  const { restart } = useRestartAgent();
-  return {
-    updateAvailable: !!agent.templateUpdate,
-    onConfigure: () => {
-      navigateToSandboxHome(agent.id);
-      onNavigate?.();
-    },
-    onToggleDisabled: () => {
-      const disable = async () => {
-        if (
-          !agent.disabled &&
-          !(await showConfirm(
-            "The agent stops now, and Slack, Telegram, schedules and SSH won't wake it until you enable it again.",
-            "Disable agent?",
-            { confirmLabel: "Disable" },
-          ))
-        )
-          return;
-        setDisabled.mutate({ id: agent.id, disabled: !agent.disabled });
-      };
-      void disable();
-      onNavigate?.();
-    },
-    onRestart: () => {
-      const ask = async () => {
-        if (
-          await showConfirm(
-            "In-flight work is interrupted and the agent starts fresh.",
-            "Restart agent?",
-            { confirmLabel: "Restart" },
-          )
-        )
-          restart(agent.id);
-      };
-      void ask();
-      onNavigate?.();
-    },
-    onRemove: () =>
-      void confirmDelete(agent).then((ok) => {
-        if (!ok) return;
-        deleteAgent.mutate({ id: agent.id });
-        if (current) setView("home");
-      }),
-  };
 }
 
 /**

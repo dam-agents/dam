@@ -31,8 +31,10 @@ vi.mock(
 
 const { AgentUpdateDot } =
   await import("../../modules/agents/components/update-available-action.js");
-const { AgentMenuItems, agentMenuEntries } =
+const { AgentMenuItems } =
   await import("../../modules/platform/components/sidebar-v2/agent-row-actions.js");
+const { agentMenuEntries } =
+  await import("../../modules/agents/lib/agent-menu.js");
 const { AgentUpdateRow } =
   await import("../../modules/sandboxes/components/agent-update-row.js");
 

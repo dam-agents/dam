@@ -21,7 +21,7 @@ vi.mock("../../modules/features/hooks/use-unified-right-toolbar.js", () => ({
 }));
 
 const { agentMenuEntries } =
-  await import("../../modules/platform/components/sidebar-v2/agent-row-actions.js");
+  await import("../../modules/agents/lib/agent-menu.js");
 
 // TEST_SCENARIO: with the experiment off, the row menu keeps the way into the configuration page; with it on, that page is not a destination, so the menu carries the Agent's own verbs and nothing opens the page.
 it("lists the Agent's own verbs under the experiment", () => {
