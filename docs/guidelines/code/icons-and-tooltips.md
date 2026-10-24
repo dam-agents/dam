@@ -21,7 +21,7 @@ Icons come from `@carbon/icons-react`.
 | Create agent from a starter kit                             | `DataEnrichmentAdd`                                      |
 | Starter kits destination, a starter kit                     | `Gift`                                                   |
 | Channels destination                                        | `LogoSlack`                                              |
-| Skills destination                                          | `MachineLearningModel`                                   |
+| Skills destination                                          | `ToolsAlt`                                               |
 | Schedules destination                                       | `EventSchedule`                                          |
 | External link, open in new tab                              | `Launch` (only for a link that leaves the app)           |
 | Back                                                        | `ArrowLeft`                                              |
