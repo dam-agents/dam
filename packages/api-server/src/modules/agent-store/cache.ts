@@ -71,8 +71,8 @@ export function createControlAgentStateCache(deps: {
     if (generation === epoch) {
       if (resource === null) cached.delete(id);
       else cached.set(id, resource);
+      stale.delete(id);
     }
-    stale.delete(id);
     return resource;
   };
 
