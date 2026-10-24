@@ -66,7 +66,7 @@ rules:
   - apiGroups: ["authorization.k8s.io"]
     resources: ["selfsubjectaccessreviews"]
     verbs: ["create"]
-  {{- else }}
+  {{- else if ne .Values.agentStore.authority "contract" }}
   # the api-server is the sole writer of the Agent custom
   # resource spec (create/patch/delete); the controller owns its status.
   - apiGroups: ["agent-platform.ai"]
@@ -79,6 +79,8 @@ rules:
     resources: ["userbudgets"]
     verbs: ["get", "list", "create", "patch", "delete"]
   {{- end }}
+  # The contract release reads and writes no custom resource, so it holds no
+  # verb on the platform's group here: what it cannot list, it cannot serve.
   # Secrets for credentials. The chart-shipped agent templates are mounted as
   # files, loaded at boot, not read through the K8s API.
   - apiGroups: [""]
@@ -94,7 +96,7 @@ rules:
     resources: ["configmaps"]
     resourceNames: [{{ include "platform.agentStore.markerName" . | quote }}]
     verbs: ["get"]
-  {{- if eq .Values.agentStore.authority "postgres" }}
+  {{- if ne .Values.agentStore.authority "crd" }}
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["create"]
