@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "21"
+    agent-platform.ai/crd-schema-generation: "20"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -65,7 +65,8 @@ spec:
 
               There is no desiredState field: running-vs-hibernated is not stored intent
               but observed status the controller derives from activity. Security context
-              and scheduling are chart-only (config.AgentBase, config.VM).
+              is chart-only (config.AgentBase); scheduling is chart-wide except
+              RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
             properties:
               agentHome:
                 description: |-
@@ -78,6 +79,41 @@ spec:
                   "emoji:<emoji>" or "image:<sha256>"; unset means a character picked
                   from its owner and name.'
                 type: string
+              backend:
+                description: |-
+                  Backend selects the isolation substrate the agent workload runs on;
+                  nil = container. Immutable after create (enforced by the api-server,
+                  the sole spec writer), except that a runtime migration moves a
+                  container agent to `vm`, never back. `vm` runs the agent as a persistent microVM on
+                  its owner's VM runner instead of a StatefulSet: the controller
+                  drives the runner's machine API, and the agent Service resolves to the
+                  machine's published port; the paired gateway is unaffected.
+                properties:
+                  type:
+                    enum:
+                    - container
+                    - vm
+                    type: string
+                  vm:
+                    description: VM carries vm-backend props; present only when type
+                      == "vm".
+                    properties:
+                      nestedVirtualization:
+                        description: |-
+                          NestedVirtualization asks for this agent's machine to get the node's
+                          virtualization extensions, so the guest can run KVM itself. It takes
+                          effect only on an install with virtualization.runner.nestedVirtualization
+                          and a node whose KVM allows nesting; the NestedVirtualization condition
+                          says whether it did. Other machines on the same runner are unaffected.
+                          Changing it restarts the agent's machine.
+                        type: boolean
+                    type: object
+                required:
+                - type
+                type: object
+                x-kubernetes-validations:
+                - message: 'vm block requires type: vm'
+                  rule: self.type == 'vm' || !has(self.vm)
               description:
                 description: Description is an optional human-readable description.
                 type: string
@@ -204,15 +240,14 @@ spec:
               name:
                 description: Name is an optional human-readable name.
                 type: string
-              nestedVirtualization:
+              nodeSelector:
+                additionalProperties:
+                  type: string
                 description: |-
-                  NestedVirtualization asks for this Agent's machine to get the node's
-                  virtualization extensions, so the guest can run KVM itself. It takes
-                  effect only on an install with virtualization.runner.nestedVirtualization
-                  and a node whose KVM allows nesting; the NestedVirtualization condition
-                  says whether it did. Other machines on the same runner are unaffected.
-                  Changing it restarts the machine.
-                type: boolean
+                  NodeSelector overrides the chart-wide node selector; empty = inherit.
+                  Container backend only — rejected on the vm backend, whose machine is
+                  placed with its owner's VM runner.
+                type: object
               requireConnectionAddress:
                 description: |-
                   RequireConnectionAddress makes the agent's gateway inject a Connection's
@@ -235,6 +270,11 @@ spec:
                       type: string
                     type: object
                 type: object
+              runtimeClassName:
+                description: |-
+                  RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+                  Selects among *container* runtimes only — rejected on the vm backend.
+                type: string
               secretRef:
                 description: |-
                   SecretRef names a K8s Secret whose keys are envFrom-projected into the
@@ -274,6 +314,15 @@ spec:
             - image
             type: object
             x-kubernetes-validations:
+            - message: runtimeClassName selects a container runtime and is invalid
+                on the vm backend
+              rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.runtimeClassName)'
+            - message: nodeSelector places a pod and is invalid on the vm backend,
+                whose machine is placed with its owner's VM runner
+              rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.nodeSelector)'
+            - message: an Environment runs on the vm backend
+              rule: '!has(self.environmentOf) || (has(self.backend) && self.backend.type
+                == ''vm'')'
             - message: environmentOf is set at create and never added or removed
               rule: has(self.environmentOf) == has(oldSelf.environmentOf)
           status:
@@ -300,7 +349,9 @@ spec:
                   and status are the whole of what it sees (see
                   docs/architecture/platform-topology.md).
 
-                  Counts the guest's restarts within one machine.
+                  Counts container restarts within one pod, so it resets when the pod
+                  itself is replaced rather than restarted; the vm backend has no
+                  container statuses and never reports here.
                 format: int32
                 type: integer
               conditions:
@@ -368,6 +419,13 @@ spec:
               observedGeneration:
                 description: ObservedGeneration is the spec generation last reconciled.
                 format: int64
+                type: integer
+              runtimeMigrationAttempts:
+                description: |-
+                  RuntimeMigrationAttempts counts the copy attempts of the runtime
+                  migration in progress; the migration fails once they run out. Zero when
+                  no migration runs.
+                format: int32
                 type: integer
             type: object
         type: object

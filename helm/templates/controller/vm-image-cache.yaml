@@ -226,8 +226,7 @@ outside the cluster on a private address is named in `imageCache.egressCidrs`.
 
 Nothing dials this pod: the runners reach it over the Unix socket in the
 directory they share with it, which no policy sees, so there is no ingress
-rule here. The namespace's deny-all is scoped to `role: agent`, which this
-pod is not, so this policy alone gates it.
+rule here and this policy alone gates it.
 */}}
 {{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict }}
 apiVersion: networking.k8s.io/v1
