@@ -52,6 +52,8 @@ const reasonOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
 const AGENT = "agent-store-check";
+const INTERLEAVE = "agent-store-interleave";
+const INTERLEAVE_DELETE = "agent-store-interleave-delete";
 const OWNER = "sub-store-check";
 
 const feed = createAgentChangeFeed({
@@ -69,6 +71,9 @@ const repo = createControlAgentsRepository(db, cache);
 
 async function cleanup(): Promise<void> {
   await db.execute(sql`DELETE FROM control.agents WHERE id = ${AGENT}`);
+  await db.execute(
+    sql`DELETE FROM control.agents WHERE id IN (${INTERLEAVE}, ${INTERLEAVE_DELETE})`,
+  );
   await db.execute(
     sql`DELETE FROM control.user_budgets WHERE owner_sub = ${OWNER}`,
   );
@@ -342,6 +347,81 @@ async function main(): Promise<void> {
   await db.execute(
     sql`UPDATE control.agent_signals SET reclaimed_at = NULL, reclaimed_activity_token = NULL WHERE agent_id = ${AGENT}`,
   );
+
+  // TEST_SCENARIO: the controller's status transaction and a definition write interleaved. The controller holds the signals row shared and is about to insert an observation whose foreign key needs a key-share lock on the definition. A definition row taken FOR UPDATE blocks that lock while the api-server waits for the signals row — a deadlock the api-server side loses. FOR NO KEY UPDATE is compatible with the key-share lock, so both transactions commit.
+  const withDeadline = async <T>(name: string, work: Promise<T>): Promise<T> => {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${name} did not finish in 15 s`)), 15_000),
+    );
+    return Promise.race([work, timeout]);
+  };
+  await repo.create(
+    { image: "agent:1", resources: { limits: { cpu: "1", memory: "2Gi" } } },
+    OWNER,
+    INTERLEAVE,
+  );
+  const interleaveLive = (await repo.getLive(INTERLEAVE, OWNER))!;
+  let interleaveWrite: Promise<unknown> | undefined;
+  const controllerStatus = other.sql.begin(async (tx) => {
+    await tx`SELECT version FROM control.agent_signals WHERE agent_id = ${INTERLEAVE} FOR SHARE`;
+    interleaveWrite = repo.writeAgentSpec(INTERLEAVE, OWNER, {
+      spec: { name: "interleaved" },
+      annotations: {},
+      resourceVersion: interleaveLive.resourceVersion,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await tx`INSERT INTO control.agent_conditions
+               (agent_id, type, status, reason, observed_generation, last_transition_at)
+             VALUES (${INTERLEAVE}, 'Interleave', 'False', 'Held', 1, now())`;
+  });
+  let interleaveOk = true;
+  try {
+    await withDeadline("the status transaction", controllerStatus);
+    await withDeadline("the definition write", interleaveWrite!);
+  } catch (cause) {
+    interleaveOk = false;
+    process.stdout.write(`  FAIL ${reasonOf(cause)}\n`);
+  }
+  check(
+    "a status transaction and a definition write do not deadlock",
+    interleaveOk,
+  );
+
+  // TEST_SCENARIO: the same interleaving with a delete. The controller holds the status row and is about to change a condition the cascade would remove; a delete that starts cascading before taking the signals lock waits on the condition while the trigger waits on the status row. Taking the signals lock first makes the delete wait for the whole status transaction instead.
+  await repo.create(
+    { image: "agent:1", resources: { limits: { cpu: "1", memory: "2Gi" } } },
+    OWNER,
+    INTERLEAVE_DELETE,
+  );
+  await db.execute(sql`
+    INSERT INTO control.agent_status (agent_id, observed_generation)
+    VALUES (${INTERLEAVE_DELETE}, 1) ON CONFLICT (agent_id) DO NOTHING
+  `);
+  await db.execute(sql`
+    INSERT INTO control.agent_conditions
+      (agent_id, type, status, reason, observed_generation, last_transition_at)
+    VALUES (${INTERLEAVE_DELETE}, 'Ready', 'True', 'AllPodsReady', 1, now())
+    ON CONFLICT (agent_id, type) DO NOTHING
+  `);
+  let deleteWrite: Promise<unknown> | undefined;
+  const controllerDelete = other.sql.begin(async (tx) => {
+    await tx`SELECT version FROM control.agent_signals WHERE agent_id = ${INTERLEAVE_DELETE} FOR SHARE`;
+    await tx`SELECT 1 FROM control.agent_status WHERE agent_id = ${INTERLEAVE_DELETE} FOR UPDATE`;
+    deleteWrite = repo.delete(INTERLEAVE_DELETE, OWNER);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await tx`UPDATE control.agent_conditions SET message = 'held'
+               WHERE agent_id = ${INTERLEAVE_DELETE} AND type = 'Ready'`;
+  });
+  let deleteOk = true;
+  try {
+    await withDeadline("the delete", controllerDelete);
+    const deletedNow = await withDeadline("the delete", deleteWrite!);
+    deleteOk = deletedNow === true;
+  } catch (cause) {
+    deleteOk = false;
+    process.stdout.write(`  FAIL ${reasonOf(cause)}\n`);
+  }
+  check("a delete and a status transaction do not deadlock", deleteOk);
 
   // TEST_SCENARIO: the cache lists what the store holds, and a delete takes the children with it.
   const listed = await cache.list(OWNER);

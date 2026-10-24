@@ -471,11 +471,12 @@ export function createControlAgentsRepository(
       if (!Number.isFinite(expected)) return { ok: false, reason: "conflict" };
       const now = new Date();
       return db.transaction(async (tx): Promise<AgentSpecWriteResult> => {
+        // UNIT_BOUNDARY_DESCRIPTION: the definition row is taken for no-key update, not for update. The controller's status write inserts rows whose foreign keys take a KEY SHARE lock on this row, and a plain FOR UPDATE waits for that lock while the controller waits for the signals row this transaction takes next — a deadlock the api-server side loses. NO KEY UPDATE is compatible with KEY SHARE and still serializes every definition writer.
         const rows = await tx
           .select()
           .from(controlAgents)
           .where(eq(controlAgents.id, id))
-          .for("update")
+          .for("no key update")
           .limit(1);
         const row = rows[0];
         if (!row) return { ok: false, reason: "not-found" };
@@ -502,15 +503,34 @@ export function createControlAgentsRepository(
     },
 
     async delete(id, owner?) {
-      const deleted = await db
-        .delete(controlAgents)
-        .where(
-          owner === undefined
-            ? eq(controlAgents.id, id)
-            : and(eq(controlAgents.id, id), eq(controlAgents.ownerSub, owner)),
-        )
-        .returning({ id: controlAgents.id });
-      return deleted.length > 0;
+      // UNIT_BOUNDARY_DESCRIPTION: the delete takes the same two locks in the same order as every other writer before it starts the cascade: the definition for no-key update, then the signals row for update. Without them the cascade's condition trigger and the controller's status transaction can each hold what the other waits for, and the deadlock is the api-server's to lose.
+      return db.transaction(async (tx) => {
+        const exists = await tx
+          .select({ id: controlAgents.id })
+          .from(controlAgents)
+          .where(
+            owner === undefined
+              ? eq(controlAgents.id, id)
+              : and(
+                  eq(controlAgents.id, id),
+                  eq(controlAgents.ownerSub, owner),
+                ),
+          )
+          .for("no key update")
+          .limit(1);
+        if (exists.length === 0) return false;
+        await tx
+          .select({ agentId: controlAgentSignals.agentId })
+          .from(controlAgentSignals)
+          .where(eq(controlAgentSignals.agentId, id))
+          .for("update")
+          .limit(1);
+        const deleted = await tx
+          .delete(controlAgents)
+          .where(eq(controlAgents.id, id))
+          .returning({ id: controlAgents.id });
+        return deleted.length > 0;
+      });
     },
 
     async restart(id, owner?) {
