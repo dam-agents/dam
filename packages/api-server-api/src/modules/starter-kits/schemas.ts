@@ -2,13 +2,7 @@ import { startupItemDeclarationSchema } from "agent-runtime-api";
 import { z } from "zod";
 import { agentNameSchema, avatarSchema } from "../agents/schemas.js";
 import { AVATAR_CHARACTERS, AVATAR_EMOJI_RE } from "../agents/avatar/svg.js";
-import {
-  agentSetupEnvVarSchema,
-  agentSetupInstallSchema,
-  agentSetupResourcesSchema,
-  agentSetupShape,
-  agentSetupSkillSchema,
-} from "../agents/setup.js";
+import { agentSetupResourcesSchema, agentSetupShape } from "../agents/setup.js";
 import {
   isProviderPresetType,
   type ProviderPresetType,
@@ -71,8 +65,6 @@ export const starterKitScheduleSchema = z.union([
   starterKitRRuleScheduleSchema,
 ]);
 
-export const starterKitExternalSkillSchema = agentSetupSkillSchema;
-
 export const starterKitBundledSkillsSchema = z.object({
   path: z.string().min(1),
 });
@@ -81,8 +73,6 @@ export const resolvedSkillSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
 });
-
-export const starterKitEnvVarSchema = agentSetupEnvVarSchema;
 
 const providerListSchema = z.array(
   z.custom<ProviderPresetType>(
@@ -104,8 +94,6 @@ export const starterKitEgressRuleSchema = egressRuleCreateInputSchema
 export const starterKitKnowledgeBaseSchema = z.object({
   shareRoots: z.array(z.string().min(1)).min(1).max(20),
 });
-
-export const starterKitInstallSchema = agentSetupInstallSchema;
 
 export const starterKitResourcesSchema = agentSetupResourcesSchema.extend({
   note: z.string().min(1).optional(),

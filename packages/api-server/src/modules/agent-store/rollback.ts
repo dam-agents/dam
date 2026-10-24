@@ -176,14 +176,6 @@ export function absentAbsorbedResources(input: {
     .map((one) => one.name);
 }
 
-export function snapshotUidOf(
-  kind: string,
-  name: string,
-  membership: Map<string, Map<string, string>>,
-): string | null {
-  return membership.get(kind)?.get(name) ?? null;
-}
-
 export type RePointAction =
   { action: "repoint"; uid: string } | { action: "skip" } | { action: "throw" };
 
