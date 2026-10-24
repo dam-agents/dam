@@ -1314,7 +1314,6 @@ export function ChatView() {
                   tab={activeTab}
                   agent={agentView}
                   agentId={selectedAgent}
-                  focusScheduleId={null}
                   onResumeSession={(id) => openAgentSession(selectedAgent, id)}
                 />
               )}

@@ -13,23 +13,34 @@ import type {
 import { A2uiAssistantText } from "../../a2ui/components/a2ui-assistant-text.js";
 import { A2uiUserText } from "../../a2ui/components/a2ui-user-text.js";
 import { hasRendererBlocks } from "../../a2ui/lib/prompts.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
 import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
 import {
   awaitChipTitle,
   isAwaitSubAgentsChip,
 } from "../../invocations/lib/sub-agent-chips.js";
+import { agentChangeOf } from "../lib/agent-change.js";
 import { ActivityBlock } from "./activity-block.js";
+import { AgentChangeCard } from "./agent-change-card.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
 
 export function ToolPart({ chip }: { chip: ToolChipPart }) {
   const spawns = useOwnedSpawns(chip);
+  const rightToolbar = useUnifiedRightToolbar();
   if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
   if (isAwaitSubAgentsChip(chip))
     return <ToolChip chip={{ ...chip, title: awaitChipTitle(chip) }} />;
-  return <ToolChip chip={chip} />;
+  const change = rightToolbar ? agentChangeOf(chip) : null;
+  if (!change) return <ToolChip chip={chip} />;
+  return (
+    <div className="flex flex-col gap-2">
+      <ToolChip chip={chip} />
+      <AgentChangeCard change={change} />
+    </div>
+  );
 }
 
 function HistoryBlock({ text }: { text: string }) {

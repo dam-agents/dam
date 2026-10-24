@@ -31,16 +31,15 @@ export function ConfigSidePanel({
   tab,
   agent,
   agentId,
-  focusScheduleId,
   onResumeSession,
 }: {
   tab: ConfigPanelTab;
   agent: AgentView;
   agentId: string;
-  focusScheduleId: string | null;
   onResumeSession: (sessionId: string) => void;
 }) {
   const showJustAskHint = useStore((s) => s.showJustAskHint);
+  const focus = useStore((s) => s.sidePanelFocus);
 
   return (
     <SidebarSection title={CONFIG_PANEL_TITLES[tab]} open className="flex-1">
@@ -64,7 +63,7 @@ export function ConfigSidePanel({
             agentId={agentId}
             header={() => null}
             onResumeSession={onResumeSession}
-            focusId={focusScheduleId}
+            focusId={focus?.tab === "schedules" ? focus.id : null}
             onCreated={({ rrule, task }) => {
               const prompt = justAskPrompt(rrule, task);
               if (prompt) showJustAskHint({ agentId, prompt });

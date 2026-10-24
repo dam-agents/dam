@@ -9,18 +9,25 @@ export interface JustAskHint {
   prompt: string;
 }
 
+export interface SidePanelFocus {
+  tab: SidePanelTab;
+  id: string;
+}
+
 export interface SidePanelSlice {
   sidePanelTab: SidePanelTab | null;
   sidePanelMaximized: string | null;
   dock: Dock | null;
   artifactFullPage: boolean;
   justAskHint: JustAskHint | null;
+  sidePanelFocus: SidePanelFocus | null;
   setSidePanelTab: (tab: SidePanelTab | null) => void;
   setSidePanelMaximized: (view: string | null) => void;
   setDock: (dock: Dock | null, opts?: { edit?: boolean }) => void;
   setArtifactFullPage: (on: boolean) => void;
   showJustAskHint: (hint: JustAskHint) => void;
   dismissJustAskHint: () => void;
+  setSidePanelFocus: (focus: SidePanelFocus | null) => void;
 }
 
 export const createSidePanelSlice: StateCreator<
@@ -34,8 +41,10 @@ export const createSidePanelSlice: StateCreator<
   dock: null,
   artifactFullPage: false,
   justAskHint: null,
+  sidePanelFocus: null,
   showJustAskHint: (hint) => set({ justAskHint: hint }),
   dismissJustAskHint: () => set({ justAskHint: null }),
+  setSidePanelFocus: (focus) => set({ sidePanelFocus: focus }),
   setSidePanelTab: (tab) =>
     set(
       tab === null
