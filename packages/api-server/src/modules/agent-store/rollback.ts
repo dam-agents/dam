@@ -1,4 +1,6 @@
 import type { KubeObject } from "../agents/infrastructure/k8s.js";
+import type { InstallIdentity } from "./absorb.js";
+import { installMatches } from "./absorb.js";
 
 export type RollbackVerdict =
   | { action: "noop"; reason: string }
@@ -20,6 +22,9 @@ export type RollbackVerdict =
 export function rollbackVerdict(input: {
   absorbedAt: Date | null;
   markerStore: string | null;
+  markerAbsorbedAt: string | null;
+  install: InstallIdentity | null;
+  liveInstall: InstallIdentity;
   agentRows: number;
   liveAgents: number;
 }): RollbackVerdict {
@@ -41,6 +46,19 @@ export function rollbackVerdict(input: {
     return {
       action: "refuse",
       reason: `the cluster's marker says ${input.markerStore}, so this database is not the store the cluster serves`,
+    };
+  if (!installMatches(input.install, input.liveInstall))
+    return {
+      action: "refuse",
+      reason: `this database was absorbed by another install (${input.install?.releaseName ?? "unknown"}/${input.install?.namespace ?? "unknown"} at ${input.install?.apiServer ?? "unknown"}), not by ${input.liveInstall.releaseName}/${input.liveInstall.namespace} at ${input.liveInstall.apiServer ?? "unknown"}: writing this cluster's resources from its rows would mix two installs`,
+    };
+  if (
+    input.markerAbsorbedAt !== null &&
+    input.markerAbsorbedAt !== input.absorbedAt.toISOString()
+  )
+    return {
+      action: "refuse",
+      reason: `the cluster's marker names an absorb at ${input.markerAbsorbedAt}, but this database was absorbed at ${input.absorbedAt.toISOString()}: the two are not the same store`,
     };
   if (input.agentRows === 0 && input.liveAgents > 0)
     return {
@@ -115,4 +133,46 @@ export function attestedDigestMatches(
     typeof recorded === "string" &&
     recorded.toLowerCase() === attested.toLowerCase()
   );
+}
+
+export function snapshotMembership(
+  documents: Array<{ kind: string; name: string; uid: string | null }>,
+): Map<string, Map<string, string>> {
+  const byKind = new Map<string, Map<string, string>>();
+  for (const document of documents) {
+    if (document.uid === null) continue;
+    const byName = byKind.get(document.kind) ?? new Map<string, string>();
+    byName.set(document.name, document.uid);
+    byKind.set(document.kind, byName);
+  }
+  return byKind;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the custom resources a rollback removes: the ones
+ * the absorb recorded and whose row is gone. A resource that was never absorbed
+ * is left alone, so a wrong or stale snapshot can never delete a fleet, and a
+ * budget removed in row mode stops existing when the previous release serves
+ * again — the same rule for both kinds, or a removed override resurrects.
+ */
+export function absentAbsorbedResources(input: {
+  kind: string;
+  live: Array<{ name: string; uid: string | null }>;
+  restored: Set<string>;
+  membership: Map<string, Map<string, string>>;
+}): string[] {
+  const recorded =
+    input.membership.get(input.kind) ?? new Map<string, string>();
+  return input.live
+    .filter((one) => one.name !== "" && !input.restored.has(one.name))
+    .filter((one) => one.uid !== null && recorded.get(one.name) === one.uid)
+    .map((one) => one.name);
+}
+
+export function snapshotUidOf(
+  kind: string,
+  name: string,
+  membership: Map<string, Map<string, string>>,
+): string | null {
+  return membership.get(kind)?.get(name) ?? null;
 }

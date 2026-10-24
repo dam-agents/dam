@@ -217,6 +217,11 @@ export function createApi(namespace: string) {
   };
 }
 
+export const currentClusterServer = (): string | null => {
+  const cluster = loadKubeConfig().getCurrentCluster();
+  return cluster?.server ?? null;
+};
+
 export const createLeaseApi = () =>
   loadKubeConfig().makeApiClient(k8s.CoordinationV1Api);
 

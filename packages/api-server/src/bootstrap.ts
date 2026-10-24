@@ -9,6 +9,7 @@ import {
   createApi,
   createK8sClient,
   createLeaseApi,
+  currentClusterServer,
   agentServiceAddress,
   createAuthorizationApi,
   type KubeObject,
@@ -495,6 +496,13 @@ export async function bootstrap() {
         listCustomObjects: (plural) => k8sClient.listCustomObjects(plural),
         writeMarker: (data) =>
           writeAgentStoreMarker(api, config.namespace, markerName, data),
+        readMarker: () =>
+          readAgentStoreMarker(api, config.namespace, markerName),
+        install: {
+          releaseName: config.releaseName,
+          namespace: config.namespace,
+          apiServer: currentClusterServer(),
+        },
         store: snapshotStore,
         backupKeyPrefix: `crd-snapshots/${config.releaseName}`,
         backupRefPrefix: config.objectStorageEndpoint
@@ -519,6 +527,7 @@ export async function bootstrap() {
       leases: leaseApi,
       namespace: config.namespace,
       leaseName: `${config.releaseName}-controller`,
+      markerAbsorbedAt: switched?.["absorbed-at"] ?? null,
       log: (message, fields) => getLogger().info(fields ?? {}, message),
     });
   }

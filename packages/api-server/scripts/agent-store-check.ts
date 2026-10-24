@@ -31,6 +31,7 @@ import { buildAgentStoreSnapshot } from "../src/modules/agent-store/snapshot.js"
 import { createHash } from "node:crypto";
 import type { KubeObject } from "../src/modules/agents/infrastructure/k8s.js";
 import type { CoordinationV1Api } from "@kubernetes/client-node";
+import { createControlAgentL7HostsPort } from "../src/modules/agent-store/l7-hosts-control.js";
 
 const url = process.env.AGENT_STORE_DATABASE_URL;
 if (!url) {
@@ -61,6 +62,11 @@ const AGENT = "agent-store-check";
 const INTERLEAVE = "agent-store-interleave";
 const INTERLEAVE_DELETE = "agent-store-interleave-delete";
 const OWNER = "sub-store-check";
+const INSTALL = {
+  releaseName: "platform",
+  namespace: "platform-agents",
+  apiServer: "https://api.test:6443",
+};
 
 const feed = createAgentChangeFeed({
   source: postgresChangeSource(client),
@@ -503,6 +509,37 @@ async function main(): Promise<void> {
     "the definition is gone",
     (remaining as unknown as Array<{ count: string }>)[0]?.count === "0",
   );
+  // TEST_SCENARIO: the L7 host projection over the rows writes the sets an agent has now and advances the definition's generation, which is what reached the machine as a spec change before the switch.
+  const l7 = createControlAgentL7HostsPort(db);
+  const l7Agent = await repo.create({ image: "agent:1" }, OWNER, "l7-check");
+  const hostsOf = async (): Promise<string> => {
+    const rows = (await db.execute(
+      sql`SELECT host FROM control.agent_l7_hosts WHERE agent_id = ${l7Agent.id} ORDER BY host`,
+    )) as unknown as Array<{ host: string }>;
+    return rows.map((row) => row.host).join(",");
+  };
+  const generationOf = async (): Promise<number> => {
+    const rows = (await db.execute(
+      sql`SELECT generation FROM control.agents WHERE id = ${l7Agent.id}`,
+    )) as unknown as Array<{ generation: string }>;
+    return Number(rows[0]?.generation ?? "0");
+  };
+  const generationBefore = await generationOf();
+  await l7.set(l7Agent.id, ["a.example.test", "b.example.test"]);
+  check(
+    "the L7 port writes the rows",
+    (await hostsOf()) === "a.example.test,b.example.test",
+  );
+  await l7.set(l7Agent.id, ["b.example.test"]);
+  check("the L7 port removes a host", (await hostsOf()) === "b.example.test");
+  check(
+    "an L7 change advances the generation",
+    (await generationOf()) > generationBefore,
+  );
+  await l7.set(l7Agent.id, []);
+  check("an empty set removes the rows", (await hostsOf()) === "");
+  await repo.delete(l7Agent.id);
+
   await cache.stop();
 
   await absorbChecks();
@@ -586,6 +623,8 @@ async function absorbChecks(): Promise<void> {
       listCustomObjects: async (plural) =>
         plural === "agents" ? [refusedAgent] : ([kubeBudget()] as KubeObject[]),
       writeMarker: async (data) => void markerData.push(data),
+      readMarker: async () => markerData.at(-1) ?? null,
+      install: INSTALL,
       store: null,
       backupKeyPrefix: "crd-snapshots/test",
       backupRefPrefix: "s3://bucket",
@@ -613,6 +652,8 @@ async function absorbChecks(): Promise<void> {
       listCustomObjects: async (plural) =>
         plural === "agents" ? [kubeAgent([])] : [kubeBudget()],
       writeMarker: async (data) => void markerData.push(data),
+      readMarker: async () => markerData.at(-1) ?? null,
+      install: INSTALL,
       store: noBackup,
       backupKeyPrefix: "crd-snapshots/test",
       backupRefPrefix: "s3://bucket",
@@ -642,6 +683,8 @@ async function absorbChecks(): Promise<void> {
     listCustomObjects: async (plural) =>
       plural === "agents" ? [kubeAgent([])] : [kubeBudget()],
     writeMarker: async (data) => void markerData.push(data),
+    readMarker: async () => markerData.at(-1) ?? null,
+    install: INSTALL,
     store: backupStore,
     backupKeyPrefix: "crd-snapshots/test",
     backupRefPrefix: "s3://bucket",
@@ -678,6 +721,8 @@ async function absorbChecks(): Promise<void> {
       throw new Error("a rerun must not read the custom resources again");
     },
     writeMarker: async (data) => void markerData.push(data),
+    readMarker: async () => markerData.at(-1) ?? null,
+    install: INSTALL,
     store: backupStore,
     backupKeyPrefix: "crd-snapshots/test",
     backupRefPrefix: "s3://bucket",
@@ -695,6 +740,7 @@ async function absorbChecks(): Promise<void> {
   await db.execute(sql`DELETE FROM control.user_budgets`);
   await db.execute(sql`DELETE FROM control.crd_snapshots`);
   await db.execute(sql`DELETE FROM control.agent_store`);
+  markerData.length = 0;
   let markerAttempts = 0;
   let killed = "";
   try {
@@ -707,6 +753,8 @@ async function absorbChecks(): Promise<void> {
         markerAttempts += 1;
         throw new Error("killed writing the marker");
       },
+      readMarker: async () => null,
+      install: INSTALL,
       store: backupStore,
       backupKeyPrefix: "crd-snapshots/test",
       backupRefPrefix: "s3://bucket",
@@ -730,6 +778,8 @@ async function absorbChecks(): Promise<void> {
       throw new Error("a recovery must not import again");
     },
     writeMarker: async (data) => void markerData.push(data),
+    readMarker: async () => markerData.at(-1) ?? null,
+    install: INSTALL,
     store: backupStore,
     backupKeyPrefix: "crd-snapshots/test",
     backupRefPrefix: "s3://bucket",
@@ -744,6 +794,80 @@ async function absorbChecks(): Promise<void> {
       markerData.at(-1)?.store === "postgres",
   );
 
+  // TEST_SCENARIO: a database another install absorbed is refused even though its stamp and rows are complete: the report names the install, and a mismatch is a refusal before any write.
+  await db.execute(
+    sql`UPDATE control.agent_store SET absorb_report = jsonb_set(absorb_report, '{install,releaseName}', '"other-install"') WHERE id = 1`,
+  );
+  let foreignAbsorb = "";
+  try {
+    await absorbAgentStore({
+      db,
+      logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+      listCustomObjects: async () => {
+        throw new Error(
+          "a foreign database must not list the custom resources",
+        );
+      },
+      writeMarker: async () => {
+        throw new Error("a foreign database must not write the marker");
+      },
+      readMarker: async () => null,
+      install: INSTALL,
+      store: null,
+      backupKeyPrefix: "crd-snapshots/test",
+      backupRefPrefix: "s3://bucket",
+      defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+      absorbedByVersion: "test",
+      now: new Date(),
+    });
+  } catch (cause) {
+    foreignAbsorb = reasonOf(cause);
+  }
+  check(
+    "the absorb refuses a database another install absorbed",
+    foreignAbsorb.includes("another install"),
+    foreignAbsorb,
+  );
+  await db.execute(
+    sql`UPDATE control.agent_store SET absorb_report = jsonb_set(absorb_report, '{install,releaseName}', '"platform"') WHERE id = 1`,
+  );
+
+  // TEST_SCENARIO: a cluster marker that names an absorbed store over a database with no stamp is refused: the rows it would import belong to another store.
+  const stampBefore = await stamp();
+  await db.execute(
+    sql`UPDATE control.agent_store SET absorbed_at = NULL WHERE id = 1`,
+  );
+  let markerOverEmpty = "";
+  try {
+    await absorbAgentStore({
+      db,
+      logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+      listCustomObjects: async () => [kubeAgent([])],
+      writeMarker: async () => {},
+      readMarker: async () => ({
+        store: "postgres",
+        "absorbed-at": "2026-01-01T00:00:00.000Z",
+      }),
+      install: INSTALL,
+      store: null,
+      backupKeyPrefix: "crd-snapshots/test",
+      backupRefPrefix: "s3://bucket",
+      defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+      absorbedByVersion: "test",
+      now: new Date(),
+    });
+  } catch (cause) {
+    markerOverEmpty = reasonOf(cause);
+  }
+  check(
+    "the absorb refuses an absorbed marker over a database with no stamp",
+    markerOverEmpty.includes("holds no absorb stamp"),
+    markerOverEmpty,
+  );
+  await db.execute(
+    sql`UPDATE control.agent_store SET absorbed_at = ${stampBefore} WHERE id = 1`,
+  );
+
   // TEST_SCENARIO: the barrier opens only when the Lease's holder is the controller that recorded its anchor pass, and it never waits again once it has recorded the switch.
   const holder = "controller-pod-1";
   await db.execute(
@@ -755,11 +879,38 @@ async function absorbChecks(): Promise<void> {
   const leases = {
     readNamespacedLease: async () => ({ spec: { holderIdentity: holder } }),
   } as unknown as CoordinationV1Api;
+  const rawStamp = await stamp();
+  const storeStamp =
+    rawStamp === null
+      ? ""
+      : typeof rawStamp === "string"
+        ? new Date(rawStamp).toISOString()
+        : rawStamp.toISOString();
+  let foreignRefused = false;
+  try {
+    await passCutoverBarrier({
+      db,
+      leases,
+      namespace: "test",
+      leaseName: "platform-controller",
+      markerAbsorbedAt: "2026-01-01T00:00:00.000Z",
+      log: () => {},
+      pollMs: 1,
+      deadlineMs: 100,
+    });
+  } catch {
+    foreignRefused = true;
+  }
+  check(
+    "the barrier refuses a database the marker does not name",
+    foreignRefused,
+  );
   const passed = await passCutoverBarrier({
     db,
     leases,
     namespace: "test",
     leaseName: "platform-controller",
+    markerAbsorbedAt: storeStamp,
     log: () => {},
     pollMs: 1,
     deadlineMs: 1_000,
@@ -783,6 +934,7 @@ async function absorbChecks(): Promise<void> {
     } as unknown as CoordinationV1Api,
     namespace: "test",
     leaseName: "platform-controller",
+    markerAbsorbedAt: storeStamp,
     log: () => {},
     pollMs: 1,
     deadlineMs: 100,

@@ -28,8 +28,25 @@ import {
 } from "./rows.js";
 import { buildAgentStoreSnapshot } from "./snapshot.js";
 
+export interface InstallIdentity {
+  releaseName: string;
+  namespace: string;
+  apiServer: string | null;
+}
+
+export const installMatches = (
+  recorded: InstallIdentity | null | undefined,
+  live: InstallIdentity,
+): boolean =>
+  recorded !== null &&
+  recorded !== undefined &&
+  recorded.releaseName === live.releaseName &&
+  recorded.namespace === live.namespace &&
+  recorded.apiServer === live.apiServer;
+
 export interface AbsorbReport {
   absorbedAt: string;
+  install: InstallIdentity;
   absorbedByVersion: string;
   agents: {
     seen: number;
@@ -58,6 +75,8 @@ export interface AbsorbDeps {
   logger: Logger;
   listCustomObjects: (plural: string) => Promise<KubeObject[]>;
   writeMarker: (data: Record<string, string>) => Promise<void>;
+  readMarker: () => Promise<Record<string, string> | null>;
+  install: InstallIdentity;
   store: SnapshotObjectStore | null;
   backupKeyPrefix: string;
   backupRefPrefix: string;
@@ -107,12 +126,30 @@ export async function absorbAgentStore(
   deps: AbsorbDeps,
 ): Promise<AbsorbOutcome> {
   const current = await deps.db
-    .select({ absorbedAt: controlAgentStore.absorbedAt })
+    .select({
+      absorbedAt: controlAgentStore.absorbedAt,
+      absorbReport: controlAgentStore.absorbReport,
+    })
     .from(controlAgentStore)
     .where(sql`${controlAgentStore.id} = 1`)
     .limit(1);
   const stamped = current[0]?.absorbedAt ?? null;
+  const marker = await deps.readMarker();
   if (stamped !== null) {
+    const recorded = (
+      current[0]?.absorbReport as { install?: InstallIdentity } | null
+    )?.install;
+    if (!installMatches(recorded, deps.install))
+      throw new Error(
+        `this database was absorbed by another install (${recorded?.releaseName ?? "unknown"}/${recorded?.namespace ?? "unknown"} at ${recorded?.apiServer ?? "unknown"}), not by ${deps.install.releaseName}/${deps.install.namespace} at ${deps.install.apiServer ?? "unknown"}: refusing to publish its stamp into this cluster`,
+      );
+    if (
+      marker?.store === "postgres" &&
+      marker["absorbed-at"] !== stamped.toISOString()
+    )
+      throw new Error(
+        `the cluster's marker names an absorb at ${marker["absorbed-at"]}, but this database was absorbed at ${stamped.toISOString()}: the two are not the same store. Refusing.`,
+      );
     await deps.writeMarker({
       store: "postgres",
       "absorbed-at": stamped.toISOString(),
@@ -123,6 +160,10 @@ export async function absorbAgentStore(
     );
     return { status: "skipped", absorbedAt: stamped };
   }
+  if (marker?.store === "postgres")
+    throw new Error(
+      `the cluster's marker names an absorbed store at ${marker["absorbed-at"] ?? "an unknown time"}, but this database holds no absorb stamp: DATABASE_URL names another database, or the store was lost. Refusing to absorb into it.`,
+    );
 
   const agents = await deps.listCustomObjects("agents");
   const budgets = await deps.listCustomObjects("userbudgets");
@@ -167,6 +208,7 @@ export async function absorbAgentStore(
   const mappedBudgets = budgets.map(mapBudget);
   const report: AbsorbReport = {
     absorbedAt: deps.now.toISOString(),
+    install: deps.install,
     absorbedByVersion: deps.absorbedByVersion,
     agents: {
       seen: preview.agents.seen,

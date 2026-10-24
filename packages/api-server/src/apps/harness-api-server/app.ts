@@ -173,6 +173,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const composeSkills = (owner: string) =>
     composeSkillsModule({
       agentStateCache: deps.agentStateCache,
+      agentStore: { authority: config.agentStore },
       surface: "mcp",
       api,
       namespace: config.namespace,

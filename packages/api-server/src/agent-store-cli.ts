@@ -15,6 +15,7 @@ import { securityLog } from "./core/security-log.js";
 import {
   createApi,
   createK8sClient,
+  currentClusterServer,
   type KubeObject,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
@@ -29,12 +30,15 @@ import {
   readFrozenState,
 } from "./modules/agent-store/frozen.js";
 import {
+  absentAbsorbedResources,
   attestedDigestMatches,
   restoreBody,
   rollbackVerdict,
+  snapshotMembership,
   statusBody,
   type RestoreBody,
 } from "./modules/agent-store/rollback.js";
+import type { InstallIdentity } from "./modules/agent-store/absorb.js";
 import { orderDocuments } from "./modules/agent-store/snapshot.js";
 import { readAgentRows } from "./modules/agent-store/control-read.js";
 import {
@@ -454,28 +458,6 @@ const main = async (): Promise<void> => {
       });
   };
 
-  const wasAbsorbed = async (
-    kind: string,
-    name: string,
-    uid: string,
-  ): Promise<boolean> => {
-    const latest = await db
-      .select({ at: controlCrdSnapshots.capturedAt })
-      .from(controlCrdSnapshots)
-      .orderBy(sql`${controlCrdSnapshots.capturedAt} DESC`)
-      .limit(1);
-    const at = latest[0]?.at;
-    if (at === undefined) return false;
-    const rows = await db
-      .select({ name: controlCrdSnapshots.name })
-      .from(controlCrdSnapshots)
-      .where(
-        sql`${controlCrdSnapshots.capturedAt} = ${at} and ${controlCrdSnapshots.kind} = ${kind} and ${controlCrdSnapshots.name} = ${name} and ${controlCrdSnapshots.uid} = ${uid}`,
-      )
-      .limit(1);
-    return rows.length > 0;
-  };
-
   switch (command) {
     case "export-snapshot": {
       const configured = config.agentStoreBackupRecipient;
@@ -623,9 +605,20 @@ const main = async (): Promise<void> => {
       const existingAgents = await client.listCustomObjects(AGENTS_PLURAL);
       const existingBudgets =
         await client.listCustomObjects(USERBUDGETS_PLURAL);
+      const liveInstall: InstallIdentity = {
+        releaseName: config.releaseName,
+        namespace: config.namespace,
+        apiServer: currentClusterServer(),
+      };
+      const recordedInstall =
+        (store.absorbReport as { install?: InstallIdentity } | null)?.install ??
+        null;
       const verdict = rollbackVerdict({
         absorbedAt: store.absorbedAt,
         markerStore: marker?.store ?? null,
+        markerAbsorbedAt: marker?.["absorbed-at"] ?? null,
+        install: recordedInstall,
+        liveInstall,
         agentRows: agents.length,
         liveAgents: existingAgents.length,
       });
@@ -636,6 +629,25 @@ const main = async (): Promise<void> => {
       }
       if (verdict.action === "refuse")
         throw new Error(`rollback refuses: ${verdict.reason}`);
+
+      const latest = await db
+        .select({ at: controlCrdSnapshots.capturedAt })
+        .from(controlCrdSnapshots)
+        .orderBy(sql`${controlCrdSnapshots.capturedAt} DESC`)
+        .limit(1);
+      const capturedAt = latest[0]?.at;
+      const membership = snapshotMembership(
+        capturedAt === undefined
+          ? []
+          : await db
+              .select({
+                kind: controlCrdSnapshots.kind,
+                name: controlCrdSnapshots.name,
+                uid: controlCrdSnapshots.uid,
+              })
+              .from(controlCrdSnapshots)
+              .where(eq(controlCrdSnapshots.capturedAt, capturedAt)),
+      );
 
       const frozen = await readFrozenState({
         apps: kubeConfig.makeApiClient(k8s.AppsV1Api),
@@ -673,27 +685,44 @@ const main = async (): Promise<void> => {
         if (live === null) await createComplete(kind, resource, body);
         else await replaceComplete(kind, resource.name, body);
       }
-      for (const cr of existingAgents) {
-        const name = cr.metadata?.name ?? "";
-        if (name === "" || restored.has(name)) continue;
-        const uid = cr.metadata?.uid;
-        if (uid === undefined || !(await wasAbsorbed("Agent", name, uid))) {
+      const deletions = (
+        [
+          {
+            kind: "Agent" as const,
+            plural: AGENTS_PLURAL,
+            live: existingAgents,
+          },
+          {
+            kind: "UserBudget" as const,
+            plural: USERBUDGETS_PLURAL,
+            live: existingBudgets,
+          },
+        ] as const
+      ).flatMap((one) => {
+        const removed = absentAbsorbedResources({
+          kind: one.kind,
+          live: one.live.map((cr) => ({
+            name: cr.metadata?.name ?? "",
+            uid: cr.metadata?.uid ?? null,
+          })),
+          restored: new Set(restored.keys()),
+          membership,
+        });
+        const kept = one.live
+          .map((cr) => cr.metadata?.name ?? "")
+          .filter((name) => name !== "" && !restored.has(name))
+          .filter((name) => !removed.includes(name));
+        for (const name of kept)
           process.stderr.write(
-            `leaving Agent ${name}: it has no row but was not part of an absorbed fleet\n`,
+            `leaving ${one.kind} ${name}: it has no row but was not part of an absorbed fleet\n`,
           );
-          continue;
-        }
+        return removed.map((name) => ({ ...one, name }));
+      });
+      for (const one of deletions) {
         process.stderr.write(
-          `deleting Agent ${name}: it was absorbed and its row is gone\n`,
+          `deleting ${one.kind} ${one.name}: it was absorbed and its row is gone\n`,
         );
-        if (!dryRun) await client.deleteCustomObject(AGENTS_PLURAL, name);
-      }
-      for (const cr of existingBudgets) {
-        const name = cr.metadata?.name ?? "";
-        if (name === "" || restored.has(name)) continue;
-        process.stderr.write(
-          `leaving UserBudget ${name}: it was not part of the absorbed fleet\n`,
-        );
+        if (!dryRun) await client.deleteCustomObject(one.plural, one.name);
       }
 
       for (const resource of resources) {

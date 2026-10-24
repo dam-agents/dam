@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import {
+  absentAbsorbedResources,
   attestedDigestMatches,
   restoreBody,
   rollbackVerdict,
+  snapshotMembership,
   statusBody,
 } from "../../modules/agent-store/rollback.js";
 import { frozenRefusals } from "../../modules/agent-store/frozen.js";
@@ -41,64 +43,89 @@ const agent = (overrides: {
 });
 
 describe("what a rollback may do", () => {
-  // TEST_SCENARIO: The dangerous states are named before anything is written. An empty store on a switched cluster is the wrong database; an empty store on a cluster with no switched marker is a finished rollback; a store with no rows and live resources is not restorable.
+  const liveInstall = {
+    releaseName: "platform",
+    namespace: "platform-agents",
+    apiServer: "https://api.dev:6443",
+  };
+  const base = {
+    absorbedAt: new Date(AT) as Date | null,
+    markerStore: "postgres" as string | null,
+    markerAbsorbedAt: AT as string | null,
+    install: liveInstall as typeof liveInstall | null,
+    liveInstall,
+    agentRows: 9,
+    liveAgents: 9,
+  };
+
+  // TEST_SCENARIO: The dangerous states are named before anything is written. An empty store on a switched cluster is the wrong database; an empty store on a cluster with no switched marker is a finished rollback; a store with no rows and live resources is not restorable; and a database absorbed by another install, or at another time than the marker names, is refused.
   it("refuses the states that lose data and no-ops the finished one", () => {
+    const verdict = (overrides: Partial<typeof base>) =>
+      rollbackVerdict({ ...base, ...overrides }).action;
+    expect(verdict({ absorbedAt: null, agentRows: 0 })).toBe("refuse");
+    expect(verdict({ absorbedAt: null, markerStore: null, agentRows: 0 })).toBe(
+      "noop",
+    );
+    expect(verdict({ markerStore: "crd" })).toBe("refuse");
+    expect(verdict({ markerStore: null })).toBe("restore");
+    expect(verdict({ absorbReport: undefined } as never)).toBe("restore");
+    expect(verdict({ agentRows: 0 })).toBe("refuse");
+    expect(verdict({ agentRows: 0, liveAgents: 0 })).toBe("restore");
+    expect(verdict({ install: null })).toBe("refuse");
     expect(
-      rollbackVerdict({
-        absorbedAt: null,
-        markerStore: "postgres",
-        agentRows: 0,
-        liveAgents: 9,
-      }).action,
+      verdict({
+        install: { ...liveInstall, releaseName: "other" },
+      }),
     ).toBe("refuse");
     expect(
-      rollbackVerdict({
-        absorbedAt: null,
-        markerStore: null,
-        agentRows: 0,
-        liveAgents: 9,
-      }).action,
-    ).toBe("noop");
-    expect(
-      rollbackVerdict({
-        absorbedAt: new Date(AT),
-        markerStore: "crd",
-        agentRows: 9,
-        liveAgents: 9,
-      }).action,
+      verdict({
+        install: { ...liveInstall, apiServer: "https://api.prod:6443" },
+      }),
     ).toBe("refuse");
+    expect(verdict({ markerAbsorbedAt: "2026-10-23T00:00:00.000Z" })).toBe(
+      "refuse",
+    );
+  });
+
+  // TEST_SCENARIO: A budget removed in row mode is deleted from the cluster on rollback, while a resource the absorb never recorded, or one that still has a row, is left alone. The same rule covers Agents and budgets, or a removed override resurrects on the previous release.
+  it("removes only absorbed resources whose row is gone", () => {
+    const membership = snapshotMembership([
+      { kind: "Agent", name: "agent-a", uid: "uid-a" },
+      { kind: "Agent", name: "agent-b", uid: "uid-b" },
+      { kind: "UserBudget", name: "budget-gone", uid: "uid-budget" },
+      { kind: "UserBudget", name: "budget-kept", uid: "uid-kept" },
+    ]);
     expect(
-      rollbackVerdict({
-        absorbedAt: new Date(AT),
-        markerStore: null,
-        agentRows: 9,
-        liveAgents: 9,
-      }).action,
-    ).toBe("restore");
+      absentAbsorbedResources({
+        kind: "Agent",
+        live: [
+          { name: "agent-a", uid: "uid-a" },
+          { name: "agent-b", uid: "uid-b" },
+          { name: "agent-out-of-band", uid: "uid-x" },
+        ],
+        restored: new Set(["agent-b"]),
+        membership,
+      }),
+    ).toEqual(["agent-a"]);
     expect(
-      rollbackVerdict({
-        absorbedAt: new Date(AT),
-        markerStore: "postgres",
-        agentRows: 0,
-        liveAgents: 9,
-      }).action,
-    ).toBe("refuse");
+      absentAbsorbedResources({
+        kind: "UserBudget",
+        live: [
+          { name: "budget-gone", uid: "uid-budget" },
+          { name: "budget-kept", uid: "uid-kept" },
+        ],
+        restored: new Set(["budget-kept"]),
+        membership,
+      }),
+    ).toEqual(["budget-gone"]);
     expect(
-      rollbackVerdict({
-        absorbedAt: new Date(AT),
-        markerStore: "postgres",
-        agentRows: 9,
-        liveAgents: 9,
-      }).action,
-    ).toBe("restore");
-    expect(
-      rollbackVerdict({
-        absorbedAt: new Date(AT),
-        markerStore: "postgres",
-        agentRows: 0,
-        liveAgents: 0,
-      }).action,
-    ).toBe("restore");
+      absentAbsorbedResources({
+        kind: "UserBudget",
+        live: [{ name: "budget-new", uid: "uid-new" }],
+        restored: new Set(),
+        membership,
+      }),
+    ).toEqual([]);
   });
 });
 

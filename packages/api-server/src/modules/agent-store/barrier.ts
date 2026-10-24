@@ -7,20 +7,34 @@ export interface CutoverBarrierDeps {
   leases: CoordinationV1Api;
   namespace: string;
   leaseName: string;
+  markerAbsorbedAt: string | null;
   log: (message: string, fields?: Record<string, unknown>) => void;
   deadlineMs?: number;
   pollMs?: number;
 }
 
 type Progress = {
+  absorbedAt: Date | null;
   holder: string | null;
   anchorsEnsuredAt: Date | null;
   switchCompletedAt: Date | null;
 };
 
+const sameInstant = (stored: Date, marker: string | null): boolean => {
+  if (marker === null) return false;
+  const parsed = new Date(marker);
+  if (Number.isNaN(parsed.getTime()))
+    return stored.toISOString() === marker || stored.toUTCString() === marker;
+  return (
+    Math.abs(stored.getTime() - parsed.getTime()) < 1 ||
+    stored.toISOString() === marker
+  );
+};
+
 const readProgress = async (db: Db): Promise<Progress | null> => {
   const rows = await db
     .select({
+      absorbedAt: controlAgentStore.absorbedAt,
       holder: controlAgentStore.controllerHolder,
       anchorsEnsuredAt: controlAgentStore.anchorsEnsuredAt,
       switchCompletedAt: controlAgentStore.switchCompletedAt,
@@ -70,7 +84,17 @@ export async function passCutoverBarrier(
 
   for (;;) {
     const progress = await readProgress(deps.db);
-    if (progress?.switchCompletedAt) return "already";
+    // UNIT_BOUNDARY_DESCRIPTION: the marker binds the cluster to this database, so a database
+    // UNIT_BOUNDARY_DESCRIPTION: switched elsewhere cannot pass on its own `switch_completed_at`.
+    if (progress?.absorbedAt === null || progress?.absorbedAt === undefined)
+      throw new Error(
+        "the store has no absorb stamp: this is not the database the cluster switched to. Refusing to serve it.",
+      );
+    if (!sameInstant(progress.absorbedAt, deps.markerAbsorbedAt))
+      throw new Error(
+        `the store was absorbed at ${progress.absorbedAt.toISOString()}, the marker names ${deps.markerAbsorbedAt ?? "nothing"}: the database and the cluster are not the same install. Refusing to serve it.`,
+      );
+    if (progress.switchCompletedAt) return "already";
     if (progress?.holder && progress.anchorsEnsuredAt) {
       const holder = await heldBy(deps.leases, deps.namespace, deps.leaseName);
       if (holder === progress.holder) {
