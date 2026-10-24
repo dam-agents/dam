@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -8,20 +8,20 @@ Platform persists state on four durable substrates, split cleanly between the pl
 
 **Platform-owned** (the agent never touches these):
 
-- **Postgres** — application state the api-server owns end-to-end.
-  Sole writer: api-server; the controller never reads from or writes to Postgres.
-  Holds anything that has to be queryable when no agent is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource.
+- **Postgres** — the platform's own state, and from the release that moves them, its record of each Agent and each user budget as well.
+  The api-server owns the schema and writes definitions, lifecycle signals and budgets; the controller reaches only what it reconciles, through its own login and grants that name each column, and writes nothing else.
+  Holds anything that has to be queryable when no agent is running (channel bindings, identity links, allow-listed users, schedules), the per-Agent record the controller renders from, plus any other api-server-only domain resource.
   Session metadata is *not* here — it is agent-owned, save for the one dimension the spend read path cannot lose to hibernation or agent deletion (see the session directory below).
-  The bundled instance runs under three login roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
+  The bundled instance runs under four login roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`), the controller's own login `platform_controller` that owns nothing, plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate, and the controller's cannot read a definition column it does not render.
   Admin sessions carry a per-role `log_statement` default that puts every statement they issue into the pod log for the cluster collector; the server-wide default logs DDL only, so routine application DML stays out of the audit trail while every role and grant change is captured whoever issues it.
-  A fourth role, `usage_readers`, carries no credential and cannot log in: it is the group an operator grants membership in to give a read-only login access to the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views).
+  A group role beside them, `usage_readers`, carries no credential and cannot log in: it is the group an operator grants membership in to give a read-only login access to the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views).
 - **Object store** — bulk binary blobs behind an S3-compatible API; consumers: artifact-library content and the published read-only snapshots of shared knowledge bases.
   The api-server is its sole standing authority: it holds the only credentials and mints short-lived, single-object links that let an agent upload or download (through its paired gateway) or a browser download directly, after ownership checks — each link signed for the authority its audience dials, since it is only valid on that one — an agent has no access to the store beyond a link the platform issued.
   The chart bundles a single-node SeaweedFS by default so dev and local clusters work without an external account; operators point production installs at their own S3-compatible endpoint instead.
   An install with no object store cannot store artifact content — the feature fails closed.
-- **Custom resources** — resource state the controller reconciles into running infrastructure (Agents, Runs), as CRDs with a `spec` / `status` ownership split enforced by the status subresource.
-  Sole writer of `spec`: api-server.
-  Sole writer of `status`: controller.
+- **Custom resources** — on their way out.
+  The two kinds the platform kept there, `Agent` and `UserBudget`, become rows in Postgres; until that switch the resources remain the authority and the tables stay empty, and from it they are a frozen copy kept only for the rollback window.
+  `Runs`, named here until the container backend went, are gone.
 
 **Agent-owned**:
 
@@ -34,14 +34,16 @@ It holds only coordination and ephemeral state (job queues, presence keys, hando
 Losing this state signs restricted viewers out, interrupts pending sign-ins and invalidates outstanding render grants; viewers must sign in again or reload the share page.
 No artifact content or viewer allowlist is lost; Postgres stays the source of truth for anything durable, and the scheduled sweeps re-assert their registrations so a dataset loss cannot silently stop them ([platform-topology](platform-topology.md)).
 
-**Choosing between Postgres and the K8s API.** A new resource belongs on a CRD iff the controller reconciles it.
-If only the api-server reads and writes it, it belongs in Postgres.
-The spec/status single-writer split exists to coordinate api-server and controller; without a controller reader, it has no purpose, and putting api-server-only state on the K8s API is using it as a generic key-value store.
-An earlier "K8s is the database" framing predates Postgres landing in the platform — the rule above is the refinement that replaced it, carried forward unchanged through the CRD migration.
-This is why schedules live in Postgres and templates never became a CRD.
+**Choosing between Postgres and the K8s API.** Platform state belongs in Postgres.
+The Kubernetes API holds what is rendered from it — the machines, their Services, credentials and policies, and one anchor ConfigMap per Agent whose reference owns those children so a deletion still cascades — and what the cluster itself owns: Events, Leases, and the infrastructure an operator installs.
+The anchor also keeps a deletion's record: it is removed last, after the machine, the PVCs and the release-namespace objects, so a failure leaves something for the delete queue to retry.
+One rule replaced the earlier "a resource belongs on a CRD iff the controller reconciles it", which was right while the state lived there: a resource the controller reconciles is now a database row the controller observes, and putting platform state in the API server is using a shared, cluster-scoped object as a general store — the CRD is one kind for every install in the cluster, so nothing in it separates one install's records from another's.
+It is the same reasoning that keeps api-server-only state off the Kubernetes API, carried the rest of the way.
+This is why schedules live in Postgres, templates never became a CRD, and Agents and budgets are moving there too.
 
-The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional.
-The agent's only durable surface is its machine disk; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
+The split between writers is per column and table, not per subresource: definitions, lifecycle signals and budgets are the api-server's, observations are the controller's, and one shared row is split by grant.
+What makes it structural on the controller's side is its database login, which is granted nothing else; on the api-server's side it is the schema's ownership plus a check that its code never writes an observation table.
+The agent's only durable surface is its machine disk; everything the platform knows *about* the agent is written to Postgres by the api-server or the controller, not by the agent itself.
 
 The optional agent-telemetry backend adds a fifth durable substrate, outside this split — see [observability](observability.md).
 It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
@@ -58,24 +60,25 @@ flowchart LR
   objectstore[(Object store<br/>S3-compatible)]
 
   subgraph k8s[K8s API]
-    cr-spec[Agent CR<br/>spec]
-    cr-status[Agent CR<br/>status subresource]
-    cr-anno[Agent CR<br/>annotations]
+    rendered[Rendered infrastructure<br/>machines, Services, policies]
+    events[Events and Leases]
   end
 
   disk[(Machine disk)]
 
-  api-server -->|write| postgres
+  api-server -->|write definitions, signals, budgets| postgres
   api-server -->|read/write| objectstore
-  api-server -->|write| cr-spec
-  api-server -->|read| cr-status
-  api-server -->|annotate| cr-anno
+  api-server -->|render| rendered
 
-  controller -->|write| cr-status
-  controller -->|read| cr-spec
+  controller -->|listen and read| postgres
+  controller -->|write observations| postgres
+  controller -->|render| rendered
+  controller -->|lease, events| events
 
   agent-runtime -->|read/write| disk
 ```
+
+Until the move's switch, the two custom resources sit where the diagram has Postgres: the api-server writes their specs and the controller their status, and the `control` tables stay empty.
 
 ## Substrates
 
@@ -137,10 +140,42 @@ Several of those rows carry an owner's Keycloak sub, and they carry it **differe
 The difference is the requirement, not an oversight — a public page names its Agent's owner and a feed names a person's own sessions back to them, and a hash cannot be resolved back to a person.
 Neither table can stand in for the other, and the pseudonymized one must not be extended to serve the page.
 
-The api-server is the sole writer for all of it.
-The controller does not touch Postgres — its bookkeeping lives on the `status` subresource of the custom resources it owns.
+The api-server is the sole writer for all of it, and for the per-Agent record below.
+
+- **the Agent store** — one schema of its own (`control`), separate from the rest because its writers are separate and because the pseudonymized usage mirror in this one must keep its name and its readers.
+  A definition row per Agent carries what the controller renders: image, harness, resource limits as the quantity text an operator wrote, the idle timeout, the nested-virtualization and connection-address flags, the L7 hosts, and the compatibility values a machine still falls back on.
+  A signals row carries what changes without a spec write: last activity with the token that changes with it, the pins that keep a machine awake, a stop request, a disable, the restart revision, and the reclaim mark the controller writes.
+  Observation tables carry what the controller sees — conditions with their original transition times, machine restarts and the OOM attribution that goes with them — and it is their only writer.
+  A budget row per owner subject overrides the chart's pool field by field; a budget with no override does not exist, and a row written outside the platform carries no invented audit time.
+  A store row records where an install is in the move, and the snapshot table holds the archive the rollback window depends on.
+  The definition's generation advances on exactly the columns the controller renders, and a host or grant change still advances it, as both were spec fields.
+  Grants are the boundary: the controller's login writes only its own observation tables, the two reclaim columns of the signals row, and the two progress columns of the store row — the holder and the moment every anchor existed, which the switch's barrier reads.
+  It reads the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns — and no column it does not render, no other schema, and no other install's database.
+  A change feed carries every write that matters, and after the switch it is what both components' caches of the fleet read instead of watching the API server; a component that has not heard from it lately makes no hibernation, reclaim or collection decision.
+  The controller opens the store before it campaigns for the Lease and exits when it cannot, and its liveness probe restarts a leader whose store has not answered for two minutes ([platform-topology](platform-topology.md#controller)).
+
 The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup, serialized across replicas on a Postgres advisory lock so concurrent boots queue behind one migrator instead of racing the same DDL — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
-One non-schema step follows the migrations in the same startup sequence: a privilege reconcile for the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views).
+Two non-schema steps follow the migrations in the same startup sequence: a privilege reconcile for the usage source passthrough views, owned by [usage-tracking](usage-tracking.md#source-passthrough-views), and one for the controller's grants, which re-issues them on every start because the role may be created before or after this build's migrations — by the chart on the bundled database, by an operator on an external one.
+
+Before any of that, a component reads one marker ConfigMap — `<release>-agent-store` in the agent namespace — and refuses to start when it names a store the build cannot serve.
+The marker is written by the switch, so a build on the custom resources stops as soon as the authority has moved, and a build on Postgres starts only once the switch has absorbed them.
+The contract release adds one stamp to it: `contract-at`, written by the api-server only when the contract gate passes, and what the operator's tooling reads to know this install is past its window.
+The store is then bound to that install: the absorb records the release, namespace and API server it ran against, and the absorb, the barrier and a rollback refuse a database whose absorb stamp or install does not match the cluster's marker.
+
+The switch is one api-server startup behind that marker ([agent-store cutover](../notes/agent-store-cutover.md) is the operator's procedure).
+It recreates both Deployments instead of rolling them, so no old replica or periodic job acts on a fleet that exists only in rows.
+The api-server then reads every `Agent` and `UserBudget`, refuses any record it cannot carry as rows — a refusal names the record, and a connection grant that disagrees with `connection_grants` is one of them — and writes the rows, the archive in `crd_snapshots` and the store row's `absorbed_at` in one transaction.
+The archive's independent copy is written to the object store and read back before that transaction opens, so an install with an object store aborts rather than absorb with one copy; an install without one carries the in-database copy only, and the operator's encrypted file before the contract release is what replaces it.
+The object-store copy is plaintext in the platform's own bucket; only the operator's file leaves the platform, encrypted to the install's age key.
+A rerun finds `absorbed_at` and imports nothing again, whatever point a kill interrupted.
+It serves only once the new controller leads the Lease and has recorded that every Agent has its anchor — the store row's `controller_holder` and `anchors_ensured_at` — and it records `switch_completed_at` so a later controller outage never keeps the api-server down.
+The archive is exported, encrypted to the operator's age key, by the api-server's own command; the plaintext never leaves the database, a pod's filesystem or a terminal.
+
+The contract release is the one that stops reading the custom resources, and it is armed rather than trusted.
+Its api-server refuses to start until `switch_completed_at` is set, at least a week has passed since it (the rollback window), the snapshot table and the object-store copy both read back to the digest the absorb recorded, an operator export is recorded in `control` and encrypted to the install's key, and `agentStore.contract.backupSha256` is that export's ciphertext digest — or `emptyArchive` for an install that never absorbed a custom resource.
+It then writes `contract-at` into the marker and serves from the rows with no RBAC on `agent-platform.ai` at all; the controller in the same release skips the CRD schema check and holds no verb on the group either.
+A rehearsal may move that gate's clock with `agentStore.contract.now`; an install never sets it.
+The install's own `Agent` and `UserBudget` resources may be deleted by `agent-store-cli delete-crs`, which refuses without the marker's `contract-at` and orphans the children because the anchors own them; the kinds themselves stay for every install on the cluster that still reads them.
 
 ### Object store
 
@@ -157,30 +192,17 @@ An install with no object store fails closed: bulk-blob features are unavailable
 
 ### Custom resources
 
-Resources the controller reconciles are Kubernetes CRDs under the `agent-platform.ai/v1` API group, each with a status subresource:
+The two kinds the platform keeps in the Kubernetes API, `Agent` and `UserBudget` under `agent-platform.ai/v1`, are being replaced by rows in the Agent store above.
+Until the move's switch they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
+Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
+From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
+A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
+An install may delete its own resources with `delete-crs`, an optional cleanup that refuses without a real-clock contract gate and orphans the children through their anchors.
+The kinds themselves stay on the cluster: another install in another namespace may still read them, and each install chooses its own authority, so no release, chart, hook or operator command ever deletes a shared CRD.
 
-| Kind    | What it declares                                                                                                                                                                                                                 | `spec` writer | `status` writer |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------- |
-| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server    | controller      |
+Two domain resources are deliberately not custom resources:
 
-Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
-
-- **`spec`** — user intent.
-  Written exclusively by the api-server and validated by the K8s API server at admission against the CRD schema; the controller consumes typed objects without re-validating shape.
-  Cross-field and referential rules stay application logic.
-- **`status`** — observed state, written exclusively by the controller through the status subresource.
-  Conditions are the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`); `Ready` is the machine-and-gateway intersection and the api-server's sole routing signal.
-
-There is no stored desired state — the former `desiredState` latch is eliminated.
-Wake is a one-off activity poke, the controller hibernates on idleness, and running-vs-hibernated is recorded as observed status; see [agent-lifecycle](agent-lifecycle.md).
-
-High-frequency, out-of-band signals live on **annotations** rather than `status`, so they are independently patchable without a spec or status write: the last-activity timestamp and active-session marker that drive hibernation, and the roll trigger the api-server bumps to force a rolling restart of the pair.
-Connection and secret grants are intent and moved from annotations into `spec`.
-(Credential `env` rides the runtime channel; see [runtime delivery](runtime-delivery.md).)
-
-Two domain resources are deliberately not CRDs:
-
-- **Templates** stay ConfigMaps — chart-rendered, read-only blueprints copied into an Agent at create time, never reconciled, loaded by the api-server at boot.
+- **Templates** are ConfigMaps — chart-rendered, read-only blueprints copied into an Agent at create time, never reconciled, loaded by the api-server at boot.
 - **Schedules** live in Postgres — only the api-server reads and writes them (see the Postgres/K8s rule above).
 
 ### The machine disk
@@ -231,7 +253,8 @@ A machine may reach only its gateway, so its image is fetched for it and unpacke
 | Schedule delete           | schedule row removed                            | n/a                                                                                                                                                                  | n/a                    | n/a                   |
 | Satellite delete          | satellite row, grants and jobs removed          | n/a                                                                                                                                                                  | n/a                    | n/a                   |
 
-**Agent-scoped rows follow the Agent.** No Postgres table references an Agent by foreign key — the custom resource is the authoritative record, so the database cannot cascade on its own and the api-server owns the cleanup.
+**Agent-scoped rows follow the Agent.** Most Postgres tables hold an Agent's id without a foreign key, because they outlive it or predate the store: the api-server owns that cleanup, one list of record kinds, and a periodic sweep that reaps a kind whose Agent no longer exists.
+The Agent store's own tables are the exception — they cascade from the definition row, so deleting an Agent deletes its signals, observations and bookkeeping with it.
 An API delete runs one cleanup per agent-scoped record kind, from a single list declared in the code; most delete the rows.
 Some do more: they cancel queued schedule fires, revoke knowledge-base shares and purge their snapshots, purge the script output a root driver's sub-agents left, mark the usage mirror deleted, retire the public profile, and fail running Invocations the Agent drove.
 A periodic orphan sweep backstops that list: it diffs every kind's agent ids against the live custom resources and re-runs every cleanup for each id that no longer resolves.

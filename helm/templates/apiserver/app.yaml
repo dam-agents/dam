@@ -62,12 +62,27 @@ metadata:
     app.kubernetes.io/component: apiserver
   {{- include "platform.annotations" (dict "root" $ "component" .Values.apiServer) | nindent 2 }}
 spec:
+  {{- if .Values.agentStore.frozen }}
+  # Frozen for a rollback: no pod serves, so nothing writes rows the rollback is
+  # reading. The operator clears this with the previous release.
+  replicas: 0
+  {{- else }}
   replicas: {{ .Values.apiServer.replicas | default 1 }}
+  {{- end }}
+  {{- if eq .Values.agentStore.authority "postgres" }}
+  # The switch recreates: every old replica is gone before the absorb reads the
+  # custom resources, so no old writer or periodic job can act on a fleet that
+  # exists only in rows.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  {{- else }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/component: apiserver
@@ -142,6 +157,47 @@ spec:
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
             - name: DATABASE_POOL_MAX
               value: {{ .Values.apiServer.db.poolMax | quote }}
+            # Which store is authoritative for Agents and budgets, and the
+            # dry-run report that tells an operator what a switch would do.
+            - name: PLATFORM_AGENT_STORE
+              value: {{ .Values.agentStore.authority | quote }}
+            - name: PLATFORM_AGENT_STORE_MARKER
+              value: {{ include "platform.agentStore.markerName" . | quote }}
+            - name: AGENT_STORE_PREVIEW_REPORT
+              value: {{ .Values.agentStore.previewReport | quote }}
+            - name: PLATFORM_AGENT_STORE_FROZEN
+              value: {{ .Values.agentStore.frozen | quote }}
+            {{- with .Values.agentStore.backup.recipient }}
+            # The age public key the operator's archive is encrypted to. Public,
+            # so it can live here; the identity never enters the cluster.
+            - name: AGENT_STORE_BACKUP_RECIPIENT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq .Values.agentStore.authority "contract" }}
+            # The archive digest the operator attested from the encrypted file,
+            # and the one release that refuses to start until the switch's
+            # recorded digest is that value. An install that never absorbed a
+            # custom resource says so instead.
+            - name: AGENT_STORE_CONTRACT_BACKUP_SHA256
+              value: {{ .Values.agentStore.contract.backupSha256 | quote }}
+            - name: AGENT_STORE_CONTRACT_EMPTY_ARCHIVE
+              value: {{ .Values.agentStore.contract.emptyArchive | quote }}
+            {{- with .Values.agentStore.contract.now }}
+            # A rehearsal's clock, so the rollback window is proved without
+            # waiting it out. Empty in an install.
+            - name: AGENT_STORE_CONTRACT_NOW
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.agentStore.previewReport }}
+            # The report sizes an Agent that carries no limit from the same
+            # defaults the controller uses, so what it previews is what an
+            # absorb would write.
+            - name: AGENT_LEGACY_CPU_LIMIT
+              value: {{ .Values.controller.agent.legacyAgentSize.cpu | quote }}
+            - name: AGENT_LEGACY_MEMORY_LIMIT
+              value: {{ .Values.controller.agent.legacyAgentSize.memory | quote }}
+            {{- end }}
             - name: RUNTIME_DELIVERY_CONCURRENCY
               value: {{ .Values.apiServer.runtimeDelivery.concurrency | quote }}
             {{- if .Values.apiServer.db.caCert }}

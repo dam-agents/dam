@@ -1,6 +1,5 @@
 import {
   Add,
-  ChevronRight,
   Information,
   Unlink,
   WarningAltFilled,
@@ -39,13 +38,11 @@ import {
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
-  addableProviders,
   attachableProviders,
-  type ModelGroup,
   modelGroups,
-  modelIndicatorLabel,
   sameModel,
   sameSideGroups,
+  sessionModelLabel,
 } from "../lib/catalog-groups.js";
 import { DEFAULT_KIND_LABEL, DEFAULT_KIND_TITLE } from "../lib/default-kind.js";
 import {
@@ -89,9 +86,9 @@ type Props = CommonProps &
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the harness, model and session settings a new
  * session starts on, or, while the agent's harness list still loads, the pair
- * it expects with a loader in place of the body. In JanUI providers are not
- * attached or disconnected here: a Manage providers row leads to the agent's
- * Providers page instead.
+ * it expects with a loader in place of the body. Providers are not attached
+ * or disconnected here: the model list ends with a Connect more providers
+ * row that leads to the agent's Providers page.
  */
 export function SessionPairPicker(props: Props) {
   const {
@@ -188,12 +185,6 @@ export function SessionPairPicker(props: Props) {
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
-  const addable =
-    routed && !manageProviders
-      ? addableProviders(providers.granted, providers.owned, (c) =>
-          offered.addable.some((p) => p.id === c.id),
-        )
-      : [];
   const confirmDisconnect = (name: string, id: string) => {
     const provider = providers.granted.find((p) => p.id === id);
     return void showConfirm(
@@ -244,7 +235,7 @@ export function SessionPairPicker(props: Props) {
   const label = !pair
     ? undefined
     : routed
-      ? (modelIndicatorLabel(groups, pair.model) ?? "Choose a model")
+      ? (sessionModelLabel(groups, pair.model) ?? "Choose a model")
       : modelProviderLabel(
           pair.model,
           provider?.name,
@@ -295,6 +286,10 @@ export function SessionPairPicker(props: Props) {
                         <HarnessIcons harnesses={[h.name]} size="xs" />
                       </span>
                       {h.displayName}
+                      <HarnessModelCount
+                        agentId={routed ? agentId : null}
+                        harness={h.name}
+                      />
                     </button>
                     {unsupported(h.name) && (
                       <Tooltip
@@ -319,7 +314,6 @@ export function SessionPairPicker(props: Props) {
                 <SessionModelList
                   agentId={agentId}
                   groups={groups}
-                  harnessName={harnessName(harness)}
                   current={pair?.model ?? null}
                   loading={catalogModels.isLoading}
                   waiting={catalogModels.waiting}
@@ -339,54 +333,10 @@ export function SessionPairPicker(props: Props) {
                       ...(Object.keys(kept).length > 0 && { settings: kept }),
                     });
                   }}
-                  {...(!manageProviders && {
-                    onDisconnect: (group: ModelGroup) =>
-                      confirmDisconnect(group.displayName, group.connectionId),
-                  })}
-                  disconnecting={pending}
+                  onManageProviders={() =>
+                    navigateToSandboxHome(agentId, "providers")
+                  }
                 />
-                {addable.map(({ connection, conflict }) => (
-                  <section
-                    key={connection.id}
-                    aria-label={connection.name}
-                    className="flex flex-col px-1"
-                  >
-                    <ProviderHeading name={connection.name} />
-                    <span className="inline-flex items-center gap-1 self-start">
-                      <button
-                        type="button"
-                        disabled={pending || conflict !== null}
-                        onClick={() => attach(connection)}
-                        className="inline-flex items-center gap-1.5 py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
-                      >
-                        <Add size={16} /> Attach this provider
-                      </button>
-                      {conflict && (
-                        <Tooltip
-                          content={`An agent holds one ${conflict.displayName} connection at a time; this agent already uses ${conflict.held.name}.`}
-                        >
-                          <span
-                            tabIndex={0}
-                            aria-label={`Why ${connection.name} cannot be attached`}
-                            className="px-1 text-muted-foreground"
-                          >
-                            <Information size={14} />
-                          </span>
-                        </Tooltip>
-                      )}
-                    </span>
-                  </section>
-                ))}
-                {groups.length === 0 &&
-                  addable.length === 0 &&
-                  !catalogModels.isLoading &&
-                  !catalogModels.isError &&
-                  catalogModels.operable && (
-                    <p className="px-1 text-muted-foreground">
-                      No connected model provider runs {harnessName(harness)}.
-                      Connect one first.
-                    </p>
-                  )}
               </>
             ) : (
               <OldRuntimeProviderSections
@@ -434,7 +384,7 @@ export function SessionPairPicker(props: Props) {
               />
             </div>
           )}
-          {!manageProviders ? (
+          {(!routed || (pair && routed && status?.followsDefaults)) && (
             // UNIT_BOUNDARY_DESCRIPTION: the popover's last row holds the two acts on the default and nothing else: back to the default, and set the pick as it. Left on the default, the row is blank.
             <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground empty:hidden">
               {pair &&
@@ -465,21 +415,6 @@ export function SessionPairPicker(props: Props) {
                     Set as default
                   </button>
                 )}
-            </div>
-          ) : (
-            <div className="border-t border-border pt-1">
-              <PopoverClose asChild>
-                <button
-                  type="button"
-                  data-testid="session-pair-manage-providers"
-                  onClick={() => navigateToSandboxHome(agentId, "providers")}
-                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  Manage providers ({providers.granted.length}/
-                  {providers.owned.length} connected)
-                  <ChevronRight size={14} aria-hidden />
-                </button>
-              </PopoverClose>
             </div>
           )}
         </PopoverContent>
@@ -772,5 +707,25 @@ function ModelChoice({
         {label}
       </button>
     </PopoverClose>
+  );
+}
+
+function HarnessModelCount({
+  agentId,
+  harness,
+}: {
+  agentId: string | null;
+  harness: string;
+}) {
+  const { data } = useHarnessCatalogModels(agentId, harness);
+  if (!data) return null;
+  const count = data.providers.reduce(
+    (total, provider) => total + provider.models.length,
+    0,
+  );
+  return (
+    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+      {count} {count === 1 ? "model" : "models"}
+    </span>
   );
 }

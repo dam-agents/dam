@@ -53,11 +53,11 @@ import { createApprovalsRepository } from "../../../modules/approvals/infrastruc
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
   composeEgressRulesModule,
-  createAgentL7HostsPort,
   createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
   createKitRulesSeederAdapter,
 } from "../../../modules/egress-rules/compose.js";
+import { createL7HostsPortFor } from "../../../modules/agent-store/l7-hosts.js";
 import {
   findAgentByConversation,
   bindConversation,
@@ -167,6 +167,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       api,
       resolveSlackWorkspace: boot.resolveSlackWorkspace,
       agentStateCache: boot.agentStateCache,
+      agentStore: { authority: config.agentStore },
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,
@@ -257,6 +258,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
+      agentStore: { authority: config.agentStore },
       surface,
       api,
       namespace: config.namespace,
@@ -268,7 +270,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       templatesRepo,
       runtimeProgress: contributionsProgress,
     });
-    const l7Hosts = createAgentL7HostsPort(k8sClient);
+    const l7Hosts = createL7HostsPortFor({
+      authority: config.agentStore,
+      k8s: k8sClient,
+      db,
+    });
     const { starterKits } = composeStarterKitsForOwner({
       owner: user.sub,
       repo: starterKitsRepo,

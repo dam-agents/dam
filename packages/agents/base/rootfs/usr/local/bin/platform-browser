@@ -1,18 +1,13 @@
 #!/bin/sh
 # The agent's browser as agent-browser launches it (AGENT_BROWSER_EXECUTABLE_PATH):
-# Playwright's Chromium, launched the way the browser panel's "Browser testing
-# mode" switch chose. The agent runtime keeps that choice in the agent's home,
-# so every launch reads it: the panel's, the agent's own commands' and one
-# after any restart. Chromium reports itself automated (navigator.webdriver)
-# whenever its DevTools port is open, the port agent-browser drives it through;
-# with testing mode off that report is turned off and the port stays.
+# Playwright's Chromium, launched with its automation report off. Chromium
+# reports itself automated (navigator.webdriver) whenever its DevTools port is
+# open, the port agent-browser drives it through, and some sites' bot checks
+# then refuse the user's own clicks; the port stays, so the agent and the panel
+# control the browser as before.
 # Chrome's component updater and Safe Browsing list updates reach Google with no
 # page asking, and the gateway holds each for the user's approval, so the
-# switches that turn them off are on every launch, whatever the testing mode.
+# switches that turn them off are on every launch too.
 quiet="--disable-background-networking --disable-component-update"
-if [ "$(cat "${HOME:-/home/agent}/.local/share/platform/browser-launch" 2>/dev/null)" = standard ]; then
-  set -- $quiet --disable-blink-features=AutomationControlled "$@"
-else
-  set -- $quiet "$@"
-fi
+set -- $quiet --disable-blink-features=AutomationControlled "$@"
 exec /opt/ms-playwright/chromium "$@"

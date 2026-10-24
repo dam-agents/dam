@@ -18,6 +18,7 @@ export interface LiveEventsModule {
   stop(): void;
   startAgentWatch(): void;
   stopAgentWatch(): void;
+  agentChanged(agentId: string, ownerSub: string): void;
 }
 
 export function composeLiveEventsModule(deps: {
@@ -31,6 +32,10 @@ export function composeLiveEventsModule(deps: {
   let watch: { stop(): void } | null = null;
   return {
     liveEvents: createLiveEventsService({ bus }),
+    agentChanged(agentId, ownerSub) {
+      bus.publish(ownerSub, { topic: "agents", agentId });
+      deps.onAgentChanged(agentId);
+    },
     start() {
       saga ??= startLiveHintsSaga(bus);
     },

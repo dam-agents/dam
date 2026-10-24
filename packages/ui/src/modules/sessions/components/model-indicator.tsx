@@ -28,8 +28,8 @@ import {
 } from "../api/session-pair.js";
 import {
   modelGroups,
-  modelIndicatorLabel,
   sameSideGroups,
+  sessionModelLabel,
 } from "../lib/catalog-groups.js";
 import {
   harnessDisplayName,
@@ -77,6 +77,7 @@ export function ModelIndicator({
   onNewSession,
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId, kind ?? "chat");
   const capability = carried.find((h) => h.name === harness);
@@ -125,7 +126,7 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = routed
-    ? (modelIndicatorLabel(groups, model) ?? "Choose a model")
+    ? (sessionModelLabel(groups, model) ?? "Choose a model")
     : (models.find((m) => m.value === model)?.name ?? model);
   const unlisted =
     !routed &&
@@ -239,13 +240,15 @@ export function ModelIndicator({
             <SessionModelList
               agentId={agentId}
               groups={groups}
-              harnessName={harnessName}
               current={model}
               loading={catalogModels.isLoading}
               waiting={catalogModels.waiting}
               failed={catalogModels.isError}
               onRetry={() => void catalogModels.refetch()}
               onChoose={(name) => onChoose(name)}
+              onManageProviders={() =>
+                navigateToSandboxHome(agentId, "providers")
+              }
             />
           </div>
         ) : (

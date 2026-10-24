@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -33,7 +32,7 @@ func (r *AgentReconciler) vmPoolOf(ctx context.Context, owner string) (vmPool, e
 
 // UNIT_BOUNDARY_DESCRIPTION: reads the owner's UserBudget again. A read that fails keeps the overrides last read, so an API server that is slow for a moment does not shrink a pool back to the install's; an owner never read at all has none to keep, which is what errVMPoolUnread says.
 func (r *AgentReconciler) refreshVMPool(ctx context.Context, owner string) (vmPool, error) {
-	obj, err := r.dynamic.Resource(UserBudgetsGVR).Namespace(r.config.Namespace).Get(ctx, "budget-"+owner, metav1.GetOptions{})
+	obj, err := r.backend.GetBudget(ctx, owner)
 	var pool vmPool
 	switch {
 	case k8serrors.IsNotFound(err):

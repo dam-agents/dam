@@ -247,7 +247,7 @@ export const PROVIDERS = {
   "curve-bender": {
     id: "curve-bender",
     alias: "cb",
-    displayName: "CurveBender custom key",
+    displayName: "CurveBender (own key)",
     modes: [
       { key: "api-key", label: "API token", templateId: "curve-bender" },
       {
@@ -362,7 +362,7 @@ export function aliasForTemplateId(templateId: string): ProviderAlias | null {
  * entry of its own takes its preset's name.
  */
 const TEMPLATE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "CurveBender",
+  [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "CurveBender (shared)",
 };
 
 export function displayNameForTemplate(templateId: string): string | null {

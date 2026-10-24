@@ -42,7 +42,7 @@ func hibernate(t *testing.T, r *AgentReconciler, name string) {
 	u.SetAnnotations(ann)
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, u, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	down, err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", name)
+	down, err := hibernateAgentPair(ctx, r.client, r.backend, r.HaltMachine, testOwner, "test-agents", name)
 	require.NoError(t, err)
 	require.True(t, down)
 }

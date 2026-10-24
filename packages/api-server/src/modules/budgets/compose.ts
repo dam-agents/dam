@@ -1,5 +1,13 @@
 import type { BudgetsService, UserBudgetDefaults } from "api-server-api";
+import type { Db } from "db";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
+import {
+  deleteUserBudget as deleteStoredUserBudget,
+  listUserBudgets as listStoredUserBudgets,
+  readUserBudget as readStoredUserBudget,
+  writeUserBudget as writeStoredUserBudget,
+} from "../agent-store/user-budgets.js";
 import { readRunnerUsage } from "./infrastructure/runner-usage.js";
 import {
   deleteUserBudget,
@@ -50,14 +58,28 @@ export function composeUserBudgetsAdmin(deps: {
   k8s: K8sClient;
   users: BudgetUsers;
   defaults: UserBudgetDefaults;
+  agentStore?: { authority: AgentStoreMode; db: Db } | undefined;
 }): UserBudgetsForOperator {
+  const store =
+    deps.agentStore !== undefined && readsRows(deps.agentStore.authority)
+      ? {
+          list: () => listStoredUserBudgets(deps.agentStore!.db),
+          get: (ownerSub: string) =>
+            readStoredUserBudget(deps.agentStore!.db, ownerSub),
+          write: (input: Parameters<typeof writeStoredUserBudget>[1]) =>
+            writeStoredUserBudget(deps.agentStore!.db, input),
+          remove: (ownerSub: string) =>
+            deleteStoredUserBudget(deps.agentStore!.db, ownerSub),
+        }
+      : {
+          list: () => listUserBudgets(deps.k8s),
+          get: (ownerSub: string) => readUserBudget(deps.k8s, ownerSub),
+          write: (input: Parameters<typeof writeUserBudget>[1]) =>
+            writeUserBudget(deps.k8s, input),
+          remove: (ownerSub: string) => deleteUserBudget(deps.k8s, ownerSub),
+        };
   return createUserBudgetsAdmin({
-    store: {
-      list: () => listUserBudgets(deps.k8s),
-      get: (ownerSub) => readUserBudget(deps.k8s, ownerSub),
-      write: (input) => writeUserBudget(deps.k8s, input),
-      remove: (ownerSub) => deleteUserBudget(deps.k8s, ownerSub),
-    },
+    store,
     users: deps.users,
     defaults: deps.defaults,
   });

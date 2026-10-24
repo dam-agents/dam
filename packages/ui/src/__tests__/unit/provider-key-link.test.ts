@@ -50,7 +50,7 @@ const FORMS: [string, (variant: "wizard" | "edit") => ReactElement, string][] =
       "https://pages.github.ibm.com/dam-agents/docs/reference/litellm-key/",
     ],
     [
-      "CurveBender",
+      "CurveBender (own key)",
       (variant) =>
         createElement(LiteLlmProxyForm, {
           provider: "curve-bender",

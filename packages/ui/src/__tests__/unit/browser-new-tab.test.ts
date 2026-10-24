@@ -52,7 +52,6 @@ vi.mock("../../modules/browser/hooks/use-browser-control.js", () => ({
     connection: "live",
     connects: 0,
     browser: { state: "ready", message: null },
-    testingMode: true,
     page: {
       url: "http://a/",
       title: "A",
@@ -73,7 +72,6 @@ vi.mock("../../modules/browser/hooks/use-browser-control.js", () => ({
     newTab: state.newTab,
     clearData: vi.fn(),
     restartBrowser: vi.fn(),
-    setTestingMode: vi.fn(),
     reconnect: vi.fn(),
   }),
 }));

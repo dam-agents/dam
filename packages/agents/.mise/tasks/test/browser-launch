@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-//MISE description="Test that the panel browser's launcher starts Chromium the way the Browser testing mode switch chose, with its own Google calls off"
-//MISE sources=["base/rootfs/usr/local/bin/platform-browser", "base/rootfs/etc/opt/chrome_for_testing/policies/managed/platform.json", "base/base.toml", ".mise/tasks/test/browser-launch-mode"]
+//MISE description="Test that the panel browser's launcher starts Chromium with its automation report off and its own Google calls off"
+//MISE sources=["base/rootfs/usr/local/bin/platform-browser", "base/rootfs/etc/opt/chrome_for_testing/policies/managed/platform.json", "base/base.toml", ".mise/tasks/test/browser-launch"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,41 +12,30 @@ import { fileURLToPath } from "node:url";
 const launcher = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/platform-browser", import.meta.url));
 const baseToml = readFileSync(new URL("../../../base/base.toml", import.meta.url), "utf8");
 const policy = JSON.parse(readFileSync(new URL("../../../base/rootfs/etc/opt/chrome_for_testing/policies/managed/platform.json", import.meta.url), "utf8"));
-const dir = mkdtempSync(join(tmpdir(), "browser-launch-mode-"));
-const home = join(dir, "home");
+const dir = mkdtempSync(join(tmpdir(), "browser-launch-"));
 const chromium = join(dir, "chromium");
-const choice = join(home, ".local/share/platform/browser-launch");
 writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
 writeFileSync(join(dir, "platform-browser"), readFileSync(launcher, "utf8").replaceAll("/opt/ms-playwright/chromium", chromium));
 const launch = (...args) =>
   execFileSync("/bin/sh", [join(dir, "platform-browser"), ...args], {
-    env: { PATH: process.env.PATH, HOME: home },
+    env: { PATH: process.env.PATH },
     encoding: "utf8",
   }).trimEnd().split("\n");
 
 try {
-  // TEST_SCENARIO: agent-browser launches the panel's browser through the launcher, so every launch — the panel's and the agent's own — goes through the switch.
+  // TEST_SCENARIO: agent-browser launches the panel's browser through the launcher, so every launch — the panel's and the agent's own — is launched the one way.
   assert.match(baseToml, /^AGENT_BROWSER_EXECUTABLE_PATH = "\/usr\/local\/bin\/platform-browser"$/m);
 
   // TEST_SCENARIO: every launch turns off the background networking that reaches Google with no page asking (the component updater, Safe Browsing's list updates), as the gateway would otherwise hold each for an approval the user did not cause.
   const quiet = ["--disable-background-networking", "--disable-component-update"];
 
-  // TEST_SCENARIO: an agent whose home holds no choice launches as it always did, in testing mode: agent-browser's arguments reach Chromium as they are, so the DevTools port marks the browser automated, and the background subsystems stay off.
-  assert.deepEqual(launch("--remote-debugging-port=0", "--kiosk"), [...quiet, "--remote-debugging-port=0", "--kiosk"]);
-
-  // TEST_SCENARIO: with testing mode off, Chromium is launched without its automation report (navigator.webdriver), and the DevTools port agent-browser controls it through is kept.
-  mkdirSync(join(home, ".local/share/platform"), { recursive: true });
-  writeFileSync(choice, "standard\n");
+  // TEST_SCENARIO: every launch turns off the browser's automation report (navigator.webdriver), which some sites' bot checks read to refuse the user's own clicks, and keeps the DevTools port agent-browser controls it through.
   assert.deepEqual(launch("--remote-debugging-port=0", "--kiosk"), [
     ...quiet,
     "--disable-blink-features=AutomationControlled",
     "--remote-debugging-port=0",
     "--kiosk",
   ]);
-
-  // TEST_SCENARIO: turning testing mode back on restores the testing launch, with the background subsystems still off.
-  writeFileSync(choice, "testing\n");
-  assert.deepEqual(launch("--remote-debugging-port=0"), [...quiet, "--remote-debugging-port=0"]);
 
   // TEST_SCENARIO: no launch switch stops the browser's connectivity check (connectivitycheck.gstatic.com) or its spell-check dictionary download (redirector.gvt1.com), so the managed policy turns off the error-page web service that probes for a captive portal, and blocks the dictionary languages so no dictionary is loaded or fetched. Chrome honours the blocklist only while SpellcheckEnabled is unset; the list holds English because an image that sets no locale gets that dictionary.
   assert.equal(policy.AlternateErrorPagesEnabled, false);

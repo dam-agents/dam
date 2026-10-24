@@ -40,6 +40,7 @@ import {
   wakeFailureReasonToken,
 } from "../domain/wake-failure.js";
 import { AgentStoppedError } from "../domain/agent-stopped.js";
+import { createAgentWake } from "./agent-wake.js";
 import { getLogger } from "../../../core/logger.js";
 
 const PIN_CONFLICT_RETRIES = 4;
@@ -110,14 +111,24 @@ export interface AgentSpecWrite {
   spec?: Record<string, unknown>;
   annotations: Record<string, string | null>;
   resourceVersion: string | undefined;
+  signalVersion?: number | undefined;
+  statusVersion?: number | undefined;
 }
 
 export type AgentSpecWriteResult =
   | { ok: true; value: InfraAgent }
   | { ok: false; reason: "not-found" | "conflict" };
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what an activity write replaced, so a rollback can
+ * put exactly it back.
+ * The custom resource identified the write by its timestamp; the store
+ * identifies it by the token that changes with it, and carries the previous
+ * timestamp when there is one.
+ */
 export interface AgentActivityStamp {
   previous: string | null;
+  previousAt?: string | null;
   written: string;
 }
 
@@ -189,6 +200,14 @@ export function createAgentsRepository(
     const agent = reread ? parseInfraAgent(reread) : null;
     return agent ? { agent, stamp } : null;
   }
+
+  const wake = createAgentWake({
+    readCached: (id) => cache.get(id),
+    readLive: (id) => k8s.getCustomObject(AGENTS_PLURAL, id),
+    isReady: (id) => repo.isReady(id),
+    bumpLastActivity,
+    whenChanged: (id) => cache.whenChanged(id),
+  });
 
   async function bumpLastActivity(id: string): Promise<void> {
     await k8s.patchCustomObject(AGENTS_PLURAL, id, {
@@ -490,146 +509,7 @@ export function createAgentsRepository(
       return obj !== null && readyConditionStatus(obj) === "True";
     },
 
-    async ensureReady(id, opts) {
-      const existing = inflight.get(id);
-      if (existing) {
-        opts?.onWaking?.();
-        return existing;
-      }
-      const waitOnly = opts?.waitOnly ?? false;
-
-      const work = (async () => {
-        const current = await cache.get(id);
-        if (!current) {
-          throw new AgentWakeTimeoutError({
-            agentId: id,
-            timeoutMs: WAKE_TIMEOUT_MS,
-            durationMs: 0,
-            failure: { kind: "not-found" },
-          });
-        }
-        if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
-          throw new AgentStoppedError(
-            id,
-            !!current.metadata.annotations[DISABLED_KEY],
-          );
-        }
-        if (await repo.isReady(id)) {
-          if (!waitOnly) await bumpLastActivity(id);
-          return;
-        }
-        opts?.onWaking?.();
-        const startedAt = Date.now();
-        getLogger().info({ agentId: id }, "agent.wake.begin");
-        try {
-          if (!waitOnly) await bumpLastActivity(id);
-        } catch (e) {
-          if (!(await k8s.getCustomObject(AGENTS_PLURAL, id))) {
-            throw new AgentWakeTimeoutError({
-              agentId: id,
-              timeoutMs: WAKE_TIMEOUT_MS,
-              durationMs: Date.now() - startedAt,
-              failure: { kind: "not-found" },
-            });
-          }
-          throw e;
-        }
-        let sawNotRefused = false;
-        const ready = await pollUntilReady(
-          async () => {
-            const obj = await cache.get(id);
-            if (!obj) return false;
-            if (obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
-              throw new AgentStoppedError(
-                id,
-                !!obj.metadata.annotations[DISABLED_KEY],
-              );
-            }
-            const infra = parseInfraAgent(obj);
-            if (waitOnly && infra.hibernated && !infra.wakeRequested) {
-              throw new AgentWakeTimeoutError({
-                agentId: id,
-                timeoutMs: WAKE_TIMEOUT_MS,
-                durationMs: Date.now() - startedAt,
-                failure: classifyWakeFailure(infra),
-              });
-            }
-            if (
-              infra.overBudget ||
-              (!infra.hibernated &&
-                REFUSED_START_REASONS.has(infra.agentPodNotReadyReason ?? ""))
-            ) {
-              const graceOver =
-                Date.now() - startedAt >= REFUSAL_FAIL_FAST_GRACE_MS;
-              if (sawNotRefused || graceOver) {
-                getLogger().warn(
-                  {
-                    agentId: id,
-                    cause: wakeFailureReasonToken(classifyWakeFailure(infra)),
-                  },
-                  "agent.wake.rejected",
-                );
-                throw new AgentWakeTimeoutError({
-                  agentId: id,
-                  timeoutMs: WAKE_TIMEOUT_MS,
-                  durationMs: Date.now() - startedAt,
-                  failure: classifyWakeFailure(infra),
-                });
-              }
-              return false;
-            }
-            sawNotRefused = true;
-            return infra.ready;
-          },
-          {
-            initialMs: WAKE_POLL_INITIAL_MS,
-            maxMs: WAKE_POLL_MAX_MS,
-            timeoutMs: WAKE_TIMEOUT_MS,
-            wakeOn: () => cache.whenChanged(id),
-          },
-        );
-        const durationMs = Date.now() - startedAt;
-        if (!ready) {
-          const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-          const infra = obj ? parseInfraAgent(obj) : null;
-          if (infra?.ready) {
-            getLogger().info(
-              { agentId: id, durationMs, lateReady: true },
-              "agent.wake.ready",
-            );
-            if (!waitOnly) await bumpLastActivity(id);
-            return;
-          }
-          const failure = classifyWakeFailure(infra);
-          getLogger().warn(
-            {
-              agentId: id,
-              durationMs,
-              cause: wakeFailureReasonToken(failure),
-              hibernated: infra?.hibernated,
-              agentPodNotReadyReason: infra?.agentPodNotReadyReason,
-              gatewayPodReady: infra?.gatewayPodReady,
-              gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
-              reconciledReason: infra?.reconciledReason,
-              podTerminationReason: infra?.podTerminationReason,
-            },
-            "agent.wake.timeout",
-          );
-          throw new AgentWakeTimeoutError({
-            agentId: id,
-            timeoutMs: WAKE_TIMEOUT_MS,
-            durationMs,
-            failure,
-          });
-        }
-        getLogger().info({ agentId: id, durationMs }, "agent.wake.ready");
-        if (!waitOnly) await bumpLastActivity(id);
-      })();
-      if (waitOnly) return work;
-      const tracked = work.finally(() => inflight.delete(id));
-      inflight.set(id, tracked);
-      return tracked;
-    },
+    ensureReady: wake.ensureReady,
   };
 
   return repo;

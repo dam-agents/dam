@@ -2,8 +2,7 @@ import { Hono } from "hono";
 import type { Db } from "db";
 import { createMemoryTtlStore } from "../../../core/ttl-store.js";
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
-import type { K8sClient } from "../../agents/infrastructure/k8s.js";
-import { AGENTS_PLURAL } from "../../agents/infrastructure/labels.js";
+import type { KubeObject } from "../../agents/infrastructure/k8s.js";
 import {
   findActiveShareById,
   incrementShareQueryCount,
@@ -19,7 +18,7 @@ const AGENT_NAME_TTL_MS = 60_000;
 export function composeKbShareServing(opts: {
   db: Db;
   store: Pick<ArtifactService, "get">;
-  k8s: K8sClient;
+  getAgent: (id: string) => Promise<KubeObject | null>;
   grepDeadlineMs: number;
 }): Hono {
   const nameCache = createMemoryTtlStore<string>(AGENT_NAME_TTL_MS);
@@ -27,9 +26,7 @@ export function composeKbShareServing(opts: {
   async function agentName(agentId: string): Promise<string> {
     const cached = await nameCache.peek(agentId);
     if (cached !== null) return cached;
-    const obj = await opts.k8s
-      .getCustomObject(AGENTS_PLURAL, agentId)
-      .catch(() => null);
+    const obj = await opts.getAgent(agentId).catch(() => null);
     const name = (obj?.spec as { name?: string } | undefined)?.name ?? agentId;
     await nameCache.set(agentId, name);
     return name;

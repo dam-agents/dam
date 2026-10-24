@@ -15,6 +15,7 @@ Two kinds of migration, by what's changing (#739):
 - **Tables / columns / indexes / enums** live in `schema.ts` and are **generated** with `drizzle-kit generate`.
   Never hand-write these — `db:check:generated` fails the build if you do (see below).
 - **The `usage_*` reporting views** aren't in `schema.ts` (expressing 23 aggregate views in Drizzle's DSL is lossy, and `generate` can't order interdependent views correctly), so they're **hand-written** raw SQL, scaffolded with `db:new`.
+  The same holds for everything a schema DSL cannot express — functions, triggers, constraint triggers and the grants a table view rests on — which also goes in a `db:new` migration, never into the generated one.
 
 ### Changing a table
 
