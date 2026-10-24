@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -73,4 +74,39 @@ func ReadMarker(ctx context.Context, client kubernetes.Interface, namespace, nam
 		return nil, nil
 	}
 	return marker.Data, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: proves the write fence instead of assuming it. Once the rows own the fleet,
+// UNIT_BOUNDARY_DESCRIPTION: the controller's identity must not be able to write an Agent or its status: the
+// UNIT_BOUNDARY_DESCRIPTION: status subresource was the structural guarantee, and a ServiceAccount that still
+// UNIT_BOUNDARY_DESCRIPTION: holds the verb could overwrite what the api-server wrote. The check asks the API
+// UNIT_BOUNDARY_DESCRIPTION: server what this pod may do, so a chart that forgot the narrower Role stops the
+// UNIT_BOUNDARY_DESCRIPTION: controller rather than leaving two writers.
+func VerifyWriteFence(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	checks := []struct{ group, resource, verb string }{
+		{"agent-platform.ai", "agents", "create"},
+		{"agent-platform.ai", "agents", "patch"},
+		{"agent-platform.ai", "agents", "delete"},
+		{"agent-platform.ai", "agents/status", "update"},
+		{"agent-platform.ai", "agents/status", "patch"},
+	}
+	for _, check := range checks {
+		review, err := client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, &authorizationv1.SelfSubjectAccessReview{
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: namespace,
+					Verb:      check.verb,
+					Group:     check.group,
+					Resource:  check.resource,
+				},
+			},
+		}, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("asking whether this identity may still %s %s: %w", check.verb, check.resource, err)
+		}
+		if review.Status.Allowed {
+			return fmt.Errorf("this controller's ServiceAccount can still %s %s in %s: the rows own the fleet, so the release that reads them must not keep the custom resource's write grants", check.verb, check.resource, namespace)
+		}
+	}
+	return nil
 }

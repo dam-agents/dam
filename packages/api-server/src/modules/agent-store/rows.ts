@@ -112,6 +112,7 @@ export interface AgentRowMapping {
   dropped: string[];
   normalized: string[];
   refusal?: string;
+  skipped?: boolean;
 }
 
 const QUANTITY =
@@ -271,16 +272,17 @@ export function rowsFromResource(
   const normalized: string[] = [];
   const id = metadata.name ?? "";
 
-  const refuse = (reason: string): AgentRowMapping => ({
+  const refuse = (reason: string, skipped = false): AgentRowMapping => ({
     id,
     rows: undefined,
     dropped,
     normalized,
     refusal: reason,
+    ...(skipped && { skipped }),
   });
 
   if (metadata.deletionTimestamp)
-    return refuse("the resource is being deleted");
+    return refuse("the resource is being deleted", true);
   if (!id || !DNS_LABEL.test(id) || id.length > 63)
     return refuse(
       "the name is not a DNS-1123 label of at most 63 characters, which the platform's labels and machine names are built from",

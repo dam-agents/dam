@@ -48,7 +48,7 @@ describe("agent store fence", () => {
         { [AGENT_STORE_MARKER_KEY]: "postgres" },
         true,
       ],
-      ["postgres, absorbed", "postgres", ABSORBED, true],
+      ["postgres, absorbed", "postgres", ABSORBED, false],
     ];
 
     for (const [name, mode, marker, refused] of cases) {
@@ -65,7 +65,9 @@ describe("agent store fence", () => {
       ABSORBED,
     ])
       expect(
-        agentStoreRefusal("postgres", marker)?.includes("no Postgres reader"),
+        agentStoreRefusal("postgres", marker, {
+          readsPostgres: false,
+        })?.includes("no Postgres reader"),
       ).toBe(true);
   });
 

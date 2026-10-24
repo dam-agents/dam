@@ -12,6 +12,12 @@ metadata:
   {{- include "platform.annotations" (dict "root" $ "component" .Values.controller) | nindent 2 }}
 spec:
   replicas: {{ .Values.controller.replicas | default 1 }}
+  {{- if eq .Values.agentStore.authority "postgres" }}
+  # The switch recreates: the old controller is gone before the new one starts,
+  # so two controllers never read the store the absorb is filling.
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
@@ -41,6 +47,8 @@ spec:
               value: {{ .Values.agentStore.authority | quote }}
             - name: PLATFORM_AGENT_STORE_MARKER
               value: {{ include "platform.agentStore.markerName" . | quote }}
+            - name: PLATFORM_AGENT_STORE_FROZEN
+              value: {{ .Values.agentStore.frozen | quote }}
             {{- if eq .Values.agentStore.authority "postgres" }}
             # The controller's own login, on the api-server's database: it
             # reads definitions and writes observations, and nothing else. The

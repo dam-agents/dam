@@ -66,7 +66,7 @@ export interface AbsorbDeps {
   now: Date;
 }
 
-const ABSORB_LOCK = sql`pg_advisory_xact_lock(hashtext('control.agent_store.absorb'))`;
+const ABSORB_LOCK = sql`select pg_advisory_xact_lock(hashtext('control.agent_store.absorb'))`;
 
 const insertAgent = async (
   tx: Db | DbTx,

@@ -220,6 +220,9 @@ export function createApi(namespace: string) {
 export const createLeaseApi = () =>
   loadKubeConfig().makeApiClient(k8s.CoordinationV1Api);
 
+export const createAuthorizationApi = () =>
+  loadKubeConfig().makeApiClient(k8s.AuthorizationV1Api);
+
 export type AgentInformer = k8s.Informer<KubeObject> &
   k8s.ObjectCache<KubeObject>;
 

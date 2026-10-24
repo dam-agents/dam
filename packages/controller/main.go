@@ -110,6 +110,10 @@ func main() {
 		slog.Error("refusing to start", "agentStore", cfg.AgentStore, "reason", refusal)
 		os.Exit(1)
 	}
+	if cfg.AgentStoreFrozen {
+		slog.Error("refusing to start", "reason", "the Agent store is frozen for a rollback: this controller writes nothing until the rollback clears the freeze")
+		os.Exit(1)
+	}
 
 	if err := crdcheck.Assert(ctx, dynClient); err != nil {
 		slog.Error("CRD schema check failed", "error", err)
@@ -122,6 +126,10 @@ func main() {
 		postgres = openStore(ctx, cfg)
 		defer postgres.Close()
 		if err := awaitAbsorbed(ctx, postgres, marker[agentstore.KeyAbsorbed]); err != nil {
+			slog.Error("refusing to start", "reason", err)
+			os.Exit(1)
+		}
+		if err := agentstore.VerifyWriteFence(ctx, client, cfg.Namespace); err != nil {
 			slog.Error("refusing to start", "reason", err)
 			os.Exit(1)
 		}
@@ -272,6 +280,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		}
 		agentReconciler.ReconcileOrphanLeafSecrets(sctx)
 		agentReconciler.ReconcileOrphanMachines(sctx)
+		if err := agentReconciler.ReconcileOrphanReleaseNsResources(sctx); err != nil {
+			slog.WarnContext(sctx, "release-namespace sweep failed", "error", err)
+		}
 		if err := agentReconciler.ReconcileOrphanAnchors(sctx, func(name string) {
 			deleteQueue.Add(deletedAgent{name: name})
 		}); err != nil {

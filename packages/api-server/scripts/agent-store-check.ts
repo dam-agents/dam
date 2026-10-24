@@ -25,6 +25,12 @@ import {
   writeUserBudget,
 } from "../src/modules/agent-store/user-budgets.js";
 import { parseInfraAgent } from "../src/modules/agents/infrastructure/agent-mappers.js";
+import { absorbAgentStore } from "../src/modules/agent-store/absorb.js";
+import { passCutoverBarrier } from "../src/modules/agent-store/barrier.js";
+import { buildAgentStoreSnapshot } from "../src/modules/agent-store/snapshot.js";
+import { createHash } from "node:crypto";
+import type { KubeObject } from "../src/modules/agents/infrastructure/k8s.js";
+import type { CoordinationV1Api } from "@kubernetes/client-node";
 
 const url = process.env.AGENT_STORE_DATABASE_URL;
 if (!url) {
@@ -94,7 +100,10 @@ async function main(): Promise<void> {
     AGENT,
   );
   check("a create returns the Agent it wrote", created.id === AGENT);
-  check("the created Agent reads back ready-shaped", created.spec.image === "agent:1");
+  check(
+    "the created Agent reads back ready-shaped",
+    created.spec.image === "agent:1",
+  );
   check(
     "its idle timeout survives as the same duration",
     created.spec.hibernationTimeout === "1h30m0s",
@@ -102,7 +111,8 @@ async function main(): Promise<void> {
   );
   check(
     "its hosts survive as a set",
-    JSON.stringify(created.spec.l7Hosts) === JSON.stringify(["a.test", "b.test"]),
+    JSON.stringify(created.spec.l7Hosts) ===
+      JSON.stringify(["a.test", "b.test"]),
     JSON.stringify(created.spec.l7Hosts),
   );
 
@@ -169,7 +179,10 @@ async function main(): Promise<void> {
     (await repo.readInvocationPin(AGENT)) === version,
   );
   await repo.releaseInvocationPin(AGENT, version ?? "");
-  check("a release at its version clears it", (await repo.readInvocationPin(AGENT)) === null);
+  check(
+    "a release at its version clears it",
+    (await repo.readInvocationPin(AGENT)) === null,
+  );
 
   // TEST_SCENARIO: An activity restore applies to exactly the write it undid.
   const stamp = await repo.wakeIfHibernated(AGENT);
@@ -199,14 +212,19 @@ async function main(): Promise<void> {
   const rolled = await cache.get(AGENT);
   check(
     "a restart writes a roll revision",
-    (rolled?.metadata?.annotations?.["agent-platform.ai/roll-rev"] ?? "") !== "",
+    (rolled?.metadata?.annotations?.["agent-platform.ai/roll-rev"] ?? "") !==
+      "",
     JSON.stringify(rolled?.metadata?.annotations ?? {}),
   );
 
   // TEST_SCENARIO: The controller's reclaim column is not the api-server's to write.
   let refused = false;
   try {
-    await repo.patchAnnotation(AGENT, "agent-platform.ai/reclaimed-at", new Date().toISOString());
+    await repo.patchAnnotation(
+      AGENT,
+      "agent-platform.ai/reclaimed-at",
+      new Date().toISOString(),
+    );
   } catch {
     refused = true;
   }
@@ -218,23 +236,46 @@ async function main(): Promise<void> {
     change: { memory: "16Gi" },
     setBySub: "operator-1",
   });
-  check("a budget write records its operator", writtenBudget.row?.setBySub === "operator-1");
+  check(
+    "a budget write records its operator",
+    writtenBudget.row?.setBySub === "operator-1",
+  );
   check(
     "a field left out stays unset",
     (await readUserBudgetSizes(db, OWNER)).cpu === null,
   );
-  await writeUserBudget(db, { ownerSub: OWNER, change: { cpu: "4" }, setBySub: "operator-1" });
+  await writeUserBudget(db, {
+    ownerSub: OWNER,
+    change: { cpu: "4" },
+    setBySub: "operator-1",
+  });
   const kept = await readUserBudgetSizes(db, OWNER);
-  check("a later write keeps the earlier field", kept.memory === "16Gi" && kept.cpu === "4");
+  check(
+    "a later write keeps the earlier field",
+    kept.memory === "16Gi" && kept.cpu === "4",
+  );
   await writeUserBudget(db, {
     ownerSub: OWNER,
     change: { cpu: null, memory: null },
     setBySub: "operator-1",
   });
-  check("dropping the last field deletes the row", (await readUserBudget(db, OWNER)) === null);
-  check("the list agrees", (await listUserBudgets(db)).every((row) => row.ownerSub !== OWNER));
-  await writeUserBudget(db, { ownerSub: OWNER, change: { storage: "20Gi" }, setBySub: "operator-1" });
-  check("a delete reports what it removed", (await deleteUserBudget(db, OWNER))?.storage === "20Gi");
+  check(
+    "dropping the last field deletes the row",
+    (await readUserBudget(db, OWNER)) === null,
+  );
+  check(
+    "the list agrees",
+    (await listUserBudgets(db)).every((row) => row.ownerSub !== OWNER),
+  );
+  await writeUserBudget(db, {
+    ownerSub: OWNER,
+    change: { storage: "20Gi" },
+    setBySub: "operator-1",
+  });
+  check(
+    "a delete reports what it removed",
+    (await deleteUserBudget(db, OWNER))?.storage === "20Gi",
+  );
 
   // TEST_SCENARIO: the change feed is the platform's, not a stub's: a kit write and a disable both arrive through the real listener, and the cache serves the row after them rather than the one before.
   const listened = new Promise<void>((resolve) => {
@@ -244,7 +285,11 @@ async function main(): Promise<void> {
       resolve();
     });
   });
-  await repo.patchAnnotation(AGENT, "agent-platform.ai/starter-kit-onboarded", "2026-10-24T00:00:00Z");
+  await repo.patchAnnotation(
+    AGENT,
+    "agent-platform.ai/starter-kit-onboarded",
+    "2026-10-24T00:00:00Z",
+  );
   const heard = await Promise.race([
     listened.then(() => true),
     new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5_000)),
@@ -253,8 +298,9 @@ async function main(): Promise<void> {
   const kitSeen = await cache.get(AGENT);
   check(
     "the cache serves the kit write it was notified of",
-    kitSeen?.metadata?.annotations?.["agent-platform.ai/starter-kit-onboarded"] !==
-      undefined,
+    kitSeen?.metadata?.annotations?.[
+      "agent-platform.ai/starter-kit-onboarded"
+    ] !== undefined,
     JSON.stringify(kitSeen?.metadata?.annotations ?? {}),
   );
 
@@ -321,7 +367,9 @@ async function main(): Promise<void> {
       sql`SELECT reclaimed_at::text AS at, reclaimed_activity_token::text AS token
             FROM control.agent_signals WHERE agent_id = ${AGENT}`,
     );
-    const row = (rows as unknown as Array<{ at: string | null; token: string | null }>)[0];
+    const row = (
+      rows as unknown as Array<{ at: string | null; token: string | null }>
+    )[0];
     return `${row?.at ?? ""}|${row?.token ?? ""}`;
   };
   const reclaimBefore = await reclaimOf();
@@ -335,7 +383,11 @@ async function main(): Promise<void> {
   const pin = await repo.readInvocationPin(AGENT);
   await repo.releaseInvocationPin(AGENT, pin ?? "");
   await repo.restart(AGENT, OWNER);
-  await repo.patchAnnotation(AGENT, "agent-platform.ai/kit-update-skipped", "0123456789abcdef0123456789abcdef01234567");
+  await repo.patchAnnotation(
+    AGENT,
+    "agent-platform.ai/kit-update-skipped",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
   await repo.patchSpec(AGENT, { name: "renamed" });
   if (reclaimStamp !== null)
     await repo.restoreActivityIfUnchanged(AGENT, reclaimStamp);
@@ -349,9 +401,15 @@ async function main(): Promise<void> {
   );
 
   // TEST_SCENARIO: the controller's status transaction and a definition write interleaved. The controller holds the signals row shared and is about to insert an observation whose foreign key needs a key-share lock on the definition. A definition row taken FOR UPDATE blocks that lock while the api-server waits for the signals row — a deadlock the api-server side loses. FOR NO KEY UPDATE is compatible with the key-share lock, so both transactions commit.
-  const withDeadline = async <T>(name: string, work: Promise<T>): Promise<T> => {
+  const withDeadline = async <T>(
+    name: string,
+    work: Promise<T>,
+  ): Promise<T> => {
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${name} did not finish in 15 s`)), 15_000),
+      setTimeout(
+        () => reject(new Error(`${name} did not finish in 15 s`)),
+        15_000,
+      ),
     );
     return Promise.race([work, timeout]);
   };
@@ -425,7 +483,10 @@ async function main(): Promise<void> {
 
   // TEST_SCENARIO: the cache lists what the store holds, and a delete takes the children with it.
   const listed = await cache.list(OWNER);
-  check("the cache lists the Agent by owner", listed.some((obj) => obj.metadata?.name === AGENT));
+  check(
+    "the cache lists the Agent by owner",
+    listed.some((obj) => obj.metadata?.name === AGENT),
+  );
   const deleted = await repo.delete(AGENT, OWNER);
   check("a delete reports success", deleted);
   const gone = await db.execute<{ count: string }>(
@@ -443,6 +504,295 @@ async function main(): Promise<void> {
     (remaining as unknown as Array<{ count: string }>)[0]?.count === "0",
   );
   await cache.stop();
+
+  await absorbChecks();
+}
+
+const ABSORB_AGENT = "agent-store-absorb";
+const ABSORB_BUDGET = "budget-sub-absorb";
+
+const kubeAgent = (granted: string[]): KubeObject => ({
+  apiVersion: "agent-platform.ai/v1",
+  kind: "Agent",
+  metadata: {
+    name: ABSORB_AGENT,
+    uid: "123e4567-e89b-42d3-a456-426614174000",
+    generation: 9,
+    creationTimestamp: "2026-10-01T08:00:00Z",
+    labels: { "agent-platform.ai/owner": OWNER },
+    annotations: { "agent-platform.ai/roll-rev": "rev-absorb" },
+  } as KubeObject["metadata"],
+  spec: {
+    image: "agent:absorb",
+    resources: { limits: { cpu: "2", memory: "4Gi" } },
+    hibernationTimeout: "30m0s",
+    l7Hosts: ["absorb.example.test"],
+    grantedConnectionIds: granted,
+  },
+  status: { conditions: [] },
+});
+
+const kubeBudget = (): KubeObject => ({
+  apiVersion: "agent-platform.ai/v1",
+  kind: "UserBudget",
+  metadata: {
+    name: ABSORB_BUDGET,
+    uid: null,
+  } as unknown as KubeObject["metadata"],
+  spec: { owner: "sub-absorb", cpu: "2" },
+});
+
+async function absorbChecks(): Promise<void> {
+  await db.execute(sql`DELETE FROM control.agents`);
+  await db.execute(sql`DELETE FROM control.user_budgets`);
+  await db.execute(sql`DELETE FROM control.crd_snapshots`);
+  await db.execute(sql`DELETE FROM control.agent_store`);
+
+  const grantRows = await db.execute(
+    sql`SELECT count(*)::int AS n FROM public.connection_grants WHERE agent_id = ${ABSORB_AGENT}`,
+  );
+  const granted =
+    Number((grantRows as unknown as Array<{ n: number }>)[0]?.n ?? 0) === 0;
+
+  const snapshotCount = async (): Promise<number> => {
+    const rows = await db.execute(
+      sql`SELECT count(*)::int AS n FROM control.crd_snapshots`,
+    );
+    return Number((rows as unknown as Array<{ n: number }>)[0]?.n ?? 0);
+  };
+  const stamp = async (): Promise<Date | null> => {
+    const rows = await db.execute(
+      sql`SELECT absorbed_at FROM control.agent_store WHERE id = 1`,
+    );
+    const value = (rows as unknown as Array<{ absorbed_at: Date | null }>)[0];
+    return value?.absorbed_at ?? null;
+  };
+  const agentCount = async (): Promise<number> => {
+    const rows = await db.execute(
+      sql`SELECT count(*)::int AS n FROM control.agents WHERE id = ${ABSORB_AGENT}`,
+    );
+    return Number((rows as unknown as Array<{ n: number }>)[0]?.n ?? 0);
+  };
+  const markerData: Array<Record<string, string>> = [];
+  const noBackup = { put: async () => {}, get: async () => null };
+
+  // TEST_SCENARIO: a grant the database does not hold stops the absorb before anything is written, and names the Agent.
+  const refusedAgent = kubeAgent(granted ? ["only-on-resource"] : []);
+  let refused = "";
+  try {
+    await absorbAgentStore({
+      db,
+      logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+      listCustomObjects: async (plural) =>
+        plural === "agents" ? [refusedAgent] : ([kubeBudget()] as KubeObject[]),
+      writeMarker: async (data) => void markerData.push(data),
+      store: null,
+      backupKeyPrefix: "crd-snapshots/test",
+      backupRefPrefix: "s3://bucket",
+      defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+      absorbedByVersion: "test",
+      now: new Date(),
+    });
+  } catch (cause) {
+    refused = reasonOf(cause);
+  }
+  check(
+    "the absorb refuses a connection-grant mismatch",
+    refused.includes("connection grants"),
+    refused,
+  );
+  check("a refused absorb wrote no stamp", (await stamp()) === null);
+  check("a refused absorb imported no row", (await agentCount()) === 0);
+
+  // TEST_SCENARIO: an object store that cannot read the copy back is no backup, so the absorb aborts before a row exists.
+  let backupRefusal = "";
+  try {
+    await absorbAgentStore({
+      db,
+      logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+      listCustomObjects: async (plural) =>
+        plural === "agents" ? [kubeAgent([])] : [kubeBudget()],
+      writeMarker: async (data) => void markerData.push(data),
+      store: noBackup,
+      backupKeyPrefix: "crd-snapshots/test",
+      backupRefPrefix: "s3://bucket",
+      defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+      absorbedByVersion: "test",
+      now: new Date(),
+    });
+  } catch (cause) {
+    backupRefusal = reasonOf(cause);
+  }
+  check(
+    "an unverifiable backup fails the absorb closed",
+    backupRefusal.includes("cannot be read back"),
+    backupRefusal,
+  );
+  check("a failed backup wrote no stamp", (await stamp()) === null);
+
+  // TEST_SCENARIO: the absorb commits the rows, the archive and the stamp together; a rerun finds the stamp and writes nothing twice.
+  const stored = new Map<string, Buffer>();
+  const backupStore = {
+    put: async (key: string, body: Buffer) => void stored.set(key, body),
+    get: async (key: string) => stored.get(key) ?? null,
+  };
+  const first = await absorbAgentStore({
+    db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+    listCustomObjects: async (plural) =>
+      plural === "agents" ? [kubeAgent([])] : [kubeBudget()],
+    writeMarker: async (data) => void markerData.push(data),
+    store: backupStore,
+    backupKeyPrefix: "crd-snapshots/test",
+    backupRefPrefix: "s3://bucket",
+    defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+    absorbedByVersion: "test",
+    now: new Date("2026-10-24T12:00:00.000Z"),
+  });
+  check("the absorb committed", first.status === "absorbed");
+  check("the Agent became a row", (await agentCount()) === 1);
+  check("the archive became snapshot rows", (await snapshotCount()) === 2);
+  check("the store carries the stamp", (await stamp()) !== null);
+  check(
+    "the marker names the store and the stamp",
+    markerData.at(-1)?.store === "postgres" &&
+      markerData.at(-1)?.["absorbed-at"] === "2026-10-24T12:00:00.000Z",
+    JSON.stringify(markerData.at(-1)),
+  );
+  const archive = stored.get(
+    `crd-snapshots/test/${createHash("sha256")
+      .update(
+        buildAgentStoreSnapshot({
+          agents: [kubeAgent([])],
+          budgets: [kubeBudget()],
+        }).yaml,
+      )
+      .digest("hex")}.yaml`,
+  );
+  check("the verified copy is in the object store", archive !== undefined);
+
+  const second = await absorbAgentStore({
+    db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+    listCustomObjects: async () => {
+      throw new Error("a rerun must not read the custom resources again");
+    },
+    writeMarker: async (data) => void markerData.push(data),
+    store: backupStore,
+    backupKeyPrefix: "crd-snapshots/test",
+    backupRefPrefix: "s3://bucket",
+    defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+    absorbedByVersion: "test",
+    now: new Date(),
+  });
+  check(
+    "a rerun skips the import and rewrites the marker",
+    second.status === "skipped" && (await snapshotCount()) === 2,
+  );
+
+  // TEST_SCENARIO: a kill after the commit but before the marker write leaves the stamp; the next start skips the import and writes the marker, so neither state is lost nor written twice.
+  await db.execute(sql`DELETE FROM control.agents`);
+  await db.execute(sql`DELETE FROM control.user_budgets`);
+  await db.execute(sql`DELETE FROM control.crd_snapshots`);
+  await db.execute(sql`DELETE FROM control.agent_store`);
+  let markerAttempts = 0;
+  let killed = "";
+  try {
+    await absorbAgentStore({
+      db,
+      logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+      listCustomObjects: async (plural) =>
+        plural === "agents" ? [kubeAgent([])] : [kubeBudget()],
+      writeMarker: async () => {
+        markerAttempts += 1;
+        throw new Error("killed writing the marker");
+      },
+      store: backupStore,
+      backupKeyPrefix: "crd-snapshots/test",
+      backupRefPrefix: "s3://bucket",
+      defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+      absorbedByVersion: "test",
+      now: new Date(),
+    });
+  } catch (cause) {
+    killed = reasonOf(cause);
+  }
+  check(
+    "a kill after the commit leaves the stamp and no marker",
+    killed.includes("killed writing the marker") &&
+      (await stamp()) !== null &&
+      markerAttempts === 1,
+  );
+  const recovered = await absorbAgentStore({
+    db,
+    logger: { info: () => {}, warn: () => {}, error: () => {} } as never,
+    listCustomObjects: async () => {
+      throw new Error("a recovery must not import again");
+    },
+    writeMarker: async (data) => void markerData.push(data),
+    store: backupStore,
+    backupKeyPrefix: "crd-snapshots/test",
+    backupRefPrefix: "s3://bucket",
+    defaults: { cpuLimit: "1", memoryLimit: "2Gi" },
+    absorbedByVersion: "test",
+    now: new Date(),
+  });
+  check(
+    "the next start recovers from the commit",
+    recovered.status === "skipped" &&
+      (await agentCount()) === 1 &&
+      markerData.at(-1)?.store === "postgres",
+  );
+
+  // TEST_SCENARIO: the barrier opens only when the Lease's holder is the controller that recorded its anchor pass, and it never waits again once it has recorded the switch.
+  const holder = "controller-pod-1";
+  await db.execute(
+    sql`UPDATE control.agent_store SET controller_holder = ${holder}, anchors_ensured_at = now() WHERE id = 1`,
+  );
+  await db.execute(
+    sql`UPDATE control.agent_store SET switch_completed_at = NULL WHERE id = 1`,
+  );
+  const leases = {
+    readNamespacedLease: async () => ({ spec: { holderIdentity: holder } }),
+  } as unknown as CoordinationV1Api;
+  const passed = await passCutoverBarrier({
+    db,
+    leases,
+    namespace: "test",
+    leaseName: "platform-controller",
+    log: () => {},
+    pollMs: 1,
+    deadlineMs: 1_000,
+  });
+  const switchedRows = await db.execute(
+    sql`SELECT switch_completed_at FROM control.agent_store WHERE id = 1`,
+  );
+  check(
+    "the barrier passes for the recorded holder and records the switch",
+    passed === "passed" &&
+      (
+        switchedRows as unknown as Array<{ switch_completed_at: Date | null }>
+      )[0]?.switch_completed_at != null,
+  );
+  const again = await passCutoverBarrier({
+    db,
+    leases: {
+      readNamespacedLease: async () => {
+        throw new Error("a completed switch must not read the Lease again");
+      },
+    } as unknown as CoordinationV1Api,
+    namespace: "test",
+    leaseName: "platform-controller",
+    log: () => {},
+    pollMs: 1,
+    deadlineMs: 100,
+  });
+  check("a completed switch never waits again", again === "already");
+
+  await db.execute(sql`DELETE FROM control.agents`);
+  await db.execute(sql`DELETE FROM control.user_budgets`);
+  await db.execute(sql`DELETE FROM control.crd_snapshots`);
+  await db.execute(sql`DELETE FROM control.agent_store`);
 }
 
 await main()

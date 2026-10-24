@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/telemetry.ts"],
+  entry: ["src/index.ts", "src/telemetry.ts", "src/agent-store-cli.ts"],
   format: "esm",
   target: "node26",
   platform: "node",

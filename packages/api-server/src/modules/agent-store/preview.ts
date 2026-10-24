@@ -197,7 +197,11 @@ export function previewAgentStore(input: {
           (one): one is AgentRowMapping & { refusal: string } =>
             one.refusal !== undefined,
         )
-        .map((one) => ({ id: one.id, reason: one.refusal })),
+        .map((one) => ({
+          id: one.id,
+          reason: one.refusal,
+          ...(one.skipped && { skipped: one.skipped }),
+        })),
       dropped: counted(mappedAgents, "dropped"),
       normalized: counted(mappedAgents, "normalized"),
     },

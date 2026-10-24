@@ -22,6 +22,7 @@ type Config struct {
 	PodName                string
 	AgentStore             string
 	AgentStoreMarker       string
+	AgentStoreFrozen       bool
 	DatabaseURL            string
 	HealthPort             int
 
@@ -196,6 +197,7 @@ func LoadFromEnv() (*Config, error) {
 		PodName:                podName,
 		AgentStore:             envOrDefault("PLATFORM_AGENT_STORE", "crd"),
 		AgentStoreMarker:       os.Getenv("PLATFORM_AGENT_STORE_MARKER"),
+		AgentStoreFrozen:       os.Getenv("PLATFORM_AGENT_STORE_FROZEN") == "true",
 		DatabaseURL:            os.Getenv("PLATFORM_DATABASE_URL"),
 		HealthPort:             healthPort(os.Getenv("PLATFORM_HEALTH_PORT")),
 	}

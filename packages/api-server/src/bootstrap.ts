@@ -10,6 +10,7 @@ import {
   createK8sClient,
   createLeaseApi,
   agentServiceAddress,
+  createAuthorizationApi,
   type KubeObject,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
@@ -27,6 +28,7 @@ import {
   agentStoreMarkerName,
   agentStoreRefusal,
   readAgentStoreMarker,
+  verifyAgentStoreWriteFence,
   writeAgentStoreMarker,
 } from "./modules/agent-store/fence.js";
 import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
@@ -481,6 +483,11 @@ export async function bootstrap() {
     });
 
   if (config.agentStore === "postgres") {
+    const writeFence = await verifyAgentStoreWriteFence(
+      createAuthorizationApi(),
+      config.namespace,
+    );
+    if (writeFence) throw new Error(writeFence);
     if (agentStoreMarker?.store !== "postgres")
       await absorbAgentStore({
         db,

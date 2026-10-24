@@ -1763,22 +1763,32 @@ apiServer:
 # switch writes into the agent namespace.
 agentStore:
   # -- Which store is authoritative: `crd` (the custom resources) or
-  # `postgres`. Both components can read the rows in this release, but no
-  # release performs the absorb that fills them, so `postgres` fails the render
-  # until the switch release exists.
+  # `postgres`. `postgres` is the switch release: both Deployments recreate, the
+  # api-server absorbs the custom resources in one transaction, and it serves
+  # only once the new controller leads and has ensured every anchor. It refuses
+  # to render without `cutover.acknowledged`.
   authority: crd
+  # -- Freeze both components for a rollback: they exit instead of serving, so
+  # nothing writes rows while the reverse exporter restores the custom
+  # resources. Set it with `authority=postgres` and the acknowledgement, deploy,
+  # run the exporter, then pin the previous release and clear it.
+  frozen: false
   # -- Log, at api-server startup, what an absorb would write: which records
   # would become rows, which would be refused and why, what the move would drop,
   # and where the recorded connection grants disagree with the database. Writes
   # nothing. Leave it off outside a cutover: the report is for an operator
   # reading one install's log once.
   previewReport: false
+  backup:
+    # -- age public key (`age1…`) the operator-held archive is encrypted to.
+    # Public, so it lives here; the identity is the operator's and never enters
+    # the cluster. `export-snapshot` uses it unless given `--recipient`.
+    recipient: ""
   cutover:
-    # -- Set by the operator to time the switch release. The switch release
-    # refuses to render until this is true, because a production install
-    # auto-upgrades on a semver range and the cutover is an outage of a minute
-    # or two. No release performs a cutover yet, so setting it now fails the
-    # render.
+    # -- Set by the operator to time the switch release. It refuses to render
+    # until this is true, because a production install auto-upgrades on a semver
+    # range and the cutover is an outage of a minute or two. It fails the render
+    # when `authority` is `crd`, so it is never carried into a later release.
     acknowledged: false
   contract:
     # -- SHA-256 of the operator's encrypted archive of the custom resources,
