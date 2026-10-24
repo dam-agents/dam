@@ -30,7 +30,10 @@ export function createControlAgentStateCache(deps: {
   db: Db;
   feed: AgentChangeFeed;
   log: (message: string, fields?: Record<string, unknown>) => void;
-}): RunningAgentStateCache & { snapshot(): Promise<void> } {
+}): RunningAgentStateCache & {
+  snapshot(): Promise<void>;
+  invalidate(id: string | null): void;
+} {
   let cached = new Map<string, KubeObject>();
   let listed = false;
   let stopped = false;
@@ -52,6 +55,11 @@ export function createControlAgentStateCache(deps: {
   };
 
   const stopFeed = () => deps.feed.stop();
+
+  const invalidate = (id: string | null) => {
+    if (id === null) cached = new Map();
+    else cached.delete(id);
+  };
 
   void deps.feed.start().catch((cause) => {
     deps.log("agent store: the cache could not start", {
@@ -86,6 +94,7 @@ export function createControlAgentStateCache(deps: {
     async awaitObserved(id, version) {
       const target = Number(version);
       const deadline = Date.now() + OBSERVE_TIMEOUT_MS;
+      if (!stopped) await live(id);
       while (!stopped && Date.now() < deadline) {
         const seen = Number(cached.get(id)?.metadata?.resourceVersion);
         if (cached.has(id) && (!Number.isFinite(target) || seen >= target))
@@ -105,6 +114,7 @@ export function createControlAgentStateCache(deps: {
       }
     },
     snapshot,
+    invalidate,
     async stop() {
       stopped = true;
       cached = new Map();

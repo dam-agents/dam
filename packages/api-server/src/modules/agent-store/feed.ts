@@ -6,6 +6,7 @@ export interface ReadOnlyChangeSource {
   listen(
     channel: string,
     onPayload: (payload: string) => void,
+    onSubscribed?: () => void,
   ): Promise<{ unlisten(): Promise<void> }>;
 }
 
@@ -19,13 +20,15 @@ export interface ListenCapableClient {
   listen(
     channel: string,
     onNotify: (payload: string) => void,
+    onSubscribed?: () => void,
   ): Promise<{ unlisten: () => Promise<void> }>;
 }
 
 export const postgresChangeSource = (
   client: ListenCapableClient,
 ): ReadOnlyChangeSource => ({
-  listen: (channel, onPayload) => client.listen(channel, onPayload),
+  listen: (channel, onPayload, onSubscribed) =>
+    client.listen(channel, onPayload, onSubscribed),
 });
 
 export interface AgentChangeFeed {
@@ -72,6 +75,7 @@ export function createAgentChangeFeed(deps: {
   source: ReadOnlyChangeSource;
   snapshot: () => Promise<void>;
   log: (message: string, fields?: Record<string, unknown>) => void;
+  onChange?: (id: string | null) => void;
   relistIntervalMs?: number;
 }): AgentChangeFeed {
   const waiters = new Map<string, Set<() => void>>();
@@ -99,6 +103,7 @@ export function createAgentChangeFeed(deps: {
       buffered.add(change.id ?? null);
       return;
     }
+    deps.onChange?.(change.id ?? null);
     if (change.id === undefined) releaseAll();
     else release(change.id);
   };
@@ -110,6 +115,9 @@ export function createAgentChangeFeed(deps: {
         subscription = await deps.source.listen(
           AGENT_CHANGE_CHANNEL,
           onPayload,
+          () => {
+            if (subscribedBefore) void refresh();
+          },
         );
         return true;
       } catch (cause) {
@@ -142,9 +150,12 @@ export function createAgentChangeFeed(deps: {
     }
   }
 
+  let subscribedBefore = false;
+
   return {
     async start() {
       if (!(await subscribe())) return;
+      subscribedBefore = true;
       await refresh();
       const interval = deps.relistIntervalMs ?? RELIST_INTERVAL_MS;
       relistTimer = setInterval(() => void refresh(), interval);

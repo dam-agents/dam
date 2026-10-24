@@ -45,7 +45,11 @@ import {
   PAUSE_SETTLE_TIMEOUT_MS,
   pollUntilReady,
 } from "../agents/infrastructure/poll-until-ready.js";
-import { readAgentRows, readOneAgent } from "./control-read.js";
+import {
+  readAgentRows,
+  readAgentWriteLocks,
+  readOneAgent,
+} from "./control-read.js";
 import { resourceFromRows, rowsFromResource } from "./rows.js";
 import { parseGoDurationNs } from "../../duration.js";
 
@@ -269,12 +273,14 @@ export function createControlAgentsRepository(
       values.diskSize = text(patch.storageSize) ?? null;
     if (patch.hibernationTimeout !== undefined) {
       const raw =
-        typeof patch.hibernationTimeout === "string"
-          ? patch.hibernationTimeout
-          : (patch.hibernationTimeout as { duration?: string }).duration;
-      const parsed =
-        raw === undefined || raw === "" ? null : parseGoDurationNs(raw);
-      if (raw !== undefined && raw !== "" && parsed === null)
+        patch.hibernationTimeout === null
+          ? null
+          : typeof patch.hibernationTimeout === "string"
+            ? patch.hibernationTimeout
+            : ((patch.hibernationTimeout as { duration?: string }).duration ??
+              null);
+      const parsed = raw === null || raw === "" ? null : parseGoDurationNs(raw);
+      if (raw !== null && raw !== "" && parsed === null)
         throw new Error(`hibernationTimeout ${raw} is not a duration`);
       values.hibernationTimeoutNs = parsed === null ? null : Number(parsed);
     }
@@ -301,7 +307,12 @@ export function createControlAgentsRepository(
 
   const stop = async (
     id: string,
-    opts: { disabled?: boolean; idle?: boolean; stamp?: string } = {},
+    opts: {
+      disabled?: boolean;
+      idle?: boolean;
+      stamp?: string;
+      unlessDisabled?: boolean;
+    } = {},
   ): Promise<{
     agent: ReturnType<typeof parseInfraAgent>;
     stamp: string;
@@ -318,14 +329,21 @@ export function createControlAgentsRepository(
       ...(opts.disabled === true && { disabledAt: now }),
       ...(opts.disabled === false && { disabledAt: null }),
       ...(opts.idle === true && {
-        lastActivityAt: null,
+        lastActivityAt: STALE_ACTIVITY,
         lastActivityToken: null,
       }),
     };
     const updated = await db
       .update(controlAgentSignals)
       .set(values)
-      .where(eq(controlAgentSignals.agentId, id))
+      .where(
+        opts.unlessDisabled === true
+          ? and(
+              eq(controlAgentSignals.agentId, id),
+              sql`${controlAgentSignals.disabledAt} IS NULL`,
+            )
+          : eq(controlAgentSignals.agentId, id),
+      )
       .returning({ agentId: controlAgentSignals.agentId });
     if (updated.length === 0) return null;
     const live = await agentOf(id);
@@ -465,6 +483,15 @@ export function createControlAgentsRepository(
           return { ok: false, reason: "not-found" };
         if (row.generation !== expected)
           return { ok: false, reason: "conflict" };
+        const locks = await readAgentWriteLocks(tx, id);
+        if (
+          locks !== null &&
+          ((patch.signalVersion !== undefined &&
+            locks.signalVersion !== patch.signalVersion) ||
+            (patch.statusVersion !== undefined &&
+              locks.statusVersion !== patch.statusVersion))
+        )
+          return { ok: false, reason: "conflict" };
         if (patch.spec !== undefined) await applySpec(tx, id, patch.spec, now);
         await applyAnnotations(tx, id, patch.annotations, now);
         const read = await readAgentRows(tx, [id]);
@@ -527,22 +554,27 @@ export function createControlAgentsRepository(
     },
 
     async setDisabled(id, disabled) {
-      const stopped = await stop(id, {
-        disabled,
-        idle: true,
-        ...(disabled ? {} : { stamp: new Date().toISOString() }),
-      });
-      if (!disabled)
-        await db
-          .update(controlAgentSignals)
-          .set({
-            stopRequestedAt: null,
-            stopRequestToken: null,
-            disabledAt: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(controlAgentSignals.agentId, id));
-      return stopped?.agent ?? null;
+      if (disabled)
+        return (await stop(id, { disabled: true, idle: true }))?.agent ?? null;
+      const now = new Date();
+      const enabled = await db
+        .update(controlAgentSignals)
+        .set({
+          disabledAt: null,
+          stopRequestedAt: null,
+          stopRequestToken: null,
+          sessionPinned: false,
+          invocationPinned: false,
+          invocationPinVersion: sql`${controlAgentSignals.invocationPinVersion} + 1`,
+          lastActivityAt: STALE_ACTIVITY,
+          lastActivityToken: null,
+          updatedAt: now,
+        })
+        .where(eq(controlAgentSignals.agentId, id))
+        .returning({ agentId: controlAgentSignals.agentId });
+      if (enabled.length === 0) return null;
+      const live = await readLive(id);
+      return live ? parseInfraAgent(live) : null;
     },
 
     async requestStop(id) {
@@ -550,12 +582,11 @@ export function createControlAgentsRepository(
     },
 
     async requestSleep(id) {
-      const live = await agentOf(id);
-      if (!live) return null;
-      const parsed = parseInfraAgent(live);
-      if (parsed.disabled) return parsed;
-      const stopped = await stop(id, { idle: true });
-      if (!stopped) return null;
+      const stopped = await stop(id, { idle: true, unlessDisabled: true });
+      if (stopped === null) {
+        const current = await readLive(id);
+        return current === null ? null : parseInfraAgent(current);
+      }
       const { agent: infra, stamp: sleepToken } = stopped;
       void (async () => {
         const settled = await pollUntilReady(
@@ -689,6 +720,13 @@ export function createControlAgentsRepository(
     },
 
     async listAgentIdsWithAnnotation(key, value) {
+      if (key === INVOCATIONS_ACTIVE_KEY && value === "true")
+        return (
+          await db
+            .select({ id: controlAgentSignals.agentId })
+            .from(controlAgentSignals)
+            .where(eq(controlAgentSignals.invocationPinned, true))
+        ).map((row) => row.id);
       if (key === ANN_ROLL_REV)
         return (
           await db

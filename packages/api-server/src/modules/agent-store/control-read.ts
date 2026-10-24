@@ -137,11 +137,43 @@ export async function readAgentRows(
 }
 
 export async function readOneAgent(
-  db: Db | DbTx,
+  db: Db,
   id: string,
 ): Promise<AgentRows | null> {
-  const rows = await readAgentRows(db, [id]);
+  const rows = await db.transaction(async (tx) => readAgentRows(tx, [id]), {
+    isolationLevel: "repeatable read",
+  });
   return rows[0] ?? null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the two versions a definition write is decided
+ * against, read with the signals row locked so nothing moves under the decision.
+ * The generation guards what the controller renders; the signals version guards
+ * activity, pins and stop requests, which the api-server's own decisions — an
+ * image update over an idle Agent, a rollback after a failed start — depend on.
+ */
+export async function readAgentWriteLocks(
+  tx: DbTx,
+  id: string,
+): Promise<{ signalVersion: number; statusVersion: number } | null> {
+  const signals = await tx
+    .select({ version: controlAgentSignals.version })
+    .from(controlAgentSignals)
+    .where(eq(controlAgentSignals.agentId, id))
+    .for("update")
+    .limit(1);
+  const signal = signals[0];
+  if (signal === undefined) return null;
+  const statuses = await tx
+    .select({ version: controlAgentStatus.version })
+    .from(controlAgentStatus)
+    .where(eq(controlAgentStatus.agentId, id))
+    .limit(1);
+  return {
+    signalVersion: signal.version,
+    statusVersion: statuses[0]?.version ?? 0,
+  };
 }
 
 export async function agentExists(

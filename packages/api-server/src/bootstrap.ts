@@ -486,9 +486,11 @@ export async function bootstrap() {
     config.agentStore === "postgres"
       ? (() => {
           let refresh: () => Promise<void> = async () => {};
+          let invalidate: (id: string | null) => void = () => {};
           const feed = createAgentChangeFeed({
             source: postgresChangeSource(sql),
             snapshot: () => refresh(),
+            onChange: (id) => invalidate(id),
             log: (message, fields) =>
               getLogger().warn(fields ?? {}, `[agents] ${message}`),
           });
@@ -499,6 +501,7 @@ export async function bootstrap() {
               getLogger().warn(fields ?? {}, `[agents] ${message}`),
           });
           refresh = cache.snapshot;
+          invalidate = cache.invalidate;
           return cache;
         })()
       : startAgentStateCache({

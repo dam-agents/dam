@@ -111,6 +111,8 @@ export interface AgentSpecWrite {
   spec?: Record<string, unknown>;
   annotations: Record<string, string | null>;
   resourceVersion: string | undefined;
+  signalVersion?: number | undefined;
+  statusVersion?: number | undefined;
 }
 
 export type AgentSpecWriteResult =

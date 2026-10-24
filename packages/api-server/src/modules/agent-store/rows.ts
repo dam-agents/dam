@@ -585,7 +585,13 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
   if (signals.invocationPinned) put(INVOCATIONS_ACTIVE_KEY, "true");
   put(STOP_REQUESTED_KEY, TIME_OF(signals.stopRequestedAt));
   put(DISABLED_KEY, TIME_OF(signals.disabledAt));
-  put(RECLAIMED_AT_KEY, TIME_OF(signals.reclaimedAt));
+  const reclaimedApplies =
+    signals.reclaimedActivityToken !== null &&
+    signals.reclaimedActivityToken === signals.lastActivityToken;
+  put(
+    RECLAIMED_AT_KEY,
+    reclaimedApplies ? TIME_OF(signals.reclaimedAt) : undefined,
+  );
   put(ANN_ROLL_REV, signals.rollRev);
   if (agent.sweepable) put(ANN_SWEEPABLE, "true");
   if (agent.lifetimeMs !== null) put(ANN_LIFETIME_MS, String(agent.lifetimeMs));
@@ -626,11 +632,11 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
 
   const spec: Record<string, unknown> = {
     image: agent.image,
-    name: agent.name,
     resources: {
       limits: { cpu: agent.cpuLimit, memory: agent.memoryLimit },
     },
   };
+  if (agent.name !== "") spec.name = agent.name;
   const putSpec = (key: string, value: unknown) => {
     if (value !== undefined && value !== null && value !== "")
       spec[key] = value;

@@ -1,4 +1,4 @@
-import { eq, type Db } from "db";
+import { eq, type Db, type DbTx } from "db";
 import { controlUserBudgets } from "db";
 import type {
   UserBudgetChange,
@@ -17,14 +17,14 @@ import type {
  * carries neither and reads as set outside it.
  */
 export async function readUserBudgetSizes(
-  db: Db,
+  db: Db | DbTx,
   ownerSub: string,
 ): Promise<UserBudgetSizes> {
   return sizesOf(await readUserBudget(db, ownerSub));
 }
 
 export async function readUserBudget(
-  db: Db,
+  db: Db | DbTx,
   ownerSub: string,
 ): Promise<UserBudgetRow | null> {
   const rows = await db
@@ -60,41 +60,51 @@ export async function writeUserBudget(
   db: Db,
   input: { ownerSub: string; change: UserBudgetChange; setBySub: string },
 ): Promise<{ row: UserBudgetRow | null; from: UserBudgetSizes | null }> {
-  const from = await readUserBudgetSizes(db, input.ownerSub);
-  const existing = await readUserBudget(db, input.ownerSub);
-  const next: UserBudgetSizes = {
-    cpu: input.change.cpu === undefined ? from.cpu : input.change.cpu,
-    memory:
-      input.change.memory === undefined ? from.memory : input.change.memory,
-    storage:
-      input.change.storage === undefined ? from.storage : input.change.storage,
-  };
+  return db.transaction(async (tx) => {
+    const before = await readUserBudget(tx, input.ownerSub);
+    const from = sizesOf(before);
+    const set: Record<string, unknown> = {
+      setBySub: input.setBySub,
+      operatorUpdatedAt: new Date(),
+      updatedAt: new Date(),
+    };
+    if (input.change.cpu !== undefined) set.cpu = input.change.cpu;
+    if (input.change.memory !== undefined) set.memory = input.change.memory;
+    if (input.change.storage !== undefined) set.storage = input.change.storage;
+    const next = {
+      cpu: input.change.cpu === undefined ? from.cpu : input.change.cpu,
+      memory:
+        input.change.memory === undefined ? from.memory : input.change.memory,
+      storage:
+        input.change.storage === undefined
+          ? from.storage
+          : input.change.storage,
+    };
 
-  if (next.cpu === null && next.memory === null && next.storage === null) {
-    if (existing) await deleteUserBudget(db, input.ownerSub);
-    return { row: null, from: existing ? from : null };
-  }
+    if (next.cpu === null && next.memory === null && next.storage === null) {
+      if (before === null) return { row: null, from: null };
+      await tx
+        .delete(controlUserBudgets)
+        .where(eq(controlUserBudgets.ownerSub, input.ownerSub));
+      return { row: null, from };
+    }
 
-  const values = {
-    cpu: next.cpu,
-    memory: next.memory,
-    storage: next.storage,
-    setBySub: input.setBySub,
-    operatorUpdatedAt: new Date(),
-    updatedAt: new Date(),
-  };
-  await db
-    .insert(controlUserBudgets)
-    .values({ ownerSub: input.ownerSub, ...values })
-    .onConflictDoUpdate({
-      target: controlUserBudgets.ownerSub,
-      set: values,
-    });
-  return { row: await readUserBudget(db, input.ownerSub), from };
+    await tx
+      .insert(controlUserBudgets)
+      .values({ ownerSub: input.ownerSub, ...set })
+      .onConflictDoUpdate({
+        target: controlUserBudgets.ownerSub,
+        set,
+      });
+    return {
+      row: await readUserBudget(tx, input.ownerSub),
+      from: before === null ? null : from,
+    };
+  });
 }
 
 export async function deleteUserBudget(
-  db: Db,
+  db: Db | DbTx,
   ownerSub: string,
 ): Promise<UserBudgetSizes | null> {
   const before = await readUserBudget(db, ownerSub);
