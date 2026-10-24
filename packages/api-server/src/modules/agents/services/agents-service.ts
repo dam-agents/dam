@@ -1051,6 +1051,12 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
+      if (input.vm === false)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this install runs every agent as a machine on a VM runner, so a container agent cannot be created; the field that asked for one is refused rather than ignored",
+        });
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;

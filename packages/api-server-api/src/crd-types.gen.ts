@@ -7,7 +7,8 @@
  *
  * There is no desiredState field: running-vs-hibernated is not stored intent
  * but observed status the controller derives from activity. Security context
- * and scheduling are chart-only (config.AgentBase, config.VM).
+ * is chart-only (config.AgentBase); scheduling is chart-wide except
+ * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
  */
 export interface AgentSpecCR {
   /**
@@ -20,6 +21,32 @@ export interface AgentSpecCR {
    * Avatar is the agent's chosen avatar: a character name, "emoji:<emoji>" or "image:<sha256>"; unset means a character picked from its owner and name.
    */
   avatar?: string;
+  /**
+   * Backend selects the isolation substrate the agent workload runs on;
+   * nil = container. Immutable after create (enforced by the api-server,
+   * the sole spec writer), except that a runtime migration moves a
+   * container agent to `vm`, never back. `vm` runs the agent as a persistent microVM on
+   * its owner's VM runner instead of a StatefulSet: the controller
+   * drives the runner's machine API, and the agent Service resolves to the
+   * machine's published port; the paired gateway is unaffected.
+   */
+  backend?: {
+    type: "container" | "vm";
+    /**
+     * VM carries vm-backend props; present only when type == "vm".
+     */
+    vm?: {
+      /**
+       * NestedVirtualization asks for this agent's machine to get the node's
+       * virtualization extensions, so the guest can run KVM itself. It takes
+       * effect only on an install with virtualization.runner.nestedVirtualization
+       * and a node whose KVM allows nesting; the NestedVirtualization condition
+       * says whether it did. Other machines on the same runner are unaffected.
+       * Changing it restarts the agent's machine.
+       */
+      nestedVirtualization?: boolean;
+    };
+  };
   /**
    * Description is an optional human-readable description.
    */
@@ -128,14 +155,13 @@ export interface AgentSpecCR {
    */
   name?: string;
   /**
-   * NestedVirtualization asks for this Agent's machine to get the node's
-   * virtualization extensions, so the guest can run KVM itself. It takes
-   * effect only on an install with virtualization.runner.nestedVirtualization
-   * and a node whose KVM allows nesting; the NestedVirtualization condition
-   * says whether it did. Other machines on the same runner are unaffected.
-   * Changing it restarts the machine.
+   * NodeSelector overrides the chart-wide node selector; empty = inherit.
+   * Container backend only — rejected on the vm backend, whose machine is
+   * placed with its owner's VM runner.
    */
-  nestedVirtualization?: boolean;
+  nodeSelector?: {
+    [k: string]: string;
+  };
   /**
    * RequireConnectionAddress makes the agent's gateway inject a Connection's
    * credential only into a request that names that Connection, by its token
@@ -156,6 +182,11 @@ export interface AgentSpecCR {
       [k: string]: string;
     };
   };
+  /**
+   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+   * Selects among *container* runtimes only — rejected on the vm backend.
+   */
+  runtimeClassName?: string;
   /**
    * SecretRef names a K8s Secret whose keys are envFrom-projected into the
    * agent container (operator-supplied envs).

@@ -34,7 +34,7 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.hibernationTimeout).toBeUndefined();
   });
 
-  // TEST_SCENARIO: the template schema passes through what it does not declare, so a template that still carries the retired container-only keys must not hand them to the Agent the machine is built from.
+  // TEST_SCENARIO: the template schema passes through what it does not declare, so a template that still carries the retired container-only keys must not hand them to the Agent the machine is built from. The backend is stamped `vm` for the CRD's Environment rule and read by nothing.
   it("writes the machine backend and drops placement the machine cannot use", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
@@ -46,7 +46,7 @@ describe("assembleSpecFromTemplate", () => {
       {},
       defaultLimits,
     );
-    expect(spec.backend).toBeUndefined();
+    expect(spec.backend).toEqual({ type: "vm" });
     expect(spec.runtimeClassName).toBeUndefined();
     expect(spec.nodeSelector).toBeUndefined();
   });
@@ -60,7 +60,7 @@ describe("assembleSpecFromTemplate", () => {
       defaultLimits,
     );
     expect(spec.harness).toBe("codex");
-    expect(spec.backend).toBeUndefined();
+    expect(spec.backend).toEqual({ type: "vm" });
   });
 
   // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the mounts travel unchanged, and the template's size is the disk the machine gets. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
@@ -78,7 +78,7 @@ describe("assembleSpecFromTemplate", () => {
       {},
       defaultLimits,
     );
-    expect(spec.backend).toBeUndefined();
+    expect(spec.backend).toEqual({ type: "vm" });
     expect(spec.mounts).toEqual([
       { path: "/home/agent", persist: true },
       { path: "/tmp", persist: false },
