@@ -16,8 +16,7 @@ The model list a session or a [schedule](schedules.md#session-choices) picks fro
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
-Before a session starts, the picker lists every provider the harness accepts in one stable order: on a routed runtime it groups the catalog's models by family and ends with a Connect more providers row, while the old runtime shows an attached provider's models with a disconnect action and offers to attach one not attached, so a provider never carries another provider's model.
-It grays out a harness that no provider the owner holds accepts.
+Before a session starts, the picker lists every provider the harness accepts, in order: a routed picker groups models by family and ends with a Connect more providers row; the old runtime lists an attached provider's models and offers to attach one not attached, so a provider never carries another provider's model.
 A web terminal starts from a row of harness buttons on the agent's General page: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
 The empty chat's Browser Terminal card opens a web terminal on the pair the session picker holds.
 With the JanUI experiment on, the empty chat shows the General page's harness buttons in a Web terminal row instead of that card.
