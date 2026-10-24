@@ -8,14 +8,16 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
+import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
+import { isSharedAgent } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The left of the chat's top bar while the
  * new-layout experiment is off: the Agent's state dot, its avatar and name,
- * editable in place, and the buttons that toggle the browser and the changes
- * beside the conversation, open the sections on a phone, and open the
- * Agent's configuration.
+ * editable in place, the Shared badge of a Shared Agent, and the buttons
+ * that toggle the browser and the changes beside the conversation, open the
+ * sections on a phone, and open the Agent's configuration.
  */
 export function ClassicChatIdentity({
   agent,
@@ -62,6 +64,11 @@ export function ClassicChatIdentity({
         />
       ) : (
         <h1 className="text-sm font-bold text-foreground truncate">{name}</h1>
+      )}
+      {agent && isSharedAgent(agent) && (
+        <span className="flex shrink-0 @max-[199px]:hidden">
+          <SharedAgentBadge access={agent.access} />
+        </span>
       )}
       <div className="ml-auto flex shrink-0">
         {canOpenBrowser && agentId && (

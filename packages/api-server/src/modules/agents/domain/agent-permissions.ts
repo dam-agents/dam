@@ -13,16 +13,18 @@ const EDITOR_PERMISSIONS: readonly AgentPermission[] = [
   "schedules",
   "chatForms",
   "environments",
+  "sessions",
 ];
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The Agent Permissions each role holds. The owner
  * holds every one. An Agent Editor holds a fixed set today: they change the
- * set-up, but not what reaches the owner's credentials (connections, the
- * credential injection switch, a Secret named by secretRef), not who can talk
- * to the Agent (channels, whispers) and not the Agent's existence or its
- * people. Every check asks for a permission, never for the role, so an owner
- * can later choose the set.
+ * set-up and use its sessions, but not what reaches the owner's credentials
+ * (connections, the credential injection switch, a Secret named by
+ * secretRef), not who can talk to the Agent (channels, whispers), not its
+ * terminals and SSH, and not the Agent's existence or its people. Every check
+ * asks for a permission, never for the role, so an owner can later choose
+ * the set.
  */
 export function permissionsOf(role: AgentRole): AgentPermission[] {
   return match(role)

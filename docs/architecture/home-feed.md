@@ -206,10 +206,10 @@ The agent-runtime stamps it while a viewer is attached to a session — machine-
 Dismissal is the user's own watermark, stored per user against the item: dismissing hides an approval from the bell without resolving it, without marking anything read, and without touching running work.
 The sidebar lists Sessions as they are and reads no dismissals.
 
-Read state is still **per session, not per person**.
-An Agent currently has a single driving user, so the distinction has no observable effect today; the shared-agent work is what must revisit it.
-The dismissal watermarks are already keyed per user, so that half needs no migration when it does.
-An [Agent Editor](agent-editors.md) gets no Home feed items or unread marks for a Shared Agent yet.
+Read state is **per session, not per person**, and it is the owner's.
+An [Agent Editor](agent-editors.md) using a Shared Agent's session is a viewer that never stamps it seen, so an editor reading a session leaves it unread for the owner.
+An editor gets no Home feed items or unread marks for a Shared Agent.
+The dismissal watermarks are already keyed per user, so per-person read state would need no migration for that half.
 
 ## Terminal sessions
 

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An owner always sees which of their agents are Shared Agents and with whom: the sidebar row of a shared agent carries a people mark whose tooltip names the Agent Editors, the first five and a count of the rest. The agent's People section sums up who works on it, from the owner's side and from an editor's, and an editor's page names the owner.
+// TEST_OVERVIEW: An owner always sees which of their agents are Shared Agents and with whom: the sidebar row of a shared agent carries a people mark whose tooltip names the Agent Editors, the first five and a count of the rest. The agent's People section sums up who works on it, from the owner's side and from an editor's, an editor's page names the owner, and the owner is warned what an editor can do before adding one.
 import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -17,7 +17,7 @@ vi.mock("../../modules/agents/hooks/use-order-drag.js", () => ({
   useOrderDrag: () => ({ dragProps: {}, indicator: null }),
 }));
 
-const { editorsTooltip, ownerLine, peopleSummary } =
+const { EDITORS_WARNING, editorsTooltip, ownerLine, peopleSummary } =
   await import("../../modules/agents/lib/agent-editors.js");
 const { TooltipProvider } = await import("../../components/ui/tooltip.js");
 const { SidebarAgentRow } =
@@ -112,5 +112,21 @@ describe("who works on an agent", () => {
       "Owned by jordan@example.com · you're an editor",
     );
     expect(ownerLine(null)).toBe("Owned by a former user · you're an editor");
+  });
+});
+
+describe("the owner's warning in People", () => {
+  // TEST_SCENARIO: editors now work in sessions, so the warning says they can use and delete every session, the owner's too, read and change files and environment variables, approve actions with the owner's connections, and that their use counts toward the owner's own spend limits.
+  it("says what an editor can do", () => {
+    expect(EDITORS_WARNING).toMatch(
+      /use and delete every session with this agent, yours included/,
+    );
+    expect(EDITORS_WARNING).toMatch(
+      /read and change its files and environment variables/,
+    );
+    expect(EDITORS_WARNING).toMatch(
+      /approve actions it takes with your connections/,
+    );
+    expect(EDITORS_WARNING).toMatch(/counts toward your own spend limits/);
   });
 });

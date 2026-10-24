@@ -77,7 +77,7 @@ export function useAgent(agentId: string | null): AgentView | null {
   return agentId ? findAgent(data, agentId) : null;
 }
 
-function cachedAgent(agentId: string): AgentView | null {
+export function cachedAgent(agentId: string): AgentView | null {
   return findAgent(
     queryClient.getQueryData<AgentsData>(agentsKeys.listWithChannels()),
     agentId,

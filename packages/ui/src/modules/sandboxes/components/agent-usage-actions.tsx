@@ -18,6 +18,7 @@ import { CLI_REFERENCE_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { holds } from "../../agents/lib/agent-permissions.js";
 import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
 import { TerminalHarnessButtons } from "../../sessions/components/terminal-harness-buttons.js";
 import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
@@ -59,19 +60,22 @@ export function AgentUsageActions({
   const ref = cliAgentRef(agent, agentsData?.list ?? [agent]);
   const slackInstallUrl = useSlackInstallRequestUrl();
   const brand = getBrand();
+  const terminal = holds(agent.access, "terminal");
+  const channels = holds(agent.access, "channels");
 
-  const actions: Action[] = [
-    ...(showChat
+  const chatActions: Action[] =
+    showChat && holds(agent.access, "sessions")
       ? [
           {
             icon: <Chat />,
-            kind: "link" as const,
+            kind: "link",
             title: "Chat",
             description: "Chat with the agent in this browser.",
             onClick: () => selectAgent(agent.id),
           },
         ]
-      : []),
+      : [];
+  const terminalActions: Action[] = [
     {
       icon: <Terminal />,
       kind: "control",
@@ -133,6 +137,8 @@ export function AgentUsageActions({
         </div>
       ),
     },
+  ];
+  const messengerActions: Action[] = [
     ...(available.slack
       ? [
           {
@@ -165,6 +171,11 @@ export function AgentUsageActions({
           },
         ]
       : []),
+  ];
+  const actions: Action[] = [
+    ...chatActions,
+    ...(terminal ? terminalActions : []),
+    ...(channels ? messengerActions : []),
     ...(showConfigure
       ? [
           {

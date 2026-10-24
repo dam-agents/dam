@@ -10,6 +10,9 @@ const fake = vi.hoisted(() => ({ navigateToSettings: vi.fn() }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) => select(fake),
 }));
+vi.mock("../../modules/sessions/hooks/use-spend-refusal-viewer.js", () => ({
+  useSpendRefusalViewer: () => ({ role: "owner" }),
+}));
 
 const { SendErrorCard } =
   await import("../../modules/sessions/components/send-error-card.js");

@@ -135,6 +135,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     schedules: schedulesBoot.repo,
     egressRules: createEgressRulesRepository(db),
     environments: createEnvironmentsRepository(db),
+    approvals: createApprovalsRepository(db),
   });
 
   const contextFor = (user: UserIdentity, surface: string): ApiContext => {
@@ -348,6 +349,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: approvals } = composeApprovalsService({
       db,
       ownerSub: user.sub,
+      actor: user.actingEditor ?? user.sub,
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),

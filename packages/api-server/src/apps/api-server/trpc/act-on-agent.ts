@@ -6,12 +6,14 @@ import {
   type UserIdentity,
 } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
+import type { ResolvedTarget } from "./agent-target.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The request's answer to an Agent Permission
  * check. A caller who is not an Agent Editor of the Agent keeps their own
  * context, so nothing changes for owners, API keys or strangers. An editor
- * holding the permission gets a context made for the Agent's owner, bound to
+ * holding the permission, and any permission the target's records need,
+ * gets a context made for the Agent's owner, bound to
  * that one Agent and naming the editor as the person acting. Each change an
  * editor makes, and each refusal, is an audit record naming the editor, the
  * owner and the procedure.
@@ -19,7 +21,7 @@ import { securityLog } from "../../../core/security-log.js";
 export function createActOnAgent(deps: {
   user: UserIdentity;
   self: () => ApiContext;
-  agentOfTarget: (target: AgentTarget) => Promise<string | null>;
+  agentOfTarget: (target: AgentTarget) => Promise<ResolvedTarget | null>;
   editorStanding: (
     agentId: string,
     caller: { sub: string; editorEmail: string },
@@ -30,14 +32,16 @@ export function createActOnAgent(deps: {
     const asCaller = { ok: true as const, ctx: deps.self() };
     const editorEmail = editorEmailOf(deps.user);
     if (editorEmail === null) return asCaller;
-    const agentId = await deps.agentOfTarget(target);
-    if (agentId === null) return asCaller;
+    const resolved = await deps.agentOfTarget(target);
+    if (resolved === null) return asCaller;
+    const { agentId } = resolved;
     const standing = await deps.editorStanding(agentId, {
       sub: deps.user.sub,
       editorEmail,
     });
     if (!standing) return asCaller;
-    const allowed = standing.permissions.includes(permission);
+    const required = [...new Set([permission, ...resolved.needs])];
+    const allowed = required.every((p) => standing.permissions.includes(p));
     if (call.mutation || !allowed)
       securityLog(allowed ? "info" : "warn", "agent.editor_act", {
         category: "authz",
@@ -48,7 +52,7 @@ export function createActOnAgent(deps: {
         decision: allowed ? "allow" : "deny",
         detail: {
           ownerSub: standing.ownerSub,
-          permission,
+          permission: required.join(","),
           procedure: call.path,
         },
       });

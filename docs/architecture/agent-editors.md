@@ -12,8 +12,9 @@ A Channel Binding never makes an Agent shared: that is Shared Access, a differen
 An editor is not a second owner.
 The Agent keeps running on its owner's budget and connections, and only the owner changes the Editor List or deletes the Agent.
 An editor changes the Agent's set-up much as its owner does: its settings, environment variables, Egress Rules, skills, schedules, chat forms, Environments and spend limits, and they can disable, restart and update it.
+An editor also uses its sessions as its owner does: they start and continue them, chat, and answer the approvals the Agent asks for in the chat.
 What reaches the owner's credentials or decides who can talk to the Agent stays with the owner: its connections and providers, the credential injection switch, a Secret named by secretRef, its Channel Bindings and whispers, and its skill library.
-Using its sessions comes later.
+So do its terminals and SSH.
 
 ## The Editor List
 
@@ -58,17 +59,38 @@ Reads of the Agent's set-up need `view`, so an editor reads the owner's schedule
 Reading the Agent's connections returns each granted connection's display fields, read on the owner's behalf and never with secrets: that is all an editor sees of the owner's connections.
 The updates the Agent context once took in one procedure are now one procedure per permission: settings, environment variables, the credential injection switch, whispers and secretRef.
 
-The Agent's own runtime is reached through the agent proxies, which admit only the owner.
-The HTTP proxy also admits an editor for the few runtime calls the Agent's page needs: its live model settings, its process list and applying a pending restart.
-Sessions, files and terminals are not open to editors yet, and the live sockets admit no editor, so an editor's page reads the runtime over HTTP.
+An approval names only its id, so the middleware reads the Agent from the approval, and the approval adds the permission of what it lets through: `sessions` for a tool call, `egressRules` for network access or a rule the Agent proposes.
+A spend limit question names no Agent for this check, because continuing it raises the owner's own spending: it stays with the owner.
 
 An editor opens the Agent's Environments like its owner: the owning Agent's editors are always on the list, and no Environment's own list narrows them out (see [environments](environments.md)).
+
+## Sessions
+
+The Agent's own runtime is reached through the agent proxies.
+They admit the owner, and an editor who holds the permission each one needs: the chat socket, the runtime's tRPC socket and the browser stream need `sessions`, and the terminal and SSH sockets need `terminal`, which only the owner holds.
+Every runtime procedure an editor may call maps to one permission, one map for the HTTP proxy and the tRPC socket alike.
+The session screen and its side panels need `sessions`: sessions, files, the browser, changes, and a turn's processes.
+The live model settings need `view`, and startup items and a pending restart need `lifecycle`.
+A procedure not on the map, such as adding an SSH key or publishing, stays with the owner.
+Over HTTP a batch with one such call is refused whole; on the socket the relay answers that one call with `FORBIDDEN` and passes the rest.
+A session is full access to the Agent's machine anyway, since the Agent reads and changes any file it is asked to, so the side panels give an editor nothing more.
+
+Read state stays the owner's (see [home feed](home-feed.md)).
+The relay opens the runtime's chat socket for an editor with a flag that makes it a full viewer that never stamps a session seen, and it answers an editor's explicit mark-seen call itself.
+
+An editor answers a tool call in the chat as the owner does, Allow always included.
+The chat's network access and proposed rule cards are answered through the approvals procedures above.
+The record of an approval names the person who answered it, owner or editor, and so does the Egress Rule an answer writes; the audit record of an editor's verdict also names the owner.
+
+Each replica remembers the sockets editors hold open, per Agent.
+A change to the Editor List or a delete of the Agent asks every replica, over the bus, to check those editors again, and a socket whose editor no longer stands as one is closed with "access revoked".
+Each admission of an editor to a socket is an audit record.
 
 ## Live hints
 
 The [live hints](platform-topology.md) bus addresses a user id.
 An editor's browser stream also listens on a second audience: their verified email.
-Every publisher still addresses the owner; a hint about an Agent, its schedules or its model settings is copied to the email audience of each of its editors, read from a short per-replica cache that a change to the list clears.
+Every publisher still addresses the owner; a hint with the topic `agents`, `schedules`, `harnessConfig`, `approvals` or `attention` is copied to the email audience of each of the Agent's editors, read from a short per-replica cache that a change to the list clears.
 A change to the list also tells each person it added or removed, so the Agent appears in or leaves their sidebar at once.
 When the owner deletes the Agent, the cleanup that drops its list tells its editors the same way.
 
@@ -80,13 +102,18 @@ Their page is the owner's page with every control they lack permission for hidde
 A section where they hold none of its permissions carries a lock in the section list: People, Connections and Channels.
 Each such page opens with a notice that says what only the owner does, why, and names the owner to ask; Providers has one too, with its switches disabled.
 Where the owner would delete the Agent, a line says only the owner can.
+Under Shared with me, a Shared Agent lists its sessions as the owner's own Agents do; they are not in an editor's Activity, All sessions or Pinned.
+A session of a Shared Agent carries the Shared badge in its top bar for the owner and the editors alike.
+An editor's approval prompts in the chat add one line naming the owner and the Agent's connections other than its model providers, since the platform cannot know which one a tool call will use; the owner's prompts do not.
+Where only the owner can continue a spend limit, the chat tells an editor to ask the owner by name.
+An editor is not offered what they lack: no channel tiles without `channels`, no terminal or local editor tiles and no terminal sessions without `terminal`.
 Shared Agents add nothing to an editor's Home feed or unread marks (see [home feed](home-feed.md)).
 When an editor loses access while the Agent is open, the page goes home and says so by name, rather than to the owner's [public agent page](public-agent-page.md).
 
 ## Audit
 
 Each change to a list is an audit record naming who was added and who was removed, and an editor leaving is one too (see [logging](logging.md)).
-Each change an editor makes to a Shared Agent, and each refusal, is an audit record naming the editor, the owner, the permission and the procedure.
+Each change an editor makes to a Shared Agent, each socket they open to it, and each refusal, is an audit record naming the editor, the owner, the permission and the procedure or socket.
 The Agents context's own records of a change name the editor as the actor.
 
 ## Known limits
@@ -94,7 +121,10 @@ The Agents context's own records of a change name the editor as the actor.
 - An expired connection stops the Agent until its owner fixes it; an editor cannot.
 - Editors have no CLI or API access to Shared Agents.
 - The owner and an editor saving the same whole-list form at once: the last save wins.
-- A new host an Environment asks for, and a spend limit that stops the Agent, still file approvals on the owner's Home only.
+- A new host an Environment asks for, and a spend limit that stops the Agent, file approvals on the owner's Home only.
+- An editor's turns count toward the owner's own spend limits.
+- An editor can delete any session of the Agent, the owner's included.
+- Turns and sessions do not yet show which person sent or started them.
 - The owner is not told when an editor changes something; the audit trail names the editor.
 - When the owner's account is gone, a notice names a former user, so there is nobody to ask.
 - Matching depends on the identity provider marking emails verified.

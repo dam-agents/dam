@@ -16,7 +16,9 @@ import { createAcpRelay } from "./agent-proxies/acp-relay.js";
 import { createAgentTrpcRelay } from "./agent-proxies/agent-trpc-relay.js";
 import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
 import { createEditorRuntimeAccess } from "./agent-proxies/editor-runtime-access.js";
+import { createEditorSockets } from "./agent-proxies/editor-sockets.js";
 import { composeEditorStanding } from "../../modules/agents/index.js";
+import { editorEmailOf, type UserIdentity } from "api-server-api";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
 import {
@@ -68,12 +70,21 @@ export function startApiServerApp(deps: ApiServerDeps) {
   const verifyOwner = (agentId: string, ownerSub: string) =>
     deps.agentsRepo.isOwnedBy(agentId, ownerSub);
   const ensureReady = (agentId: string) => deps.agentsRepo.ensureReady(agentId);
-  const editorRuntime = createEditorRuntimeAccess({
-    editorStanding: composeEditorStanding({
-      db: deps.db,
-      repo: deps.agentsRepo,
-    }),
+  const editorStanding = composeEditorStanding({
+    db: deps.db,
+    repo: deps.agentsRepo,
   });
+  const editorRuntime = createEditorRuntimeAccess({ editorStanding });
+  const standingOf = async (agentId: string, user: UserIdentity) => {
+    if (await verifyOwner(agentId, user.sub)) return { role: "owner" as const };
+    const email = editorEmailOf(user);
+    if (email === null) return null;
+    const standing = await editorStanding(agentId, {
+      sub: user.sub,
+      editorEmail: email,
+    });
+    return standing && { role: "editor" as const, email, ...standing };
+  };
   const composeApiContext = createApiContextFactory(deps);
 
   const authenticate: Authenticate = (token, site: AuthSite) =>
@@ -140,9 +151,14 @@ export function startApiServerApp(deps: ApiServerDeps) {
     surfaceAttribution: deps.surfaceAttribution,
     composeApiContext,
   });
+  const editorSockets = createEditorSockets({
+    bus: deps.redisBus,
+    editorStanding,
+  });
   const relayAdmission = createRelayAdmission({
     authenticate,
-    verifyOwner,
+    standingOf,
+    editorSockets,
     isTermsAccepted: deps.isTermsAccepted,
     surfaceAttribution: deps.surfaceAttribution,
   });
@@ -177,23 +193,36 @@ export function startApiServerApp(deps: ApiServerDeps) {
 
   const pathUpgrades = createUpgradeHandler({
     "/api/trpc-ws": selfAuthenticated(trpcWs),
-    "/api/agents/:id/acp": relayRoute(relayAdmission, acpRelay, "acp"),
+    "/api/agents/:id/acp": relayRoute(
+      relayAdmission,
+      acpRelay,
+      "acp",
+      "sessions",
+    ),
     "/api/agents/:id/terminal": relayRoute(
       relayAdmission,
       terminalRelay,
       "terminal",
+      "terminal",
     ),
-    "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+    "/api/agents/:id/ssh": relayRoute(
+      relayAdmission,
+      sshRelay,
+      "ssh",
+      "terminal",
+    ),
     "/api/public/browser-stream/:id/api/websockets": relayRoute(
       relayAdmission,
       browserStreamRelay,
       "browser",
+      "sessions",
       (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
     ),
     "/api/agents/:id/trpc-ws": relayRoute(
       relayAdmission,
       agentTrpcRelay,
       "trpc",
+      "sessions",
     ),
   });
   server.on("upgrade", (req, socket, head) => {
@@ -210,6 +239,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
       sshRelay.close();
       browserStreamRelay.close();
       agentTrpcRelay.close();
+      editorSockets.close();
     },
   };
 }

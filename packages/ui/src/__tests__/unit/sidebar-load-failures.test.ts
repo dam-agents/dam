@@ -44,6 +44,7 @@ vi.mock("../../store.js", () => {
   return { useStore: (select: (s: unknown) => unknown) => select(state) };
 });
 vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => null,
   useAgentRunState: () => "running",
   useIsAgentAnswerableSoon: () => agentState.answerable,
   useIsAgentOperable: () => true,

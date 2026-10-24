@@ -3,13 +3,17 @@ import type { AgentAccess } from "api-server-api";
 export const EDITORS_TOOLTIP_MAX = 5;
 
 export const EDITORS_WARNING =
-  "Editors will see every session with this agent, past and future, and everything it can read, including its environment variables and files. They can change its set-up, including its spend limits, and approve actions it takes with your connections. It keeps running on your budget, so your own spend limit still caps it.";
+  "Editors can use and delete every session with this agent, yours included. They can read and change its files and environment variables, change its set-up, including its spend limits, and approve actions it takes with your connections. Their use counts toward your own spend limits.";
 
 const editorCount = (count: number) =>
   `${count} editor${count === 1 ? "" : "s"}`;
 
 export function isSharedAgent(agent: { access: AgentAccess }): boolean {
   return agent.access.editors.length > 0;
+}
+
+export function isOwnAgent(agent: { access: AgentAccess }): boolean {
+  return agent.access.role === "owner";
 }
 
 export function editorsTooltip(editors: readonly string[]): {

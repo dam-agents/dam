@@ -71,6 +71,8 @@ async function world(firePair: FirePair) {
       sub: "u",
       surface: "cli",
       attached: () => {},
+      editor: null,
+      opened: () => {},
     });
   });
   const port = await listen(front);

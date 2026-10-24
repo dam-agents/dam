@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 
 import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { type BrowserLink, mayAutoOpen } from "../lib/browser-link.js";
 
 const opened = new Set<string>();
@@ -12,10 +12,9 @@ export function useBrowserAvailable(): {
   available: boolean;
 } {
   const agentId = useStore((s) => s.selectedAgent);
-  const agents = useAgentsList();
+  const agent = useAgent(agentId);
   const available =
-    agentId !== null &&
-    agents.find((a) => a.id === agentId)?.requireConnectionAddress === true;
+    agentId !== null && agent?.requireConnectionAddress === true;
   return { agentId, available };
 }
 

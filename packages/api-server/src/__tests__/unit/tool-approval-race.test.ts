@@ -117,6 +117,7 @@ function setup() {
     wrapperFrameSender: harness.sender,
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
+    actor: "owner-1",
     agentBinding: "*",
   });
   const asked = (options: AcpPermissionOption[] = OPTIONS) =>

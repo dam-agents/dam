@@ -65,6 +65,7 @@ interface CreateApprovalsServiceDeps {
   wrapperFrameSender: WrapperFrameSender;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
+  actor: string;
   agentBinding: readonly string[] | "*";
 }
 
@@ -133,7 +134,7 @@ function verdictConflict(
 ): TRPCError {
   securityLog("warn", "approval.verdict_conflict", {
     category: "approval",
-    actor: deps.ownerSub,
+    actor: deps.actor,
     actorKind: "user",
     agentId: row.agentId,
     decision: "deny",
@@ -171,12 +172,15 @@ function auditVerdict(
 ): void {
   securityLog("info", "approval.verdict", {
     category: "approval",
-    actor: deps.ownerSub,
+    actor: deps.actor,
     actorKind: "user",
     agentId: row.agentId,
     decision,
     correlationId: row.id,
-    detail,
+    detail:
+      deps.actor === deps.ownerSub
+        ? detail
+        : { ...detail, ownerSub: deps.ownerSub },
   });
 }
 
@@ -310,7 +314,7 @@ async function declineProposal(
   row: PendingApprovalRow,
 ): Promise<ApprovalActionOutcome> {
   if (row.status !== "pending") return NOT_ACTIONABLE;
-  const casWon = await deps.repo.resolvePending(row.id, "deny", deps.ownerSub, {
+  const casWon = await deps.repo.resolvePending(row.id, "deny", deps.actor, {
     markDelivered: true,
   });
   if (casWon) emitResolved(row, "deny");
@@ -333,7 +337,7 @@ async function answerSpendQuestion(
         "continuing a spend limit raises it, so it requires an unrestricted (wildcard) principal; agent-bound API keys are refused.",
     });
   }
-  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
   if (casWon) emitResolved(row, verdict);
   auditVerdict(deps, row, verdict, { verdict, spendLimit: true });
   return casWon
@@ -347,7 +351,7 @@ async function resolveOnce(
   verdict: "allow_once" | "deny_once",
   decision: "allow" | "deny",
 ): Promise<ApprovalActionOutcome> {
-  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
   if (casWon) emitResolved(row, verdict);
   auditVerdict(deps, row, decision, { verdict, ruleWritten: false });
   return casWon
@@ -371,7 +375,7 @@ async function writeRuleAndResolve(
     id: randomUUID(),
     agentId: row.agentId,
     ...rule,
-    decidedBy: deps.ownerSub,
+    decidedBy: deps.actor,
     source: "inbox",
   });
   if (written.kind === "verdict-clash") {
@@ -386,12 +390,12 @@ async function writeRuleAndResolve(
   const casWon = await deps.repo.resolvePending(
     row.id,
     rule.verdict,
-    deps.ownerSub,
+    deps.actor,
     { markDelivered: row.type === "egress_proposal" },
   );
   const expiredFlipped = casWon
     ? false
-    : await deps.repo.resolveExpired(row.id, rule.verdict, deps.ownerSub);
+    : await deps.repo.resolveExpired(row.id, rule.verdict, deps.actor);
   if (casWon || expiredFlipped) emitResolved(row, rule.verdict);
   auditVerdict(deps, row, rule.verdict, {
     verdict: rule.verdict,
@@ -411,7 +415,7 @@ async function resolveAndDeliverAcpNative(
   verdict: ApprovalVerdict,
 ): Promise<ApprovalActionOutcome> {
   if (row.payload.kind !== "acp_native") return NOT_ACTIONABLE;
-  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.actor);
   if (casWon) emitResolved(row, verdict);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,

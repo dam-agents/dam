@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
+import { OwnerConnectionsNote } from "../../agents/components/owner-connections-note.js";
 import { denyAllPrompt } from "../../approvals/lib/deny-all.js";
 import { withAttachmentNames } from "../../files/lib/upload-path.js";
 import { denyOnceOption } from "../lib/permission-deny-all.js";
@@ -144,6 +145,7 @@ export function PermissionPrompt({
   onResolved?: (verdict: PermissionVerdict, toolCallId: string) => void;
 }) {
   const sessionId = useStore((s) => s.sessionId);
+  const agentId = useStore((s) => s.selectedAgent);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const resolve = useStore((s) => s.resolvePendingPermission);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -259,6 +261,7 @@ export function PermissionPrompt({
               {location}
             </div>
           )}
+          <OwnerConnectionsNote agentId={agentId} className="pl-4" />
           <div className="flex flex-wrap gap-2">
             {current.options.map((opt, i) => (
               <Button

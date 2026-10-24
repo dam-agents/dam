@@ -188,7 +188,7 @@ export function createClient(): { client: Client; channel: ClientChannel } {
 
 export interface World {
   runtime: AcpRuntime;
-  connect(opts?: { viewer?: boolean }): Client;
+  connect(opts?: { viewer?: boolean; marksSeen?: boolean }): Client;
   harness(): Harness;
   harnessStarted(): boolean;
   harnessCount(): number;

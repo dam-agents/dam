@@ -7,7 +7,7 @@ import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
-import { useAgentsList } from "./modules/agents/api/queries.js";
+import { useAgent } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
@@ -55,7 +55,7 @@ function useDocumentTitle() {
   const sessionId = useStore((s) => (s.view === "chat" ? s.sessionId : null));
   const kitCatalog = useStore((s) => s.starterKitCatalog);
   const kitId = useStore((s) => s.starterKitId);
-  const agent = useAgentsList().find((a) => a.id === agentId);
+  const agent = useAgent(agentId);
   const session = useAgentSession(agentId, sessionId).data;
   const kit = useStarterKit(kitCatalog, kitId).data;
   const title = documentTitle(

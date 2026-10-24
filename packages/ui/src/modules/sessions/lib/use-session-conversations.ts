@@ -1,7 +1,7 @@
 import { ChannelType, type SessionView } from "api-server-api";
 import { useCallback, useMemo } from "react";
 
-import { useAgents } from "../../agents/api/queries.js";
+import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { slackChannelLabel } from "../../sandboxes/lib/slack-channels.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 import { conversationLabel } from "./conversation-label.js";
@@ -12,7 +12,7 @@ export function useSessionConversations(
   agentId: string | null,
 ): SessionConversationLabel {
   const agents = useAgents();
-  const agent = agents.data?.list.find((a) => a.id === agentId);
+  const agent = agentId ? findAgent(agents.data, agentId) : null;
   const telegramReady = agents.data?.availableChannels?.telegram;
   const telegramChats = useTelegramChats(
     telegramReady && agentId ? agentId : undefined,
