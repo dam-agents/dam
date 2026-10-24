@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,6 +85,22 @@ func (r *AgentReconciler) ensureAnchor(ctx context.Context, agent *apiv1.Agent) 
 
 func anchorOwnerRef(anchor *corev1.ConfigMap) metav1.OwnerReference {
 	return *metav1.NewControllerRef(anchor, corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a child that already exists keeps the owner
+// UNIT_BOUNDARY_DESCRIPTION: reference it was created with. That reference may name the custom resource, or an anchor of the same name with an earlier incarnation, and either one is garbage-collected while the child is still wanted. Converging the metadata is what hands the child to the anchor this Agent has now, without touching its spec.
+func adoptOwnerRefs(existing []metav1.OwnerReference, desired metav1.OwnerReference) []metav1.OwnerReference {
+	out := make([]metav1.OwnerReference, 0, len(existing)+1)
+	for _, ref := range existing {
+		if ref.UID == desired.UID {
+			continue
+		}
+		if ref.Kind == agentGVK.Kind || (ref.Kind == "ConfigMap" && strings.HasSuffix(ref.Name, anchorSuffix)) {
+			continue
+		}
+		out = append(out, ref)
+	}
+	return append(out, desired)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: deleteByAnchor runs the durable deletion protocol: everything the anchor

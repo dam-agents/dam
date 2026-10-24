@@ -804,7 +804,7 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 		if slices.ContainsFunc(sec.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == ownerRef.UID }) {
 			return nil
 		}
-		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
+		sec.OwnerReferences = adoptOwnerRefs(sec.OwnerReferences, metav1.OwnerReference{
 			APIVersion: ownerRef.APIVersion,
 			Kind:       ownerRef.Kind,
 			Name:       ownerRef.Name,
@@ -835,7 +835,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 		slog.Warn("deleted agent cleanup: release-namespace resources remain", "agent", name, "error", err)
 	}
 	if err := r.deletePVCs(ctx, name); err != nil {
-		return err
+		slog.Warn("deleted agent cleanup: PVCs remain", "agent", name, "error", err)
 	}
 	if err := r.deleteMachine(ctx, name, owner); err != nil {
 		return err
@@ -992,7 +992,18 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		}
 		scaled := !running || (existing.Spec.Replicas != nil && *existing.Spec.Replicas == 1)
 		if scaled && existing.Annotations[annStatefulSetTemplate] == hash {
-			return nil
+			if len(desired.OwnerReferences) == 0 {
+				return nil
+			}
+			if slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
+				return nil
+			}
+			existing.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+			updated, err := r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+			if err == nil && r.statefulSets != nil {
+				r.statefulSets.Mutation(updated)
+			}
+			return err
 		}
 		if running {
 			one := int32(1)
@@ -1088,6 +1099,14 @@ func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Serv
 		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 		return err
 	}
+	if err != nil || len(desired.OwnerReferences) == 0 {
+		return err
+	}
+	if slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
+		return nil
+	}
+	existing.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+	_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
 	return err
 }
 

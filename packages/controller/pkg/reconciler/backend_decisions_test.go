@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -301,4 +302,33 @@ func TestAnchorSweepFindsMissedDeletions(t *testing.T) {
 	backend.gone = true
 	require.NoError(t, r.ReconcileOrphanAnchors(context.Background(), func(name string) { enqueued = append(enqueued, name) }))
 	assert.Equal(t, []string{"my-agent"}, enqueued)
+}
+
+// TEST_SCENARIO: An Agent re-created under the same name gets a new anchor and
+// TEST_SCENARIO: a new incarnation, and the children already in the cluster still name the
+// TEST_SCENARIO: old authority. Converging their metadata hands them to the new anchor before
+// TEST_SCENARIO: the old one is collected; without it the gateway would be garbage-collected
+// TEST_SCENARIO: from under a live Agent.
+func TestARecreatedAgentsChildrenAreHandedToTheNewAnchor(t *testing.T) {
+	agent := agentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: "owner-1"}
+	r, client := setupReconciler(t, agent)
+	_, err := client.CoreV1().ServiceAccounts(r.config.Namespace).Create(context.Background(), &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-agent", Namespace: r.config.Namespace, UID: "old-sa",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: apiv1.GroupVersion.String(), Kind: "Agent", Name: "my-agent", UID: "old-agent-uid",
+			}},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	backend := newRecordingBackend(crAgentBackend{dynamic: r.dynamic, namespace: r.config.Namespace})
+	r.WithAgentBackend(backend)
+	_ = r.Reconcile(context.Background(), agent)
+
+	sa, err := client.CoreV1().ServiceAccounts(r.config.Namespace).Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, sa.OwnerReferences, 1)
+	assert.NotEqual(t, "old-agent-uid", string(sa.OwnerReferences[0].UID))
+	assert.Equal(t, "ConfigMap", sa.OwnerReferences[0].Kind)
 }
