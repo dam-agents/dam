@@ -1797,11 +1797,12 @@ agentStore:
     # when `authority` is `crd`, so it is never carried into a later release.
     acknowledged: false
   contract:
-    # -- SHA-256 of the archive the switch absorbed (the digest `export-snapshot`
-    # prints and the absorb recorded), attested by the operator from the
-    # encrypted file the key holder keeps. The contract release refuses to start
-    # until this matches both. It is the digest of the YAML, not of the
-    # encrypted file: age ciphertext is randomized. Required by
+    # -- SHA-256 of the encrypted file `export-snapshot` wrote, taken from the
+    # file itself (the export records it when it runs). The contract release
+    # refuses to start until this is the ciphertext digest of the export the
+    # platform recorded for this install, encrypted to the install's
+    # `backup.recipient` — which is what makes the operator's file, not a digest
+    # copied from a log, the attestation D79A asks for. Required by
     # `authority: contract`, unless `emptyArchive` says the install never
     # absorbed a custom resource.
     backupSha256: ""
@@ -1811,9 +1812,15 @@ agentStore:
     # install that absorbed something.
     emptyArchive: false
     # -- A rehearsal's clock (`2026-10-25T00:00:00Z`), so the one-week rollback
-    # window is proved without waiting it out. Leave it empty in an install: a
-    # value there moves the gate, not the window.
+    # window is proved without waiting it out. It fails the render unless
+    # `rehearsal` is true, and the marker the gate then writes carries
+    # `contract-clock: rehearsal`, which `delete-crs` and `retire-crds` refuse
+    # without `--rehearsal`. Empty in an install.
     now: ""
+    # -- Set it true only on a rehearsal cluster, beside `now`: it is what
+    # makes moving the window an explicit act, and what marks the install's
+    # gate as one no real deletion may trust.
+    rehearsal: false
 
 # -- Controller (Go reconciler + scheduler)
 controller:

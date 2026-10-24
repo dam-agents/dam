@@ -676,13 +676,29 @@ for refused in \
   "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.emptyArchive=true,agentStore.contract.backupSha256=$DIGEST" \
   "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST,agentStore.frozen=true" \
   "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST,agentStore.contract.now=yesterday" \
+  "agentStore.authority=contract,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST,agentStore.contract.now=2026-11-02T00:00:00Z" \
   "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.backupSha256=$DIGEST" \
-  "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.emptyArchive=true"; do
+  "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.emptyArchive=true" \
+  "agentStore.authority=postgres,agentStore.cutover.acknowledged=true,agentStore.contract.rehearsal=true"; do
   if helm template platform . "${COMMON[@]}" $(printf -- "--set %s " ${refused//,/ }) >/dev/null 2>&1; then
     echo "a render setting $refused succeeded, but only the contract release reads those values" >&2
     exit 1
   fi
 done
+# A rehearsal moves the gate's clock, so it is an explicit value beside the
+# clock, and the release carries it into the pod's environment; the marker the
+# gate writes then says so, which is what the operator commands refuse.
+rehearsal=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=contract \
+  --set agentStore.cutover.acknowledged=true \
+  --set agentStore.contract.backupSha256=$DIGEST \
+  --set agentStore.contract.rehearsal=true \
+  --set agentStore.contract.now=2026-11-02T00:00:00Z | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "apiserver")
+    | .spec.template.spec.containers | add | .env // []) | add
+    | map(select(.name == "AGENT_STORE_CONTRACT_NOW"))[0].value) == "2026-11-02T00:00:00Z"' <<<"$rehearsal" >/dev/null ||
+  { echo "a rehearsal contract render does not carry its clock into the api-server" >&2; exit 1; }
 # An install created after the CRDs were retired never absorbed anything: the
 # empty-archive marker is the way it says so, and it needs no digest.
 helm template platform . "${COMMON[@]}" \
