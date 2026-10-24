@@ -20,9 +20,10 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
-  # No configmaps/pods: the api-server reads neither anywhere —
-  # agents are CRs, templates are file-mounted, and reachability is
-  # the Agent's Ready condition.
+  # No configmaps/pods here: the release namespace holds neither anything the
+  # api-server reads — templates are file-mounted, and reachability is the
+  # Agent's Ready condition. (The one ConfigMap it reads lives in the agent
+  # namespace: the Agent store's marker.)
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
@@ -65,12 +66,20 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["userbudgets"]
     verbs: ["get", "list", "create", "patch", "delete"]
-  # Secrets for credentials. ConfigMaps are gone from the api-server's API
-  # surface: agents are CRs and the chart-shipped templates
-  # are mounted as files, loaded at boot — not read via the K8s API.
+  # Secrets for credentials. The chart-shipped agent templates are mounted as
+  # files, loaded at boot, not read through the K8s API.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # One ConfigMap, read once at startup: the marker the switch leaves when
+  # Agents and budgets become authoritative in Postgres. Reading it is how a
+  # build that still reconciles the custom resources learns to refuse to start
+  # rather than serve a store nothing writes. Nothing else of the api-server's
+  # reads a ConfigMap, so the grant names this one.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: [{{ include "platform.agentStore.markerName" . | quote }}]
+    verbs: ["get"]
   # Leader election for the work that must have one holder install-wide (the
   # channel workers, the live-events agent watch): a single Lease carrying every
   # such role, created and renewed by the holder and deleted when it stands

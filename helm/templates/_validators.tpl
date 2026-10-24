@@ -29,6 +29,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.monitoringNeedsTheCollector" . -}}
 {{- include "platform.validate.environmentsUrlNamesTheDomain" . -}}
 {{- include "platform.validate.backchannelHostsAreItsOwn" . -}}
+{{- include "platform.validate.agentStore" . -}}
 {{- end -}}
 
 {{/*
@@ -562,6 +563,44 @@ Fail at render instead, naming what took each one's place.
 {{- fail "virtualization.runner.imageArchiveHostPath is no longer read. Staged image trees live in the node image cache directory the chart derives from virtualization.imageCache.hostPath, beside the trees its service fetches; `mise run image:stage-vm` stages there. Remove the key, or move its directory to imageCache.hostPath." -}}
 {{- end -}}{{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
 {{- fail "virtualization.runner.canaryImage and virtualization.runner.canary are no longer read: every runner runs virtualization.runner.image, rolled across owners by virtualization.runner.rollout. Remove the keys." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The move of Agents and budgets into Postgres spans three releases, and each one
+reads its own values. The authority takes one of two names; and no release in
+this chart performs a cutover, so acknowledging one now would mark a switch that
+never happens — or, worse, a later one without the operator's timing.
+*/}}
+{{- define "platform.validate.agentStore" -}}
+{{- $store := .Values.agentStore | default dict -}}
+{{- if not (has ($store.authority | toString) (list "crd" "postgres")) -}}
+{{- fail (printf "agentStore.authority must be crd or postgres, got %q." ($store.authority | toString)) -}}
+{{- end -}}
+{{- /* No binary in this chart reads Postgres: the switch release adds the
+       readers and removes this refusal. Rendering the mode now would hand both
+       components a store they can only refuse, so it fails here where an
+       operator reads it, not in two CrashLoopBackOffs. */ -}}
+{{- if eq ($store.authority | toString) "postgres" -}}
+{{- fail "agentStore.authority=postgres is not served by any release in this chart yet: both components would refuse to start. Leave it crd; the switch release reads Postgres and removes this refusal." -}}
+{{- end -}}
+{{- $cutover := $store.cutover | default dict -}}
+{{- if $cutover.acknowledged -}}
+{{- fail "agentStore.cutover.acknowledged is set, but no release in this chart performs the cutover: the switch release that does refuses to render without it, and sets this value's meaning itself. Unset it." -}}
+{{- end -}}
+{{- /* The api-server grants the controller's privileges to one fixed login
+       name, so a chart that let the identity be configured separately would
+       render a controller that owns nothing and can read nothing. */ -}}
+{{- $granted := "platform_controller" -}}
+{{- $declared := list .Values.postgres.controllerUser (dig "db" "user" $granted (.Values.controller | default dict)) -}}
+{{- range $declared -}}
+{{- if ne . $granted -}}
+{{- fail (printf "postgres.controllerUser and controller.db.user must both be %s: the api-server grants the controller's privileges to that login, so another name would render a controller with none. Got %q." $granted .) -}}
+{{- end -}}
+{{- end -}}
+{{- $contract := $store.contract | default dict -}}
+{{- if $contract.backupSha256 -}}
+{{- fail "agentStore.contract.backupSha256 is set, but no release in this chart deletes custom resources yet: the contract release checks it against the archive it must not delete without." -}}
 {{- end -}}
 {{- end -}}
 
