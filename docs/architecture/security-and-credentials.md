@@ -147,6 +147,7 @@ The event knobs, log format, and realm import live in the Keycloak Helm values u
 Multi-tenancy is **soft** — a single Kubernetes namespace, with a `agent-platform.ai/owner` label on every owned resource carrying the authenticated user's `sub`.
 The api-server is the sole writer of resource spec and stamps the label on create; every list and get filters by it.
 There is no namespace-per-user.
+An owner can name [Agent Editors](agent-editors.md), matched by verified email, who may see an Agent they do not own; every other operation on it still checks the owner label.
 
 The controller picks credentials per-Agent by listing K8s Secrets labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent namespace, then mounting the matching set into the paired gateway pod.
 Cross- owner leakage is structurally prevented by the label selector — a missing `agent-platform.ai/owner` label is treated as no owner and never mounted.

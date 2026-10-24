@@ -16,6 +16,7 @@ export {
   agentEnv,
   environments,
   environmentAccessLists,
+  agentEditors,
   agentChatFormPreferences,
   agentSessions,
   agentPublicProfiles,

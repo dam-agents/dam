@@ -57,6 +57,7 @@ import { AddRow } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { NewAgentMenu } from "./new-agent-menu.js";
+import { SharedAgentTiles } from "./shared-agent-nodes.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
@@ -232,6 +233,7 @@ export function SidebarRail({
                 onNavigate={navigate}
               />
             ))}
+        {groupBy === "agents" && <SharedAgentTiles onNavigate={navigate} />}
       </div>
       <button
         type="button"

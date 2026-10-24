@@ -209,6 +209,7 @@ The sidebar lists Sessions as they are and reads no dismissals.
 Read state is still **per session, not per person**.
 An Agent currently has a single driving user, so the distinction has no observable effect today; the shared-agent work is what must revisit it.
 The dismissal watermarks are already keyed per user, so that half needs no migration when it does.
+An [Agent Editor](agent-editors.md) gets no Home feed items or unread marks for a Shared Agent yet.
 
 ## Terminal sessions
 

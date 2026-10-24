@@ -15,6 +15,7 @@ interface Props {
   draft: string;
   onDraftChange: (draft: string) => void;
   caption?: string;
+  inputLabel?: string;
 }
 
 interface ViewerRowProps {
@@ -49,6 +50,7 @@ export function ViewerListEditor({
   draft,
   onDraftChange,
   caption,
+  inputLabel = "Viewer email address",
 }: Props) {
   const errorId = useId();
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export function ViewerListEditor({
           type="email"
           size="sm"
           placeholder="name@company.com"
-          aria-label="Viewer email address"
+          aria-label={inputLabel}
           value={draft}
           variant={error ? "invalid" : "standard"}
           aria-invalid={error !== null}

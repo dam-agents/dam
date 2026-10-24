@@ -61,6 +61,8 @@ export interface UserIdentity {
   agentIds: readonly string[] | "*";
   keyId?: string;
   isOperator?: boolean;
+  email?: string;
+  emailVerified?: boolean;
 }
 
 export interface ApiContext {

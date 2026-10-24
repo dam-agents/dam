@@ -7,6 +7,10 @@ import {
 } from "./avatar/svg.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { envVarSchema } from "../shared.js";
+import {
+  VIEWER_ALLOWLIST_MAX,
+  viewerEmailSchema,
+} from "../artifact-library/schemas.js";
 
 const idSchema = z.object({ id: z.string().min(1) });
 
@@ -23,7 +27,18 @@ export const storageQuantitySchema = z
     message: "storage must be at least 1Gi",
   });
 
+export const agentListInputSchema = z
+  .object({ scope: z.enum(["mine", "all"]) })
+  .optional();
 export const agentGetInputSchema = idSchema;
+export const agentSetEditorsInputSchema = z.object({
+  id: z.string().min(1),
+  editors: z
+    .array(viewerEmailSchema)
+    .max(VIEWER_ALLOWLIST_MAX)
+    .transform((emails) => [...new Set(emails)]),
+});
+export const agentLeaveInputSchema = idSchema;
 export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;

@@ -30,6 +30,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   channels: [],
   spawnedBy: null,
   environmentOf: null,
+  access: { role: "owner", editors: [] },
   ...overrides,
 });
 

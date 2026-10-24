@@ -127,6 +127,12 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
         agentIds: "*",
         isOperator:
           !!config.operatorRole && roles.includes(config.operatorRole),
+        ...(typeof claims.email === "string"
+          ? {
+              email: claims.email,
+              emailVerified: claims.email_verified === true,
+            }
+          : {}),
       },
       azp: typeof claims.azp === "string" ? claims.azp : "",
       roles,

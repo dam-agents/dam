@@ -33,7 +33,7 @@ import {
   AppSidePanelButtons,
   AppSidePanelHost,
 } from "./modules/sessions/components/app-side-panel.js";
-import { ChatView } from "./modules/sessions/views/chat-view.js";
+import { ChatRoute } from "./modules/sessions/views/chat-route.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { useStarterKit } from "./modules/starter-kits/api/queries.js";
@@ -195,7 +195,7 @@ function MainApp() {
             tabIndex={-1}
             className="relative z-content has-[[data-full-page]]:z-overlay flex-1 min-w-0 outline-none"
           >
-            <ChatView />
+            <ChatRoute />
           </main>
         </div>
         {kitBrowserOpen && <BrowseKitsModal />}

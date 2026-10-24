@@ -30,6 +30,7 @@ const agent = {
   name: "Reviewer",
   avatar: null,
   state: "running",
+  access: { role: "owner", editors: [] },
 } as unknown as AgentView;
 
 const agentRow = (props: { open: boolean; selected: boolean }) =>
@@ -42,6 +43,7 @@ const agentRow = (props: { open: boolean; selected: boolean }) =>
       onMove: () => {},
       onStep: () => {},
       onSelect: () => {},
+      onOpenPeople: () => {},
       actions: null,
       actionCount: 3,
       filter: null,

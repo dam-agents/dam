@@ -1,4 +1,8 @@
-import type { PromptBlock, ProviderPresetType } from "api-server-api";
+import type {
+  AgentAccess,
+  PromptBlock,
+  ProviderPresetType,
+} from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
@@ -195,6 +199,7 @@ export interface AgentView {
   spawnedBy: string | null;
   environmentOf: string | null;
   kind?: AgentKind;
+  access: AgentAccess;
 }
 
 interface QuietWindowView {

@@ -81,6 +81,9 @@ function setup() {
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused<AgentsDeps["editors"]>(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
   });
   return { agents, persist, patchSpec };
 }
