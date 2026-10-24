@@ -18,7 +18,7 @@ import {
   Task,
   Wikis,
 } from "@carbon/icons-react";
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -170,9 +170,8 @@ export function SidePanelTabButtons({
           )}
         </Button>
       );
-    return rail && tiles ? (
-      <Fragment key={tab}>{control}</Fragment>
-    ) : (
+    // UNIT_BOUNDARY_DESCRIPTION: every icon in the bar names its panel in a tooltip, the tiled rail's too, since a tile's glyph alone does not say which panel it opens.
+    return (
       <Tooltip key={tab} content={content} side={rail ? "left" : "bottom"}>
         {control}
       </Tooltip>

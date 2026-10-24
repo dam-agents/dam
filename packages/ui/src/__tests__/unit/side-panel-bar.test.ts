@@ -243,8 +243,8 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(order[1]).toBeGreaterThan(order[0]!);
 });
 
-// TEST_SCENARIO: The JanUI rail names a tab through its aria-label and the panel header, not a hover tooltip that would cover the panel, as the left rail does; the classic layout's icon bar keeps its tooltip.
-it("drops the rail's tooltips but keeps the classic bar's", () => {
+// TEST_SCENARIO: Both bars name every tab in a hover tooltip and in its aria-label, so a reader can find a panel from its glyph alone.
+it("names every panel in a tooltip on both bars", () => {
   const railHtml = renderToStaticMarkup(
     createElement(
       TooltipProvider,
@@ -262,7 +262,8 @@ it("drops the rail's tooltips but keeps the classic bar's", () => {
       /<button[^>]*data-testid="side-panel-tab-artifacts"[^>]*>/,
     )?.[0] ?? "";
   expect(tile).toContain('aria-label="Artifacts"');
-  expect(tile).not.toContain("data-state=");
+  // UNIT_BOUNDARY_DESCRIPTION: the tiled rail's tiles carry the panel's name in a tooltip too, so a glyph alone never has to be guessed.
+  expect(tile).toContain('data-state="closed"');
   const classicHtml = renderToStaticMarkup(
     createElement(
       TooltipProvider,
