@@ -119,6 +119,24 @@ async function main(): Promise<void> {
   const afterWrite = await repo.getLive(AGENT, OWNER);
   check("the second write did not land", afterWrite?.spec.image === "agent:2");
 
+  // TEST_SCENARIO: The image-update decisions depend on more than the rendered spec: a pin or an activity bump after the read must refuse the write, and so must a newer observation, because the decision was made on the idle, ready Agent it saw.
+  const idleRead = (await repo.getLive(AGENT, OWNER))!;
+  await repo.wake(AGENT);
+  const refusedOnSignal = await repo.writeAgentSpec(AGENT, OWNER, {
+    spec: { image: "agent:4" },
+    annotations: {},
+    resourceVersion: idleRead.resourceVersion,
+    signalVersion: idleRead.signalVersion,
+    statusVersion: idleRead.statusVersion,
+  });
+  check(
+    "a write decided on an older signals version is refused",
+    !refusedOnSignal.ok && refusedOnSignal.reason === "conflict",
+    JSON.stringify(refusedOnSignal),
+  );
+  const stillOnTwo = await repo.getLive(AGENT, OWNER);
+  check("the refused write did not land", stillOnTwo?.spec.image === "agent:2");
+
   // TEST_SCENARIO: A disabled Agent cannot be woken; enabling clears the mark without waking.
   await repo.setDisabled(AGENT, true);
   const wokeDisabled = await repo.wake(AGENT);

@@ -688,6 +688,8 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
     spec,
     status: {
       ...(observed.length > 0 && { conditions: observed }),
+      signalVersion: signals.version,
+      statusVersion: status?.version ?? 0,
       ...(status && {
         observedGeneration: status.observedGeneration,
         ...(status.machineRestarts > 0 && {
