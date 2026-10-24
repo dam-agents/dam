@@ -20,6 +20,8 @@ const RECLAIM_COLUMNS = [
 
 const READ_ONLY_ADAPTER = /^control-read(-[a-z]+)*\.ts$/u;
 
+const MAPPING_MODULE = /^rows\.ts$/u;
+
 const quoted = (name: string): string => `"?${name}"?`;
 
 const writesTo = (name: string): RegExp =>
@@ -33,9 +35,15 @@ const builderWrite = (identifier: string): RegExp =>
 
 const builderCall = /\b(insert|update|delete)\s*\(/u;
 
+const snakeColumns = RECLAIM_COLUMNS.filter((column) => column.includes("_"));
+const camelColumns = RECLAIM_COLUMNS.filter((column) => !column.includes("_"));
 const reclaimWrite = new RegExp(
-  `\\b(${RECLAIM_COLUMNS.filter((column) => column.includes("_")).join("|")})\\s*=\\s*[^=]|\\b(${RECLAIM_COLUMNS.filter((column) => !column.includes("_")).join("|")})\\s*:`,
-  "u",
+  [
+    `\\b(${snakeColumns.join("|")})\\s*=\\s*[^=]`,
+    `\\b(${camelColumns.join("|")})\\s*:`,
+    `\\.(${camelColumns.join("|")})\\s*=[^=]`,
+  ].join("|"),
+  "su",
 );
 
 function sourceFiles(directory: string): string[] {
@@ -91,9 +99,14 @@ describe("api-server writes to what the controller owns", () => {
     expect(offenders).toEqual([]);
   });
 
-  // TEST_SCENARIO: The signals row is shared, and two of its columns are the controller's alone — the api-server may read the reclaim mark and must never set or clear it, whichever side of the switch holds the row.
+  // TEST_SCENARIO: The signals row is shared, and two of its columns are the controller's alone — the api-server may read the reclaim mark and put it in a row it describes, but must never set or clear it, whichever side of the switch holds the row. Every shape counts: a raw `SET`, a key in an object a writer passes on, a value handed to `set`/`values`, and an assignment. Two modules are exempt because they describe the row rather than write it: the mapping and the read adapter. The real proof is a runtime one in the database check; this catches the shape a reviewer would miss.
   it("never writes the controller's reclaim columns", () => {
     const offenders = sourceFiles(SOURCE_ROOT)
+      .filter(
+        (path) =>
+          !MAPPING_MODULE.test(basename(path)) &&
+          !READ_ONLY_ADAPTER.test(basename(path)),
+      )
       .filter((path) => reclaimWrite.test(readFileSync(path, "utf8")))
       .map((path) => path.replace(SOURCE_ROOT, ""));
 

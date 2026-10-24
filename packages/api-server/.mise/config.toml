@@ -36,3 +36,11 @@ set -euo pipefail
 : "${CONTROL_GRANTS_DATABASE_URL:?point it at a disposable database with the migrations applied, on a server where creating and dropping platform_controller is acceptable}"
 pnpm exec tsx scripts/control-grants-check.ts
 '''
+
+[tasks."test:agent-store"]
+description = "Check the Postgres Agent and budget adapters against a real PostgreSQL"
+run = '''
+set -euo pipefail
+: "${AGENT_STORE_DATABASE_URL:?point it at a disposable database with the migrations applied}"
+pnpm exec tsx scripts/agent-store-check.ts
+'''

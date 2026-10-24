@@ -100,6 +100,8 @@ export function createImageUpdate(deps: {
             [ANN_IMAGE_UPDATE_FROM]: read!.imageUpdateFrom ?? read!.spec.image!,
           },
           resourceVersion: read?.resourceVersion,
+          signalVersion: read?.signalVersion,
+          statusVersion: read?.statusVersion,
         });
         return written.ok ? written.value : null;
       },
@@ -138,6 +140,8 @@ export function createImageUpdate(deps: {
         ...(failed ? { [ANN_IMAGE_UPDATE_REFUSED]: live.spec.image! } : {}),
       },
       resourceVersion: live.resourceVersion,
+      signalVersion: live.signalVersion,
+      statusVersion: live.statusVersion,
     });
     if (!written.ok || !failed) return;
     deps.log(
