@@ -186,7 +186,8 @@ An install with no object store fails closed: bulk-blob features are unavailable
 The two kinds the platform keeps in the Kubernetes API, `Agent` and `UserBudget` under `agent-platform.ai/v1`, are being replaced by rows in the Agent store above.
 Until the move's switch they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
 Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
-From the switch they are frozen: nothing writes them, they hold what the snapshot archive holds, and they exist only so a rollback within its window has a state to restore.
+From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
+A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
 They are deleted per install, and the kinds themselves only after every install is past its rollback window, by an operator action rather than by any install's release.
 
 Two domain resources are deliberately not custom resources:

@@ -4,6 +4,7 @@ import {
   absentAbsorbedResources,
   attestedDigestMatches,
   restoreBody,
+  rePointAction,
   rollbackVerdict,
   snapshotMembership,
   statusBody,
@@ -85,6 +86,20 @@ describe("what a rollback may do", () => {
     expect(verdict({ markerAbsorbedAt: "2026-10-23T00:00:00.000Z" })).toBe(
       "refuse",
     );
+  });
+
+  // TEST_SCENARIO: The dry run creates nothing, so it must not demand the uid of an Agent it has not created; a real run without one refuses rather than orphaning every child.
+  it("re-points only with a uid, and the dry run reports the one it would take", () => {
+    expect(rePointAction({ dryRun: true, liveUid: null })).toEqual({
+      action: "skip",
+    });
+    expect(rePointAction({ dryRun: false, liveUid: null })).toEqual({
+      action: "throw",
+    });
+    expect(rePointAction({ dryRun: false, liveUid: "uid-1" })).toEqual({
+      action: "repoint",
+      uid: "uid-1",
+    });
   });
 
   // TEST_SCENARIO: A budget removed in row mode is deleted from the cluster on rollback, while a resource the absorb never recorded, or one that still has a row, is left alone. The same rule covers Agents and budgets, or a removed override resurrects on the previous release.

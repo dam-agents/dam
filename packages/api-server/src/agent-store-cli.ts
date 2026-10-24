@@ -33,6 +33,7 @@ import {
   absentAbsorbedResources,
   attestedDigestMatches,
   restoreBody,
+  rePointAction,
   rollbackVerdict,
   snapshotMembership,
   statusBody,
@@ -728,11 +729,21 @@ const main = async (): Promise<void> => {
       for (const resource of resources) {
         if (resource.kind !== "Agent") continue;
         const live = await client.getCustomObject(AGENTS_PLURAL, resource.name);
-        const uid = live?.metadata?.uid;
-        if (!uid)
+        const decision = rePointAction({
+          dryRun,
+          liveUid: live?.metadata?.uid ?? null,
+        });
+        if (decision.action === "skip") {
+          process.stderr.write(
+            `would create Agent ${resource.name} and re-point its children to its new uid\n`,
+          );
+          continue;
+        }
+        if (decision.action === "throw")
           throw new Error(
             `the restored Agent ${resource.name} has no uid: re-pointing its children would orphan them`,
           );
+        const uid = decision.uid;
         const reference: k8s.V1OwnerReference = {
           apiVersion: "agent-platform.ai/v1",
           kind: "Agent",

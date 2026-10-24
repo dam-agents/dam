@@ -176,3 +176,20 @@ export function snapshotUidOf(
 ): string | null {
   return membership.get(kind)?.get(name) ?? null;
 }
+
+export type RePointAction =
+  { action: "repoint"; uid: string } | { action: "skip" } | { action: "throw" };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what the re-point does when the restored Agent has
+ * no live object. A dry run creates nothing, so the missing uid is the run's own
+ * doing and the child re-point is only reported; a real run that still lacks one
+ * would orphan every child, so it refuses.
+ */
+export function rePointAction(input: {
+  dryRun: boolean;
+  liveUid: string | null;
+}): RePointAction {
+  if (input.liveUid !== null) return { action: "repoint", uid: input.liveUid };
+  return input.dryRun ? { action: "skip" } : { action: "throw" };
+}
