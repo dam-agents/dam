@@ -23,7 +23,7 @@ test("user env rides the contribution rail", async () => {
   const baselineEnv = (await api.agents.get.query({ id: agentId })).env ?? [];
 
   await test.step("setting user env reaches the agent — no pod roll", async () => {
-    await api.agents.update.mutate({
+    await api.agents.setEnv.mutate({
       id: agentId,
       env: [...baselineEnv, { name: userEnvName, value: userEnvValue }],
     });
@@ -45,7 +45,7 @@ test("user env rides the contribution rail", async () => {
   });
 
   await test.step("editing the value applies at the next turn", async () => {
-    await api.agents.update.mutate({
+    await api.agents.setEnv.mutate({
       id: agentId,
       env: [...baselineEnv, { name: userEnvName, value: userEnvEdited }],
     });
@@ -59,7 +59,7 @@ test("user env rides the contribution rail", async () => {
   });
 
   await test.step("user env wins over connection env on name collision", async () => {
-    await api.agents.update.mutate({
+    await api.agents.setEnv.mutate({
       id: agentId,
       env: [
         ...baselineEnv,
@@ -78,7 +78,7 @@ test("user env rides the contribution rail", async () => {
 
   await test.step("clearing user env reverts to the connection's own placeholder", async () => {
     const connectionId = await getConnectionId(api, connectionName);
-    await api.agents.update.mutate({ id: agentId, env: baselineEnv });
+    await api.agents.setEnv.mutate({ id: agentId, env: baselineEnv });
     await expectAgentEnv(
       api,
       agentId,

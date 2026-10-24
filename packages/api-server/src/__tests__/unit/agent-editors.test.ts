@@ -1,5 +1,6 @@
 // TEST_OVERVIEW: An Agent's owner names Agent Editors by email on its Editor List. An editor finds the Agent through their verified email, listed apart from their own agents and marked with who owns it; anyone else does not find it at all. Only the owner changes the list, the owner's own email cannot go on it, and an editor can take themselves off. Each change tells the people it adds or removes.
 import { afterEach, describe, expect, it } from "vitest";
+import { AGENT_PERMISSIONS } from "api-server-api";
 import type { Subscription } from "rxjs";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
@@ -27,6 +28,21 @@ const AGENTS = [
   infra("alice-bot", "alice"),
   infra("alice-other", "alice"),
   infra("bob-bot", "bob"),
+];
+
+const OWNS = [...AGENT_PERMISSIONS];
+
+const EDITS = [
+  "view",
+  "settings",
+  "envVars",
+  "lifecycle",
+  "spendLimits",
+  "egressRules",
+  "skills",
+  "schedules",
+  "chatForms",
+  "environments",
 ];
 
 const EMAILS: Record<string, string> = {
@@ -72,6 +88,7 @@ function serviceFor(
 ) {
   return createAgentsService({
     owner: caller.sub,
+    actor: caller.sub,
     editorEmail: caller.editorEmail,
     editors,
     resolveUserEmail: async (sub) => EMAILS[sub] ?? null,
@@ -137,18 +154,19 @@ describe("listing agents with their access", () => {
 
     const mine = await serviceFor(BOB, editors).listWithAccess("mine");
     expect(mine.map((l) => [l.agent.id, l.access])).toEqual([
-      ["bob-bot", { role: "owner", editors: [] }],
+      ["bob-bot", { role: "owner", editors: [], permissions: OWNS }],
     ]);
 
     const all = await serviceFor(BOB, editors).listWithAccess("all");
     expect(all.map((l) => [l.agent.id, l.access])).toEqual([
-      ["bob-bot", { role: "owner", editors: [] }],
+      ["bob-bot", { role: "owner", editors: [], permissions: OWNS }],
       [
         "alice-bot",
         {
           role: "editor",
           ownerEmail: "alice@example.com",
           editors: ["bob@example.com", "carol@example.com"],
+          permissions: EDITS,
         },
       ],
     ]);
@@ -159,8 +177,11 @@ describe("listing agents with their access", () => {
     const editors = inMemoryEditors({ "alice-bot": ["bob@example.com"] });
     const all = await serviceFor(ALICE, editors).listWithAccess("all");
     expect(all.map((l) => [l.agent.id, l.access])).toEqual([
-      ["alice-bot", { role: "owner", editors: ["bob@example.com"] }],
-      ["alice-other", { role: "owner", editors: [] }],
+      [
+        "alice-bot",
+        { role: "owner", editors: ["bob@example.com"], permissions: OWNS },
+      ],
+      ["alice-other", { role: "owner", editors: [], permissions: OWNS }],
     ]);
   });
 
@@ -185,6 +206,7 @@ describe("reading one agent", () => {
       role: "editor",
       ownerEmail: "alice@example.com",
       editors: ["bob@example.com"],
+      permissions: EDITS,
     });
     expect(
       await serviceFor(CAROL, editors).getWithAccess("alice-bot"),

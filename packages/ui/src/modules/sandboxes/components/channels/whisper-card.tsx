@@ -1,10 +1,11 @@
 import { getBrand } from "../../../../brand.js";
 import type { AgentView } from "../../../../types.js";
-import { useUpdateAgent } from "../../../agents/api/mutations.js";
+import { useSetWhisper } from "../../../agents/api/mutations.js";
+import { holds } from "../../../agents/lib/agent-permissions.js";
 import { ChannelSwitchCard } from "./channel-switch-card.js";
 
 export function WhisperCard({ agent }: { agent: AgentView }) {
-  const update = useUpdateAgent();
+  const update = useSetWhisper();
   const checked =
     (update.isPending ? update.variables.whisper : undefined) ?? agent.whisper;
   return (
@@ -12,7 +13,7 @@ export function WhisperCard({ agent }: { agent: AgentView }) {
       label="Whispers"
       checked={checked}
       onChange={(whisper) => update.mutate({ id: agent.id, whisper })}
-      disabled={update.isPending}
+      disabled={update.isPending || !holds(agent.access, "channels")}
     >
       Anyone in a conversation this agent is connected to can talk to it
       privately with <code>/{getBrand().short} whisper</code>. Nobody else there

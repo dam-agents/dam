@@ -1,9 +1,12 @@
 // TEST_OVERVIEW: An owner always sees which of their agents are Shared Agents and with whom: the sidebar row of a shared agent carries a people mark whose tooltip names the Agent Editors, the first five and a count of the rest. The agent's People section sums up who works on it, from the owner's side and from an editor's, and an editor's page names the owner.
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 vi.stubGlobal("window", new EventTarget());
 
@@ -31,7 +34,7 @@ const row = (editors: string[]) =>
           name: "Release helper",
           avatar: null,
           state: "running",
-          access: { role: "owner", editors },
+          access: { role: "owner", editors, permissions: OWNS },
         } as unknown as AgentView,
         open: false,
         selected: false,
@@ -81,9 +84,15 @@ describe("the editors tooltip", () => {
 
 describe("who works on an agent", () => {
   it("TEST_SCENARIO: the owner's summary says it is only them, or how many editors there are", () => {
-    expect(peopleSummary({ role: "owner", editors: [] })).toBe("Only you");
     expect(
-      peopleSummary({ role: "owner", editors: ["a@example.com", "b@x.io"] }),
+      peopleSummary({ role: "owner", editors: [], permissions: OWNS }),
+    ).toBe("Only you");
+    expect(
+      peopleSummary({
+        role: "owner",
+        editors: ["a@example.com", "b@x.io"],
+        permissions: OWNS,
+      }),
     ).toBe("2 editors");
   });
 
@@ -93,6 +102,7 @@ describe("who works on an agent", () => {
         role: "editor",
         ownerEmail: "jordan@example.com",
         editors: ["a@example.com", "b@example.com"],
+        permissions: [],
       }),
     ).toBe("Owner + 2 editors");
   });

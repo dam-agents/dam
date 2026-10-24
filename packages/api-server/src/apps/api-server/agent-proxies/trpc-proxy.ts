@@ -15,10 +15,12 @@ import {
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
 import type { ApiVariables } from "../deps.js";
+import type { EditorRuntimeAccess } from "./editor-runtime-access.js";
 
 export interface AgentTrpcProxyDeps {
   namespace: string;
   verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
+  editorRuntime: EditorRuntimeAccess;
   ensureReady: (agentId: string) => Promise<unknown>;
   upstreamBase?: (agentId: string) => string;
 }
@@ -64,7 +66,14 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
   return async (c: ProxyCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
-    if (!(await deps.verifyOwner(agentId, user.sub))) {
+    const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
+    const admitted =
+      (await deps.verifyOwner(agentId, user.sub)) ||
+      (await deps.editorRuntime(agentId, user, {
+        paths: rest.replace(/^\//, "").split(",").filter(Boolean),
+        mutation: c.req.method !== "GET",
+      }));
+    if (!admitted) {
       securityLog("warn", "authz.owner_mismatch", {
         category: "authz",
         actor: user.sub,
@@ -115,7 +124,6 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
       return c.json(body, 502);
     }
 
-    const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
     const upstreamUrl = `${upstreamBase(agentId)}/api/trpc${rest}${qs}`;
     const headers = new Headers(c.req.raw.headers);

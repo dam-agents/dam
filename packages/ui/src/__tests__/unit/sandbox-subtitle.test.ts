@@ -1,3 +1,4 @@
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +6,8 @@ import {
   sandboxSubtitle,
 } from "../../modules/agents/utils/sandbox-subtitle.js";
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const agent: AgentView = {
   id: "agent",
@@ -36,7 +39,7 @@ const agent: AgentView = {
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
-  access: { role: "owner", editors: [] },
+  access: { role: "owner", editors: [], permissions: OWNS },
 };
 
 const slotUnit = { cpuMilli: 1000, memoryMi: 1024 };

@@ -10,6 +10,7 @@ import {
 } from "../../agents/api/mutations.js";
 import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
+import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { AGENT_ENABLE_ANCHOR } from "../../agents/lib/overlay-copy.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { type Action, ActionList } from "./action-list.js";
@@ -74,7 +75,7 @@ export function AgentManagementActions({
     setView("home");
   };
 
-  const actions: Action[] = [
+  const lifecycle: Action[] = [
     {
       id: AGENT_ENABLE_ANCHOR,
       kind: "button",
@@ -108,6 +109,8 @@ export function AgentManagementActions({
         onClick: () => void onRestart(),
       },
     },
+  ];
+  const removal: Action[] = [
     {
       kind: "button",
       icon: <TrashCan />,
@@ -123,5 +126,23 @@ export function AgentManagementActions({
     },
   ];
 
-  return <ActionList label="Manage" actions={actions} />;
+  const canDelete = holds(agent.access, "delete");
+  const actions = [
+    ...(holds(agent.access, "lifecycle") ? lifecycle : []),
+    ...(canDelete ? removal : []),
+  ];
+
+  return (
+    <>
+      {actions.length > 0 && <ActionList label="Manage" actions={actions} />}
+      {!canDelete && (
+        <p
+          className="mt-3 text-sm text-muted-foreground"
+          data-testid="agent-delete-owner-only"
+        >
+          Only its owner, {ownerName(agent.access)}, can delete this agent.
+        </p>
+      )}
+    </>
+  );
 }

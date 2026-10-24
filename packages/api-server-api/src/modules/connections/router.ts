@@ -2,6 +2,8 @@ import { TRPCError } from "@trpc/server";
 import type { ApiContext } from "../../context.js";
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   manageCredentialsProcedure,
@@ -148,6 +150,7 @@ export const connectionsRouter = t.router({
 
   getAgentConnections: readAgentProcedure
     .input(connectionGetAgentConnectionsInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.connections.getAgentConnections(input.agentId);
@@ -155,6 +158,7 @@ export const connectionsRouter = t.router({
 
   setAgentConnections: manageAgentsProcedure
     .input(connectionSetAgentConnectionsInputSchema)
+    .use(agentPermission("connections", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       await refuseOnEnvironment(ctx, input.agentId);
       return ctx.connections.setAgentConnections(
@@ -165,6 +169,7 @@ export const connectionsRouter = t.router({
 
   updateAgentConnections: manageAgentsProcedure
     .input(connectionUpdateAgentConnectionsInputSchema)
+    .use(agentPermission("connections", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       await refuseOnEnvironment(ctx, input.agentId);
       return ctx.connections.updateAgentConnections(input.agentId, {
@@ -175,6 +180,7 @@ export const connectionsRouter = t.router({
 
   setPreferredConnection: manageAgentsProcedure
     .input(connectionSetPreferredConnectionInputSchema)
+    .use(agentPermission("connections", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) =>
       ctx.connections.setPreferredConnection(input.agentId, input.connectionId),
     ),

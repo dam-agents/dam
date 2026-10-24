@@ -67,7 +67,7 @@ export function SkillSourceCard({
   source: SkillSource;
   surface: SkillsSurface;
   derived: SkillsDerivations;
-  onRemove: () => void;
+  onRemove?: () => void;
   onHide: () => void;
   onOpenSkill: (skill: Skill) => void;
   onToggleAll: (on: boolean, scope?: Skill[]) => void;

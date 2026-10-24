@@ -138,13 +138,46 @@ export function useUpdateAgent({ inlineError = false } = {}) {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     onSettled: (_agent, error, vars) => {
-      if (error || (vars.env === undefined && vars.name === undefined)) return;
+      if (error || vars.name === undefined) return;
       askToRestartAfterSave(vars.id);
     },
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't update agent",
       suppressErrorToast: inlineError,
+    },
+  });
+}
+
+export function useSetAgentEnv() {
+  return useMutation({
+    ...trpc.agents.setEnv.mutationOptions(),
+    onSettled: (_agent, error, vars) => {
+      if (!error) askToRestartAfterSave(vars.id);
+    },
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Couldn't save the environment variables",
+    },
+  });
+}
+
+export function useSetCredentialInjection() {
+  return useMutation({
+    ...trpc.agents.setCredentialInjection.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Couldn't change how credentials are injected",
+    },
+  });
+}
+
+export function useSetWhisper() {
+  return useMutation({
+    ...trpc.agents.setWhisper.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsList,
+      errorToast: "Couldn't change whispers",
     },
   });
 }

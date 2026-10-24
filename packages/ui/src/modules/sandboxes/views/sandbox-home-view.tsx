@@ -1,5 +1,4 @@
 import type { PendingRestart } from "agent-runtime-api";
-import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 
@@ -16,6 +15,7 @@ import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
+import { holds, isLockedSection } from "../../agents/lib/agent-permissions.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { useEnvironmentsEnabled } from "../../environments/api/queries.js";
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
@@ -29,7 +29,6 @@ import { AgentManagementActions } from "../components/agent-management-actions.j
 import { AgentUpdateRow } from "../components/agent-update-row.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
-import { EditorAgentHome } from "../components/editor-agent-home.js";
 import { PeopleSection } from "../components/people-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import {
@@ -76,13 +75,10 @@ export function SandboxHomeView() {
       </div>
     );
   }
-  return match(agent.access.role)
-    .with("owner", () => <OwnerAgentHome key={agent.id} agent={agent} />)
-    .with("editor", () => <EditorAgentHome agent={agent} />)
-    .exhaustive();
+  return <AgentHome key={agent.id} agent={agent} />;
 }
 
-function OwnerAgentHome({ agent }: { agent: AgentView }) {
+function AgentHome({ agent }: { agent: AgentView }) {
   const agentId = agent.id;
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -101,6 +97,11 @@ function OwnerAgentHome({ agent }: { agent: AgentView }) {
       (environmentsEnabled && agent?.vm === true
         ? true
         : e.section !== "environments"),
+  );
+  const locked = new Set(
+    sections
+      .map((e) => e.section)
+      .filter((s) => isLockedSection(agent.access, s)),
   );
   const sectionEntry = SECTIONS.find((e) => e.section === section);
   const SectionPictogram = sectionEntry?.pictogram;
@@ -128,13 +129,16 @@ function OwnerAgentHome({ agent }: { agent: AgentView }) {
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}
           warnings={warnings}
+          locked={locked}
         />
         <div className="min-w-0 flex-1 md:max-w-[760px]">
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>
               {newLayout && <AgentUpdateRow agent={agent} />}
-              <AgentUsageActions agent={agent} />
+              {holds(agent.access, "sessions") && (
+                <AgentUsageActions agent={agent} />
+              )}
               <SandboxSetupSection agent={agent} />
               <AgentManagementActions agent={agent} display={display} />
             </>

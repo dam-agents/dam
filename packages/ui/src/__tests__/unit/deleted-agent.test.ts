@@ -1,9 +1,12 @@
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
   agentFallback,
   departedAgents,
 } from "../../modules/agents/lib/deleted-agent.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 /**
  * TEST_OVERVIEW: A tab open on an agent learns that it is gone only when its
@@ -17,12 +20,17 @@ import {
 const own = (id: string) => ({
   id,
   name: id,
-  access: { role: "owner" as const, editors: [] },
+  access: { role: "owner" as const, editors: [], permissions: OWNS },
 });
 const shared = (id: string) => ({
   id,
   name: id,
-  access: { role: "editor" as const, ownerEmail: null, editors: [] },
+  access: {
+    role: "editor" as const,
+    ownerEmail: null,
+    editors: [],
+    permissions: [],
+  },
 });
 
 describe("departed agent", () => {

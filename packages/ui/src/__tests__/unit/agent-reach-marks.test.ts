@@ -17,7 +17,9 @@ import type { AgentView } from "../../types.js";
 const fake = vi.hoisted(() => ({ agents: [] as unknown[] }));
 vi.mock("../../modules/agents/api/queries.js", async (original) => ({
   ...(await original<object>()),
-  useAgentsList: () => fake.agents,
+  useAgents: () => ({ data: { list: fake.agents, shared: [] } }),
+  useAgent: (id: string) =>
+    (fake.agents as AgentView[]).find((a) => a.id === id) ?? null,
 }));
 
 const withState = (state: AgentView["state"]) =>

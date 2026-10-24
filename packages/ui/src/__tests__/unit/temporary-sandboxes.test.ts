@@ -1,3 +1,4 @@
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -5,6 +6,8 @@ import {
   splitTemporarySandboxes,
 } from "../../modules/agents/utils/temporary-sandboxes.js";
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   id,
@@ -36,7 +39,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
-  access: { role: "owner", editors: [] },
+  access: { role: "owner", editors: [], permissions: OWNS },
   ...overrides,
 });
 

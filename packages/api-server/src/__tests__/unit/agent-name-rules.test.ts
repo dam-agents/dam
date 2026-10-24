@@ -47,6 +47,7 @@ function setup(existing: ReturnType<typeof agent>[]) {
   );
   const agents = createAgentsService({
     owner: "owner-1",
+    actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
       list: async (owner) => existing.filter((a) => a.owner === owner),
       get: async (id) => existing.find((a) => a.id === id) ?? null,

@@ -27,6 +27,7 @@ async function createdBackend(
   const specs: Record<string, unknown>[] = [];
   const agents = createAgentsService({
     owner: "owner-1",
+    actor: "owner-1",
     virtualizationEnabled,
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [],

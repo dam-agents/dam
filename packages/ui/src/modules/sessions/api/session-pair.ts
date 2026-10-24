@@ -20,7 +20,7 @@ import {
   useIsAgentAnswerableSoon,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import { useAgentPageConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import { catalogSettled, sameModel } from "../lib/catalog-groups.js";
@@ -216,7 +216,8 @@ export function useProviderConnections(agentId: string | null): {
   failed: boolean;
 } {
   const { data: grants, isError: grantsFailed } = useAgentConnections(agentId);
-  const { data: connections, isError: connectionsFailed } = useAppConnections();
+  const { data: connections, isError: connectionsFailed } =
+    useAgentPageConnections(agentId);
   return {
     ...grantedProviderRefs(
       (grants?.connections ?? []).map((g) => g.connectionId),

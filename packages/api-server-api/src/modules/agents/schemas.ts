@@ -133,7 +133,7 @@ export const agentCreateInputSchema = z.object({
   sweepable: z.boolean().optional(),
   lifetimeMs: z.number().int().min(0).optional(),
 });
-export const agentUpdateInputSchema = z.object({
+export const agentPatchSchema = z.object({
   id: z.string().min(1),
   name: agentNameSchema.max(255).optional(),
   description: z.string().optional(),
@@ -144,6 +144,35 @@ export const agentUpdateInputSchema = z.object({
   size: agentSizeSchema.optional(),
   requireConnectionAddress: z.boolean().optional(),
   whisper: z.boolean().optional(),
+});
+
+export const agentUpdateInputSchema = agentPatchSchema.pick({
+  id: true,
+  name: true,
+  description: true,
+  avatar: true,
+  hibernationTimeoutMin: true,
+  size: true,
+});
+
+export const agentSetEnvInputSchema = z.object({
+  id: z.string().min(1),
+  env: z.array(envVarSchema).max(64),
+});
+
+export const agentSetSecretRefInputSchema = z.object({
+  id: z.string().min(1),
+  secretRef: z.string(),
+});
+
+export const agentSetCredentialInjectionInputSchema = z.object({
+  id: z.string().min(1),
+  requireConnectionAddress: z.boolean(),
+});
+
+export const agentSetWhisperInputSchema = z.object({
+  id: z.string().min(1),
+  whisper: z.boolean(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

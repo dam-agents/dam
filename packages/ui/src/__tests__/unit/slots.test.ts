@@ -1,4 +1,5 @@
 import type { BudgetReserved } from "api-server-api";
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,6 +12,8 @@ import {
   slotUnitOf,
 } from "../../modules/budgets/lib/slots.js";
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const GI = 1024 ** 3;
 
@@ -55,7 +58,7 @@ const agent = (
   environmentOf: null,
   vm: false,
   runtimeMigration: null,
-  access: { role: "owner", editors: [] },
+  access: { role: "owner", editors: [], permissions: OWNS },
 });
 
 describe("slots", () => {

@@ -1,6 +1,7 @@
 import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
+import type { AgentPermission } from "./permissions.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
 import type {
   KitUpdatePending,
@@ -10,7 +11,7 @@ import type {
 import type {
   agentCreateInputSchema,
   agentKindSchema,
-  agentUpdateInputSchema,
+  agentPatchSchema,
 } from "./schemas.js";
 
 export { ChannelType };
@@ -206,7 +207,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   noDefaultProvider?: boolean;
   environmentOf?: string;
 };
-export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
+export type AgentUpdateInput = z.infer<typeof agentPatchSchema>;
 
 export interface BackgroundWorkItemView {
   id: string;
@@ -312,8 +313,13 @@ export interface RuntimeFleet {
 }
 
 export type AgentAccess =
-  | { role: "owner"; editors: string[] }
-  | { role: "editor"; ownerEmail: string | null; editors: string[] };
+  | { role: "owner"; editors: string[]; permissions: AgentPermission[] }
+  | {
+      role: "editor";
+      ownerEmail: string | null;
+      editors: string[];
+      permissions: AgentPermission[];
+    };
 
 export interface AgentWithAccess {
   agent: Agent;

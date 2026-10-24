@@ -11,7 +11,7 @@ import { GatewayFailureBadge } from "../../agents/components/gateway-failure-bad
 import { SharedBadge } from "../../agents/components/shared-badge.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
-import { isSharedAgent } from "../../agents/lib/agent-editors.js";
+import { isSharedAgent, ownerLine } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 
@@ -38,6 +38,14 @@ export function SandboxIdentity({ agent, display }: Props) {
         <GatewayFailureBadge agent={agent} />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
       </div>
+      {agent.access.role === "editor" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="agent-owner-line"
+        >
+          {ownerLine(agent.access.ownerEmail)}
+        </p>
+      )}
       {!newLayout && <AgentRuntimeStatus agent={agent} />}
     </div>
   );

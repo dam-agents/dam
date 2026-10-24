@@ -37,6 +37,7 @@ import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
 import type { AgentEditorsRepository } from "../infrastructure/agent-editors-repository.js";
 import { accessTo, namesOwner } from "../domain/agent-access.js";
+import { permissionsOf } from "../domain/agent-permissions.js";
 import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import { getLogger } from "../../../core/logger.js";
@@ -478,7 +479,7 @@ export function executeSlackBind(deps: {
 }
 
 export function executeTemplateUpgrade(deps: {
-  owner: string | undefined;
+  actor: string | undefined;
   actorKind?: "user" | "system";
   getAgent: (id: string) => Promise<InfraAgent | null>;
   readTemplateSpec: ReadTemplateSpec;
@@ -517,7 +518,7 @@ export function executeTemplateUpgrade(deps: {
     if (!patched) return err({ type: "AgentNotFound" as const });
     securityLog("info", "agent.upgrade", {
       category: "resource",
-      actor: deps.owner ?? null,
+      actor: deps.actor ?? null,
       actorKind: deps.actorKind ?? "user",
       agentId: id,
       result: "success",
@@ -559,6 +560,7 @@ export function createAgentsService(deps: {
   agentEnvRepo: AgentEnvRepository;
   agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
+  actor: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
   lastHelloAt?: (agentId: string) => Promise<Date | null>;
   presetSeeder?: PresetSeeder;
@@ -591,7 +593,10 @@ export function createAgentsService(deps: {
     ): Promise<void>;
   };
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
-  listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
+  listChannelsByAgent: (
+    agentId: string,
+    owner: string,
+  ) => Promise<ChannelConfig[]>;
   deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
   deleteSlackChannelByAgent: (
     agentId: string,
@@ -653,7 +658,7 @@ export function createAgentsService(deps: {
     if (owner && (await deps.secretRefs.isOwnedBy(secretRef, owner))) return;
     securityLog("warn", "agent.secret_ref.refused", {
       category: "resource",
-      actor: deps.owner ?? null,
+      actor: deps.actor ?? null,
       actorKind: "user",
       result: "failure",
       ...(agentId ? { agentId } : {}),
@@ -755,8 +760,11 @@ export function createAgentsService(deps: {
     return { labels, loopGuard };
   }
 
-  async function labelledChannelsOf(agentId: string): Promise<ChannelConfig[]> {
-    const channels = await deps.listChannelsByAgent(agentId);
+  async function labelledChannelsOf(
+    agentId: string,
+    owner: string,
+  ): Promise<ChannelConfig[]> {
+    const channels = await deps.listChannelsByAgent(agentId, owner);
     return withSlackChannelNotes(channels, await slackChannelNotes([channels]));
   }
 
@@ -796,7 +804,7 @@ export function createAgentsService(deps: {
   ): Promise<ReturnType<typeof assembleAgent>> {
     const [channels, status, userEnv, templateUpdate, checklists] =
       await Promise.all([
-        labelledChannelsOf(infra.id),
+        labelledChannelsOf(infra.id, infra.owner ?? deps.owner ?? ""),
         safeStatus(infra.id),
         deps.agentEnvRepo.list(infra.id),
         templateUpdateFor(infra),
@@ -820,7 +828,7 @@ export function createAgentsService(deps: {
     if (!deps.owner || (await deps.repo.isOwnedBy(id, deps.owner))) return true;
     securityLog("warn", "authz.owner_mismatch", {
       category: "authz",
-      actor: deps.owner,
+      actor: deps.actor ?? null,
       actorKind: "user",
       agentId: id,
       decision: "deny",
@@ -899,7 +907,7 @@ export function createAgentsService(deps: {
     if (txResult.value.claimedDefault) {
       securityLog("info", "channel.default_changed", {
         category: "authz-list",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         surface: "slack",
         agentId: id,
@@ -919,7 +927,7 @@ export function createAgentsService(deps: {
     if (wasAmbient !== requestedAmbient) {
       securityLog("info", "channel.ambient_toggled", {
         category: "authz-list",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         surface: "slack",
         agentId: id,
@@ -961,7 +969,7 @@ export function createAgentsService(deps: {
     if (orphans.length > 0) {
       securityLog("warn", "agent.channels.orphan_purge", {
         category: "authz-list",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         detail: { agentIds: orphans },
       });
@@ -1025,6 +1033,7 @@ export function createAgentsService(deps: {
         ? await deps.resolveUserEmail(infra.owner).catch(() => null)
         : null,
       editors,
+      permissions: permissionsOf("editor"),
     };
   }
 
@@ -1058,6 +1067,7 @@ export function createAgentsService(deps: {
         access: {
           role: "owner" as const,
           editors: editors.get(agent.id) ?? [],
+          permissions: permissionsOf("owner"),
         },
       }));
       return match(scope)
@@ -1083,7 +1093,7 @@ export function createAgentsService(deps: {
         agent,
         access:
           role === "owner"
-            ? { role, editors }
+            ? { role, editors, permissions: permissionsOf(role) }
             : await editorAccess(infra, editors),
       };
     },
@@ -1097,7 +1107,7 @@ export function createAgentsService(deps: {
       const change = await deps.editors.replace(id, emails);
       securityLog("info", "agent.editors_set", {
         category: "authz-list",
-        actor: deps.owner,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1127,7 +1137,7 @@ export function createAgentsService(deps: {
         return { ok: false, error: { type: "NotAnEditor" } };
       securityLog("info", "agent.editor_leave", {
         category: "authz-list",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1382,7 +1392,7 @@ export function createAgentsService(deps: {
           } catch (cleanupErr) {
             securityLog("error", "agent.create.pull_secret_orphaned", {
               category: "resource",
-              actor: owner || null,
+              actor: deps.actor ?? null,
               actorKind: "user",
               result: "failure",
               reason:
@@ -1445,7 +1455,7 @@ export function createAgentsService(deps: {
       );
       securityLog("info", "agent.create", {
         category: "resource",
-        actor: owner || null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: agent.id,
         result: "success",
@@ -1568,7 +1578,7 @@ export function createAgentsService(deps: {
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
-          actor: deps.owner ?? null,
+          actor: deps.actor ?? null,
           actorKind: "user",
           agentId: input.id,
           result: "success",
@@ -1600,7 +1610,7 @@ export function createAgentsService(deps: {
         } catch (err) {
           securityLog("warn", "agent.delete.cleanup_failed", {
             category: "resource",
-            actor: deps.owner ?? null,
+            actor: deps.actor ?? null,
             actorKind: "user",
             agentId: id,
             result: "failure",
@@ -1610,7 +1620,7 @@ export function createAgentsService(deps: {
       }
       securityLog("info", "agent.delete", {
         category: "resource",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1627,7 +1637,7 @@ export function createAgentsService(deps: {
       if (restarted) {
         securityLog("info", "agent.restart", {
           category: "privileged",
-          actor: deps.owner ?? null,
+          actor: deps.actor ?? null,
           actorKind: "user",
           agentId: id,
           result: "success",
@@ -1648,7 +1658,7 @@ export function createAgentsService(deps: {
       const infra = woke.value;
       securityLog("info", "agent.wake", {
         category: "privileged",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1666,7 +1676,7 @@ export function createAgentsService(deps: {
       await deps.repo.wakeIfHibernated(id);
       securityLog("info", "agent.workspace_retry", {
         category: "privileged",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1697,7 +1707,7 @@ export function createAgentsService(deps: {
       if (!infra) return null;
       securityLog("info", "agent.sleep", {
         category: "privileged",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1716,7 +1726,7 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" });
       securityLog("info", disabled ? "agent.disable" : "agent.enable", {
         category: "privileged",
-        actor: deps.owner ?? null,
+        actor: deps.actor ?? null,
         actorKind: "user",
         agentId: id,
         result: "success",
@@ -1731,7 +1741,7 @@ export function createAgentsService(deps: {
 
     async upgrade(id, expectedToImage) {
       const result = await executeTemplateUpgrade({
-        owner: deps.owner,
+        actor: deps.actor,
         getAgent: (agentId) => deps.repo.get(agentId, deps.owner),
         readTemplateSpec: deps.readTemplateSpec,
         patchSpec: (agentId, patch) =>

@@ -27,7 +27,7 @@ export function StandaloneSkillsGroup({
   readOnly: boolean;
   publishes: SkillPublishRecord[];
   canPublish: boolean;
-  onPublish: (skill: LocalSkill) => void;
+  onPublish?: (skill: LocalSkill) => void;
   onDownload: (skill: LocalSkill) => void;
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   onTrack: (skill: LocalSkill, target: ReadyTrackTarget) => void;
@@ -71,7 +71,7 @@ export function StandaloneSkillsGroup({
             publish={pub}
             readOnly={readOnly}
             canPublish={canPublish}
-            onPublish={() => onPublish(skill)}
+            onPublish={onPublish && (() => onPublish(skill))}
             onDownload={() => onDownload(skill)}
             onDelete={() => onDelete(skill, pub)}
             onTrack={(target) => onTrack(skill, target)}
