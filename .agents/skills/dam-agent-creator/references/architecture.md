@@ -5,11 +5,11 @@ The generated `docs/self-modification.md` cites them rather than restating them.
 
 ## One repo, one data directory, one backup remote
 
-| Path                    | Kind                                                                                                                                 | Holds                                                                                                                                       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `$HOME` (`/home/agent`) | **definition repo** (`origin` = the kit's seed, or where ONBOARDING.md was fetched from — fork-aware either way)                     | `kit.yaml`, `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
-| `$HOME/work`            | **plain data directory — never a git repo** (the shared volume corrupts a concurrently-mutated `.git`; `references/platform-dam.md`) | `CONFIG.md`, `MEMORY.md`, `LESSONS.md`, domain state files, logs                                                                            |
-| state remote            | optional git remote (env var, e.g. `GITHUB_REPO_WORK`)                                                                               | durable, versioned backup of `work/`, written only via the tmpfs backup script                                                              |
+| Path                    | Kind                                                                                                                                           | Holds                                                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$HOME` (`/home/agent`) | **definition repo** (`origin` = the kit's seed, or where ONBOARDING.md was fetched from — fork-aware either way)                               | `kit.yaml`, `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
+| `$HOME/work`            | **plain data directory — never a git repo** (concurrent runs of one machine corrupt a `.git` two of them mutate; `references/platform-dam.md`) | `CONFIG.md`, `MEMORY.md`, `LESSONS.md`, domain state files, logs                                                                            |
+| state remote            | optional git remote (env var, e.g. `GITHUB_REPO_WORK`)                                                                                         | durable, versioned backup of `work/`, written only via the tmpfs backup script                                                              |
 
 Why this shape works:
 
@@ -190,9 +190,9 @@ The work heartbeat decides work only and carries no health check.
   One templated DM to the escalation owner: a header and one bullet per alert from a fixed template, every value a UTC time, a whole number, a class word or an id; event text never travels; a message with any other token is not sent; at most 10 alerts and 12 calls per 24 h; a sent id is acked and leaves the worklist, a failed send leaves it to the session, an `unknown` outcome holds it for its claim time.
   This is **the one designed exception** to "scripts never act", named as such in self-modification §4; a new outward action of a script extends it or belongs to the agent.
   Alerts that need analysis (an anomaly) stay with the session.
-- **Technical history** (`work/health/`, always on, 90 days, no token): one row of counts per UTC hour (gate ticks, broken gates, sessions, items, model and integration failures, classifier blocks, errors, pod boots, backup errors), one incident per condition (`first`, `last_seen`, `open`, `end`), the status of each service at the last tick.
+- **Technical history** (`work/health/`, always on, 90 days, no token): one row of counts per UTC hour (gate ticks, broken gates, sessions, items, model and integration failures, classifier blocks, errors, machine boots, backup errors), one incident per condition (`first`, `last_seen`, `open`, `end`), the status of each service at the last tick.
   Counts, class words, times and ids only — never event text.
-  It answers "why did the agent not run at T": no gate tick → the platform or the pod; a broken gate → the gate; a failed integration or model → them; ticks and no session → nothing was due.
+  It answers "why did the agent not run at T": no gate tick → the platform or the machine; a broken gate → the gate; a failed integration or model → them; ticks and no session → nothing was due.
   An opt-in `health_dashboard` key publishes it as one page in the Artifact Library, updated in place on a status change or every 3 h, redacted, public by link.
 
 ## Writes to the definition repo

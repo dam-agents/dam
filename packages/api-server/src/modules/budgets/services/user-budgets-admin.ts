@@ -13,7 +13,6 @@ import type {
   UserBudgetRow,
   UserBudgetSizes,
 } from "../infrastructure/user-budgets.js";
-import { reservedBy, type BudgetedAgent } from "./budgets-service.js";
 
 export interface BudgetUsers {
   subByEmail(email: string): Promise<string | null>;
@@ -36,23 +35,7 @@ export type UserBudgetsForOperator = (
   operatorSub: string,
 ) => UserBudgetsService;
 
-type OwnedAgent = BudgetedAgent & { owner?: string };
-
-const NO_RESERVATION = { cpuMilli: 0, memoryBytes: 0 };
 const SEARCH_MAX_USERS = 1000;
-
-function reservationsByOwner(
-  agents: readonly OwnedAgent[],
-): Map<string, { cpuMilli: number; memoryBytes: number }> {
-  const byOwner = new Map<string, OwnedAgent[]>();
-  for (const agent of agents) {
-    if (!agent.owner) continue;
-    byOwner.set(agent.owner, [...(byOwner.get(agent.owner) ?? []), agent]);
-  }
-  return new Map(
-    [...byOwner].map(([owner, owned]) => [owner, reservedBy(owned)]),
-  );
-}
 
 function sortRows(
   rows: UserBudgetRow[],
@@ -79,29 +62,24 @@ function sortRows(
   return rows.sort((a, b) => of(b) - of(a) || bySub(a, b));
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the operator's view of every user's own compute budget: one page of them at a time, found by part of an email or an account id and sorted by the last change or by a size, with each user's current reservation. Emails are looked up for the page alone, so a large install costs one directory lookup per row shown. A new budget names its user by email, and an account id only reaches a budget that exists, so a typo never creates a budget for nobody.
+// UNIT_BOUNDARY_DESCRIPTION: the operator's view of every user's own budget: one page of them at a time, found by part of an email or an account id and sorted by the last change or by a size. Emails are looked up for the page alone, so a large install costs one directory lookup per row shown. A new budget names its user by email, and an account id only reaches a budget that exists, so a typo never creates a budget for nobody.
 export function createUserBudgetsAdmin(deps: {
   store: UserBudgetStore;
   users: BudgetUsers;
-  listAgents(): Promise<OwnedAgent[]>;
   defaults: UserBudgetDefaults;
 }): UserBudgetsForOperator {
   const toEntries = async (
     rows: readonly UserBudgetRow[],
     extraSubs: readonly string[] = [],
   ): Promise<UserBudgetEntry[]> => {
-    const [emails, agents] = await Promise.all([
-      deps.users.emailsBySub([
-        ...new Set([
-          ...rows.flatMap((row) =>
-            row.setBySub ? [row.ownerSub, row.setBySub] : [row.ownerSub],
-          ),
-          ...extraSubs,
-        ]),
+    const emails = await deps.users.emailsBySub([
+      ...new Set([
+        ...rows.flatMap((row) =>
+          row.setBySub ? [row.ownerSub, row.setBySub] : [row.ownerSub],
+        ),
+        ...extraSubs,
       ]),
-      deps.listAgents(),
     ]);
-    const reserved = reservationsByOwner(agents);
     return rows.map((row) => ({
       ownerSub: row.ownerSub,
       email: emails.get(row.ownerSub) ?? null,
@@ -111,7 +89,6 @@ export function createUserBudgetsAdmin(deps: {
       setBySub: row.setBySub,
       setByEmail: row.setBySub ? (emails.get(row.setBySub) ?? null) : null,
       updatedAt: row.updatedAt,
-      reserved: reserved.get(row.ownerSub) ?? NO_RESERVATION,
     }));
   };
 

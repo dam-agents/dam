@@ -85,7 +85,7 @@ The definition is project-agnostic: everything specific to one deployment lives 
 ## Runtime requirements
 
 - **Platform:** the DAM agent infrastructure — `$HOME` at `/home/agent` on a persistent
-  volume, the platform's outbound auth proxy for tokens, and the
+  disk, the platform's outbound auth proxy for tokens, and the
   `mcp__platform-outbound__*` tools for schedules and channel messages.
 - **Identity:** the agent acts as the account behind its token — use a **dedicated
   machine/bot account**, never a personal one.

@@ -1,7 +1,7 @@
 # Security Model
 
 > **TL;DR.** Agents are powerful because they *act*, and risky because anything they read can steer them.
-> Platform handles two of the three big risks well: it runs each agent in a Kubernetes pod (so broken-out code is contained), and it hides your API keys behind a proxy (so a compromised agent can't steal them).
+> Platform handles two of the three big risks well: it runs each agent in its own small virtual machine (so broken-out code is contained), and it hides your API keys behind a proxy (so a compromised agent can't steal them).
 > The third risk, private data leaking out after an attacker sneaks instructions into something the agent reads, has no good fix yet, in Platform or anywhere else.
 > The best you can do today is limit where the agent is allowed to send things.
 
@@ -17,30 +17,24 @@ This document explains the three main ways that can hurt you, and what Platform 
 > But `safe-check` is a fake tool built by an attacker.
 > It exploits a hidden bug in the operating system (a zero-day[^1] Linux kernel vulnerability), escapes its sandbox, and takes over the whole server the agent was running on, along with anything else sharing that server.
 
-Platform runs each agent inside its own *pod*.
+Platform runs each agent inside its own *microVM*: a small virtual machine with a kernel of its own.
 Think of it as a sealed room on a server.
 No shared processes, no shared filesystem, no shared network namespace between agents, so even if one agent is taken over, it can't reach into another.
 You should assume the agent is running untrusted code, because prompt injection means anyone who can get text in front of it can make it try things.
-The pod is the wall that contains those things.
+The virtual machine is the wall that contains those things.
 
-The catch: every room on the same server shares one front door, called the *kernel* (the core of the operating system that every program talks to).
-If an attacker finds a bug in that door (a zero-day like the one in the example above), they can walk out of their room and into everyone else's.
-To block this, you need a stronger kind of sandbox, like [gVisor](https://gvisor.dev/) or [Kata Containers](https://katacontainers.io/), that puts an extra door in front of the kernel.
-
-Platform can't turn those on for you; they live a layer *below* Platform, in the infrastructure.
-We strongly recommend enabling one.
-If you don't, you need to assume that anyone who breaks out of one pod has the whole server, so only run Platform on servers where that's an acceptable outcome.
+Every room has its own front door, called the *kernel* (the core of the operating system that every program talks to).
+If an attacker finds a bug in that door (a zero-day like the one in the example above), they take over only their own room's kernel, not the server's.
+To get further they need a second, much rarer bug, in the *hypervisor* that keeps the virtual machines apart.
+Even then they land in a locked-down process that belongs to the agent's owner, so the most they reach is that same owner's other agents, never anyone else's.
 
 Inside the cluster, Platform also limits where a broken-out agent can go *laterally*.
-The agent pod has no admitted network route to anything except its paired gateway pod (enforced by a Kubernetes NetworkPolicy), and the platform's internal services only accept calls carrying a cryptographic mesh identity the agent doesn't have.
+The agent's virtual machine has no network route to anything except its own gateway pod (enforced by the virtual machine's own network and again by a Kubernetes NetworkPolicy), and the platform's internal services only accept calls carrying a cryptographic mesh identity the agent doesn't have.
 See [security-and-credentials](../architecture/security-and-credentials.md) § Intra-cluster identity and admission for the details.
 
-There's one exception: the "local" version of Platform, which runs the whole stack inside a virtual machine on your laptop.
-Putting another sandbox inside a virtual machine is slow and finicky, so we skip it.
-
-So yes: *inside* the virtual machine, an agent has fewer walls between it and the other pods than it would in a proper cluster.
-But the virtual machine itself is a strong wall around everything, and local mode is meant for one person experimenting with their own work, not a shared environment.
-The whole virtual machine is the sealed room; as long as you don't share it, an attacker breaking one pod only gets to the other pods *you* were running anyway.
+There's one exception: the "local" version of Platform on a Mac, which runs the rest of the stack inside a virtual machine on your laptop and every agent on one shared runner on the Mac itself.
+That runner has no per-owner wall, so an agent that broke out of its virtual machine would reach every other agent on the laptop, and the Mac as the user who started it.
+Local mode is meant for one person experimenting with their own work, not a shared environment; as long as you don't share it, an attacker breaking one agent only gets to the other agents *you* were running anyway.
 
 ## Credentials
 
@@ -52,8 +46,8 @@ The whole virtual machine is the sealed room; as long as you don't share it, an 
 > From there, the attacker logs into your Slack workspace and starts scanning messages for anything valuable: passwords, customer data, internal plans.
 
 The trick for solving this is a proxy: a middleman program that sits between the agent and the outside world, letting it use APIs and CLI tools without ever holding the real keys.
-Platform runs Envoy in a **separate paired gateway pod** alongside each agent.
-The agent's outbound traffic is forced through that gateway by a cluster-level NetworkPolicy — the agent pod has no other admitted route to the internet.
+Platform runs Envoy in a **separate gateway pod** alongside each agent.
+The agent's outbound traffic is forced through that gateway: its virtual machine can reach that one address and nothing else, and a cluster-level NetworkPolicy holds the same line — the agent has no other route to the internet.
 The gateway swaps a placeholder for the real credential and only forwards the request if it's headed to the matching upstream.
 
 Here's how it works.
@@ -62,13 +56,13 @@ When the agent sends a request, say to Slack, the request passes through the gat
 The gateway swaps the placeholder for the real key at the very last second, and only if the request is actually going to Slack.
 A request going anywhere else gets no key at all.
 
-The real keys are mounted only into the gateway pod; the agent pod never sees them.
-That means even if an attacker fully takes over the agent's pod, they don't find any real keys to steal, only placeholders that are useless on their own — and they can't reach the gateway's secrets either, because the gateway is a different pod on the other side of the credential boundary.
+The real keys are mounted only into the gateway pod; the agent's virtual machine never sees them.
+That means even if an attacker fully takes over the agent's virtual machine, they don't find any real keys to steal, only placeholders that are useless on their own — and they can't reach the gateway's secrets either, because the gateway is a different pod on the other side of the credential boundary.
 
 Two things to watch out for:
 
 - **Don't bake keys into agent images.** The proxy can only protect the keys it manages.
-  A key hard-coded inside a container is invisible to it and completely exposed.
+  A key hard-coded inside an image is invisible to it and completely exposed.
 - **Don't paste keys into the chat window.** Agents can ask for them, and a compromised agent definitely will.
 
 One thing the proxy *can't* hide: the LLM provider (Anthropic, OpenAI, etc.) still sees every message and every tool result you send to the model, because that's how the model works.
@@ -141,8 +135,8 @@ Better defenses are an open problem, and one we're actively working on.
 
 How Platform realizes the model:
 
-- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, Envoy sidecar credential gateway, cert-manager-issued leaf CA, network boundary, full threat model.
-- [platform-topology](../architecture/platform-topology.md) — the four components and why the agent pod is the trust boundary.
+- [security-and-credentials](../architecture/security-and-credentials.md) — Keycloak identity flow, the Envoy credential gateway in a pod of its own, cert-manager-issued leaf CA, network boundary, full threat model.
+- [platform-topology](../architecture/platform-topology.md) — the four components and why the agent's virtual machine, and its owner's runner, are the trust boundaries.
 - [persistence](../architecture/persistence.md) § Security boundary — workspace residue is adversarial input on the next turn.
 - [Multiplayer](multi-player.md) — the companion doc covering identity, ownership, and what a colleague's turn looks like.
 

@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -10,7 +10,7 @@ Platform persists state on four durable substrates, split cleanly between the pl
 
 - **Postgres** — application state the api-server owns end-to-end.
   Sole writer: api-server; the controller never reads from or writes to Postgres.
-  Holds anything that has to be queryable when no agent pod is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource.
+  Holds anything that has to be queryable when no agent is running (channel bindings, identity links, allow-listed users, schedules) plus any other api-server-only domain resource.
   Session metadata is *not* here — it is agent-owned, save for the one dimension the spend read path cannot lose to hibernation or agent deletion (see the session directory below).
   The bundled instance runs under three login roles — one NOSUPERUSER owner per service (`platform_apiserver`, `platform_keycloak`) plus the bootstrap superuser `platform`, kept as a separate statement-logged role for DBA work — so the api-server's connection credential cannot reach Keycloak's database or escalate.
   Admin sessions carry a per-role `log_statement` default that puts every statement they issue into the pod log for the cluster collector; the server-wide default logs DDL only, so routine application DML stays out of the audit trail while every role and grant change is captured whoever issues it.
@@ -25,10 +25,9 @@ Platform persists state on four durable substrates, split cleanly between the pl
 
 **Agent-owned**:
 
-- **Per-Agent PVCs** — the workspace and `$HOME` mounted into the agent pod.
+- **Machine disks** — each Agent's one disk on its owner's runner claim, holding its workspace and `$HOME`, which [vm storage](vm-storage.md) owns.
   The agent process reads and writes here freely; it has no direct access to Postgres or to the custom resources that describe it.
   Persists across hibernation; reclaimed when the Agent is deleted.
-  On the `vm` Backend there are none: a machine keeps one disk on its owner's runner instead, which [vm storage](vm-storage.md) owns.
 
 Alongside the durable substrates, the platform runs a **Redis** the api-server cannot boot without — a bundled single-replica instance by default, or an external endpoint chosen at deploy time.
 It holds only coordination and ephemeral state (job queues, presence keys, handoff flows, pending [connection secret requests](connections.md#connection), and the pending sign-ins, share sessions and render grants for [restricted artifacts](artifact-library.md)).
@@ -42,7 +41,7 @@ An earlier "K8s is the database" framing predates Postgres landing in the platfo
 This is why schedules live in Postgres and templates never became a CRD.
 
 The controller and api-server never write the same surface — the status subresource makes the split structural, not conventional.
-The agent's only durable surface is the PVC; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
+The agent's only durable surface is its machine disk; everything the platform knows *about* the agent is mirrored onto Postgres or the Agent CR by the api-server or controller, not by the agent itself.
 
 The optional agent-telemetry backend adds a fifth durable substrate, outside this split — see [observability](observability.md).
 It is operator-managed and self-contained: neither the agent nor the controller touches it, and it exists only when that subsystem is enabled.
@@ -53,7 +52,7 @@ It is operator-managed and self-contained: neither the agent nor the controller 
 flowchart LR
   api-server[api-server]
   controller[controller]
-  agent-runtime[agent-runtime pod]
+  agent-runtime[agent-runtime machine]
 
   postgres[(Postgres)]
   objectstore[(Object store<br/>S3-compatible)]
@@ -64,7 +63,7 @@ flowchart LR
     cr-anno[Agent CR<br/>annotations]
   end
 
-  pvc[(Per-Agent PVC)]
+  disk[(Machine disk)]
 
   api-server -->|write| postgres
   api-server -->|read/write| objectstore
@@ -75,14 +74,14 @@ flowchart LR
   controller -->|write| cr-status
   controller -->|read| cr-spec
 
-  agent-runtime -->|read/write| pvc
+  agent-runtime -->|read/write| disk
 ```
 
 ## Substrates
 
 ### Postgres
 
-Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
+Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent is running, plus any domain resource the controller does not reconcile.
 
 - **channel routing** — bindings between external chat surfaces and the Agent/session they map to.
   Owned by [channels](channels.md).
@@ -120,7 +119,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Unlike the catalog above it is not rebuildable: nothing else records what the agent asked for.
   Owned by [starter-kits](starter-kits.md).
 - **public agent profiles** — a projection of each channel-bound Agent's name and owner (`agent_public_profiles`), serving the one unauthenticated read surface.
-  It satisfies the rule above on every count: the controller does not reconcile it, only the api-server reads and writes it, and it must answer with no agent pod running.
+  It satisfies the rule above on every count: the controller does not reconcile it, only the api-server reads and writes it, and it must answer with no agent running.
   What is unusual is *why* it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads.
   Owned by [public-agent-page](public-agent-page.md).
 - **attention record** — the per-owner account of which sessions have asked for a user's attention, plus that user's own dismissal watermarks.
@@ -170,7 +169,7 @@ Each CR carries strict single-writer ownership, made structural by the status su
   Written exclusively by the api-server and validated by the K8s API server at admission against the CRD schema; the controller consumes typed objects without re-validating shape.
   Cross-field and referential rules stay application logic.
 - **`status`** — observed state, written exclusively by the controller through the status subresource.
-  Conditions are the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`); `Ready` is the agent-and-gateway pod intersection and the api-server's sole routing signal.
+  Conditions are the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`); `Ready` is the machine-and-gateway intersection and the api-server's sole routing signal.
 
 There is no stored desired state — the former `desiredState` latch is eliminated.
 Wake is a one-off activity poke, the controller hibernates on idleness, and running-vs-hibernated is recorded as observed status; see [agent-lifecycle](agent-lifecycle.md).
@@ -184,30 +183,20 @@ Two domain resources are deliberately not CRDs:
 - **Templates** stay ConfigMaps — chart-rendered, read-only blueprints copied into an Agent at create time, never reconciled, loaded by the api-server at boot.
 - **Schedules** live in Postgres — only the api-server reads and writes them (see the Postgres/K8s rule above).
 
-### Per-Agent PVCs
+### The machine disk
 
-Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts.
-A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod.
-PVCs are `ReadWriteOnce` on ordinary single-writer storage, which no install needs a shared filesystem class for.
-`ReadWriteOnce` binds a volume to one *node*, not one pod — any number of pods on that node could mount it — so what keeps a workspace single-writer is that the platform runs exactly one writer for it, not the access mode.
-A second writer on another node would not be refused at admission; its pod would schedule and then hang on attach.
-(Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.)
-An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class.
-The pin is also honored by the warm pool and the storage migration below.
+Each Agent's machine keeps its workspace and `$HOME` on one disk on its owner's runner claim; [vm storage](vm-storage.md) owns the disk, what survives a stop and the claim under it.
+The machine's boot seeds `HOME` once from what the image ships there, so image content lands exactly once and files the user later edits are never overwritten by a restarted or upgraded image; the Agent CR's `spec.init` field (and a Template's `init`) is retained but no longer read.
+Image-shipped skills are the one carve-out from this once-per-disk rule: they are seeded, updated, and retired per skill by [image-skill reconciliation](agent-skills.md#image-skill-lifecycle), so a skill added to an image reaches existing disks too, while everything else in the workspace keeps the one-shot semantics.
 
-A home volume mounts empty and shadows whatever the image bakes at that path, so the image's boot seeds it on the volume's first boot from the staged workspace: a no-clobber copy behind a sentinel file, run once per volume, so image content lands exactly once and files the user later edits are never overwritten by a restarted or upgraded image.
-The seed lives in the image's own boot sequence — the container entrypoint, replayed by the VM boot — with no separate init container, and the Agent CR's `spec.init` field (and a Template's `init`) is retained but no longer read.
-Image-shipped skills are the one carve-out from this once-per-volume rule: they are seeded, updated, and retired per skill by [image-skill reconciliation](agent-skills.md#image-skill-lifecycle), so a skill added to an image reaches existing volumes too, while everything else in the workspace keeps the one-shot semantics.
-
-The default Claude Code template persists the workspace and `$HOME`.
-Together these hold:
+The home holds:
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
 - **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store.
-  The session store is what a cold re-attach reads after a pod restart, whichever verb the harness advertises for it ([sessions](sessions.md#session-inside-the-pod)).
-  The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's source of truth for per-session mode, type, `scheduleId`, `threadTs`, a title the platform set, a flag for a session the harness has not stored yet, the session's own reference and the session a one-time run reports to, `createdAt`, the time of the session's last genuine message, and run accounting for scheduled fires (how many the session has served, their summed duration — timed only for machine-driven turns so a human reply never counts — and the start time of each fire, kept as a bounded newest-wins list), surfaced over ACP `_meta.platform` and (for mode and type alone) mirrored into the session directory above — those stamps and the totals are durable, but the marker for the fire currently in flight is not: it cannot outlive the process that set it, so the totals under-count a fire the pod restart interrupted — alongside the trigger-binding, runtime-channel and [processes](agent-processes.md) state files; its Startup Items are in `~/.config/rc`.
+  The session store is what a cold re-attach reads after a restart, whichever verb the harness advertises for it ([sessions](sessions.md#session-inside-the-machine)).
+  The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's source of truth for per-session mode, type, `scheduleId`, `threadTs`, a title the platform set, a flag for a session the harness has not stored yet, the session's own reference and the session a one-time run reports to, `createdAt`, the time of the session's last genuine message, and run accounting for scheduled fires (how many the session has served, their summed duration — timed only for machine-driven turns so a human reply never counts — and the start time of each fire, kept as a bounded newest-wins list), surfaced over ACP `_meta.platform` and (for mode and type alone) mirrored into the session directory above — those stamps and the totals are durable, but the marker for the fire currently in flight is not: it cannot outlive the process that set it, so the totals under-count a fire a restart interrupted — alongside the trigger-binding, runtime-channel and [processes](agent-processes.md) state files; its Startup Items are in `~/.config/rc`.
   The same directory holds the **undelivered-prompts document**: the whole content of user prompts that never reached the harness, and of a prompt the harness took for a session it has not stored yet when the harness exits before it answers (inline images capped, file attachments by name), written only when a prompt is recorded, sent again, or deleted — never on a routine turn — and deliberately separate from session metadata so a corrupt metadata write cannot take user text with it.
-  A record outlives session teardown and pod restarts; it goes when the user resends or deletes it, with its Session, or — the document is byte-capped — when another session's write needs the room, evicting whole sessions oldest-first ([agent-lifecycle](agent-lifecycle.md) owns the delivery contract).
+  A record outlives session teardown and restarts; it goes when the user resends or deletes it, with its Session, or — the document is byte-capped — when another session's write needs the room, evicting whole sessions oldest-first ([agent-lifecycle](agent-lifecycle.md) owns the delivery contract).
   A third document, **active-turns**, marks each session while a turn runs and clears it on every turn end agent-runtime observes; a marker still present at the next boot names a turn whose end it never saw — the process went down mid-turn, SIGKILLed (an OOM group-kill) or shut down by SIGTERM (a Sleep, an eviction; that shutdown marks the marker *stopped*) — which agent-lifecycle's recovery consumes to resume that session automatically — only markers inherited from the previous process, since a turn the new process began before recovery runs is live work and resuming it would answer it twice — its own document again so a corrupt write cannot take run accounting or user text with it.
   The marker of a session the harness has not stored yet also keeps the turn's prompt, the only copy that survives the process.
   The directory also holds the **run-results document**: for each `cli_run` Session and each Session a one-time run reports from, the newest finished run's outcome — prompt identity, stop reason, accumulated assistant text (size-capped per run, marked when cut) — written when the run ends so a detached headless caller can read the result after the in-memory session log is reaped.
@@ -215,60 +204,32 @@ Together these hold:
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`.
   Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
 
-PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained.
-The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
-The volumes a [runtime migration](vm-runtime-migration.md) copied from are the one kind kept past their use: they lose the agent and mount labels, so nothing that lists an agent's volumes counts or mounts them, and are deleted when their retention window passes or the Agent is deleted.
-
-What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`.
-`$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume, npm's cache with it.
+The disk survives hibernation — a stopped machine keeps it — and goes with the Agent on delete.
+What does not survive is the root outside `HOME` once an image of another root generation replaces it, OS-level changes and packages installed at runtime with it ([vm storage](vm-storage.md)).
+`$HOME/.cache` is deliberately kept off the home: the base-image entrypoint redirects it to `/tmp/agent-cache` so churn-heavy tool caches don't load the disk, npm's cache with it.
 The redirect is best-effort: a failed swap costs speed, not the boot.
 
-**Caches outlive their tools.** A cache of a tool the image dropped stays on the volume until the home is full.
+**Caches outlive their tools.** A cache of a tool the image dropped stays on the disk until the home is full.
 A full home keeps agent-runtime up, unsaved state in memory; the chat says so.
 The entrypoint discards at boot the caches no shipped tool reads — Go's module cache, pnpm store layouts the shipped pnpm does not name (aube names its own), npm's once redirected — moved aside and deleted in the background.
-Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
-
-A machine keeps no PVCs: its storage is one disk on the owner's runner, and [vm storage](vm-storage.md) owns it.
+Toolchains the agent installed for itself are never touched.
 
 ### The machine image cache
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory the install's runners share, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
 
-### Warm PVC pool
-
-First-start provisioning of a workspace PVC is slow on production storage — tens of seconds to minutes — because the volume is allocated on demand when the first pod mounts it.
-To hide that latency the controller can keep a **warm pool**: a background buffer of pre-provisioned, already-bound spare PVCs, organized into per-workspace-size pools, that a newly created Agent claims instantly instead of waiting.
-The buffer refills in the background and is operator-tunable; it is disabled by default.
-
-A spare only helps if it holds real storage while idle, so pool PVCs use an **immediate-binding** StorageClass — the agents' own class defers allocation until mount, which would leave a pre-created spare empty.
-At create time, for each persisted mount whose size matches a configured pool, the controller claims one spare and mounts it by name rather than through the StatefulSet's `volumeClaimTemplate`; a mount with no matching pool, or an exhausted pool, falls back to on-demand provisioning so Agent creation never blocks.
-An Agent pinned to a storage class other than the pool's bypasses the pool entirely — a spare on the wrong backend is worse than a slow first start.
-
-Claimed-versus-spare is tracked entirely by labels: an unclaimed spare carries a pool label but **no owning-agent label**, so the orphan-PVC sweep — which acts only on agent-labeled PVCs — leaves it untouched.
-On claim the controller stamps the agent label and removes the available marker in one atomic update; from that point the volume is an ordinary per-Agent PVC, reclaimed on Agent deletion and reattached on wake.
-The claim decision is made once at create and reconstructed from the live StatefulSet on every later reconcile, so it survives hibernate/wake without ever re-rendering the pod's volumes — even if the claimed volume is deleted out-of-band, the agent keeps referencing it by name rather than degrading to a mount with no backing volume.
-
-### Storage migration (transitional)
-
-Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (the since-removed Slack per-person fork and `dam-run` executor) could write into a live agent's workspace.
-Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a sleep-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state; an Agent the runtime migration takes over instead has its gate released and that copy abandoned.
-Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume.
-Throttled fleet-wide, skipping an Agent mid-way through a [runtime migration](vm-runtime-migration.md); a no-op once no RWX workspace volume remains.
-The same machinery also drains workspaces whose class is not the configured destination, and an Agent's storage-class pin overrides that destination for its own volumes — pinning the class a workspace already sits on exempts that Agent from the drain, which is how part of a fleet stays on a faster class while the rest moves.
-Operators keep the old shared filesystem available until the last RWX volume drains, then decommission it.
-
 ## Lifetime
 
-| Event                    | Postgres                                        | Object store                                                                                                                                                         | Agent CR (spec/status) | PVC                        |
-| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------- |
-| Pod restart              | survives                                        | survives                                                                                                                                                             | survives               | survives                   |
-| Hibernate (replicas → 0) | survives                                        | survives                                                                                                                                                             | survives               | survives                   |
-| Wake (replicas → 1)      | survives                                        | survives                                                                                                                                                             | survives               | survives                   |
-| api-server restart       | survives                                        | survives                                                                                                                                                             | survives               | survives                   |
-| Controller restart       | survives                                        | survives                                                                                                                                                             | survives               | survives                   |
-| Agent delete             | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots and, for a root driver, its script sub-agents' output are purged | CR removed             | PVCs removed by controller |
-| Schedule delete          | schedule row removed                            | n/a                                                                                                                                                                  | n/a                    | n/a                        |
-| Satellite delete         | satellite row, grants and jobs removed          | n/a                                                                                                                                                                  | n/a                    | n/a                        |
+| Event                     | Postgres                                        | Object store                                                                                                                                                         | Agent CR (spec/status) | Machine disk          |
+| ------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | --------------------- |
+| Machine restart           | survives                                        | survives                                                                                                                                                             | survives               | survives              |
+| Hibernate (machine stops) | survives                                        | survives                                                                                                                                                             | survives               | survives              |
+| Wake (machine starts)     | survives                                        | survives                                                                                                                                                             | survives               | survives              |
+| api-server restart        | survives                                        | survives                                                                                                                                                             | survives               | survives              |
+| Controller restart        | survives                                        | survives                                                                                                                                                             | survives               | survives              |
+| Agent delete              | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots and, for a root driver, its script sub-agents' output are purged | CR removed             | removed by controller |
+| Schedule delete           | schedule row removed                            | n/a                                                                                                                                                                  | n/a                    | n/a                   |
+| Satellite delete          | satellite row, grants and jobs removed          | n/a                                                                                                                                                                  | n/a                    | n/a                   |
 
 **Agent-scoped rows follow the Agent.** No Postgres table references an Agent by foreign key — the custom resource is the authoritative record, so the database cannot cascade on its own and the api-server owns the cleanup.
 An API delete runs one cleanup per agent-scoped record kind, from a single list declared in the code; most delete the rows.
@@ -280,10 +241,7 @@ It re-reads the candidate's CR right before reaping, so a row written after its 
 The sweep is what makes a deletion done directly in the cluster, or one the api-server crashed halfway through, end in the same state as an API delete.
 The attention record is trimmed on age as well as on delete: a periodic job removes rows past 90 days, so feed cost tracks recent activity rather than an Agent's whole history.
 Kept on purpose: the usage row (soft-deleted, its runtime and config snapshots cleared so a later Agent under the same name starts clean), library artifacts, the activity log, the session directory (kept so spend stays attributable), and the spend ledger.
-Sessions are agent-owned files on the PVC, not Postgres rows — they follow the PVC column, not this one.
-
-Unclaimed warm-pool spares are not tied to any Agent and so are absent from this table — the pool manager reclaims them when it trims a pool below its inventory or when their size pool is removed, never via Agent deletion.
-Once claimed, a spare follows the PVC column above.
+Sessions are agent-owned files on the machine disk, not Postgres rows — they follow the disk column, not this one.
 
 An Agent created on a private custom image carries an agent-scoped image-pull Secret that follows the Agent itself: the api-server writes it at create and removes it on delete (a delete-time cleanup hook, with a label-scoped orphan sweep as backstop).
 This is the opposite of the owner-scoped credential Secrets the gateway injects for egress, which are reusable across an owner's Agents and outlive any single one.
@@ -291,11 +249,11 @@ The mechanism and trust boundary live on [security-and-credentials](security-and
 
 ## Security boundary
 
-The PVC is a **shared mutable surface across every session, trigger, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream, and the documents people attach in a bound channel — is plain context for the next turn.
+The machine disk is a **shared mutable surface across every session, trigger, and channel-driven prompt that runs on the same Agent.** Anything written into the workspace by one turn — model output saved to disk, tool output, files fetched from upstream, and the documents people attach in a bound channel — is plain context for the next turn.
 That last writer is not the Agent's owner: a channel binding admits whoever the messenger admits, so a passer-by can put bytes on the disk a later session reads.
 Treat workspace contents as adversarial input.
 A scheduled job can plant a file that prompt-injects a later user-driven session; a Slack-driven prompt can leak its instructions through residue left on disk.
 
 The platform does not sandbox writes within the workspace.
-Mitigations live elsewhere: NetworkPolicy restricts which upstreams the agent can reach (the agent pod can only dial its paired gateway pod, never an upstream directly), and the gateway pod gates credentialed egress.
+Mitigations live elsewhere: the machine's egress allowlist and the runner's NetworkPolicy restrict which upstreams the agent can reach (the machine can only reach its gateway, never an upstream directly), and the gateway gates credentialed egress.
 The threat model and credential isolation are detailed on [security-and-credentials](security-and-credentials.md).

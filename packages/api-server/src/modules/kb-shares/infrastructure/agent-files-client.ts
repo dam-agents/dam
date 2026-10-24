@@ -1,5 +1,5 @@
 import type { DirListResult } from "agent-runtime-api";
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 
 export class AgentFilesUnreachableError extends Error {
   constructor(agentId: string, cause: string) {
@@ -16,7 +16,7 @@ export function createAgentFilesClient(namespace: string): AgentFilesClient {
   return {
     async listDirs(agentId, paths) {
       try {
-        const result = await agentPodClient(
+        const result = await agentServiceClient(
           agentId,
           namespace,
         ).files.listDirs.query({ paths });

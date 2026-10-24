@@ -136,7 +136,7 @@ urls:
   # routed to the api-server, which host-gates it onto the share-host app.
   # This host is browser-facing only — consumer agents read shared knowledge
   # bases over the in-cluster harness channel, never by dialing this host, so
-  # it does not need to be resolvable from agent pods.
+  # it does not need to be resolvable from a machine.
   share: "" # default: {scheme}://share.{domain}{:port}
   # Content host that serves only artifact documents and raw bytes, framed by
   # the share host. A second origin so artifact code can never act on the
@@ -169,7 +169,7 @@ backchannel:
   port: "4444"
 
 # -- Pull secrets for all pods managed by this chart.
-# Agent pods (managed by the controller) also inherit these secrets.
+# The node image cache and every machine inherit these secrets too.
 # Example:
 #   imagePullSecrets:
 #     - name: my-registry-secret
@@ -190,11 +190,10 @@ commonAnnotations: {}
 commonPodAnnotations: {}
 
 # -- Kubelet probes for chart-managed pods (api-server, ui, keycloak,
-# postgres, redis) AND controller-managed agent / executor pods. Set
+# postgres, redis). Set
 # `enabled: false` to drop all readiness/liveness/startup probes — escape
 # hatch for clusters where the kubelet's probe behavior is causing churn
-# (false-positive restarts, slow rollouts). Plumbed into the controller via
-# `AGENT_PROBES_ENABLED` so newly reconciled pods follow the same setting.
+# (false-positive restarts, slow rollouts).
 probes:
   enabled: true
 
@@ -220,11 +219,13 @@ istio:
   # offline render (helm template, GitOps) and any real cluster fail.
   enforce: true
 
-# -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
-# persistent microVM (smolvm) instead of as a pod, hosted by the **VM
-# runner** — one pod per owner, created by the controller, that holds /dev/kvm
-# and runs the platform's
-# vm-runner agent plus smolvm. A machine persists the agent's home,
+# -- How every agent runs: as a persistent microVM (smolvm), hosted by the
+# **VM runner** — one pod per owner, created by the controller, that holds
+# /dev/kvm and runs the platform's vm-runner agent plus smolvm. There is no
+# other backend, so the install needs a runner: `runner.resources.limits.memory`,
+# `runner.releaseHostPath` and (unless the Mac host runner is in use)
+# `imageCache.hostPath` are required, and the chart refuses an install without
+# them. A machine persists the agent's home,
 # bind-mounted from its one storage disk by platform-init, which the runner
 # runs as every machine's entrypoint; the rest of the guest is a root overlay
 # whose upper layer is on that disk too, kept across stops until an image of
@@ -234,18 +235,17 @@ istio:
 # and a bearer token: the controller mints the token, and cert-manager issues
 # the runner's certificate from the runners' own CA (`runnerCA` below), so
 # virtualization needs cert-manager; the agent Service resolves to the
-# machine's port on that pod; the paired gateway pod is unchanged and the
-# machine may reach nothing but it. Off = the create refuses the vm backend
-# and existing vm agents fail reconcile. One runner per owner; per-user fair-use
-# limits for machines are the upgrade path.
+# machine's port on that pod, and the machine may reach nothing but its
+# gateway. One runner per owner; per-user fair-use limits for machines are the
+# upgrade path.
 # The chart refuses values the controller cannot use. The controller then checks
 # the install against the cluster at startup and every few minutes — a node
 # advertising `runner.devices`, the runner ServiceAccount, the image budget, the
 # memory limit against `reserveMiB`, egress that reaches the cluster's own
 # ranges — logs what it finds, and names any problem on a vm agent whose
 # runner is not ready.
-# -- Environments: sandboxes a vm agent creates for others to open, one per
-# pull request for example. They need `virtualization.enabled`.
+# -- Environments: sandboxes an agent creates for others to open, one per pull
+# request for example.
 environments:
   # -- Domain under which each Environment endpoint gets an address of its
   # own, `<endpoint>-<environment>.<domain>`: one wildcard DNS name and one
@@ -274,7 +274,6 @@ environments:
       secretName: ""
 
 virtualization:
-  enabled: false
   # The shape of every runner pod the controller creates (one per owner).
   runner:
     # Published charts pin this by digest, which a rebuild that changes nothing
@@ -302,10 +301,10 @@ virtualization:
     # startup when no schedulable node matching `nodeSelector` advertises it.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
-    # ServiceAccount — the SCC that admits a runner, since the chart's own
-    # agent SCC refuses the hostPath of the node image cache and of the
-    # release directory, which every runner mounts. Required whenever
-    # `openshift.scc.anyuidCapNet` is on.
+    # ServiceAccount — the SCC that admits a runner, since no SCC the chart
+    # renders admits the hostPath of the node image cache and of the release
+    # directory, which every runner mounts. Required whenever
+    # `openshift.enabled` is on.
     # It must allow DAC_OVERRIDE, the one capability a runner adds (so its
     # VMMs read image files the image keeps from root), and it also admits
     # the node image cache, which sets its own SELinux type (see `imageCache`),
@@ -348,18 +347,18 @@ virtualization:
     # already exists. The rendered class stays even then, because a runner
     # Deployment keeps the class it was rolled with until its pod rolls again. A
     # runner holds every machine of one owner, so that one pod going down costs
-    # the owner every agent they have: a node under memory pressure evicts the
-    # agent pods, which carry no class (0), before it. `preemptionPolicy: Never`
+    # the owner every agent they have: a node under memory pressure takes the
+    # pods with no class (0) before it. `preemptionPolicy: Never`
     # keeps it the other way round too — a runner never preempts anything to be
-    # placed, so a full node waits for room rather than evicting a gateway, an
-    # agent pod or the platform's own control plane. The chart gives that
+    # placed, so a full node waits for room rather than evicting a gateway or
+    # the platform's own control plane. The chart gives that
     # control plane no class of its own, which leaves it below this value; an
     # install that wants it above gives it a class above this one.
     priorityClassName: ""
     priority: 1000
-    # REQUIRED when virtualization.enabled — the install fails without
-    # limits.memory. Machines are processes of this pod, so that limit is also
-    # what the runner admits them against (it refuses one that does not fit,
+    # REQUIRED — the install fails without limits.memory. Machines are
+    # processes of this pod, so that limit is also what the runner admits them
+    # against (it refuses one that does not fit,
     # keeping `reserveMiB` for itself), and never past the memory the node has
     # allocated the pod: a start that the pod's request does not cover waits
     # for the resize below to be applied. It is the owner's whole memory pool,
@@ -420,7 +419,7 @@ virtualization:
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
     # or controller.agent.templateDefaults.nestedVirtualization for all),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
-    # vm-backend install. Every other machine boots without them. A runner
+    # install. Every other machine boots without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
     # (kvm_intel and kvm_amd `nested=1`) and needs a module reload to change,
     # so this value is the install's switch. A nesting guest reaches the host
@@ -534,27 +533,6 @@ virtualization:
     # certificate; `mise run cluster:install` starts it. There is no per-owner
     # boundary: one owner's escaped guest reaches every owner's machines.
     hostAddress: ""
-  # Moving a container agent onto a machine (the Migrate button). Once the
-  # machine has booted from the copy, the home volume the copy was read from is
-  # kept for `retention` (a Go duration) rather than deleted, so an operator can
-  # still recover the agent's pre-migration work. A kept volume carries the
-  # label `agent-platform.ai/retained-for=<agent>` and the annotations
-  # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
-  # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
-  # the controller deletes it when the window passes or the agent is deleted.
-  # `concurrency` caps the copy Jobs running at once in the install and
-  # `ownerConcurrency` those of one owner, whose copies all land on the same
-  # runner claim; a migration past either cap waits, and says so on the Agent.
-  # `cloneSource` makes each copy attempt read a CSI clone of a single-node
-  # (ReadWriteOnce) home volume instead of the volume itself, so a copy never
-  # waits on an attachment the old volume still holds on another node
-  # (Multi-Attach). It applies only to CSI volumes; the storage class's driver
-  # must support volume cloning. Set it to false for a driver that does not.
-  runtimeMigration:
-    retention: 168h
-    concurrency: 10
-    ownerConcurrency: 1
-    cloneSource: true
   # One gateway pod per owner serves every vm Agent of that owner, each on
   # ports of its own behind the agent's own gateway Service, so a wake starts
   # no gateway pod. Off: each vm Agent keeps a gateway pod of its own, which
@@ -578,12 +556,11 @@ virtualization:
     duration: 87600h # 10y
     renewBefore: 720h # 30d
   # A directory on each node that every runner scheduled there shares, and
-  # the only place a runner gets an image from. REQUIRED when
-  # virtualization.enabled. A machine may reach only its gateway, so the guest
-  # cannot pull its own image; it is fetched and unpacked here once, and the
-  # next owner on that node boots the same tree without touching the
-  # registry. It is this install's own directory under the one
-  # etc/openshift-node-config has the nodes create and label, named
+  # the only place a runner gets an image from. REQUIRED. A machine may reach
+  # only its gateway, so the guest cannot pull its own image; it is fetched and
+  # unpacked here once, and the next owner on that node boots the same tree
+  # without touching the registry. It is this install's own directory under the
+  # one etc/openshift-node-config has the nodes create and label, named
   # `<release namespace>/<release name>`, so the installs sharing a node never
   # take each other's.
   # An install with no registry (local dev) stages
@@ -597,7 +574,7 @@ virtualization:
   # SCC refuses hostPath — and that SCC must have `seLinuxContext.type:
   # RunAsAny`: SELinux confines every container to `container_t`, which may
   # neither write nor read the directory the kubelet creates for a hostPath
-  # (it carries the host's `var_lib_t`), so when `openshift.scc.anyuidCapNet`
+  # (it carries the host's `var_lib_t`), so when `openshift.enabled`
   # is on the cache pod runs as `spc_t` at level `s0` and labels the directory
   # `container_file_t` as it starts. Every tree it unpacks inherits that label,
   # which is what lets the runners, still confined, boot from it. Under a
@@ -718,24 +695,12 @@ createAgentNamespace: true
 
 # -- OpenShift-specific knobs. No-op on vanilla Kubernetes.
 openshift:
-  scc:
-    # Custom `anyuid-cap-net` SCC for agent pods on OpenShift. Modeled on
-    # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
-    # init container can run as root; the agent container itself stays at
-    # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities. No VM workload runs under it — a runner refuses
-    # it, since it mounts a hostPath this SCC does not admit, and runs under
-    # the one `virtualization.runner.scc` names. No agent workload can take
-    # the two capabilities either: agent containers are
-    # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
-    # controller refuses a configuration without that block, and an agent
-    # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to
-    # all SAs in `agentNamespace`. Default ON — required for
-    # `iptablesInit`, harmless otherwise (OpenShift admission still
-    # prefers more restrictive SCCs when the pod doesn't request the
-    # extra capabilities).
-    anyuidCapNet:
-      enabled: false
+  # true = this cluster is OpenShift. The chart renders no SCC of its own, so
+  # this tells the chart to require the built-in SCCs `virtualization.runner.scc`
+  # and `virtualization.imageCache.scc` name (both mount hostPaths no
+  # restrictive SCC admits) and to run the node image cache as spc_t, so it can
+  # label the directory it serves.
+  enabled: false
 
 # -- Shared local PostgreSQL instance
 # Set enabled: false when using external/cloud DBs for all services.
@@ -1780,8 +1745,8 @@ apiServer:
 controller:
   # -- Extra annotations for the controller Deployment object / its pod
   # template (merged over commonAnnotations / commonPodAnnotations). These
-  # apply to the controller pod itself, not the agent pods it launches (those
-  # have their own knobs under controller.agent).
+  # apply to the controller pod itself, not the agent machines it launches
+  # (those have their own knobs under controller.agent).
   annotations: {}
   podAnnotations: {}
   image:
@@ -1792,9 +1757,8 @@ controller:
   # -- slog level for the controller: debug | info | warn | error.
   logLevel: info
 
-  # -- Agent pod configuration. Three layers, applied at reconcile time:
-  #   1. `base`             — chart-only platform policy, applied verbatim
-  #                           to every agent + executor pod.
+  # -- Agent configuration. Three layers, applied at reconcile time:
+  #   1. `base`             — chart-only policy, never overridable by an agent.
   #   2. `templateDefaults` — chart-wide fallbacks for fields a template
   #                           can override (template wins when set).
   #   3. harnessTemplates.*   — per-template values (further down).
@@ -1802,137 +1766,31 @@ controller:
   # it at render time with the fixed agent home (/home/agent).
   agent:
     base:
-      # Cluster details (immutable per-agent)
       # Install-wide default pull secrets, listed after an Agent's own
-      # `imagePullSecretRef`. On the vm backend the runner fetches with them
-      # instead of the kubelet (see `virtualization.imageCache`).
+      # `imagePullSecretRef`. The runner fetches with them instead of the
+      # kubelet (see `virtualization.imageCache`).
       imagePullSecrets: [] # must exist in agentNamespace
-      # storageClass for workspace volumes; empty = cluster default. Any
-      # ordinary RWO-capable class works — workspace volumes are always
-      # ReadWriteOnce (#2988), the agent pod is the volume's only writer.
-      # (accessMode is retired: a value still set here is ignored with a
-      # startup warning.)
-      storageClass: ""
 
-      # Lifecycle
-      idleTimeout: "1h" # hibernate idle agents; "0s" disables
-      # vm agents start fast, so they always take this and ignore their own
-      # hibernationTimeout
+      # Lifecycle. A machine starts fast, so every agent takes this and
+      # ignores its own hibernationTimeout; "0s" disables hibernation.
       vmIdleTimeout: "5m"
-      terminationGracePeriod: 5 # gateway pods have a hardcoded drain
-
-      # Pod metadata + scheduling
-      extraLabels: {}
-      extraAnnotations: {}
-      nodeSelector: {}
-      # If a GPU node is tainted, add a matching toleration here (applies to
-      # every agent pod, but only the GPU pod requests nvidia.com/gpu).
-      tolerations: []
-      affinity: {}
-      topologySpreadConstraints: []
-      priorityClassName: ""
-      runtimeClassName: "" # e.g. "kata" for sandboxed runtimes
-
-      # Probes (each sub-field overrides the controller's built-in probe).
-      # Gated by top-level `probes.enabled`.
-      probes: {}
-
-      # ━━━ SECURITY DEFAULTS — DO NOT CHANGE WITHOUT REVIEW ━━━
-      # These ship the cluster-enforced sandbox boundary the platform relies on.
-      # Relaxing them gives the agent container privileges that bypass the
-      # paired-pod credential split and the L7 ext_authz gate.
-      # Agent ConfigMaps cannot set these — chart-only by design.
-      # UID 65532 is the agent user every agent image is built with.
-      podSecurityContext:
-        runAsUser: 65532
-        runAsGroup: 65532
-        runAsNonRoot: true
-        # fsGroup makes a freshly provisioned block volume writable to the
-        # agent: the kubelet chowns the volume root to this group and marks
-        # it setgid at mount -- the standard mechanism for non-root pods on
-        # RWO storage (file/NFS classes and hostPath ignore it). Without it
-        # a new agent's init dies on a root-owned volume root.
-        # OnRootMismatch confines that to the FIRST mount: a volume whose
-        # root already matches is left entirely alone, so neither a large
-        # workspace on wake nor a freshly MIGRATED volume (whose root the
-        # copy Job shapes to match, and whose interior is verified
-        # byte-exact) is ever rewritten. On OpenShift the agents' SCC must
-        # permit fsGroup 65532.
-        fsGroup: 65532
-        fsGroupChangePolicy: OnRootMismatch
-      containerSecurityContext:
-        runAsUser: 65532
-        runAsGroup: 65532
-        runAsNonRoot: true
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: ["ALL"]
-
-      # ━━━ EGRESS LOCKDOWN — pick ONE mode ━━━
-      # Two mutually-exclusive layers (the chart validates). Both ride
-      # on top of HTTPS_PROXY (IP-direct), the per-pair NetworkPolicy,
-      # and the namespace deny-all baseline.
-      #
-      #   - iptablesInit: privileged init container, plain OCI runtime.
-      #     Requires netfilter modules in the guest.
-      #
-      #   - npGateInit: unprivileged init container, works on guests
-      #     without netfilter (Kata/CoCo on OpenShift Sandboxed Containers).
-      iptablesInit:
-        enabled: true
-        # SIG Release distroless-iptables — same image kube-proxy uses.
-        # Ships sh + iptables-wrapper; pinned by tag.
-        # v0.11.1 (2026-10-16) is under the 7-day floor: it carries the Debian
-        # point releases that fix CVE-2026-103111 and CVE-2026-84782 in
-        # v0.11.0, and its go-runner is built with Go 1.27.2, which fixes the
-        # Go stdlib rows the scan reported for the 1.27.1 build. The exception
-        # can go 2026-10-23.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.11.1
-
-      # -- Userspace init container that blocks the agent's main
-      # container until the egress NetworkPolicy is verifiably enforced.
-      # Runs a small shell+curl probe; no caps, works against any guest kernel.
-      npGateInit:
-        enabled: false
-        # Hardened curl image for the probe. The probe is a `sh` loop, so it
-        # needs a shell — use the `-builder` variant (the distroless curl image
-        # has no shell). Any image works as long as it provides /bin/sh + curl.
-        image: registry.access.redhat.com/hi/curl:8.22-builder
-        # Hard deadline before the init container fails the pod. OVN-K
-        # typically converges in well under a second; 30s is generous
-        # for cold node churn / controller restart scenarios.
-        timeoutSeconds: 30
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:
       # (agentHome is retired: the agent home is fixed at /home/agent; a value
       # still set here is ignored with a startup warning.)
 
-      # Left unset so Kubernetes applies its native, tag-based pull policy:
-      # `Always` for a mutable `:latest` (so a repushed tag is actually
-      # re-pulled, not served stale from the node cache) and `IfNotPresent`
-      # for the immutable sha/digest tags the harness images use. Hardcoding a
-      # value here forces it for ALL tags and silently strands `:latest` agents
-      # on a cached image. A template or agent can still set its own override.
-      imagePullPolicy: ""
       storageSize: "10Gi"
       # Default agent Size when neither the user's slider nor the template
       # chooses one. Limits are the user-facing concept (#1900): the Budget
       # bounds Σ limits of a user's running agents, so limits ARE the
-      # agent's "power". Requests are derived at render from
-      # `controller.requestsFromLimits` below; setting `requests` here (or in
-      # a template) overrides the derivation — an operator escape hatch, not
-      # a user concept.
+      # agent's "power". A `requests` set here (or in a template) is carried
+      # onto the Agent as written — an operator escape hatch, not a user
+      # concept.
       #
       # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
       # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
       # an existing sandbox — NEW sandboxes get it directly, existing ones are
-      # backfilled at the identical `legacyAgentSize` below. One thing still
-      # changed from the pre-Sizes chart: the derived default CPU request is
-      # 500m (limit × 0.5) where it used to be an explicit 250m, so a packed
-      # cluster fits fewer default-size agents. Tune
-      # `requestsFromLimits.fraction` if density matters more than burst
-      # headroom.
+      # backfilled at the identical `legacyAgentSize` below.
       resources:
         limits:
           cpu: "1"
@@ -1996,139 +1854,6 @@ controller:
     defaultCpu: "8"
     defaultMemory: "16Gi"
 
-  # -- How pod requests are derived from an agent's limits (#1900). Requests
-  # are scheduling internals, never a user concept: the scheduler packs on
-  # `limit × fraction` (a deterministic 1/fraction overcommit), the floors
-  # keep tiny agents schedulable and fairly weighted under contention. A
-  # template that sets `resources.requests` explicitly bypasses derivation.
-  requestsFromLimits:
-    fraction: "0.5"
-    minCpu: "100m"
-    minMemory: "128Mi"
-
-  # -- Warm PVC pool (#692). A background buffer of pre-provisioned,
-  # already-Bound spare workspace volumes that a newly created agent claims
-  # instantly, instead of waiting tens of seconds to minutes for dynamic
-  # provisioning on first start. Refills in the background. Disabled by default;
-  # when off the controller behaves exactly as before.
-  warmPool:
-    enabled: false
-    # -- StorageClass for spare PVCs. MUST be an Immediate-binding class
-    # (volumeBindingMode: Immediate) so a spare provisions the instant it is
-    # created and sits ready — a WaitForFirstConsumer class (most clusters'
-    # default) will NOT pre-warm, since a spare would sit Pending until
-    # mounted. Point this at an Immediate RWO-capable class.
-    storageClass: ""
-    # -- How often the manager reconciles inventory toward target.
-    replenishInterval: "30s"
-    # -- How long a spare may sit provisioning before it's treated as stuck and
-    # reclaimed. Must exceed the worst-case healthy provisioning time on your
-    # storage, or a slow-but-healthy spare gets reaped and recreated in a loop.
-    maxProvisioningTime: "30m"
-    # -- Per-size buffers. Each entry is an independent pool: keep `target`
-    # ready spares of `size`. An agent claims from the pool matching its
-    # effective workspace size; sizes with no pool fall back to dynamic
-    # provisioning. Size the pools to your templates' storageSize values.
-    sizes: []
-    #  - size: "10Gi"
-    #    target: 3
-    #  - size: "5Gi"
-    #    target: 2
-
-  # -- One-time workspace-volume migration onto ordinary single-writer storage
-  # (#2988). A workspace is migrated when it is still ReadWriteMany, OR when it
-  # sits on a storage class other than `targetStorageClass` below — the second
-  # trigger is what moves a volume that was flipped to ReadWriteOnce but left
-  # on the shared filesystem. The controller forces the agent
-  # down, copies the volume onto a fresh ReadWriteOnce PVC in a Job
-  # (content- and metadata-verified), re-points the StatefulSet, deletes the
-  # old volume, and restores the agent's prior run state. Interrupt-safe and
-  # resumable; a no-op once no RWX workspace volume remains. Keep the old
-  # storage backend (e.g. your managed shared filesystem)
-  # available until the controller stops logging migrations, then decommission
-  # it.
-  #
-  # Enabled by default: the fleet drains itself on upgrade with no owner
-  # action, which is the point. Turning it off is safe at any point and is the
-  # escape hatch if an install's storage semantics (root squash, foreign file
-  # ownership, an unexpected class) stall the copy — a disabled manager
-  # releases every agent it had gated, bins the half-copied targets, and
-  # leaves each agent on the volume it started from. Watch the controller log
-  # through the first drain; `concurrency: 1` makes that easy to follow.
-  storageMigration:
-    enabled: false
-    # -- Storage class migrated workspaces land on: the DESTINATION of the
-    # migration. Empty (default) = the cluster's default class, i.e. ordinary
-    # storage, which is the point of the exercise.
-    #
-    # Deliberately NOT `controller.agent.base.storageClass`: on an install
-    # that has not migrated yet, that field still names the shared filesystem
-    # being drained, so inheriting it would force-restart every agent and copy
-    # every byte only to arrive back on NFS with a different access mode. Set
-    # this to the block class agents should end on, or leave it empty for the
-    # cluster default — and fix `agent.base.storageClass` (and
-    # `warmPool.storageClass`) too, or newly-created agents keep landing on
-    # the old backend.
-    #
-    # An Agent that pins its own storage class (`spec.storageClass` on the
-    # Agent CR) migrates onto — and stays on — its pin instead: pinning the
-    # class a workspace already sits on exempts that agent from the drain.
-    targetStorageClass: ""
-    # -- Permit a migration whose target class is the class the workspace is
-    # already on. Refused by default: it changes the access mode and nothing
-    # else, at the cost of a forced restart and a full copy per agent.
-    allowSameStorageClass: false
-    # -- Floor for a migrated volume's size; empty keeps the source's request.
-    # Set this when the target class prices IOPS PER GIGABYTE (IBM's block
-    # tiers do): a faithfully-sized 1Gi volume then inherits a 1Gi share of
-    # IOPS, and a copy that is bound by per-file operations crawls. Such
-    # classes usually have a minimum volume size anyway, which a smaller
-    # request is silently rounded up to. "10Gi" suits IBM VPC block.
-    minTargetSize: ""
-    # -- How many agents migrate at once. Each migration walks its source
-    # once and reads it twice (copy + checksum), so this cap is the trade
-    # between fleet drain time and pressure on the shared filesystem being
-    # drained — lower it if the filer struggles. Duration is driven by FILE
-    # COUNT, not bytes: every entry is a round-trip and, on an IOPS-capped
-    # class, an IOP. The copy Job logs `phase:` lines with elapsed seconds so
-    # a slow drain can be attributed rather than guessed at.
-    concurrency: 10
-    # -- Reconcile pass interval.
-    interval: "30s"
-    # -- Deprecated, ignored: the copy preserves ownership exactly (the
-    # writer side runs privileged on the target), so no remap consent is
-    # needed. Kept so existing values files keep parsing.
-    allowOwnershipRemap: false
-    # -- Image for the copy Job. Needs bash, GNU tar, GNU coreutils
-    # (find -printf, md5sum) and util-linux (setpriv) — the stock
-    # debian-slim default has all of them.
-    #
-    # The Job runs AS ROOT with split identity inside: every source read is
-    # dropped to the agent uid via setpriv (a root-squashing source share
-    # never honors uid 0), while the target side uses root to own the fresh
-    # volume root, restore exact ownership, and wipe retry residue. On
-    # OpenShift this requires binding an SCC that permits uid 0 (e.g.
-    # anyuid) to the `platform-migration` ServiceAccount in the agents
-    # namespace — an ops-side grant, out of band like all cluster-scoped
-    # security objects:
-    #   oc adm policy add-scc-to-user anyuid -z platform-migration -n <agents-ns>
-    # Without it, the copy pod is rejected at admission, loudly, and the
-    # gated agent waits.
-    #
-    # The runtime migration's copy Job (virtualization.runtimeMigration) runs
-    # under the same ServiceAccount. When the home volume it copies is a block
-    # (ReadWriteOnce) volume it runs as root holding DAC_READ_SEARCH alone,
-    # which `anyuid` does not permit. With `openshift.scc.anyuidCapNet` on,
-    # the chart renders a migration-only SCC for it — uid 0, DAC_READ_SEARCH,
-    # drop ALL, no escalation, runtime/default seccomp — bound to the
-    # `platform-migration` ServiceAccount alone; otherwise grant an SCC of
-    # that shape to it. The storage Job keeps its `anyuid` grant. A refused
-    # copy pod is reported on the Agent with the Job's FailedCreate event.
-    #
-    # The storage Job never mounts a token, joins no mesh, and
-    # deliberately does not inherit the agents' runtimeClassName (Kata
-    # virtiofs refuses guest chown regardless of uid).
-    jobImage: mirror.gcr.io/library/debian:stable-slim
   replicas: 1
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's

@@ -1,21 +1,18 @@
 # VM storage
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
-On the `vm` Backend a machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
+A machine keeps one disk on its owner's [VM runner](vm-runner.md) rather than a volume per mounted path, and an owner's disks all sit on one claim.
 This page owns what that disk holds, what survives a stop, and how the runner keeps the claim from filling.
-The container backend's volumes are [persistence](persistence.md#per-agent-pvcs)'s.
 
 ## The disk
 
-**The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
-A machine has a single disk, and it has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — so what the owner's disks take is what they write, and an Agent's `storageSize`, a mount's size and a starter kit's storage size only containers.
+**A machine has no PVC, and one disk.** That disk has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md)'s `storage`, else the install's value — so what the owner's disks take is what they write.
 A new machine is created at the pool, since every runner release creates a disk at the size it is asked for.
 An existing machine is sent the pool only once its runner has reported the machine's disk, since an older runner would restart a running machine to grow it; until then it keeps the size the Agent's spec gives.
 The path the disk holds apart from the root is `HOME`.
-That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
+That is not a field an Agent sets: `HOME` is fixed, and it is already the only path every template and starter kit in the chart persists.
 The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
-It is per owner rather than per Agent, so the storage-class pin and the [warm pool](persistence.md#warm-pvc-pool) do not apply and the [storage migration](persistence.md#storage-migration-transitional) never sees it.
 An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 
 **The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation.
@@ -49,11 +46,10 @@ Both use the same discard, so a device that refuses one returns nothing.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
-The runner hands every machine a read-only share holding the MITM CA and **platform-init** (and, for a migrated machine until its migration completes, the copied home), and runs platform-init as the machine's entrypoint; it claims the disk, refuses to boot when the disk did not attach, moves the image onto its fresh root, seeds `HOME` once from whatever the image ships there — or, on a machine a [runtime migration](vm-runtime-migration.md) made, from the copy of the old volume the runner holds for it — bind-mounts it, and starts the image's own entrypoint, which it then supervises ([vm-runner](vm-runner.md)).
+The runner hands every machine a read-only share holding the MITM CA and **platform-init**, and runs platform-init as the machine's entrypoint; it claims the disk, refuses to boot when the disk did not attach, moves the image onto its fresh root, seeds `HOME` once from whatever the image ships there, bind-mounts it, and starts the image's own entrypoint, which it then supervises ([vm-runner](vm-runner.md)).
 Any image therefore keeps its agent's home, even one that has never heard of this platform: platform-init is linked statically and needs nothing from the image.
 An image that ships `HOME` as a symlink is seeded from what the link points at, and the link is replaced by a directory before the bind, so the home is on the disk and never on the root an image update discards; a disk an older platform-init gave a linked home is seeded again from what that home holds.
-The storage model is a constant; what varies is a migration's copy, whose entries the guest refuses when they would land outside `HOME`.
-**Nothing from `HOME` is ever run.** The home is the agent's to write, so every step platform-init takes as root comes from the share or from platform-init itself: neither an image that drops to an unprivileged user nor an old volume carried across can plant one, and a `.platform/boot.d` an older home carries is ignored.
+**Nothing from `HOME` is ever run.** The home is the agent's to write, so every step platform-init takes as root comes from the share or from platform-init itself: nothing the home carries can plant one, and a `.platform/boot.d` an older home carries is ignored.
 Beside the agent's home, in a namespace of its own so a `log` directory in that home cannot collide with it, the disk holds the platform state a machine's root cannot keep: the guest's boot log, where an agent's output goes since the harness never writes to the console, kept one boot deep so a machine that died still explains itself on the boot after, and bounded while it is written so an agent that logs without pause cannot fill its disk; an image's boot may keep its extracted trust store in a directory of its root rather than rebuilding it, which the platform's own images, whose rebuild is quick, leave unused.
 The log is rebuilt or resumed by the next boot rather than being state an Agent can lose.
 
@@ -63,9 +59,8 @@ A btrfs disk that does not mount fails the boot and stays as it is, since btrfs 
 A Mac host runner runs the same agent, taken from the runner image.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
-So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
+So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image — that the disk holds a home, and keeps the record for as long as the machine exists.
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
-A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
 The runner makes every new disk itself, btrfs at its full size, before any guest has touched it ([vm-runner](vm-runner.md)).
 A disk from before that, ext4 or btrfs in the old directory layout, fails its boot and is kept as it is ([vm-runner](vm-runner.md)).
@@ -73,7 +68,7 @@ On a Mac host runner the loss is refused, not prevented.
 
 ## The owner's claim
 
-**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, and a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and every disk may grow to the pool, so the claim is created at the pool; the image trees are on the node, not the claim.
+**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have and their bookkeeping, and every disk may grow to the pool, so the claim is created at the pool; the image trees are on the node, not the claim.
 It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
@@ -95,16 +90,15 @@ btrfs reports free space late, and as an estimate that can pass the disk's size,
 A shrink drops whole files, never part of one, and a clean stop releases them all.
 Eviction counts the guard's blocks back as free while no grant holds the guest, so a guest held to the claim does not read its own disk as short.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until their discard reaches it.
-Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
+Past 90% it creates no machine, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
 A storage refusal parks the Agent when its start was what was refused: the gateway goes to zero with the machine it would proxy, the start is retried at the parked tick while the Agent should run, and it starts once space frees.
 A machine that is up is not parked for it, since parking halts a running machine and nothing a guest keeps in memory frees disk: the refusal is then only reported.
 Nor is an Agent that should be asleep: a machine that is absent while it sleeps is still shaped by a create the runner refuses on a critical claim, and parking would flip its status out of hibernated on every pass.
-The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn — once the claim is 90% used, with the figures and the same three ways out.
-A move onto the vm backend meets a stricter read of the same figures: it is refused up front unless the claim would stay under that 90% with twice the home's size added ([runtime migration](vm-runtime-migration.md)).
+The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new Agent — a create, a kit applied, a spawn — once the claim is 90% used, with the figures and the same three ways out.
 Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
-The same read names, beside each machine's disk, what the seeds of migrations not yet ended take of the claim, so a user whose storage is short is shown what fills it ([budgets](budgets.md)).
+The same read names each machine's disk, so a user whose storage is short is shown what fills it ([budgets](budgets.md)).
 Past 90%, and again past 95% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
 
 **A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, and btrfs aborts its transaction and turns the filesystem read-only.

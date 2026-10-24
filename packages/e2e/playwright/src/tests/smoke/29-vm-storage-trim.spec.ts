@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the room a vm agent frees goes back to its owner's storage, and what an agent writes stays inside the share the runner grants it. A machine's disk is a sparse file on the owner's claim, so a file the agent deletes keeps its blocks on the claim until the guest's filesystem discards them, and platform-init is what asks for that discard: the storage disk is mounted `discard=sync`, and it trims the whole disk every minute and before its storage guard preallocates, since a preallocated extent is allocated and no trim reaches it afterwards. The guard is a set of unnamed preallocated files that holds the guest to its share, and it gives room back by dropping whole files, because btrfs keeps the whole physical allocation of an extent a length alone partly released. Without both, the claim only ever grows and a writing agent wedges below the 95% ceiling: everything the owner is shown and refused for reads the claim. Only the vm lane runs this spec, it boots two of the owner's machines because a share is the claim's room divided among the ones running, and it measures each machine's own disk file, the claim itself, and the guest's free space.
+// TEST_OVERVIEW: the room a vm agent frees goes back to its owner's storage, and what an agent writes stays inside the share the runner grants it. A machine's disk is a sparse file on the owner's claim, so a file the agent deletes keeps its blocks on the claim until the guest's filesystem discards them, and platform-init is what asks for that discard: the storage disk is mounted `discard=sync`, and it trims the whole disk every minute and before its storage guard preallocates, since a preallocated extent is allocated and no trim reaches it afterwards. The guard is a set of unnamed preallocated files that holds the guest to its share, and it gives room back by dropping whole files, because btrfs keeps the whole physical allocation of an extent a length alone partly released. Without both, the claim only ever grows and a writing agent wedges below the 95% ceiling: everything the owner is shown and refused for reads the claim. The spec boots two of the owner's machines because a share is the claim's room divided among the ones running, and it measures each machine's own disk file, the claim itself, and the guest's free space.
 import { expect, test } from "@playwright/test";
 
 import {
@@ -12,7 +12,6 @@ import {
   inGuest,
   onRunnerHost,
   refreshingToken,
-  requireBackend,
   runnerPod,
   waitAgentState,
 } from "../../lib/backend.js";
@@ -129,7 +128,7 @@ async function settledRoom(
   }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The vm lane's idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and the per-agent hibernation timeout a spec can set is a container backend setting the vm backend ignores; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
+// UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and a per-agent hibernation timeout a spec can set is not what the sweep reads for a machine; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
 async function keepAwake(id: string): Promise<void> {
   await api.agents.wake.mutate({ id });
   await waitAgentState(api, id, "running");
@@ -161,12 +160,11 @@ function markRoom(id: string, dir: string): string {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the test user's running vm machines other than the case's own, as one comparable key. A share is the claim's room divided among every running machine, so one of these starting or stopping moves the probe's share as much as the case's own sibling does. Specs of other projects run beside this one and own them — the idle sweep hibernates one after 5 minutes, and a spec can wake or start one at any time — so the case reads them and does not touch them (#5624).
+// UNIT_BOUNDARY_DESCRIPTION: the test user's running machines other than the case's own, as one comparable key. A share is the claim's room divided among every running machine, so one of these starting or stopping moves the probe's share as much as the case's own sibling does. Specs of other projects run beside this one and own them — the idle sweep hibernates one after 5 minutes, and a spec can wake or start one at any time — so the case reads them and does not touch them (#5624).
 async function otherMachines(): Promise<string> {
   return (await api.agents.list.query())
     .filter(
       (agent) =>
-        agent.vm &&
         agent.id !== probeId &&
         agent.id !== siblingId &&
         agent.state === "running",
@@ -193,7 +191,6 @@ async function waitFor(
 test.beforeAll(async () => {
   test.setTimeout(900_000);
   api = createRefreshingApiClient(token);
-  await requireBackend(api, "vm");
   await acceptTerms(api);
   for (const name of [
     "e2e-storage-trim",
@@ -206,13 +203,8 @@ test.beforeAll(async () => {
     ),
   ])
     await deleteAgentIfPresent(api, name);
-  probeId = await createAgentOn(api, "vm", "e2e-storage-trim", harnessName);
-  siblingId = await createAgentOn(
-    api,
-    "vm",
-    "e2e-storage-trim-peer",
-    harnessName,
-  );
+  probeId = await createAgentOn(api, "e2e-storage-trim", harnessName);
+  siblingId = await createAgentOn(api, "e2e-storage-trim-peer", harnessName);
   await waitAgentState(api, probeId, "running");
   await waitAgentState(api, siblingId, "running");
 });
@@ -303,7 +295,6 @@ test("the guard gives a machine the room its share gains, and takes it back", as
         if (!siblingId) {
           siblingId = await createAgentOn(
             api,
-            "vm",
             `e2e-storage-trim-move-${++movePeers}`,
             harnessName,
           );
@@ -321,7 +312,6 @@ test("the guard gives a machine the room its share gains, and takes it back", as
         );
         siblingId = await createAgentOn(
           api,
-          "vm",
           `e2e-storage-trim-move-${++movePeers}`,
           harnessName,
         );
@@ -447,7 +437,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       claim.used,
       `a concurrent writer took the claim to ${claim.used} KiB of its ${claim.capacity}`,
     ).toBeLessThanOrEqual(claim.capacity);
-    // UNIT_BOUNDARY_DESCRIPTION: a policy check on the live claim that costs the host no byte, not the claim-ceiling regression: the runner grants each machine's guest its even part of what is left below 95% of the claim's capacity, so no single guest may be granted the whole of that room. The claim's room is read before the grants, and use only grows, so every grant published after that read is a part of a room no larger than the figure used here: a runner that granted one guest the room the claim has, which is how a guest writes into the claim's last blocks, reads above it and fails. Three limits are stated rather than papered over. There is no sum over the observed grants, because a grant read here may predate the claim read or a sibling's renewal, so a sum fails a healthy runner; the cost is that two machines each granted the whole room pass, which only the near-ceiling refusal below can catch. A sum also could not prove the ceiling, since a runner counting machines this case does not observe could grant past 95% overall. And a runner that granted nothing at all would satisfy an upper bound alone, so each grant must also be a positive part. The near-ceiling regression — a guest refused while the claim itself is at 94–95% — needs the claim filled and stays in the `E2E_DISK_FILL_GIB` case below, and it stays open until a lane can fill a small claim without a host budget.
+    // UNIT_BOUNDARY_DESCRIPTION: a policy check on the live claim that costs the host no byte, not the claim-ceiling regression: the runner grants each machine's guest its even part of what is left below 95% of the claim's capacity, so no single guest may be granted the whole of that room. The claim's room is read before the grants, and use only grows, so every grant published after that read is a part of a room no larger than the figure used here: a runner that granted one guest the room the claim has, which is how a guest writes into the claim's last blocks, reads above it and fails. Three limits are stated rather than papered over. There is no sum over the observed grants, because a grant read here may predate the claim read or a sibling's renewal, so a sum fails a healthy runner; the cost is that two machines each granted the whole room pass, which only the near-ceiling refusal below can catch. A sum also could not prove the ceiling, since a runner counting machines this case does not observe could grant past 95% overall. And a runner that granted nothing at all would satisfy an upper bound alone, so each grant must also be a positive part. The near-ceiling regression — a guest refused while the claim itself is at 94–95% — needs the claim filled and stays in the `E2E_DISK_FILL_GIB` case below, and it stays open until a run can fill a small claim without a host budget.
     const roomMiB = Math.max(
       0,
       Math.round((0.95 * claim.capacity - claim.used) / 1024),
@@ -547,7 +537,6 @@ test("a refused agent has filled the claim to its ceiling", async () => {
   if (!siblingId)
     siblingId = await createAgentOn(
       api,
-      "vm",
       "e2e-storage-trim-peer-2",
       harnessName,
     );
@@ -573,7 +562,7 @@ test("a refused agent has filled the claim to its ceiling", async () => {
       ].join("\n"),
     );
   try {
-    // UNIT_BOUNDARY_DESCRIPTION: the budget is spent a chunk at a time, and the last chunk is whatever is left of it: a request capped at the reservation keeps every byte inside it, and the measured slack and the whole chunk after the fill leave room for the renewed refusal. A refusal with nothing left to write is not the wedge by itself: the runner republishes every grant on its 30 s look and the guard may move once per 30 s backoff, so the case waits that window out, writes again, and counts the refusal stable only when the write after the window is refused too. Both machines are woken every round, since the lane stops one whose harness reports idle for 5 minutes and a fill of several GiB outlasts that.
+    // UNIT_BOUNDARY_DESCRIPTION: the budget is spent a chunk at a time, and the last chunk is whatever is left of it: a request capped at the reservation keeps every byte inside it, and the measured slack and the whole chunk after the fill leave room for the renewed refusal. A refusal with nothing left to write is not the wedge by itself: the runner republishes every grant on its 30 s look and the guard may move once per 30 s backoff, so the case waits that window out, writes again, and counts the refusal stable only when the write after the window is refused too. Both machines are woken every round, since the sweep stops one whose harness reports idle for 5 minutes and a fill of several GiB outlasts that.
     const deadline = Date.now() + CEILING_MS;
     let availMiB = Number.POSITIVE_INFINITY;
     let refusalsInARow = 0;

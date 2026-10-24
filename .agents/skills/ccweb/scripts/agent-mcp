@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Make one JSON-RPC call to the platform MCP server as an agent, from inside
-# the agent's pod, so it carries that agent's mesh identity. Stands in for a
-# model when the harness is the scripted mock. Prints the JSON-RPC response.
+# Make one JSON-RPC call to the platform MCP server as an agent, running curl
+# inside the agent's machine, so the call leaves through that agent's gateway
+# and carries its name. Stands in for a model when the harness is the scripted
+# mock. Prints the JSON-RPC response.
 #
 # Usage: agent-mcp <agent-id> <method> [params-json]
 #   agent-mcp agent-1a2b tools/list
@@ -9,6 +10,21 @@
 set -euo pipefail
 AGENT="$1" METHOD="$2" PARAMS="${3:-{\}}"
 BODY=$(printf '{"jsonrpc":"2.0","id":1,"method":"%s","params":%s}' "$METHOD" "$PARAMS")
-mise run -q cluster:kubectl -- -n platform-agents exec "$AGENT-0" -c agent -- \
-  sh -c 'curl -sS -m 300 -X POST "$PLATFORM_MCP_URL" -H "content-type: application/json" -H "accept: application/json, text/event-stream" -H "mcp-protocol-version: 2025-06-18" --data-binary "$0"' "$BODY" \
+NAMESPACE="${AGENT_NS:-platform-agents}"
+kubectl() { mise run -q cluster:kubectl -- -n "$NAMESPACE" "$@"; }
+OWNER=$(kubectl get agents.agent-platform.ai "$AGENT" -o 'jsonpath={.metadata.labels.agent-platform\.ai/owner}')
+RUNNER=$(kubectl get pod -l "app.kubernetes.io/component=vm-runner,agent-platform.ai/owner=$OWNER" -o 'jsonpath={.items[0].metadata.name}')
+# The machine's launch record carries the platform env the image's own entrypoint
+# gets, PLATFORM_MCP_URL among it; an exec'd command inherits only PATH.
+GUEST=$(cat <<'EOF'
+url=$(tr -d '\n' < /platform/launch.json | sed -n 's/.*"PLATFORM_MCP_URL","\([^"]*\)".*/\1/p')
+curl -sS -m 300 -X POST "$url" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-06-18' \
+  --data-binary "$0"
+EOF
+)
+kubectl exec "$RUNNER" -c vm-runner -- \
+  /usr/local/libexec/vm-runner/vm-runner exec "$AGENT" -- sh -c "$GUEST" "$BODY" \
   | sed -n 's/^data: //p'

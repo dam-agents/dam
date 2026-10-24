@@ -1,4 +1,4 @@
-import { podSessionNoticeSchema } from "agent-runtime-api";
+import { sessionNoticeSchema } from "agent-runtime-api";
 
 import {
   useAgentLacksLiveUpdates,
@@ -16,7 +16,7 @@ export function useSessionWatch(agentId: string | null) {
     enabled: runState === "running" && !compat,
     subscribe: (trpc, onData, onError) =>
       trpc.sessions.watch.subscribe(undefined, { onData, onError }),
-    notice: podSessionNoticeSchema,
+    notice: sessionNoticeSchema,
     invalidate: (queryClient, id) =>
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(id),

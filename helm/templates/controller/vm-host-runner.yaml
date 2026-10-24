@@ -1,4 +1,4 @@
-{{- if and .Values.virtualization.enabled .Values.virtualization.runner.hostAddress }}
+{{- if .Values.virtualization.runner.hostAddress }}
 {{- /*
 The one runner outside the cluster (virtualization.runner.hostAddress). The
 controller reads its credentials by these names, as it reads a runner pod's,

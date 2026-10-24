@@ -102,19 +102,18 @@ const { AgentManagementActions } =
 const { SandboxHomeView } =
   await import("../../modules/sandboxes/views/sandbox-home-view.js");
 
-const agent = (vm = true) =>
+const agent = () =>
   ({
     id: "agent-dev",
     name: "dam",
-    vm,
     disabled: false,
     env: [],
   }) as unknown as AgentView;
 
-const renderRow = (vm = true) =>
+const renderRow = () =>
   renderToStaticMarkup(
     createElement(AgentManagementActions, {
-      agent: agent(vm),
+      agent: agent(),
       display: { state: "running", powerAction: "restart" } as never,
     }),
   );
@@ -124,14 +123,13 @@ const renderPage = (section: string) => {
   return renderToStaticMarkup(createElement(SandboxHomeView));
 };
 
-// TEST_SCENARIO: the section navigation offers Environments only for a vm agent, with the feature on, and once it owns at least one; it never flashes the entry while the list is still loading.
+// TEST_SCENARIO: the section navigation offers Environments with the feature on, and once the agent owns at least one; it never flashes the entry while the list is still loading.
 it("shows the section only once the agent owns an Environment", () => {
-  expect(environmentsShown({ enabled: true, vm: true, count: 1 })).toBe(true);
+  expect(environmentsShown({ enabled: true, count: 1 })).toBe(true);
   for (const off of [
-    { enabled: true, vm: true, count: 0 },
-    { enabled: true, vm: true, count: undefined },
-    { enabled: false, vm: true, count: 1 },
-    { enabled: true, vm: false, count: 1 },
+    { enabled: true, count: 0 },
+    { enabled: true, count: undefined },
+    { enabled: false, count: 1 },
   ])
     expect(environmentsShown(off)).toBe(false);
 });
@@ -156,10 +154,4 @@ it("links to the section from the Manage card only while the agent has none", ()
   state.loading = true;
   expect(renderRow()).not.toContain("Choose who may open Environments");
   state.loading = false;
-});
-
-// TEST_SCENARIO: a container agent never owns Environments, so no row offers to set who may open them.
-it("offers no row for a container agent", () => {
-  state.count = 0;
-  expect(renderRow(false)).not.toContain("Choose who may open Environments");
 });

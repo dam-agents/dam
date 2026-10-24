@@ -3,7 +3,7 @@ import type {
   PrStateCandidate,
 } from "../infrastructure/agent-skills-repository.js";
 import type { PrStateReader } from "../infrastructure/pr-state-reader.js";
-import { derivePrState, type PodPrStateReader } from "../domain/pr-state.js";
+import { derivePrState, type AgentPrStateReader } from "../domain/pr-state.js";
 import type { PrCoordinates } from "../domain/pr-url.js";
 import { parsePrUrl } from "../domain/pr-url.js";
 
@@ -16,7 +16,7 @@ export interface PrStateResolver {
 interface ResolverDeps {
   agentSkills: AgentSkillsRepository;
   reader: PrStateReader;
-  podReader: PodPrStateReader;
+  agentReader: AgentPrStateReader;
   log: (msg: string) => void;
 }
 
@@ -77,13 +77,13 @@ export function createPrStateResolver(deps: ResolverDeps): PrStateResolver {
 }
 
 async function resolveThroughPods(
-  deps: Pick<ResolverDeps, "agentSkills" | "podReader">,
+  deps: Pick<ResolverDeps, "agentSkills" | "agentReader">,
   candidate: { prUrl: string; agentIds: string[] },
   coords: PrCoordinates,
   now: Date,
 ): Promise<number> {
   for (const agentId of candidate.agentIds) {
-    const result = await deps.podReader.read(agentId, coords);
+    const result = await deps.agentReader.read(agentId, coords);
     if (result.kind === "state") {
       await deps.agentSkills.setPrState(candidate.prUrl, {
         prState: derivePrState(result.disposition),

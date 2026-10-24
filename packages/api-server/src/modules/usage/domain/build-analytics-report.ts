@@ -22,10 +22,7 @@ import {
   type WeeklySeries,
 } from "./analytics-report.js";
 import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
-import {
-  type IdleTimeoutMinutes,
-  resolveEffectiveHibernationTimeoutMin,
-} from "../../agents/domain/spec-assembly.js";
+import { resolveEffectiveHibernationTimeoutMin } from "../../agents/domain/spec-assembly.js";
 
 const TREND_WINDOWS = 8;
 const TREND_WEEKS = 8;
@@ -518,16 +515,9 @@ function sizeOf(
   return "custom";
 }
 
-function neverHibernates(
-  agent: LiveAgentFact,
-  idle: IdleTimeoutMinutes,
-): boolean {
+function neverHibernates(agent: LiveAgentFact, idle: number): boolean {
   return (
-    resolveEffectiveHibernationTimeoutMin(
-      agent.hibernationTimeout,
-      agent.vm,
-      idle,
-    ) === 0
+    resolveEffectiveHibernationTimeoutMin(agent.hibernationTimeout, idle) === 0
   );
 }
 
@@ -568,13 +558,11 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
     total: agents.length,
     sizes,
     disk: bucketCounts(
-      agents
-        .filter((a) => !a.vm)
-        .map((a) =>
-          Math.round(
-            parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
-          ),
+      agents.map((a) =>
+        Math.round(
+          parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
         ),
+      ),
       [
         { label: "≤ 4 Gi", max: 4 },
         { label: "5 Gi", max: 5 },

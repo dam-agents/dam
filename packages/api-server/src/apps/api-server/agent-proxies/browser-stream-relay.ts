@@ -1,4 +1,4 @@
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import type { SessionPresence } from "./session-presence.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
@@ -37,7 +37,7 @@ export function createBrowserStreamRelay(
   presence: SessionPresence,
   upstreamPath: string,
   upstreamBase: (agentId: string) => string = (agentId) =>
-    `ws://${podBaseUrl(agentId, namespace)}`,
+    `ws://${agentServiceAddress(agentId, namespace)}`,
 ): BrowserStreamRelay {
   return createWakeGatedRelay({
     repo,

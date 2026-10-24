@@ -88,7 +88,7 @@ export function platformOwnPids(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Sorts the pod's process table into the kinds
+ * UNIT_BOUNDARY_DESCRIPTION: Sorts the machine's process table into the kinds
  * the Processes panel lists, one tree per root. The platform's own
  * processes are never listed: PID 1, agent-runtime and its ancestors, and
  * agent-runtime's direct children (the chat harnesses, the pod service, PTYs,

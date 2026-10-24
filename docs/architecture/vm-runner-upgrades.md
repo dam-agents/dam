@@ -1,12 +1,12 @@
 # VM runner upgrades
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
 ## Rolls
 
-**A change to the runner pod rolls across owners, not all at once.** Because a pod restart reboots every machine of that owner, a new runner image or a controller release that renders the pod differently would otherwise reboot every vm machine in the install together, where container agents roll one at a time.
+**A change to the runner pod rolls across owners, not all at once.** Because a pod restart reboots every machine of that owner, a new runner image or a controller release that renders the pod differently would otherwise reboot every machine in the install together.
 The controller records a hash of the pod it rendered on each runner, leaves a runner alone while that hash is unchanged, and lets a changed one roll only while fewer than the install's roll width are mid-roll.
 That hash leaves out every field the controller changes on the running pod in place, and the class the chart sets for every runner at once: the memory limit, which is the owner's pool, and the memory request ([vm-memory](vm-memory.md)), the CPU limit and the zero CPU request the same resize sets, and the PriorityClass, which a pod takes when it is rolled for another reason ([vm-runner](vm-runner.md)).
 None of those alone rolls a runner, so none of them reboots an owner's machines, and a pod created later takes whatever the install renders then.
@@ -27,7 +27,7 @@ Both halves compare the whole pod template, less the `pod-template-hash` label t
 Without both, the refusal halts the roll, which is what a broken release looks like.
 Each says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
 Every other state still halts the roll: a pod the scheduler cannot place, since a release that adds a node selector or raises a request makes every runner unplaceable, a container that started, an image that does not pull.
-The node is read through the node read grant the chart adds with virtualization; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
+The node is read through the node read grant the chart adds; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
 A runner whose pod is unchanged is not rolled — unless its runner holds the configured release as one whose machines must reboot onto it, which rolls the pod with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
@@ -137,7 +137,7 @@ As with a roll, the runner is asked on its own owner's turn, so a hand-off settl
 An owner with no ready machine has no agent to settle their hand-off, so the sweep, on its turn for them, waits until their runner has taken the release, the hand-off stalls, or the settle timeout passes.
 The sweep runs as many such turns at once as the roll is wide, so one pass takes a release to every owner with nothing running in about owners divided by the width hand-offs of a few seconds each, while owners with running machines still take it a few at a time.
 The rollout sweep runs apart from the orphan sweep, so a long pass delays no cleanup.
-A runner with ready machines stays mid-hand-off for at least two minutes, and naming the release writes the runner's Deployment, which requeues every vm Agent of that owner: each ensures its machine against the new runner, and an ensure the new release refuses stalls the hand-off from that Agent's reconcile.
+A runner with ready machines stays mid-hand-off for at least two minutes, and naming the release writes the runner's Deployment, which requeues every Agent of that owner: each ensures its machine against the new runner, and an ensure the new release refuses stalls the hand-off from that Agent's reconcile.
 The wait outlasts those ensures so a release that runs but refuses them is seen before the next owner is named it.
 A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
 Time the runner reports the release not staged on its node does not count either: the hand-off's start moves up while it waits, so the settle timeout runs from about when the stager reached the node, and a stager that never does keeps the hand-off waiting in its place rather than stalled.

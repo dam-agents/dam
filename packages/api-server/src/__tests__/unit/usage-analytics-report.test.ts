@@ -30,7 +30,7 @@ function facts(overrides: Partial<AnalyticsFacts> = {}): AnalyticsFacts {
     sizing: {
       slot: { cpu: "1", memory: "2Gi" },
       defaultStorage: "10Gi",
-      idleTimeoutMinutes: { container: 30, vm: 5 },
+      idleTimeoutMinutes: 5,
     },
     ...overrides,
   };
@@ -188,13 +188,13 @@ describe("usage analytics report", () => {
   // TEST_SCENARIO: are grouped by the size the agent had when it ran out, so x1 (now 1x)
   // TEST_SCENARIO: keeps its event under 4x, the deleted agent's event is dropped, and
   // TEST_SCENARIO: agents are the distinct agents behind the events.
-  // TEST_SCENARIO: A vm agent honours its "0s" override, so it counts as always on too (x3).
-  // TEST_SCENARIO: A vm agent's override is a Go duration, so a sub-minute one
+  // TEST_SCENARIO: An agent honours its "0s" override, so it counts as always on (x3).
+  // TEST_SCENARIO: An agent's override is a Go duration, so a sub-minute one
   // TEST_SCENARIO: is not always-on: the controller hibernates it, and this
   // TEST_SCENARIO: report must agree rather than count it as never sleeping. A
   // TEST_SCENARIO: fraction just under one nanosecond is one nanosecond to Go,
   // TEST_SCENARIO: so the projection must not round it down to none.
-  it("counts a sub-minute vm override as sleeping, not always on", () => {
+  it("counts a sub-minute override as sleeping, not always on", () => {
     const details = [
       {
         agentId: "x1",
@@ -209,7 +209,6 @@ describe("usage analytics report", () => {
         cpu: "1",
         memory: "2Gi",
         hibernationTimeout: "0.9999999999999999ns",
-        vm: true,
         storageSize: undefined,
         grantedConnectionIds: [],
       },
@@ -230,7 +229,6 @@ describe("usage analytics report", () => {
       cpu: undefined,
       memory: undefined,
       hibernationTimeout: undefined,
-      vm: false,
       storageSize: undefined,
       grantedConnectionIds: [],
       ...extra,
@@ -250,7 +248,6 @@ describe("usage analytics report", () => {
             cpu: "2",
             memory: "2Gi",
             hibernationTimeout: "0s",
-            vm: true,
             grantedConnectionIds: ["kb", "c", "provider-key"],
           }),
           live("core-agent", { cpu: "4", memory: "8Gi" }),

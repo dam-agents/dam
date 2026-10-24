@@ -1,14 +1,12 @@
-// UNIT_BOUNDARY_DESCRIPTION: whether an agent shows its Environments anywhere: only a vm agent has any, only while the feature is on, and only once it owns at least one, since an Environment appears when the agent creates it and an empty surface teaches nothing.
+// UNIT_BOUNDARY_DESCRIPTION: whether an agent shows its Environments anywhere: only while the feature is on, and only once it owns at least one, since an Environment appears when the agent creates it and an empty surface teaches nothing.
 export function environmentsShown({
   enabled,
-  vm,
   count,
 }: {
   enabled: boolean;
-  vm: boolean;
   count: number | undefined;
 }): boolean {
-  return enabled && vm && (count ?? 0) > 0;
+  return enabled && (count ?? 0) > 0;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's chat offers its Environments as a side panel tab only under JanUI, with the feature on, and once it owns at least one; the current layout keeps them in the sidebar instead.
@@ -18,7 +16,6 @@ export function environmentsTabShown({
 }: {
   newLayout: boolean;
   enabled: boolean;
-  vm: boolean;
   count: number | undefined;
 }): boolean {
   return newLayout && environmentsShown(shown);

@@ -8,7 +8,6 @@ type AgentObjectShape = {
 type AgentSpecShape = {
   resources?: { limits?: { cpu?: string; memory?: string } };
   hibernationTimeout?: string;
-  backend?: { type?: string };
   storageSize?: string;
   grantedConnectionIds?: string[];
 };
@@ -22,7 +21,6 @@ export function toLiveAgentFact(obj: AgentObjectShape): LiveAgentFact | null {
     cpu: spec.resources?.limits?.cpu,
     memory: spec.resources?.limits?.memory,
     hibernationTimeout: spec.hibernationTimeout,
-    vm: spec.backend?.type === "vm",
     storageSize: spec.storageSize,
     grantedConnectionIds: spec.grantedConnectionIds ?? [],
   };

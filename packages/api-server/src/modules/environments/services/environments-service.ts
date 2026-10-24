@@ -75,10 +75,10 @@ function refuse(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Environments for one owner. An owning vm Agent
+ * UNIT_BOUNDARY_DESCRIPTION: Environments for one owner. An owning Agent
  * creates, lists, changes and deletes its own; the owner lists, extends and
  * deletes them from the app. An Environment is an Agent record that names its
- * owning Agent, on the vm backend and the default image, with no harness, no
+ * owning Agent, on the default image, with no harness, no
  * connections and no default model provider, so nothing in it can act as the
  * owning Agent; a row beside it holds its host label, endpoints, access list
  * and expiry. A `start` command becomes its first Startup Item through the
@@ -130,10 +130,6 @@ export function createEnvironmentsService(
     if (!agent) refuse("no such agent", "NOT_FOUND");
     if (agent.spec.environmentOf)
       refuse("an Environment cannot own Environments");
-    if (agent.spec.backend?.type !== "vm")
-      refuse(
-        "only an agent on the vm backend can own Environments: they run on its owner's VM runner beside it",
-      );
     return agent;
   }
 
@@ -200,7 +196,6 @@ export function createEnvironmentsService(
       const agent = await deps.agents.create({
         name: environmentAgentName(owning.name, input.name),
         description: `Environment ${input.name} of ${owning.name}`,
-        vm: true,
         environmentOf: owningAgentId,
         noDefaultProvider: true,
         egressPreset: "none",
@@ -278,11 +273,6 @@ export function createEnvironmentsService(
           refuse(
             `${name} is turned off by your owner; it does not wake until they turn it on`,
             "PRECONDITION_FAILED",
-          );
-        if (woke.error.type === "RuntimeMigrating")
-          refuse(
-            `${name} is moving to another runtime; try again later`,
-            "CONFLICT",
           );
         refuse(`no Environment named ${name}`, "NOT_FOUND");
       },

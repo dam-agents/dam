@@ -17,7 +17,7 @@ import {
   SHARE_LOGIN_TTL_MS,
   SHARE_SESSION_TTL_MS,
 } from "./domain/share-session.js";
-import type { AgentApiPodClient } from "./infrastructure/agent-api-pod-client.js";
+import type { AgentApiClient } from "./infrastructure/agent-api-client.js";
 import { createArtifactLibraryRepository } from "./infrastructure/artifact-library-repository.js";
 import {
   createKeycloakShareIdentity,
@@ -61,7 +61,7 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
-  agentApi: AgentApiPodClient;
+  agentApi: AgentApiClient;
 }
 
 export type ArtifactLibraryFor = (
@@ -185,7 +185,7 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
 export function composeShareBridge(opts: {
   featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
-  agentApi: AgentApiPodClient;
+  agentApi: AgentApiClient;
   makeAcpClient: AcpClientFactory;
   spendHold: (agentId: string) => Promise<SpendHoldReason | null>;
   attendance: ChannelTurnAttendance;

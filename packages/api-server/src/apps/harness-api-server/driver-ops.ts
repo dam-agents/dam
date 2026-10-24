@@ -19,7 +19,6 @@ import {
   concreteResources,
   type DefaultResourceLimits,
 } from "../../modules/agents/index.js";
-import { SizeNeverFitsError } from "../../modules/budgets/index.js";
 import {
   AttenuationError,
   NoSpawnModelError,
@@ -215,7 +214,6 @@ function driverOps(
       setup: {
         ...(body.seed ? { seed: body.seed } : {}),
         ...(body.install ? { install: body.install } : {}),
-        ...(body.backend ? { backend: body.backend } : {}),
         ...(resources ? { resources } : {}),
         env: body.env,
         skills: body.skills,
@@ -242,7 +240,6 @@ function driverOps(
     }
     if (
       err instanceof InvalidSchemaError ||
-      err instanceof SizeNeverFitsError ||
       err instanceof ModelNameError ||
       err instanceof ProviderMismatchError
     ) {
@@ -442,10 +439,7 @@ function driverOps(
     },
 
     async budget() {
-      const reserved = await deps.budgetsFor(owner).reserved();
       return {
-        cpu: reserved.cpu,
-        memory: reserved.memory,
         defaultWorkerSize: {
           cpu: deps.defaultLimits.cpu,
           memory: deps.defaultLimits.memory,

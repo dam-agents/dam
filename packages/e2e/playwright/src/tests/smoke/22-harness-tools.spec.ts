@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a harness Template's agent runs on the harness tools the default image bakes. The Template boots the default image, and the agent's harness is picked from the Template. Only the vm lane runs it, with the Claude Code Template enabled; the mock agents of the rest of the suite carry their own tools. The same tools are what the guest kernel is held to: a guest that maps them with DAX must not corrupt the pages a running process maps, nor stall when its working set outgrows the DAX window.
+// TEST_OVERVIEW: a harness Template's agent runs on the harness tools the default image bakes. The Template boots the default image, and the agent's harness is picked from the Template. Only a run with the Claude Code Template enabled takes it; the mock agents of the rest of the suite carry their own tools. The same tools are what the guest kernel is held to: a guest that maps them with DAX must not corrupt the pages a running process maps, nor stall when its working set outgrows the DAX window.
 import { expect, test } from "@playwright/test";
 
 import {
@@ -9,7 +9,6 @@ import { acceptTerms } from "../../lib/auth.js";
 import {
   createAgentOn,
   refreshingToken,
-  requireBackend,
   waitAgentState,
 } from "../../lib/backend.js";
 import { AGENT_NS, kubectl } from "../../lib/cluster.js";
@@ -66,9 +65,8 @@ async function openSession(): Promise<Frame[]> {
 test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
-  await requireBackend(api, "vm");
   await acceptTerms(api);
-  agentId = await createAgentOn(api, "vm", "e2e-harness-tools", "claude-code");
+  agentId = await createAgentOn(api, "e2e-harness-tools", "claude-code");
 });
 
 test.afterAll(async () => {

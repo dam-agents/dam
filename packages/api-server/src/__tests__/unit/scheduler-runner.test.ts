@@ -90,7 +90,6 @@ function makeDeps(opts?: {
   onboardingPending?: boolean;
   once?: boolean;
   onceResult?: string;
-  runtimeMigrating?: boolean;
   agentDisabled?: boolean;
   enabled?: boolean;
   firePair?: FirePair;
@@ -246,9 +245,6 @@ function makeDeps(opts?: {
     activityStamps: stamps,
     ...(opts?.onboardingPending !== undefined
       ? { onboardingPending: async () => opts.onboardingPending === true }
-      : {}),
-    ...(opts?.runtimeMigrating !== undefined
-      ? { runtimeMigrating: async () => opts.runtimeMigrating === true }
       : {}),
     agentDisabled: async () => opts?.agentDisabled === true,
     log: () => {},
@@ -555,27 +551,6 @@ describe("scheduler-runner fire", () => {
       },
     ]);
     expect(lastRun()).toBe("2026-06-12T09:00:00.000Z");
-    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
-  });
-
-  // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down, so a fire would only wait out the wake and read as a failed run. The occurrence is held with a reason the schedules page shows, and the next one is armed as usual.
-  it("holds the occurrence while the agent is moving to the new runtime", async () => {
-    const { runner, calls, stampedResults, enqueued } = makeDeps({
-      runtimeMigrating: true,
-    });
-
-    await runner.buildFireHandler()(
-      SCHEDULE_ID,
-      new Date("2026-06-12T10:30:00Z"),
-    );
-
-    expect(calls).toEqual([]);
-    expect(stampedResults).toEqual([
-      {
-        result: "held: moving to the new runtime",
-        nextRun: new Date("2026-06-12T11:00:00Z"),
-      },
-    ]);
     expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
   });
 
@@ -1245,12 +1220,6 @@ describe("scheduler-runner fire: the trace of a fire", () => {
       "platform.schedule.precheck": false,
       "platform.schedule.outcome": "success",
     });
-    expect(await traceFire(makeDeps({ runtimeMigrating: true }))).toMatchObject(
-      {
-        "platform.schedule.outcome": "held",
-        "platform.schedule.hold_reason": "runtime_migration",
-      },
-    );
     expect(
       await traceFire(makeDeps({ bumpError: new Error("db down") })),
     ).toMatchObject({

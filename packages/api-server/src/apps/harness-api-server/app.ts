@@ -31,15 +31,11 @@ import {
   composeSubAgentAwaitMarks,
   composeInvocationsForOwner,
   type ScriptOutputs,
-  createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
 } from "../../modules/invocations/index.js";
 import type { SpendHoldGate } from "../../modules/spend/index.js";
-import {
-  composeBudgetsModule,
-  composeSpawnSizeGate,
-} from "../../modules/budgets/index.js";
+import { composeBudgetsModule } from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import {
   composeKbPublishGate,
@@ -168,10 +164,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     cpu: config.agentDefaultCpuLimit,
     memory: config.agentDefaultMemoryLimit,
   };
-  const defaultCeiling = {
-    cpu: config.defaultUserCpuBudget,
-    memory: config.defaultUserMemoryBudget,
-  };
   const publishLimits = {
     perFileMaxBytes: config.kbSharePerFileMaxBytes,
     totalMaxBytes: config.kbShareTotalMaxBytes,
@@ -208,18 +200,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       readHarnessConfigSupport,
       scriptOutputsAvailable: Boolean(config.objectStorageEndpoint),
       spendHold,
-      targetAdmission: createTargetAdmission({
-        readTemplateResources: async (templateId) =>
-          (await templatesRepo.readSpec(templateId))?.spec.resources,
-        defaultLimits,
-        virtualizationEnabled:
-          agentsInstallSettings(config).virtualizationEnabled,
-        gate: composeSpawnSizeGate({
-          k8s: k8sClient,
-          owner,
-          defaultCeiling,
-        }),
-      }),
     });
 
   const mcpArtifactLibraryFor = (owner: string) =>
@@ -273,14 +253,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeBudgetsModule({
         k8s: k8sClient,
         owner,
-        listAgents: () => agentsRepo.list(owner),
-        defaultCeiling,
-        slotSize: defaultLimits,
+        listAgentIds: async () =>
+          (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
-        vmPool: {
-          storage: config.vmPoolStorage,
-          memory: config.vmPoolMemory,
-        },
       }).budgets,
     defaultLimits,
     scriptOutputs: deps.scriptOutputs,
@@ -321,8 +296,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
       const agent = await agentsRepo.get(agentId, owner);
-      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
-        return null;
+      if (!agent || agent.spec.environmentOf) return null;
       return deps.environmentsFor(owner).forOwningAgent(agentId);
     },
     agentTelemetry,

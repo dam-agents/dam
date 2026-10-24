@@ -28,12 +28,12 @@ func TestTheIdleOverrideAgreesWithTheProjectionTheAPIServerMakes(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &contract))
 	require.NotEmpty(t, contract.Cases)
 	require.NotEmpty(t, contract.Invalid)
-	base := config.AgentBase{IdleTimeout: config.Duration(time.Hour), VMIdleTimeout: config.Duration(5 * time.Minute)}
+	base := config.AgentBase{VMIdleTimeout: config.Duration(5 * time.Minute)}
 
 	for _, c := range contract.Cases {
 		d, err := time.ParseDuration(c.Duration)
 		require.NoError(t, err, "%q is not a Go duration", c.Duration)
-		effective := effectiveIdleTimeout(&metav1.Duration{Duration: d}, true, base)
+		effective := effectiveIdleTimeout(&metav1.Duration{Duration: d}, base)
 		assert.Equal(t, c.Minutes <= 0, effective <= 0, "%q: the controller and the projection must agree on whether it ever hibernates", c.Duration)
 	}
 	for _, bad := range contract.Invalid {

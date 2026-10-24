@@ -45,13 +45,13 @@ const (
 	ownerGatewayTerminationGrace int64 = 30
 )
 
-func (r *AgentReconciler) ownerGatewayServes(spec *apiv1.AgentSpec) bool {
-	return r.config.VM.Enabled && r.config.VM.Gateway.PerOwner && spec.IsVM()
+func (r *AgentReconciler) ownerGatewayServes() bool {
+	return r.config.VM.Gateway.PerOwner
 }
 
 func (r *AgentReconciler) ownerGatewayOn(owner string) bool {
 	_, refused := r.ownerGatewayRefused.Load(owner)
-	return r.config.VM.Enabled && r.config.VM.Gateway.PerOwner && !refused
+	return r.config.VM.Gateway.PerOwner && !refused
 }
 
 func ownerGatewayProxyPort(slot int) int    { return ownerGatewayPortBase + 2*slot }
@@ -296,7 +296,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	var vmNames []string
 	for _, obj := range items {
 		agent, err := FromCacheObject[apiv1.Agent](obj)
-		if err != nil || !agent.Spec.IsVM() || agent.DeletionTimestamp != nil {
+		if err != nil || agent.DeletionTimestamp != nil {
 			continue
 		}
 		vmAgents = append(vmAgents, agent)
@@ -795,10 +795,7 @@ func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, svcName str
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the agent's Service selects its owner gateway, whatever the flag says: until the agent has moved back, its policies must keep admitting the owner gateway, or the pod its traffic still reaches is refused at the harness and at ext-authz.
-func (r *AgentReconciler) onOwnerGateway(ctx context.Context, spec *apiv1.AgentSpec, name string) (bool, error) {
-	if !r.config.VM.Enabled || !spec.IsVM() {
-		return false, nil
-	}
+func (r *AgentReconciler) onOwnerGateway(ctx context.Context, name string) (bool, error) {
 	_, ok, err := r.servedDesiredUp(ctx, name)
 	return ok, err
 }

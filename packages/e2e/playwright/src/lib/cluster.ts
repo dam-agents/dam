@@ -42,31 +42,6 @@ function runKubectl(
   }).trim();
 }
 
-export interface AgentCr {
-  apiVersion: string;
-  kind: string;
-  metadata: Record<string, unknown>;
-  spec: Record<string, unknown>;
-}
-
-export function readAgentCr(agent: string): AgentCr {
-  return JSON.parse(
-    kubectl(
-      "-n",
-      AGENT_NS,
-      "get",
-      "agents.agent-platform.ai",
-      agent,
-      "-o",
-      "json",
-    ),
-  ) as AgentCr;
-}
-
-export function applyAgentCr(cr: AgentCr): void {
-  runKubectl(["-n", AGENT_NS, "apply", "-f", "-"], JSON.stringify(cr));
-}
-
 function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);
@@ -129,18 +104,6 @@ export function deleteAgentCr(name: string): void {
     "agents.agent-platform.ai",
     name,
     "--ignore-not-found",
-  );
-}
-
-export function requestRuntimeMigration(agent: string): void {
-  kubectl(
-    "-n",
-    AGENT_NS,
-    "annotate",
-    "agents.agent-platform.ai",
-    agent,
-    "--overwrite",
-    "agent-platform.ai/runtime-migration=requested",
   );
 }
 

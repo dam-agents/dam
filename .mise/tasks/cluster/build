@@ -51,7 +51,13 @@ for c in "${components[@]}"; do
       tars=()
       for a in "${agents[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$a")"); done
       mise run cluster:import -- "${tars[@]}"
-      kubectl delete pods -n platform-agents --all 2>/dev/null || true
+      # A machine boots from the node image cache, so a rebuilt image reaches
+      # it at its next start and no pod is restarted to do it. Restart one
+      # agent's machine by changing the revision it boots with; deleting a
+      # runner pod instead reboots every machine of that owner, and the
+      # gateway, cache and runner pods are more than this rebuild touches.
+      echo "agent images rebuilt. Restart one agent's machine with:"
+      echo "  kubectl annotate agent <name> -n platform-agents agent-platform.ai/roll-rev=\"$(date -u +%Y%m%dT%H%M%SZ)\" --overwrite"
       continue
       ;;
     controller) pkg=controller deploy=platform-controller timeout=60s ;;

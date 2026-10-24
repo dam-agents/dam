@@ -38,14 +38,6 @@ export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   research: "Research",
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a kit's agent is created on the new runtime: the kit asks for a machine, or a kit that names no backend follows the install, which makes one unless the create says otherwise. Undefined while the install's answer has not arrived and the kit alone does not settle it, so the kit page shows neither a size nor a machine's.
-export function kitRunsOnVm(
-  kit: Pick<StarterKitView, "backend">,
-  installVm: boolean | undefined,
-): boolean | undefined {
-  return kit.backend === "vm" || installVm;
-}
-
 interface KitBadge {
   key: string;
   label: string;

@@ -26,20 +26,20 @@ const percentOf = (used: number, limit: number) =>
 
 export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
   const { data: usage, isPending } = usePoolUsage();
-  const vmAgents = agents.filter((agent) => agent.vm);
+  const ownAgents = agents;
   if (!usage) {
     if (isPending) return null;
     return (
       <p className="text-sm text-muted-foreground">
-        {vmAgents.some((agent) => agent.state === "running")
+        {ownAgents.some((agent) => agent.state === "running")
           ? "Usage is unavailable right now — try again in a minute."
-          : "Usage appears once one of your VM agents is running."}
+          : "Usage appears once one of your agents is running."}
       </p>
     );
   }
   const { memory, storage } = usage;
   // UNIT_BOUNDARY_DESCRIPTION: an agent can be out of room while the pool is not near full, since the guard gives each running agent only its part of the pool: the breakdown that names it opens on either, not only on the pool's own level, and it asks the shares whether a home is full rather than the rows it renders, so a disk the runner could not read cannot close it.
-  const rows = storageRows(usage, vmAgents);
+  const rows = storageRows(usage, ownAgents);
   const slackLogin = usage.slackUnlinked
     ? `/${getBrand().short} login`
     : undefined;
@@ -52,7 +52,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         icon={RESOURCE_ICON.memory}
         value={memoryValue}
         valueText={`${memoryValue}${LEVEL_WORD[memory.level]}`}
-        bar={memoryBar(usage, vmAgents)}
+        bar={memoryBar(usage, ownAgents)}
         percent={percentOf(memory.usedBytes, memory.limitBytes)}
         warning={poolWarning(
           memory.level,
@@ -66,12 +66,12 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         icon={RESOURCE_ICON.storage}
         value={storageValue}
         valueText={`${storageValue}${LEVEL_WORD[storage.level]}`}
-        bar={storageBar(usage, vmAgents)}
+        bar={storageBar(usage, ownAgents)}
         percent={percentOf(storage.usedBytes, storage.usableBytes)}
         warning={poolWarning(
           storage.level,
           "Delete old agents, or ask them to clean up their disks.",
-          "New VM agents can't be created until space is freed.",
+          "New agents can't be created until space is freed.",
           slackLogin,
         )}
       />
@@ -79,7 +79,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         usage.agents.some((share) => share.homeFull)) && (
         <StorageBreakdown rows={rows} />
       )}
-      {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={vmAgents} />}
+      {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={ownAgents} />}
     </div>
   );
 }

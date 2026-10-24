@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -76,7 +76,6 @@ The controller logs to stderr rather than stdout because its lines are pure diag
 
 The controller carries **no audit trail**.
 It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern.
-The one security record written elsewhere is the VM runner's: it logs each seed a [runtime migration](vm-runtime-migration.md) stores (`seed.accept`) and each seed capability it refuses (`seed.deny`), with the machine and a fingerprint of the capability, never the capability itself.
 
 When operational telemetry is enabled (see [observability](observability.md)), the controller runs an **in-process OpenTelemetry SDK** and its `slog` records fan out to two destinations at the same level: the stderr JSON stream stays byte-identical (gaining `trace_id`/`span_id` fields on lines logged inside a reconcile span), and each record is additionally exported over OTLP with trace correlation.
 The SDK activates only when the standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment is present — without it the logger is exactly the plain stderr handler and no OTel component exists in the process.

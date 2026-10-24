@@ -3,10 +3,9 @@ import { useMemo } from "react";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
-import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useAgents } from "../api/queries.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
-import { agentUsage, sandboxSubtitle } from "../utils/sandbox-subtitle.js";
+import { agentUsage } from "../utils/sandbox-subtitle.js";
 import { useSlowStartIds } from "./use-slow-start.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 
@@ -23,12 +22,9 @@ export function useAgentRows() {
     [restartingAgents],
   );
 
-  const slotUnit = budget ? slotUnitOf(budget) : null;
-
   const rowProps = (agent: AgentView) => ({
     agent,
     display: resolveAgentDisplay(agent, restartingIds, slowStartIds),
-    subtitle: sandboxSubtitle(agent, slotUnit),
     usage: agentUsage(agent, budget?.vm),
     updatePending: update.updatingId === agent.id,
     updateBusy: update.updatingId !== null,

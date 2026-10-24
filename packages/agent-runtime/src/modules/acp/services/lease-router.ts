@@ -22,7 +22,7 @@ import {
   isPlatformSubagentSetting,
   NO_MODEL_REASON,
   PIN_MODEL_METHOD,
-  podSessionTypeSchema,
+  sessionTypeSchema,
   sessionDefaultKind,
   sessionSettingsSchema,
   type SessionDefaultKind,
@@ -1071,7 +1071,7 @@ function sameSettings(
 function defaultKindOfType(
   type: string | undefined,
 ): SessionDefaultKind | null {
-  const parsed = podSessionTypeSchema.safeParse(type ?? "regular");
+  const parsed = sessionTypeSchema.safeParse(type ?? "regular");
   if (!parsed.success) return null;
   return match(parsed.data)
     .with("regular", "cli_run", () => "chat" as const)

@@ -18,7 +18,7 @@ import type {
   ArtifactRow,
   FolderRow,
 } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
-import type { AgentApiPodClient } from "../../modules/artifact-library/infrastructure/agent-api-pod-client.js";
+import type { AgentApiClient } from "../../modules/artifact-library/infrastructure/agent-api-client.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 
 describe("share-crypto — slugs", () => {
@@ -252,7 +252,7 @@ const fakeArtifacts = stubArtifacts();
 
 function idleAgentApiDeps(): {
   ensureReady: (agentId: string) => Promise<void>;
-  agentApi: AgentApiPodClient;
+  agentApi: AgentApiClient;
 } {
   return {
     ensureReady: () => Promise.resolve(),

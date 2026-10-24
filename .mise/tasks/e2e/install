@@ -22,62 +22,40 @@ INSTALL_ARGS=(
 # and oidc-client-ts can generate PKCE state in signinRedirect(). On
 # *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
 # the OIDC redirect throws silently, and the SPA hangs on a blank screen.
-# E2E_VIRTUALIZATION=1 installs the vm backend too: cluster:install applies the
-# KVM device plugin, and values-local.yaml puts the node image cache where
-# this install stages its images. The same variable puts the Playwright suite on the vm Backend — every agent it
-# creates is a vm agent, and it adds the runtime migration spec — and that run
-# fails, rather than skips, on an install without the backend. It needs a
-# usable /dev/kvm (nested virtualization on the lima VM, or a KVM host in
-# sandbox mode), so it is opt-in: CI sets it only in its vm lane, e2e.yml's
-# e2e-vm job on a KVM runner.
+# Every agent is a microVM, so the install needs a usable /dev/kvm: nested
+# virtualization on the lima VM, or a KVM host in sandbox mode. GitHub's
+# standard x64 Linux runners expose it; e2e.yml opens it to the runner's user.
 #
-# That lane also gives every machine one vCPU and counts a booting one at
-# 1Gi. One vCPU is what the lane's 1-CPU mock Size gave each machine before
-# machines took their shape from the install, on a small CI node that nests
-# KVM beside k3s and the browser. The controller raises the owner's runner pod's memory request by each booting
-# machine's count, and on the single 16 GB CI node the control plane already
-# requests about 5Gi, so a 2Gi boot estimate took more from what the agents'
-# gateways and the other pods can be scheduled into. The mock replays
-# scripts, and its guest needs a fraction of 1Gi. The mock and default
-# Templates keep a 1Gi Size for the container agents the lane still starts,
-# such as a runtime migration's source. The container lane keeps the defaults.
+# Every machine gets one vCPU and counts a booting one at 1Gi. One vCPU is what
+# the lane's 1-CPU mock Size gave each machine before machines took their shape
+# from the install, on a small CI node that nests KVM beside k3s and the
+# browser. The controller raises the owner's runner pod's memory request by
+# each booting machine's count, and on the single 16 GB CI node the control
+# plane already requests about 5Gi, so a 2Gi boot estimate took more from what
+# the agents' gateways and the other pods can be scheduled into. The mock
+# replays scripts, and its guest needs a fraction of 1Gi.
 #
 # On a Mac the lane keeps the runner pods on nested virtualization rather than
 # the host runner cluster:install would pick: the suite restarts the runner by
 # deleting its pod, and the one host runner belongs to the dev cluster.
-if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
-  export PLATFORM_NESTED_VIRT=1
-  INSTALL_ARGS+=(
-    --set=virtualization.enabled=true
-    # A cache root of the lane's own, not values-local.yaml's. Every machine
-    # here boots a staged tree, and image:stage-vm takes the directory from the
-    # install's own values, so a staging that rendered the chart on its own
-    # would write the trees where no runner mounts and the first boot would
-    # fail.
-    --set=virtualization.imageCache.hostPath=/var/lib/vm-images
-    --set=virtualization.runner.machineCPUs=1
-    --set=virtualization.runner.bootMiB=1024
-    --set=harnessTemplates.mock.resources.limits.cpu=1000m
-    --set=harnessTemplates.mock.resources.limits.memory=1Gi
-  )
-  # The lane also boots one harness Template on the default image and its
-  # baked tools (smoke/22-harness-tools): the default Template, sized like the
-  # mock.
-  INSTALL_ARGS+=(
-    --set=harnessTemplates.default.enabled=true
-    --set=harnessTemplates.default.resources.limits.cpu=1000m
-    --set=harnessTemplates.default.resources.limits.memory=1Gi
-  )
-  # E2E_GATEWAY_PER_OWNER=1 serves the lane's vm agents from one gateway pod
-  # per owner (virtualization.gateway.perOwner), the path no other suite
-  # reaches; CI's vm lane sets it.
-  [ -z "${E2E_GATEWAY_PER_OWNER:-}" ] || INSTALL_ARGS+=(--set=virtualization.gateway.perOwner=true)
-else
-  # The container lane says so: outside CI cluster:install turns the vm
-  # backend on by itself on an Apple silicon Mac and in a sandbox that can
-  # open /dev/kvm.
-  INSTALL_ARGS+=(--set=virtualization.enabled=false)
-fi
+export PLATFORM_NESTED_VIRT=1
+INSTALL_ARGS+=(
+  # A cache root of the lane's own, not values-local.yaml's. Every machine
+  # here boots a staged tree, and image:stage-vm takes the directory from the
+  # install's own values, so a staging that rendered the chart on its own
+  # would write the trees where no runner mounts and the first boot would
+  # fail.
+  --set=virtualization.imageCache.hostPath=/var/lib/vm-images
+  --set=virtualization.runner.machineCPUs=1
+  --set=virtualization.runner.bootMiB=1024
+  # The lane boots one harness Template on the default image and its baked
+  # tools (smoke/22-harness-tools).
+  --set=harnessTemplates.default.enabled=true
+)
+# E2E_GATEWAY_PER_OWNER=1 serves the lane's agents from one gateway pod per
+# owner (virtualization.gateway.perOwner), the path the suite reaches in CI's
+# owner-gateway job.
+[ -z "${E2E_GATEWAY_PER_OWNER:-}" ] || INSTALL_ARGS+=(--set=virtualization.gateway.perOwner=true)
 mise run cluster:install -- "${INSTALL_ARGS[@]}"
 
 # Readiness gate — shared task, see e2e:gate.

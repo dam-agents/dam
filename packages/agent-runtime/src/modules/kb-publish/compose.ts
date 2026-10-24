@@ -29,15 +29,15 @@ export interface KbPublishRuntime {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the pod-side publish flusher — owns the share's
+ * UNIT_BOUNDARY_DESCRIPTION: the machine-side publish flusher — owns the share's
  * change detection end to end: a recursive watch on the share roots sets a
- * PVC-persisted dirty marker and re-arms a quiet-period timer; when the timer
- * fires, the pod plans locally and asks the api-server to publish (work order
+ * disk-persisted dirty marker and re-arms a quiet-period timer; when the timer
+ * fires, the machine plans locally and asks the api-server to publish (work order
  * + presigned uploads + completion report). The server stays the authority
  * for keys, verification, and the manifest; this module only decides WHEN.
- * A pending flush holds the pod's idle flag via isBusy (scheduled or running
+ * A pending flush holds the machine's idle flag via isBusy (scheduled or running
  * work only — a share stuck in a recorded failure never blocks hibernation),
- * and the persisted marker makes a force-killed pod flush on its next boot.
+ * and the persisted marker makes a force-killed process flush on its next boot.
  */
 export function composeKbPublish(opts: {
   workDir: string;

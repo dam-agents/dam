@@ -24,9 +24,7 @@ export function buildRestartCommand(deps: {
   createAgentService: (host: string) => AgentService;
 }): Command {
   return new Command("restart")
-    .description(
-      "Restart an Agent (recreates the pod; persistent volumes survive)",
-    )
+    .description("Restart an Agent (recreates its machine; its home survives)")
     .argument("<ref>", "Agent Ref — name or 'agent-…' ID")
     .option(
       "--server <url>",

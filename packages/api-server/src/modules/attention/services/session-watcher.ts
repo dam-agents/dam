@@ -1,4 +1,4 @@
-import type { PodSession, RuntimeFeatures } from "agent-runtime-api";
+import type { Session, RuntimeFeatures } from "agent-runtime-api";
 
 import { emit, EventType } from "../../../events.js";
 import type { InfraAgent } from "../../agents/infrastructure/agent-mappers.js";
@@ -6,9 +6,9 @@ import { agentStreamable } from "../../agents/index.js";
 import { sameRecord, type AttentionRecordRow } from "../domain/types.js";
 import type { AttentionRepository } from "../infrastructure/attention-repository.js";
 import type {
-  PodSessionClient,
-  PodSessionList,
-} from "../infrastructure/pod-session-watch.js";
+  SessionWatchClient,
+  WatchedSessionList,
+} from "../infrastructure/session-watch-client.js";
 
 const RECONCILE_BACKSTOP_MS = 60_000;
 const CAPTURE_DEBOUNCE_MS = 250;
@@ -24,11 +24,11 @@ export interface SessionWatcher {
 interface Held {
   ownerSub: string;
   close(): void;
-  read(): Promise<PodSessionList>;
+  read(): Promise<WatchedSessionList>;
   poll: ReturnType<typeof setInterval> | null;
   debounce: ReturnType<typeof setTimeout> | null;
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: Re-arms a capture the pod read or the database
+   * UNIT_BOUNDARY_DESCRIPTION: Re-arms a capture the runtime read or the database
    * refused. A watched agent is captured only when its session list changes, so
    * a failed pass would otherwise wait for the next notice — and a pass that
    * failed before removing a session the agent stopped listing leaves that card
@@ -37,7 +37,7 @@ interface Held {
   retry: ReturnType<typeof setTimeout> | null;
   /**
    * UNIT_BOUNDARY_DESCRIPTION: What this agent's rows looked like at the last
-   * capture, so an unchanged notice costs nothing but the pod read. Most
+   * capture, so an unchanged notice costs nothing but the runtime read. Most
    * notices change one session or none — reading every stored row back to find
    * that out would put the database on the hot path. Empty until the first
    * capture after a hold, which is what makes a new lease holder re-read once.
@@ -45,9 +45,9 @@ interface Held {
   known: Map<string, AttentionRecordRow> | null;
   /**
    * UNIT_BOUNDARY_DESCRIPTION: One capture per agent at a time. A capture
-   * awaits a pod read, so two in flight can interleave and let the slower one
-   * delete rows the newer list already wrote. A trailing repeat replaces the
-   * overlap, so the last notice is still honored.
+   * awaits a runtime read, so two in flight can interleave and let the slower
+   * one delete rows the newer list already wrote. A trailing repeat replaces
+   * the overlap, so the last notice is still honored.
    */
   busy: boolean;
   repeat: boolean;
@@ -62,7 +62,7 @@ function toDate(value: string | null | undefined): Date | null {
 function toRow(
   agentId: string,
   ownerSub: string,
-  session: PodSession,
+  session: Session,
 ): AttentionRecordRow {
   return {
     agentId,
@@ -86,7 +86,7 @@ export function createSessionWatcher(deps: {
   runtimeFeaturesFor: (
     agentIds: string[],
   ) => Promise<Map<string, RuntimeFeatures>>;
-  pods: PodSessionClient;
+  sessions: SessionWatchClient;
   repo: AttentionRepository;
   log: (message: string) => void;
 }): SessionWatcher {
@@ -207,7 +207,7 @@ export function createSessionWatcher(deps: {
     const entry: Held = {
       ownerSub,
       close: () => reads.abort(),
-      read: () => deps.pods.listSessions(agent.id, reads.signal),
+      read: () => deps.sessions.listSessions(agent.id, reads.signal),
       poll: null,
       debounce: null,
       retry: null,
@@ -217,7 +217,7 @@ export function createSessionWatcher(deps: {
     };
     held.set(agent.id, entry);
     if (live) {
-      const subscription = deps.pods.watchAgent(agent.id, () =>
+      const subscription = deps.sessions.watchAgent(agent.id, () =>
         scheduleCapture(agent.id),
       );
       entry.close = () => subscription.close();

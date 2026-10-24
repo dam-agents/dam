@@ -16,18 +16,19 @@ Slack/Telegram thread. The campaign keeps using Nous's *own* channel feature;
 this just re-targets it at the platform's messaging instead of an external
 webhook — so no external egress and no webhook secret on disk.
 
-Why this works in the pod (all verified against a live agent):
-  * Auth is mesh-based — a process inside the agent pod inherits the pod's
-    mesh identity, which the api-server waypoint accepts for
-    ``/api/agents/<id>/mcp``. No token needed.
+Why this works in the machine (all verified against a live agent):
+  * Auth is the gateway's — the machine's calls leave through its owner's
+    credential gateway, whose mesh identity the api-server waypoint admits for
+    ``/api/agents/<id>/mcp`` with the header that agent's harness guard sets.
+    No token needed.
   * The MCP endpoint URL is injected as ``PLATFORM_MCP_URL``.
-  * The MCP call must traverse the egress gateway (the pod's NetworkPolicy
-    routes all egress through it); urllib's default opener honors ``HTTP_PROXY``
+  * The MCP call must traverse the egress gateway (the runner's NetworkPolicy
+    routes all of the machine's egress through it); urllib's default opener honors ``HTTP_PROXY``
     and the in-cluster MCP host is not in ``NO_PROXY``, so it does.
   * Nous's POST to 127.0.0.1 must NOT be proxied — the image sets
     ``NO_PROXY=127.0.0.1,localhost,::1`` so localhost bypasses the gateway.
 
-stdlib only — runs on the image's python3; the pod has no extra tools
+stdlib only — runs on the image's python3; the machine has no extra tools
 (not even ``awk``).
 """
 from __future__ import annotations
@@ -50,7 +51,7 @@ TIMEOUT_SECONDS = 15
 
 # Nous appends this approval prompt to *every* gate notification, even under
 # --auto-approve where the gate auto-passes and nothing is awaiting a reply
-# (upstream bug). This pod only ever runs auto-approved, so the line is always
+# (upstream bug). This machine only ever runs auto-approved, so the line is always
 # misleading — strip it from the forwarded summary.
 APPROVAL_PROMPT = "Reply with `approve`, `reject`, or `abort`."
 
@@ -195,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
                 if exc.code != 404:
                     raise
                 # The MCP session is pinned to one api-server replica; a
-                # rolling deploy or scale event can remap this pod mid-
+                # rolling deploy or scale event can remap this machine mid-
                 # sequence and 404 the follow-up. A fresh handshake lands
                 # on the new replica.
                 log.info("mcp session lost (404); retrying with a fresh session")
@@ -223,7 +224,7 @@ def main() -> int:
         server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
-            # Another bridge in this pod already owns the port. One shared bridge
+            # Another bridge in this machine already owns the port. One shared bridge
             # serves every campaign/session here (it's stateless per request), so
             # a duplicate launch is a no-op — exit cleanly instead of crash-looping.
             log.info("port %d already in use; another bridge is running — nothing to do.", PORT)

@@ -13,7 +13,6 @@ function agent(overrides: Partial<Watched> = {}): Watched {
     id: "a1",
     name: "Scout",
     state: "running",
-    vm: true,
     podRestarts: 0,
     ...overrides,
   };
@@ -75,31 +74,8 @@ describe("nextCrashNotices", () => {
     ).toEqual([[]]);
   });
 
-  // TEST_SCENARIO: a container agent's count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
-  it("treats a reset count as a new baseline", () => {
-    expect(
-      replay(
-        [agent({ vm: false, podRestarts: 2 })],
-        [agent({ vm: false, state: "hibernated", podRestarts: 0 })],
-        [
-          agent({
-            vm: false,
-            podRestarts: 1,
-            podRestartReason: "OutOfMemory",
-          }),
-        ],
-      ),
-    ).toEqual([
-      [],
-      [],
-      [
-        "Scout ran out of memory and restarted — give it a larger size in its settings",
-      ],
-    ]);
-  });
-
-  // TEST_SCENARIO: a vm agent's count is the runner's and survives the machine's stop, while hibernation publishes zero. Waking it, here seconds after its user put it to sleep, brings the old count back, which is not a crash; a restart once it runs again still is.
-  it("does not report a vm agent's old count, back after it slept, as a crash", () => {
+  // TEST_SCENARIO: an agent's count is the runner's and survives the machine's stop, while hibernation publishes zero. Waking it, here seconds after its user put it to sleep, brings the old count back, which is not a crash; a restart once it runs again still is.
+  it("does not report an agent's old count, back after it slept, as a crash", () => {
     const restarted = {
       podRestarts: 1,
       podRestartReason: "GuestStoppedAnswering",

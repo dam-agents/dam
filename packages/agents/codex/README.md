@@ -14,7 +14,7 @@ The harness ships in the default image every harness Template boots, built by `/
 ## Authentication
 
 Codex requires an OpenAI API key.
-On the platform, the actual credential is never stored in the pod -- the Envoy sidecar injects it on the wire (see [credential-gateway](../../../docs/architecture/credential-gateway.md)).
+On the platform, the actual credential is never stored in the machine -- the [credential gateway](../../../docs/architecture/credential-gateway.md), Envoy in a pod of its own, injects it on the wire.
 
 Create a **generic secret** on the platform with:
 
@@ -26,7 +26,7 @@ The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 
 ### The Model Router
 
-Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, sends the platform's session id in a terminal with `env_http_headers`, and reads its model catalog from the router's `model_catalog_url`.
+Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the machine's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, sends the platform's session id in a terminal with `env_http_headers`, and reads its model catalog from the router's `model_catalog_url`.
 The router routes each call by its provider-qualified model name (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`) to that Connection's host with the Connection's placeholder, so one Codex process serves every granted provider and no `-c base_url` override is needed on any thread, those codex-acp starts on its own included.
 A session's subagent model (`subagentModel`) is the router's: Codex's subagent threads carry their own `thread-id` beside the session's, and the router sends their calls to that model, whatever the thread asked for.
 The subagent effort (`subagentEffort`) replaces the `reasoning.effort` those calls carry.
@@ -127,7 +127,7 @@ After a `codex login` in the terminal, it polls `chatgpt.com`, which the gateway
 | [`harness-chat`](rootfs/usr/local/bin/harness-chat)         | `codex-acp`                       | ACP subprocess for chat-mode sessions (UI); runs `codex app-server` through [`codex-app-server`](rootfs/usr/local/bin/codex-app-server) |
 | [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions                                                                                              |
 
-Both modes run without approvals or Codex's own sandbox, since the pod itself is the sandbox (network isolation + Envoy credential injection): terminal sessions pass `--dangerously-bypass-approvals-and-sandbox`, and chat sessions start in codex-acp's `agent-full-access` mode, which it sends with every turn and which therefore outranks `/etc/codex/config.toml`.
+Both modes run without approvals or Codex's own sandbox, since the machine itself is the sandbox (network isolation + gateway credential injection): terminal sessions pass `--dangerously-bypass-approvals-and-sandbox`, and chat sessions start in codex-acp's `agent-full-access` mode, which it sends with every turn and which therefore outranks `/etc/codex/config.toml`.
 
 Codex mints its own thread id on the first turn, so the platform session id cannot be passed in.
 A managed `SessionStart` hook ([`requirements.toml`](rootfs/etc/codex/requirements.toml), shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal` resumes that thread when the file exists and starts a fresh conversation otherwise.
@@ -147,7 +147,7 @@ The session's title is what it was before the generator would have run: the plat
 A terminal is not affected: Codex's own TUI names its thread, on the session's model behind a custom provider, and the terminal's calls carry the platform's session id.
 
 The hook patches only codex-acp 2.1.1 and only when the edit matches the bundle exactly.
-Otherwise it loads codex-acp unchanged and prints `codex-acp-patch: not applied …` to the pod log.
+Otherwise it loads codex-acp unchanged and prints `codex-acp-patch: not applied …` to the machine's log.
 **To remove it** once a codex-acp release closes #663, by #595, #338 or a switch of its own: bump `npm:@agentclientprotocol/codex-acp` in [`image.toml`](image.toml), delete `codex-acp-patch.mjs` and its check ([`check/codex-acp-patch`](../.mise/tasks/check/codex-acp-patch)), drop the `NODE_OPTIONS` line from `harness-chat`, and with #338 send the session's title on `session/new`.
 
 ## Usage

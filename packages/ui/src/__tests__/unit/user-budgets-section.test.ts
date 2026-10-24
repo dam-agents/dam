@@ -73,25 +73,19 @@ function entry(overrides: Partial<UserBudgetEntry>): UserBudgetEntry {
     setBySub: "op-1",
     setByEmail: "op@example.com",
     updatedAt: new Date().toISOString(),
-    reserved: { cpuMilli: 0, memoryBytes: 0 },
     ...overrides,
   };
 }
 
 describe("the Compute budgets section", () => {
   // TEST_SCENARIO: a budget that raises only the CPU shows its own CPU and the defaults for memory and storage, so the operator sees what the user really gets.
-  it("shows each user's own sizes, the defaults they fall back to, and their reservation", () => {
+  it("shows each user's own sizes and the defaults they fall back to", () => {
     const html = render({
       defaults,
       total: 1,
       matched: 1,
       offset: 0,
-      entries: [
-        entry({
-          cpu: "16",
-          reserved: { cpuMilli: 3000, memoryBytes: 6 * 1024 ** 3 },
-        }),
-      ],
+      entries: [entry({ cpu: "16" })],
     });
     expect(html).toContain(
       "Users without their own budget: 8 CPU, 16Gi memory, 100Gi storage.",
@@ -100,7 +94,6 @@ describe("the Compute budgets section", () => {
     expect(html).toContain("16 CPU");
     expect(html).toContain("16Gi memory (default)");
     expect(html).toContain("100Gi storage (default)");
-    expect(html).toContain("Reserves 3 CPU, 6 GiB now");
     expect(html).toContain("Set by op@example.com");
     expect(state.inputs[0]).toEqual({ sort: "changed", offset: 0, limit: 25 });
   });
@@ -121,7 +114,6 @@ describe("the Compute budgets section", () => {
       ],
     });
     expect(html).toContain("Set outside the platform");
-    expect(html).toContain("Reserves nothing now");
   });
 
   it("leaves storage out on an install without VM agents", () => {

@@ -12,7 +12,7 @@
 #   .nothing_to_do == true  -> the agent ends the run immediately.
 #   otherwise               -> the agent processes the arrays per CLAUDE.md + docs/.
 #
-# Requires: bash, jq, git, sed/grep/cut/tr, GNU date (Linux pod).
+# Requires: bash, jq, git, sed/grep/cut/tr, GNU date (the machine).
 
 set -u
 export LC_ALL=C
@@ -75,8 +75,8 @@ emit() {  # $1 = jq object body of mode-specific arrays, e.g. '{items_due:$items
 #   - connectivity: one unauthenticated-failure-proof GET per integration (+ rate limit
 #     headroom where reported); token scopes + required CLI commands (both specified
 #     once, in README)
-#   - backup invariants (git-backed state): no work/.git on the volume; count of .nfs*
-#     files under work/ (early concurrency signal)
+#   - backup invariants (git-backed state): no work/.git under HOME, and a .git that
+#     appears under work/ (early concurrency signal)
 #   - run cadence: gaps in each run type's log vs. its registered cadence
 #   - error scan: grep "^.*ERROR:" across the week's work/*.log lines; with the events
 #     log, group the week's {level: error} events into failures[] signatures
@@ -84,7 +84,7 @@ emit() {  # $1 = jq object body of mode-specific arrays, e.g. '{items_due:$items
 #     diagnosis pass, and delete events files older than the retention window
 #   - open issues on the definition repo (PRs filtered out)
 #   - stale locks / duplicate tracking rows / leftover /tmp/{{AGENT_NAME}}-* dirs
-#   - disk usage of the volume (warn threshold)
+#   - disk usage of the machine's disk (warn threshold)
 #   - definition cleanliness (git -C "$HOME" status --porcelain empty) and version
 #     currency: origin/main VERSION vs checked-out VERSION vs work/VERSION
 # plus 7-day stats counters from the logs (runs, idle ratio, per-mode throughput).

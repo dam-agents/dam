@@ -1,13 +1,13 @@
 # Experimental features
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces.
 Every feature defaults **off**; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
 The tab also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
-The current features are advanced connection types, interactive artifacts, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), the JanUI experiment (a different app shell, Home and left navigation, and in an Agent's chat the side panel; see [home-feed](home-feed.md#the-janui-experiment)), the Unified right toolbar experiment (the right-hand icon bar and the panel's top bar drawn as tiles on the sidebar's rhythm, on its own flag whatever shell the page has; see [home-feed](home-feed.md#the-unified-right-toolbar-experiment)), and Environments (sandboxes a vm agent creates for others to open, offered only where microVMs run; see [environments](environments.md)).
+The current features are advanced connection types, interactive artifacts, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, the agent's Login items with their controls, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), the JanUI experiment (a different app shell, Home and left navigation, and in an Agent's chat the side panel; see [home-feed](home-feed.md#the-janui-experiment)), the Unified right toolbar experiment (the right-hand icon bar and the panel's top bar drawn as tiles on the sidebar's rhythm, on its own flag whatever shell the page has; see [home-feed](home-feed.md#the-unified-right-toolbar-experiment)), and Environments (sandboxes an agent creates for others to open; see [environments](environments.md)).
 Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md) and addressed credential injection graduated this way).
 
 An operator can take a feature out of users' hands: the chart's `features` value gives each feature a mode, `experimental` leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
@@ -15,35 +15,6 @@ A feature `features` does not name takes the chart's `featureDefault` mode, `exp
 The chart names no feature itself, so an install that sets `featureDefault` to `off` keeps every feature off, including one a later release adds, until it names that feature.
 A pinned feature's switch is hidden from the settings tab, and the api-server answers its flag from the mode, so every surface that reads flags — the UI and agent surfaces alike — sees the same answer.
 Stored rows are kept, so returning a feature to `experimental` restores each user's own choice.
-
-A per-user flag says what a user wants to see; it cannot say what the install can do.
-The module therefore also answers one install-wide question — whether this deployment supports microVMs — read from the chart's own `virtualization.enabled` rather than from any stored row ([vm-runner](vm-runner.md)).
-That answer is what the runtime of a new agent follows, and it is not a feature: the new sandbox runtime graduated, so no switch decides it and no settings row hides it.
-**An install that can run microVMs creates every new agent as one**, whichever path makes it: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
-A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
-No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.
-**A container agent cannot be created there at all**: a create that asks for one is refused with a message naming the runtime the install does make, rather than quietly made a machine instead, so nothing new lands on the legacy path.
-**An install without virtualization keeps creating containers**, and is the only place a container Agent is created at all.
-That is an install whose host cannot virtualize — an Intel Mac, or a Linux host whose k3s VM gets no hypervisor from the install — and an install that turned virtualization off in its values or with `--set`.
-A local install is one of these only where it cannot virtualize or was asked not to.
-`cluster:install` turns virtualization on by default on an Apple silicon Mac, on one runner on the Mac's own hypervisor ([vm-host-runner](vm-host-runner.md)), and in a sandbox that can open `/dev/kvm`, unless the values or a flag decide otherwise; under CI it stays off unless asked for.
-
-### Install preflight
-
-The install-wide answer is the chart's value alone, and turning it on asks an operator to get several things right at once: a device plugin, the runner's identity, its memory limit, its egress ranges, the image budget.
-Each one gone wrong would otherwise surface only as a vm Agent that never becomes ready.
-So the chart refuses the values the controller cannot use, and the [controller](platform-topology.md#controller) checks the install against the cluster at startup and on a periodic pass: that a schedulable node in the [VM runners'](platform-topology.md#vm-runner) placement advertises the device resources, that the runner ServiceAccount exists, and that the values it hands each runner are usable.
-A **problem** is logged and named on every vm Agent whose runner is not ready.
-
-What the check cannot see is said as a **warning**, logged only and never on an Agent — so silence on an Agent is not a pass:
-
-- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only grant the chart adds with virtualization, which also feeds the node capacity in the operators' [pool metrics](observability.md#alerts); an install without it gets a log line instead of the device check, and pool metrics without node capacity.
-- **Egress that reaches the cluster.** The runner's egress ranges match in-cluster addresses too.
-  No portable API names the pod range, so the exceptions are never defaulted from the cluster; the controller instead checks the ones configured against an address it knows sits in each range — the API server's Service address and its own pod address.
-  Reaching one is only a warning, because an install may leave a range open on purpose.
-- **Taints.** Placement is checked against the node selector alone; the scheduler's own message on the runner pod says when a toleration is missing.
-
-The api-server does not read this result: a failed preflight does not withdraw the install-wide answer.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
 That is deliberate: feature surfaces are not necessarily UI-only.

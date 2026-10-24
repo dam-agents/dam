@@ -33,8 +33,8 @@ const pairs = (raw: string | undefined): Record<string, string> =>
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the OTLP endpoint of the export rail the install
- * delivered to this pod, read from whichever env layer carries it. Null when
- * no rail reached the pod, in which case nothing is exported.
+ * delivered to this machine, read from whichever env layer carries it. Null
+ * when no rail reached the machine, in which case nothing is exported.
  */
 export function otlpTargetOf(state: RuntimeEnvState): OtlpTarget | null {
   const layers = [state.env, ...state.harnesses.map((l) => l.env)];

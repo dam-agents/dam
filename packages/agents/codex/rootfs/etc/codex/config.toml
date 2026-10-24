@@ -12,7 +12,7 @@ forced_login_method = "api"
 check_for_update_on_startup = false
 
 # The provider keeps its id (rollouts record it, a rename would strand old
-# threads) but every call goes to the Model Router on the pod's loopback,
+# threads) but every call goes to the Model Router on the machine's loopback,
 # which routes by the provider-qualified model name and serves the catalog
 # Codex picks from; see docs/architecture/harness-config.md.
 # WSS disabled: the Envoy MITM proxy can't relay upgrades, Codex would hang then fall back

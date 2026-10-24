@@ -160,7 +160,6 @@ export async function spawnScript(
     install,
     env,
     resources,
-    backend,
     skills,
   } = opts;
 
@@ -182,7 +181,6 @@ export async function spawnScript(
   if (install) body.install = install;
   if (env) body.env = env;
   if (resources) body.resources = resources;
-  if (backend) body.backend = backend;
   if (skills) body.skills = skills;
 
   const { id } = await req<SpawnInvocationResponse>(

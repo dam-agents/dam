@@ -137,7 +137,7 @@ func TestOwnerGateway_SweptWithTheOwnersLastVMAgent(t *testing.T) {
 
 // TEST_SCENARIO: the cut-over keeps the Service's ClusterIP, which the machine's allowlist and resolver name, and changes only where it points: the owner gateway pod, with every port the Service declares mapped onto the agent's own slot and no other port declared.
 func TestOwnerGateway_RetargetMapsOnlyTheAgentsSlot(t *testing.T) {
-	svc := BuildGatewayService("agent-a", true, testConfig, metav1.OwnerReference{})
+	svc := BuildGatewayService("agent-a", testConfig, metav1.OwnerReference{})
 	svc.Spec.ClusterIP = "10.43.0.7"
 	moved := retargetedGatewayService(svc, testOwner, 3)
 	assert.Equal(t, "10.43.0.7", moved.Spec.ClusterIP)
@@ -593,7 +593,7 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupReconciler(t, agentCR())
-	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1}}}
+	r.config.VM = config.VMConfig{Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1}}}
 	for _, owner := range []string{"owner-a", "owner-b"} {
 		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
 	}
@@ -626,7 +626,7 @@ func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 func TestOwnerGateway_TemplateChangesRollTheWidthOfTheShare(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupReconciler(t, agentCR())
-	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	r.config.VM = config.VMConfig{Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
 	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d"}
 	for _, owner := range owners {
 		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
@@ -780,7 +780,7 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 func TestOwnerGateway_AMidRollGatewayTakesACorrectiveChangeWhenTheFleetShrinks(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupReconciler(t, agentCR())
-	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	r.config.VM = config.VMConfig{Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
 	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d", "owner-e"}
 	for _, owner := range owners {
 		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))

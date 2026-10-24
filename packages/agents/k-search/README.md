@@ -18,21 +18,18 @@ Pick by selecting the workload at sandbox creation:
 
 - **`k-search`** — kernels benchmarked on **Modal cloud GPUs** (`KSEARCH_EVAL_MODE=modal`); no in-cluster GPU needed.
   Requires the Modal connection.
-- **`k-search-local`** — kernels benchmarked on an **in-cluster NVIDIA GPU** (`KSEARCH_EVAL_MODE=local`); the pod requests `nvidia.com/gpu` and schedules onto a GPU node.
-  No Modal connection needed.
+- **`k-search-local`** — kernels benchmarked on an in-cluster NVIDIA GPU (`KSEARCH_EVAL_MODE=local`); no Modal connection needed.
 
-Both are the same image — only the eval backend (env) and GPU request differ.
+Both are the same image — only the eval backend (env) differs.
 
-> **Kata note:** agents run under a sandboxed Kata runtime.
-> GPU passthrough needs a GPU-capable Kata runtime class (VFIO) distinct from the default agent class, so `k-search-local` sets `runtimeClassName` + `nodeSelector` per-template (the chart-wide class can't carry the GPU VM config for every agent).
-> The operator fills in the cluster's actual GPU Kata class and GPU node label — see the `k-search-local` block in `helm/values.yaml`.
+> **GPU note:** `k-search-local` is not offered on the platform: the template no longer sets a runtime class or a node selector, and a machine's spec forwards no GPU device to its guest, so GPU passthrough is not available to one today.
 
 ## Configuration (env)
 
 | Variable                         | Default       | Notes                                  |
 | -------------------------------- | ------------- | -------------------------------------- |
 | `KSEARCH_TASK_SOURCE`            | `kernelbench` | Only `kernelbench` supports Modal eval |
-| `KSEARCH_EVAL_MODE`              | `modal`       | Switch to `local` on a GPU node        |
+| `KSEARCH_EVAL_MODE`              | `modal`       | Switch to `local` on a GPU             |
 | `KSEARCH_TARGET_GPU`             | `H100`        | Modal GPU type                         |
 | `KSEARCH_KERNELBENCH_LEVEL`      | `1`           | KernelBench difficulty (1–4)           |
 | `KSEARCH_KERNELBENCH_PROBLEM_ID` | `1`           | Problem within the level               |
@@ -47,6 +44,6 @@ All modal traffic then flows through the gateway.
 
 Requirements — supplied by the **Modal connection** granted to the agent:
 
-- `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the `x-modal-token-secret` header over the HTTP/2 chain (the pod env holds only a placeholder, never the real value).
-- `MODAL_TOKEN_ID` — non-secret identifier, delivered as a plain pod env.
+- `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the `x-modal-token-secret` header over the HTTP/2 chain (the agent's env holds only a placeholder, never the real value).
+- `MODAL_TOKEN_ID` — non-secret identifier, delivered as plain env.
 - Egress allow-rules for `api.modal.com` (control plane) plus the blob hosts `storage.googleapis.com` and `s3.amazonaws.com`.

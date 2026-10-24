@@ -35,8 +35,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   channels: [],
   spawnedBy: null,
   environmentOf: null,
-  vm: false,
-  runtimeMigration: null,
 });
 
 describe("resolveAgentDisplay", () => {

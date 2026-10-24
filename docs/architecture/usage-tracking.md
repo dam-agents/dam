@@ -1,11 +1,11 @@
 # Usage tracking
 
-Last verified: 2026-10-20
+Last verified: 2026-10-23
 
 ## Overview
 
 A **usage tracking** subsystem captures semantically-meaningful user activity in Postgres, shapes it into SQL views, and exposes it to a dedicated inspector role through the **usage analytics** dashboard and JSON endpoints.
-It answers two kinds of question: operator ones — turns by Agent, schedule fires, connection lifecycle by provider, contribution-delivery health — and adoption ones — who comes back each week, how new users get through their first three weeks, which core features they pick up, what size the Agents they run are.
+It answers two kinds of question: operator ones — turns by Agent, schedule fires, connection lifecycle by provider, contribution-delivery health — and adoption ones — who comes back each week, how new users get through their first three weeks, which core features they pick up.
 
 Three design choices follow:
 
@@ -112,7 +112,7 @@ The subsystem owns:
 The subsystem reads from but does not own:
 
 - **Other Postgres tables** (`pending_approvals`, `agent_skills`, `skill_sources`, `egress_rules`, `identity_links`, `connections`) — selected views project read-only summaries over them; the identity links seed the messenger map, and the dashboard reads which Connections are shared knowledge bases.
-- **The live Agents** — the dashboard's current-state panels (size, always-on, disk, connections) read the api-server's in-memory replica of the Agent resources rather than Postgres, since those settings exist only there.
+- **The live Agents** — the dashboard's current-state panels (never-hibernate, disk, connections) read the api-server's in-memory replica of the Agent resources rather than Postgres, since those settings exist only there.
   Schema changes there can require view rewrites; view rewrites never require changes to the source tables.
   (Session-derived views were retired when sessions became agent-owned.)
 
@@ -156,7 +156,7 @@ Nine properties of that stream are load-bearing for anyone reading the numbers:
 - **A Slack binding names its owner.** Binding an Agent to a Slack channel — directly or through a Starter Kit — is recorded against the Agent's owner, because "when did this user first set Slack up" is the question it answers, and a binding row disappears on unbind.
 
 - **An out-of-memory restart is observed, not reported.** Nothing raises an event when an agent runs out of memory: the controller only rewrites the restart count and reason on the Agent's status, and resets the count on hibernation.
-  The api-server watches that status and emits an event when the count changes with an out-of-memory reason, carrying the cpu and memory limits the Agent had at that moment, so the report groups the restart by the size the Agent ran out at, whatever it is resized to later.
+  The api-server watches that status and emits an event when the count changes with an out-of-memory reason, carrying the cpu and memory limits the Agent had at that moment, so the report groups the restart by the size it ran out at, whatever the Agent's spec says later.
   An Agent first seen when the watch starts sets a baseline and emits nothing, so a restarted api-server does not report old restarts again; a restart that happens while no replica is watching is missed.
   Every replica runs its own watch, so the log keeps one row per Agent, restart count and UTC day, deduplicated by a partial unique index: each restart the watch sees is a row, and replicas collapse to one.
 
@@ -274,7 +274,7 @@ The dashboard answers adoption questions in four sections, each stating its wind
   The panels follow a cohort through its first day, first week and first three weeks.
   The funnel's sign-in and first-to-fourth active day stages count only users at least four days past their first sign-in, so each of them could have reached every stage; its last stage, active in week 3, counts only users three weeks in, with its own base.
 - **All use** — the same activity measures per calendar week, the week in progress left out, plus adoption of each core feature, Starter Kit popularity and checklist completion.
-- **Agents right now** — current state of the live Agents: size in slots, set never to hibernate, out-of-memory events in 30 days (for Agents that still exist, each counted at the size the Agent had when it ran out), disk, Connections (shared knowledge bases included, the provider key every Agent is granted not) and shared knowledge bases.
+- **Agents right now** — current state of the live Agents: set never to hibernate, out-of-memory events in 30 days (for Agents that still exist, each counted at the size the Agent had when it ran out), disk, Connections (shared knowledge bases included, the provider key every Agent is granted not) and shared knowledge bases.
   Hibernated Agents count; deleted Agents do not.
 
 **An active day** is a UTC day on which a user sent a message to an Agent from any surface, or had a scheduled run fire on an Agent they own.
@@ -289,7 +289,7 @@ A sender who never linked an identity counts toward no one.
 The api-server reads them, applies the windows, which a view cannot take as parameters, and builds every panel in one pure computation.
 The current-state panels read the in-memory Agent replica; they count only Agents a non-core user created, which leaves out the core team's Agents and Agents another Agent started.
 "Always on" is read against the install's default idle timeout, so an install that never hibernates by default reports every Agent without an override as always on.
-A vm Agent without an override is read against the vm idle timeout; one that carries an override is read against that, as everywhere else.
+An Agent without an override is read against the install's idle timeout; one that carries an override is read against that, as everywhere else.
 
 ### Source passthrough views
 

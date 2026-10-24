@@ -91,7 +91,6 @@ describe("start notice", () => {
       createElement(AgentStartNotice, {
         agent: {
           id: "a",
-          vm: true,
           notReadyMessage: "pulling image",
         },
         display: slow,

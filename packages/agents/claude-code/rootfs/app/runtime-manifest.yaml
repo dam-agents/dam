@@ -78,7 +78,7 @@ harnessState: claude-code
 # runtime worker and imports the adapter as soon as the worker starts, so the
 # first load after a wake does not wait about 450 ms for that import on a vm
 # machine. To dump a session's replay by hand, call the lib's
-# loadHistory from a node one-liner in the pod.
+# loadHistory from a node one-liner in the machine.
 sessionHistory:
   module: "/usr/local/lib/harness-history-lib.mjs"
   exportName: "loadHistory"
@@ -92,7 +92,7 @@ sessionCut:
   exportName: "cutSession"
 
 # claude-agent-acp is an adapter: each session's conversation runs in a
-# `claude` process under it, usually the pod's largest. The memory reaper must
+# `claude` process under it, usually the machine's largest. The memory reaper must
 # never take one of those for a tool the agent started.
 agentProcesses: ["claude"]
 

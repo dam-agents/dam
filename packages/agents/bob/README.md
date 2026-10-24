@@ -1,7 +1,7 @@
 # Bob Agent
 
 Platform agent running [Bob Shell](https://bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant.
-Shipped in the default agent image, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
+Shipped in the default agent image, speaking ACP natively, with the platform's credential gateway — Envoy in a pod of its own — injecting the Bob API key on the machine's outbound traffic.
 
 The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), are baked into the default image's harness tools layer, and its files live at their image paths under [`rootfs/`](rootfs/).
 
@@ -11,7 +11,7 @@ The harness ships in the default image every harness Template boots, built by `/
 | ------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Harness            | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                            |
 | Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)                                     | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform and agent instructions rules links and the terminal-session pin hook; runs before either surface starts |
-| Storage            | `/home/agent` PVC                                                                     | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts                                                                                                |
+| Storage            | `/home/agent`, on the machine's disk                                                  | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives restarts and hibernation                                                                                    |
 
 ## ACP
 
@@ -31,7 +31,7 @@ Consequences for the platform:
 - **Session ids are Bob task ids.** `session/new` returns `taskState.rootTaskId`, so the platform's session id and Bob's task id are the same string — nothing to map or persist.
 - **History is native.** `session/list` (paged, `cwd`-filtered), `session/load` (full replay including tool calls, diffs and the last plan state) and `session/resume` (no replay) come straight from Bob's task store.
 - **`cwd` must be absolute.** `session/list` rejects a relative `cwd` outright.
-  The platform's clients all send `cwd: "."`, but agent-runtime rewrites every `cwd` in a frame to the pod's work dir before it reaches the harness, so Bob only ever sees an absolute path.
+  The platform's clients all send `cwd: "."`, but agent-runtime rewrites every `cwd` in a frame to the machine's work dir before it reaches the harness, so Bob only ever sees an absolute path.
   That rewrite is load-bearing for this agent.
 - **Attachments and images ride the prompt.** `embeddedContext` and `image` are supported, so nothing has to be staged into the workspace first.
 - **Extra updates are ignored, not fatal.** Bob emits `plan` and `available_commands_update` frames the UI's projection drops on its `default` branch.
@@ -44,8 +44,8 @@ MCP servers still arrive the platform way, as a runtime-channel contribution wri
 
 ## Authentication
 
-Bob expects `BOBSHELL_API_KEY` in the pod env (2.0 renamed it to `BOB_API_KEY`, but the old name is a supported alias — Bob copies it over and errors only if both are set to different values).
-On the platform the agent only ever sees a **placeholder** — the real key is materialized at the Envoy sidecar, never in the agent container.
+Bob expects `BOBSHELL_API_KEY` in the machine's env (2.0 renamed it to `BOB_API_KEY`, but the old name is a supported alias — Bob copies it over and errors only if both are set to different values).
+On the platform the agent only ever sees a **placeholder** — the real key is materialized at the credential gateway, never in the machine.
 
 1. **Open Settings → Providers → Bob Shell** and paste your Bob API key.
    The provider preset creates a secret pinned to `api.us-east.bob.ibm.com` (unchanged in 2.0) with `Authorization: Apikey {value}` injection plus a twin entry on the same host that handles the `?key=` URL parameter Bob appends to several admin endpoints.
@@ -53,7 +53,7 @@ On the platform the agent only ever sees a **placeholder** — the real key is m
    The Advanced disclosure lets you set the default model and tenant-scoping flags (see below) — those flow as additional env-mappings rather than free-form env vars in the agent dialog.
 
 2. **Grant the secret to the Bob agent instance** from Configure Agent → Secrets.
-   The next pod restart picks up `BOBSHELL_API_KEY` and any pinned `BOB_*` envs along with the Envoy filter chain.
+   The next machine start picks up `BOBSHELL_API_KEY` and any pinned `BOB_*` envs along with the gateway's filter chain.
 
 The flow per request: Bob's `fetch()` sets `Authorization: Apikey dummy-placeholder` and tunnels through `HTTPS_PROXY` → Envoy terminates TLS using the platform CA → `credential_injector` rewrites the header to `Apikey bob_prod_…` from the K8s Secret → upstream sees the valid token.
 See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [`docs/architecture/credential-gateway.md`](../../../docs/architecture/credential-gateway.md).
@@ -136,7 +136,7 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 
 | Env var                   | Translated to                            | Effect                                                                                                                                                                                             |
 | ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BOBSHELL_API_KEY`        | n/a (env-only)                           | API key the Envoy sidecar swaps to the real value on the wire. Always emitted.                                                                                                                     |
+| `BOBSHELL_API_KEY`        | n/a (env-only)                           | API key the credential gateway swaps to the real value on the wire. Always emitted.                                                                                                                |
 | `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only)                           | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to.                                                       |
 | `BOB_SHELL_MODEL`         | `session.model`                          | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default.                                         |
 | `BOB_CHAT_MODE`           | `session.defaultMode`                    | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
@@ -178,7 +178,7 @@ Bob reads `AGENTS.md` only in the session's `cwd`, the work directory, and never
 The settings bootstrap links it as the global rule `~/.bob/rules/agent.md` while the home has that file, and removes the link when it does not, since a dangling rule warns on every task.
 A regular file of that name is the owner's and stays.
 
-The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins the version, and a self-update inside the pod would both fail against the egress rules and print onto stdout.
+The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins the version, and a self-update inside the machine would both fail against the egress rules and print onto stdout.
 
 ## Harness scripts
 
@@ -190,7 +190,7 @@ The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins th
 
 ## Session history
 
-Bob persists every task to SQLite on the PVC (`~/.bob/db/bob.db`) and serves ACP history from it, so the platform's sidebar, replay and resume are all native reads — see [ACP](#acp) above.
+Bob persists every task to SQLite in `~/.bob/db/bob.db` on the machine's disk and serves ACP history from it, so the platform's sidebar, replay and resume are all native reads — see [ACP](#acp) above.
 Terminal-mode tasks land in the same store and therefore also appear in the session list.
 
 ### Terminal sessions
@@ -207,5 +207,5 @@ Their Bob-side tasks survive and can still be resumed from the terminal with `bo
 
 ## Persistence
 
-The `/home/agent` PVC keeps Bob's task DB (`~/.bob/db/`), settings (`~/.bob/settings/`), logs, and whatever Bob writes during a session (workspace files, MCP server configs).
-Survives pod restarts and image rebuilds.
+`/home/agent`, on the machine's disk, keeps Bob's task DB (`~/.bob/db/`), settings (`~/.bob/settings/`), logs, and whatever Bob writes during a session (workspace files, MCP server configs).
+Survives restarts, hibernation and image rebuilds.

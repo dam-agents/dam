@@ -122,7 +122,6 @@ function makeHarness(
     grantedAt: string;
     preferred: boolean;
   }[] = [],
-  virtualizationEnabled = true,
   linkedKits: LinkedKits = NO_LINKS,
 ) {
   const calls = {
@@ -268,7 +267,6 @@ function makeHarness(
         calls.enqueued.push(agentId);
       },
     },
-    virtualizationEnabled,
   });
   return { service, calls };
 }
@@ -1221,44 +1219,6 @@ describe("starter kits: egress preset", () => {
   });
 });
 
-describe("starter kits: backend", () => {
-  const VM_KIT: LoadedKit = {
-    ...LOADED,
-    kit: kit({ backend: "vm" }),
-  };
-
-  // TEST_SCENARIO: whether the install can run a microVM is a capability, not a preference. A kit that needs one is unusable on an install with virtualization off — the create refuses it — so the catalog must not offer it at all, the same way a disabled built-in kit never reaches the UI. Listing it would end in a user choosing a kit that cannot be created.
-  it("hides a vm kit from the catalog when the install cannot run one", async () => {
-    const off = makeHarness(VM_KIT, null, [], false);
-    expect(await off.service.list()).toEqual([]);
-    expect(await off.service.get("platform", "code-reviewer")).toBeNull();
-
-    const on = makeHarness(VM_KIT, null, [], true);
-    expect(await on.service.list()).toHaveLength(1);
-    expect(await on.service.get("platform", "code-reviewer")).not.toBeNull();
-  });
-
-  // TEST_SCENARIO: a kit that declares no backend says nothing about how it runs, so it stays on offer wherever it would otherwise be — an install without virtualization is the ordinary case, and hiding every kit there would empty the catalog.
-  it("leaves a kit that declares no backend alone", async () => {
-    const { service } = makeHarness(LOADED, null, [], false);
-    expect(await service.list()).toHaveLength(1);
-  });
-
-  // TEST_SCENARIO: the kit's declaration is what puts the agent on the vm Backend, even on an install that cannot virtualize — the refusal for that is the create's. Apply must therefore pass it explicitly on the create.
-  it("creates the agent as a microVM when the kit asks for one", async () => {
-    const { service, calls } = makeHarness(VM_KIT);
-    await service.apply(APPLY);
-    expect(calls.created[0]).toMatchObject({ vm: true });
-  });
-
-  // TEST_SCENARIO: `vm` is absent rather than false for a kit that declares no backend, so the create falls through to the install's default runtime. Sending false would override that default from a kit that never expressed one.
-  it("says nothing about the backend when the kit does not", async () => {
-    const { service, calls } = makeHarness(LOADED);
-    await service.apply(APPLY);
-    expect(calls.created[0]).not.toHaveProperty("vm");
-  });
-});
-
 describe("starter kits: startup items", () => {
   const DASHBOARD = {
     name: "control-room",
@@ -1310,7 +1270,7 @@ describe("starter kits: startup items", () => {
     ).not.toContain("startup-items");
   });
 
-  // TEST_SCENARIO: a Startup Item is an openrc service, which only a machine runs, so a kit that declares one and no `backend: vm` fails validation and is never offered; two items of one name would write one script, so that fails too; a command is a program, never a shell line, so a kit cannot hide a pipeline in it.
+  // TEST_SCENARIO: a Startup Item is an openrc service, which every Agent's machine runs; two items of one name would write one script, so that fails; a command is a program, never a shell line, so a kit cannot hide a pipeline in it.
   it("refuses items a machine could not run as declared", () => {
     const parse = (overrides: Record<string, unknown>) =>
       starterKitSchema.safeParse({
@@ -1319,13 +1279,9 @@ describe("starter kits: startup items", () => {
         name: "K",
         description: "d",
         category: "software",
-        backend: "vm",
         ...overrides,
       });
     expect(parse({ startupItems: [DASHBOARD] }).success).toBe(true);
-    expect(
-      parse({ backend: undefined, startupItems: [DASHBOARD] }).success,
-    ).toBe(false);
     expect(parse({ startupItems: [DASHBOARD, DASHBOARD] }).success).toBe(false);
     for (const command of [
       "sd control-room",
@@ -1388,9 +1344,9 @@ describe("starter kits: a kit from a link", () => {
     link: { url: URL },
   };
 
-  function linkedHarness(found: LinkedKit = LINKED, virtualization = true) {
+  function linkedHarness(found: LinkedKit = LINKED) {
     const reads: { url: string; commit?: string }[] = [];
-    const h = makeHarness(null, null, [], virtualization, {
+    const h = makeHarness(null, null, [], {
       read: async (url, commit) => {
         reads.push({ url, ...(commit ? { commit } : {}) });
         return found;
@@ -1439,15 +1395,6 @@ describe("starter kits: a kit from a link", () => {
       service.apply({ ...LINK_APPLY, kitId: "something-else" }),
     ).rejects.toThrow(/is code-reviewer, not something-else/);
     expect(calls.created).toEqual([]);
-  });
-
-  // TEST_SCENARIO: a linked kit asking for a microVM on an install without virtualization would only fail at create; refusing it at the preview tells the user before they fill anything in.
-  it("refuses a vm kit from a link where no microVM can run", async () => {
-    const { service } = linkedHarness(
-      { ...LINKED, kit: kit({ backend: "vm" }) },
-      false,
-    );
-    await expect(service.inspect(URL)).rejects.toThrow(/microVM/);
   });
 
   // TEST_SCENARIO: the catalog name `link` is the one way to say "from a link", and a link is meaningless on a catalog kit, so the input names both or neither — a catalog kit can never be swapped for a link, nor a link apply fall back to a catalog row.

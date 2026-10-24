@@ -5,7 +5,6 @@ import {
   type K8sClient,
   type KubeObject,
 } from "../../agents/infrastructure/k8s.js";
-import type { CeilingOverride } from "../services/budgets-service.js";
 
 const USERBUDGETS_PLURAL = "userbudgets";
 const KIND_USER_BUDGET = "UserBudget";
@@ -35,18 +34,6 @@ export async function readUserBudgetSizes(
   return sizesOf(
     await k8s.getCustomObject(USERBUDGETS_PLURAL, budgetName(owner)),
   );
-}
-
-export async function readUserBudgetCeiling(
-  k8s: K8sClient,
-  owner: string,
-): Promise<CeilingOverride | null> {
-  const { cpu, memory } = await readUserBudgetSizes(k8s, owner);
-  if (cpu === null && memory === null) return null;
-  return {
-    ...(cpu !== null && { cpu }),
-    ...(memory !== null && { memory }),
-  };
 }
 
 export async function listUserBudgets(

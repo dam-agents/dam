@@ -33,10 +33,9 @@ export function AgentManagementActions({
   const setDisabled = useSetAgentDisabled();
   const { restart } = useRestartAgent();
   const environmentsEnabled = useEnvironmentsEnabled();
-  const environments = useEnvironments(
-    environmentsEnabled && agent.vm ? agent.id : null,
-    { poll: false },
-  );
+  const environments = useEnvironments(environmentsEnabled ? agent.id : null, {
+    poll: false,
+  });
   const accessListReach = environments.data?.length === 0;
 
   useEffect(() => {

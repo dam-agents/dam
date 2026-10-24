@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { derivePrState } from "../../modules/skills/domain/pr-state.js";
 import type {
-  PodPrReadResult,
-  PodPrStateReader,
+  AgentPrReadResult,
+  AgentPrStateReader,
 } from "../../modules/skills/domain/pr-state.js";
 import { parsePrUrl } from "../../modules/skills/domain/pr-url.js";
 import {
@@ -76,7 +76,7 @@ const PR_URL = "https://github.com/acme/skills/pull/7";
 function makeResolver(opts: {
   candidates: { agentId: string; prUrl: string; prEtag: string | null }[];
   reads?: PrStateReadResult[];
-  podReads?: PodPrReadResult[];
+  podReads?: AgentPrReadResult[];
 }) {
   const agentSkills = {
     listPrStateCandidates: vi.fn().mockResolvedValue(opts.candidates),
@@ -85,12 +85,12 @@ function makeResolver(opts: {
   } as unknown as AgentSkillsRepository;
   const read = vi.fn<PrStateReader["read"]>();
   for (const r of opts.reads ?? []) read.mockResolvedValueOnce(r);
-  const podRead = vi.fn<PodPrStateReader["read"]>();
+  const podRead = vi.fn<AgentPrStateReader["read"]>();
   for (const r of opts.podReads ?? []) podRead.mockResolvedValueOnce(r);
   const resolver = createPrStateResolver({
     agentSkills,
     reader: { read },
-    podReader: { read: podRead },
+    agentReader: { read: podRead },
     log: vi.fn(),
   });
   return { resolver, agentSkills, read, podRead };

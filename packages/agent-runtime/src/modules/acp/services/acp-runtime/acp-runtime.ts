@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
-import type { PendingRestart, PodSession } from "agent-runtime-api";
+import type { PendingRestart, Session } from "agent-runtime-api";
 import {
   buildPlatformQueueChangedNotification,
   buildPlatformSessionResetNotification,
@@ -2774,7 +2774,7 @@ function stripPlatformMeta(frame: unknown): object {
   return withPlatform(frame, () => null);
 }
 
-function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
+function toAcpPlatformMeta(session: Session): Record<string, unknown> {
   return {
     mode: session.mode,
     type: session.type,

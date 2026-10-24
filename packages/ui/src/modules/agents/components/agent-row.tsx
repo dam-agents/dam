@@ -30,7 +30,6 @@ import {
   ContributionFailuresBadge,
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
-import { RuntimeMigrationBadge } from "./runtime-migration-badge.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 import { UsagePairs } from "./usage-pairs.js";
@@ -38,14 +37,10 @@ import { UsagePairs } from "./usage-pairs.js";
 const SECOND_LINE_ITEM =
   "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
 
-const SIZE_HINT =
-  "Size: compute slots this agent reserves, then its CPU and memory limits";
-
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
   working?: boolean;
-  subtitle: string | null;
   usage: AgentUsage | null;
   temporaryDraw?: TemporaryDraw;
   updatePending: boolean;
@@ -60,7 +55,6 @@ export function AgentRow({
   agent,
   display,
   working,
-  subtitle,
   usage,
   temporaryDraw,
   updatePending,
@@ -105,7 +99,6 @@ export function AgentRow({
               {kindBadge.label}
             </Badge>
           )}
-          <RuntimeMigrationBadge agent={agent} />
           <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
@@ -126,7 +119,6 @@ export function AgentRow({
               state={display.state}
               working={working}
               keptWork={keptWork}
-              vm={agent.vm}
               refused={isStartRefusal(agent.podTerminationCode)}
               className={cn(
                 SECOND_LINE_ITEM,
@@ -143,11 +135,6 @@ export function AgentRow({
             >
               <Gift size={14} className="shrink-0" aria-hidden />
               <span className="truncate">{kitBadge.label}</span>
-            </span>
-          )}
-          {subtitle && (
-            <span className="truncate" title={SIZE_HINT}>
-              {subtitle}
             </span>
           )}
           {usage && <UsagePairs usage={usage} />}
