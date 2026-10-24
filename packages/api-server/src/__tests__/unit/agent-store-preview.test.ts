@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
-  mapAgent,
   mapBudget,
   previewAgentStore,
-  type AgentStoreDefaults,
 } from "../../modules/agent-store/preview.js";
+import {
+  rowsFromResource as mapAgent,
+  type AgentStoreDefaults,
+} from "../../modules/agent-store/rows.js";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 
 // TEST_OVERVIEW: The dry-run absorb report is the operator's evidence that the switch is safe on an install, so the mapping it reports on is what the real absorb will write. These specs pin what a stored Agent becomes — values that must survive verbatim, the fields the move deliberately drops — and every refusal, because a refused Agent is one an operator has to look at before the switch rather than after.
@@ -77,7 +79,7 @@ describe("agent mapping", () => {
     );
 
     expect(mapped.refusal).toBeUndefined();
-    const rows = mapped.rows as {
+    const rows = mapped.rows as unknown as {
       agent: Record<string, unknown>;
       signals: Record<string, unknown>;
       status: Record<string, unknown>;
@@ -93,20 +95,23 @@ describe("agent mapping", () => {
     expect(rows.agent.ownerSub).toBe("sub-1");
     expect(rows.signals.rollRev).toBe("rev-3");
     expect(rows.signals.sessionPinned).toBe(true);
-    expect(rows.signals.lastActivityAt).toBe("2026-10-24T10:00:00Z");
+    expect(rows.signals.lastActivityAt).toEqual(
+      new Date("2026-10-24T10:00:00Z"),
+    );
     expect(rows.status.observedGeneration).toBe(7);
     expect(rows.status.machineRestarts).toBe(2);
     expect(rows.conditions).toHaveLength(1);
-    expect(rows.conditions[0]?.lastTransitionAt).toBe("2026-10-20T09:00:00Z");
-    expect(rows.hosts).toEqual([
-      { agentId: "agent-abc", host: "*.example.test" },
-    ]);
+    expect(rows.conditions[0]?.lastTransitionAt).toEqual(
+      new Date("2026-10-20T09:00:00Z"),
+    );
+    expect(rows.hosts).toEqual(["*.example.test"]);
   });
 
   // TEST_SCENARIO: A limit an Agent never set falls back to the chart's legacy value, because the column is not nullable and the machine today is sized from the same default.
   it("fills a missing limit from the chart's legacy default", () => {
     const mapped = mapAgent(agent({}), DEFAULTS, SWITCHED_AT);
-    const row = (mapped.rows as { agent: Record<string, unknown> }).agent;
+    const row = (mapped.rows as unknown as { agent: Record<string, unknown> })
+      .agent;
     expect(row.cpuLimit).toBe("1");
     expect(row.memoryLimit).toBe("2Gi");
   });
@@ -154,9 +159,10 @@ describe("agent mapping", () => {
       DEFAULTS,
       SWITCHED_AT,
     );
-    const signals = (mapped.rows as { signals: Record<string, unknown> })
-      .signals;
-    expect(signals.disabledAt).toBe(SWITCHED_AT);
+    const signals = (
+      mapped.rows as unknown as { signals: Record<string, unknown> }
+    ).signals;
+    expect(signals.disabledAt).toEqual(new Date(SWITCHED_AT));
     expect(signals.stopRequestedAt).toBeNull();
   });
 
@@ -220,7 +226,8 @@ describe("agent mapping", () => {
       SWITCHED_AT,
     );
     expect(
-      (larger.rows as { agent: Record<string, unknown> }).agent.diskSize,
+      (larger.rows as unknown as { agent: Record<string, unknown> }).agent
+        .diskSize,
     ).toBe("8Gi");
 
     const smaller = mapAgent(
@@ -235,7 +242,8 @@ describe("agent mapping", () => {
       SWITCHED_AT,
     );
     expect(
-      (smaller.rows as { agent: Record<string, unknown> }).agent.diskSize,
+      (smaller.rows as unknown as { agent: Record<string, unknown> }).agent
+        .diskSize,
     ).toBe("10Gi");
   });
 });
@@ -345,7 +353,7 @@ describe("preview against what the rows accept", () => {
     );
     expect(mapped.refusal).toBeUndefined();
     expect(
-      (mapped.rows as { agent: Record<string, unknown> }).agent
+      (mapped.rows as unknown as { agent: Record<string, unknown> }).agent
         .hibernationTimeoutNs,
     ).toBe(0);
     expect(mapped.normalized).toContain("hibernationTimeout.negative");
@@ -361,7 +369,9 @@ describe("preview against what the rows accept", () => {
       SWITCHED_AT,
     );
     expect(mapped.normalized).toContain("l7Hosts.duplicates");
-    expect((mapped.rows as { hosts: unknown[] }).hosts).toHaveLength(2);
+    expect((mapped.rows as unknown as { hosts: unknown[] }).hosts).toHaveLength(
+      2,
+    );
   });
 
   // TEST_SCENARIO: The kit's commit checks accept uppercase and the columns accept lowercase; a half-written seed or pending update cannot be a row at all, so it is dropped and counted rather than failing the import.
@@ -382,7 +392,8 @@ describe("preview against what the rows accept", () => {
       DEFAULTS,
       SWITCHED_AT,
     );
-    const kit = (mapped.rows as { kit: Record<string, unknown> }).kit;
+    const kit = (mapped.rows as unknown as { kit: Record<string, unknown> })
+      .kit;
     expect(kit.seedCommit).toBe("abcdef0123456789abcdef0123456789abcdef01");
     expect(kit.pendingCommit).toBeNull();
     expect(mapped.normalized).toEqual(
@@ -407,7 +418,8 @@ describe("preview against what the rows accept", () => {
       SWITCHED_AT,
     );
     expect(
-      (decimal.rows as { agent: Record<string, unknown> }).agent.diskSize,
+      (decimal.rows as unknown as { agent: Record<string, unknown> }).agent
+        .diskSize,
     ).toBe("2Gi");
 
     const unparseable = mapAgent(
@@ -438,11 +450,13 @@ describe("preview against what the rows accept", () => {
       DEFAULTS,
       SWITCHED_AT,
     );
-    const status = (mapped.rows as { status: Record<string, unknown> }).status;
+    const status = (
+      mapped.rows as unknown as { status: Record<string, unknown> }
+    ).status;
     expect(status).toMatchObject({
-      machineUpAt: "2026-10-24T08:00:00Z",
-      machineDownAt: "2026-10-24T09:00:00Z",
-      memoryWaitUntil: "2026-10-24T09:30:00Z",
+      machineUpAt: new Date("2026-10-24T08:00:00Z"),
+      machineDownAt: new Date("2026-10-24T09:00:00Z"),
+      memoryWaitUntil: new Date("2026-10-24T09:30:00Z"),
       runnerOomKillId: "runner-1",
       runnerOomRecoveredId: "runner-1",
     });

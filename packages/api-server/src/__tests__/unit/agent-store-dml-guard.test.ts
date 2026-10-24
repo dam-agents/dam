@@ -33,9 +33,14 @@ const builderWrite = (identifier: string): RegExp =>
 
 const builderCall = /\b(insert|update|delete)\s*\(/u;
 
+const snakeColumns = RECLAIM_COLUMNS.filter((column) => column.includes("_"));
+const camelColumns = RECLAIM_COLUMNS.filter((column) => !column.includes("_"));
 const reclaimWrite = new RegExp(
-  `\\b(${RECLAIM_COLUMNS.filter((column) => column.includes("_")).join("|")})\\s*=\\s*[^=]|\\b(${RECLAIM_COLUMNS.filter((column) => !column.includes("_")).join("|")})\\s*:`,
-  "u",
+  [
+    `\\b(${snakeColumns.join("|")})\\s*=\\s*[^=]`,
+    `\\.(set|values)\\(\\{[^}]*\\b(${camelColumns.join("|")})\\b`,
+  ].join("|"),
+  "su",
 );
 
 function sourceFiles(directory: string): string[] {
@@ -91,7 +96,7 @@ describe("api-server writes to what the controller owns", () => {
     expect(offenders).toEqual([]);
   });
 
-  // TEST_SCENARIO: The signals row is shared, and two of its columns are the controller's alone — the api-server may read the reclaim mark and must never set or clear it, whichever side of the switch holds the row.
+  // TEST_SCENARIO: The signals row is shared, and two of its columns are the controller's alone — the api-server may read the reclaim mark and put it in a row it describes, but must never set or clear it, whichever side of the switch holds the row. A write is a raw `SET`, or a value handed to a Drizzle `set`/`values`.
   it("never writes the controller's reclaim columns", () => {
     const offenders = sourceFiles(SOURCE_ROOT)
       .filter((path) => reclaimWrite.test(readFileSync(path, "utf8")))
