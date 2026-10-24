@@ -6,13 +6,17 @@ export interface ModelFamily {
   name: string;
   token: string;
   sizes: readonly string[];
+  names?: readonly string[];
+  variantSuffix?: boolean;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the families and their size tiers, smallest to
  * largest, which is what makes a size one menu entry and orders it; a new
  * size is one string here, in that order. A family whose ids carry no size
- * word has no tiers, so it reads as one tier of its own.
+ * word has no tiers, so it reads as one tier of its own. A family with fixed
+ * names (Bob's service tiers) lists them in display order, and one whose ids
+ * carry a variant tail after the size (Nemotron) says so.
  */
 export const MODEL_FAMILIES: readonly ModelFamily[] = [
   {
@@ -35,6 +39,27 @@ export const MODEL_FAMILIES: readonly ModelFamily[] = [
     token: "deepseek",
     sizes: ["flash"],
   },
+  {
+    name: "Nemotron",
+    token: "nemotron",
+    sizes: ["nano", "ultra"],
+    variantSuffix: true,
+  },
+  {
+    name: "Bob",
+    token: "bob",
+    sizes: [],
+    names: [
+      "background",
+      "explorer",
+      "fast",
+      "premium",
+      "premium-ide",
+      "premium-shell",
+      "security",
+      "wxO-model",
+    ],
+  },
 ];
 
 export interface ParsedModel {
@@ -52,11 +77,17 @@ const VERSION_PART = /^v?\d{1,2}$/;
  * (`ibm/aws/…`) and Bedrock with dots (`eu.anthropic.…`), so only the last
  * path segment is read.
  */
-const tokensOf = (name: string) =>
-  (name.toLowerCase().split("/").pop() ?? "").split(/[^a-z0-9]+/);
+const lastSegment = (name: string) => name.toLowerCase().split("/").pop() ?? "";
+
+const tokensOf = (name: string) => lastSegment(name).split(/[^a-z0-9]+/);
 
 const familyOf = (tokens: readonly string[]): ModelFamily | null =>
   MODEL_FAMILIES.find((family) => tokens.includes(family.token)) ?? null;
+
+const namedFamilyOf = (name: string): ModelFamily | null =>
+  MODEL_FAMILIES.find((family) =>
+    family.names?.some((entry) => entry.toLowerCase() === lastSegment(name)),
+  ) ?? null;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a name is a family model only in one of the
@@ -67,9 +98,17 @@ const familyOf = (tokens: readonly string[]): ModelFamily | null =>
  * (a variant such as `-mini`, a size in the middle) leaves it out, so it
  * stays a distinct model instead of merging with the model it resembles.
  * The stamp, a snapshot date or a build number, stays apart from the
- * version, so a stamped snapshot is the same model.
+ * version, so a stamped snapshot is the same model. A variant tail after the
+ * size of a family that declares one is not read at all.
  */
 export function parseModelFamily(name: string): ParsedModel | null {
+  const named = namedFamilyOf(name);
+  if (named !== null) {
+    const size = named.names!.find(
+      (entry) => entry.toLowerCase() === lastSegment(name),
+    )!;
+    return { family: named, size, version: [] };
+  }
   const tokens = tokensOf(name);
   const family = familyOf(tokens);
   if (family === null) return null;
@@ -96,6 +135,29 @@ export function parseModelFamily(name: string): ParsedModel | null {
           ...(buildStamp !== undefined && { buildStamp }),
         };
   }
+  if (family.variantSuffix) {
+    for (const size of family.sizes) {
+      const at = rest.indexOf(size);
+      if (at < 0) continue;
+      const before = versionOf(rest.slice(Math.max(0, at - 2), at));
+      if (before !== null)
+        return {
+          family,
+          size,
+          version: before,
+          ...(buildStamp !== undefined && { buildStamp }),
+        };
+      const after = versionOf(rest.slice(at + 1, at + 2));
+      if (after !== null)
+        return {
+          family,
+          size,
+          version: after,
+          ...(buildStamp !== undefined && { buildStamp }),
+        };
+    }
+    return null;
+  }
   for (const size of family.sizes) {
     if (rest.length < 2 || rest.length > 3) continue;
     const version =
@@ -113,6 +175,23 @@ export function parseModelFamily(name: string): ParsedModel | null {
       };
   }
   return null;
+}
+
+const entryLabel = (parsed: ParsedModel) =>
+  parsed.family.names
+    ? parsed.size
+    : parsed.family.sizes.length === 0
+      ? parsed.version.join(".")
+      : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the chat's own name for a matched model, family
+ * then size or version (`Claude Opus 5.5`, `GLM 5.3`); a name the parser does
+ * not match has no pretty name and the caller keeps its old label.
+ */
+export function prettyModelLabel(name: string): string | null {
+  const parsed = parseModelFamily(name);
+  return parsed === null ? null : `${parsed.family.name} ${entryLabel(parsed)}`;
 }
 
 export function compareVersions(
@@ -199,8 +278,8 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
       continue;
     }
     for (const model of group.models) {
-      const family = familyOf(tokensOf(model.name));
-      const parsed = family === null ? null : parseModelFamily(model.name);
+      const parsed = parseModelFamily(model.name);
+      const family = parsed?.family ?? familyOf(tokensOf(model.name));
       if (parsed === null) {
         addLoose(family, group, model);
         continue;
@@ -211,10 +290,7 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
         entry = {
           ...parsed,
           key,
-          label:
-            parsed.family.sizes.length === 0
-              ? parsed.version.join(".")
-              : `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`,
+          label: entryLabel(parsed),
           options: [],
         };
         recognized.set(key, entry);
@@ -237,6 +313,13 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
           family.sizes.indexOf(b.size) - family.sizes.indexOf(a.size),
       );
     const newest: FamilyModel[] = [];
+    if (family.names) {
+      for (const name of family.names) {
+        const entry = versioned.find((e) => e.size === name);
+        if (entry !== undefined) newest.push(entry);
+      }
+      return { family, newest, more: [], expanded: newest };
+    }
     const sizes =
       family.sizes.length === 0 ? [family.token] : [...family.sizes].reverse();
     for (const size of sizes) {

@@ -6,6 +6,7 @@ import {
   compareVersions,
   familyModelGroups,
   parseModelFamily,
+  prettyModelLabel,
 } from "../../modules/sessions/lib/model-families.js";
 
 // TEST_OVERVIEW: The model menu recognises a model by family and size tier, ignoring the gateway prefixes and the version in its id, so it can show one entry per size on the newest version and put older and unrecognised versions behind More. Every other model stays selectable, under its family's More or under Other.
@@ -92,6 +93,23 @@ describe("a model id's family, size and version", () => {
     expect(parseModelFamily("claude-opus-5-5-mini")).toBeNull();
   });
 
+  // TEST_SCENARIO: Nemotron's variant tail after its size is not a version, and Bob's service tiers are fixed names, not versions.
+  it("reads Nemotron's variant tail and Bob's named tiers", () => {
+    expect(
+      parseModelFamily("rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4"),
+    ).toMatchObject({
+      family: { name: "Nemotron" },
+      size: "ultra",
+      version: [3],
+    });
+    expect(parseModelFamily("bob/premium-ide")).toMatchObject({
+      family: { name: "Bob" },
+      size: "premium-ide",
+      version: [],
+    });
+    expect(parseModelFamily("bob/wxO-model")?.size).toBe("wxO-model");
+  });
+
   // TEST_SCENARIO: A build stamp after the version, a snapshot date or a build number, is kept apart from it, so a stamped model is the same version and not a newer one.
   it("reads a build stamp apart from the version", () => {
     expect(parseModelFamily("claude-opus-5-5-20261001")).toMatchObject({
@@ -111,6 +129,14 @@ describe("a model id's family, size and version", () => {
       version: [4, 1],
       buildStamp: "1017",
     });
+  });
+
+  // TEST_SCENARIO: The chat names a matched model by family and size, not by its provider, and has no pretty name for an unmatched one.
+  it("names a matched model for the chat", () => {
+    expect(prettyModelLabel("ibm/aws/claude-opus-5-5")).toBe("Claude Opus 5.5");
+    expect(prettyModelLabel("cb/rits/zai-org/glm-5-3")).toBe("GLM 5.3");
+    expect(prettyModelLabel("bob/premium-ide")).toBe("Bob premium-ide");
+    expect(prettyModelLabel("ibm/azure/gpt-5.5")).toBeNull();
   });
 
   // TEST_SCENARIO: Versions compare numerically, so 5.5 beats 5.1, 5.1 beats 5, and 5.10 beats 5.9.
@@ -234,6 +260,35 @@ describe("the menu's family groups", () => {
     expect(deepseek.more.map((e) => e.label)).toEqual([
       "rits/deepseek-ai/DeepSeek-V3.2",
     ]);
+  });
+
+  // TEST_SCENARIO: Nemotron's Ultra is one entry, and Bob's tiers form their own group in the given order; gpt-oss keeps the GPT family and its More.
+  it("groups Nemotron and Bob", () => {
+    const { families } = familyModelGroups([
+      group("cb", "cb/rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4"),
+      group(
+        "bob",
+        "bob/background",
+        "bob/premium-ide",
+        "bob/wxO-model",
+        "bob/gpt-oss-20b",
+      ),
+    ]);
+    expect(
+      families
+        .find((f) => f.family.name === "Nemotron")!
+        .newest.map((e) => e.label),
+    ).toEqual(["Ultra 3"]);
+    const bob = families.find((f) => f.family.name === "Bob")!;
+    expect(bob.newest.map((e) => e.label)).toEqual([
+      "background",
+      "premium-ide",
+      "wxO-model",
+    ]);
+    expect(bob.more).toEqual([]);
+    expect(
+      families.find((f) => f.family.name === "GPT")!.more.map((e) => e.label),
+    ).toContain("gpt-oss-20b");
   });
 
   // TEST_SCENARIO: Models of no known family are their own entries under Other, grouped by upstream id across providers.

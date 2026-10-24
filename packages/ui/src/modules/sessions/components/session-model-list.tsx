@@ -1,4 +1,4 @@
-import { ChevronDown } from "@carbon/icons-react";
+import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ interface Props {
   failed: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
+  onManageProviders: () => void;
   harnessName?: string;
 }
 
@@ -66,32 +67,36 @@ function ListedModels({
   failed,
   onRetry,
   onChoose,
+  onManageProviders,
   harnessName,
 }: Omit<Props, "agentId">) {
   if (groups.length === 0)
     return (
-      <p className="px-1 py-1 text-muted-foreground">
-        {loading ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Spinner size={12} className="text-muted-foreground" />
-            Loading models…
-          </span>
-        ) : failed ? (
-          <>
-            Couldn't load the models.
-            <Button
-              variant="link"
-              size="inline"
-              className="ml-1"
-              onClick={onRetry}
-            >
-              Retry
-            </Button>
-          </>
-        ) : (
-          "No models available."
-        )}
-      </p>
+      <>
+        <p className="px-1 py-1 text-muted-foreground">
+          {loading ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner size={12} className="text-muted-foreground" />
+              Loading models…
+            </span>
+          ) : failed ? (
+            <>
+              Couldn't load the models.
+              <Button
+                variant="link"
+                size="inline"
+                className="ml-1"
+                onClick={onRetry}
+              >
+                Retry
+              </Button>
+            </>
+          ) : (
+            "No models available."
+          )}
+        </p>
+        <ConnectMoreProviders onManageProviders={onManageProviders} />
+      </>
     );
   const { families, other } = familyModelGroups(groups);
   return (
@@ -113,7 +118,31 @@ function ListedModels({
         onRetry={onRetry}
         onChoose={onChoose}
       />
+      <ConnectMoreProviders onManageProviders={onManageProviders} />
     </>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one way out of this menu to attach another
+ * provider; the attach rows that used to sit under the models are gone.
+ */
+function ConnectMoreProviders({
+  onManageProviders,
+}: {
+  onManageProviders: () => void;
+}) {
+  return (
+    <PopoverClose asChild>
+      <button
+        type="button"
+        onClick={onManageProviders}
+        className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        Connect more providers
+        <ChevronRight size={14} aria-hidden />
+      </button>
+    </PopoverClose>
   );
 }
 
@@ -186,7 +215,8 @@ function OtherModelSection({
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
-  if (other.models.length === 0 && other.unlisted.length === 0) return null;
+  const unlisted = other.unlisted.filter((g) => g.status !== "unsupported");
+  if (other.models.length === 0 && unlisted.length === 0) return null;
   return (
     <section aria-label="Other" className="flex flex-col px-1">
       <div className="flex h-6 items-center">
@@ -201,7 +231,7 @@ function OtherModelSection({
             onChoose={onChoose}
           />
         ))}
-        {other.unlisted.map((group) => (
+        {unlisted.map((group) => (
           <li
             key={group.connectionId}
             className="px-2 py-1 text-muted-foreground"
@@ -266,13 +296,20 @@ function ModelRow({
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         </button>
       </PopoverClose>
-      {entry.options.length > 1 && (
+      {entry.options.length > 1 ? (
         <ProviderChoice
           label={entry.label}
           options={entry.options}
           selected={option}
           onPick={(next) => onChoose(next.model.name, next.group)}
         />
+      ) : (
+        <span
+          title={option.group.displayName}
+          className="shrink-0 whitespace-nowrap px-1 py-1 text-xs text-muted-foreground"
+        >
+          {option.group.displayName}
+        </span>
       )}
     </li>
   );

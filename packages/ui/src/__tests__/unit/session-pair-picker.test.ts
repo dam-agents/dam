@@ -612,6 +612,7 @@ describe("one model list on a runtime that routes by model name", () => {
     );
     expect(html).toContain('aria-label="GPT"');
     expect(html).toContain('aria-label="GLM"');
+    expect(html).toContain("2 models");
     expect(html).toContain("5.3");
     expect(html).toContain("More");
     expect(html).not.toContain("Other");
@@ -714,35 +715,6 @@ describe("one model list on a runtime that routes by model name", () => {
     );
   });
 
-  /** TEST_SCENARIO: A second IBM key the owner holds cannot be attached
-   * beside the one the agent already uses (one Connection per provider
-   * alias), so it is listed disabled with the reason, not as an attach that
-   * would fail. */
-  it("shows a conflicting provider disabled with the alias reason", () => {
-    state.owned = [
-      {
-        id: "ibm-2",
-        name: "IBM second key",
-        type: "ibm-litellm",
-        templateId: "ibm-litellm",
-      } as never,
-    ];
-    const html = renderToStaticMarkup(
-      createElement(SessionPairPicker, {
-        agentId: "agent",
-        defaultHarness: "pi",
-        carried,
-        routed: true,
-        onConnectProviders: state.connectProviders,
-      }),
-    );
-    expect(html).toContain('aria-label="IBM second key"');
-    expect(html).toMatch(
-      /disabled=""[^>]*>[^<]*<svg[^>]*>.*?Attach this provider/s,
-    );
-    expect(html).toContain("Why IBM second key cannot be attached");
-  });
-
   /** TEST_SCENARIO: In a running session the popover lists the same grouped
    * list across providers, with no new-session gate, and says a pick lands
    * on the next message while a turn runs; the label under the composer
@@ -769,6 +741,29 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).toContain("applies to the next message");
     expect(html).not.toContain("start a new session");
     expect(html).not.toContain(">Change<");
+  });
+
+  /** TEST_SCENARIO: The label under the composer is the model family's pretty name for a matched model, not its provider. */
+  it("shows the pretty model name under the composer", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
+        agentId: "agent",
+        harness: "pi",
+        provider: "curve",
+        model: "cb/rits/zai-org/glm-5-3",
+        carried,
+        routed: true,
+        onChoose: vi.fn(),
+        onConfigure: vi.fn(),
+        onNewSession: state.newSession,
+      }),
+    );
+    const trigger =
+      /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(html)?.[1];
+    expect(trigger).toContain("GLM 5.3");
+    expect(trigger).not.toContain("Curve");
   });
 
   /** TEST_SCENARIO: The provider a running session's model names (the
@@ -835,21 +830,18 @@ describe("JanUI's picker and the default's editor", () => {
       }),
     );
 
-  /** TEST_SCENARIO: In JanUI the picker neither attaches nor
-   * disconnects providers; one row counts the attached providers among the
-   * owner's and leads to the agent's Providers page. The current layout
-   * keeps its Configure providers link, and neither offers a disconnect. */
-  it("swaps provider controls for one Manage providers row", () => {
-    const html = render({ newLayout: true });
-    expect(html).not.toContain("Disconnect IBM");
-    expect(html).not.toContain("Attach this provider");
-    expect(html).not.toContain("Configure providers and defaults");
-    expect(html.replace(/<!-- -->/g, "")).toMatch(
-      /data-testid="session-pair-manage-providers"[^>]*>Manage providers \(2\/3 connected\)/,
-    );
-    const current = render({});
-    expect(current).not.toContain("Disconnect IBM");
-    expect(current).toContain("Configure providers and defaults");
-    expect(current).not.toContain("session-pair-manage-providers");
+  /** TEST_SCENARIO: The routed model list ends with one Connect more
+   * providers row that leads to the Providers page; the separate attach
+   * rows, the manage-providers row and the disconnect controls are gone,
+   * in both layouts. */
+  it("offers one Connect more providers row", () => {
+    for (const props of [{ newLayout: true }, {}]) {
+      const html = render(props);
+      expect(html).toContain("Connect more providers");
+      expect(html).not.toContain("Disconnect IBM");
+      expect(html).not.toContain("Attach this provider");
+      expect(html).not.toContain("Manage providers");
+      expect(html).not.toContain("Configure providers and defaults");
+    }
   });
 });

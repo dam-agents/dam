@@ -66,6 +66,8 @@ afterEach(() => {
 function render(
   onChoose: (model: string, group: ModelGroup) => void,
   current: string | null = null,
+  onManageProviders: () => void = () => {},
+  groups: ModelGroup[] = [ibm, anthropic],
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -74,12 +76,13 @@ function render(
     root.render(
       createElement(SessionModelList, {
         agentId: "agent",
-        groups: [ibm, anthropic],
+        groups,
         current,
         loading: false,
         failed: false,
         onRetry: () => {},
         onChoose,
+        onManageProviders,
       }),
     ),
   );
@@ -147,4 +150,39 @@ it("opens the family of the current older model", () => {
   const { container } = render(() => {}, "ibm/aws/claude-opus-5-1");
   expect(container.textContent).toContain("Opus 5.1");
   expect(container.textContent).toContain("Less");
+});
+
+// TEST_SCENARIO: One provider is a plain muted label on the entry, not a dropdown, and the menu ends with the one way to attach more providers.
+it("shows a single provider as a label and offers Connect more providers", () => {
+  const onManageProviders = vi.fn();
+  const { container, buttons } = render(() => {}, null, onManageProviders);
+  const kimi = [...container.querySelectorAll("li")].find((li) =>
+    li.textContent?.includes("Kimi-K2.5"),
+  );
+  expect(kimi?.textContent).toContain("IBM");
+  expect(kimi?.querySelector('[aria-label^="Provider for"]')).toBeNull();
+
+  const connect = buttons().find((b) =>
+    b.textContent?.trim().startsWith("Connect more providers"),
+  );
+  click(connect!);
+  expect(onManageProviders).toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: A provider that is not compatible with the harness is left out of the menu, with no line of its own.
+it("does not list an incompatible provider", () => {
+  const bob = {
+    ...ibm,
+    connectionId: "bob",
+    displayName: "Bob Shell",
+    status: "unsupported" as const,
+    models: [],
+  };
+  const { container } = render(
+    () => {},
+    null,
+    () => {},
+    [ibm, anthropic, bob],
+  );
+  expect(container.textContent).not.toContain("Not compatible");
 });
