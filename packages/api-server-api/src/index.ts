@@ -522,6 +522,31 @@ export {
 export type { DefaultAccountKindId } from "./modules/connections/preference-group.js";
 
 export type {
+  ProfilesService,
+  ProfileView,
+  ProfileWithUsage,
+  ProfileUsage,
+  ProfileUsageCounts,
+  ProfileCreateInput,
+  ProfileUpdateInput,
+  ProfileUnavailableReason,
+  ProfileSlot,
+} from "./modules/profiles/types.js";
+export {
+  profileSchema,
+  profileViewSchema,
+  profileUsageSchema,
+  profileUsageCountsSchema,
+  profileCreateInputSchema,
+  profileUpdateInputSchema,
+  profileIdInputSchema,
+  profileNameSchema,
+  profileModelSchema,
+  profileSettingsSchema,
+  profileSlotSchema,
+} from "./modules/profiles/schemas.js";
+
+export type {
   CaseStudyStatus,
   CaseStudyContentSource,
   CaseStudySubmitInput,
