@@ -62,6 +62,7 @@ function harness(current: Agent) {
         marks.ended = stamp;
       },
       skip: async () => {},
+      nudge: async () => {},
     },
     agents: { list: async () => [current], get: async () => current },
     schedules: { list: async () => [] },
@@ -128,11 +129,30 @@ describe("kit update", () => {
           ended = stamp;
         },
         skip: async () => {},
+        nudge: async () => {},
       },
     });
     await expect(reporter.report("agent-1", "user-1", OLD)).rejects.toThrow();
     await reporter.report("agent-1", "user-1", NEW);
     expect(ended).toEqual({ ...STAMP, commit: NEW });
+  });
+
+  // TEST_SCENARIO: Continue on an update that is still pending opens a fresh session for the same target. The reminder already went out for that update, so the pending mark it writes back keeps its nudgedAt and the agent is not nagged again.
+  it("keeps the reminder mark when the same update is continued", async () => {
+    const nudgedAt = "2026-10-02T10:30:00.000Z";
+    const h = harness(
+      agent({
+        kitUpdatePending: {
+          targetCommit: NEW,
+          startedAt: "2026-10-02T09:00:00.000Z",
+          nudgedAt,
+        },
+      }),
+    );
+
+    await h.updates.startUpdate("agent-1");
+
+    expect(h.marks.begun).toMatchObject({ targetCommit: NEW, nudgedAt });
   });
 
   // TEST_SCENARIO: an agent created from a link has no catalog row to compare against, yet its Seed Stamp still tracks the kit's branch, so it is offered updates like a catalog agent; the update session is told the kit came from a link rather than that it left a catalog it was never in.

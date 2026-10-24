@@ -42,6 +42,7 @@ const stored: KubeObject = {
       "agent-platform.ai/kit-update-pending": JSON.stringify({
         targetCommit: "0123456789abcdef0123456789abcdef01234567",
         startedAt: "2026-10-23T00:00:00Z",
+        nudgedAt: "2026-10-23T00:30:00Z",
       }),
       "agent-platform.ai/image-update-from": "agent:0",
       "agent-platform.ai/machine-up-at": "2026-10-24T09:00:00Z",
@@ -129,6 +130,9 @@ describe("an Agent crossing to rows and back", () => {
     );
     expect(new Date(rebuilt.kitUpdatePending!.startedAt).toISOString()).toBe(
       new Date(before.kitUpdatePending!.startedAt).toISOString(),
+    );
+    expect(new Date(rebuilt.kitUpdatePending!.nudgedAt!).toISOString()).toBe(
+      new Date(before.kitUpdatePending!.nudgedAt!).toISOString(),
     );
     expect(rebuilt.hibernated).toBe(true);
     expect(rebuilt.hibernatedSince?.toISOString()).toBe(

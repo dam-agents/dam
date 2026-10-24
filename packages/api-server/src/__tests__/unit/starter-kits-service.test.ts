@@ -41,6 +41,7 @@ const NO_MARKS = {
   begin: async () => {},
   end: async () => {},
   skip: async () => {},
+  nudge: async () => {},
 };
 const NO_LINKS: LinkedKits = {
   read: async () => {

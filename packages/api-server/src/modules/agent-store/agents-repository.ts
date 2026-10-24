@@ -208,6 +208,7 @@ export function createControlAgentsRepository(
           const pending = value === null ? undefined : JSON.parse(value);
           putKit("pendingCommit", pending?.targetCommit?.toLowerCase() ?? null);
           putKit("pendingStartedAt", timeOf(pending?.startedAt));
+          putKit("pendingNudgedAt", timeOf(pending?.nudgedAt));
           break;
         }
         case RECLAIMED_AT_KEY:

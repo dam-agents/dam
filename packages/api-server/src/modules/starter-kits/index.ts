@@ -43,3 +43,7 @@ export {
   createKitUpdateReporter,
   type KitUpdateReporter,
 } from "./services/kit-update-reporter.js";
+export {
+  createKitUpdateNudge,
+  type KitUpdateNudge,
+} from "./services/kit-update-nudge.js";

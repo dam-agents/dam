@@ -17,6 +17,10 @@ export function createKitUpdateMarks(
       }),
     skip: (agentId: string, commit: string) =>
       repo.patchAnnotations(agentId, { [ANN_KIT_UPDATE_SKIPPED]: commit }),
+    nudge: (agentId: string, pending: KitUpdatePending) =>
+      repo.patchAnnotations(agentId, {
+        [ANN_KIT_UPDATE_PENDING]: JSON.stringify(pending),
+      }),
     end: (agentId: string, stamp: SeedStamp | null) =>
       repo.patchAnnotations(agentId, {
         ...(stamp ? { [ANN_STARTER_KIT_SEED]: JSON.stringify(stamp) } : {}),

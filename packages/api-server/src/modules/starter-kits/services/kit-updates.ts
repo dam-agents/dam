@@ -34,6 +34,7 @@ export interface KitUpdateMarks {
   ): Promise<void>;
   end(agentId: string, stamp: SeedStamp | null): Promise<void>;
   skip(agentId: string, commit: string): Promise<void>;
+  nudge(agentId: string, pending: KitUpdatePending): Promise<void>;
 }
 
 export interface KitUpdatesDeps {
@@ -162,7 +163,14 @@ export function createKitUpdates(deps: KitUpdatesDeps): KitUpdateOps {
         chatForms,
       });
       const at = now();
-      const pending = { targetCommit, startedAt: at.toISOString() };
+      const pending: KitUpdatePending = {
+        targetCommit,
+        startedAt: at.toISOString(),
+        ...(agent.kitUpdatePending?.targetCommit === targetCommit &&
+          agent.kitUpdatePending.nudgedAt !== undefined && {
+            nudgedAt: agent.kitUpdatePending.nudgedAt,
+          }),
+      };
       await deps.marks.begin(agentId, stamp, pending);
       await deps.runtimeMutator.bump(agentId, [
         kitUpdateEvent(agentId, task, at, pair),
