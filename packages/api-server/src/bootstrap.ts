@@ -41,6 +41,7 @@ import {
   describeContract,
   readContractFacts,
 } from "./modules/agent-store/contract.js";
+import { createObjectStoreReader } from "./modules/agent-store/object-store.js";
 import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
 import { absorbAgentStore } from "./modules/agent-store/absorb.js";
 import { passCutoverBarrier } from "./modules/agent-store/barrier.js";
@@ -552,6 +553,22 @@ export async function bootstrap() {
       log: (message, fields) => getLogger().info(fields ?? {}, message),
     });
     if (config.agentStore === "contract") {
+      const objectStore = config.objectStorageEndpoint
+        ? createObjectStoreReader({
+            endpoint: config.objectStorageEndpoint,
+            region: config.objectStorageRegion,
+            bucket: config.objectStorageBucket,
+            forcePathStyle: config.objectStorageForcePathStyle,
+            credentials:
+              config.objectStorageAccessKeyId !== null &&
+              config.objectStorageSecretAccessKey !== null
+                ? {
+                    accessKeyId: config.objectStorageAccessKeyId,
+                    secretAccessKey: config.objectStorageSecretAccessKey,
+                  }
+                : null,
+          })
+        : null;
       const rehearsalClock = config.agentStoreContractNow;
       const now = rehearsalClock ? new Date(rehearsalClock) : new Date();
       const verdict = contractVerdict(
@@ -560,9 +577,7 @@ export async function bootstrap() {
           attestedSha256: config.agentStoreContractSha256 ?? null,
           emptyArchive: config.agentStoreContractEmptyArchive,
           expectedRecipient: config.agentStoreBackupRecipient ?? null,
-          readObject: snapshotStore
-            ? (ref) => snapshotStore.get(ref).then((body) => body ?? null)
-            : null,
+          readObject: objectStore,
         }),
       );
       if (!verdict.ok)

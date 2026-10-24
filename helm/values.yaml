@@ -1770,8 +1770,8 @@ agentStore:
   # one transaction, and it serves only once the new controller leads and has
   # ensured every anchor. `contract` reads no custom resource and renders no
   # RBAC for them; its api-server refuses to start until `contract-check`
-  # passes, then records `contract-at` in the marker for the cluster-wide CRD
-  # retirement. Both refuse to render without `cutover.acknowledged`.
+  # passes, then records `contract-at` in the marker for the operator. Both
+  # refuse to render without `cutover.acknowledged`.
   authority: crd
   # -- Freeze both components for a rollback: both Deployments render zero
   # replicas, so nothing writes rows while the reverse exporter restores the
@@ -1806,10 +1806,9 @@ agentStore:
     # `authority: contract`, unless `emptyArchive` says the install never
     # absorbed a custom resource.
     backupSha256: ""
-    # -- An install created after this cluster's CRDs were retired: it never had
-    # a custom resource to archive, so the contract release checks that the
-    # archive is empty instead of waiting for a digest. Never set it on an
-    # install that absorbed something.
+    # -- An install that never had a custom resource (a new namespace beside the
+    # others): the contract release checks that the archive is empty instead of
+    # waiting for a digest. Never set it on an install that absorbed something.
     emptyArchive: false
     # -- A rehearsal's clock (`2026-10-25T00:00:00Z`), so the one-week rollback
     # window is proved without waiting it out. It fails the render unless
