@@ -19,6 +19,8 @@ func TestRefusal(t *testing.T) {
 		{"an absorbed store", ModePostgres, absorbedMarker, false},
 		{"a marked store this build cannot read", ModeCRD, map[string]string{MarkerKey: "frozen"}, true},
 		{"an unknown mode", "sqlite", nil, true},
+		{"the contract release before the absorb", ModeContract, nil, true},
+		{"the contract release on an absorbed store", ModeContract, absorbedMarker, false},
 	}
 
 	for _, tc := range cases {
@@ -41,6 +43,17 @@ func TestRefusalWithAPostgresReader(t *testing.T) {
 	}
 	if got := RefusalFor(ModeCRD, absorbed, true); got == "" {
 		t.Fatal("a build that reads Postgres accepted the custom resources after the switch")
+	}
+}
+
+func TestReadsRows(t *testing.T) {
+	for _, mode := range []string{ModePostgres, ModeContract} {
+		if !ReadsRows(mode) {
+			t.Fatalf("ReadsRows(%q) = false, want true: that release has no custom-resource reader", mode)
+		}
+	}
+	if ReadsRows(ModeCRD) {
+		t.Fatal("ReadsRows(crd) = true, want false: that release reads the custom resources")
 	}
 }
 

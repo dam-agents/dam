@@ -201,8 +201,8 @@ func LoadFromEnv() (*Config, error) {
 		DatabaseURL:            os.Getenv("PLATFORM_DATABASE_URL"),
 		HealthPort:             healthPort(os.Getenv("PLATFORM_HEALTH_PORT")),
 	}
-	if cfg.AgentStore == "postgres" && cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("PLATFORM_DATABASE_URL is required when PLATFORM_AGENT_STORE is postgres")
+	if (cfg.AgentStore == "postgres" || cfg.AgentStore == "contract") && cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("PLATFORM_DATABASE_URL is required when PLATFORM_AGENT_STORE is postgres or contract")
 	}
 
 	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {

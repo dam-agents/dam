@@ -13,6 +13,7 @@ import (
 const (
 	ModeCRD      = "crd"
 	ModePostgres = "postgres"
+	ModeContract = "contract"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: ReadsPostgres is true from the release that reconciles the rows. An older
@@ -27,6 +28,10 @@ const (
 
 func MarkerName(releaseName string) string {
 	return releaseName + "-agent-store"
+}
+
+func ReadsRows(mode string) bool {
+	return mode == ModePostgres || mode == ModeContract
 }
 
 func Refusal(mode string, marker map[string]string) string {
@@ -46,7 +51,7 @@ func RefusalFor(mode string, marker map[string]string, readsPostgres bool) strin
 			return fmt.Sprintf("the Agent store's marker names %q, which this build does not know: it understands %q and %q only, and a store it cannot read is one it must not serve.", marked, ModeCRD, ModePostgres)
 		}
 		return ""
-	case ModePostgres:
+	case ModePostgres, ModeContract:
 		if !readsPostgres {
 			return "this build reconciles the custom resources and carries no Postgres reader, so it refuses the Agent store's Postgres mode whatever the cluster's marker says. Deploy the release that reads Postgres."
 		}
@@ -58,7 +63,7 @@ func RefusalFor(mode string, marker map[string]string, readsPostgres bool) strin
 		}
 		return ""
 	default:
-		return fmt.Sprintf("unknown Agent store mode %q: expected %q or %q", mode, ModeCRD, ModePostgres)
+		return fmt.Sprintf("unknown Agent store mode %q: expected %q, %q or %q", mode, ModeCRD, ModePostgres, ModeContract)
 	}
 }
 
