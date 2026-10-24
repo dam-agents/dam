@@ -51,7 +51,11 @@ func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName st
 			}
 		}
 		if !slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
-			existing.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+			if r.anchors {
+				existing.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+			} else {
+				existing.OwnerReferences = append(existing.OwnerReferences, desired.OwnerReferences[0])
+			}
 			changed = true
 		}
 		if existing.AutomountServiceAccountToken == nil ||

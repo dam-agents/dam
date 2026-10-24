@@ -63,6 +63,8 @@ type AgentReconciler struct {
 	podResize             atomic.Int32
 	backend               AgentBackend
 	anchors               bool
+	absorbed              func(context.Context) error
+	anchorOrphanSince     sync.Map
 	agentCache            cache.GenericLister
 	agentCacheSynced      cache.InformerSynced
 	podCache              corelisters.PodLister
@@ -148,6 +150,27 @@ func (r *AgentReconciler) WithAgentBackend(backend AgentBackend) *AgentReconcile
 	r.backend = backend
 	r.anchors = !backend.SpecWritable()
 	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: WithAbsorbedCheck is the database's half of the fence: every sweep that can
+// UNIT_BOUNDARY_DESCRIPTION: delete asks it first, so a store this cluster never moved into cannot be read
+// UNIT_BOUNDARY_DESCRIPTION: as an empty fleet. Nil in CRD mode, where there is no store to check.
+func (r *AgentReconciler) WithAbsorbedCheck(check func(context.Context) error) *AgentReconciler {
+	r.absorbed = check
+	return r
+}
+
+func (r *AgentReconciler) assertStoreAbsorbed(ctx context.Context) error {
+	if r.absorbed == nil {
+		return nil
+	}
+	return r.absorbed(ctx)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: AssertStoreAbsorbed is the gate the passes outside a reconcile call before
+// UNIT_BOUNDARY_DESCRIPTION: they collect anything.
+func (r *AgentReconciler) AssertStoreAbsorbed(ctx context.Context) error {
+	return r.assertStoreAbsorbed(ctx)
 }
 
 func (r *AgentReconciler) updateStatus(ctx context.Context, name string, mutate func(*apiv1.AgentStatus)) error {
@@ -368,7 +391,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err != nil {
 				return fmt.Errorf("reading gateway service: %v", err)
 			}
-			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name); err != nil {
+			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name, r.anchors); err != nil {
 				return fmt.Errorf("ensuring gateway service: %v", err)
 			}
 			return nil
@@ -804,12 +827,21 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 		if slices.ContainsFunc(sec.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == ownerRef.UID }) {
 			return nil
 		}
-		sec.OwnerReferences = adoptOwnerRefs(sec.OwnerReferences, metav1.OwnerReference{
-			APIVersion: ownerRef.APIVersion,
-			Kind:       ownerRef.Kind,
-			Name:       ownerRef.Name,
-			UID:        ownerRef.UID,
-		})
+		if r.anchors {
+			sec.OwnerReferences = adoptOwnerRefs(sec.OwnerReferences, metav1.OwnerReference{
+				APIVersion: ownerRef.APIVersion,
+				Kind:       ownerRef.Kind,
+				Name:       ownerRef.Name,
+				UID:        ownerRef.UID,
+			})
+		} else {
+			sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
+				APIVersion: ownerRef.APIVersion,
+				Kind:       ownerRef.Kind,
+				Name:       ownerRef.Name,
+				UID:        ownerRef.UID,
+			})
+		}
 		_, err = r.client.CoreV1().Secrets(r.config.Namespace).Update(ctx, sec, metav1.UpdateOptions{})
 		return err
 	})
@@ -895,6 +927,10 @@ func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) erro
 	return stderrors.Join(errs...)
 }
 func (r *AgentReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
+	if err := r.assertStoreAbsorbed(ctx); err != nil {
+		slog.Warn("orphan leaf Secret GC: skipped, the Agent store is not the absorbed one", "error", err)
+		return
+	}
 	secrets, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Warn("orphan leaf Secret GC: listing Secrets failed", "error", err)
@@ -992,7 +1028,7 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		}
 		scaled := !running || (existing.Spec.Replicas != nil && *existing.Spec.Replicas == 1)
 		if scaled && existing.Annotations[annStatefulSetTemplate] == hash {
-			if len(desired.OwnerReferences) == 0 {
+			if !r.anchors || len(desired.OwnerReferences) == 0 {
 				return nil
 			}
 			if slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
@@ -1099,7 +1135,7 @@ func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Serv
 		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 		return err
 	}
-	if err != nil || len(desired.OwnerReferences) == 0 {
+	if err != nil || !r.anchors || len(desired.OwnerReferences) == 0 {
 		return err
 	}
 	if slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {

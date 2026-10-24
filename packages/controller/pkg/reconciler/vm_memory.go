@@ -233,6 +233,10 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil {
 		return nil
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: a cache that has not listed is not an owner with no agents. The pass waits for it rather than acting on a partly listed fleet.
+	if !r.agentCacheReady() || r.backendHealthy() != nil {
+		return nil
+	}
 	items, err := r.agentCache.ByNamespace(r.config.Namespace).List(labels.Everything())
 	if err != nil {
 		slog.WarnContext(ctx, "vm memory: listing agents", "error", err)

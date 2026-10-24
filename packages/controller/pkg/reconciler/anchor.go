@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -107,6 +108,12 @@ func adoptOwnerRefs(existing []metav1.OwnerReference, desired metav1.OwnerRefere
 // UNIT_BOUNDARY_DESCRIPTION: cannot cascade goes first, and the anchor last, so a failure keeps the record
 // UNIT_BOUNDARY_DESCRIPTION: that there is work left.
 func (r *AgentReconciler) deleteByAnchor(ctx context.Context, name string) error {
+	// UNIT_BOUNDARY_DESCRIPTION: every delete asks the database's half of the fence first. A relist against a
+	// UNIT_BOUNDARY_DESCRIPTION: store this cluster never moved into reads every Agent as gone, and without
+	// UNIT_BOUNDARY_DESCRIPTION: this check the feed would hand the whole fleet to the delete in one pass.
+	if err := r.assertStoreAbsorbed(ctx); err != nil {
+		return err
+	}
 	anchor, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, anchorName(name), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
@@ -173,12 +180,16 @@ func (r *AgentReconciler) ReconcileOrphanAnchors(ctx context.Context, enqueue fu
 	if !r.anchors {
 		return nil
 	}
+	if err := r.assertStoreAbsorbed(ctx); err != nil {
+		return err
+	}
 	anchors, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent,
 	})
 	if err != nil {
 		return fmt.Errorf("listing agent anchors: %w", err)
 	}
+	now := r.clockNow()
 	for i := range anchors.Items {
 		anchor := &anchors.Items[i]
 		name := anchor.Labels[LabelAgent]
@@ -186,14 +197,33 @@ func (r *AgentReconciler) ReconcileOrphanAnchors(ctx context.Context, enqueue fu
 			continue
 		}
 		live, err := r.backend.Get(ctx, name)
+		orphaned := false
 		switch {
 		case apierrors.IsNotFound(err):
-			enqueue(name)
+			orphaned = true
 		case err != nil:
 			slog.Warn("anchor sweep: reading an Agent failed", "agent", name, "error", err)
+			continue
 		case string(live.GetUID()) != anchor.Data[anchorIncarnation]:
-			enqueue(name)
+			orphaned = true
 		}
+		if !orphaned {
+			r.anchorOrphanSince.Delete(name)
+			continue
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: a sweep that finds an anchor unclaimed waits the
+		// UNIT_BOUNDARY_DESCRIPTION: same grace a machine gets, because a read that comes
+		// UNIT_BOUNDARY_DESCRIPTION: back empty is not proof the Agent is gone and its disk
+		// UNIT_BOUNDARY_DESCRIPTION: has no backup. The feed's own delete is immediate.
+		first, seen := r.anchorOrphanSince.LoadOrStore(name, now)
+		if !seen {
+			slog.Info("anchor sweep: an anchor's Agent is gone; it is removed if that lasts", "agent", name, "grace", orphanGrace)
+			continue
+		}
+		if now.Sub(first.(time.Time)) < orphanGrace {
+			continue
+		}
+		enqueue(name)
 	}
 	return nil
 }

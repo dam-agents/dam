@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"time"
 
@@ -36,8 +35,9 @@ type statusRow struct {
 // UNIT_BOUNDARY_DESCRIPTION: shared first, so a definition or lifecycle change that must not race the
 // UNIT_BOUNDARY_DESCRIPTION: decision is serialized with it, and the status row exclusively, so two
 // UNIT_BOUNDARY_DESCRIPTION: controller paths that observe the same Agent apply their mutations in order.
-// UNIT_BOUNDARY_DESCRIPTION: The signals version the transaction saw is recorded, which is what an
-// UNIT_BOUNDARY_DESCRIPTION: api-server decision compares before it writes.
+// UNIT_BOUNDARY_DESCRIPTION: The signals version the transaction saw is recorded as the row's
+// UNIT_BOUNDARY_DESCRIPTION: observed_signal_version: the observations describe the definition and signals
+// UNIT_BOUNDARY_DESCRIPTION: as of that version.
 func (s *Store) UpdateStatus(ctx context.Context, name string, mutate func(*apiv1.AgentStatus)) error {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -47,6 +47,13 @@ func (s *Store) UpdateStatus(ctx context.Context, name string, mutate func(*apiv
 
 	signalsVersion, err := lockSignals(ctx, tx, name)
 	if err != nil {
+		return err
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the status row is created before it is locked, so a first observation takes
+	// UNIT_BOUNDARY_DESCRIPTION: the row's lock the way every later one does. With no row, FOR UPDATE locks
+	// UNIT_BOUNDARY_DESCRIPTION: nothing, and a concurrent stamp that commits between the read and the upsert
+	// UNIT_BOUNDARY_DESCRIPTION: is overwritten by the columns this transaction read as absent.
+	if err := ensureStatus(ctx, tx, name); err != nil {
 		return err
 	}
 	row, current, err := lockStatus(ctx, tx, name)
@@ -64,11 +71,7 @@ func (s *Store) UpdateStatus(ctx context.Context, name string, mutate func(*apiv
 	if err := writeConditions(ctx, tx, name, desired.Conditions); err != nil {
 		return err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("writing Agent status: %w", err)
-	}
-	s.afterWrite(ctx, name)
-	return nil
+	return tx.Commit(ctx)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: PatchAgent applies the controller's own stamps: the two machine marks, the
@@ -122,7 +125,6 @@ func (s *Store) PatchAgent(ctx context.Context, name string, ann map[string]*str
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("stamping agent %s: %w", name, err)
 	}
-	s.afterWrite(ctx, name)
 	return nil
 }
 
@@ -185,7 +187,6 @@ func (s *Store) StampReclaim(ctx context.Context, name, stamp, revision string) 
 		return apierrors.NewConflict(agentsResource, name,
 			errors.New("the Agent's activity moved while its reclaim was being decided"))
 	}
-	s.afterWrite(ctx, name)
 	return nil
 }
 
@@ -213,14 +214,6 @@ func (s *Store) GetBudget(ctx context.Context, owner string) (*unstructured.Unst
 		"metadata":   map[string]any{"name": "budget-" + owner, "namespace": s.namespace},
 		"spec":       spec,
 	}}, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: afterWrite refreshes the cache entry the controller's own write moved, so a
-// UNIT_BOUNDARY_DESCRIPTION: reconcile that follows in the same pass does not read the state before it.
-func (s *Store) afterWrite(ctx context.Context, name string) {
-	if err := s.refresh(ctx, name); err != nil {
-		slog.Debug("Agent store: refreshing a written Agent failed", "agent", name, "error", err)
-	}
 }
 
 func lockSignals(ctx context.Context, tx pgx.Tx, name string) (int64, error) {
@@ -365,6 +358,45 @@ func upsertCondition(ctx context.Context, tx pgx.Tx, name string, condition meta
 // UNIT_BOUNDARY_DESCRIPTION: existed. The api-server serves the first Postgres-backed request only once
 // UNIT_BOUNDARY_DESCRIPTION: both are recorded, so a deployment's rollout cannot leave an Agent whose
 // UNIT_BOUNDARY_DESCRIPTION: children have no owner.
+// UNIT_BOUNDARY_DESCRIPTION: AbsorbedAt is the database's half of the switch. A store row with no absorb stamp is a database this cluster has never moved into, and a controller that treated its empty fleet as authoritative would collect every machine on the cluster. The marker's stamp is compared with this one, so a controller cannot be pointed at another install's database.
+func (s *Store) AbsorbedAt(ctx context.Context) (time.Time, bool, error) {
+	var at *time.Time
+	err := s.pool.QueryRow(ctx, "SELECT absorbed_at FROM control.agent_store WHERE id = 1").Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading the store's absorb stamp: %w", err)
+	}
+	if at == nil {
+		return time.Time{}, false, nil
+	}
+	return *at, true, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: AssertAbsorbed refuses a database the marker does not name. An unreadable store is an error, so the caller retries; a readable one with no stamp, or with another stamp, is a refusal.
+func (s *Store) AssertAbsorbed(ctx context.Context, expected string) error {
+	at, ok, err := s.AbsorbedAt(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("the database has no absorb stamp: this is not the store the switch filled")
+	}
+	if expected == "" {
+		return errors.New("the store marker carries no absorb stamp")
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, expected); err == nil {
+		if at.UTC().Truncate(time.Microsecond).Equal(parsed.UTC().Truncate(time.Microsecond)) {
+			return nil
+		}
+	} else if at.UTC().Format(time.RFC3339Nano) == expected {
+		return nil
+	}
+	return fmt.Errorf("the database was absorbed at %s, the marker names %q", at.UTC().Format(time.RFC3339Nano), expected)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: RecordAnchorsEnsured names the pod and the moment: the controller's half of the switch's barrier, written only after every Agent's anchor exists, so the api-server can wait for it before it serves the rows.
 func (s *Store) RecordAnchorsEnsured(ctx context.Context, holder string) error {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE control.agent_store

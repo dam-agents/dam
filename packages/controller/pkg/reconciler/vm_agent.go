@@ -364,6 +364,10 @@ func (r *AgentReconciler) applyHostRunnerEndpoints(ctx context.Context, svc *cor
 const orphanGrace = 30 * time.Minute
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
+	if err := r.assertStoreAbsorbed(ctx); err != nil {
+		slog.Warn("orphan machine GC: skipped, the Agent store is not the absorbed one", "error", err)
+		return
+	}
 	if r.config.VM.Runner.HostAddress != "" {
 		r.dropPodRunners(ctx)
 		r.sweepHostRunner(ctx)

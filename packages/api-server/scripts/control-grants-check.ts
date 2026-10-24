@@ -63,7 +63,6 @@ function check(name: string, ok: boolean, detail = ""): void {
 const keepRole = process.env.CONTROL_GRANTS_KEEP_ROLE === "1";
 
 async function dropRole(): Promise<void> {
-  if (keepRole) return;
   const present = await roleDb.execute<{ present: boolean }>(
     sql`SELECT to_regrole(${CONTROL_ROLE}) IS NOT NULL AS present`,
   );
@@ -347,7 +346,7 @@ async function main(): Promise<void> {
   await db.execute(
     sql`DELETE FROM public.connections WHERE id = 'conn-grants-check'`,
   );
-  await dropRole();
+  if (!keepRole) await dropRole();
 }
 
 await main()
@@ -355,7 +354,7 @@ await main()
     failures.push(`the run stopped: ${reasonOf(cause)}`);
   })
   .then(async () => {
-    await dropRole().catch(() => {});
+    if (!keepRole) await dropRole().catch(() => {});
     process.stdout.write(
       `\n${checked - failures.length}/${checked} checks passed\n`,
     );

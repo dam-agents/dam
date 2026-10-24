@@ -295,11 +295,17 @@ func TestAnchorSweepFindsMissedDeletions(t *testing.T) {
 	r.WithAgentBackend(backend)
 	_ = r.Reconcile(context.Background(), agent)
 
+	now := time.Now()
+	r.clock = func() time.Time { return now }
 	var enqueued []string
 	require.NoError(t, r.ReconcileOrphanAnchors(context.Background(), func(name string) { enqueued = append(enqueued, name) }))
 	assert.Empty(t, enqueued, "a live Agent's anchor was enqueued")
 
 	backend.gone = true
+	require.NoError(t, r.ReconcileOrphanAnchors(context.Background(), func(name string) { enqueued = append(enqueued, name) }))
+	assert.Empty(t, enqueued, "an anchor was enqueued before its grace ran out")
+
+	now = now.Add(orphanGrace + time.Minute)
 	require.NoError(t, r.ReconcileOrphanAnchors(context.Background(), func(name string) { enqueued = append(enqueued, name) }))
 	assert.Equal(t, []string{"my-agent"}, enqueued)
 }
@@ -331,4 +337,28 @@ func TestARecreatedAgentsChildrenAreHandedToTheNewAnchor(t *testing.T) {
 	require.Len(t, sa.OwnerReferences, 1)
 	assert.NotEqual(t, "old-agent-uid", string(sa.OwnerReferences[0].UID))
 	assert.Equal(t, "ConfigMap", sa.OwnerReferences[0].Kind)
+}
+
+// TEST_SCENARIO: The custom-resource path is byte-identical to what it was:
+// TEST_SCENARIO: an owner reference it does not recognize is appended beside, never adopted
+// TEST_SCENARIO: away. Adoption exists because the rows have no object for a child to name,
+// TEST_SCENARIO: and it must not change the CR path's behavior.
+func TestCRDModeKeepsAnExistingOwnerReference(t *testing.T) {
+	agent := agentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: "owner-1"}
+	r, client := setupReconciler(t, agent)
+	_, err := client.CoreV1().ServiceAccounts(r.config.Namespace).Create(context.Background(), &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-agent", Namespace: r.config.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: apiv1.GroupVersion.String(), Kind: "Agent", Name: "my-agent", UID: "old-agent-uid",
+			}},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_ = r.Reconcile(context.Background(), agent)
+
+	sa, err := client.CoreV1().ServiceAccounts(r.config.Namespace).Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Len(t, sa.OwnerReferences, 2, "the CR path adopted an owner reference away")
 }

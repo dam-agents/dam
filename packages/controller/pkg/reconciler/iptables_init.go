@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +15,7 @@ import (
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
-func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desired *corev1.Service, kind, name string) (*corev1.Service, error) {
+func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desired *corev1.Service, kind, name string, adopt bool) (*corev1.Service, error) {
 	cli := client.CoreV1().Services(desired.Namespace)
 
 	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
@@ -23,7 +24,7 @@ func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desi
 	case err != nil:
 		return nil, fmt.Errorf("getting gateway Service: %w", err)
 	case existing.Spec.ClusterIP != corev1.ClusterIPNone:
-		return syncGatewayServicePorts(ctx, cli, existing, desired)
+		return syncGatewayServicePorts(ctx, cli, existing, desired, adopt)
 	default:
 		slog.Info("migrating legacy headless gateway Service to ClusterIP",
 			"service", desired.Name, kind, name)
@@ -43,13 +44,21 @@ func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desi
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an existing gateway Service keeps its ClusterIP, which a machine's allowlist and resolver both name, so only its ports and selector are brought to what is desired — a vm Agent cut over to its owner gateway selects that pod on its own ports — an Agent that moves to the vm Backend, or a gateway created before machines reached it transparently, gains the transparent ports in place.
-func syncGatewayServicePorts(ctx context.Context, cli typedcorev1.ServiceInterface, existing, desired *corev1.Service) (*corev1.Service, error) {
-	if sameServicePorts(existing.Spec.Ports, desired.Spec.Ports) && maps.Equal(existing.Spec.Selector, desired.Spec.Selector) {
+func syncGatewayServicePorts(ctx context.Context, cli typedcorev1.ServiceInterface, existing, desired *corev1.Service, adopt bool) (*corev1.Service, error) {
+	ownerAdopted := false
+	if adopt && len(desired.OwnerReferences) > 0 &&
+		!slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
+		ownerAdopted = true
+	}
+	if !ownerAdopted && sameServicePorts(existing.Spec.Ports, desired.Spec.Ports) && maps.Equal(existing.Spec.Selector, desired.Spec.Selector) {
 		return existing, nil
 	}
 	updated := existing.DeepCopy()
 	updated.Spec.Ports = desired.Spec.Ports
 	updated.Spec.Selector = desired.Spec.Selector
+	if ownerAdopted {
+		updated.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+	}
 	out, err := cli.Update(ctx, updated, metav1.UpdateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("updating gateway Service ports: %w", err)

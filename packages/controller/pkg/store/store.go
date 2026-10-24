@@ -2,13 +2,12 @@ package store
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -50,24 +49,11 @@ type Store struct {
 	feedDown bool
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: Open connects, but decides nothing about the fleet until Relist answers.
-func Open(ctx context.Context, url, namespace, caPath string) (*Store, error) {
+// UNIT_BOUNDARY_DESCRIPTION: Open connects, but decides nothing about the fleet until Relist answers. TLS is the driver's: the URL carries sslmode and, when the install sets a CA, sslrootcert, so libpq's own rules apply — require plus a root certificate verifies, and verify-full checks the host name.
+func Open(ctx context.Context, url, namespace string) (*Store, error) {
 	config, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parsing the database URL: %w", err)
-	}
-	if caPath != "" && config.ConnConfig.TLSConfig != nil {
-		pem, err := os.ReadFile(caPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading the database CA: %w", err)
-		}
-		roots := x509.NewCertPool()
-		if !roots.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("the database CA %s holds no certificate", caPath)
-		}
-		tlsConfig := config.ConnConfig.TLSConfig.Clone()
-		tlsConfig.RootCAs = roots
-		config.ConnConfig.TLSConfig = tlsConfig
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: The change feed takes a connection of its own, which must not come from a
 	// UNIT_BOUNDARY_DESCRIPTION: transaction pooler: LISTEN lives for the life of a session.
@@ -105,6 +91,11 @@ func (s *Store) Synced() bool {
 	defer s.mu.RUnlock()
 	return s.synced
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: Ping is the liveness answer, separate from Healthy: a standby replica has no
+// UNIT_BOUNDARY_DESCRIPTION: feed and has listed nothing, but its database answering is what makes it able to
+// UNIT_BOUNDARY_DESCRIPTION: serve the moment it acquires the Lease.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 // UNIT_BOUNDARY_DESCRIPTION: Healthy is the safety gate the decision passes ask: a feed that is down, or
 // UNIT_BOUNDARY_DESCRIPTION: a fleet nothing has re-read lately, is no basis for hibernation, reclaim or
@@ -186,13 +177,19 @@ LEFT JOIN control.agent_status st ON st.agent_id = a.id`
 // UNIT_BOUNDARY_DESCRIPTION: An Agent is always written with its signals row, but a reader that cannot
 // UNIT_BOUNDARY_DESCRIPTION: see the second yet must not report the first as absent.
 func (s *Store) read(ctx context.Context, name string) ([]loadedAgent, error) {
+	// UNIT_BOUNDARY_DESCRIPTION: one read is one snapshot. A definition written between the four statements would otherwise be read as half its old spec and half its new children, and a relist built from that is a fleet that never existed.
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, fmt.Errorf("reading Agents: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
 	query, args := definitionQuery, []any(nil)
 	if name != "" {
 		query += " WHERE a.id = $1"
 		args = append(args, name)
 	}
 	query += " ORDER BY a.id"
-	rows, err := s.pool.Query(ctx, query, args...)
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("reading Agents: %w", err)
 	}
@@ -229,18 +226,21 @@ func (s *Store) read(ctx context.Context, name string) ([]loadedAgent, error) {
 	for i := range loaded {
 		ids[i] = loaded[i].row.ID
 	}
-	if err := s.fill(ctx, loaded, ids); err != nil {
+	if err := s.fill(ctx, tx, loaded, ids); err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("reading Agents: %w", err)
 	}
 	return loaded, nil
 }
 
-func (s *Store) fill(ctx context.Context, loaded []loadedAgent, ids []string) error {
+func (s *Store) fill(ctx context.Context, tx pgx.Tx, loaded []loadedAgent, ids []string) error {
 	byID := make(map[string]int, len(loaded))
 	for i := range loaded {
 		byID[loaded[i].row.ID] = i
 	}
-	conditions, err := s.pool.Query(ctx,
+	conditions, err := tx.Query(ctx,
 		`SELECT agent_id, type, status, reason, message, observed_generation, last_transition_at
 		 FROM control.agent_conditions WHERE agent_id = ANY($1) ORDER BY agent_id, type`, ids)
 	if err != nil {
@@ -264,7 +264,7 @@ func (s *Store) fill(ctx context.Context, loaded []loadedAgent, ids []string) er
 	}
 	conditions.Close()
 
-	hosts, err := s.pool.Query(ctx,
+	hosts, err := tx.Query(ctx,
 		`SELECT agent_id, host FROM control.agent_l7_hosts WHERE agent_id = ANY($1) ORDER BY agent_id, host`, ids)
 	if err != nil {
 		return fmt.Errorf("reading Agent L7 hosts: %w", err)
@@ -285,7 +285,7 @@ func (s *Store) fill(ctx context.Context, loaded []loadedAgent, ids []string) er
 	}
 	hosts.Close()
 
-	grants, err := s.pool.Query(ctx,
+	grants, err := tx.Query(ctx,
 		`SELECT agent_id, connection_id FROM control.agent_connection_grants WHERE agent_id = ANY($1) ORDER BY agent_id, connection_id`, ids)
 	if err != nil {
 		return fmt.Errorf("reading Agent connection grants: %w", err)
@@ -349,11 +349,17 @@ func parseNotify(payload []byte) (Notify, bool) {
 	if err := json.Unmarshal(payload, &raw); err != nil || raw.Table == "" {
 		return Notify{}, false
 	}
-	notify := Notify{Name: raw.ID, Table: raw.Table, Delete: raw.Op == "D"}
-	// UNIT_BOUNDARY_DESCRIPTION: A status or condition write is the controller's own echo, and a budget
-	// UNIT_BOUNDARY_DESCRIPTION: write names no Agent: both take the background lane. Everything else is a
-	// UNIT_BOUNDARY_DESCRIPTION: change someone is waiting on, a wake very much included.
-	notify.Urgent = raw.Table != "agent_status" && raw.Table != "agent_conditions" && raw.Table != "user_budgets"
+	// UNIT_BOUNDARY_DESCRIPTION: Only a DELETE on the definition is a deleted Agent. A child row is deleted
+	// UNIT_BOUNDARY_DESCRIPTION: in normal operation — every host on a spec write, every recovered condition,
+	// UNIT_BOUNDARY_DESCRIPTION: a kit row — and reading one as the Agent's deletion takes a live Agent out of
+	// UNIT_BOUNDARY_DESCRIPTION: the cache and hands it to the delete worker for nothing. A child delete only
+	// UNIT_BOUNDARY_DESCRIPTION: says the Agent moved, and the refetch decides whether it is gone.
+	notify := Notify{Name: raw.ID, Table: raw.Table, Delete: raw.Op == "D" && raw.Table == "agents"}
+	// UNIT_BOUNDARY_DESCRIPTION: A status, condition or kit write is the controller's own echo or a column it
+	// UNIT_BOUNDARY_DESCRIPTION: never reads, and a budget write names no Agent: all take the background lane.
+	// UNIT_BOUNDARY_DESCRIPTION: Everything else is a change someone is waiting on, a wake very much included.
+	notify.Urgent = raw.Table != "agent_status" && raw.Table != "agent_conditions" &&
+		raw.Table != "agent_kit_state" && raw.Table != "user_budgets"
 	return notify, true
 }
 
@@ -363,6 +369,7 @@ func parseNotify(payload []byte) (Notify, bool) {
 func (s *Store) Run(ctx context.Context, notify func(Notify)) {
 	backoff := time.Second
 	for ctx.Err() == nil {
+		started := time.Now()
 		err := s.feed(ctx, notify)
 		if ctx.Err() != nil {
 			return
@@ -370,6 +377,9 @@ func (s *Store) Run(ctx context.Context, notify func(Notify)) {
 		s.mu.Lock()
 		s.feedDown = true
 		s.mu.Unlock()
+		if time.Since(started) > 30*time.Second {
+			backoff = time.Second
+		}
 		slog.Warn("Agent store change feed lost; reconnecting", "error", err, "in", backoff)
 		select {
 		case <-ctx.Done():
@@ -414,6 +424,7 @@ func (s *Store) feed(ctx context.Context, notify func(Notify)) error {
 	waitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	pending := make(chan []byte, 256)
+	var dropped atomic.Bool
 	go func() {
 		defer close(pending)
 		for waitCtx.Err() == nil {
@@ -427,8 +438,9 @@ func (s *Store) feed(ctx context.Context, notify func(Notify)) error {
 			select {
 			case pending <- []byte(message.Payload):
 			default:
-				// UNIT_BOUNDARY_DESCRIPTION: A full buffer only drops the wake-up; the relist that follows
-				// UNIT_BOUNDARY_DESCRIPTION: the drain is what the fleet is then read from.
+				// UNIT_BOUNDARY_DESCRIPTION: A full buffer drops the wake-up, so the pass that drains it
+				// UNIT_BOUNDARY_DESCRIPTION: relists instead of trusting what arrived.
+				dropped.Store(true)
 			}
 		}
 	}()
@@ -440,6 +452,19 @@ func (s *Store) feed(ctx context.Context, notify func(Notify)) error {
 		case payload, ok := <-pending:
 			if !ok {
 				return errors.New("the change feed's connection closed")
+			}
+			if dropped.CompareAndSwap(true, false) {
+				changed, deleted, err := s.relist(ctx)
+				if err != nil {
+					return err
+				}
+				for _, name := range changed {
+					notify(Notify{Name: name, Table: "agents", Urgent: false})
+				}
+				for _, name := range deleted {
+					notify(Notify{Name: name, Table: "agents", Delete: true})
+				}
+				continue
 			}
 			event, ok := parseNotify(payload)
 			if !ok {
@@ -467,8 +492,10 @@ func (s *Store) feed(ctx context.Context, notify func(Notify)) error {
 					notify(event)
 					continue
 				}
-				slog.Warn("Agent store: re-reading a notified Agent failed", "agent", event.Name, "error", err)
-				continue
+				// UNIT_BOUNDARY_DESCRIPTION: a notification that could not be read is a wake nobody will get
+				// UNIT_BOUNDARY_DESCRIPTION: until the next relist. Dropping the connection makes the relist
+				// UNIT_BOUNDARY_DESCRIPTION: happen now, and it enqueues the whole fleet.
+				return fmt.Errorf("re-reading the Agent %s: %w", event.Name, err)
 			}
 			notify(event)
 		case <-ticker.C:
@@ -539,6 +566,16 @@ func (s *Store) relist(ctx context.Context) (changed, deleted []string, err erro
 	defer s.mu.Unlock()
 	for name, agent := range fresh {
 		old, ok := s.fleet[name]
+		if ok && string(old.GetUID()) != string(agent.GetUID()) {
+			// UNIT_BOUNDARY_DESCRIPTION: an Agent re-created under the same name is a different Agent, and
+			// UNIT_BOUNDARY_DESCRIPTION: the children of the old one must go. A relist that saw the delete and
+			// UNIT_BOUNDARY_DESCRIPTION: the create in the gap reports both, so the new incarnation is not
+			// UNIT_BOUNDARY_DESCRIPTION: taken for the old one.
+			deleted = append(deleted, name)
+			changed = append(changed, name)
+			s.setLocked(agent)
+			continue
+		}
 		if !ok || !equalAgent(old, agent) {
 			changed = append(changed, name)
 			s.setLocked(agent)
