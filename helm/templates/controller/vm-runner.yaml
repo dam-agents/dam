@@ -1,4 +1,3 @@
-{{- if .Values.virtualization.enabled }}
 {{- /*
 The VM runners themselves are not rendered here: the controller creates one
 per owner, so that a guest escape reaches only that owner's machines, and it
@@ -10,8 +9,7 @@ the controller as AGENT_VM.
 This identity also owns them. A runner belongs to an owner rather than to any
 one Agent, so no Agent can own it; an owner reference may not cross a
 namespace, so the ServiceAccount is rendered beside the runners in the agent
-namespace. Removing it — uninstall, rollback, or virtualization.enabled going
-false — collects every runner and credential with it. The disk claims are
+namespace. Removing it — uninstall or rollback — collects every runner and credential with it. The disk claims are
 left unowned, so recreating this account never takes users' disks; after an
 uninstall an operator deletes them by label (docs/architecture/vm-runner.md).
 
@@ -33,7 +31,7 @@ Always rendered, and named after the release either way: helm deletes an object
 it stops rendering, and a runner Deployment keeps the class it was rolled with
 until its pod rolls again, so an install that switches to a class of its own
 would leave live templates naming a class that is gone, and their next pod
-refused at admission. It is above the agent pods, which carry no class unless
+refused at admission. It is above the agent gateways, which carry no class unless
 the install gives them one, and above the platform's own control plane, which
 this chart leaves at no class; an install that wants its control plane above
 the runners gives it a class above this one. It never preempts anything to be
@@ -63,5 +61,4 @@ description: "The VM runner of one owner: every machine that owner has runs as a
 {{- with .Values.virtualization.runner.scc }}
 ---
 {{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-runner" "scc" .) }}
-{{- end }}
 {{- end }}

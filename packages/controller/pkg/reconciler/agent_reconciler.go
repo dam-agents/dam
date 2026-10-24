@@ -47,7 +47,6 @@ type AgentReconciler struct {
 
 	budgetMu              sync.Mutex
 	ownerLocks            map[string]*sync.Mutex
-	deniedWakes           map[string]string
 	parkedRetry           map[string]struct{}
 	memoryGraces          map[string]memoryGrace
 	memoryWaitWrites      sync.Map
@@ -102,7 +101,6 @@ type AgentReconciler struct {
 	preflightMu           sync.Mutex
 	preflight             vmPreflightResult
 	preflightDone         bool
-	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
 	ownerGatewayAnswered  sync.Map
@@ -241,17 +239,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, agentSpec.IsVM(), r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
-	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
 	var liveGatewaySvc *corev1.Service
-	onOwnerGateway, err := r.onOwnerGateway(ctx, agentSpec, name)
+	onOwnerGateway, err := r.onOwnerGateway(ctx, name)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("reading gateway service: %v", err))
 	}
-	ownerGatewayOn := agentSpec.IsVM() && r.ownerGatewayOn(owner)
+	ownerGatewayOn := r.ownerGatewayOn(owner)
 	moved := onOwnerGateway && ownerGatewayOn
 	ownGateway := func(apply func() error) func() error {
 		if moved {
@@ -313,22 +310,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			}
 			return nil
 		},
-		func() error {
-			return applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef))
-		},
 		ownGateway(func() error {
-			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef))
+			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, r.config, ownerRef))
 		}),
 		ownGateway(func() error {
 			return applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef))
 		}),
 		func() (err error) {
-			desired := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
-			if agentSpec.IsVM() {
-				desired, err = r.ownerGatewayServiceFor(ctx, desired, owner)
-				if err != nil {
-					return fmt.Errorf("reading gateway service: %v", err)
-				}
+			desired, err := r.ownerGatewayServiceFor(ctx, BuildGatewayService(name, r.config, ownerRef), owner)
+			if err != nil {
+				return fmt.Errorf("reading gateway service: %v", err)
 			}
 			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name); err != nil {
 				return fmt.Errorf("ensuring gateway service: %v", err)
@@ -350,71 +341,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	timer.mark("agentObjects")
 
-	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, agent.Spec.IsVM(), r.config.AgentBase)
-	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
+	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase)
+	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
 
 	lastActivity := agent.Annotations[annLastActivity]
-	alwaysOn := idleTimeout <= 0
-	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migration.keepsUp()
 	overBudget := ""
 	awaiting, awaitingReason := "", ""
 	parked := false
-	if running {
-		if !autoRetry && r.wakeAlreadyDenied(name, lastActivity) {
-			running = false
-			parked = true
-		} else {
-			refusal, err := r.budgetAllows(ctx, agent, owner)
-			if err != nil {
-				return fmt.Errorf("agent %s: budget check: %w", name, err)
-			}
-			if refusal != "" && !migration.keepsUp() {
-				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
-				if err != nil {
-					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
-				}
-				if freed {
-					if refusal, err = r.budgetAllows(ctx, agent, owner); err != nil {
-						return fmt.Errorf("agent %s: budget re-check: %w", name, err)
-					}
-				}
-			}
-			if refusal != "" {
-				running = false
-				parked = true
-				overBudget = refusal
-				if !autoRetry {
-					r.recordDeniedWake(name, lastActivity)
-				}
-			} else {
-				r.clearDeniedWake(name)
-			}
-		}
-	}
-
-	if running {
-		refusal, err := r.resizeAllows(ctx, agent, owner)
-		if err != nil {
-			return fmt.Errorf("agent %s: resize budget check: %w", name, err)
-		}
-		if refusal != "" {
-			running = false
-			parked = true
-			overBudget = refusal
-			if !autoRetry {
-				r.recordDeniedWake(name, lastActivity)
-			}
-			if err := scaleAgentPairToZero(ctx, r.client, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
-			}
-		}
-	}
-
-	if parked && autoRetry {
-		r.recordParkedRetry(name)
-	} else {
-		r.clearParkedRetry(name)
-	}
+	r.clearParkedRetry(name)
 
 	rollRev := agent.Annotations[annRollRev]
 
@@ -424,7 +358,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
+	hardStop := agent.Annotations[annStopRequested] != ""
 	_, served := desiredUpRecord(liveGatewaySvc)
 	served = served && ownerGatewayOn
 	applyGateway := func() error {
@@ -437,10 +371,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			}
 			return nil
 		}
-		machineGatewayIP := ""
-		if agentSpec.IsVM() {
-			machineGatewayIP = gatewayIP
-		}
+		machineGatewayIP := gatewayIP
 		gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
 		stampRollRev(gatewaySS, rollRev)
 		if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
@@ -463,12 +394,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		timer.mark("gatewayStatefulSet")
 		return nil
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the old order: a parked agent retried every few seconds must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
+	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the runner call. The runner can still refuse a machine for lack of room, so an agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the other order: a parked agent retried every few seconds must not start and stop a gateway pod each time.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
 	// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for the owner's storage is answered the same way until space frees, so this pass keeps the old order rather than start a gateway pod the refusal will scale down again.
 	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAwaitingWarmUp || lastReady.Reason == apiv1.ReasonAwaitingMemory || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
-	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && !parkedLast)
-	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted && !served
+	runnerAccepted := lastReady != nil && !parkedLast
+	gatewayUp := running && !hardStop && runnerAccepted && !served
 	if gatewayUp {
 		if err := applyGateway(); err != nil {
 			return err
@@ -480,216 +411,138 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
-	var migrationVMErr error
-	if migration.requested {
-		if err := r.beginRuntimeMigration(ctx, agent, &migration); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("starting runtime migration: %v", err))
+	if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
+		secretRefused = refusal
+	}
+	machineRuns := running
+	pairAtRest := false
+	if !running && !hardStop {
+		if machineRuns, err = r.pairAwake(ctx, name); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
+		}
+		pairAtRest = !machineRuns
+	}
+	machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns)
+	if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
+		r.publishCertificateWait(ctx, agent, err)
+		return fmt.Errorf("agent %s: %w, requeuing", name, err)
+	}
+	if err != nil {
+		return r.setMachineError(ctx, agent, err)
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the sample is kept under the owner's lock, the one the runner's answer was recorded under, so a pass that read a status before that answer cannot keep the older reading after it.
+	machineLock := r.ownerLock(owner)
+	machineLock.Lock()
+	r.noteMachineUse(name, machine)
+	machineLock.Unlock()
+	// UNIT_BOUNDARY_DESCRIPTION: the machine's episode is stamped as it is watched, so a kill of the runner can later be held to the machines that were on it: a machine started after a kill is no victim of it, and one booting at the kill is.
+	if stamped, err := r.stampMachine(ctx, agent, machine, runnerReached); err != nil {
+		slog.Warn("stamping the machine's episode", "agent", name, "error", err)
+	} else {
+		agent = stamped
+	}
+	timer.mark("vmMachine")
+	// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer. It is published on every reconcile of a resting agent rather than only the first, so a kill that took its machine down comes off AgentPodReady once its episode ends: nothing else writes that condition on an agent that stays asleep.
+	if pairAtRest && runnerReached && machineStopped(machine) {
+		if _, err := r.publishKill(ctx, agent, hibernatedStatus); err != nil {
+			return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
 		}
 	}
-	if agentSpec.IsVM() {
-		if !r.config.VM.Enabled {
-			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
-		}
-		if err := r.prepareRuntimeMigration(ctx, agent, migration); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
-		}
-		if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
-			secretRefused = refusal
-		}
-		machineRuns := running
-		pairAtRest := false
-		if !running && !hardStop && !parked && !migration.holdsDown() {
-			if machineRuns, err = r.pairAwake(ctx, name); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
-			}
-			pairAtRest = !machineRuns && !migration.active()
-		}
-		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns && migration.machineMayRun(), true)
-		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
-			r.publishCertificateWait(ctx, agent, err)
-			return fmt.Errorf("agent %s: %w, requeuing", name, err)
-		}
-		if err != nil {
-			return r.setMachineError(ctx, agent, err)
-		}
-		// UNIT_BOUNDARY_DESCRIPTION: the sample is kept under the owner's lock, the one the runner's answer was recorded under, so a pass that read a status before that answer cannot keep the older reading after it.
-		machineLock := r.ownerLock(owner)
-		machineLock.Lock()
-		r.noteMachineUse(name, machine)
-		machineLock.Unlock()
-		// UNIT_BOUNDARY_DESCRIPTION: the machine's episode is stamped as it is watched, so a kill of the runner can later be held to the machines that were on it: a machine started after a kill is no victim of it, and one booting at the kill is.
-		if stamped, err := r.stampMachine(ctx, agent, machine, runnerReached); err != nil {
-			slog.Warn("stamping the machine's episode", "agent", name, "error", err)
+	// UNIT_BOUNDARY_DESCRIPTION: a start the wave of a restart holds back is
+	// UNIT_BOUNDARY_DESCRIPTION: not the owner's memory being full: the machines
+	// UNIT_BOUNDARY_DESCRIPTION: the runner is bringing back fill the pool at their
+	// UNIT_BOUNDARY_DESCRIPTION: warm-up floors and settle below it, so the start
+	// UNIT_BOUNDARY_DESCRIPTION: waits for them rather than hibernate one of them,
+	// UNIT_BOUNDARY_DESCRIPTION: and reads as a start in progress so a wake waits for
+	// UNIT_BOUNDARY_DESCRIPTION: it. The window is read from the runner pod, so it is
+	// UNIT_BOUNDARY_DESCRIPTION: the same one after a controller restart, and past it
+	// UNIT_BOUNDARY_DESCRIPTION: the owner's idle agents are the room the start has.
+	// UNIT_BOUNDARY_DESCRIPTION: A refusal whose own reclaim hibernated an idle agent
+	// UNIT_BOUNDARY_DESCRIPTION: for it is a wait rather than a refusal: the room that
+	// UNIT_BOUNDARY_DESCRIPTION: agent holds frees within seconds, so the parked retry
+	// UNIT_BOUNDARY_DESCRIPTION: starts this one by itself and the owner is not asked to
+	// UNIT_BOUNDARY_DESCRIPTION: free room the platform is making. It is read as a start
+	// UNIT_BOUNDARY_DESCRIPTION: in progress, and asked for again at the machine watch's
+	// UNIT_BOUNDARY_DESCRIPTION: cadence so it does not wait the half minute of the parked
+	// UNIT_BOUNDARY_DESCRIPTION: tick. A refusal nothing has freed room for inside
+	// UNIT_BOUNDARY_DESCRIPTION: memoryReclaimWait is the pool's again: it reads
+	// UNIT_BOUNDARY_DESCRIPTION: OverBudget with the message that says what frees it, so a
+	// UNIT_BOUNDARY_DESCRIPTION: pool that cannot hold the start never reads as a start
+	// UNIT_BOUNDARY_DESCRIPTION: that is merely slow. A plan the runner did not refuse for room
+	// UNIT_BOUNDARY_DESCRIPTION: is a start that got in or one that stopped, so its wait ends with
+	// UNIT_BOUNDARY_DESCRIPTION: it: a refusal after it is a new question rather than the wait of
+	// UNIT_BOUNDARY_DESCRIPTION: the room freed before. The wait is stamped by the agents the
+	// UNIT_BOUNDARY_DESCRIPTION: reclaim put to sleep, before a later one's failure ends this
+	// UNIT_BOUNDARY_DESCRIPTION: pass: those side effects stand, so the retry finds the room
+	// UNIT_BOUNDARY_DESCRIPTION: and this start is no more a refusal than if every agent had
+	// UNIT_BOUNDARY_DESCRIPTION: gone to sleep.
+	if machine.Reason == vmrunner.ReasonOutOfCapacity {
+		running, parked = false, true
+		r.recordParkedRetry(name)
+		if r.runnerWarmingUp(ctx, owner) {
+			awaiting, awaitingReason = vmAwaitingWarmUpMessage, apiv1.ReasonAwaitingWarmUp
 		} else {
-			agent = stamped
-		}
-		timer.mark("vmMachine")
-		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer. It is published on every reconcile of a resting agent rather than only the first, so a kill that took its machine down comes off AgentPodReady once its episode ends: nothing else writes that condition on an agent that stays asleep.
-		if pairAtRest && runnerReached && machineStopped(machine) {
-			if _, err := r.publishKill(ctx, agent, hibernatedStatus); err != nil {
-				return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
+			r.retryMemoryWait(ctx, name)
+			freed, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) })
+			if freed > 0 {
+				_ = r.noteMemoryWait(ctx, name)
 			}
-		}
-		if migration.active() {
-			migration.held = runtimeMigrationBootHeld(migration, overBudget)
-			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+			waiting := freed > 0 || r.memoryWaiting(agent)
+			if waiting {
+				// UNIT_BOUNDARY_DESCRIPTION: the wait this start has had is all it gets: past
+				// UNIT_BOUNDARY_DESCRIPTION: it the refusal is the pool's rather than the start
+				// UNIT_BOUNDARY_DESCRIPTION: of a grace of its own.
+				r.markMemoryGraced(name, lastActivity)
+			} else if waiting = r.memoryGrace(name, lastActivity); !waiting {
+				if clearErr := r.clearMemoryWait(ctx, agent); clearErr != nil && err == nil {
+					err = clearErr
+				}
 			}
-		}
-		// UNIT_BOUNDARY_DESCRIPTION: a start the wave of a restart holds back is
-		// UNIT_BOUNDARY_DESCRIPTION: not the owner's memory being full: the machines
-		// UNIT_BOUNDARY_DESCRIPTION: the runner is bringing back fill the pool at their
-		// UNIT_BOUNDARY_DESCRIPTION: warm-up floors and settle below it, so the start
-		// UNIT_BOUNDARY_DESCRIPTION: waits for them rather than hibernate one of them,
-		// UNIT_BOUNDARY_DESCRIPTION: and reads as a start in progress so a wake waits for
-		// UNIT_BOUNDARY_DESCRIPTION: it. The window is read from the runner pod, so it is
-		// UNIT_BOUNDARY_DESCRIPTION: the same one after a controller restart, and past it
-		// UNIT_BOUNDARY_DESCRIPTION: the owner's idle agents are the room the start has.
-		// UNIT_BOUNDARY_DESCRIPTION: A refusal whose own reclaim hibernated an idle agent
-		// UNIT_BOUNDARY_DESCRIPTION: for it is a wait rather than a refusal: the room that
-		// UNIT_BOUNDARY_DESCRIPTION: agent holds frees within seconds, so the parked retry
-		// UNIT_BOUNDARY_DESCRIPTION: starts this one by itself and the owner is not asked to
-		// UNIT_BOUNDARY_DESCRIPTION: free room the platform is making. It is read as a start
-		// UNIT_BOUNDARY_DESCRIPTION: in progress, and asked for again at the machine watch's
-		// UNIT_BOUNDARY_DESCRIPTION: cadence so it does not wait the half minute of the parked
-		// UNIT_BOUNDARY_DESCRIPTION: tick. A refusal nothing has freed room for inside
-		// UNIT_BOUNDARY_DESCRIPTION: memoryReclaimWait is the pool's again: it reads
-		// UNIT_BOUNDARY_DESCRIPTION: OverBudget with the message that says what frees it, so a
-		// UNIT_BOUNDARY_DESCRIPTION: pool that cannot hold the start never reads as a start
-		// UNIT_BOUNDARY_DESCRIPTION: that is merely slow. A plan the runner did not refuse for room
-		// UNIT_BOUNDARY_DESCRIPTION: is a start that got in or one that stopped, so its wait ends with
-		// UNIT_BOUNDARY_DESCRIPTION: it: a refusal after it is a new question rather than the wait of
-		// UNIT_BOUNDARY_DESCRIPTION: the room freed before. The wait is stamped by the agents the
-		// UNIT_BOUNDARY_DESCRIPTION: reclaim put to sleep, before a later one's failure ends this
-		// UNIT_BOUNDARY_DESCRIPTION: pass: those side effects stand, so the retry finds the room
-		// UNIT_BOUNDARY_DESCRIPTION: and this start is no more a refusal than if every agent had
-		// UNIT_BOUNDARY_DESCRIPTION: gone to sleep.
-		if machine.Reason == vmrunner.ReasonOutOfCapacity {
-			running, parked = false, true
-			r.recordParkedRetry(name)
-			if r.runnerWarmingUp(ctx, owner) {
-				awaiting, awaitingReason = vmAwaitingWarmUpMessage, apiv1.ReasonAwaitingWarmUp
+			if err != nil {
+				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+			}
+			if waiting {
+				awaiting, awaitingReason = vmAwaitingMemoryMessage, apiv1.ReasonAwaitingMemory
+				if r.requeue != nil {
+					r.requeue(name, vmReadinessPoll)
+				}
 			} else {
-				r.retryMemoryWait(ctx, name)
-				freed, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) })
-				if freed > 0 {
-					_ = r.noteMemoryWait(ctx, name)
-				}
-				waiting := freed > 0 || r.memoryWaiting(agent)
-				if waiting {
-					// UNIT_BOUNDARY_DESCRIPTION: the wait this start has had is all it gets: past
-					// UNIT_BOUNDARY_DESCRIPTION: it the refusal is the pool's rather than the start
-					// UNIT_BOUNDARY_DESCRIPTION: of a grace of its own.
-					r.markMemoryGraced(name, lastActivity)
-				} else if waiting = r.memoryGrace(name, lastActivity); !waiting {
-					if clearErr := r.clearMemoryWait(ctx, agent); clearErr != nil && err == nil {
-						err = clearErr
-					}
-				}
-				if err != nil {
-					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
-				}
-				if waiting {
-					awaiting, awaitingReason = vmAwaitingMemoryMessage, apiv1.ReasonAwaitingMemory
-					if r.requeue != nil {
-						r.requeue(name, vmReadinessPoll)
-					}
-				} else {
-					overBudget = r.vmMemoryFullMessage(ctx, agent, owner)
-				}
-			}
-		} else if err := r.clearMemoryWait(ctx, agent); err != nil {
-			return fmt.Errorf("agent %s: clearing the memory wait: %w", name, err)
-		} else {
-			// UNIT_BOUNDARY_DESCRIPTION: a start that got in or stopped ends the memory refusal of this Agent, and the grace spent on one of its starts with it.
-			r.clearMemoryGrace(name)
-		}
-		// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
-		if machine.Reason == vmrunner.ReasonAwaitingAllocation {
-			// UNIT_BOUNDARY_DESCRIPTION: an answer about a machine that is still coming up is never parked: parking stops the machine, and a boot or a restart the runner already admitted runs to completion whatever this second answer says. A runner current with this controller lets such a machine through instead of answering, and one from before it answers exactly here, so this is where the exemption is kept for the rollout rather than in the runner alone.
-			bootInFlight := holdsMemory(machine.State)
-			if !bootInFlight {
-				running, parked, awaiting, awaitingReason = false, true, vmAwaitingAllocationMessage, apiv1.ReasonAwaitingAllocation
-				r.recordParkedRetry(name)
-			}
-			if r.requeue != nil {
-				r.requeue(name, vmReadinessPoll)
-			}
-			// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
-			if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
-				if _, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
-					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
-				}
+				overBudget = r.vmMemoryFullMessage(ctx, agent, owner)
 			}
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused because the owner's storage is full holds nothing, so the Agent is parked with the runner's own explanation: the gateway comes down with the machine it proxies, and the parked tick asks again, which is what starts the Agent once space frees. Only a start of an Agent that should run is parked, and only when the machine is stopped or absent: an Agent that should be asleep keeps the hibernation it is already under, since a refusal from a machine it asked to keep stopped must not wake its status between the two, and a machine in any other state may still hold memory, which parking halts.
-		if running && machine.Reason == vmrunner.ReasonStorageFull && machineStopped(machine) {
-			running, parked, awaiting, awaitingReason = false, true, machine.Message, vmrunner.ReasonStorageFull
-			r.recordParkedRetry(name)
-		}
-		// UNIT_BOUNDARY_DESCRIPTION: a start held on a node that has not reported what it granted keeps holding past the bound, but it stops promising an automatic start in seconds: it is published under a reason of its own that names the problem and is retried at the parked tick, so a person sees the diagnosis instead of a start that reads as coming up for ever.
-		if machine.Reason == apiv1.ReasonAllocationUnreadable {
-			running, parked, awaiting, awaitingReason = false, true, vmAllocationUnreadableMessage, apiv1.ReasonAllocationUnreadable
-			r.recordParkedRetry(name)
-		}
+	} else if err := r.clearMemoryWait(ctx, agent); err != nil {
+		return fmt.Errorf("agent %s: clearing the memory wait: %w", name, err)
 	} else {
-		// UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. This arm serves only the Agents made before the microVM was the default, so nothing here grows; the vm arm above is where every new Agent is reconciled.
-		podSpec, refusal, err := r.renderedSpec(ctx, agent)
-		if err != nil {
-			return r.setError(ctx, name, err.Error())
+		// UNIT_BOUNDARY_DESCRIPTION: a start that got in or stopped ends the memory refusal of this Agent, and the grace spent on one of its starts with it.
+		r.clearMemoryGrace(name)
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
+	if machine.Reason == vmrunner.ReasonAwaitingAllocation {
+		// UNIT_BOUNDARY_DESCRIPTION: an answer about a machine that is still coming up is never parked: parking stops the machine, and a boot or a restart the runner already admitted runs to completion whatever this second answer says. A runner current with this controller lets such a machine through instead of answering, and one from before it answers exactly here, so this is where the exemption is kept for the rollout rather than in the runner alone.
+		bootInFlight := holdsMemory(machine.State)
+		if !bootInFlight {
+			running, parked, awaiting, awaitingReason = false, true, vmAwaitingAllocationMessage, apiv1.ReasonAwaitingAllocation
+			r.recordParkedRetry(name)
 		}
-		secretRefused = refusal
-		agentSS := BuildAgentStatefulSet(name, podSpec, r.config, ownerRef, gatewayIP)
-		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
-		if err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
+		if r.requeue != nil {
+			r.requeue(name, vmReadinessPoll)
 		}
-		timer.mark("workspaceClaims")
-		applyPoolClaims(agentSS, claims)
-		stampRollRev(agentSS, rollRev)
-		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
-			live, getErr := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-			if errors.IsNotFound(getErr) {
-				live, getErr = nil, nil
-			}
-			if failure := admissionStartFailure(err, live, agentSpec.Image); getErr == nil && failure.reason != "" {
-				if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
-					setStartFailure(s, failure, agent.Generation)
-				}); err != nil {
-					slog.Warn("writing agent admission start failure", "agent", name, "error", err)
-				}
-			}
-			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
-		}
-		if err := r.forceRollStuckPod(ctx, agentSS.Namespace, agentSS.Name); err != nil {
-			slog.Warn("force-rolling stuck agent pod failed; rollout may be deadlocked",
-				"namespace", agentSS.Namespace, "statefulset", agentSS.Name, "error", err)
-		}
-		if migration.containerDown() {
-			if err := r.stopContainerForRuntimeMigration(ctx, name); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("stopping the container for its runtime migration: %v", err))
+		// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
+		if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
+			if _, err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
+				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 			}
 		}
-		timer.mark("agentStatefulSet")
-		if !migration.vmSideRuns() {
-			if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
-			}
-		}
-		timer.mark("agentService")
-		if migration.active() && migration.phase != apiv1.ReasonRuntimeMigrationFailed && r.requeue != nil {
-			r.requeue(name, runtimeMigrationPoll)
-		}
-		if migration.requested {
-			machine, runnerReached, migrationVMErr = r.reconcileMigrationMachine(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun(), migration.vmSideRuns())
-			timer.mark("migrationMachine")
-		}
-		if migration.active() {
-			migration.held = runtimeMigrationBootHeld(migration, overBudget)
-			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, migrationVMErr); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
-			}
-		}
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused because the owner's storage is full holds nothing, so the Agent is parked with the runner's own explanation: the gateway comes down with the machine it proxies, and the parked tick asks again, which is what starts the Agent once space frees. Only a start of an Agent that should run is parked, and only when the machine is stopped or absent: an Agent that should be asleep keeps the hibernation it is already under, since a refusal from a machine it asked to keep stopped must not wake its status between the two, and a machine in any other state may still hold memory, which parking halts.
+	if running && machine.Reason == vmrunner.ReasonStorageFull && machineStopped(machine) {
+		running, parked, awaiting, awaitingReason = false, true, machine.Message, vmrunner.ReasonStorageFull
+		r.recordParkedRetry(name)
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a start held on a node that has not reported what it granted keeps holding past the bound, but it stops promising an automatic start in seconds: it is published under a reason of its own that names the problem and is retried at the parked tick, so a person sees the diagnosis instead of a start that reads as coming up for ever.
+	if machine.Reason == apiv1.ReasonAllocationUnreadable {
+		running, parked, awaiting, awaitingReason = false, true, vmAllocationUnreadableMessage, apiv1.ReasonAllocationUnreadable
+		r.recordParkedRetry(name)
 	}
 
 	if !gatewayUp || !running || served {
@@ -708,11 +561,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 
 	if running {
-		if agentSpec.IsVM() {
-			err = r.publishVMReadiness(ctx, agent, machine, runnerReached)
-		} else {
-			err = r.publishReadiness(ctx, agent)
-		}
+		err = r.publishVMReadiness(ctx, agent, machine, runnerReached)
 		timer.mark("readiness")
 		return err
 	}
@@ -736,9 +585,6 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	default:
 		timer.mark("reconciled")
 	}
-	if !agentSpec.IsVM() {
-		return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, own)
-	}
 	_, err = r.publishKill(ctx, agent, own)
 	return err
 }
@@ -757,32 +603,6 @@ func (r *AgentReconciler) pairAwake(ctx context.Context, name string) (bool, err
 	}
 	return ss.Spec.Replicas == nil || *ss.Spec.Replicas != 0, nil
 }
-
-func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {
-	name := agent.Name
-	agentReady := r.podCurrentAndReady(ctx, name)
-	agentPod, podReadErr := r.readPod(ctx, name)
-
-	agentFailReason, agentFailMsg := "PodNotReady", ""
-	if !agentReady {
-		if reason, msg, ok := terminationReason(agentPod); ok {
-			agentFailReason, agentFailMsg = reason, msg
-		}
-	}
-	agentRestarts, agentRestartReason := podRestarts(agentPod)
-	ss, ssReadErr := r.statefulSet(ctx, name, true)
-	failure, recheck := podStartFailure(ss, agentPod, time.Now())
-	if recheck > 0 && r.requeue != nil {
-		r.requeue(name, recheck)
-	}
-	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason,
-		func(s *apiv1.AgentStatus) {
-			if podReadErr == nil && (ssReadErr == nil || errors.IsNotFound(ssReadErr)) {
-				setStartFailure(s, failure, agent.Generation)
-			}
-		})
-}
-
 func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
 	name := agent.Name
 	gen := agent.Generation
@@ -826,7 +646,7 @@ func (r *AgentReconciler) publishGatewayTurnedReady(ctx context.Context, agent *
 }
 
 func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Agent) (bool, string, string) {
-	if agent.Spec.IsVM() && r.ownerGatewayOn(agent.Labels[envoyOwnerLabel]) {
+	if r.ownerGatewayOn(agent.Labels[envoyOwnerLabel]) {
 		if svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(agent.Name), metav1.GetOptions{}); err == nil && svc.Annotations[annOwnerGatewayServed] == "true" {
 			if ok, msg := r.ownerListenerCurrent(ctx, agent.Name, svc.Spec.ClusterIP, r.config.EnvoyPort); !ok {
 				if r.requeue != nil {
@@ -977,7 +797,6 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	r.ownerGatewayLegacyRevisions.Delete(name)
 	r.ownerGatewayEpochs.Delete(name)
 
-	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
 	r.memoryWaitWrites.Delete(name)
 	unresolvedGrants.forget(name)
@@ -1002,7 +821,7 @@ func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, age
 }
 
 func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
-	for _, selector := range []string{LabelAgent + "=" + agentName, LabelRetainedFor + "=" + agentName} {
+	for _, selector := range []string{LabelAgent + "=" + agentName} {
 		pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
 			metav1.ListOptions{LabelSelector: selector},
 		)
@@ -1017,159 +836,6 @@ func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
 		}
 	}
 }
-
-func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *apiv1.Agent, agentSpec *apiv1.AgentSpec) (map[string]string, error) {
-	name := agent.Name
-	defaults := r.config.AgentTemplateDefaults
-
-	persisted := map[string]bool{}
-	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
-		if mnt.Persist {
-			persisted[sanitizeMountName(mnt.Path)] = true
-		}
-	}
-
-	sts, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
-	if err == nil {
-		claims := map[string]string{}
-		for _, v := range sts.Spec.Template.Spec.Volumes {
-			if v.PersistentVolumeClaim != nil && persisted[v.Name] {
-				claims[v.Name] = v.PersistentVolumeClaim.ClaimName
-			}
-		}
-		return claims, nil
-	}
-	if !errors.IsNotFound(err) {
-		return nil, err
-	}
-	if err := r.refuseOverRetainedVolumes(ctx, name); err != nil {
-		return nil, err
-	}
-
-	claimed, err := r.listClaimedPoolPVCs(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	claims := map[string]string{}
-	for mount, pvc := range claimed {
-		if persisted[mount] {
-			claims[mount] = pvc
-		}
-	}
-	if !r.config.WarmPool.Enabled {
-		return claims, nil
-	}
-	if pin := agentSpec.StorageClass; pin != "" && pin != r.config.WarmPool.StorageClass {
-		return claims, nil
-	}
-
-	targets := poolTargets(r.config.WarmPool)
-	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
-		if !mnt.Persist {
-			continue
-		}
-		volName := sanitizeMountName(mnt.Path)
-		if _, ok := claims[volName]; ok {
-			continue
-		}
-		key, ok := matchPoolKey(targets, effectiveMountSize(mnt, agentSpec, defaults))
-		if !ok {
-			continue
-		}
-		pvcName, err := r.claimSpare(ctx, name, key, volName)
-		if err != nil {
-			return nil, err
-		}
-		if pvcName != "" {
-			claims[volName] = pvcName
-		}
-	}
-	return claims, nil
-}
-
-func (r *AgentReconciler) listClaimedPoolPVCs(ctx context.Context, agentName string) (map[string]string, error) {
-	list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: LabelAgent + "=" + agentName,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]string{}
-	for _, p := range list.Items {
-		if _, fromPool := p.Labels[LabelPool]; !fromPool {
-			continue
-		}
-		if mount := p.Labels[LabelMount]; mount != "" {
-			out[mount] = p.Name
-		}
-	}
-	return out, nil
-}
-
-func (r *AgentReconciler) claimSpare(ctx context.Context, agentName, poolKey, mountName string) (string, error) {
-	list, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: LabelPool + "=" + poolKey + "," + LabelPoolAvailable + "=true",
-	})
-	if err != nil {
-		return "", err
-	}
-	for i := range list.Items {
-		p := &list.Items[i]
-		if p.Status.Phase != corev1.ClaimBound {
-			continue
-		}
-		if p.Labels == nil {
-			p.Labels = map[string]string{}
-		}
-		p.Labels[LabelAgent] = agentName
-		p.Labels[LabelMount] = mountName
-		delete(p.Labels, LabelPoolAvailable)
-		if _, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Update(ctx, p, metav1.UpdateOptions{}); err != nil {
-			if errors.IsConflict(err) || errors.IsNotFound(err) {
-				continue
-			}
-			return "", err
-		}
-		slog.Info("warm pool: claimed spare for agent", "agent", agentName, "pool", poolKey, "mount", mountName, "pvc", p.Name)
-		return p.Name, nil
-	}
-	return "", nil
-}
-
-func (r *AgentReconciler) ReconcileOrphanPVCs(ctx context.Context) {
-	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: LabelAgent},
-	)
-	if err != nil {
-		slog.Warn("orphan PVC GC: listing PVCs failed", "error", err)
-		return
-	}
-	deleted := 0
-	for _, pvc := range pvcs.Items {
-		agentName := pvc.Labels[LabelAgent]
-		if agentName == "" {
-			continue
-		}
-		_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, agentName, metav1.GetOptions{})
-		if err == nil {
-			continue
-		}
-		if !errors.IsNotFound(err) {
-			slog.Warn("orphan PVC GC: API lookup failed", "agent", agentName, "error", err)
-			continue
-		}
-		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
-			slog.Warn("orphan PVC GC: delete failed", "pvc", pvc.Name, "agent", agentName, "error", err)
-			continue
-		}
-		slog.Info("orphan PVC GC: deleted PVC for missing agent", "pvc", pvc.Name, "agent", agentName)
-		deleted++
-	}
-	if deleted > 0 {
-		slog.Info("orphan PVC GC: sweep complete", "deleted", deleted, "scanned", len(pvcs.Items))
-	}
-}
-
 func (r *AgentReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
 	secrets, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -1351,7 +1017,7 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the Service once and leaves it as it is, except that a headless one replaces one with a cluster address: a runtime migration that is aborted after its boot leaves the Service a machine needs, and a Service's cluster address cannot be changed in place.
+// UNIT_BOUNDARY_DESCRIPTION: creates the Service once and leaves it as it is, except that a headless one replaces one with a cluster address: a machine needs a Service it can remap a published port on, and a cluster address cannot be changed in place.
 func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
 	cli := r.client.CoreV1().Services(desired.Namespace)
 	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})

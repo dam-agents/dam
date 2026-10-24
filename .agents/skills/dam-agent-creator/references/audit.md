@@ -25,7 +25,7 @@ Include what applies; add domain checks from the design's effects list.
 - Auth/connectivity to each integration (an unauthenticated GET; plus rate-limit headroom where the API reports it).
 - **Token scopes and CLI deps**: assert the scopes scheduled runs need (stated only in README) and that required commands exist.
   A missing scope silently breaks posting and only the operator can fix it, so check weekly, not only at onboarding.
-- Backup invariants (git-backed state): no `work/.git` on the volume; `.nfs*` junk count under `work/` as an early concurrency signal (`references/platform-dam.md`).
+- Backup invariants (git-backed state): no `work/.git` under the agent's home; a `.git` appearing in `work/` is an early concurrency signal (`references/platform-dam.md`).
 - **Structure verification**: re-run `scripts/verify-onboarding.sh` (offline), the script onboarding ends with: the cheapest catch for state files drifted out of shape or a `CONFIG.md` key the runtime can't see.
 - **Toolchain shims**: report every CLI behind a `mise` shim (`toolpath_shimmed`): it passes the dependency check while every process not sourcing the workaround pays the exec tax.
   The report reads what `toolpath_init` saw *before* shadowing anything, so an active workaround doesn't silence it; the finding is the image defect and keeps warning until real bin dirs precede the shim dir on `PATH` (§5a: reported, never absorbed).
@@ -36,7 +36,7 @@ Include what applies; add domain checks from the design's effects list.
 - **Session models**: the week's `tokens` events against `run_model` (what ran, from the log) beside the registered schedules' `spec.model` (what is configured, judgment side).
 - **Harness adapter parts by name** (`install.sh --check`): hooks, auto-mode rules, the tool deny list, the lean subagent type; a partially-installed instance warns per part.
 - **Memory budget** (only with memory): lines and line length of every distilled memory file against its bound (`references/architecture.md` → Memory); never the archive.
-- **Disk space and inodes of every volume a run writes to** (the home volume, clones, the backup's tmpfs), not only `work/`.
+- **Disk space and inodes of every filesystem a run writes to** (the machine's disk, clones, the backup's tmpfs), not only `work/`.
 - **The monitor's week** (`references/architecture.md` → Monitor): classifier blocks by day, tool and reason with the top patterns; API failures by class grouped into outages.
 - **Per-item shape** (when items are measured): the medians of `secs`, `msgs`, `peak_ctx`, `repeats`, `failures`, `max_out` this week against the week before, the items the week's anomaly alerts named, and the baseline count per model.
 - Run cadence: gaps in each run type's log vs. its schedule (missed runs).
@@ -48,7 +48,7 @@ Include what applies; add domain checks from the design's effects list.
 - **Counting rules**: a run's usage is its *last* `tokens` event (cumulative per session); a count pruning would delete comes from the facts file written before the prune; the error scan strips zero-count phrases first (`references/architecture.md` → Logging).
 - State consistency: tracking rows vs external markers, sampled both ways (rows without markers, markers without rows).
 - Stale locks, duplicate tracking rows, prune backlog, orphaned per-item files, orphaned published artifacts, leftover temp directories.
-- Disk usage of the volume; cache freshness.
+- Disk usage of the machine's disk; cache freshness.
 - Definition cleanliness (`git -C "$HOME" status --porcelain` empty) and version currency (checked-out vs latest vs adopted `work/VERSION`; drift is a warn; the audit only reports, acting on versions happens in the direct session).
 
 **Judgment (agent side):**

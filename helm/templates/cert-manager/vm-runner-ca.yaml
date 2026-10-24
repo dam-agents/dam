@@ -1,4 +1,3 @@
-{{- if .Values.virtualization.enabled }}
 {{/*
 The VM runners' own CA. The bootstrap issuer signs the CA Certificate; the CA
 issuer then signs each runner's serving certificate, which the controller
@@ -54,4 +53,3 @@ metadata:
 spec:
   ca:
     secretName: {{ $ca.secretName }}
-{{- end }}

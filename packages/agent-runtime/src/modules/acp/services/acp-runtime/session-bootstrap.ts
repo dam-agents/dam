@@ -89,7 +89,7 @@ export interface SessionBootstrapDeps {
  * UNIT_BOUNDARY_DESCRIPTION: Answers session/load and session/resume from the
  * Session Transcript when it already holds the session, so the harness is not
  * asked twice for the same history. When the transcript is cold (first attach
- * after a pod restart), at most one session/load per session goes to the
+ * after a machine restart), at most one session/load per session goes to the
  * harness; every load or resume for that session parks as a waiter, and the
  * replayed lines fill the transcript without reaching any channel. When the
  * response lands, every parked waiter is served from the transcript — a load

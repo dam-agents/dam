@@ -51,8 +51,6 @@ export interface TemplateSpec {
   hibernationTimeout?: string;
   storageSize?: string;
   storageClass?: string;
-  runtimeClassName?: string;
-  nodeSelector?: Record<string, string>;
   skillSources?: SkillSourceSeed[];
 }
 

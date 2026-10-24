@@ -3,14 +3,12 @@ import type { InfraAgent } from "./infrastructure/agent-mappers.js";
 import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
-import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
-import type { IdleTimeoutMinutes } from "./domain/spec-assembly.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
-import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
+import { createAgentServiceStatusClient } from "./infrastructure/agent-service-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createAgentsRepository,
@@ -24,7 +22,6 @@ import {
   type PresetSeeder,
   type ContributionsProgressPort,
   type OnboardingChecklistReader,
-  type ResizeGatePort,
   type StorageGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
@@ -66,7 +63,6 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 
 export interface AgentsInstallSettings {
-  virtualizationEnabled: boolean;
   defaultHarness: string;
   telemetry: boolean;
 }
@@ -76,10 +72,9 @@ export function composeAgentsModule(deps: {
   resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
   agentStateCache: AgentStateCache;
   namespace: string;
-  agentIdleTimeoutMinutes: IdleTimeoutMinutes;
+  agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
   install: AgentsInstallSettings;
-  resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
   owner: string | undefined;
   db: Db;
@@ -112,12 +107,9 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      virtualizationEnabled: deps.install.virtualizationEnabled,
       defaultHarness: deps.install.defaultHarness,
       telemetry: deps.install.telemetry,
-      resizeGate: deps.resizeGate,
       storageGate: deps.storageGate,
-      resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       lastHelloAt: async (agentId) =>
@@ -129,7 +121,7 @@ export function composeAgentsModule(deps: {
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
       onboardingChecklists: deps.onboardingChecklists,
-      podStatus: createPodStatusClient(deps.namespace),
+      agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

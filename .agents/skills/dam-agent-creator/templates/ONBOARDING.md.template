@@ -1,6 +1,6 @@
 <!-- TODO(creator): delete inapplicable steps (renumber if needed). Keep every step idempotent — a failed
      run must be safe to re-run from the top. This file must fully bootstrap a fresh agent
-     on an empty volume: every config key, state seed, schedule, and sentinel the runtime
+     on a fresh machine: every config key, state seed, schedule, and sentinel the runtime
      needs is created here. -->
 
 # Onboarding — first-run initialization
@@ -16,7 +16,7 @@ Two git repositories exist after onboarding and must never overlap:
 | `/home/agent/work` | **plain data directory** (not a repo); backed up to `$GITHUB_REPO_WORK` when set | Runtime state. <!-- TODO(creator): adjust if the design chose local-only state. --> |
 
 `work/` is git-ignored by the outer repo (allowlist `.gitignore`) and holds no `.git` of
-its own — backup runs off-volume via a tmpfs clone
+its own — backup runs from a disposable tmpfs clone
 ([docs/persistence.md](docs/persistence.md) → **Backup & restore**), so the two stay
 fully independent.
 
@@ -30,7 +30,7 @@ fi
 ```
 
 Sentinel exists → **stop here**. It lives in persistent `$HOME`, so onboarding runs once
-per volume, not per scheduled run.
+per machine, not per scheduled run.
 
 ## Two ways in
 
@@ -63,8 +63,9 @@ fires while the dialog is still open.
         connection/token is broken. Also verify the token scopes and the CLI commands
         the design's runs actually need (both specified once, in README) — a missing
         scope is operator-only to fix and better caught now than by the weekly audit.
-        OS packages cannot be installed on the pod, so the definition must not require
-        anything beyond the pod's toolset. -->
+        The agent is root in its own machine, so an OS package it needs is a one-line
+        install (`apt-get install`); what it must not assume is another host's toolset,
+        so the definition still names the tools its runs need. -->
 2. **Definition repo** — when the kit seeded this checkout, `origin` is already the right
    repository (and the right fork): read it with
    `git -C /home/agent remote get-url origin` and use that. Otherwise derive `OWNER/REPO`
@@ -90,7 +91,7 @@ gh auth setup-git
 <!-- TODO(creator): keep the shim probe only when a script sources scripts/lib/toolpath.sh
      (a hot pre-flight); adjust the tool list. -->
 Report — never block on — CLI tools reaching through a version-manager shim; the runtime
-resolves them per run, but the real fix belongs in the pod image and the weekly audit
+resolves them per run, but the real fix belongs in the agent image and the weekly audit
 keeps warning until it lands:
 
 ```bash
@@ -148,7 +149,7 @@ update that changes the adapter (the monitor reports `harness_drift` until then)
 ## Step 2 — Provision `work/` (runtime state)
 
 **2a — state repo env var set** → restore prior state from the backup remote. `work/`
-is a **plain data directory, never a git clone** — backup runs off-volume via a tmpfs
+is a **plain data directory, never a git clone** — backup runs from a disposable tmpfs
 clone ([docs/persistence.md](docs/persistence.md)), so restore just copies the remote's
 files in:
 

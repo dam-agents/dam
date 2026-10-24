@@ -8,8 +8,8 @@ For *what* Platform is and how it's built, see the [architecture docs](architect
 Agents and other connections require API tokens to communicate with their providers.
 These secrets are managed through the Platform UI at [platform.localhost:4444](http://platform.localhost:4444).
 
-The Envoy sidecar in each agent pod injects credentials on the wire — agents never see the secret bytes.
-The api-server stores secrets as K8s Secrets labelled with the owner's `sub`; the controller mounts the matching set into the Envoy sidecar only.
+Each agent's gateway injects credentials on the wire — agents never see the secret bytes.
+The api-server stores secrets as K8s Secrets labelled with the owner's `sub`; the controller mounts the matching set into the owner's gateway pod only.
 
 1. **Add a secret** — open the Connections panel in the UI.
    For Anthropic, you can use `claude setup-token` as the token value.
@@ -25,7 +25,7 @@ Name that CA with `controller.gatewayUpstreamExtraCAs`: `--set-file controller.g
 Gateways then trust it on top of the public roots, and agents trust it beside their gateway's CA, since the proxy also intercepts the hosts a gateway passes through untouched.
 The api-server trusts it too, for its own outbound calls on the same path: Slack's Socket Mode and Web API, GitHub, and OAuth token exchanges.
 A connection that carries its upstream's own CA still validates against that CA alone.
-`mise run cluster:install` sets the value by itself when it runs inside one of the platform's vm agents.
+`mise run cluster:install` sets the value by itself when it runs inside one of the platform's agents.
 
 ### Agents that inject only addressed requests
 
@@ -257,23 +257,24 @@ Platform detects it is running in a sandbox by env `IS_SANDBOX` and skips provis
 With a running systemd (or OpenRC) it runs the Lima provision scripts on the host; without one it installs the pinned k3s binary and starts it as a plain process, prefixed by `K3S_LAUNCHER` when the host needs a wrapper.
 On a node kernel without IPv6 the mesh dataplane is installed IPv4-only.
 Claude Code on the web needs that wrapper and more: see the [`ccweb`](../.agents/skills/ccweb/SKILL.md) skill.
-A sandbox that can open `/dev/kvm` also runs vm-backend agents: `cluster:install` turns `virtualization.enabled` on there unless the values or `--set=virtualization.enabled=false` choose otherwise.
-A sandbox that cannot open it gets none, and the install warns that they are off.
-Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every vm agent with `controller.agent.templateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
-Changing the ask restarts that agent's machine and no other; changing the template default restarts every vm agent's machine that does not ask itself, and while it is on no Agent can opt out.
+Every agent runs as a microVM, so the sandbox must be able to open `/dev/kvm`: `cluster:install` fails in one that cannot.
+Such an agent can open `/dev/kvm` only when its Agent asks for nesting with `spec.backend.vm.nestedVirtualization: true`, or the install asks for every agent with `controller.agent.templateDefaults.nestedVirtualization=true`, on an install with `virtualization.runner.nestedVirtualization=true`: then that machine alone gets the node's virtualization extensions, where the node's KVM allows nesting, and its `NestedVirtualization` condition says whether it got them.
+Changing the ask restarts that agent's machine and no other; changing the template default restarts every agent's machine that does not ask itself, and while it is on no Agent can opt out.
 Nesting is the kernel default (`kvm_intel` and `kvm_amd` `nested=1`), and turning it off on a node takes a module reload, so the chart value is the switch.
 It is off by default because a nesting guest reaches the host kernel's nested-virtualization code.
 The api-server offers no way to ask, so only someone who can edit Agent resources can turn it on for one agent, and only the install for all of them.
 
-### vm-backend agents (VM runner)
+### Agents (VM runner)
 
-An install that can virtualize creates every new agent on the `vm` Backend, whichever path makes it ([features](architecture/features.md)).
-In the cluster, each runs as a smolvm microVM inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+Every agent runs as a smolvm microVM, whichever path makes it.
+In the cluster, each runs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
 A local install on an Apple silicon Mac has no such pod, unless it keeps the runner pods on nested virtualization: one runner outside the cluster serves every owner from the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
-Such an agent persists the agent's home and nothing else: the rest of the machine is a root overlay discarded every time it stops.
-Turn it on with `virtualization.enabled=true`, which then requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, or the install refuses to render.
+An agent persists its home on its machine's disk, and the rest of the machine as a root overlay kept across stops while the image's root generation stays the same ([vm storage](architecture/vm-storage.md)).
+The install requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, `virtualization.runner.releaseHostPath`, and `virtualization.imageCache.hostPath` unless the Mac host runner is in use, or it refuses to render.
+An install may still carry `virtualization.enabled`, `controller.warmPool`, `controller.storageMigration`, `controller.requestsFromLimits` or a pod field under `controller.agent.base`: Helm drops a value nothing reads, and those configured the agent pod and its volumes, which are gone.
+The three JSON blocks the controller decodes are the exception — a key left in `AGENT_BASE`, `AGENT_TEMPLATE_DEFAULTS` or `AGENT_VM` stops its startup, because it refuses a field its config no longer has.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
-The devices reach the pod only as device-plugin resources, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
+The devices reach the pod only as device-plugin resources, so an install with no node a plugin exposes `/dev/kvm` on cannot run agents, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.
 The runner pod runs in a user namespace, which puts two demands on its nodes.
 The node's `/dev/kvm` must be mode 0666, systemd's own default, because the device keeps its host owner unmapped in the pod; Debian and Ubuntu lower it to 0660, which no runner can open.
@@ -281,11 +282,8 @@ The runner's claim, `virtualization.runner.storageClass`, needs a filesystem tha
 Every other knob, and what each one costs, is documented per field under `virtualization` in [`helm/values.yaml`](../helm/values.yaml); the shape it produces is described in [vm-runner](architecture/vm-runner.md).
 A published chart pins the runner image by digest rather than by the release, and a rebuild that changes nothing in the image keeps its digest, so an upgrade that leaves that image unchanged does not roll the runner: a roll stops every machine of that owner at once, and each of those agents loses the turn it was running.
 A chart rendered straight from git keeps the appVersion fallback and rolls the runner on every deploy.
-Locally, `mise run cluster:install` turns `virtualization.enabled` on by default where the host can run machines, and the chart's own default stays off.
-On an Apple silicon Mac it runs them on one runner on the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
-In a sandbox (`IS_SANDBOX`) it does so when the sandbox can open `/dev/kvm`.
-On a Linux host outside a sandbox and on an Intel Mac it leaves them off, and says why at the start and the end of the install; under CI they are off unless asked for.
-`--set=virtualization.enabled=false` (or the same key in the values file) turns them off, and `--set=virtualization.enabled=true` asks for them where the default would not.
-The e2e install chooses for itself: off, unless `E2E_VIRTUALIZATION=1`.
+Locally, `mise run cluster:install` needs a host that can run machines.
+On a Mac it runs them on one runner on the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
+Elsewhere it runs the runner pods in the cluster, which need `/dev/kvm` on the host or, in the k3s Lima VM, nested virtualization; an install that cannot open `/dev/kvm` fails, since no agent could run.
 With `PLATFORM_NESTED_VIRT=1` on a Mac, the install creates the k3s Lima VM with nested virtualization (Apple silicon M3+ on macOS 15+) and runs the runner pods in it, staging the agent images on the node for the runners to mount, since there is no registry.
-Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it; until then the default leaves vm agents off with a warning, and an explicit `virtualization.enabled=true` fails the install.
+Nested virtualization is create-time only — an existing VM needs `cluster:delete` and a reinstall to gain it, and the install fails until then.

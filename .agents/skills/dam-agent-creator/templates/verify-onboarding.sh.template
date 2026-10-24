@@ -84,7 +84,7 @@ if [ "$STRUCTURE" = 1 ]; then
 
   : # ------------------------------------------------------------------ work/
     # TODO(creator): work/ present and a PLAIN DIRECTORY (no .git — the
-    # invariant the NFS volume forces); work/AGENTS.md pointer present;
+    # invariant the shared home forces); work/AGENTS.md pointer present;
     # work/VERSION matches the checkout; per state file: present, template
     # sections/table header intact, every row matching the documented format.
 fi

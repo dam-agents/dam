@@ -16,7 +16,6 @@ const stateVariant: Record<
   disabled: "muted",
   error: "danger",
   over_budget: "warning",
-  migrating: "info",
 };
 
 export const stateDotClass: Record<AgentDisplayState, string> = {
@@ -28,20 +27,17 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   disabled: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
-  migrating: "bg-info",
 };
 
 export function StatusBadge({
   state,
   working,
   keptWork = 0,
-  vm,
   refused,
   className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
-  vm: boolean;
   refused: boolean;
   keptWork?: number;
   className?: string;
@@ -54,7 +50,7 @@ export function StatusBadge({
     ? working
       ? "Working"
       : "Idle"
-    : badgeLabel(state, vm, refused);
+    : badgeLabel(state, refused);
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
   return (
     <Badge variant={variant} className={className}>

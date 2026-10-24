@@ -151,16 +151,6 @@ func TestAHungRunnerHoldsUpNoOtherOwnersReconcile(t *testing.T) {
 	assert.Less(t, time.Since(start), 2*time.Second, "another owner's reconcile waited on the hung runner")
 }
 
-// TEST_SCENARIO: an install has virtualization on but the agent hibernating is container-backed; halting must not reach a runner, because that agent has no machine and an error here would strand its credentials.
-func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
-	agent := vmAgentCR()
-	agent.Spec.Backend = nil
-	r, node, _ := setupVMReconciler(t, agent)
-
-	require.NoError(t, r.HaltMachine(context.Background(), testOwner, "my-agent"))
-	assert.Empty(t, node.specs, "a container agent must not reach its owner's runner")
-}
-
 // TEST_SCENARIO: hibernating a vm agent has to stop its machine, which is how the platform reclaims a runner's memory — scaling the gateway alone would leave the guest running while the owner's budget counts that memory as free.
 func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	ctx := context.Background()

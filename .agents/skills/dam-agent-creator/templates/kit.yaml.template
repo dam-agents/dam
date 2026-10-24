@@ -125,8 +125,8 @@ egressRules:
   - host: TODO(creator).example.com
 
 # TODO(creator): keep only when the agent runs a program at every boot — a
-# dashboard, a local API, a watcher — and the kit declares `backend: vm`: each is a
-# Login item (an openrc user service) written at create, never an onboarding step.
+# dashboard, a local API, a watcher: each is a Login item (an openrc user
+# service) written at create, never an onboarding step.
 # `command` is a program on PATH, an absolute path, or ~/… — never a shell line.
 startupItems:
   - name: TODO-creator-item

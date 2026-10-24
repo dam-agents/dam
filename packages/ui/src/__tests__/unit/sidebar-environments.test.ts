@@ -44,14 +44,13 @@ vi.mock("../../modules/features/api/queries.js", () => ({
 const { SidebarEnvironments } =
   await import("../../modules/environments/components/sidebar-environments.js");
 
-function render(vm = true) {
+function render() {
   return renderToStaticMarkup(
     createElement(
       TooltipProvider,
       null,
       createElement(SidebarEnvironments, {
         agentId: "agent-dev",
-        vm,
         indent: "pl-12",
       }),
     ),
@@ -93,16 +92,11 @@ describe("the sidebar's Environments", () => {
     );
   });
 
-  // TEST_SCENARIO: an agent with no Environments shows nothing, and a container agent or a disabled feature does not even ask for them.
-  it("shows nothing without Environments, and asks only for vm agents", () => {
+  // TEST_SCENARIO: an agent with no Environments shows nothing, and a disabled feature does not even ask for them.
+  it("shows nothing without Environments, and asks only while the feature is on", () => {
     state.enabled = true;
     state.environments = [];
     expect(render()).toBe("");
-
-    state.environments = [environment];
-    state.asked = [];
-    expect(render(false)).toBe("");
-    expect(state.asked).toEqual([Symbol.for("skip")]);
 
     state.enabled = false;
     state.asked = [];

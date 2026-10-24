@@ -78,7 +78,6 @@ const page: UserBudgetPage = {
       setBySub: "op-1",
       setByEmail: "op@example.com",
       updatedAt: "2026-10-22T12:00:00.000Z",
-      reserved: { cpuMilli: 2000, memoryBytes: 4 * 1024 ** 3 },
     },
   ],
 };

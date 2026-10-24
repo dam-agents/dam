@@ -26,7 +26,7 @@ flowchart LR
   agents[agents]
   schedules[schedules]
   channels[channels]
-  pod[agent pod]
+  machine[machine]
 
   api -->|read catalog.yaml, kit.yaml at ref| catalog
   catalog -.->|entry| kitrepo
@@ -34,9 +34,9 @@ flowchart LR
   api -->|create + grants + kit stamp| agents
   api -->|create declared schedules| schedules
   api -->|bind Slack conversation| channels
-  api -->|workspace-seed: definition at its commit| pod
-  api -->|install, then initialization event| pod
-  pod -.->|follows ONBOARDING.md in the checkout| kitrepo
+  api -->|workspace-seed: definition at its commit| machine
+  api -->|install, then initialization event| machine
+  machine -.->|follows ONBOARDING.md in the checkout| kitrepo
 ```
 
 ## Concepts
@@ -113,11 +113,6 @@ flowchart LR
   The Agent is created on that image exactly as a custom-image agent is, with the install's default mounts; nothing has to be declared in Helm for a kit to work.
   A kit without an image runs on the default Template.
   The former `preconfigured` Templates are now kits in the built-in catalog: workload images belong in kits, harness images in Templates.
-- **Kit Backend** — optional `backend: vm`: the kit's work needs a machine rather than a pod.
-  An agent container drops every capability, so a workload that runs a container runtime or a whole cluster inside its sandbox can only exist on the `vm` Backend ([platform-topology](platform-topology.md)); the kit says so and apply passes it to the create, where the existing refusal for a microVM on an install without virtualization already sits, before anything is created.
-  **Whether the install can run one is a capability, not a preference, and it decides visibility**: a `vm` kit is left out of the listing and reads as absent on a read when `virtualization.enabled` is off, for the same reason a disabled built-in kit never reaches the UI — a catalog that offers what this install cannot run wastes the user's time and ends in a parked agent.
-  A kit that names no backend gets its install's runtime: a microVM wherever virtualization is on, as every create that names no backend gets, and a container only on an install that cannot run one, where a `vm` kit is hidden anyway ([features](features.md)).
-  The kit therefore carries no runtime badge: on a given install every kit offered runs on the same Backend.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).
   Apply passes the preset to the create, which seeds from it exactly as when the user picks one; a kit that names none gets the create's default (`trusted`).
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
@@ -128,13 +123,13 @@ flowchart LR
   Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
   The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
-  The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
+  The command runs **inside the agent's own sandbox** — the same machine, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
   This is how the two wiki kits run their toolkit's bootstrap: from the checkout their `seed` brought in, pinned to the commit the catalog resolved, instead of fetching a script from the network at install.
 - **Kit Writes Into the Agent's Home** — an install command, a startup item or a bootstrap script that edits the agent's own configuration (`~/.claude/settings.json` for hooks, `autoMode` rules or a theme) writes a file the platform's own writers also write, so it follows the same rule ([writing a file](runtime-delivery.md#writing-a-file)): take `~/.claude/settings.json.lock` for the whole read-modify-write, read the file again once the lock is held, stage the replacement **in `~/.claude/`** so the rename stays on one filesystem — a file staged in `/tmp` is on another one, so moving it is a copy and a reader can see half a file — and never write `{}` over a file it could not read.
   The lock is one file whose text is `<pid>:<a word of the kit's own>`, so a shell bootstrap takes it with an exclusive create (`set -o noclobber` with `printf '%s:kit' "$$"` into it) and removes it when the write is done; one left behind by a kit that died is broken once it is old.
   A kit that leaves the rule out still works until the millisecond a writer holds the lock, and then loses its own change or the platform's: no lock protects a writer that takes none, so the fix for that kit is in the kit's own repository, not here.
 - **Kit Startup Item** — optional `startupItems`: the programs the agent runs at every boot, each a [Startup Item](agent-processes.md#startup-items) — a `name`, a `command` (a program on `PATH`, an absolute path, or a path in the agent's home as `~/…`; never a shell line), its `args`, a one-line `description`, and `enabled`, on at boot unless it says `false`.
-  Only a machine runs openrc, so a kit that declares one declares `backend: vm`, and a name, the script's file name, is used once.
+  Every Agent runs openrc, so a kit that declares one needs no runtime declaration, and a name, the script's file name, is used once.
   Apply queues them as one `startup-items` event after the install command, which may be what puts the program there, and before the initialization session; the agent-runtime writes each as the agent would, a script in `~/.config/rc/init.d` with its boot link when on, and starts it.
   A script the agent already has under that name is the agent's and is left as it is.
   From then on an item is the agent's like any other: listed as a Login item, which the user stops, turns off or removes in the Processes panel, and which a Kit Update does not rewrite.
@@ -145,21 +140,16 @@ flowchart LR
   The two knowledge kits (LLM Wiki, Plain Wiki) live in the toolkit repositories they install and are reached through the curated catalog, and run on the default Template.
   A knowledge base is set up by asking its owner what it is for and what to read first, so such a kit ships an `ONBOARDING.md` and names no onboarding command: the briefing then opens on that file once `install` has run, and the intake is reported as a checklist.
   A bare command cannot do that job — it is stamped onboarded at create and has nothing to report with.
-- **Agent Setup** — the seed, install, env, size, backend and external skills are one definition shared with spawning a sub-agent, so a target is set up exactly like a kit-created Agent ([invocations](invocations.md)).
+- **Agent Setup** — the seed, install, env and external skills are one definition shared with spawning a sub-agent, so a target is set up exactly like a kit-created Agent ([invocations](invocations.md)).
   A new setup field lands there and works for both, or is kept kit-only on purpose.
-- **Kit Size** — optional `resources`: the CPU and memory limits and the workspace disk the kit's workload needs, plus a `note` saying why.
-  It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
-  Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
-  CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  Every kit on an install with virtualization gets none of it and shows no size, since every agent created there is a machine: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools.
-  Only an install that cannot run one, and so creates containers, shows a kit's size.
-  This is where the sizing the `preconfigured` Templates used to carry now lives.
+- **Kit Size** — optional `resources`: the CPU, memory and disk a kit declares for its workload, plus a `note` saying why.
+  It sizes nothing: every Agent is a machine with no CPU, memory or disk of its own, drawing on its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools, so the kit modal shows no size for any kit.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.
   `into` says where: `work` (the default — the toolkit-as-workspace shape the wiki kits use) or `home` (a definition that wants to be `$HOME`, with `CLAUDE.md`, `scripts/` and `docs/` beside the platform's own dotfiles and `work/` as its git-ignored data directory — Code Guardian's shape).
   A home seed is never a clone: init, fetch, hard-reset of tracked paths, checkout of the branch, so nothing the platform or harness put in `$HOME` is removed.
-  The seed first lists its destination as a git `safe.directory` in the agent's gitconfig — the home directory is the volume's mount root, owned by root, and git otherwise refuses to treat it as a repository, for the seed and for every `git` the agent later runs there.
-  A private definition needs the GitHub connection the kit requires: the clone rides the gateway like any `git` in the pod.
+  The seed first lists its destination as a git `safe.directory` in the agent's gitconfig — the home directory is the disk's mount root, owned by root, and git otherwise refuses to treat it as a repository, for the seed and for every `git` the agent later runs there.
+  A private definition needs the GitHub connection the kit requires: the clone rides the gateway like any `git` in the machine.
   The work directory *is* the definition afterwards, so a seeded kit's `install` runs inside that checkout.
   A seed that fails is loud, not silent: the initialization session waits behind it, the runtime reports the reason, the agent shows it with a retry ([runtime delivery](runtime-delivery.md#event)), and the briefing tells the agent that a missing checkout means the seed failed — say so and stop, never clone or delete anything itself.
   The seed marks its own completion, so an agent's own clone in the work directory is never mistaken for it.
@@ -206,7 +196,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 1. Resolve the kit at the catalog's pin.
    Use the kit's own image when it brings one, otherwise the Template the caller names, else the plain create's default Template.
 2. Check every required Connection Requirement against the templates of the connections the user granted; refuse before anything is created.
-3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, size, backend, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
+3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
    The seed is a fixed part of the kit: the kit modal shows it but offers no way to drop it, and apply takes no input that would, because the definition's instructions, scripts and `ONBOARDING.md` are what the kit exists to provide — an Agent created without them cannot run the kit's setup.
    The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below, and a kit with Startup Items queues them as a `startup-items` event behind it.
 4. Create the declared schedules, toggling suggested ones off; bind the Slack conversation if one was given.

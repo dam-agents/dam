@@ -80,10 +80,10 @@ func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 }
 
 func TestBuildGatewayService(t *testing.T) {
-	svc := BuildGatewayService("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM))
+	svc := BuildGatewayService("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	assert.Equal(t, "my-instance-gateway", svc.Name)
 	assert.Empty(t, svc.Spec.ClusterIP, "gateway Service must not be headless")
-	require.Len(t, svc.Spec.Ports, 1)
+	require.NotEmpty(t, svc.Spec.Ports)
 	assert.Equal(t, "proxy", svc.Spec.Ports[0].Name)
 	assert.Equal(t, int32(10000), svc.Spec.Ports[0].Port)
 

@@ -1,7 +1,7 @@
 import type { AgentView } from "../../../types.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
-import { AgentResourcesSection } from "./agent-config-sections.js";
+import { AgentSleepSection } from "./agent-config-sections.js";
 import { AgentManagementActions } from "./agent-management-actions.js";
 import { AgentUpdateRow } from "./agent-update-row.js";
 import { SandboxIdentity } from "./sandbox-home-header.js";
@@ -23,7 +23,7 @@ export function AgentPanel({
     <div className="flex flex-col gap-2">
       <SandboxIdentity agent={agent} display={display} />
       <AgentUpdateRow agent={agent} />
-      <AgentResourcesSection agent={agent} />
+      <AgentSleepSection agent={agent} />
       <AgentManagementActions agent={agent} display={display} />
       <SandboxUsageSection agentId={agent.id} />
     </div>

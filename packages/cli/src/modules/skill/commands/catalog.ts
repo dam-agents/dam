@@ -35,7 +35,7 @@ export function buildCatalogCommand(deps: {
     .argument("<source>", "source id or git URL (from `dam skill source list`)")
     .option(
       "--agent <ref>",
-      "Agent Ref — annotate each skill not-installed / installed / update-available, and scan private sources through the Agent's pod",
+      "Agent Ref — annotate each skill not-installed / installed / update-available, and scan private sources through the Agent's runtime",
     )
     .option(
       "--server <url>",

@@ -7,29 +7,29 @@ import {
 } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 
-import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../modules/agents/infrastructure/k8s.js";
 
 type FetchLike = NonNullable<Parameters<typeof httpLink>[0]["fetch"]>;
 
-const AGENT_POD_TIMEOUT_MS = 15_000;
+const AGENT_SERVICE_TIMEOUT_MS = 15_000;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the one way the api-server calls an Agent pod's
- * runtime over HTTP. Every call is bounded: a pod that accepts the connection
- * and never answers fails the call in `timeoutMs` instead of holding a caller
- * for the transport's five-minute headers timeout. A caller that can
- * legitimately run long passes its own budget; the timeout composes with any
- * signal the caller sets per call, whichever comes first.
+ * UNIT_BOUNDARY_DESCRIPTION: the one way the api-server calls an Agent's
+ * runtime over HTTP. Every call is bounded: a runtime that accepts the
+ * connection and never answers fails the call in `timeoutMs` instead of
+ * holding a caller for the transport's five-minute headers timeout. A caller
+ * that can legitimately run long passes its own budget; the timeout composes
+ * with any signal the caller sets per call, whichever comes first.
  */
-export function agentPodClient(
+export function agentServiceClient(
   agentId: string,
   namespace: string,
   opts: { timeoutMs?: number; batch?: boolean; fetch?: FetchLike } = {},
 ) {
   const fetchImpl = opts.fetch ?? fetch;
-  const timeoutMs = opts.timeoutMs ?? AGENT_POD_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? AGENT_SERVICE_TIMEOUT_MS;
   const link = {
-    url: `http://${podBaseUrl(agentId, namespace)}/api/trpc`,
+    url: `http://${agentServiceAddress(agentId, namespace)}/api/trpc`,
     fetch: ((request, init) =>
       fetchImpl(request, {
         ...init,
@@ -49,13 +49,13 @@ export function agentPodClient(
  * session watch. One socket carries both the watch and the reads it triggers,
  * because a notice is always followed by a read.
  */
-export function agentPodWsClient(
+export function agentServiceWsClient(
   agentId: string,
   namespace: string,
   opts: { webSocket?: typeof WebSocket; onError: () => void },
 ) {
   const wsClient = createWSClient({
-    url: `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,
+    url: `ws://${agentServiceAddress(agentId, namespace)}/api/trpc-ws`,
     WebSocket: opts.webSocket,
     keepAlive: { enabled: true },
     onError: opts.onError,

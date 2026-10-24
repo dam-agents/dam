@@ -3,7 +3,7 @@ import type { UserBudgetDefaults, UserBudgetEntry } from "api-server-api";
 import { cn } from "@/lib/utils";
 
 import { OperatorEntryRow } from "../../operator/components/operator-entry-row.js";
-import { cpuText, reservedLine } from "../lib/user-budget-copy.js";
+import { cpuText } from "../lib/user-budget-copy.js";
 
 interface Props {
   entry: UserBudgetEntry;
@@ -48,7 +48,6 @@ export function UserBudgetRow({
         sub: entry.setBySub,
         at: entry.updatedAt,
       }}
-      note={reservedLine(entry)}
       values={
         <>
           {entry.cpu === null ? (

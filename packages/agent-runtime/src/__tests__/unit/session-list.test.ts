@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PodSession, SessionListQuery } from "agent-runtime-api";
+import type { Session, SessionListQuery } from "agent-runtime-api";
 import {
   composeSessionList,
   pageSessions,
@@ -197,8 +197,8 @@ describe("composeSessionList", () => {
 function session(
   sessionId: string,
   updatedAt: string,
-  extra: Partial<PodSession> = {},
-): PodSession {
+  extra: Partial<Session> = {},
+): Session {
   return {
     sessionId,
     mode: "chat",

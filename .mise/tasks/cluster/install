@@ -9,13 +9,12 @@
 #USAGE flag "--environment <name>" help="Install into this agent's Environment of that name, over the Environment Link"
 #USAGE flag "--backchannel" help="With --environment: also answer on the backchannel addresses, which cluster:open forwards to this agent"
 #USAGE flag "--backchannel-port <port>" default="4444" help="The port of the backchannel addresses, which cluster:open forwards"
-# vm-backend agents run as microVMs (virtualization.enabled): on a Mac on one
-# VM runner on the Mac's own hypervisor (cluster:host-runner), elsewhere on the
-# chart's VM runner pods, which on a lima VM needs nested virtualization (Apple
-# silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Outside CI they
-# are on by default on an Apple silicon Mac and in a sandbox (IS_SANDBOX) that
-# can open /dev/kvm, and off with a warning elsewhere; the values or
-# --set=virtualization.enabled=true|false decide either way.
+# Every agent runs as a microVM on a VM runner: on a Mac on one VM runner on the
+# Mac's own hypervisor (cluster:host-runner), elsewhere on the chart's VM runner
+# pods, which on a lima VM needs nested virtualization (Apple silicon M3+;
+# PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Outside CI the install runs
+# them on an Apple silicon Mac and in a sandbox (IS_SANDBOX) that
+# can open /dev/kvm, and nowhere else: a host without it is refused.
 # SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD
 # also skips importing them. --no-mesh (local-only, refused under CI) installs
 # no Istio dataplane, so AuthorizationPolicies exist but nothing enforces
@@ -32,7 +31,10 @@
 # on one port, give the public URLs; the host-name bridge listens on that port.
 # A component whose source image:resolve finds in the registry is pulled there,
 # under the local tag the chart runs, and only a changed one is built here and
-# streamed in. No mesh and no vm agents: the Environment's kernel has neither.
+# streamed in. No mesh: the Environment's kernel has none. Every agent is a
+# machine on a VM runner, so the Environment's guest needs /dev/kvm, which only
+# an install that sets controller.agent.templateDefaults.nestedVirtualization
+# and lets its runners nest gives it.
 #
 # Both install and upgrade share the same flow:
 #   ensure VM/k3s → cert-manager → build images → load into k3s → helm install/upgrade
@@ -160,62 +162,14 @@ AGENT_VALUE_FLAGS=()
 [ -n "$HELM_VALUES" ] && AGENT_VALUE_FLAGS+=(-f "$HELM_VALUES")
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
-# virtualization.enabled drives extra provisioning below (nested virt on the
-# k3s VM, the vm images staged on the node for the VM runners) — resolve it
-# from the values file + --set flags (chart default is false) so one flag
-# configures the whole stack.
-VIRT_ENABLED=""
-VIRT_CHOSEN=""
-if [ -n "$HELM_VALUES" ]; then
-  case "$(yq '.virtualization.enabled' "$HELM_VALUES")" in
-    true) VIRT_ENABLED=1 VIRT_CHOSEN=1 ;;
-    false) VIRT_CHOSEN=1 ;;
-  esac
-fi
-for arg in "${HELM_EXTRA_ARGS[@]}"; do
-  case "$arg" in
-    --set=virtualization.enabled=true) VIRT_ENABLED=1 VIRT_CHOSEN=1 ;;
-    --set=virtualization.enabled=false) VIRT_ENABLED="" VIRT_CHOSEN=1 ;;
-  esac
-done
 # Probe by opening: the node can exist while the device cgroup still denies it.
 kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; }
-# A local install runs vm agents wherever this host can: on an Apple silicon
-# Mac's own hypervisor, or in a sandbox that is the node and can open
-# /dev/kvm, such as a platform vm agent whose runner's node allows nesting.
-# Elsewhere it leaves them off and says why. The values or a --set decide
-# either way, and CI is not local: e2e:install chooses for each lane.
-VIRT_DEFAULTED=""
-VIRT_OFF_NOTE=""
-if [ -z "$VIRT_CHOSEN" ] && [ -z "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  if [ "$CLUSTER_TARGET" = environment ]; then
-    VIRT_OFF_NOTE="an Environment has no /dev/kvm"
-  elif [ -n "${IS_SANDBOX:-}" ]; then
-    if kvm_usable; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="this sandbox cannot open /dev/kvm"; fi
-  elif [ "$(uname -s)" = Darwin ]; then
-    if [ "$(uname -m)" = arm64 ]; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="the Mac's VM runner needs Apple silicon"; fi
-  else
-    # Ceiling: the lima VM is created with nested virtualization only on a Mac
-    # (vz); a qemu VM on a KVM host that nests could run them too.
-    VIRT_OFF_NOTE="outside a sandbox, a Linux host's k3s VM gets no /dev/kvm from this install"
-  fi
-fi
-virt_off_warning() {
-  [ -z "$VIRT_OFF_NOTE" ] || echo "WARN: vm-backend agents are off: $VIRT_OFF_NOTE (--set=virtualization.enabled=true to try anyway)." >&2
-}
-if [ -n "$VIRT_DEFAULTED" ]; then
-  echo "vm-backend agents are on, the local default (--set=virtualization.enabled=false turns them off)"
-  VIRT_ENABLED=1
-  HELM_EXTRA_ARGS+=(--set=virtualization.enabled=true)
-  AGENT_VALUE_FLAGS+=(--set=virtualization.enabled=true)
-fi
-virt_off_warning
 # On a Mac the VM runner runs on the Mac itself, on its own hypervisor, rather
 # than as pods in the k3s VM on a hypervisor nested inside it: a nested guest
 # boots several times slower, and only M3 and later nest at all.
 # PLATFORM_NESTED_VIRT=1 keeps the pods.
 HOST_RUNNER=""
-if [ -n "$VIRT_ENABLED" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
+if [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   HOST_RUNNER=1
   export VM_HOST_RUNNER=1
@@ -225,12 +179,13 @@ fi
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
 # template's catch-all ignore.
 NODEPORT_FORWARD='.portForwards = [{"guestPortRange": [30000, 32767], "hostIP": "127.0.0.1"}] + .portForwards'
-if [ -n "$VIRT_ENABLED" ] && [ "$CLUSTER_TARGET" = environment ]; then
-  echo "FATAL: virtualization.enabled=true needs /dev/kvm on the node, which an Environment does not have." >&2
+if [ "$CLUSTER_TARGET" = environment ] && ! env_ssh 'test -e /dev/kvm' 2>/dev/null; then
+  echo "FATAL: Environment '$CLUSTER_ENVIRONMENT' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
+  echo "Nothing in create_environment asks for nesting: an Environment gives one only when the install that owns it sets controller.agent.templateDefaults.nestedVirtualization: true and lets its runners nest (virtualization.runner.nestedVirtualization), on a node whose KVM allows it." >&2
   exit 1
 fi
-if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
-  echo "FATAL: virtualization.enabled=true needs a usable /dev/kvm on this host (the VM runner pod runs microVMs on it)." >&2
+if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
+  echo "FATAL: this host cannot open /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   exit 1
 fi
 
@@ -341,17 +296,19 @@ EOF
 else
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
-    # Nested virtualization exposes /dev/kvm inside the VM, which the sandbox
-    # node pod needs to run vm-backend agents as microVMs (macOS: vz on
-    # M3+/macOS 15). Enabled automatically with virtualization.enabled=true;
-    # PLATFORM_NESTED_VIRT=1 forces it for a plain install. Create-time only —
-    # an existing VM needs cluster:delete + reinstall to gain it.
+    # Nested virtualization exposes /dev/kvm inside the VM, which the VM runner
+    # pods need to run agents as microVMs (macOS: vz on M3+/macOS 15). It is
+    # create-time only — an existing VM needs cluster:delete + reinstall to
+    # gain it. A Mac with a host runner needs none: its runner uses the Mac's
+    # own hypervisor.
     if [ -n "$HOST_RUNNER" ]; then
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false --set "$NODEPORT_FORWARD"
-    elif [ -n "${PLATFORM_NESTED_VIRT:-}" ] || [ -n "$VIRT_ENABLED" ]; then
+    elif [ "$(uname -s)" = Darwin ]; then
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false \
         --set '.vmType = "vz" | .nestedVirtualization = true'
     else
+      # Ceiling: only a Mac's vz nests here. A qemu VM on a KVM host that nests
+      # could run machines too, and the /dev/kvm check below refuses this one.
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
     fi
   fi
@@ -366,20 +323,11 @@ else
     echo "Starting k3s VM..."
     limactl start "$LIMA_INSTANCE"
   fi
-  # Pre-existing VM without nested virt (create-time only): the VM runner
-  # pod would have no /dev/kvm — stop early with the fix, or, when only the
-  # local default asked for vm agents, leave them off.
-  if [ -n "$VIRT_DEFAULTED" ] && [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
-    VIRT_ENABLED=""
-    VIRT_OFF_NOTE="VM '$LIMA_INSTANCE' has no /dev/kvm (nested virtualization is create-time only: cluster:delete, then reinstall)"
-    HELM_EXTRA_ARGS+=(--set=virtualization.enabled=false)
-    AGENT_VALUE_FLAGS+=(--set=virtualization.enabled=false)
-    virt_off_warning
-  fi
-  if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
-    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; the VM runner needs it." >&2
-    echo "Recreate it: mise run cluster:delete, then rerun this install with virtualization.enabled=true" >&2
-    echo "(nested virtualization needs Apple silicon M3+ on macOS 15+)." >&2
+  # A VM made without nested virtualization cannot gain it (create-time only),
+  # and its runner pods would have no /dev/kvm to boot a machine on.
+  if [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
+    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it" >&2
+    echo "(nested virtualization is create-time only: cluster:delete, then reinstall; it needs Apple silicon M3+ on macOS 15+)." >&2
     exit 1
   fi
   echo "Waiting for k3s to be ready..."
@@ -438,7 +386,7 @@ fi
 # /dev/kvm with its host owner unmapped: a 0660 root:kvm device, Ubuntu's
 # mode, opens for nobody in the pod. Open it to all, as systemd's own rule
 # does; the udev rule keeps the mode across a reboot of the lima VM.
-if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then
+if [ -z "$HOST_RUNNER" ]; then
   KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
   if [ -n "${IS_SANDBOX:-}" ]; then
     as_root chmod 0666 /dev/kvm
@@ -471,7 +419,7 @@ prepull_images() {
         helm template ztunnel istio/ztunnel --version "$ISTIO_VERSION"
       fi
       helm template platform helm -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}"
-      if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then cat helm/extra/kvm-device-plugin.yaml; fi
+      if [ -z "$HOST_RUNNER" ]; then cat helm/extra/kvm-device-plugin.yaml; fi
     } | yq -r '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' |
       grep -v '^---$' | grep -vE '(^|/)platform-' | sort -u
   ) || return 0
@@ -554,11 +502,10 @@ else
     # ("platform-<component>" locally), not the template key — and dedup so
     # a shared image builds and loads once.
     comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
-    # The backend is chosen per agent at create, not declared by a template, so
-    # any agent image may be asked to boot as a microVM — every one of them,
-    # e2e fixtures included, is staged for the VM runners when the install
-    # supports them, once per image.
-    if [ -n "${VIRT_ENABLED:-}" ] && { [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; }; then
+    # Every agent boots its image as a machine, and no template declares which
+    # images it may use, so every agent image — e2e fixtures included — is
+    # staged for the VM runners, once per image.
+    if [ -d "packages/agents/$comp" ] || [ -d "packages/e2e/agents/$comp" ]; then
       case " ${VM_IMAGES[*]:-} " in *" $image "*) ;; *) VM_IMAGES+=("$image") ;; esac
     fi
     case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
@@ -571,13 +518,12 @@ else
   done <<< "$AGENTS_RENDERED"$'\n'"$KITS_RENDERED"
   [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ "$CLUSTER_TARGET" != environment ] && [ -n "${AGENT_TASKS[*]}" ] && mise run //packages/agents:oci -- "${AGENT_TASKS[@]}"
   # Like the agents', off Linux its build runs in the VM, so it waits for one.
-  if [ -z "${SKIP_IMAGE_BUILD:-}" ] && [ -n "$VIRT_ENABLED" ]; then
+  if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
     mise run //packages/vm-runner:oci
     RUNNER_IMAGE_BUILT=1
   fi
 
-  COMPONENTS=(controller api-server ui keycloak)
-  [ -n "$VIRT_ENABLED" ] && COMPONENTS+=(vm-runner)
+  COMPONENTS=(controller api-server ui keycloak vm-runner)
   # An Environment pulls each image the registry has for this checkout's
   # source itself, under the local tag the chart runs, rather than this agent
   # pulling it and streaming it over the link; only an image the registry
@@ -880,8 +826,8 @@ else
   ISTIO_CNI_PID=$!
   # ztunnel proxies every mesh hop, including the driver SDK's status polls
   # from a driver to the api-server harness. Its chart default requests only
-  # 200m, so a bursting agent pod (a nous worker boots with a large upstream
-  # fetch and many concurrent dials) can outbid it on this single-node VM;
+  # 200m, so a bursting run inside a machine (a nous worker boots with a large
+  # upstream fetch and many concurrent dials) can outbid it on this single-node VM;
   # starved, ztunnel terminates in-flight connections and the client sees a
   # synthesized 503 with no retry anywhere in the path. Guarantee it a core.
   istio_install_if_missing ztunnel istio/ztunnel \
@@ -1112,7 +1058,7 @@ fi
 # VM runner pods take /dev/kvm from a device plugin, which the chart does not
 # ship: the cluster runs one for every install on it. The Mac's host runner
 # needs none.
-if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then
+if [ -z "$HOST_RUNNER" ]; then
   kubectl apply -f helm/extra/kvm-device-plugin.yaml
 fi
 
@@ -1140,17 +1086,15 @@ else
   # namespace, and either may not exist yet. With the host runner, runner pods
   # left from an earlier nested install are not the install's: restarting them
   # only piles up ReplicaSets of a pod that cannot schedule.
-  if [ -n "$VIRT_ENABLED" ]; then
-    for workload in deployment/vm-runner daemonset/vm-image-cache; do
-      [ -n "$HOST_RUNNER" ] && [ "$workload" = deployment/vm-runner ] && continue
-      selector="app.kubernetes.io/component=${workload#*/}"
-      if [ -n "$(kubectl -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
-        kubectl -n platform-agents rollout restart "${workload%/*}" -l "$selector"
-      fi
-    done
-  fi
-  # Agent pods are managed by the controller (StatefulSets in platform-agents) and
-  # pin :latest too — delete them so they come back on the freshly loaded image.
+  for workload in deployment/vm-runner daemonset/vm-image-cache; do
+    [ -n "$HOST_RUNNER" ] && [ "$workload" = deployment/vm-runner ] && continue
+    selector="app.kubernetes.io/component=${workload#*/}"
+    if [ -n "$(kubectl -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
+      kubectl -n platform-agents rollout restart "${workload%/*}" -l "$selector"
+    fi
+  done
+  # Agent gateways and runners pin :latest too — delete them so they come back
+  # on the freshly loaded image.
   kubectl delete pods -n platform-agents --all --ignore-not-found
 fi
 
@@ -1197,7 +1141,6 @@ wait "$PREPULL_PID" 2>/dev/null || true
 echo ""
 echo "=== Cluster ready ==="
 no_mesh_warning
-virt_off_warning
 echo "KUBECONFIG=$KUBECONFIG"
 if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Open it at $(printf '%s\n' "$ENV_VALUES" | sed -n 's/^urls.ui=//p'), behind the Environment's sign-in."

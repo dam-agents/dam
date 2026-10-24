@@ -101,12 +101,12 @@ export function memoryBar(
 }
 
 export const STORAGE_PARTS = {
-  seeds: "Agents moving to VMs",
+  retained: "Machine disk copies",
   rest: "Logs and system",
 } as const;
 
 const storageParts = (usage: BudgetVmUsage): PoolPart[] => [
-  { label: STORAGE_PARTS.seeds, bytes: usage.storage.seedBytes },
+  { label: STORAGE_PARTS.retained, bytes: usage.storage.seedBytes },
 ];
 
 export function storageBar(
@@ -131,7 +131,7 @@ export interface StorageRow {
   homeFull: boolean;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out, but a row whose own storage is full stays even at zero bytes: a disk the runner could not read reports none, and the mark is why the owner is looking.
+// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the disk copies the runner still holds, and the runner's own logs and records as what is left. A part that takes nothing is left out, but a row whose own storage is full stays even at zero bytes: a disk the runner could not read reports none, and the mark is why the owner is looking.
 export function storageRows(
   usage: BudgetVmUsage,
   agents: readonly AgentView[],

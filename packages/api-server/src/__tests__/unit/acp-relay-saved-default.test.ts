@@ -13,7 +13,7 @@ const runtime = vi.hoisted(() => ({ port: 0 }));
 
 vi.mock("../../modules/agents/infrastructure/k8s.js", async (original) => ({
   ...(await original<object>()),
-  podBaseUrl: () => `127.0.0.1:${String(runtime.port)}`,
+  agentServiceAddress: () => `127.0.0.1:${String(runtime.port)}`,
 }));
 
 const { createAcpRelay } =

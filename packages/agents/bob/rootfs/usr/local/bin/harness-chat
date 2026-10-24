@@ -14,7 +14,7 @@ if [ -n "$PLATFORM_PROVIDER$PLATFORM_MODEL$BOB_SESSION_APPROVALS" ]; then
   export BOB_SETTINGS_FILE
   preload="--import=/usr/local/lib/bob-settings-file.mjs"
 fi
-# Bob's model calls go to the Model Router on the pod's loopback, which Bob's
+# Bob's model calls go to the Model Router on the machine's loopback, which Bob's
 # own proxy agent would send through the gateway proxy.
 if [ -n "$PLATFORM_MODEL_ROUTER_URL" ]; then
   preload="--import=/usr/local/lib/bob-loopback-direct.mjs${preload:+ $preload}"

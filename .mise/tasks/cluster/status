@@ -57,7 +57,7 @@ case "${1:-}" in
       if [ -n "$CERT_HITS" ]; then
         echo 'WARNING: expired ambient-mesh certs detected (issue #283).'
         echo 'Known symptoms: UI login failure, keycloak "Connection reset" during install,'
-        echo 'agent pods looping "[runtime] hello failed" (workspace seeding never starts).'
+        echo 'machines looping "[runtime] hello failed" (workspace seeding never starts).'
         echo 'Fix now: mise run cluster:fix-certs   (the watchdog auto-heals within ~10 min)'
         printf '%s\n' "$CERT_HITS"
       else

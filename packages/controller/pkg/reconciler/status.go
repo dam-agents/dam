@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -10,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
 
@@ -79,4 +81,21 @@ func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReas
 		Message:            message,
 		ObservedGeneration: generation,
 	})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a nil value removes the annotation. Entries are sorted so one change always renders as one patch.
+func patchAgentAnnotations(ctx context.Context, dyn dynamic.Interface, namespace, name string, ann map[string]*string) error {
+	entries := make([]string, 0, len(ann))
+	for k, v := range ann {
+		if v == nil {
+			entries = append(entries, fmt.Sprintf("%q:null", k))
+		} else {
+			entries = append(entries, fmt.Sprintf("%q:%q", k, *v))
+		}
+	}
+	sort.Strings(entries)
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%s}}}`, strings.Join(entries, ","))
+	_, err := dyn.Resource(AgentsGVR).Namespace(namespace).
+		Patch(ctx, name, k8stypes.MergePatchType, []byte(patch), metav1.PatchOptions{})
+	return err
 }

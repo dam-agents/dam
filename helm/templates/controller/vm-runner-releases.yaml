@@ -1,5 +1,5 @@
 {{- $v := .Values.virtualization }}
-{{- if and $v.enabled $v.runner.releaseHostPath (not $v.runner.hostAddress) }}
+{{- if and $v.runner.releaseHostPath (not $v.runner.hostAddress) }}
 {{- /*
 The per-node runner release stager: the only writer of the node directory that
 `runner.releaseHostPath` names. It runs this chart's runner image and copies the
@@ -22,7 +22,7 @@ and the image build leaves root, the owner of every file it copies, able to
 read them.
 */}}
 {{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
-{{- $openshift := .Values.openshift.scc.anyuidCapNet.enabled }}
+{{- $openshift := .Values.openshift.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:

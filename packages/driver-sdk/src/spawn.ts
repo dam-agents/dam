@@ -22,8 +22,6 @@ export interface ConnectionInfo {
 }
 
 export interface Budget {
-  cpu: { reservedMilli: number; ceilingMilli: number };
-  memory: { reservedBytes: number; ceilingBytes: number };
   defaultWorkerSize: { cpu: string; memory: string };
 }
 
@@ -53,14 +51,7 @@ export class InvocationFailed extends Error {
 
 export type Setup = Pick<
   SpawnInvocationRequest,
-  | "harness"
-  | "image"
-  | "seed"
-  | "install"
-  | "env"
-  | "resources"
-  | "backend"
-  | "skills"
+  "harness" | "image" | "seed" | "install" | "env" | "resources" | "skills"
 >;
 
 export interface SpawnOptions extends Setup {
@@ -98,7 +89,6 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     install,
     env,
     resources,
-    backend,
     skills,
   } = opts;
 
@@ -129,7 +119,6 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   if (install) body.install = install;
   if (env) body.env = env;
   if (resources) body.resources = resources;
-  if (backend) body.backend = backend;
   if (skills) body.skills = skills;
   const options =
     configOptions && Object.keys(configOptions).length > 0

@@ -157,18 +157,15 @@ it("hides every configuration panel with the experiment off", () => {
   expect(off.has("environments")).toBe(false);
 });
 
-// TEST_SCENARIO: the Environments panel is offered once the agent owns one, and the Manage row's access-list link opens it before that; with the feature off or on a container agent it never appears, open or not.
+// TEST_SCENARIO: the Environments panel is offered once the agent owns one, and the Manage row's access-list link opens it before that; with the feature off it never appears, open or not.
 it("offers the Environments panel only once the agent owns one, or when its access list is opened", () => {
   const shown = (count: number | undefined, open = false) =>
-    environmentsPanelShown({ enabled: true, vm: true, count, open });
+    environmentsPanelShown({ enabled: true, count, open });
   expect(shown(1)).toBe(true);
   expect(shown(0)).toBe(false);
   expect(shown(0, true)).toBe(true);
   expect(shown(undefined, true)).toBe(true);
-  expect(
-    environmentsPanelShown({ enabled: false, vm: true, count: 1, open: true }),
-  ).toBe(false);
-  expect(
-    environmentsPanelShown({ enabled: true, vm: false, count: 1, open: true }),
-  ).toBe(false);
+  expect(environmentsPanelShown({ enabled: false, count: 1, open: true })).toBe(
+    false,
+  );
 });

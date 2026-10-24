@@ -1,4 +1,4 @@
-import { Asleep, Migrate, Play, Restart, Warning } from "@carbon/icons-react";
+import { Asleep, Play, Restart, Warning } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,6 @@ import type {
 } from "../utils/agent-resolver.js";
 import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
-import { RuntimeMigrationBadge } from "./runtime-migration-badge.js";
 import { StartupTip } from "./startup-tip.js";
 import { TerminationReason } from "./termination-reason.js";
 
@@ -30,7 +29,6 @@ const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
   disabled: Asleep,
   error: Warning,
   over_budget: Warning,
-  migrating: Migrate,
 };
 
 export function AgentUnavailableOverlay({
@@ -71,10 +69,7 @@ export function AgentUnavailableOverlay({
           <h2 className="text-5xl font-normal tracking-tight text-foreground">
             {agent.name}
           </h2>
-          <div className="flex items-center gap-2">
-            <RuntimeMigrationBadge agent={agent} />
-            <Badge variant="warning">Reconnecting</Badge>
-          </div>
+          <Badge variant="warning">Reconnecting</Badge>
         </div>
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
@@ -107,16 +102,12 @@ export function AgentUnavailableOverlay({
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
-        <div className="flex items-center gap-2 empty:hidden">
-          <RuntimeMigrationBadge agent={agent} />
-          {state !== "starting" && (
-            <StatusBadge
-              state={state}
-              vm={agent.vm}
-              refused={isStartRefusal(agent.podTerminationCode)}
-            />
-          )}
-        </div>
+        {state !== "starting" && (
+          <StatusBadge
+            state={state}
+            refused={isStartRefusal(agent.podTerminationCode)}
+          />
+        )}
       </div>
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>

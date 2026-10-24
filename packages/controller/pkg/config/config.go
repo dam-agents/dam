@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/netip"
 	"net/url"
@@ -12,7 +11,6 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type Config struct {
@@ -27,24 +25,15 @@ type Config struct {
 
 	AgentTemplateDefaults AgentTemplateDefaults
 
-	WarmPool WarmPool
-
-	StorageMigration StorageMigration
-
 	VM          VMConfig
 	KubeAPIAddr string
 
 	DefaultUserCPUBudget    resource.Quantity
 	DefaultUserMemoryBudget resource.Quantity
 
-	RequestsFraction  float64
-	RequestsMinCPU    resource.Quantity
-	RequestsMinMemory resource.Quantity
-
 	LegacyAgentCPULimit    resource.Quantity
 	LegacyAgentMemoryLimit resource.Quantity
 
-	AgentProbesEnabled     bool
 	HarnessServerURL       string
 	HarnessServerPort      int
 	EnvoyImage             string
@@ -197,21 +186,6 @@ func LoadFromEnv() (*Config, error) {
 	if err := decodeJSONEnv("AGENT_TEMPLATE_DEFAULTS", &cfg.AgentTemplateDefaults); err != nil {
 		return nil, err
 	}
-	if err := decodeJSONEnv("WARM_POOL", &cfg.WarmPool); err != nil {
-		return nil, err
-	}
-	if cfg.AgentBase.AccessMode != "" {
-		slog.Warn("controller.agent.base.accessMode is deprecated and ignored — workspace volumes are always ReadWriteOnce (#2988); remove it from your values")
-	}
-	if cfg.AgentTemplateDefaults.Init != "" {
-		slog.Warn("controller.agent.templateDefaults.init is deprecated and ignored — first-boot home seeding moved into the agent image's boot (#3242); remove it from your values")
-	}
-	if cfg.AgentTemplateDefaults.AgentHome != "" {
-		slog.Warn("controller.agent.templateDefaults.agentHome is deprecated and ignored — the agent home is fixed at /home/agent; remove it from your values")
-	}
-	if err := decodeJSONEnv("STORAGE_MIGRATION", &cfg.StorageMigration); err != nil {
-		return nil, err
-	}
 	if err := decodeJSONEnv("AGENT_VM", &cfg.VM); err != nil {
 		return nil, err
 	}
@@ -236,20 +210,14 @@ func LoadFromEnv() (*Config, error) {
 			}
 		}
 	}
-	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
-		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
+	if cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "" {
+		return nil, fmt.Errorf("AGENT_VM: runner.image and runner.storage are required")
 	}
-	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
-		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
+	if cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero() {
+		return nil, fmt.Errorf("AGENT_VM: runner.resources.limits.memory is required — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
-	if cfg.VM.Enabled && cfg.VM.Runner.HostAddress == "" && cfg.VM.Runner.ReleaseHostPath == "" {
-		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.releaseHostPath — a new runner image reaches the runner pods only as a hand-off from there")
-	}
-	if cfg.VM.RuntimeMigration.Retention < 0 {
-		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.retention is %s, it must not be negative", cfg.VM.RuntimeMigration.Retention.AsDuration())
-	}
-	if cfg.VM.RuntimeMigration.Concurrency < 0 || cfg.VM.RuntimeMigration.OwnerConcurrency < 0 {
-		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.concurrency and ownerConcurrency must not be negative (got %d and %d)", cfg.VM.RuntimeMigration.Concurrency, cfg.VM.RuntimeMigration.OwnerConcurrency)
+	if cfg.VM.Runner.HostAddress == "" && cfg.VM.Runner.ReleaseHostPath == "" {
+		return nil, fmt.Errorf("AGENT_VM: runner.releaseHostPath is required — a new runner image reaches the runner pods only as a hand-off from there")
 	}
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
@@ -269,7 +237,6 @@ func LoadFromEnv() (*Config, error) {
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
-	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4")
 	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.14.7")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
@@ -299,8 +266,6 @@ func LoadFromEnv() (*Config, error) {
 	}{
 		{&cfg.DefaultUserCPUBudget, "DEFAULT_USER_CPU_BUDGET", "4"},
 		{&cfg.DefaultUserMemoryBudget, "DEFAULT_USER_MEMORY_BUDGET", "8Gi"},
-		{&cfg.RequestsMinCPU, "REQUESTS_FROM_LIMITS_MIN_CPU", "100m"},
-		{&cfg.RequestsMinMemory, "REQUESTS_FROM_LIMITS_MIN_MEMORY", "128Mi"},
 		{&cfg.LegacyAgentCPULimit, "AGENT_LEGACY_CPU_LIMIT", "1"},
 		{&cfg.LegacyAgentMemoryLimit, "AGENT_LEGACY_MEMORY_LIMIT", "2Gi"},
 	} {
@@ -310,11 +275,6 @@ func LoadFromEnv() (*Config, error) {
 		}
 		*q.dst = v
 	}
-	fraction, err := strconv.ParseFloat(envOrDefault("REQUESTS_FROM_LIMITS_FRACTION", "0.5"), 64)
-	if err != nil || fraction <= 0 || fraction > 1 {
-		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_FRACTION must be a number in (0, 1] (got %q)", os.Getenv("REQUESTS_FROM_LIMITS_FRACTION"))
-	}
-	cfg.RequestsFraction = fraction
 	if v := os.Getenv("PLATFORM_OBJECT_STORE_AUTHORITY"); v != "" {
 		host, port, err := net.SplitHostPort(v)
 		if err != nil {
@@ -334,9 +294,6 @@ func LoadFromEnv() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.AgentBase.TerminationGracePeriod <= 0 {
-		return fmt.Errorf("controller.agent.base.terminationGracePeriod must be > 0 (got %d)", c.AgentBase.TerminationGracePeriod)
-	}
 	if c.AgentTemplateDefaults.StorageSize == "" {
 		return fmt.Errorf("controller.agent.templateDefaults.storageSize is required")
 	}
@@ -345,46 +302,6 @@ func (c *Config) validate() error {
 	}
 	if r := c.AgentTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
 		return fmt.Errorf("controller.agent.templateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
-	}
-	if c.AgentBase.ContainerSecurityContext == nil {
-		return fmt.Errorf("controller.agent.base.containerSecurityContext is required (chart default ships capabilities.drop: [\"ALL\"])")
-	}
-	if err := c.WarmPool.validate(); err != nil {
-		return err
-	}
-	if c.StorageMigration.Enabled && c.StorageMigration.JobImage == "" {
-		return fmt.Errorf("controller.storageMigration.jobImage is required when the storage migration is enabled")
-	}
-	return nil
-}
-
-func (w *WarmPool) validate() error {
-	if !w.Enabled {
-		return nil
-	}
-	if w.StorageClass == "" {
-		return fmt.Errorf("controller.warmPool.storageClass is required when the warm pool is enabled (must be an Immediate-binding StorageClass)")
-	}
-	if len(w.Sizes) == 0 {
-		return fmt.Errorf("controller.warmPool.sizes must list at least one {size, target} when the warm pool is enabled")
-	}
-	seen := make(map[string]bool, len(w.Sizes))
-	for i, s := range w.Sizes {
-		q, err := resource.ParseQuantity(s.Size)
-		if err != nil {
-			return fmt.Errorf("controller.warmPool.sizes[%d].size %q is not a valid K8s quantity: %w", i, s.Size, err)
-		}
-		if s.Target < 0 {
-			return fmt.Errorf("controller.warmPool.sizes[%d].target must be >= 0 (got %d)", i, s.Target)
-		}
-		canon := q.String()
-		if errs := validation.IsValidLabelValue(canon); len(errs) > 0 {
-			return fmt.Errorf("controller.warmPool.sizes[%d].size %q canonicalizes to %q, not a valid label value: %s", i, s.Size, canon, strings.Join(errs, "; "))
-		}
-		if seen[canon] {
-			return fmt.Errorf("controller.warmPool.sizes[%d].size %q duplicates another entry (both canonicalize to %q)", i, s.Size, canon)
-		}
-		seen[canon] = true
 	}
 	return nil
 }
@@ -431,15 +348,6 @@ func envOrDefaultInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
-		}
-	}
-	return def
-}
-
-func envOrDefaultBool(key string, def bool) bool {
-	if v := os.Getenv(key); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			return b
 		}
 	}
 	return def

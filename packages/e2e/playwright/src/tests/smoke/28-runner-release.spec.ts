@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a runner release reaches an owner's live machines as a hand-off in place, unless the release declares a reboot key its pod does not run, which rolls the pod and reboots them. The vm lane carries one release, so nothing there has ever reached a machine as a second one. This spec gives the lane a second release — the lane's own runner image, declaring a key of its own — and rolls a live guest onto it with the chart's own upgrade, then back onto the install's release. Each roll must show the reboot the release declares, keep the guest's HOME as it was, and leave the agent ready.
+// TEST_OVERVIEW: a runner release reaches an owner's live machines as a hand-off in place, unless the release declares a reboot key its pod does not run, which rolls the pod and reboots them. The install carries one release, so nothing there has ever reached a machine as a second one. This spec gives the install a second release — its own runner image, declaring a key of its own — and rolls a live guest onto it with the chart's own upgrade, then back onto the install's release. Each roll must show the reboot the release declares, keep the guest's HOME as it was, and leave the agent ready.
 import { expect, test } from "@playwright/test";
 import { execFile, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -14,9 +14,7 @@ import {
   createAgentOn,
   expectHomeFile,
   inGuest,
-  laneBackend,
   refreshingToken,
-  requireBackend,
   runnerPod,
   waitAgentState,
   writeHomeFile,
@@ -30,8 +28,6 @@ import {
 } from "../../lib/cluster.js";
 import { harnessName } from "../../lib/fixtures.js";
 import { keepAwake } from "../../lib/keep-awake.js";
-
-test.skip(laneBackend !== "vm", "only a machine boots a runner release");
 
 test.describe.configure({ mode: "serial" });
 
@@ -64,7 +60,7 @@ let secondImage = "";
 let installMoved = false;
 let keeping: ReturnType<typeof keepAwake> | undefined;
 
-// UNIT_BOUNDARY_DESCRIPTION: the second runner image is built with an awaited child rather than a synchronous one, because the keep-awake timer runs on the spec's own event loop: a synchronous build blocks timer callbacks, token refresh and HTTP requests until it returns, so a build that outlasts the lane's 5m `vmIdleTimeout` would let the machine hibernate even though the timer exists. The build's own output stays on this process's stderr, where the lane's log already has it.
+// UNIT_BOUNDARY_DESCRIPTION: the second runner image is built with an awaited child rather than a synchronous one, because the keep-awake timer runs on the spec's own event loop: a synchronous build blocks timer callbacks, token refresh and HTTP requests until it returns, so a build that outlasts the lane's 5m `vmIdleTimeout` would let the machine hibernate even though the timer exists. The build's own output stays on this process's stderr, where the run's log already has it.
 async function buildSecondRelease(key: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -79,7 +75,7 @@ async function buildSecondRelease(key: string): Promise<string> {
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the upgrade an operator makes, on the values the install holds. A hop names the runner image it rolls onto; the hop back names none, so the install ends as `cluster:install` made it. The chart's post-upgrade hooks are its own: keycloak's realm import and postgres's roles run on every upgrade and have nothing to do with a runner release, and a hop that waited on them would cost the lane a minute for nothing.
+// UNIT_BOUNDARY_DESCRIPTION: the upgrade an operator makes, on the values the install holds. A hop names the runner image it rolls onto; the hop back names none, so the install ends as `cluster:install` made it. The chart's post-upgrade hooks are its own: keycloak's realm import and postgres's roles run on every upgrade and have nothing to do with a runner release, and a hop that waited on them would cost the run a minute for nothing.
 function upgrade(...sets: string[]): void {
   execFileSync(
     "helm",
@@ -337,7 +333,6 @@ async function rolledOnto(
 test.beforeAll(async () => {
   test.setTimeout(900_000);
   api = createRefreshingApiClient(token);
-  await requireBackend(api, laneBackend);
   await acceptTerms(api);
   writeFileSync(
     installValues,
@@ -347,13 +342,9 @@ test.beforeAll(async () => {
       { encoding: "utf8" },
     ),
   );
-  agentId = await createAgentOn(
-    api,
-    laneBackend,
-    "e2e-runner-release",
-    harnessName,
-    { neverIdle: true },
-  );
+  agentId = await createAgentOn(api, "e2e-runner-release", harnessName, {
+    neverIdle: true,
+  });
   await waitAgentState(api, agentId, "running", { timeoutMs: 600_000 });
   const pod = runnerPod(agentId);
   test.skip(pod === "", "the Mac's host runner runs outside the cluster");
@@ -389,7 +380,7 @@ test.beforeAll(async () => {
   secondImage = await buildSecondRelease(secondKey);
   expect(
     secondImage,
-    "e2e:runner-release did not load the lane's runner image under the second key",
+    "e2e:runner-release did not load the install's runner image under the second key",
   ).toBe(`${installRepository}:${secondKey}`);
 });
 

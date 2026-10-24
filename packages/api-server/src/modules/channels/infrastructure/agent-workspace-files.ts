@@ -1,4 +1,4 @@
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 
 export interface AgentWorkspaceFiles {
   write(input: {
@@ -19,7 +19,7 @@ export function createAgentWorkspaceFiles(
   agentId: string,
   namespace: string,
 ): AgentWorkspaceFiles {
-  const client = agentPodClient(agentId, namespace, {
+  const client = agentServiceClient(agentId, namespace, {
     timeoutMs: WRITE_TIMEOUT_MS,
     batch: false,
   });

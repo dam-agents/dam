@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -381,7 +382,6 @@ func (n *fakeNode) spec(id string) vmrunner.MachineSpec {
 
 func vmAgentCR() *apiv1.Agent {
 	agent := agentCR()
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	agent.Spec.Image = "quay.io/example/claude-code-vm:1"
 	agent.Spec.Resources.Limits = map[string]string{"cpu": "1500m", "memory": "3Gi"}
 	agent.Annotations = map[string]string{annLastActivity: time.Now().UTC().Format(time.RFC3339), annRollRev: "7"}
@@ -484,7 +484,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	}
 	agent.Labels[envoyOwnerLabel] = testOwner
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), readyRunnerPod(), runnerSecret(), runnerTLSSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		ReleaseHostPath: "/var/lib/platform-runner-releases",
@@ -653,4 +653,26 @@ func staleInformer(objType runtime.Object, objs ...runtime.Object) cache.SharedI
 		_ = informer.GetStore().Add(obj)
 	}
 	return informer
+}
+
+// TEST_SCENARIO: every Agent that existed before this release still carries what the CRD keeps but no code reads — a container backend, a runtime class, a node selector, the copy attempts. Such an Agent must reconcile into exactly the machine a clean one of the same spec gets, and the controller must not rewrite the stale fields, since only the CRD's retirement removes them.
+func TestAStaleAgentReconcilesLikeACleanOne(t *testing.T) {
+	ctx := context.Background()
+	stale := vmAgentCR()
+	stale.Spec.Backend = &apiv1.Backend{Type: "container"}
+	stale.Spec.RuntimeClassName = "kata"
+	stale.Spec.NodeSelector = map[string]string{"gpu": "true"}
+	stale.Status.RuntimeMigrationAttempts = 3
+	staleReconciler, staleNode, _ := setupVMReconciler(t, stale)
+	require.NoError(t, staleReconciler.Reconcile(ctx, stale))
+
+	clean := vmAgentCR()
+	cleanReconciler, cleanNode, _ := setupVMReconciler(t, clean)
+	require.NoError(t, cleanReconciler.Reconcile(ctx, clean))
+
+	assert.Equal(t, cleanNode.spec("my-agent"), staleNode.spec("my-agent"))
+	stored, err := staleReconciler.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	backend, _, _ := unstructured.NestedString(stored.Object, "spec", "backend", "type")
+	assert.Equal(t, "container", backend, "the stale field stays as the CRD left it")
 }

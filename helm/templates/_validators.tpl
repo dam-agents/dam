@@ -9,8 +9,8 @@ add it to the include list in `platform.validate`.
 */}}
 
 {{- define "platform.validate" -}}
-{{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
+{{- include "platform.validate.openShiftSignalMoved" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
 {{- include "platform.validate.vmImageCachePathIsItsOwn" . -}}
@@ -20,7 +20,6 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.templatesRenamedFromAgentTemplates" . -}}
-{{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -216,34 +215,7 @@ serve. Fail at render instead, where the operator is looking.
 {{- end -}}
 
 {{/*
-The anyuid-cap-net RoleBinding is namespaced to `agentNamespace` and
-grants SCC access via the `system:serviceaccounts:<agentNamespace>`
-group. Both are meaningless if `agentNamespace` is empty.
-*/}}
-{{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
-{{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
-{{- if not (.Values.agentNamespace | default "" | trim) -}}
-{{- fail "openshift.scc.anyuidCapNet.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-iptablesInit and npGateInit are the two egress-lockdown modes —
-exactly one belongs on a given pod. See values.yaml for the two-mode
-comment.
-*/}}
-{{- define "platform.validate.egressLockdownModeExclusive" -}}
-{{- $base := .Values.controller.agent.base -}}
-{{- if and $base.iptablesInit $base.iptablesInit.enabled $base.npGateInit $base.npGateInit.enabled -}}
-{{- fail "controller.agent.base.iptablesInit.enabled and npGateInit.enabled are mutually exclusive — enable exactly one. See values.yaml for the two-mode comment." -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-Terms of Use are non-optional — the api-server gate refuses every
-authenticated route until each user has accepted the current version.
-A missing text or version would lock out every account at first request.
+The install must carry the terms the person accepting them saw.
 */}}
 {{- define "platform.validate.termsRequired" -}}
 {{- if not (.Values.terms.text | default "" | trim) -}}
@@ -270,28 +242,38 @@ runner promises machines the whole node while itself being BestEffort and
 first evicted — taking every machine with it.
 */}}
 {{- define "platform.validate.vmRunnerNeedsAMemoryLimit" -}}
-{{- if .Values.virtualization.enabled -}}
 {{- $r := .Values.virtualization.runner.resources | default dict -}}
 {{- if not (dig "limits" "memory" "" $r) -}}
-{{- fail "virtualization.enabled=true requires virtualization.runner.resources.limits.memory. The runner admits machines against that limit; without one it reads the node's allocatable and is BestEffort, so it over-promises memory and is evicted first." -}}
-{{- end -}}
+{{- fail "virtualization.runner.resources.limits.memory is required. The runner admits machines against that limit; without one it reads the node's allocatable and is BestEffort, so it over-promises memory and is evicted first." -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-On OpenShift the chart's own SCC is the only one the runner gets, and it
-admits no hostPath volume. Without a built-in SCC bound as well, admission
-refuses the pod. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
-signal that this is an OpenShift cluster.
+The OpenShift signal moved from `openshift.scc.anyuidCapNet.enabled` to
+`openshift.enabled` when the chart stopped rendering an SCC. A values file that
+still carries the old key would render a vanilla-Kubernetes install on an
+OpenShift cluster, and admission would then refuse the runner for its hostPath,
+so it fails here instead of at the first runner.
+*/}}
+{{- define "platform.validate.openShiftSignalMoved" -}}
+{{- if hasKey (.Values.openshift | default dict) "scc" -}}
+{{- fail "openshift.scc.anyuidCapNet is gone: the chart renders no SCC any more. Set openshift.enabled=true instead — the same signal, under the name it now means." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+On OpenShift no SCC the chart renders admits a hostPath volume, so without a
+built-in SCC bound as well, admission refuses the runner. The chart renders no
+SCC.
 */}}
 {{- define "platform.validate.openShiftSccForPrivilegedVMPieces" -}}
-{{- if and .Values.virtualization.enabled .Values.openshift.scc.anyuidCapNet.enabled -}}
+{{- if .Values.openshift.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.runner.releaseHostPath (not $v.runner.hostAddress) (not $v.runner.scc) -}}
-{{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the runners and the release stager mount, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny)." -}}
+{{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — no SCC the chart renders admits a hostPath, so the volume the runners and the release stager mount is refused, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny)." -}}
 {{- end -}}
 {{- if and (not $v.runner.hostAddress) (not $v.runner.scc) -}}
-{{- fail "on OpenShift, virtualization.runner.scc is required — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume of the node image cache (virtualization.imageCache.hostPath), which every runner and the image cache service mount. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), such as hostmount-anyuid." -}}
+{{- fail "on OpenShift, virtualization.runner.scc is required — no SCC the chart renders admits a hostPath, so the hostPath volume of the node image cache (virtualization.imageCache.hostPath), which every runner and the image cache service mount, is refused. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), such as hostmount-anyuid." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -304,8 +286,8 @@ anything. The Mac's host runner runs outside the cluster with a cache of its own
 */}}
 {{- define "platform.validate.vmRunnersHaveANodeImageCache" -}}
 {{- $v := .Values.virtualization -}}
-{{- if and $v.enabled (not $v.runner.hostAddress) (not ($v.imageCache | default dict).hostPath) -}}
-{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory tree the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a root on the runner nodes, such as /var/lib/platform-images; the chart appends this install's own subdirectory (imageCache.hostPath/<release namespace>/<release name>), which on OpenShift sits under the directory etc/openshift-node-config creates." -}}
+{{- if and (not $v.runner.hostAddress) (not ($v.imageCache | default dict).hostPath) -}}
+{{- fail "virtualization.imageCache.hostPath is required — the node directory tree the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a root on the runner nodes, such as /var/lib/platform-images; the chart appends this install's own subdirectory (imageCache.hostPath/<release namespace>/<release name>), which on OpenShift sits under the directory etc/openshift-node-config creates." -}}
 {{- end -}}
 {{- end -}}
 
@@ -323,7 +305,7 @@ same directory as `a/b`.
 {{- define "platform.validate.vmImageCachePathIsItsOwn" -}}
 {{- $v := .Values.virtualization -}}
 {{- $root := (($v.imageCache | default dict).hostPath | default "") | toString -}}
-{{- if and $v.enabled (not $v.runner.hostAddress) $root -}}
+{{- if and (not $v.runner.hostAddress) $root -}}
 {{- if not (hasPrefix "/" $root) -}}
 {{- fail (printf "virtualization.imageCache.hostPath %q is not an absolute path: it is a directory on every runner node, so it starts at /." $root) -}}
 {{- end -}}
@@ -353,7 +335,7 @@ other's trees evicts them as its own least recently written.
 {{- define "platform.validate.vmImageCacheLegacyPath" -}}
 {{- $v := .Values.virtualization -}}
 {{- $legacy := (($v.imageCache | default dict).legacyPath | default "") | toString -}}
-{{- if and $v.enabled (not $v.runner.hostAddress) $legacy -}}
+{{- if and (not $v.runner.hostAddress) $legacy -}}
 {{- if not (hasPrefix "/" $legacy) -}}
 {{- fail (printf "virtualization.imageCache.legacyPath %q is not an absolute path: it is the host directory a previous release served on every runner node, so it starts at /." $legacy) -}}
 {{- end -}}
@@ -480,7 +462,6 @@ mirror outside it is a range, which has to be a real block, since a /0 would
 reopen every range the policy exists to close.
 */}}
 {{- define "platform.validate.vmImageCacheEgress" -}}
-{{- if .Values.virtualization.enabled -}}
 {{- $cache := .Values.virtualization.imageCache | default dict -}}
 {{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict -}}
 {{- if and (eq ($cache.dnsPolicy | default "ClusterFirst") "ClusterFirst") (not .Values.virtualization.runner.hostAddress) (not (and $dns.namespace $dns.podLabels)) -}}
@@ -504,7 +485,6 @@ reopen every range the policy exists to close.
 {{- end -}}
 {{- end -}}
 {{- end -}}
-{{- end -}}
 
 {{/*
 Values the controller would otherwise take in and fail on later, one agent at a
@@ -513,7 +493,6 @@ Kubernetes, and a seccomp mode smolvm does not know installs no filter. A budget
 that is not a positive quantity refuses every runner.
 */}}
 {{- define "platform.validate.vmValuesTheControllerCanUse" -}}
-{{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- if ($v.devicePlugin | default dict).enabled -}}
 {{- fail "virtualization.devicePlugin is gone: the chart no longer ships a KVM device plugin, because a plugin is per node and a cluster runs one for every install on it. Run one on the cluster (e.g. squat's generic-device-plugin, as helm/extra/kvm-device-plugin.yaml does for local dev), set virtualization.runner.devices to the resource it publishes (squat.ai/kvm: \"1\"), and drop virtualization.devicePlugin." -}}
@@ -534,7 +513,6 @@ that is not a positive quantity refuses every runner.
 {{- fail (printf "virtualization.imageCache.budget %q leaves the cached images no room at all, so no runner can fetch an image. Give it a positive size well under the disk it sits on." $budget) -}}
 {{- end -}}
 {{- end -}}
-{{- end -}}
 
 {{/*
 A runner pod takes a new runner image only as a hand-off from the node
@@ -544,8 +522,8 @@ none.
 */}}
 {{- define "platform.validate.vmRunnerPodsNeedAReleaseDirectory" -}}
 {{- $v := .Values.virtualization -}}
-{{- if and $v.enabled (not $v.runner.hostAddress) (not $v.runner.releaseHostPath) -}}
-{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine (unless that release declares another reboot key than the pod's release, which rolls the pods and reboots them; a pod whose release declares no key takes it in place). Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
+{{- if and (not $v.runner.hostAddress) (not $v.runner.releaseHostPath) -}}
+{{- fail "virtualization.runner.releaseHostPath is required: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine (unless that release declares another reboot key than the pod's release, which rolls the pods and reboots them; a pod whose release declares no key takes it in place). Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
 {{- end -}}
 {{- end -}}
 

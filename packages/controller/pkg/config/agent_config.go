@@ -31,62 +31,18 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 
 type AgentBase struct {
 	ImagePullSecrets []string `json:"imagePullSecrets,omitempty"`
-	StorageClass     string   `json:"storageClass,omitempty"`
-	AccessMode       string   `json:"accessMode,omitempty"`
 
-	IdleTimeout            Duration `json:"idleTimeout,omitempty"`
-	VMIdleTimeout          Duration `json:"vmIdleTimeout,omitempty"`
-	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"`
-
-	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
-	ExtraAnnotations map[string]string `json:"extraAnnotations,omitempty"`
-
-	NodeSelector              map[string]string                 `json:"nodeSelector,omitempty"`
-	Tolerations               []corev1.Toleration               `json:"tolerations,omitempty"`
-	Affinity                  *corev1.Affinity                  `json:"affinity,omitempty"`
-	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
-	PriorityClassName         string                            `json:"priorityClassName,omitempty"`
-	RuntimeClassName          string                            `json:"runtimeClassName,omitempty"`
-
-	Probes *AgentProbes `json:"probes,omitempty"`
-
-	PodSecurityContext       *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
-	ContainerSecurityContext *corev1.SecurityContext    `json:"containerSecurityContext,omitempty"`
-
-	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
-
-	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
-}
-
-type AgentIptablesInit struct {
-	Enabled bool   `json:"enabled,omitempty"`
-	Image   string `json:"image,omitempty"`
-}
-
-type AgentNPGateInit struct {
-	Enabled        bool   `json:"enabled,omitempty"`
-	Image          string `json:"image,omitempty"`
-	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
+	VMIdleTimeout Duration `json:"vmIdleTimeout,omitempty"`
 }
 
 type VMConfig struct {
-	Enabled          bool               `json:"enabled,omitempty"`
-	Runner           VMRunnerSpec       `json:"runner,omitempty"`
-	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
-	Gateway          VMGateway          `json:"gateway,omitempty"`
+	Runner  VMRunnerSpec `json:"runner,omitempty"`
+	Gateway VMGateway    `json:"gateway,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether vm Agents egress through one gateway pod per owner instead of a gateway pod each. Off by default, so an install switches to it on purpose and can switch back.
 type VMGateway struct {
 	PerOwner bool `json:"perOwner,omitempty"`
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each. `CloneSource` says whether the copy reads a CSI clone of a single-node home volume rather than the volume itself; unset means it does.
-type VMRuntimeMigration struct {
-	Retention        Duration `json:"retention,omitempty"`
-	Concurrency      int      `json:"concurrency,omitempty"`
-	OwnerConcurrency int      `json:"ownerConcurrency,omitempty"`
-	CloneSource      *bool    `json:"cloneSource,omitempty"`
 }
 
 type VMRunnerSpec struct {
@@ -150,38 +106,15 @@ type VMRunnerRollout struct {
 	IdleWait       Duration `json:"idleWait,omitempty"`
 }
 
-type AgentProbes struct {
-	Startup   *corev1.Probe `json:"startup,omitempty"`
-	Readiness *corev1.Probe `json:"readiness,omitempty"`
-	Liveness  *corev1.Probe `json:"liveness,omitempty"`
-}
-
 type AgentTemplateDefaults struct {
-	AgentHome string `json:"agentHome,omitempty"`
-
-	ImagePullPolicy string                       `json:"imagePullPolicy,omitempty"`
-	StorageSize     string                       `json:"storageSize,omitempty"`
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
+	StorageSize string                       `json:"storageSize,omitempty"`
+	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	Mounts       []Mount       `json:"mounts,omitempty"`
 	Env          []EnvVar      `json:"env,omitempty"`
 	SkillSources []SkillSource `json:"skillSources,omitempty"`
-	Init         string        `json:"init,omitempty"`
 
 	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
-}
-
-type WarmPool struct {
-	Enabled             bool           `json:"enabled,omitempty"`
-	StorageClass        string         `json:"storageClass,omitempty"`
-	ReplenishInterval   Duration       `json:"replenishInterval,omitempty"`
-	MaxProvisioningTime Duration       `json:"maxProvisioningTime,omitempty"`
-	Sizes               []WarmPoolSize `json:"sizes,omitempty"`
-}
-
-type WarmPoolSize struct {
-	Size   string `json:"size"`
-	Target int    `json:"target"`
 }
 
 type Mount struct {
@@ -199,15 +132,4 @@ type SkillSource struct {
 	Name   string `json:"name"`
 	GitURL string `json:"gitUrl"`
 	Path   string `json:"path,omitempty"`
-}
-
-type StorageMigration struct {
-	Enabled               bool     `json:"enabled,omitempty"`
-	Concurrency           int      `json:"concurrency,omitempty"`
-	Interval              Duration `json:"interval,omitempty"`
-	TargetStorageClass    string   `json:"targetStorageClass,omitempty"`
-	AllowSameStorageClass bool     `json:"allowSameStorageClass,omitempty"`
-	MinTargetSize         string   `json:"minTargetSize,omitempty"`
-	AllowOwnershipRemap   bool     `json:"allowOwnershipRemap,omitempty"`
-	JobImage              string   `json:"jobImage,omitempty"`
 }

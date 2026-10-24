@@ -1,12 +1,9 @@
 package vmrunner
 
 import (
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TEST_SCENARIO: the controller mints a seed capability in Go and the runner verifies it in Rust, so nothing but a shared document holds the two derivations together. Minting from the fixture's token, machine, nonce and expiry must give exactly its capability and fingerprint.
@@ -35,21 +32,4 @@ func TestAUsageCapabilityIsWhatTheContractSays(t *testing.T) {
 	got := MintUsageCapability(fixture.Token)
 	assert.Equal(t, fixture.Capability, got)
 	assert.NotContains(t, got, fixture.Token)
-}
-
-// TEST_SCENARIO: every capability is minted with a fresh nonce, so two Jobs for one machine never hold the same one, and none of them carries the token it was derived from.
-func TestEachSeedCapabilityIsFreshAndHoldsNoToken(t *testing.T) {
-	expires := time.Unix(1790000000, 0)
-	first, fp, err := NewSeedCapability("the-runner-token", "my-agent", expires)
-	require.NoError(t, err)
-	second, _, err := NewSeedCapability("the-runner-token", "my-agent", expires)
-	require.NoError(t, err)
-	assert.NotEqual(t, first, second)
-	assert.Equal(t, SeedCapabilityFingerprint(first), fp)
-	assert.NotContains(t, first, "the-runner-token")
-	parts := strings.Split(first, ".")
-	require.Len(t, parts, 4)
-	assert.Equal(t, "seedcap1", parts[0])
-	assert.Len(t, parts[1], 32)
-	assert.Equal(t, "1790000000", parts[2])
 }

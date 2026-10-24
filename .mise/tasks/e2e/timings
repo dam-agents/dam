@@ -3,8 +3,9 @@
 #MISE hide=true
 # Reads the marks in E2E_TIMINGS and the Playwright JSON report in
 # E2E_REPORT_JSON.
-# e2e.yml's two lanes append this to the job summary, so a change to a lane
-# can be judged by where its time went. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
+# e2e.yml's jobs append this to the job summary, so a change can be judged by
+# where its time went. Both install the same backend, so every row covers the
+# same work. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
 # .mise/lib/cluster.sh writes them from cluster:install, e2e:install and
 # e2e:run, and the workflow adds the job's start and the times its background
 # k3s provision and its two image families finished. By path, like image:resolve; it

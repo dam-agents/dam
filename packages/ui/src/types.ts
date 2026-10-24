@@ -141,7 +141,6 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
-  | "migrating"
   | "error";
 
 export interface AgentView {
@@ -197,24 +196,7 @@ export interface AgentView {
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
   environmentOf: string | null;
-  vm: boolean;
-  runtimeMigration: RuntimeMigrationView | null;
   kind?: AgentKind;
-}
-
-export type RuntimeMigrationPhase =
-  | "requested"
-  | "stopping"
-  | "copying"
-  | "booting"
-  | "verified"
-  | "failed"
-  | "aborting";
-
-export interface RuntimeMigrationView {
-  phase: RuntimeMigrationPhase;
-  message?: string;
-  attempts?: number;
 }
 
 interface QuietWindowView {

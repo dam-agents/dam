@@ -6,7 +6,7 @@ import type {
 } from "agent-runtime-api";
 import { SOURCE_PATH_REASONS } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 import type { PrDisposition } from "../domain/pr-state.js";
 
 export interface PublishSkillCall {
@@ -115,7 +115,7 @@ export class AgentRuntimeClientError extends Error {
 const UPSTREAM_TIMEOUT_MS = 300_000;
 
 function makeClient(agentId: string, namespace: string) {
-  return agentPodClient(agentId, namespace, {
+  return agentServiceClient(agentId, namespace, {
     timeoutMs: UPSTREAM_TIMEOUT_MS,
   });
 }

@@ -34,16 +34,16 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.hibernationTimeout).toBeUndefined();
   });
 
-  // TEST_SCENARIO: the vm backend is chosen beside the image rather than by picking a different template, so a plain container template must assemble as a microVM on request — and runtimeClassName and nodeSelector, which the CRD rejects on that backend, must not ride along.
-  it("boots a container template as a microVM without its container-only placement", () => {
+  // TEST_SCENARIO: the template schema passes through what it does not declare, so a template that still carries the retired container-only keys must not hand them to the Agent the machine is built from. The backend is stamped `vm` for the CRD's Environment rule and read by nothing.
+  it("writes the machine backend and drops placement the machine cannot use", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       {
         ...baseTemplate,
         runtimeClassName: "kata",
         nodeSelector: { pool: "gpu" },
-      },
-      { vm: true },
+      } as TemplateSpec,
+      {},
       defaultLimits,
     );
     expect(spec.backend).toEqual({ type: "vm" });
@@ -51,7 +51,7 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.nodeSelector).toBeUndefined();
   });
 
-  // TEST_SCENARIO: every harness template points at one image, so the agent must carry its template's harness for the controller to tell the machine or pod which one to run.
+  // TEST_SCENARIO: every harness template points at one image, so the agent must carry its template's harness for the controller to tell the machine which one to run.
   it("names the template's harness on the agent spec", () => {
     const spec = assembleSpecFromTemplate(
       "codex-1",
@@ -60,11 +60,11 @@ describe("assembleSpecFromTemplate", () => {
       defaultLimits,
     );
     expect(spec.harness).toBe("codex");
-    expect(spec.backend).toBeUndefined();
+    expect(spec.backend).toEqual({ type: "vm" });
   });
 
-  // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the vm backend carries no storage block of its own and the mounts travel unchanged. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
-  it("carries the template's mounts unchanged and gives a vm agent no storage size", () => {
+  // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the mounts travel unchanged, and the template's size is the disk the machine gets. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
+  it("carries the template's mounts and sizes the machine disk from it", () => {
     const spec = assembleSpecFromTemplate(
       "nous-1",
       {
@@ -75,7 +75,7 @@ describe("assembleSpecFromTemplate", () => {
           { path: "/tmp", persist: false },
         ],
       },
-      { vm: true },
+      {},
       defaultLimits,
     );
     expect(spec.backend).toEqual({ type: "vm" });
@@ -83,50 +83,33 @@ describe("assembleSpecFromTemplate", () => {
       { path: "/home/agent", persist: true },
       { path: "/tmp", persist: false },
     ]);
-    expect(spec.storageSize).toBeUndefined();
-  });
-
-  it("leaves the agent on a container when the caller asks for nothing", () => {
-    const spec = assembleSpecFromTemplate(
-      "nous-1",
-      { ...baseTemplate, runtimeClassName: "kata" },
-      {},
-      defaultLimits,
-    );
-    expect(spec.backend).toBeUndefined();
-    expect(spec.runtimeClassName).toBe("kata");
+    expect(spec.storageSize).toBe("20Gi");
   });
 });
 
 describe("resolveEffectiveHibernationTimeoutMin", () => {
-  const idle = { container: 30, vm: 5 };
+  const idle = 5;
 
   // TEST_SCENARIO: the CRD carries a Go duration, so a Template can seed a unit
   // TEST_SCENARIO: the minute parser never sees. The controller treats a
   // TEST_SCENARIO: positive nanosecond override as awake-for-an-instant, never
   // TEST_SCENARIO: as never-hibernate, so this must not project it to zero.
-  it("keeps a positive sub-minute vm override awake rather than never-hibernate", () => {
-    expect(resolveEffectiveHibernationTimeoutMin("1ns", true, idle)).toBe(1);
-    expect(resolveEffectiveHibernationTimeoutMin("1500ms", true, idle)).toBe(1);
+  it("keeps a positive sub-minute override awake rather than never-hibernate", () => {
+    expect(resolveEffectiveHibernationTimeoutMin("1ns", idle)).toBe(1);
+    expect(resolveEffectiveHibernationTimeoutMin("1500ms", idle)).toBe(1);
   });
 
   it("reads a Go duration the minute parser would have dropped", () => {
-    expect(resolveEffectiveHibernationTimeoutMin("90s", true, idle)).toBe(2);
-    expect(resolveEffectiveHibernationTimeoutMin("2h", false, idle)).toBe(120);
+    expect(resolveEffectiveHibernationTimeoutMin("90s", idle)).toBe(2);
+    expect(resolveEffectiveHibernationTimeoutMin("2h", idle)).toBe(120);
   });
 
-  it("keeps zero as never-hibernate on both backends", () => {
-    expect(resolveEffectiveHibernationTimeoutMin("0s", true, idle)).toBe(0);
-    expect(resolveEffectiveHibernationTimeoutMin("0s", false, idle)).toBe(0);
+  it("keeps zero as never-hibernate", () => {
+    expect(resolveEffectiveHibernationTimeoutMin("0s", idle)).toBe(0);
   });
 
-  it("inherits the backend's default when the Agent carries no override", () => {
-    expect(resolveEffectiveHibernationTimeoutMin(undefined, true, idle)).toBe(
-      5,
-    );
-    expect(resolveEffectiveHibernationTimeoutMin(undefined, false, idle)).toBe(
-      30,
-    );
+  it("inherits the chart-wide default when the Agent carries no override", () => {
+    expect(resolveEffectiveHibernationTimeoutMin(undefined, idle)).toBe(5);
   });
 });
 

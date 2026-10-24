@@ -81,8 +81,8 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 		if err != nil {
 			return runnerDemand{}, fmt.Errorf("decoding an agent of owner %s: %w", owner, err)
 		}
-		if vm := vmSideOf(a); a.Name != self.Name && vm != nil {
-			agents = append(agents, vm)
+		if a.Name != self.Name {
+			agents = append(agents, a)
 		}
 	}
 	var d runnerDemand
@@ -148,7 +148,7 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	if running, ok := r.vmRunning.Load(name); ok {
 		return running.(bool), nil
 	}
-	return r.agentDesiredUp(ctx, name, true)
+	return r.agentDesiredUp(ctx, name)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the last word on the agent's machine, as the reason it carried. The runner's own answer governs: it is recorded where the runner gave it, under the owner's lock, so a refusal counts before the Agent's status carries it, and a machine the runner admitted counts while it boots, before it is a live machine. The status is read only when no answer is recorded, for a refusal this controller did not see. A machine that runs anyway counts as any other, whatever a refusal from an attempt before says.

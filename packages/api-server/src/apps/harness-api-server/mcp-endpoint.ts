@@ -36,7 +36,7 @@ import type {
   ChannelAttachment,
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { agentPodClient } from "../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../core/agent-service-client.js";
 import type {
   SubAgentAwaitMarks,
   InvocationsService,
@@ -222,7 +222,7 @@ export function createMcpSession(
     },
   );
 
-  const runtimeClient = agentPodClient(agentId, deps.k8s.namespace, {
+  const runtimeClient = agentServiceClient(agentId, deps.k8s.namespace, {
     timeoutMs: MCP_RUNTIME_TIMEOUT_MS,
   });
 
@@ -598,7 +598,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent's machine (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z
         .string()
@@ -844,7 +844,7 @@ export function createMcpSession(
 
   server.tool(
     "install_skill",
-    "Install a skill onto THIS running agent. Files land on the pod's persistent volume at the agent's configured skill path; the harness picks them up on the next session.",
+    "Install a skill onto THIS running agent. Files land on the agent's home volume at the agent's configured skill path; the harness picks them up on the next session.",
     {
       source: z.string().url(),
       name: z.string().min(1),
@@ -873,7 +873,7 @@ export function createMcpSession(
 
   server.tool(
     "uninstall_skill",
-    "Uninstall a skill from THIS agent. Removes the directory from the pod and drops the entry from the agent spec.",
+    "Uninstall a skill from THIS agent. Removes the directory from the agent's home and drops the entry from the agent spec.",
     {
       source: z.string().url(),
       name: z.string().min(1),
@@ -1039,7 +1039,7 @@ export function createMcpSession(
       precheck: precheckSchema
         .optional()
         .describe(
-          "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
+          "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this machine's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
         ),
       harness: scheduleHarnessSchema
         .optional()

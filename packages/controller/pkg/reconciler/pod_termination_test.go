@@ -29,19 +29,7 @@ func crashLoopingPod(message string) *corev1.Pod {
 	return pod
 }
 
-func TestTerminationReason_HomeVolumeFullFromTheTerminationMessage(t *testing.T) {
-	pod := crashLoopingPod("HomeVolumeFull\n")
-
-	reason, message, ok := terminationReason(pod)
-	assert.True(t, ok)
-	assert.Equal(t, apiv1.ReasonHomeVolumeFull, reason)
-	assert.Contains(t, message, "home volume is full")
-
-	_, restartReason := podRestarts(pod)
-	assert.Equal(t, apiv1.ReasonHomeVolumeFull, restartReason)
-}
-
-// TEST_SCENARIO: Any other termination message keeps the generic cause, so a container that writes its own text there is never mistaken for a full disk.
+// TEST_SCENARIO: A termination message decides nothing: a gateway pod's own text is never mistaken for a classified cause, however it reads.
 func TestTerminationReason_OtherMessagesStayContainerTerminated(t *testing.T) {
 	for _, message := range []string{"", "panic: boom", "HomeVolumeFull is a lie"} {
 		reason, _, ok := terminationReason(crashLoopingPod(message))

@@ -26,11 +26,10 @@
 # build jobs, which build the same set: the `changes` job resolves it the same
 # way.
 #
-# E2E_VIRTUALIZATION, as the vm lane sets it, adds the vm-runner, which
-# cluster:install then loads beside the platform images. It is built or
-# waited for exactly like them: here under CI_IMAGES_BUILD, otherwise by
-# build-images. The lane also boots the harness Templates' default image,
-# which build-agents builds otherwise.
+# The vm-runner is one of them, since every install loads it beside the
+# platform images. It is built or waited for exactly like them: here under
+# CI_IMAGES_BUILD, otherwise by build-images. A lane also boots the harness
+# Templates' default image, which build-agents builds otherwise.
 #
 # By path, like image:resolve. Needs GH_TOKEN with actions:read (only to wait
 # on build jobs), GITHUB_REPOSITORY, GITHUB_RUN_ID and IMAGE_PREFIX;
@@ -64,8 +63,7 @@ set -e
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${IMAGE_PREFIX:?}"
 
 resolve=.mise/tasks/image/resolve
-LOADED="controller api-server ui keycloak mock"
-[ -z "${E2E_VIRTUALIZATION:-}" ] || LOADED="$LOADED vm-runner default"
+LOADED="controller api-server ui keycloak mock vm-runner default"
 
 # The agent images are the ones image.toml makes, as image:ci-build's
 # package_of decides it; every other image is a platform image. Classified

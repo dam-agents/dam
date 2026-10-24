@@ -5,8 +5,8 @@ have to be baked too). The Python twin of ``/usr/local/lib/driver-sdk.mjs``:
 
 - ``spawn`` starts a sub-agent on a harness and blocks until its
   schema-validated result. It takes the same setup a starter kit applies:
-  ``image``, ``seed``, ``install``, ``env``, ``resources``, ``backend``,
-  ``skills``. The sub-agent runs on this driver's provider.
+  ``image``, ``seed``, ``install``, ``env``, ``resources``, ``skills``.
+  The sub-agent runs on this driver's provider.
 - ``spawn_script`` runs a shell command on a sub-agent set up the same way,
   with no model turn, and returns its exit code, stdout and stderr byte for
   byte.
@@ -190,17 +190,12 @@ def list_connections() -> list[dict[str, Any]]:
 
 
 def budget() -> dict[str, Any]:
-    """The owner's compute budget, read live::
+    """The size a spawn gets when it names none, read live::
 
-        {
-          "cpu":    {"reservedMilli": 3000, "ceilingMilli": 6000},
-          "memory": {"reservedBytes": ..., "ceilingBytes": ...},
-          "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
-        }
+        {"defaultWorkerSize": {"cpu": "1", "memory": "1Gi"}}
 
-    The ceiling caps the summed sizes of the owner's running agents, this
-    driver included. A spawn past the free room queues until room frees, and
-    that wait counts against its TTL."""
+    A spawn past the owner's free room queues until room frees, and that wait
+    counts against its TTL."""
     return _request("GET", "/budget")
 
 
@@ -213,7 +208,6 @@ def _target_body(
     install: str | None,
     env: dict[str, str] | None,
     resources: dict[str, str] | None,
-    backend: str | None,
     skills: list[dict[str, str]] | None,
     ttl_ms: int | None,
     memory: str | None,
@@ -241,8 +235,6 @@ def _target_body(
         body["env"] = [{"name": k, "value": v} for k, v in env.items()]
     if resources is not None:
         body["resources"] = resources
-    if backend is not None:
-        body["backend"] = backend
     if skills:
         body["skills"] = skills
     if ttl_ms is not None:
@@ -287,7 +279,6 @@ def spawn(
     install: str | None = None,
     env: dict[str, str] | None = None,
     resources: dict[str, str] | None = None,
-    backend: str | None = None,
     skills: list[dict[str, str]] | None = None,
     ttl_ms: int | None = None,
     memory: str | None = None,
@@ -310,7 +301,7 @@ def spawn(
     ``seed={"url": ..., "ref": ..., "commit": ..., "into": "work"}`` clones a
     repository, ``install="..."`` runs a shell command in the workspace before
     the prompt, ``env={"NAME": "value"}``, ``resources={"cpu": "2", "memory":
-    "4Gi", "storage": "10Gi"}``, ``backend="vm"``, and
+    "4Gi", "storage": "10Gi"}``, and
     ``skills=[{"source": ..., "name": ...}]``. A failed seed or install fails
     the spawn at once with its reason.
 
@@ -342,7 +333,6 @@ def spawn(
         install=install,
         env=env,
         resources=resources,
-        backend=backend,
         skills=skills,
         ttl_ms=ttl_ms,
         memory=memory,
@@ -480,7 +470,6 @@ def spawn_script(
     install: str | None = None,
     env: dict[str, str] | None = None,
     resources: dict[str, str] | None = None,
-    backend: str | None = None,
     skills: list[dict[str, str]] | None = None,
     ttl_ms: int | None = None,
     memory: str | None = None,
@@ -491,7 +480,7 @@ def spawn_script(
 ) -> ScriptOutput:
     """Run ``script`` on a sub-agent instead of a prompt, and block until it
     ends. No model turn runs: the sub-agent is set up exactly as ``spawn``
-    sets one up (``seed``, ``install``, ``env``, ``resources``, ``backend``,
+    sets one up (``seed``, ``install``, ``env``, ``resources``,
     ``skills``), then runs ``bash -lc script`` in its workspace once.
 
     Returns a ``ScriptOutput`` when the script exits 0; read its streams with
@@ -508,7 +497,6 @@ def spawn_script(
         install=install,
         env=env,
         resources=resources,
-        backend=backend,
         skills=skills,
         ttl_ms=ttl_ms,
         memory=memory,

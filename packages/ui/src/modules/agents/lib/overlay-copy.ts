@@ -20,13 +20,7 @@ const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
   over_budget:
     "Starting this agent would exceed your compute budget. Disable agents " +
     "you aren't using to free room, then start this one again.",
-  migrating:
-    "The agent is moving to the new sandbox runtime. It is back once its " +
-    "data has been copied, which takes a few minutes.",
 };
-const MIGRATION_FAILED =
-  "The agent's move to the new sandbox runtime failed. It is back once an " +
-  "operator finishes or undoes the move.";
 
 export function overlayDescription(
   state: AgentDisplayState,
@@ -38,9 +32,7 @@ export function overlayDescription(
   const budget = agent.overBudgetMessage;
   if (state === "over_budget" && budget)
     return `${budget[0].toUpperCase()}${budget.slice(1)}${budget.endsWith(".") ? "" : "."}`;
-  if (state === "over_budget" && agent.vm) return VM_MEMORY_FULL;
-  if (state === "migrating" && agent.runtimeMigration?.phase === "failed")
-    return MIGRATION_FAILED;
+  if (state === "over_budget") return VM_MEMORY_FULL;
   if (state === "hibernated" && agent.startFailure) {
     const why = agent.startFailure.message;
     return `The agent is asleep, but its last start never finished: ${why}${why.endsWith(".") ? "" : "."} Start it to try again.`;

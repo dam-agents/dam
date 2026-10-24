@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure does: it kills the machine's VMM once at each step of a boot that platform-init itself says it reached, and it kills a running guest whose writes are synced into HOME. It also empties the layout mark an unclean stop can leave empty. Each of them must end in one of two ways: the machine boots with the file in HOME readable, or it refuses to boot and says why. Two more cases need room the lane's node cannot spare, a disk with no block left and an owner's claim with none, so a run opts into them by environment, and the second needs a claim with a size of its own, which the lane's provisioner does not give it. Only the vm lane runs it, and the config runs it beside the other specs that boot their own agent.
+// TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure does: it kills the machine's VMM once at each step of a boot that platform-init itself says it reached, and it kills a running guest whose writes are synced into HOME. It also empties the layout mark an unclean stop can leave empty. Each of them must end in one of two ways: the machine boots with the file in HOME readable, or it refuses to boot and says why. Two more cases need room the install's node cannot spare, a disk with no block left and an owner's claim with none, so a run opts into them by environment, and the second needs a claim with a size of its own, which the install's provisioner does not give it. The config runs it beside the other specs that boot their own agent.
 import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -23,10 +23,8 @@ import {
   createAgentOn,
   expectHomeFile,
   inGuest,
-  laneBackend,
   onRunnerHost,
   refreshingToken,
-  requireBackend,
   claimOnNode,
   runnerClaimRead,
   runnerKilledVmms,
@@ -272,17 +270,10 @@ function consoleLines(id: string, needle: string): number {
 test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
-  await requireBackend(api, laneBackend);
   await acceptTerms(api);
-  agentId = await createAgentOn(
-    api,
-    laneBackend,
-    "e2e-boot-matrix",
-    harnessName,
-    {
-      neverIdle: true,
-    },
-  );
+  agentId = await createAgentOn(api, "e2e-boot-matrix", harnessName, {
+    neverIdle: true,
+  });
   await waitAgentState(api, agentId, "running");
   await writeHomeFile(token, agentId, markerPath, marker);
   await expectHomeFile(token, agentId, markerPath, marker, {
@@ -546,13 +537,13 @@ test("comes back with the writes a running guest synced", async () => {
   ).toBe("after");
 });
 
-// TEST_SCENARIO: a disk with no room left costs a boot the folders it needs before it mounts anything, and platform-init answers that by deleting what a boot discards anyway — its scratch folders and the layers earlier boots set aside — and trying again. The fill marks blocks in the guest's own filesystem, so it takes almost nothing from the claim; its last pass writes many small files, because the folders the boot makes need the disk's metadata, which marking blocks leaves room in. A machine's disk is a sparse file on its owner's claim, and a filesystem that allocates those blocks instead writes them onto the claim, which on this lane is the node's disk, so E2E_DISK_FILL_GIB is the most GiB the filler may mark, a cap below the disk's free space skips rather than leave a disk that is not full, and unset skips the case.
+// TEST_SCENARIO: a disk with no room left costs a boot the folders it needs before it mounts anything, and platform-init answers that by deleting what a boot discards anyway — its scratch folders and the layers earlier boots set aside — and trying again. The fill marks blocks in the guest's own filesystem, so it takes almost nothing from the claim; its last pass writes many small files, because the folders the boot makes need the disk's metadata, which marking blocks leaves room in. A machine's disk is a sparse file on its owner's claim, and a filesystem that allocates those blocks instead writes them onto the claim, which on this install is the node's disk, so E2E_DISK_FILL_GIB is the most GiB the filler may mark, a cap below the disk's free space skips rather than leave a disk that is not full, and unset skips the case.
 test("boots a disk it found with no room left", async () => {
   test.setTimeout(900_000);
   const capGiB = Number(process.env.E2E_DISK_FILL_GIB ?? "");
   test.skip(
     !Number.isFinite(capGiB) || capGiB <= 0,
-    "the filler marks blocks in the guest's filesystem, and a filesystem that allocates them instead writes them onto the claim, which on this lane is the node's disk; set E2E_DISK_FILL_GIB to the most GiB the fill may mark",
+    "the filler marks blocks in the guest's filesystem, and a filesystem that allocates them instead writes them onto the claim, which on this install is the node's disk; set E2E_DISK_FILL_GIB to the most GiB the fill may mark",
   );
   const fill = inGuest(
     agentId,
@@ -869,7 +860,7 @@ test("refuses a start while the owner's claim is full", async () => {
   const capGiB = Number(process.env.E2E_CLAIM_FILL_GIB ?? "");
   test.skip(
     !Number.isFinite(capGiB) || capGiB <= 0,
-    "the lane's claim is a directory of the node's disk, so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume",
+    "the install's claim is a directory of the node's disk, so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume",
   );
   const read = runnerClaimRead(agentId);
   const onNode = claimOnNode(read);

@@ -77,22 +77,6 @@ function setup(rows: UserBudgetRow[]) {
             .map(([s]) => s),
         ),
     },
-    listAgents: async () => [
-      {
-        id: "a1",
-        owner: "ada",
-        spec: { resources: { limits: { cpu: "2", memory: "4Gi" } } },
-        hibernated: false,
-        overBudget: false,
-      },
-      {
-        id: "a2",
-        owner: "ada",
-        spec: { resources: { limits: { cpu: "1", memory: "1Gi" } } },
-        hibernated: true,
-        overBudget: false,
-      },
-    ],
     defaults: DEFAULTS,
   })("op-1");
   return { admin, store, emailsBySub, budgets };
@@ -101,7 +85,7 @@ function setup(rows: UserBudgetRow[]) {
 const page = { sort: "changed" as const, offset: 0, limit: 25 };
 
 describe("operator list of compute budgets", () => {
-  it("shows the defaults, the counts and each user's current reservation", async () => {
+  it("shows the defaults, the counts and each user's budget", async () => {
     const { admin } = setup([row("ada", { cpu: "16" }), row("bob", {})]);
     const list = await admin.list(page);
     expect(list).toMatchObject({ defaults: DEFAULTS, total: 2, matched: 2 });
@@ -109,11 +93,6 @@ describe("operator list of compute budgets", () => {
       email: "ada@example.com",
       cpu: "16",
       memory: null,
-      reserved: { cpuMilli: 2000, memoryBytes: 4 * 1024 ** 3 },
-    });
-    expect(list.entries.find((e) => e.ownerSub === "bob")?.reserved).toEqual({
-      cpuMilli: 0,
-      memoryBytes: 0,
     });
   });
 

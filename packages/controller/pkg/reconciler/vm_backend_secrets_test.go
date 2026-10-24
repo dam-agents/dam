@@ -69,35 +69,6 @@ func TestARefusedSecretRefIsTakenOffAMachineThatHadIt(t *testing.T) {
 	assert.NotContains(t, node.spec("my-agent").Env, "SECRET_TOKEN")
 }
 
-// TEST_SCENARIO: the container backend hands a secretRef to the kubelet as envFrom, so the same Secret the vm backend refuses must never reach a StatefulSet there either: the pod is rendered without it, which also takes it off a pod that already had it, and the reconcile reports the refusal. An operator's Secret that predates the rule needs only its owner label to work again.
-func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
-	agent := agentCR()
-	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
-	agent.Spec.SecretRef = "theirs"
-	r, _ := setupReconciler(t, agent)
-	envSecret(t, r, "theirs", map[string]string{envoyOwnerLabel: "someone-else"})
-
-	err := r.Reconcile(context.Background(), agent)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "secretRef theirs")
-	ss, err := r.client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
-	require.NoError(t, err, "the pod is still rendered, only without the refused Secret")
-	for _, c := range ss.Spec.Template.Spec.Containers {
-		for _, from := range c.EnvFrom {
-			assert.Nil(t, from.SecretRef, "no pod may carry another owner's Secret as its environment")
-		}
-	}
-
-	sec, err := r.client.CoreV1().Secrets("test-agents").Get(context.Background(), "theirs", metav1.GetOptions{})
-	require.NoError(t, err)
-	sec.Labels[envoyOwnerLabel] = testOwner
-	_, err = r.client.CoreV1().Secrets("test-agents").Update(context.Background(), sec, metav1.UpdateOptions{})
-	require.NoError(t, err)
-	got, err := r.ownedSecretRef(context.Background(), agent)
-	require.NoError(t, err, "labelling the Secret with its owner is all an existing one needs")
-	assert.Equal(t, "theirs", got.Name)
-}
-
 // TEST_SCENARIO: the OOM kill of an owner's runner was reported only on the agents whose runner reason happened to be MachineNotReady, so an agent the restarted runner refused room, or one carrying a reason of its own, told its owner about that consequence and never about the kill — and the OOM notice and the Slack alert read nothing else. Every agent whose machine was running when the kill happened now names it for the episode that follows, from the runner pod's last termination and the state the agent was last published in; a reason the runner gives for this machine alone — its boot, its image, the kernel's kill of its VMM — still outranks the pod's, since the pod's kill is no account of what this machine did afterwards.
 func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	agent := vmAgentCR()
@@ -158,7 +129,7 @@ func TestAMachinesSecretsAreReadInTwoRounds(t *testing.T) {
 	r.client = slowSecretsClient{r.client.(*fake.Clientset), delay}
 
 	started := time.Now()
-	_, reached, err := r.reconcileVMAgent(ctx, agent, agentOwnerRef(agent), "10.96.42.42", true, true)
+	_, reached, err := r.reconcileVMAgent(ctx, agent, agentOwnerRef(agent), "10.96.42.42", true)
 	elapsed := time.Since(started)
 
 	require.NoError(t, err)

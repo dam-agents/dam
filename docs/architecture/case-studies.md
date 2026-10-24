@@ -1,6 +1,6 @@
 # Case studies
 
-Last verified: 2026-10-20
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -9,22 +9,22 @@ The **agent-case-study skill** produces it from the agent's real history; the pl
 
 The subsystem is deliberately split across three concerns:
 
-- **The skill** (image-shipped) does the mining, sanitizing, and writing, entirely inside the agent's own pod.
+- **The skill** (image-shipped) does the mining, sanitizing, and writing, entirely inside the agent's own machine.
 - **The api-server case-studies module** owns edition storage: the submit path, the owner surface, the inspector read surface, and retention.
 - **Consent, scheduling, and processing are elsewhere.** Opting an agent in or out, owner review UI, and reading what accumulates are follow-up work; this subsystem only guarantees that a pending edition is invisible until the owner releases it.
 
 ## The skill
 
-The skill directory ships in every agent image under the staged-skills dir ([skills](skills.md)), and it is consumed in place rather than copied onto any agent's PVC.
+The skill directory ships in every agent image under the staged-skills dir ([skills](skills.md)), and it is consumed in place rather than copied onto the agent's disk.
 It is deliberately **off every skill path**: no harness ambient-discovers it, so it costs no context on unrelated turns and can never self-trigger.
 Invocation is always an explicit reference to that path — the canonical weekly schedule task, which the contract package owns, and the Claude Code `/agent-case-study` command shim both point at it.
-The schedule task text is frozen into each schedule row at opt-in, so it stays a thin pointer plus a refusal clause; every behavior worth iterating on lives in the image-shipped `SKILL.md`, which is always current in a running pod.
+The schedule task text is frozen into each schedule row at opt-in, so it stays a thin pointer plus a refusal clause; every behavior worth iterating on lives in the image-shipped `SKILL.md`, which is always current in a running machine.
 
 The skill's evidence sources are harness-aware:
 
 - **The platform session index** ([agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven classification that transcript paths cannot provide.
 - **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, copilot's per-session directories under `~/.copilot/session-state`, codex by runtime probe — and a companion reference alongside it says how to read each.
-  No env var identifies the harness in-pod; probing is the only signal.
+  No env var identifies the harness inside the machine; probing is the only signal.
 
 ## Editions and their states
 

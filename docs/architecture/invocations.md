@@ -29,14 +29,14 @@ sequenceDiagram
 
 ## Spawning
 
-**A target is set up like a kit-created Agent.** The spawn carries an **Agent Setup** — the part of a [starter kit](starter-kits.md) that decides what an Agent is and has: a repository to seed, an install command, env, CPU, memory and disk, the vm backend, external skills.
-A vm target takes only the disk: its machine has no CPU or memory size and shares its owner's [pool](vm-memory.md).
+**A target is set up like a kit-created Agent.** The spawn carries an **Agent Setup** — the part of a [starter kit](starter-kits.md) that decides what an Agent is and has: a repository to seed, an install command, env, disk, external skills.
+A target holds no CPU or memory size of its own: it shares its owner's [pool](vm-memory.md).
 Kits and spawns share the one definition, so a setup option added for kits reaches spawns in the same change, or is deliberately kit-only.
 What a kit carries about discovery or about outliving one task — catalog display, schedules, channels, knowledge-base shares, a hibernation override — has no meaning for a target and is not accepted.
 The spawn's prompt plays the role a kit's onboarding plays: it is the target's first and only turn.
 
-**A spawn names a harness.** A harness in the install's harness catalog runs on the default Template — its image, size, env and mounts — with the target's own harness set to it, exactly as an Agent created there would; a harness only a custom Template declares still resolves to that Template.
-A harness the install does not carry is refused, naming the ones it does; the image catalogue the Driver reads lists each with its effective Size.
+**A spawn names a harness.** A harness in the install's harness catalog runs on the default Template — its image, env and mounts — with the target's own harness set to it, exactly as an Agent created there would; a harness only a custom Template declares still resolves to that Template.
+A harness the install does not carry is refused, naming the ones it does; the catalogue the Driver reads lists each harness with the models it carries.
 A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it.
 Either way the harness catalog, or the custom Template, states the providers the harness can run on, which is what Provider Inheritance checks.
 The trigger that opens the target's first session names its harness, the inherited provider and the model; a model a spawn names is a qualified name (`ibm/gpt-5.5`), and a bare one is refused before anything is created.
@@ -78,14 +78,12 @@ An image target declares nothing, so nothing is narrowed.
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.
 Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules, though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
-**Admission.** A target sized past its owner's [budget](budgets.md) Ceiling could never start, so the spawn fails at once with the figures.
-A vm target stands outside the budget and is never refused here.
-One that fits the Ceiling but not the room free now queues and starts when room frees; the wait counts against its deadline.
+**Admission.** A target is not sized against its owner's [budget](budgets.md#the-pool): it shares the owner's memory pool with their other machines, so a start that does not fit waits for room and starts when it frees ([vm memory](vm-memory.md)), and the wait counts against its deadline.
 A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is refused before anything is created, with a reason of its own that says which one and when it lifts, because the target could only fail its first model call.
 
 ## Outcomes
 
-**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target 30 seconds later, so the target's closing reply and the last telemetry it exported land before its pod goes.
+**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target 30 seconds later, so the target's closing reply and the last telemetry it exported land before its machine goes.
 The harness still sends the accepted answer back to the model, which costs one more model call; the answer tells the target to end its turn at once, so that call stays short.
 A closing call that runs longer is cut, and the spend ledger counts it as an estimate ([spend-limits](spend-limits.md#ledger)).
 The schema lives on the Invocation record and never on a Kubernetes resource.
@@ -106,7 +104,7 @@ The reasons:
   The check repeats every minute while something runs, so work that ends without a further turn fails the run then.
   A failed call's reason carries its status and body, since a harness such as Codex can go quiet after it without ending the turn.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
-- **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
+- **Restart.** A target whose machine restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
 
@@ -138,14 +136,14 @@ No object store configured means nowhere to put the output, so a script spawn is
 
 ## The delegation record
 
-**The Invocation outlives its target.** The record keeps what the target was given — prompt or script, label, harness or image, connections, size — and what it returned (for a script, its exit code), for as long as its **root Driver** exists: the first non-target Agent up the chain, since a grandchild's immediate Driver is itself a throwaway.
+**The Invocation outlives its target.** The record keeps what the target was given — prompt or script, label, harness or image, connections — and what it returned (for a script, its exit code), for as long as its **root Driver** exists: the first non-target Agent up the chain, since a grandchild's immediate Driver is itself a throwaway.
 It goes with the root Driver's other agent-scoped rows ([persistence](persistence.md#lifetime)).
 No age limit and no knob.
 Spend is not on the record; it stays in telemetry, keyed by the invocation id the target's gateway stamps ([observability](observability.md)).
 The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
 The record also names each sub-agent row in the root Driver's spend by agent, by its label, else the first line of its prompt, after the target is gone ([spend limits](spend-limits.md#grouped-read)).
 
-**The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
+**The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its machine and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.
 Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (sleeping, crashed, or whose script did not await its spawn) keeps no copy.
 A cascade that deletes the root itself skips capture, since the root's volume goes too.
@@ -210,7 +208,7 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 ## Driver SDK
 
-The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the pod's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand.
+The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
 The HTTP routes are the contract; the clients stay thin.

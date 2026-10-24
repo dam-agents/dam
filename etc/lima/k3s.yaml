@@ -8,7 +8,7 @@ images:
     arch: x86_64
 
 # ClickStack (`clickstack.enabled`) adds ~2.1 CPU of pod requests — mongodb
-# alone asks for 1 CPU. On 4 cores that left 40m free and agent pods sat
+# alone asks for 1 CPU. On 4 cores that left 40m free and runner pods sat
 # Pending forever with FailedScheduling: Insufficient cpu.
 #
 # 10 is the host's full logical-CPU count (vz time-shares vCPUs, so the host
@@ -30,7 +30,7 @@ images:
 cpus: 10
 # Istio ambient (istiod + istio-cni + ztunnel + waypoint Deployment) adds
 # ~1 GiB of pod requests on top of the existing platform stack. On 4 GiB the
-# k3s scheduler hit FailedScheduling: Insufficient memory for new agent pods.
+# k3s scheduler hit FailedScheduling: Insufficient memory for new runner pods.
 #
 # Bumping `cpus:`/`memory:` here does not resize an existing VM. Devs on an
 # older VM can resize in place without losing cluster state:

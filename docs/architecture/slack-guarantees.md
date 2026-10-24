@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -187,14 +187,14 @@ Outside its bound conversations, the bot never reaches a channel the owner could
 
 ### Getting in
 
-| Behavior                                                                                                                                                                            | Decided by                                                                                            | Caveat                                                                                                        |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Which messages start a turn: tagged ones on a normal binding, every message on ambient (not an Agent's own, its ambient-round replies, or an ignored app's), a person's in a 1:1 DM | Platform                                                                                              | On a normal binding, untagged thread replies never arrive; in the agent's own thread the writer is told once  |
-| Which Agent a mention reaches                                                                                                                                                       | Platform                                                                                              | Two Agents sharing a name: default, sender not told                                                           |
-| One turn per top-level mention; DM bursts merged; a tagged reply joins a running turn                                                                                               | Platform; joining needs a harness that supports it (**Setup**), else next turn                        | Read-along messages never join a running turn                                                                 |
-| A reply in a thread stops the Agent's turn on the thread's opener in another session, and its turn starts after that one ended                                                      | Platform                                                                                              | The earlier turn's tool calls and posts are handed on; whether it acted is for the Agent to check             |
-| Whether the turn runs at all                                                                                                                                                        | Platform, from the Agent's state: stopped by its owner, over budget, migrating, terms not re-accepted | Addressed: a notice. Ambient: nothing                                                                         |
-| What the agent is shown (§1.7)                                                                                                                                                      | Platform                                                                                              | "Since your last turn" lives in api-server memory; after a restart: since the agent's last post, at most 24 h |
+| Behavior                                                                                                                                                                            | Decided by                                                                                 | Caveat                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Which messages start a turn: tagged ones on a normal binding, every message on ambient (not an Agent's own, its ambient-round replies, or an ignored app's), a person's in a 1:1 DM | Platform                                                                                   | On a normal binding, untagged thread replies never arrive; in the agent's own thread the writer is told once  |
+| Which Agent a mention reaches                                                                                                                                                       | Platform                                                                                   | Two Agents sharing a name: default, sender not told                                                           |
+| One turn per top-level mention; DM bursts merged; a tagged reply joins a running turn                                                                                               | Platform; joining needs a harness that supports it (**Setup**), else next turn             | Read-along messages never join a running turn                                                                 |
+| A reply in a thread stops the Agent's turn on the thread's opener in another session, and its turn starts after that one ended                                                      | Platform                                                                                   | The earlier turn's tool calls and posts are handed on; whether it acted is for the Agent to check             |
+| Whether the turn runs at all                                                                                                                                                        | Platform, from the Agent's state: stopped by its owner, over budget, terms not re-accepted | Addressed: a notice. Ambient: nothing                                                                         |
+| What the agent is shown (§1.7)                                                                                                                                                      | Platform                                                                                   | "Since your last turn" lives in api-server memory; after a restart: since the agent's last post, at most 24 h |
 
 ### Delivery
 
@@ -276,7 +276,7 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment.
 Ambient turns get none.
 
 ---

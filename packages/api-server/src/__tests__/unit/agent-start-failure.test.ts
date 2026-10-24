@@ -37,7 +37,7 @@ const view = (
       parseInfraAgent(agentWithStartFailure(generation, conditions)),
       [],
       [],
-      { container: 60, vm: 5 },
+      5,
       false,
       undefined,
       {} as RuntimeFeatures,

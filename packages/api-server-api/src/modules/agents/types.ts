@@ -109,7 +109,6 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
-  | "migrating"
   | "error";
 
 export type AgentSpec = AgentSpecCR & { name: string };
@@ -118,21 +117,6 @@ export interface TemplateUpdate {
   fromImage: string;
   toImage: string;
   startFailed?: boolean;
-}
-
-export type RuntimeMigrationPhase =
-  | "requested"
-  | "stopping"
-  | "copying"
-  | "booting"
-  | "verified"
-  | "failed"
-  | "aborting";
-
-export interface RuntimeMigration {
-  phase: RuntimeMigrationPhase;
-  message?: string;
-  attempts?: number;
 }
 
 export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
@@ -161,7 +145,6 @@ export interface Agent {
   createdAt?: string;
   templateId?: string;
   templateUpdate?: TemplateUpdate;
-  runtimeMigration?: RuntimeMigration;
   spec: AgentSpec;
   state: AgentState;
   effectiveHibernationTimeoutMin: number;
@@ -235,12 +218,9 @@ export type UpgradeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: UpgradeAgentError };
 
 export type WakeAgentError =
-  | { type: "AgentNotFound" }
-  | { type: "AgentDisabled" }
-  | { type: "RuntimeMigrating"; failed: boolean };
+  { type: "AgentNotFound" } | { type: "AgentDisabled" };
 
-export type SetAgentDisabledError =
-  { type: "AgentNotFound" } | { type: "RuntimeMigrating" };
+export type SetAgentDisabledError = { type: "AgentNotFound" };
 
 export type SetAgentDisabledResult =
   { ok: true; value: Agent } | { ok: false; error: SetAgentDisabledError };

@@ -51,7 +51,7 @@ describe("agent readiness", () => {
     expect(
       agentReadiness({ state: "starting", overBudget: true }, false, false),
     ).toBe("down");
-    for (const state of ["hibernated", "error", "migrating"] as const)
+    for (const state of ["hibernated", "error"] as const)
       expect(agentReadiness({ state, overBudget: false }, false, false)).toBe(
         "down",
       );
@@ -121,20 +121,13 @@ describe("askAgainWhenReady", () => {
 describe("where the agent starts", () => {
   const starting = ["starting", "preparing_workspace"] as const;
 
-  // TEST_SCENARIO: a vm agent boots in seconds, so its chat stays usable while it starts.
-  test("a vm agent starts in its chat", () => {
-    for (const state of starting)
-      expect(startsInChat({ vm: true }, state)).toBe(true);
-  });
-
-  // TEST_SCENARIO: a container agent takes too long to start for a usable chat to make sense, so it starts behind the overlay.
-  test("a container agent starts behind the overlay", () => {
-    for (const state of starting)
-      expect(startsInChat({ vm: false }, state)).toBe(false);
+  // TEST_SCENARIO: an agent boots in seconds, so its chat stays usable while it starts.
+  test("an agent starts in its chat", () => {
+    for (const state of starting) expect(startsInChat(state)).toBe(true);
   });
 
   test("an agent that is not starting is not started in its chat", () => {
     for (const state of ["hibernated", "error", "over_budget"] as const)
-      expect(startsInChat({ vm: true }, state)).toBe(false);
+      expect(startsInChat(state)).toBe(false);
   });
 });

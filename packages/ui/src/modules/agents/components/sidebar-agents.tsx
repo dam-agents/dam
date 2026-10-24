@@ -120,7 +120,6 @@ export function SidebarAgents({
         {open && (
           <SidebarEnvironments
             agentId={agent.id}
-            vm={agent.vm}
             indent="pl-12"
             onNavigate={onNavigate}
           />

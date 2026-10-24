@@ -24,11 +24,7 @@ export function AgentStartNotice({
 }: {
   agent: Pick<
     AgentView,
-    | "id"
-    | "podTerminationReason"
-    | "podTerminationCode"
-    | "vm"
-    | "notReadyMessage"
+    "id" | "podTerminationReason" | "podTerminationCode" | "notReadyMessage"
   >;
   display: AgentDisplay;
 }) {

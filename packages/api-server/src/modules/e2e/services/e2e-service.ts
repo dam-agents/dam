@@ -10,7 +10,7 @@ import type {
 import type { FakeSlackTokenRotation } from "../../channels/infrastructure/fake-slack-token-rotation.js";
 import type { AppRouter as MockAppRouter } from "mock-agent-api";
 import WS from "ws";
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../agents/infrastructure/k8s.js";
 
 export interface SlackInstallE2eControl {
   record(install: {
@@ -72,7 +72,7 @@ export function createE2eService(deps: {
       client: ReturnType<typeof createTRPCClient<MockAppRouter>>,
     ) => Promise<T>,
   ): Promise<T> {
-    const url = `ws://${podBaseUrl(agentId, deps.namespace)}/api/acp`;
+    const url = `ws://${agentServiceAddress(agentId, deps.namespace)}/api/acp`;
     const wsClient = createWSClient({
       url,
       WebSocket: WS as unknown as typeof WebSocket,

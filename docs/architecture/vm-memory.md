@@ -1,10 +1,10 @@
 # VM memory
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
-That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
-The pool is the install's runner memory limit (`virtualization.runner.resources.limits.memory`) unless the owner's [UserBudget](budgets.md#the-ceiling) sets `memory`; `cpu` there caps the runner's CPU limit the same way.
+That memory is the owner's whole pool for their agents, which have no size of their own.
+The pool is the install's runner memory limit (`virtualization.runner.resources.limits.memory`) unless the owner's [UserBudget](budgets.md) sets `memory`; `cpu` there caps the runner's CPU limit the same way.
 
 **A pool changes in place.** The controller reads each owner's UserBudget again at every memory pass, every 30 seconds, before it creates an owner's runner claim, which never shrinks, and whenever it starts one of their machines, so a machine woken after the pool changed is sized from the new pool; it resizes the running runner pod's memory limit and CPU limit through its resize subresource, so a raised or lowered pool restarts no machine; the pod's roll leaves its memory limit and request out of what it compares, and a pod created later starts at the pool rendered then.
 A pool that rises is the limit at once.
@@ -69,7 +69,7 @@ The harness starts only once the guest answers, about a second after the boot, a
 The runner reports a machine warming up in its status, and the controller counts it the same way.
 Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below, and only the request keeps a figure the probe could not refresh below the warm-up floor: the status carries the last figure the runner read, so the request built from it can sit below admission for that machine.
-A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, a home that is full, an image it cannot fetch, a node image cache its runner cannot reach, a seed that is missing or a boot that failed, which all leave the Agent awake with no machine: it holds nothing meanwhile.
+A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, a home that is full, an image it cannot fetch, a node image cache its runner cannot reach, or a boot that failed, which all leave the Agent awake with no machine: it holds nothing meanwhile.
 A machine that boots, restarts or stops holds its memory meanwhile, and the runner keeps a refusal's reason until the action it admitted completes, so the reason alone says nothing: what counts is a refusal with nothing running or in flight.
 So the CPU limit and the pass that judges pressure count it at nothing.
 Were it counted beside the machines the runner did admit, it would push the owner past the 90% threshold, and the pass would hibernate those to make room for the one the runner refused.
@@ -107,7 +107,7 @@ Asking with the resize is how the hold is told apart from a node that has merely
 Only that node's own answer counts, on the field the API server files it against and in words that name the node's support: a webhook's quota, and the API refusing to shrink or drop a limit, are refusals about the ask rather than about the node, so each keeps the hold.
 The answer is about one pod, so it lapses with that pod: a replacement pod is a new question to whatever node it lands on, and a pod that starts reporting its grant — a kubelet that gained the gate, a reschedule onto a node that has it — takes the ceiling back from the next start on.
 A node that can resize and still reports nothing keeps the hold, since the figure it owes is one a resize would give it.
-A start that does not fit waits, until the node applies the resize the controller asked for; while the node defers or refuses that resize the `RunnerCapacity` condition on the owner's vm Agents says so.
+A start that does not fit waits, until the node applies the resize the controller asked for; while the node defers or refuses that resize the `RunnerCapacity` condition on the owner's Agents says so.
 The node grants a resize whole or not at all, so an ask that covers every start waiting for it is one the node defers while it has room for only some of them, and all of them wait together although one of them fits.
 So while the ask the demand calls for is above what the node granted, the controller asks for what the runner itself needs to admit one more machine instead: the memory the machines hold, plus the cheapest waiting start's count, plus the reserve.
 That is the runner's own admission arithmetic, so it is the least a request can be and still start one machine; a smaller ask would reserve less than the machines use and the scheduler would place other pods into memory they hold.
@@ -146,10 +146,10 @@ With no machine to run, the request is the install's request alone: the reserve 
 That request is also what the runner may admit machines against, so the pod the scheduler has not enlarged starts nothing more than it reserved (above).
 The request rises a step as soon as the counts need it, but falls only once they are a quarter step below the step under it, so use that sits on a step boundary does not resize the pod at every pass; admission and the metric stay exact.
 A cluster without in-place resize keeps the install's request.
-A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
+A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
 While the grant is below what one more machine costs and a start waits for it, the request is the stepped one above rather than the whole demand, so the node can grant it and its wave of starts can go; the condition reports the deferral, and the grant is what decides the step.
 
-**Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
+**Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
 The floor is the passes' own: three minutes for one that frees room because the owner's memory is past the threshold, or because the runner's pressure signal asks for it.
 The reclaim a refused start asks for is the owner asking for a machine now, so it frees a peer that has been idle half a minute, and one whose machine began holding memory inside that half minute is held to no floor at all — a machine woken to answer a single request and then idle is the room it holds and nothing else.
 Whether a peer woke is read from the stamp of its machine's own start, which only a start or a wake moves; a readiness that went false for one failed request and true again on the next is a machine that never stopped holding its room, and keeps the half minute.

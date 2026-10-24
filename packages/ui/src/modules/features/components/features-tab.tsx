@@ -75,7 +75,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "environments",
     label: "Environments",
     description:
-      "Let your vm agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
+      "Let your agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
   },
 ];
 

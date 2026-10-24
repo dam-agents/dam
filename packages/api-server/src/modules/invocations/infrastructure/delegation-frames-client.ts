@@ -4,7 +4,7 @@ import {
 } from "agent-runtime-api";
 import { z } from "zod";
 
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 import { invocationScheduleId } from "../domain/target-name.js";
 import type { DelegationFramesPort } from "../services/delegation-frames.js";
 
@@ -60,14 +60,14 @@ async function logged<T>(
   }
 }
 
-export function createPodSessionClient(opts: {
+export function createDelegationFramesClient(opts: {
   namespace: string;
   isReady: (agentId: string) => Promise<boolean>;
 }): DelegationFramesPort {
   return {
     readFromTarget: (targetId) =>
       logged("frames read", targetId, null, async (signal) => {
-        const client = agentPodClient(targetId, opts.namespace);
+        const client = agentServiceClient(targetId, opts.namespace);
         const { sessions } = sessionListSchema.parse(
           await client.sessions.list.query(undefined, { signal }),
         );
@@ -82,7 +82,7 @@ export function createPodSessionClient(opts: {
       if (!(await opts.isReady(rootId))) return null;
       return logged("frames store on", rootId, null, async () =>
         storedSchema.parse(
-          await agentPodClient(
+          await agentServiceClient(
             rootId,
             opts.namespace,
           ).sessions.storeDelegationFrames.mutate({ invocationId, frames }),
@@ -95,7 +95,7 @@ export function createPodSessionClient(opts: {
         const stored = delegationFramesSchema
           .nullable()
           .parse(
-            await agentPodClient(
+            await agentServiceClient(
               rootId,
               opts.namespace,
             ).sessions.delegationFrames.query({ invocationId }),

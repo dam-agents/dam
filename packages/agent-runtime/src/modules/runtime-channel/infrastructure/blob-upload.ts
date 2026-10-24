@@ -7,7 +7,7 @@ const RETRY_DELAY_MS = 1_000;
  * UNIT_BOUNDARY_DESCRIPTION: PUTs one file to a server-minted presigned URL,
  * streamed from disk so a large output never sits in memory. The body carries
  * its exact Content-Length, because an S3 presigned PUT refuses a chunked
- * body. Agent pods run with NODE_USE_ENV_PROXY=1, so fetch rides the paired
+ * body. Agents run with NODE_USE_ENV_PROXY=1, so fetch rides the machine's
  * gateway like every other upload. One retry on a network error or a 5xx; a
  * 4xx is final. Returns null on success, else why it failed.
  */

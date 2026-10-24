@@ -10,7 +10,7 @@ import type { InfraAgent } from "../agents/infrastructure/agent-mappers.js";
 
 import { ATTENTION_RETENTION_DAYS } from "./domain/types.js";
 import { createAttentionRepository } from "./infrastructure/attention-repository.js";
-import { createPodSessionClient } from "./infrastructure/pod-session-watch.js";
+import { createSessionWatchClient } from "./infrastructure/session-watch-client.js";
 import { createAttentionService } from "./services/attention-service.js";
 import {
   createSessionWatcher,
@@ -75,7 +75,7 @@ export function composeSessionWatcher(deps: {
   return createSessionWatcher({
     listAgents: deps.listAgents,
     runtimeFeaturesFor: deps.runtimeFeaturesFor,
-    pods: createPodSessionClient(deps.namespace, deps.log),
+    sessions: createSessionWatchClient(deps.namespace, deps.log),
     repo: createAttentionRepository(deps.db),
     log: deps.log,
   });
