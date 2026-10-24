@@ -666,7 +666,10 @@ jq -e -s '
     | add | map(select(.name == "AGENT_STORE_CONTRACT_BACKUP_SHA256"))[0].value
     | length > 0)
   and (map(select(.kind == "Deployment") | .spec.template.spec.containers | add | .env // [])
-    | add | map(select(.name == "PLATFORM_AGENT_STORE"))[0].value == "contract")' <<<"$contract" >/dev/null ||
+    | add | map(select(.name == "PLATFORM_AGENT_STORE"))[0].value == "contract")
+  and (map(select(.kind == "Deployment" and .metadata.labels["app.kubernetes.io/component"] == "controller")
+      | .spec.template.spec.containers | add | .env // [])
+    | add | map(select(.name == "PLATFORM_DATABASE_URL"))[0].value | length > 0)' <<<"$contract" >/dev/null ||
   { echo "the contract release keeps a custom-resource grant, the CRD read, the switch's strategy or the digest out" >&2; exit 1; }
 for refused in \
   "agentStore.authority=contract,agentStore.cutover.acknowledged=true" \
