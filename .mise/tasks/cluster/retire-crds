@@ -44,11 +44,10 @@ fail() {
 epoch_of() {
   local stamp
   stamp=$(printf '%s' "$1" | sed 's/\.[0-9]*Z$/Z/')
-  if date -j -f "%Y-%m-%dT%H:%M:%SZ" "$stamp" +%s >/dev/null 2>&1; then
-    date -j -f "%Y-%m-%dT%H:%M:%SZ" "$stamp" +%s
-  else
-    date -u -d "$stamp" +%s
+  if date -j -f "%Y-%m-%dT%H:%M:%SZ" "$stamp" +%s 2>/dev/null; then
+    return 0
   fi
+  date -u -d "$stamp" +%s 2>/dev/null
 }
 
 deployments=$("$KUBECTL" get deployments -A -l app.kubernetes.io/component=apiserver -o json) ||
@@ -86,7 +85,11 @@ while IFS=$'\x1f' read -r release namespace markerNamespace markerName; do
       problems+=("$release ($markerNamespace/$markerName): its contract gate ran on a rehearsal clock, which no real cluster's retirement may trust")
       continue
     fi
-    if [ "$(epoch_of "$contracted")" -gt "$(date -u +%s)" ]; then
+    if ! contracted_at=$(epoch_of "$contracted"); then
+      problems+=("$release ($markerNamespace/$markerName): its contract-at is not an RFC 3339 instant, so the window it records cannot be checked")
+      continue
+    fi
+    if [ "$contracted_at" -gt "$(date -u +%s)" ]; then
       problems+=("$release ($markerNamespace/$markerName): its contract-at is in the future, so the window it records never closed on the real clock")
       continue
     fi

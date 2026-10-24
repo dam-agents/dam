@@ -588,7 +588,11 @@ never happens — or, worse, a later one without the operator's timing.
 {{- $cutover := $store.cutover | default dict -}}
 {{- if ne $authority "crd" -}}
 {{- if not $cutover.acknowledged -}}
-{{- fail (printf "agentStore.authority=%s is the cutover: it recreates both Deployments, absorbs the custom resources and serves a minute or two of api-server unavailability. Set agentStore.cutover.acknowledged=true to pick the time. A failed render leaves the previous release running, and nothing rolls back on its own." $authority) -}}
+{{- if eq $authority "postgres" -}}
+{{- fail "agentStore.authority=postgres is the cutover: it recreates both Deployments, absorbs the custom resources and serves a minute or two of api-server unavailability. Set agentStore.cutover.acknowledged=true to pick the time. A failed render leaves the previous release running, and nothing rolls back on its own." -}}
+{{- else -}}
+{{- fail "agentStore.authority=contract is the release after the cutover: the operator times it with agentStore.cutover.acknowledged=true, because it stops reading the custom resources the rollback window kept. A failed render leaves the previous release running." -}}
+{{- end -}}
 {{- end -}}
 {{- else -}}
 {{- if $cutover.acknowledged -}}
