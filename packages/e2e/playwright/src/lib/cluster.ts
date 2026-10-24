@@ -94,7 +94,7 @@ function conditionPath(type: string): string {
 export function agentConditionStatus(agent: string, type: string): string {
   return psql(
     `select status from control.agent_conditions where agent_id = '${agent}' and type = '${type}'`,
-  );
+  ).trim();
 }
 
 export function podIsReady(name: string): boolean {
