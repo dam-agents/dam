@@ -40,6 +40,7 @@ A button that opens something inside the app carries no `Launch` icon.
 
 Every icon-only button has a tooltip: pass `tooltip=` to `Button`, or wrap a plain element in `Tooltip`.
 That includes the right rail's tiles, which name their panel.
+The side panel's X is the exception: its aria-label names it and it carries no tooltip, because the glyph and its place on the panel's edge already say what it does.
 Do not use a native `title=` on an icon-only button; a `title` that explains why a menu item is disabled stays.
 The "More actions" (`RowActionsMenu`) trigger has no tooltip, only its `aria-label`.
 

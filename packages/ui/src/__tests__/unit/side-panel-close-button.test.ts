@@ -174,6 +174,21 @@ it.each([
   expect(closeCellClasses(html).includes("max-md:hidden")).toBe(hidden);
 });
 
+// TEST_SCENARIO: The X names itself for screen readers and carries no tooltip, in the tiled panel and in the classic column alike.
+it("names the X without a tooltip", () => {
+  for (const tiles of [true, false]) {
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, PanelCloseButton({ tiles })),
+    );
+    const button =
+      html.match(
+        /<button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"[^>]*>/,
+      )?.[0] ?? "";
+    expect(button).toContain('aria-label="Close panel"');
+    expect(button).not.toContain("data-state=");
+  }
+});
+
 // TEST_SCENARIO: Clicking the X closes the open panel.
 it("closes the side panel", () => {
   store.current.getState().setSidePanelTab("approvals");
