@@ -149,7 +149,7 @@ The api-server is the sole writer for all of it, and for the per-Agent record be
   A budget row per owner subject overrides the chart's pool field by field; a budget with no override does not exist, and a row written outside the platform carries no invented audit time.
   A store row records where an install is in the move, and the snapshot table holds the archive the rollback window depends on.
   The definition's generation advances on exactly the columns the controller renders, and a host or grant change still advances it, as both were spec fields.
-  Grants are the boundary: the controller's login writes only its own observation tables and the two reclaim columns of the signals row.
+  Grants are the boundary: the controller's login writes only its own observation tables, the two reclaim columns of the signals row, and the two progress columns of the store row — the holder and the moment every anchor existed, which the switch's barrier reads.
   It reads the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns — and no column it does not render, no other schema, and no other install's database.
   A change feed carries every write that matters, and after the switch it is what both components' caches of the fleet read instead of watching the API server; a component that has not heard from it lately makes no hibernation, reclaim or collection decision.
 

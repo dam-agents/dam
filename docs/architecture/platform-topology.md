@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -44,7 +44,7 @@ It is change-driven — it watches the `Agent` custom resource (`agent-platform.
 Each of its eight workers reconciles the agents of the owners hashed to it, one at a time, and takes what a person waits on first, so one owner's hung VM runner delays only the owners on its worker, except while a runner roll holds its install-wide lock ([budgets](budgets.md#enforcement), [#4939](https://github.com/dam-agents/dam/issues/4939)).
 It reconciles each agent's machine on its owner's [VM runner](#vm-runner), its gateway StatefulSet, Services, NetworkPolicies and per-agent Secret, computes agent readiness from the machine and the gateway onto the Agent status, hibernates idle agents by stopping the machine and scaling the gateway to zero, and deletes gateway pods stranded NotReady on a configuration it has already superseded (the one case where it evicts a pod outside hibernation — see [security-and-credentials](security-and-credentials.md) and [agent-lifecycle](agent-lifecycle.md)).
 The schedule loop lives in the api-server, not here (see [schedules](schedules.md)).
-The controller writes only the `status` subresource on the resources it owns; it never writes `spec`, and once the rows own the definition it writes only the tables it observes ([persistence](persistence.md#postgres)).
+The controller writes only the `status` subresource on the resources it owns; it never writes `spec`, and once the rows own the definition it writes only the tables it observes plus the store row's two progress columns ([persistence](persistence.md#postgres)).
 See [`packages/controller/`](../../packages/controller/).
 
 ### api-server

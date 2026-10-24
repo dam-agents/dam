@@ -324,15 +324,14 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		waitForStore(ctx, postgres)
 		// UNIT_BOUNDARY_DESCRIPTION: the delete worker starts before the anchor pass, because the pass hands it
 		// UNIT_BOUNDARY_DESCRIPTION: every anchor of a previous incarnation, and waiting for that cleanup is the
-		// UNIT_BOUNDARY_DESCRIPTION: only way the pass can finish. A delete it processes before the anchors exist
-		// UNIT_BOUNDARY_DESCRIPTION: belongs to an Agent whose row is already gone, so it has no children of a
-		// UNIT_BOUNDARY_DESCRIPTION: live Agent to remove.
+		// UNIT_BOUNDARY_DESCRIPTION: only way a name gets its new anchor. The pass itself runs in the background:
+		// UNIT_BOUNDARY_DESCRIPTION: one Agent whose previous machine sits on an unreachable runner must not keep
+		// UNIT_BOUNDARY_DESCRIPTION: the rest of the fleet from reconciling, and the record the api-server's barrier
+		// UNIT_BOUNDARY_DESCRIPTION: reads is written when the pass is clean, however long that takes.
 		go runDeleteWorker(ctx, agentReconciler, deleteQueue)
-		if !awaitAnchorsEnsured(ctx, agentReconciler, postgres, cfg.PodName, func(name string) {
+		go recordAnchorsWhenReady(ctx, agentReconciler, postgres, cfg.PodName, func(name string) {
 			deleteQueue.Add(deletedAgent{name: name})
-		}) {
-			return
-		}
+		})
 		// UNIT_BOUNDARY_DESCRIPTION: a deletion that happened while no controller ran has its anchor and no row. It goes to the queue before any reconcile works, so the previous incarnation's children cannot be adopted by an Agent of the same name created since.
 		if err := agentReconciler.ReconcileOrphanAnchors(ctx, func(name string) {
 			deleteQueue.Add(deletedAgent{name: name})
@@ -811,15 +810,16 @@ func awaitAbsorbed(ctx context.Context, st *store.Store, expected string) error 
 	return last
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: awaitAnchorsEnsured repeats the startup pass until every Agent has an anchor and the record is written. The api-server's barrier reads that record, so a pass that failed once must be tried again rather than left for a sweep that never records it.
-func awaitAnchorsEnsured(ctx context.Context, r *reconciler.AgentReconciler, st *store.Store, holder string, enqueue func(string)) bool {
+// UNIT_BOUNDARY_DESCRIPTION: recordAnchorsWhenReady repeats the startup pass until every Agent has an anchor and the record is written. The api-server's barrier reads that record, so a pass that failed once must be tried again rather than left for a sweep that never records it; it runs beside the fleet, not in front of it.
+func recordAnchorsWhenReady(ctx context.Context, r *reconciler.AgentReconciler, st *store.Store, holder string, enqueue func(string)) {
 	backoff := time.Second
 	for {
 		pending, err := r.EnsureAnchors(ctx, enqueue)
 		if err == nil && pending == 0 {
 			err = st.RecordAnchorsEnsured(ctx, holder)
 			if err == nil {
-				return true
+				slog.Info("the startup anchor pass is recorded", "holder", holder)
+				return
 			}
 		}
 		if err == nil {
@@ -828,7 +828,7 @@ func awaitAnchorsEnsured(ctx context.Context, r *reconciler.AgentReconciler, st 
 		slog.Warn("the startup anchor pass is not complete; retrying", "error", err, "in", backoff)
 		select {
 		case <-ctx.Done():
-			return false
+			return
 		case <-time.After(backoff):
 		}
 		if backoff < 30*time.Second {
