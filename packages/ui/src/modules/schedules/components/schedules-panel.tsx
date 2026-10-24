@@ -48,7 +48,7 @@ export function SchedulesPanel({
   const [resultsFor, setResultsFor] = useState<Schedule | null>(null);
   // UNIT_BOUNDARY_DESCRIPTION: a focused item comes from a card in the chat, so it is applied once — expanded, its Past group opened if it sits there, and scrolled to — and then released, so the next click on the same card and every later opening of the tab behave the same.
   useEffect(() => {
-    if (!focusId) return;
+    if (!focusId || schedulesQuery.data === undefined) return;
     setExpandedId(focusId);
     if (past.some((s) => s.id === focusId)) setPastOpen(true);
     requestAnimationFrame(() => {
@@ -57,7 +57,7 @@ export function SchedulesPanel({
         ?.scrollIntoView({ block: "nearest" });
     });
     onFocusApplied?.();
-  }, [focusId, past, onFocusApplied]);
+  }, [focusId, schedulesQuery.data, past, onFocusApplied]);
 
   const closeForm = () => setForm(null);
 
