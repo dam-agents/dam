@@ -34,7 +34,7 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
@@ -137,8 +137,7 @@ export function SessionRow({
     s.type === SessionType.ScheduleCron ||
     s.type === SessionType.ScheduleOnce ||
     !!s.scheduleId;
-  const agents = useAgentsList();
-  const agent = agents.find((a) => a.id === s.agentId);
+  const agent = useAgent(s.agentId);
   const onboarding =
     s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;

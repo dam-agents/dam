@@ -24,6 +24,7 @@ vi.mock("../../store.js", () => ({
     }),
 }));
 vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => null,
   useIsAgentOperable: () => env.operable,
   useIsAgentAnswerableSoon: () => env.operable,
 }));

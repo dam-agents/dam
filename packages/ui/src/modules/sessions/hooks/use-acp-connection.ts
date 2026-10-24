@@ -13,6 +13,7 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
@@ -29,6 +30,8 @@ import {
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import { agentsKeys } from "../../agents/api/queries.js";
+import { isAccessRevokedClose } from "../../agents/lib/access-revoked.js";
 import { readContinuedFrom } from "../../invocations/api/queries.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { seedStartedSession } from "../api/queries.js";
@@ -154,7 +157,7 @@ export function useAcpConnection(
 
   const attachCloseHandler = useCallback(
     (ws: WebSocket) => {
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (event) => {
         if (connectionRef.current?.ws !== ws) return;
         connectionRef.current = null;
         clearEngagement();
@@ -162,6 +165,10 @@ export function useAcpConnection(
         delivery.cancelAll();
         setMessages((prev) => failQueuedOnDisconnect(prev));
         setState("idle");
+        if (isAccessRevokedClose(event.code)) {
+          void queryClient.invalidateQueries({ queryKey: agentsKeys.root });
+          return;
+        }
         reconnectFnRef.current?.();
       });
     },

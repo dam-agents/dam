@@ -43,6 +43,7 @@ const EDITS = [
   "schedules",
   "chatForms",
   "environments",
+  "sessions",
 ];
 
 const EMAILS: Record<string, string> = {

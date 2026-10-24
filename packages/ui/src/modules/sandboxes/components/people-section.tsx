@@ -49,12 +49,6 @@ function OwnerPeople({
   const ownEmail = signedInEmail();
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
-      <OwnerOnlyNotice
-        title="Only the owner adds and removes editors."
-        testId="people-owner-only"
-      >
-        You can leave this agent yourself.
-      </OwnerOnlyNotice>
       <div className="flex flex-col gap-2">
         <SectionLabel>Owner</SectionLabel>
         <p className="text-sm text-foreground">
@@ -149,6 +143,12 @@ function EditorPeople({
 
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
+      <OwnerOnlyNotice
+        title="Only the owner adds and removes editors."
+        testId="people-owner-only"
+      >
+        You can leave this agent yourself.
+      </OwnerOnlyNotice>
       <div className="flex flex-col gap-2">
         <SectionLabel>Owner</SectionLabel>
         <p className="text-sm text-foreground">

@@ -3,6 +3,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 
 import { useStore } from "../../../../store.js";
+import { useAgent } from "../../../agents/api/queries.js";
+import { isOwnAgent } from "../../../agents/lib/agent-editors.js";
 import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
 import { SessionListSkeleton } from "../../../sessions/components/session-list-skeleton.js";
@@ -21,6 +23,8 @@ function useAgentTreeRows(agentId: string) {
   const list = useAgentSessionList(agentId);
   const globalFilters = useStore((s) => s.sidebarActivityFilters);
   const filters = useAgentSessionFilter(agentId) ?? globalFilters;
+  const agent = useAgent(agentId);
+  const pinnable = !agent || isOwnAgent(agent);
   const pins = usePinnedSessions();
   const rows = newestFirst(
     list.sessions
@@ -39,10 +43,11 @@ function useAgentTreeRows(agentId: string) {
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
-  const [pinned, rest] = splitPinned(rows, (row) =>
-    pins.has(pinKey(agentId, row.session.sessionId)),
+  const [pinned, rest] = splitPinned(
+    rows,
+    (row) => pinnable && pins.has(pinKey(agentId, row.session.sessionId)),
   );
-  return { list, filters, pins, rows, pinned, rest };
+  return { list, filters, pins, pinnable, rows, pinned, rest };
 }
 
 /**
@@ -57,7 +62,7 @@ export function AgentSessionList({
   onNavigate?: () => void;
   newSessionRow?: ReactNode;
 }) {
-  const { list, filters, pins, rest } = useAgentTreeRows(agentId);
+  const { list, filters, pins, pinnable, rest } = useAgentTreeRows(agentId);
   const {
     hasNextPage,
     isFetchingNextPage,
@@ -68,7 +73,9 @@ export function AgentSessionList({
   const filtered = isFiltered(filters);
   const hiddenByFilter =
     rest.length === 0 &&
-    list.sessions.some((s) => !pins.has(pinKey(agentId, s.sessionId)));
+    list.sessions.some(
+      (s) => !pinnable || !pins.has(pinKey(agentId, s.sessionId)),
+    );
   const readableNext = hasNextPage && list.answerable;
   const canFetch = readableNext && !isFetchingNextPage && !fetchNextPageFailed;
   const emptyText = hasNextPage

@@ -8,6 +8,7 @@ import type { AppRouter } from "agent-runtime-api";
 
 import { getAccessToken } from "../../auth.js";
 import { useStore } from "../../store.js";
+import { isAccessRevokedClose } from "./lib/access-revoked.js";
 import { relayBackoff } from "./lib/relay-backoff.js";
 
 const IDLE_CLOSE_MS = 30_000;
@@ -41,11 +42,23 @@ function createAgentTrpc(agentId: string): AgentTrpcClient {
     onError: () => useStore.getState().markAgentUnreachable(agentId),
     onClose: (cause) => {
       backoff.onClose();
+      if (isAccessRevokedClose(cause?.code)) {
+        forgetAgentTrpc(agentId, client);
+        queueMicrotask(() => void wsClient.close());
+        return;
+      }
       if (isAbnormalClose(cause?.code))
         useStore.getState().markAgentUnreachable(agentId);
     },
   });
-  return createTRPCClient<AppRouter>({ links: [wsLink({ client: wsClient })] });
+  const client = createTRPCClient<AppRouter>({
+    links: [wsLink({ client: wsClient })],
+  });
+  return client;
+}
+
+function forgetAgentTrpc(agentId: string, client: AgentTrpcClient): void {
+  if (clients.get(agentId) === client) clients.delete(agentId);
 }
 
 const clients = new Map<string, AgentTrpcClient>();

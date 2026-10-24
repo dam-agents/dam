@@ -44,6 +44,8 @@ async function replica(bus: RedisBus) {
       sub: "u",
       surface: "ui",
       attached: () => {},
+      editor: null,
+      opened: () => {},
     });
   });
   await new Promise<void>((r) => server.listen(0, r));
@@ -147,6 +149,8 @@ describe("terminal relay during a wake", () => {
         sub: "u",
         surface: "ui",
         attached: () => {},
+        editor: null,
+        opened: () => {},
       }),
     );
     await new Promise<void>((r) => server.listen(0, r));
@@ -207,6 +211,8 @@ describe("terminal relay wake", () => {
         sub: "u",
         surface: "ui",
         attached: () => {},
+        editor: null,
+        opened: () => {},
       }),
     );
     await new Promise<void>((r) => server.listen(0, r));
@@ -269,6 +275,8 @@ async function firstClose(
       sub: "u",
       surface: "ui",
       attached: () => {},
+      editor: null,
+      opened: () => {},
     }),
   );
   await new Promise<void>((r) => server.listen(0, r));

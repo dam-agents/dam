@@ -1,4 +1,6 @@
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   operateAgentsProcedure,
   readAgentProcedure,
@@ -24,6 +26,7 @@ export const attentionRouter = t.router({
 
   sessionsForAgent: readAgentProcedure
     .input(attentionSessionsForAgentInputSchema)
+    .use(agentPermission("sessions", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.attention.sessionsForAgent(input.agentId);

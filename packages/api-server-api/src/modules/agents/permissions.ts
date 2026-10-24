@@ -18,6 +18,7 @@ export const AGENT_PERMISSIONS = [
   "environments",
   "channels",
   "sessions",
+  "terminal",
   "editors",
   "delete",
 ] as const;
@@ -30,4 +31,5 @@ export type AgentTarget =
   | { kind: "agent"; agentId: string }
   | { kind: "schedules"; scheduleIds: readonly string[] }
   | { kind: "egressRule"; ruleId: string }
-  | { kind: "environment"; environmentId: string };
+  | { kind: "environment"; environmentId: string }
+  | { kind: "approvals"; approvalIds: readonly string[] };

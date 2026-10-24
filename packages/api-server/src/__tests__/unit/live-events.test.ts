@@ -213,6 +213,34 @@ describe("liveEvents.ownerStream for an Agent Editor", () => {
     module.stop();
   });
 
+  // TEST_SCENARIO: An Agent Editor uses a Shared Agent's sessions and answers its approvals, so a hint that its sessions or its approvals changed is copied to every editor too.
+  it("copies session and approval hints about a shared Agent to its editors", async () => {
+    const { module } = harness({ a1: ["ed@example.com"] });
+    module.start();
+    const it_ = module.liveEvents
+      .ownerStream({ sub: "u2", editorEmail: "ed@example.com" })
+      [Symbol.asyncIterator]();
+    await it_.next();
+
+    emit({ type: EventType.AttentionChanged, agentId: "a1", ownerSub: "u1" });
+    expect((await it_.next()).value).toEqual({
+      topic: "attention",
+      agentId: "a1",
+    });
+    emit({
+      type: EventType.ApprovalResolved,
+      approvalId: "ap-1",
+      agentId: "a1",
+      ownerSub: "u1",
+      resolution: "allow_once",
+    });
+    expect((await it_.next()).value).toEqual({
+      topic: "approvals",
+      agentId: "a1",
+    });
+    module.stop();
+  });
+
   // TEST_SCENARIO: A person added to or removed from an Editor List gets the Agent into or out of their sidebar at once, including when the owner deletes the Agent and its list goes with it.
   it("tells each added or removed person when an Editor List changes", async () => {
     const { module } = harness();

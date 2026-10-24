@@ -48,6 +48,7 @@ import type { RedisBus } from "../../core/redis-bus.js";
 interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
+  actor: string;
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
@@ -64,6 +65,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
+    actor: deps.actor,
     agentBinding: deps.agentBinding,
   });
   return { service };

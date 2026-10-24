@@ -41,7 +41,11 @@ import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
-import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
+import {
+  useSidebarAgents,
+  useSidebarSharedAgents,
+} from "../../../agents/hooks/use-sidebar-agents.js";
+import { holds } from "../../../agents/lib/agent-permissions.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import {
@@ -57,11 +61,14 @@ import { AddRow } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { NewAgentMenu } from "./new-agent-menu.js";
-import { SharedAgentTiles } from "./shared-agent-nodes.js";
+import {
+  SharedAgentConfigureButton,
+  SharedAgentPageTile,
+} from "./shared-agent-nodes.js";
 import { GroupByMenu } from "./sidebar-group-by-menu.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, what the tree lists under its Agents label, and Settings — one avatar per Agent in the same manual order, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, a New agent tile, what the tree lists under its Agents label, and Settings — one avatar per Agent in the same manual order and then one per Agent shared with the person, or, while the grouping is All sessions, one tile per Session, its harness icon and any mark it needs, named in a tooltip beside it and opening that Session on click. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover, which choosing a Session closes. The rail never leaves the layout, so the page always has a way back to the tree.
  */
 export function SidebarRail({
   onExpand,
@@ -71,6 +78,7 @@ export function SidebarRail({
   onNavigate?: () => void;
 }) {
   const { agents, openAgentId, unreadAgentIds } = useSidebarAgents();
+  const sharedAgents = useSidebarSharedAgents();
   const approvals = useApprovalsForOwner().data;
   const homeOpen = useStore((s) => s.view === "home");
   const settingsOpen = useStore((s) => s.view === "settings");
@@ -233,7 +241,33 @@ export function SidebarRail({
                 onNavigate={navigate}
               />
             ))}
-        {groupBy === "agents" && <SharedAgentTiles onNavigate={navigate} />}
+        {groupBy === "agents" &&
+          sharedAgents.shared.map((agent) =>
+            holds(agent.access, "sessions") ? (
+              <AgentTile
+                key={agent.id}
+                agent={agent}
+                shared
+                current={agent.id === sharedAgents.openAgentId}
+                cue={null}
+                skipDelay={skipDelay}
+                open={open === agent.id}
+                onOpenChange={(next) =>
+                  setOpen((prev) =>
+                    next ? agent.id : prev === agent.id ? null : prev,
+                  )
+                }
+                onNavigate={navigate}
+              />
+            ) : (
+              <SharedAgentPageTile
+                key={agent.id}
+                agent={agent}
+                current={agent.id === sharedAgents.openAgentId}
+                onNavigate={navigate}
+              />
+            ),
+          )}
       </div>
       <button
         type="button"
@@ -356,6 +390,7 @@ function useRailPopover(
 
 function AgentTile({
   agent,
+  shared = false,
   current,
   cue,
   open,
@@ -364,6 +399,7 @@ function AgentTile({
   onNavigate,
 }: {
   agent: AgentView;
+  shared?: boolean;
   current: boolean;
   cue: "approval" | "unread" | null;
   open: boolean;
@@ -372,7 +408,8 @@ function AgentTile({
   onNavigate: () => void;
 }) {
   const startSession = useStartSession();
-  const name = `New session with ${agent.name}${
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const name = `New session with ${agent.name}${shared ? ", shared with me" : ""}${
     cue ? `, ${cue === "approval" ? "needs your approval" : "unread"}` : ""
   }`;
   const rail = useRailPopover(onOpenChange, skipDelay);
@@ -381,44 +418,57 @@ function AgentTile({
     startSession(agent.id);
     rail.keepOpen();
   };
+  const tile = (
+    <PopoverAnchor asChild>
+      <button
+        type="button"
+        aria-label={name}
+        aria-current={current ? "page" : undefined}
+        data-testid={
+          shared ? "sidebar-rail-shared-agent" : "sidebar-rail-agent"
+        }
+        data-agent-id={agent.id}
+        className={cn(railTile(current || open), FOCUS_RING)}
+        onClick={() => {
+          if (rail.tapOnly()) {
+            onOpenChange(!open);
+            return;
+          }
+          newSession();
+        }}
+        {...rail.trigger}
+      >
+        <AgentAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={RAIL_AVATAR}
+          mood={avatarMood(agent.state, agent)}
+        />
+        {cue && (
+          <span
+            aria-hidden
+            className={cn(
+              "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
+              cue === "approval" ? "bg-warning" : "bg-success",
+            )}
+          />
+        )}
+      </button>
+    </PopoverAnchor>
+  );
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <AgentContextMenu agent={agent} current={current} onNavigate={onNavigate}>
-        <PopoverAnchor asChild>
-          <button
-            type="button"
-            aria-label={name}
-            aria-current={current ? "page" : undefined}
-            data-testid="sidebar-rail-agent"
-            data-agent-id={agent.id}
-            className={cn(railTile(current || open), FOCUS_RING)}
-            onClick={() => {
-              if (rail.tapOnly()) {
-                onOpenChange(!open);
-                return;
-              }
-              newSession();
-            }}
-            {...rail.trigger}
-          >
-            <AgentAvatar
-              name={agent.name}
-              avatar={agent.avatar}
-              size={RAIL_AVATAR}
-              mood={avatarMood(agent.state, agent)}
-            />
-            {cue && (
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
-                  cue === "approval" ? "bg-warning" : "bg-success",
-                )}
-              />
-            )}
-          </button>
-        </PopoverAnchor>
-      </AgentContextMenu>
+      {shared ? (
+        tile
+      ) : (
+        <AgentContextMenu
+          agent={agent}
+          current={current}
+          onNavigate={onNavigate}
+        >
+          {tile}
+        </AgentContextMenu>
+      )}
       <PopoverContent
         side="right"
         align="start"
@@ -427,12 +477,22 @@ function AgentTile({
       >
         <div className="flex h-8 items-center justify-between gap-2 pr-1 pl-2">
           <span className="truncate text-sm font-medium">{agent.name}</span>
-          <AgentRowActions
-            agent={agent}
-            current={current}
-            onNavigate={onNavigate}
-            revealedOnHover={false}
-          />
+          {shared ? (
+            <SharedAgentConfigureButton
+              name={agent.name}
+              onClick={() => {
+                navigateToSandboxHome(agent.id);
+                onNavigate();
+              }}
+            />
+          ) : (
+            <AgentRowActions
+              agent={agent}
+              current={current}
+              onNavigate={onNavigate}
+              revealedOnHover={false}
+            />
+          )}
         </div>
         <AgentSessionList
           agentId={agent.id}

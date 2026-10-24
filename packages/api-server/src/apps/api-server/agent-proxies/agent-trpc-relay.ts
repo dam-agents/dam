@@ -7,6 +7,11 @@ import {
 } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
 import {
+  auditEditorRuntimeCall,
+  editorMayCall,
+} from "./editor-runtime-access.js";
+import { screenEditorFrame } from "./editor-trpc-frames.js";
+import {
   createWakeGatedRelay,
   type WakeGatedRelay,
 } from "./wake-gated-relay.js";
@@ -56,6 +61,23 @@ export function createAgentTrpcRelay(
       if (isBinary || data.toString() !== KEEPALIVE_PING) return false;
       client.send(KEEPALIVE_PONG);
       return true;
+    },
+    clientFrameGate: (agentId, actor) => {
+      const editor = actor.editor;
+      if (editor === null) return null;
+      return (client, data, isBinary) => {
+        if (isBinary) return null;
+        const screened = screenEditorFrame(data.toString(), (path) =>
+          editorMayCall(editor.permissions, path),
+        );
+        for (const refusal of screened.refusals) client.send(refusal);
+        for (const path of screened.mutations)
+          auditEditorRuntimeCall(actor.sub, agentId, editor.ownerSub, path);
+        if (screened.forward === null) return null;
+        return screened.refusals.length === 0
+          ? data
+          : Buffer.from(screened.forward);
+      };
     },
     activity: {
       everyMs: ACTIVITY_INTERVAL_MS,

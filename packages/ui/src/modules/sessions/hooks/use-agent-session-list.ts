@@ -6,11 +6,14 @@ import { failedLoad } from "../../../lib/failed-load.js";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import {
+  useAgent,
   useAgentRunState,
   useIsAgentAnswerableSoon,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
+import { holds } from "../../agents/lib/agent-permissions.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionSpend } from "../../spend/api/queries.js";
@@ -28,6 +31,9 @@ export function useAgentSessionList(agentId: string) {
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const sessionFilter = useStore((s) => s.sessionFilter);
 
+  const agent = useAgent(agentId);
+  const terminals = !agent || holds(agent.access, "terminal");
+  const unreadMarks = !agent || isOwnAgent(agent);
   const operable = useIsAgentOperable(agentId);
   const answerableSoon = useIsAgentAnswerableSoon(agentId);
   const conversationOf = useSessionConversations(agentId);
@@ -61,8 +67,13 @@ export function useAgentSessionList(agentId: string) {
     !restarting;
 
   const visible = useMemo(
-    () => sessions.filter((s) => sessionFilter.includes(sessionCategoryOf(s))),
-    [sessions, sessionFilter],
+    () =>
+      sessions.filter(
+        (s) =>
+          sessionFilter.includes(sessionCategoryOf(s)) &&
+          (terminals || s.mode !== SessionMode.Terminal),
+      ),
+    [sessions, sessionFilter, terminals],
   );
 
   const costs = useSessionSpend(agentId, sessions);
@@ -92,7 +103,7 @@ export function useAgentSessionList(agentId: string) {
       needsApproval:
         approvalSessions.has(s.sessionId) ||
         pendingPermissions.some((p) => p.sessionId === s.sessionId),
-      unread: isUnreadSession(s, { open }),
+      unread: unreadMarks && isUnreadSession(s, { open }),
       draft: !terminal && draftKeySet.has(draftKey(agentId, s.sessionId)),
       backgroundWork: backgroundWorkBySession.get(s.sessionId),
       cost: costs.get(s.sessionId),

@@ -9,6 +9,7 @@ import type { AgentView, SessionView } from "../../types.js";
 vi.stubGlobal("window", new EventTarget());
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => null,
   useAgentsList: () => [],
 }));
 vi.mock("../../modules/agents/hooks/use-auto-wake-on-sidebar-open.js", () => ({

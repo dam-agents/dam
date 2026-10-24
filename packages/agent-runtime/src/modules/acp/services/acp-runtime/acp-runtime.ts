@@ -151,7 +151,10 @@ export interface AcpRuntimeStatus {
 }
 
 export interface AcpRuntime {
-  attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
+  attach(
+    channel: ClientChannel,
+    opts?: { viewer?: boolean; marksSeen?: boolean },
+  ): void;
   prestart(): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
@@ -283,6 +286,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     null;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
+  const unseeingChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
 
   function mapOutbound(
@@ -1144,7 +1148,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!sessions) return;
     if (sessions.has(sessionId)) return;
     sessions.add(sessionId);
-    if (!nonViewerChannels.has(channel))
+    if (!nonViewerChannels.has(channel) && !unseeingChannels.has(channel))
       deps.sessionMetadata?.recordSeen(sessionId);
 
     pendingRequests.onEngaged(channel, sessionId);
@@ -1749,8 +1753,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const channel of engagedViewersOf(sessionId)) channel.send(line);
   }
 
-  function hasEngagedViewer(sessionId: string): boolean {
-    for (const _ of engagedViewersOf(sessionId)) return true;
+  function hasSeeingViewer(sessionId: string): boolean {
+    for (const channel of engagedViewersOf(sessionId))
+      if (!unseeingChannels.has(channel)) return true;
     return false;
   }
 
@@ -1805,6 +1810,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const sessions = engagedSessions.get(channel);
     engagedSessions.delete(channel);
     nonViewerChannels.delete(channel);
+    unseeingChannels.delete(channel);
     transcript.dropChannel(channel);
     bootstrap.dropChannel(channel);
     for (const [outId, m] of outboundIdToClient) {
@@ -2065,7 +2071,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           )
             startHarnessRehydrate(sid);
           deps.sessionMetadata?.recordActivity(sid);
-          if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
+          if (hasSeeingViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
           const error = extractTurnError(frame);
           const model = turnModels.get(sid);
@@ -2487,7 +2493,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (promptSessionId !== null) {
         deps.sessionMetadata?.recordActivity(promptSessionId);
-        if (hasEngagedViewer(promptSessionId))
+        if (hasSeeingViewer(promptSessionId))
           deps.sessionMetadata?.recordSeen(promptSessionId);
         const surface = platformString(frame, "surface");
         const typedPrompt = (frame as { params?: { prompt?: unknown } }).params
@@ -2578,6 +2584,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     attach(channel, opts) {
       engagedSessions.set(channel, new Set());
       if (opts?.viewer === false) nonViewerChannels.add(channel);
+      if (opts?.marksSeen === false) unseeingChannels.add(channel);
       const buffered: string[] = [];
       let live = false;
       waitingAttaches++;
