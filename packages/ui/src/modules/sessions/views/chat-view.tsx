@@ -285,6 +285,7 @@ export function ChatView() {
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
     newLayout && environmentsEnabled && agentView?.vm ? selectedAgent : null,
+    { poll: false },
   );
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const runningProcesses = useRunningProcesses(
@@ -725,12 +726,14 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    environments: environmentsTabShown({
-      newLayout,
-      enabled: environmentsEnabled,
-      vm: agentView?.vm === true,
-      count: environments.data?.length,
-    }),
+    environments:
+      environmentsTabShown({
+        newLayout,
+        enabled: environmentsEnabled,
+        vm: agentView?.vm === true,
+        count: environments.data?.length,
+      }) ||
+      (environments.isLoading && sidePanelTab === "environments"),
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);

@@ -16,7 +16,6 @@ import {
   useEnvironments,
   useEnvironmentsEnabled,
 } from "../../environments/api/queries.js";
-import { environmentsShown } from "../../environments/lib/environments-tab.js";
 import { type Action, ActionList } from "./action-list.js";
 
 export function AgentManagementActions({
@@ -36,15 +35,9 @@ export function AgentManagementActions({
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
     environmentsEnabled && agent.vm ? agent.id : null,
+    { poll: false },
   );
-  const accessListReach =
-    environmentsEnabled &&
-    agent.vm &&
-    !environmentsShown({
-      enabled: environmentsEnabled,
-      vm: agent.vm,
-      count: environments.data?.length,
-    });
+  const accessListReach = environments.data?.length === 0;
 
   useEffect(() => {
     if (location.hash === `#${AGENT_ENABLE_ANCHOR}`)
@@ -126,6 +119,18 @@ export function AgentManagementActions({
         onClick: () => void onRestart(),
       },
     },
+    ...(accessListReach
+      ? [
+          {
+            kind: "link" as const,
+            icon: <Cloud />,
+            title: "Choose who may open Environments",
+            description:
+              "This agent has none yet and creates them itself. Name the people who may open the ones it creates.",
+            onClick: () => navigateToSandboxHome(agent.id, "environments"),
+          },
+        ]
+      : []),
     {
       kind: "button",
       icon: <TrashCan />,
@@ -139,18 +144,6 @@ export function AgentManagementActions({
         danger: true,
       },
     },
-    ...(accessListReach
-      ? [
-          {
-            kind: "link" as const,
-            icon: <Cloud />,
-            title: "Who may open Environments",
-            description:
-              "This agent has none yet and creates them itself. Name the people who may open the ones it creates.",
-            onClick: () => navigateToSandboxHome(agent.id, "environments"),
-          },
-        ]
-      : []),
   ];
 
   return <ActionList label="Manage" actions={actions} />;

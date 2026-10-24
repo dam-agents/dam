@@ -146,6 +146,6 @@ What an Environment runs, its Startup Items and their output, is not shown there
 The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
 With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, and a link to the section, where the list of people is edited.
 The owner creates none there; the agent does.
-Every Environments surface refreshes at once when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show.
+Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
 
 The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.

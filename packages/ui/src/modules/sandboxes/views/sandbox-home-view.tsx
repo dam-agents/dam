@@ -74,6 +74,7 @@ export function SandboxHomeView() {
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
     environmentsEnabled && agent?.vm ? agent.id : null,
+    { poll: false },
   );
   const agentHasEnvironments = environmentsShown({
     enabled: environmentsEnabled,
