@@ -6,7 +6,7 @@ import {
   spawnInvocationRequestSchema,
   spawnScriptInvocationRequestSchema,
 } from "api-server-api";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import {
   createDriverOps,
   type DriverOps,
@@ -16,7 +16,7 @@ import {
 import { resolveAgent } from "./agent-auth.js";
 
 export interface InvocationEndpointsDeps extends DriverOpsDeps {
-  k8s: K8sClient;
+  readAgent: (id: string) => Promise<KubeObject | null>;
 }
 
 const REFUSAL_STATUS = {
@@ -32,7 +32,7 @@ export function mountInvocationRoutes(
 ): void {
   const driverOpsFor = createDriverOps(deps);
   const driverOps = async (driverId: string) => {
-    const verified = await resolveAgent(deps.k8s, driverId);
+    const verified = await resolveAgent(deps.readAgent, driverId);
     return verified
       ? driverOpsFor({ id: driverId, owner: verified.owner })
       : null;

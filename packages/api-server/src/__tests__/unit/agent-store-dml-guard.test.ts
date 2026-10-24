@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-// TEST_OVERVIEW: the api-server owns the control tables, so nothing structural stops it from writing what the controller owns — only this guard does. It fails when api-server code writes the controller's observation tables or the controller's columns on the shared signals row, so such a write has to arrive as a deliberate edit here rather than as a line in a diff nobody looked at twice.
+// TEST_OVERVIEW: the api-server owns the control tables, so nothing structural stops it from writing what the controller owns — only this guard does. It fails when api-server code writes the controller's observation tables or the controller's columns on the shared signals row, so such a write has to arrive as a deliberate edit here rather than as a line in a diff nobody looked at twice. The absorb is the one named exemption: it imports the observations the custom resources carried, once, inside the switch's transaction, and writes nothing there afterwards.
 
 const SOURCE_ROOT = new URL("../../", import.meta.url).pathname;
 
@@ -21,6 +21,8 @@ const RECLAIM_COLUMNS = [
 const READ_ONLY_ADAPTER = /^control-read(-[a-z]+)*\.ts$/u;
 
 const MAPPING_MODULE = /^rows\.ts$/u;
+
+const ABSORB_MODULE = /^absorb\.ts$/u;
 
 const quoted = (name: string): string => `"?${name}"?`;
 
@@ -56,20 +58,22 @@ function sourceFiles(directory: string): string[] {
 describe("api-server writes to what the controller owns", () => {
   // TEST_SCENARIO: The observation tables are the controller's, and raw SQL counts: a query string names a table without the schema's identifiers, so matching identifiers alone would let a write through, and quoting either name would too.
   it("never writes an observation table", () => {
-    const offenders = sourceFiles(SOURCE_ROOT).flatMap((path) => {
-      const source = readFileSync(path, "utf8");
-      const found = [
-        ...OBSERVATION_TABLES.names.filter((name) =>
-          writesTo(name).test(source),
-        ),
-        ...OBSERVATION_TABLES.identifiers.filter((identifier) =>
-          builderWrite(identifier).test(source),
-        ),
-      ];
-      return found.length === 0
-        ? []
-        : [`${path.replace(SOURCE_ROOT, "")} writes ${found.join(", ")}`];
-    });
+    const offenders = sourceFiles(SOURCE_ROOT)
+      .filter((path) => !ABSORB_MODULE.test(basename(path)))
+      .flatMap((path) => {
+        const source = readFileSync(path, "utf8");
+        const found = [
+          ...OBSERVATION_TABLES.names.filter((name) =>
+            writesTo(name).test(source),
+          ),
+          ...OBSERVATION_TABLES.identifiers.filter((identifier) =>
+            builderWrite(identifier).test(source),
+          ),
+        ];
+        return found.length === 0
+          ? []
+          : [`${path.replace(SOURCE_ROOT, "")} writes ${found.join(", ")}`];
+      });
 
     expect(offenders).toEqual([]);
   });
@@ -82,7 +86,10 @@ describe("api-server writes to what the controller owns", () => {
         source.includes(identifier),
       );
       if (names.length === 0) return [];
-      if (!READ_ONLY_ADAPTER.test(basename(path)))
+      if (
+        !READ_ONLY_ADAPTER.test(basename(path)) &&
+        !ABSORB_MODULE.test(basename(path))
+      )
         return [`${path.replace(SOURCE_ROOT, "")} names ${names.join(", ")}`];
       return [];
     });

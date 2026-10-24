@@ -1,5 +1,4 @@
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
+import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Reads an Agent's harness image from its Agent CR so
@@ -9,10 +8,12 @@ import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
  * deleted Agent still says which build wrote it. It lives here, as a port the
  * harness app injects, to keep the case-studies module off the k8s client.
  */
-export function createAgentImageReader(k8s: K8sClient) {
+export function createAgentImageReader(
+  getAgent: (id: string) => Promise<KubeObject | null>,
+) {
   return async (agentId: string): Promise<string | null> => {
     try {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, agentId);
+      const obj = await getAgent(agentId);
       const image = (obj?.spec as { image?: string } | undefined)?.image;
       return typeof image === "string" && image.length > 0 ? image : null;
     } catch {

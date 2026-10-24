@@ -570,12 +570,35 @@ jq -e '.["controller"].PLATFORM_AGENT_STORE == "crd"
   and .["controller"].PLATFORM_DATABASE_URL == null
   and .["controller"].POSTGRES_PASSWORD == null' <<<"$default_store" >/dev/null ||
   { echo "the default render does not run on the custom resources, or hands the controller a database credential: $default_store" >&2; exit 1; }
-# No release in this chart absorbs the store, so the Postgres mode fails the
-# render instead of starting two components that can only refuse it.
+# The switch is timed by the operator: the Postgres mode fails the render
+# without its acknowledgement, and renders the cutover with it.
 if helm template platform . "${COMMON[@]}" --set agentStore.authority=postgres >/dev/null 2>&1; then
-  echo "a render setting agentStore.authority=postgres succeeded, but no release in this chart absorbs the store" >&2
+  echo "a render setting agentStore.authority=postgres without the acknowledgement succeeded, but the cutover must be timed" >&2
   exit 1
 fi
+switched=$(store_env --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true)
+jq -e '.["apiserver"].PLATFORM_AGENT_STORE == "postgres"
+  and .["controller"].PLATFORM_AGENT_STORE == "postgres"
+  and .["apiserver"].DATABASE_URL != null
+  and .["controller"].PLATFORM_DATABASE_URL != null
+  and .["apiserver"].PLATFORM_AGENT_STORE_FROZEN == "false"' <<<"$switched" >/dev/null ||
+  { echo "the switch render does not run both components on the rows, or not in its unfrozen state: $switched" >&2; exit 1; }
+# The switch takes every old writer down before the new ones start: the
+# api-server recreates, and the controller rolls with no surge (Recreate cannot
+# replace a Deployment whose strategy the API server defaulted).
+strategies=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true |
+  yq -o=json 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" == "apiserver" or .metadata.labels."app.kubernetes.io/component" == "controller")) | {"component": .metadata.labels."app.kubernetes.io/component", "type": .spec.strategy.type, "surge": .spec.strategy.rollingUpdate.maxSurge}' | jq -s 'map({(.component): {type: .type, surge: .surge}}) | add')
+jq -e '.["apiserver"].type == "Recreate" and .["controller"].type == "RollingUpdate" and (.["controller"].surge | tostring) == "0"' <<<"$strategies" >/dev/null ||
+  { echo "the switch render does not take every old writer down first: $strategies" >&2; exit 1; }
+frozen=$(store_env --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true --set agentStore.frozen=true)
+jq -e '.["apiserver"].PLATFORM_AGENT_STORE_FROZEN == "true" and .["controller"].PLATFORM_AGENT_STORE_FROZEN == "true"' <<<"$frozen" >/dev/null ||
+  { echo "a frozen render does not freeze both components: $frozen" >&2; exit 1; }
+frozen_replicas=$(helm template platform . "${COMMON[@]}" \
+  --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true --set agentStore.frozen=true |
+  yq -o=json 'select(.kind == "Deployment" and (.metadata.labels."app.kubernetes.io/component" == "apiserver" or .metadata.labels."app.kubernetes.io/component" == "controller")) | {"component": .metadata.labels."app.kubernetes.io/component", "replicas": .spec.replicas}' | jq -s 'map({(.component): .replicas}) | add')
+jq -e '.["apiserver"] == 0 and .["controller"] == 0' <<<"$frozen_replicas" >/dev/null ||
+  { echo "a frozen render leaves replicas running, so the old writers outlive the freeze: $frozen_replicas" >&2; exit 1; }
 # The marker's name is the chart's, and it is the one the api-server's Role pins:
 # a name the Role did not grant would fail closed on every boot.
 marker=$(jq -r '.["apiserver"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")
@@ -583,9 +606,19 @@ marker=$(jq -r '.["apiserver"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")
   { echo "the two components do not read one marker name, or it is not the release's: $default_store" >&2; exit 1; }
 pinned=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/rbac.yaml |
   yq -o=json 'select(.kind == "Role") | .rules[]' |
-  jq -s 'map(select(.resources == ["configmaps"]))[0]')
-jq -e --arg marker "$marker" '.resourceNames == [$marker] and .verbs == ["get"]' <<<"$pinned" >/dev/null ||
-  { echo "the api-server's configmaps grant is not pinned to the marker it reads: $pinned" >&2; exit 1; }
+  jq -s 'map(select(.resources == ["configmaps"]))')
+jq -e --arg marker "$marker" '
+  . == [{"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [$marker], "verbs": ["get"]}]' <<<"$pinned" >/dev/null ||
+  { echo "the custom-resource release's configmaps grant is more than the marker read: $pinned" >&2; exit 1; }
+switched_pinned=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/rbac.yaml \
+  --set agentStore.authority=postgres --set agentStore.cutover.acknowledged=true |
+  yq -o=json 'select(.kind == "Role") | .rules[]' |
+  jq -s 'map(select(.resources == ["configmaps"]))')
+jq -e --arg marker "$marker" '
+  any(.[]; .resourceNames == [$marker] and (.verbs | index("get")))
+  and any(.[]; .verbs == ["create"])
+  and any(.[]; .resourceNames == [$marker] and (.verbs | index("update")))' <<<"$switched_pinned" >/dev/null ||
+  { echo "the switch render's configmaps grant does not both create the marker and pin its name: $switched_pinned" >&2; exit 1; }
 # The controller's role is created by the same SQL that creates the app roles,
 # and that SQL refuses to leave any of them a superuser.
 roles=$(helm template platform . "${COMMON[@]}" --show-only templates/postgres.yaml |

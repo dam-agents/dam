@@ -6,10 +6,15 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "../agents/infrastructure/agents-repository.js";
+import { createControlAgentsRepository } from "../agent-store/agents-repository.js";
+import type { AgentStoreMode } from "../agent-store/fence.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createEgressRuleMatchAdapter } from "../egress-rules/compose.js";
-import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
+import type {
+  AgentStateCache,
+  RunningAgentStateCache,
+} from "../agents/infrastructure/agent-state-cache.js";
 import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { createGithubCredentialPort } from "./infrastructure/github-credential-port.js";
@@ -73,6 +78,7 @@ export function composeSkillsModule(deps: {
   templatesRepo: TemplatesRepository;
   runtimeProgress: RuntimeProgressPort;
   agentStateCache: AgentStateCache;
+  agentStore: { authority: AgentStoreMode };
 }): SkillsService {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
@@ -82,7 +88,13 @@ export function composeSkillsModule(deps: {
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8sClient, deps.agentStateCache),
+    agentsRepo:
+      deps.agentStore.authority === "postgres"
+        ? createControlAgentsRepository(
+            deps.db,
+            deps.agentStateCache as RunningAgentStateCache,
+          )
+        : createAgentsRepository(k8sClient, deps.agentStateCache),
     templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),

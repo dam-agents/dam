@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
 
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
-import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 
 // TEST_OVERVIEW: A driver names a harness, and the spawn runs on that harness's Template. A harness the install does not carry is refused before anything is created, naming the harnesses it does carry.
 
@@ -17,18 +16,16 @@ function makeApp(
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
-    k8s: {
-      getCustomObject: async (plural: string, id: string) =>
-        plural === AGENTS_PLURAL && id === "driver-1"
-          ? {
-              metadata: {
-                uid: "uid-1",
-                labels: { "agent-platform.ai/owner": "owner-1" },
-              },
-              spec: {},
-            }
-          : null,
-    } as never,
+    readAgent: async (id: string) =>
+      id === "driver-1"
+        ? {
+            metadata: {
+              uid: "uid-1",
+              labels: { "agent-platform.ai/owner": "owner-1" },
+            },
+            spec: {},
+          }
+        : null,
     invocationsServiceFor: () =>
       ({
         spawn: async (input: Record<string, unknown>) => {

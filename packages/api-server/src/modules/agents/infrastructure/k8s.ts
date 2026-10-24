@@ -217,8 +217,16 @@ export function createApi(namespace: string) {
   };
 }
 
+export const currentClusterServer = (): string | null => {
+  const cluster = loadKubeConfig().getCurrentCluster();
+  return cluster?.server ?? null;
+};
+
 export const createLeaseApi = () =>
   loadKubeConfig().makeApiClient(k8s.CoordinationV1Api);
+
+export const createAuthorizationApi = () =>
+  loadKubeConfig().makeApiClient(k8s.AuthorizationV1Api);
 
 export type AgentInformer = k8s.Informer<KubeObject> &
   k8s.ObjectCache<KubeObject>;

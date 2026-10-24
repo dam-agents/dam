@@ -11,7 +11,25 @@ metadata:
     app.kubernetes.io/component: controller
   {{- include "platform.annotations" (dict "root" $ "component" .Values.controller) | nindent 2 }}
 spec:
+  {{- if .Values.agentStore.frozen }}
+  # Frozen for a rollback: no controller runs, so it cannot re-create an anchor
+  # or re-adopt a child while the exporter restores the custom resources.
+  replicas: 0
+  {{- else }}
   replicas: {{ .Values.controller.replicas | default 1 }}
+  {{- end }}
+  {{- if eq .Values.agentStore.authority "postgres" }}
+  # The switch takes the old controller down before it starts the new one (no
+  # surge). Recreate itself cannot replace an install's Deployment whose
+  # strategy the API server defaulted, so no-surge is how the same ordering is
+  # reached declaratively; the Lease and the api-server's barrier are what
+  # still keep two controllers from acting on the same store.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
   selector:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
@@ -41,6 +59,8 @@ spec:
               value: {{ .Values.agentStore.authority | quote }}
             - name: PLATFORM_AGENT_STORE_MARKER
               value: {{ include "platform.agentStore.markerName" . | quote }}
+            - name: PLATFORM_AGENT_STORE_FROZEN
+              value: {{ .Values.agentStore.frozen | quote }}
             {{- if eq .Values.agentStore.authority "postgres" }}
             # The controller's own login, on the api-server's database: it
             # reads definitions and writes observations, and nothing else. The

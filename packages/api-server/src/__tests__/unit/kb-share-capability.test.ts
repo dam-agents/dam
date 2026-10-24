@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { resolveAgent } from "../../apps/harness-api-server/agent-auth.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import {
   ANN_AGENT_KIND,
   ANN_KB_SHARE_ROOTS,
@@ -16,18 +16,18 @@ import {
 } from "../../modules/agents/infrastructure/labels.js";
 import { legacyShareRoots } from "../../modules/kb-shares/domain/legacy-roots.js";
 
-function k8sWith(annotations: Record<string, string>): K8sClient {
-  return {
-    getCustomObject: async () => ({
-      metadata: {
-        name: "agent-1",
-        uid: "uid-1",
-        labels: { [LABEL_OWNER]: "owner-1" },
-        annotations,
-      },
-      spec: {},
-    }),
-  } as unknown as K8sClient;
+function k8sWith(
+  annotations: Record<string, string>,
+): (id: string) => Promise<KubeObject | null> {
+  return async () => ({
+    metadata: {
+      name: "agent-1",
+      uid: "uid-1",
+      labels: { [LABEL_OWNER]: "owner-1" },
+      annotations,
+    },
+    spec: {},
+  });
 }
 
 describe("who may publish a knowledge base", () => {

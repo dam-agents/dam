@@ -55,6 +55,18 @@ metadata:
     {{- include "platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: apiserver
 rules:
+  {{- if eq .Values.agentStore.authority "postgres" }}
+  # The switch reads them once, to absorb them; the rows own them from then on.
+  # Write access is removed rather than unused: the absorb proves with a
+  # SelfSubjectAccessReview that this identity can no longer write them, so a
+  # process that still edits a custom resource cannot exist.
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["agents", "userbudgets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["selfsubjectaccessreviews"]
+    verbs: ["create"]
+  {{- else }}
   # the api-server is the sole writer of the Agent custom
   # resource spec (create/patch/delete); the controller owns its status.
   - apiGroups: ["agent-platform.ai"]
@@ -66,20 +78,31 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["userbudgets"]
     verbs: ["get", "list", "create", "patch", "delete"]
+  {{- end }}
   # Secrets for credentials. The chart-shipped agent templates are mounted as
   # files, loaded at boot, not read through the K8s API.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # One ConfigMap, read once at startup: the marker the switch leaves when
-  # Agents and budgets become authoritative in Postgres. Reading it is how a
-  # build that still reconciles the custom resources learns to refuse to start
-  # rather than serve a store nothing writes. Nothing else of the api-server's
-  # reads a ConfigMap, so the grant names this one.
+  # One ConfigMap: the marker the switch leaves when Agents and budgets become
+  # authoritative in Postgres. Reading it is how a build that still reconciles
+  # the custom resources learns to refuse to start rather than serve a store
+  # nothing writes. Only the switch's absorb writes it, and `create` is the one
+  # verb RBAC cannot pin to a name, so a release that stays on the custom
+  # resources gets `get` alone.
   - apiGroups: [""]
     resources: ["configmaps"]
     resourceNames: [{{ include "platform.agentStore.markerName" . | quote }}]
     verbs: ["get"]
+  {{- if eq .Values.agentStore.authority "postgres" }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: [{{ include "platform.agentStore.markerName" . | quote }}]
+    verbs: ["update", "patch"]
+  {{- end }}
   # Leader election for the work that must have one holder install-wide (the
   # channel workers, the live-events agent watch): a single Lease carrying every
   # such role, created and renewed by the holder and deleted when it stands

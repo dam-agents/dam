@@ -112,6 +112,7 @@ export interface AgentRowMapping {
   dropped: string[];
   normalized: string[];
   refusal?: string;
+  skipped?: boolean;
 }
 
 const QUANTITY =
@@ -282,16 +283,17 @@ export function rowsFromResource(
   const normalized: string[] = [];
   const id = metadata.name ?? "";
 
-  const refuse = (reason: string): AgentRowMapping => ({
+  const refuse = (reason: string, skipped = false): AgentRowMapping => ({
     id,
     rows: undefined,
     dropped,
     normalized,
     refusal: reason,
+    ...(skipped && { skipped }),
   });
 
   if (metadata.deletionTimestamp)
-    return refuse("the resource is being deleted");
+    return refuse("the resource is being deleted", true);
   if (!id || !DNS_LABEL.test(id) || id.length > 63)
     return refuse(
       "the name is not a DNS-1123 label of at most 63 characters, which the platform's labels and machine names are built from",
@@ -485,8 +487,11 @@ export function rowsFromResource(
   );
 
   const lastActivityAt = parseTime(annotations[LAST_ACTIVITY_KEY]);
-  const flaggedAt = (flag: string | undefined) =>
-    flag ? (lastActivityAt ?? new Date(switchedAt)) : null;
+  // UNIT_BOUNDARY_DESCRIPTION: the stop and disable marks carry their own stamp; a resource written before they did carries a bare flag, which is dated from the last activity or the switch rather than invented as now.
+  const flaggedAt = (flag: string | undefined) => {
+    if (!flag) return null;
+    return parseTime(flag) ?? lastActivityAt ?? new Date(switchedAt);
+  };
 
   return {
     id,
@@ -586,7 +591,11 @@ export function rowsFromResource(
  * reports is the definition's generation, which is what the custom resource's
  * resourceVersion stood in for at every call site that compares one.
  */
-export function resourceFromRows(rows: AgentRows): KubeObject {
+export function resourceFromRows(
+  rows: AgentRows,
+  options: { complete?: boolean } = {},
+): KubeObject {
+  const complete = options.complete === true;
   const { agent, signals, kit, status, conditions, hosts, grants } = rows;
   const annotations: Record<string, string> = {};
   const put = (key: string, value: string | undefined) => {
@@ -656,7 +665,7 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
   };
   putSpec("description", agent.description);
   putSpec("avatar", agent.avatar);
-  if (agent.whispersOff) spec.whispersOff = true;
+  if (agent.whispersOff || complete) spec.whispersOff = agent.whispersOff;
   putSpec("harness", agent.harness);
   putSpec("imagePullSecretRef", agent.imagePullSecretRef);
   putSpec("secretRef", agent.secretRef);
@@ -668,12 +677,13 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
   );
   if (agent.nestedVirtualization)
     spec.backend = { type: "vm", vm: { nestedVirtualization: true } };
-  if (agent.requireConnectionAddress) spec.requireConnectionAddress = true;
+  if (agent.requireConnectionAddress || complete)
+    spec.requireConnectionAddress = agent.requireConnectionAddress;
   putSpec("telemetryAttributionId", agent.telemetryAttributionId);
   putSpec("environmentOf", agent.environmentOf);
   putSpec("storageSize", agent.diskSize);
-  if (hosts.length > 0) spec.l7Hosts = hosts;
-  if (grants.length > 0) spec.grantedConnectionIds = grants;
+  if (hosts.length > 0 || complete) spec.l7Hosts = hosts;
+  if (grants.length > 0 || complete) spec.grantedConnectionIds = grants;
 
   const labels: Record<string, string> = { [LABEL_OWNER]: agent.ownerSub };
   if (agent.templateId !== null) labels[LABEL_TEMPLATE_REF] = agent.templateId;
@@ -701,15 +711,15 @@ export function resourceFromRows(rows: AgentRows): KubeObject {
     } as Meta,
     spec,
     status: {
-      ...(observed.length > 0 && { conditions: observed }),
+      ...((observed.length > 0 || complete) && { conditions: observed }),
       signalVersion: signals.version,
       statusVersion: status?.version ?? 0,
       ...(status && {
         observedGeneration: status.observedGeneration,
-        ...(status.machineRestarts > 0 && {
+        ...((status.machineRestarts > 0 || complete) && {
           agentPodRestarts: status.machineRestarts,
         }),
-        ...(status.machineRestartReason !== null && {
+        ...((status.machineRestartReason !== null || complete) && {
           agentPodRestartReason: status.machineRestartReason,
         }),
       }),
