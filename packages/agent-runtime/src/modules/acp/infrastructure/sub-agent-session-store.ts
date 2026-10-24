@@ -16,7 +16,7 @@ export interface SubAgentSessionStore {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Which Session spawned each sub-agent, kept on the
- * pod's own disk so it survives the hibernation an outcome may wake the Agent
+ * machine's own disk so it survives the hibernation an outcome may wake the Agent
  * from. Only the newest entries are kept; a sub-agent outliving them opens
  * its outcome in a new Session instead.
  */

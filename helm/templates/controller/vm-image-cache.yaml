@@ -1,5 +1,5 @@
 {{- $v := .Values.virtualization }}
-{{- if and $v.enabled (not $v.runner.hostAddress) }}
+{{- if not $v.runner.hostAddress }}
 {{- /*
 The per-node image cache service: the only writer of the node directory
 `platform.vmImageCache.dir` derives from `imageCache.hostPath`. Every runner of
@@ -111,7 +111,7 @@ spec:
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
             - --images={{ join "," (uniq $images) }}
-            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            {{- if .Values.openshift.enabled }}
             {{- /*
             The directory the kubelet creates for the hostPath carries the
             host's own SELinux label, which a container confined to
@@ -163,7 +163,7 @@ spec:
             - --socket=/var/lib/platform/images-legacy/.cache.sock
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
-            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            {{- if .Values.openshift.enabled }}
             - --selinux-label=system_u:object_r:container_file_t:s0
             {{- end }}
           securityContext:
@@ -226,8 +226,7 @@ outside the cluster on a private address is named in `imageCache.egressCidrs`.
 
 Nothing dials this pod: the runners reach it over the Unix socket in the
 directory they share with it, which no policy sees, so there is no ingress
-rule here. The namespace's deny-all is scoped to `role: agent`, which this
-pod is not, so this policy alone gates it.
+rule here and this policy alone gates it.
 */}}
 {{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict }}
 apiVersion: networking.k8s.io/v1
@@ -303,7 +302,7 @@ spec:
 {{- /*
 The same SCC the node cache already obliges an OpenShift install to name for
 its runners: this pod mounts that same host directory and runs as uid 0, and
-the chart's own agent SCC refuses a hostPath.
+no SCC the chart renders admits a hostPath.
 */}}
 {{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-image-cache" "scc" .) }}
 {{- end }}

@@ -2,7 +2,7 @@ name: CI/CD
 
 # One run per event. This file decides what each event's run does and passes
 # it on as inputs; build.yml (mise check and the images, then the dev chart
-# and the security scan) and e2e.yml (the smoke suite's lanes) read the inputs
+# and the security scan) and e2e.yml (the smoke suite's two jobs) read the inputs
 # and never the event. On main, build.yml hands what the run published to
 # security.yml, which scans it. A tag's release publishes from here.
 #
@@ -55,8 +55,8 @@ jobs:
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
       MEND_USER_KEY: ${{ secrets.MEND_USER_KEY }}
 
-  # A push skips both lanes: on main, the merge group before it ran them on
-  # the same tree; a tag only publishes.
+  # A push skips both jobs: on main, the merge group before it ran them on the
+  # same tree; a tag only publishes.
   e2e:
     if: ${{ github.event_name != 'push' }}
     permissions:

@@ -11,7 +11,7 @@ import {
   type ViewerBridgeDenial,
   type ViewerPromptResult,
 } from "../domain/viewer-bridge.js";
-import type { AgentApiPodClient } from "../infrastructure/agent-api-pod-client.js";
+import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
 
 export type ViewerPromptOutcome =
@@ -64,7 +64,7 @@ function viewerName(viewer: ShareSession): string {
 export function createShareBridgeService(deps: {
   featureOn: (owner: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
-  agentApi: AgentApiPodClient;
+  agentApi: AgentApiClient;
   prompts: ViewerPromptDelivery;
 }): ShareBridgeService {
   function log(

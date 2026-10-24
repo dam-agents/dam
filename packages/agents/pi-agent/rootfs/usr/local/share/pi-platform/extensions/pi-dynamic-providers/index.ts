@@ -152,7 +152,7 @@ function stampSession(pi: ExtensionAPI): void {
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: with the Model Router, Pi holds one provider, "platform", whose models are the router's catalog, each on the API the model speaks best among the dialects its provider serves. The key is a placeholder that satisfies pi-acp's auth gate only. Pi's built-in openai and anthropic providers are turned off, since the keys in the pod env are placeholders of Connections the router already serves.
+// UNIT_BOUNDARY_DESCRIPTION: with the Model Router, Pi holds one provider, "platform", whose models are the router's catalog, each on the API the model speaks best among the dialects its provider serves. The key is a placeholder that satisfies pi-acp's auth gate only. Pi's built-in openai and anthropic providers are turned off, since the keys in the machine's env are placeholders of Connections the router already serves.
 async function activateRouter(
   pi: ExtensionAPI,
   router: string,

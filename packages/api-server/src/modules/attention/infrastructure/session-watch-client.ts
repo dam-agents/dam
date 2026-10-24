@@ -1,47 +1,51 @@
-import { podSessionNoticeSchema, type PodSession } from "agent-runtime-api";
+import { sessionNoticeSchema, type Session } from "agent-runtime-api";
 
-import { agentPodWsClient } from "../../../core/agent-pod-client.js";
+import { agentServiceWsClient } from "../../../core/agent-service-client.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One connection to one pod, carrying both halves of
- * the pull design — the watch that says "re-read" and the read it triggers.
- * They share a socket because a notice is always followed by a read, and a
- * connection per read costs a handshake on every turn of every awake agent.
+ * UNIT_BOUNDARY_DESCRIPTION: One connection to one agent's runtime, carrying
+ * both halves of the pull design — the watch that says "re-read" and the read
+ * it triggers. They share a socket because a notice is always followed by a
+ * read, and a connection per read costs a handshake on every turn of every
+ * awake agent.
  */
-export interface PodSessionList {
-  sessions: PodSession[];
+export interface WatchedSessionList {
+  sessions: Session[];
   incomplete: boolean;
 }
 
-export interface PodSessionSubscription {
+export interface SessionSubscription {
   close(): void;
-  listSessions(): Promise<PodSessionList>;
+  listSessions(): Promise<WatchedSessionList>;
 }
 
-export interface PodSessionClient {
-  watchAgent(agentId: string, onNotice: () => void): PodSessionSubscription;
-  listSessions(agentId: string, signal: AbortSignal): Promise<PodSessionList>;
+export interface SessionWatchClient {
+  watchAgent(agentId: string, onNotice: () => void): SessionSubscription;
+  listSessions(
+    agentId: string,
+    signal: AbortSignal,
+  ): Promise<WatchedSessionList>;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A read waits for its socket to open, and the
- * socket retries for as long as the pod cannot be reached. An Agent deleted
- * before its pod ever answered is never reached, so without a bound the read
- * and its retries outlive the Agent until the process restarts. A live watch's
- * read is bounded too: a pod that stops answering must not leave a capture
- * waiting until the watch is released.
+ * socket retries for as long as the runtime cannot be reached. An Agent
+ * deleted before its runtime ever answered is never reached, so without a bound
+ * the read and its retries outlive the Agent until the process restarts. A live
+ * watch's read is bounded too: a runtime that stops answering must not leave a
+ * capture waiting until the watch is released.
  */
 const READ_TIMEOUT_MS = 10_000;
 
-export function createPodSessionClient(
+export function createSessionWatchClient(
   namespace: string,
   log: (message: string) => void,
   webSocket?: typeof WebSocket,
-): PodSessionClient {
+): SessionWatchClient {
   const connect = (agentId: string) =>
-    agentPodWsClient(agentId, namespace, {
+    agentServiceWsClient(agentId, namespace, {
       webSocket,
-      onError: () => log(`pod session watch errored for ${agentId}`),
+      onError: () => log(`session watch errored for ${agentId}`),
     });
 
   return {
@@ -49,13 +53,13 @@ export function createPodSessionClient(
       const { wsClient, client } = connect(agentId);
       const subscription = client.sessions.watch.subscribe(undefined, {
         onData: (raw) => {
-          if (!podSessionNoticeSchema.safeParse(raw).success) {
+          if (!sessionNoticeSchema.safeParse(raw).success) {
             log(`dropped unknown session notice from ${agentId}`);
             return;
           }
           onNotice();
         },
-        onError: () => log(`pod session watch dropped for ${agentId}`),
+        onError: () => log(`session watch dropped for ${agentId}`),
       });
 
       return {

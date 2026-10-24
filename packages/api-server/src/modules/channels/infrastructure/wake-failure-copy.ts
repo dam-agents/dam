@@ -15,14 +15,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "the room they have. It may start by itself once room frees up; if it " +
         "doesn't, contact its owner."
       );
-    case "migrating":
-      return "This agent is moving to the new runtime — try again in a few minutes.";
-    case "migration-failed":
-      return (
-        "This agent's move to the new runtime failed, and it stays asleep " +
-        "until an operator finishes or undoes the move."
-      );
-    case "agent-pod-failed":
+    case "agent-start-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":
         case "InvalidImageName":
@@ -95,7 +88,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "This agent failed to start: its configuration couldn't be " +
         "applied. Check the agent's page or contact its owner."
       );
-    case "agent-pod-not-ready":
+    case "agent-not-ready":
       return "The agent is still warming up — give it a minute and try again.";
     case "gateway-not-ready":
       return (

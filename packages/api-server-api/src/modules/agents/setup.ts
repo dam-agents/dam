@@ -32,7 +32,6 @@ export const agentSetupSeedSchema = z.object({
 });
 
 export const agentSetupShape = {
-  backend: z.literal("vm").optional(),
   resources: agentSetupResourcesSchema.optional(),
   install: agentSetupInstallSchema.optional(),
   env: z.array(agentSetupEnvVarSchema).default([]),

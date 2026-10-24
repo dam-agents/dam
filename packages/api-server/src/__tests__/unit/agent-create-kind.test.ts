@@ -13,6 +13,18 @@ describe("agents.create input schema", () => {
     expect("kbTemplateId" in parsed).toBe(false);
   });
 
+  it("keeps a request for a container Agent in the input, so the create can refuse it", () => {
+    const parsed = agentCreateInputSchema.parse({
+      name: "my-agent",
+      image: "quay.io/example/claude-code:latest",
+      vm: false,
+    });
+    expect(parsed.vm).toBe(false);
+    expect(
+      agentCreateInputSchema.parse({ name: "my-agent" }).vm,
+    ).toBeUndefined();
+  });
+
   it("strips every kind, so no marked agent can skip its Install Command", () => {
     for (const kind of agentKindSchema.options) {
       const parsed = agentCreateInputSchema.parse({

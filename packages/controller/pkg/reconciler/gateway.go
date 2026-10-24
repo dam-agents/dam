@@ -99,7 +99,7 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, machineGa
 	}
 }
 
-func BuildGatewayService(agentName string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
+func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	gatewayName := GatewayName(agentName)
 	envoyPort := portInt32(cfg.EnvoyPort)
 	selector := map[string]string{LabelPair: agentName, LabelRole: RoleGateway}
@@ -108,9 +108,7 @@ func BuildGatewayService(agentName string, vm bool, cfg *config.Config, ownerRef
 		Port:       envoyPort,
 		TargetPort: intstr.FromInt32(envoyPort),
 	}}
-	if vm {
-		ports = append(ports, machineGatewayServicePorts(cfg)...)
-	}
+	ports = append(ports, machineGatewayServicePorts(cfg)...)
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            gatewayName,

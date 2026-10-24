@@ -32,9 +32,7 @@ export function AgentPickerCard({
   const { size, name, hibernationTimeoutMin, contributionFailures } = agent;
   const display = resolveAgentDisplay(agent, NO_IDS);
   const sizeLabel =
-    !agent.vm && size.cpu && size.memory
-      ? formatCpuMemory(sizeInMi(size))
-      : null;
+    size.cpu && size.memory ? formatCpuMemory(sizeInMi(size)) : null;
 
   return (
     <CardButton
@@ -73,7 +71,6 @@ export function AgentPickerCard({
         {hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <StatusBadge
           state={display.state}
-          vm={agent.vm}
           refused={isStartRefusal(agent.podTerminationCode)}
         />
       </span>

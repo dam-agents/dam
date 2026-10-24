@@ -112,14 +112,13 @@ function setup(
     }),
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
-    agentIdleTimeoutMinutes: { container: 30, vm: 5 },
+    agentIdleTimeoutMinutes: 5,
     cleanupHooks: [],
     readTemplateSpec: async (id) =>
       templates[id] ? { spec: templates[id] as TemplateSpec } : null,
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({ bump: runtimeBump }),
     contributionsProgress: unused(),
-    podStatus: unused(),
-    resizeLock: (_key, fn) => fn(),
+    agentServiceStatus: unused(),
     grantProvisioner: {
       async resolveSpecGrants(sel) {
         if (sel.providerConnectionId)

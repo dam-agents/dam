@@ -63,8 +63,6 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     kind: agent.kind,
     kbTemplateId: agent.kbTemplateId ?? null,
     ...(agent.kbShareRoots ? { kbShareRoots: agent.kbShareRoots } : {}),
-    vm: agent.spec.backend?.type === "vm",
-    runtimeMigration: agent.runtimeMigration ?? null,
     starterKit: agent.starterKit ?? null,
     starterKitOnboarded: agent.starterKitOnboarded ?? null,
     kitUpdatePending: agent.kitUpdatePending ?? null,

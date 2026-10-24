@@ -77,7 +77,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 		}}},
 	}
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		ReleaseHostPath: "/var/lib/platform-runner-releases",
@@ -127,7 +127,7 @@ func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
 	}
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod, node)
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		ReleaseHostPath: "/var/lib/platform-runner-releases",
@@ -228,7 +228,7 @@ func TestAFinishedRunnerPodDoesNotSpeakForItsOwner(t *testing.T) {
 					LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
 			}
 			r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), old, replacement, node)
-			r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+			r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 				Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 				ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 				ReleaseHostPath: "/var/lib/platform-runner-releases",
@@ -263,7 +263,7 @@ func TestARunnerWaitingForItsNewVolumeIsStillStarting(t *testing.T) {
 		}}},
 	}
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		ReleaseHostPath: "/var/lib/platform-runner-releases",

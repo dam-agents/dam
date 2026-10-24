@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AgentBackgroundWork } from "api-server-api";
-import { podBaseUrl } from "./k8s.js";
+import { agentServiceAddress } from "./k8s.js";
 
 const statusSchema = z.object({
   backgroundWork: z
@@ -24,7 +24,7 @@ const statusSchema = z.object({
 
 const STATUS_TIMEOUT_MS = 3_000;
 
-export interface PodStatusClient {
+export interface AgentServiceStatusClient {
   backgroundWork(agentId: string): Promise<AgentBackgroundWork>;
 }
 
@@ -33,21 +33,23 @@ async function readStatus(
   namespace: string,
 ): Promise<z.infer<typeof statusSchema>> {
   const res = await fetch(
-    `http://${podBaseUrl(agentId, namespace)}/api/status`,
+    `http://${agentServiceAddress(agentId, namespace)}/api/status`,
     { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) },
   );
-  if (!res.ok) throw new Error(`pod status returned ${res.status}`);
+  if (!res.ok) throw new Error(`agent service status returned ${res.status}`);
   return statusSchema.parse(await res.json());
 }
 
-export async function podIsIdle(
+export async function agentServiceIsIdle(
   agentId: string,
   namespace: string,
 ): Promise<boolean> {
   return (await readStatus(agentId, namespace)).idle;
 }
 
-export function createPodStatusClient(namespace: string): PodStatusClient {
+export function createAgentServiceStatusClient(
+  namespace: string,
+): AgentServiceStatusClient {
   return {
     async backgroundWork(agentId) {
       const status = await readStatus(agentId, namespace);

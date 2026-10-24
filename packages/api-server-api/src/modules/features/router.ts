@@ -9,7 +9,6 @@ export const featuresRouter = t.router({
   flags: readAgentProcedure.query(({ ctx }) => ctx.features.flags()),
 
   install: readAgentProcedure.query(({ ctx }) => ({
-    virtualization: ctx.virtualizationEnabled,
     features: ctx.featureModes,
     telemetryBackend: ctx.telemetryBackend,
   })),

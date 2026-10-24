@@ -117,7 +117,7 @@ async function readProcess(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Reads the pod's process table from /proc for the
+ * UNIT_BOUNDARY_DESCRIPTION: Reads the machine's process table from /proc for the
  * process inventory. It reads each process's parent, process group, session,
  * start time, CPU ticks, resident memory, command line, and the regular file
  * behind stdout or stderr, if any. A process that vanishes mid-read is

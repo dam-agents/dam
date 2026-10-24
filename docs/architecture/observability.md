@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
 ## Overview
 
@@ -85,7 +85,7 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   A second value redirects the same way: a standard `OTEL_EXPORTER_OTLP_*` setting the harness cannot parse fails its whole env parse and sends the export to the vendor endpoint too.
 
 - **Config travels the harness env rail.** Each rail's export environment — the standard OTLP set on the Claude Code rail, the `BOB_TELEMETRY_*` set on Bob's, the endpoint and log switch on Pi's — reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
-  The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-pod) reads its own harness's rail.
+  The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-machine) reads its own harness's rail.
   A harness's layer owns its variables over an agent-wide copy, so the rail an older agent was seeded from its Template never leaks into another harness: Bob never sees the Claude Code rail's OTLP protocol.
 
 - **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage); no cost, as spend reads the [meter](spend-limits.md).
@@ -132,7 +132,7 @@ Unlike agent telemetry, this export does not ride a gateway: it arrives without 
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
   Its leader also exports the users' **VM pools** for operators, every half minute: what the runners' limits and claims commit against what the scheduler reserves for them and what the nodes able to run a runner hold (storage only where the storage driver publishes its capacity), how many runners sit at each level of their pool (ok, warning from 75%, critical from 90%), how many runner pods wait on a resize the node deferred or refused, how many sit on a node the cluster has lost, and how many runner Deployments want a pod and have none available.
-  The identity rule below holds: none of these names a user, so a user whose pool goes critical, whose runner the node cannot fit, whose runner's node is lost, or whose runner cannot start is named by a Warning Event on their vm Agents, and a runner the node cannot fit also by their `RunnerCapacity` condition.
+  The identity rule below holds: none of these names a user, so a user whose pool goes critical, whose runner the node cannot fit, whose runner's node is lost, or whose runner cannot start is named by a Warning Event on their Agents, and a runner the node cannot fit also by their `RunnerCapacity` condition.
   The critical Event comes once per crossing; a controller restart repeats it only once the cluster has dropped the earlier Event.
 - The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
@@ -227,10 +227,10 @@ Traces are sampled, so they explain individual fires and turns; counting stays w
 The [VM runner](vm-runner.md) is the one platform service that does not push.
 It stays off the mesh, and the collector's export port admits only mesh identities, so a runner's export would be refused; the collector **scrapes** every runner instead.
 A runner serves its metrics on a scrape port apart from the machine API: that API's token creates and deletes machines, and a scraper holding it could too, so the scrape carries no token and the runner's NetworkPolicy, admitting only the collector to that port, is its whole gate.
-The collector finds runners by listing pods in the agent namespace — read-only, granted only when the vm backend is on — and keeps only the port a runner names for metrics.
-The scrape exists when both the telemetry backend and the vm backend are enabled.
+The collector finds runners by listing pods in the agent namespace — read-only — and keeps only the port a runner names for metrics.
+The scrape exists when the telemetry backend is enabled.
 
-What a runner measures is what judging the vm backend against the container one needs:
+What a runner measures is what operating an owner's machines needs:
 
 - **Machine operations** — each create, wake, restart and stop as a duration by outcome; the runtime's own start call inside it; and **ready latency**, from asking a machine to start to the first health check its guest answers, once per boot.
 - **Unhealthy restarts** — the ones the runner made on its own because a guest that had answered went quiet, apart from those a changed spec causes.
@@ -254,7 +254,7 @@ The two arrive apart — the runtime files the agent's output as the console and
 platform-init writes its own verdicts there too, as kernel log lines at a level the guest's quiet console still prints — a refusal to boot, each step of a boot that a host must be able to follow, each hand-off to the image's entrypoint and each exit of it — so a machine that will not boot, or whose agent keeps exiting, says why, and a boot the host cut short says how far it got.
 The steps are the disk mounted, the layout mark written, the platform's root laid over the image and the agent's home mounted from the disk, and the line of a boot that found the disk with no room and freed what a boot discards.
 A guest that keeps running marks what room its storage guard leaves it there as well, full, nearly full and room again, and the runner reads those marks from the same console to say in the machine's usage read that the agent's writes are failing, which no boot-time verdict can carry ([vm-runner](vm-runner.md)).
-An exit with less than 64 MiB left in the agent's home says so, and the runner then reports the boot as a full home, which the Agent carries as `HomeVolumeFull`, the reason a container agent's full home gets; a boot that fails while the owner's claim is critically full is reported as that claim being full instead ([vm storage](vm-storage.md#the-owners-claim)).
+An exit with less than 64 MiB left in the agent's home says so, and the runner then reports the boot as a full home, which the Agent carries as `HomeVolumeFull`; a boot that fails while the owner's claim is critically full is reported as that claim being full instead ([vm storage](vm-storage.md#the-owners-claim)).
 When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes of each source, stripped to printable text, and redacted with every env value the machine has been given — longest first, and each line of a value that spans lines — because a guest that prints its environment puts an operator's Secret there; a value of three characters or fewer is left as it is.
 Every start empties both of the console's sources first — the runner does so itself rather than trusting the runtime's own removal of its log — because the file outlives the runner and a restarted runner knows only the current spec: what a tail quotes is then a boot this runner started, with values it holds.
 A console the runner cannot redact, holding no spec for the machine, is not shown.
@@ -269,13 +269,6 @@ The rules fire on a user's pool at 75% and 90% of its memory or storage, a runne
 The unavailable-runner rule waits fifteen minutes, so it clears a normal roll, and it reads the controller's count rather than a series the runner exports: a runner that never starts exports nothing, which is the case it exists for.
 No alert names a user: each critical one about a user's pool, a resize of their runner or their runner being unavailable ends with the `kubectl get events` line that finds that user's agents, while the two that fire on a runner's own memory state name only its scrape address, since no series names the runner's owner.
 The node-loss and unavailable-runner rules count only what their own installation scrapes, because a Prometheus may serve several installations and a node lost, or a runner down, in one is not a fault of the others; each keeps the namespace label so an alert instance says which installation it belongs to.
-
-### Runtime migration
-
-A [runtime migration](vm-runtime-migration.md) reports on the Agent rather than as a signal.
-Its condition's message says what holds the current phase up, written from what is true now and cleared once nothing does: a pod stuck terminating, named with its node; a copy pod's latest warning, an admission refusal included; a copy waiting for a slot; what the runner reports; a boot held by a stop or the owner's budget.
-vm-seed names the agent's own files in its errors, so the text is escaped, stripped of in-cluster addresses and cut to a status line, any advice ahead of the copied error.
-Each phase entered, copy failure, copy given up for a pod that never started (`RuntimeMigrationCopyStuck`), abort, retry and finish is also an Event on the Agent, as is each retained volume the sweep deletes, and the controller counts them by reason alone.
 
 ## Trusted attribution
 
@@ -311,7 +304,7 @@ A target that has reported is reaped a short moment later rather than in the sam
 
 ## Persistence
 
-The telemetry store is a **fourth durable substrate** beyond the three in [persistence](persistence.md) (Postgres, the Agent/Run custom resources, the per-Agent PVC), and it sits outside that platform/agent split — neither the agent nor the controller touches it.
+The telemetry store is a **fourth durable substrate** beyond the three in [persistence](persistence.md) (Postgres, the Agent/Run custom resources, the machines' disks), and it sits outside that platform/agent split — neither the agent nor the controller touches it.
 Both the telemetry data and the UI's app-state persist on operator-managed volumes that survive pod restarts and a chart uninstall; losing those volumes loses telemetry history and nothing else depends on them for correctness.
 When the subsystem is disabled, none of it exists.
 

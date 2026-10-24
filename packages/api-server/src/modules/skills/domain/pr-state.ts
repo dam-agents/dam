@@ -6,16 +6,16 @@ export interface PrDisposition {
   mergedAt: string | null;
 }
 
-export type PodPrReadResult =
+export type AgentPrReadResult =
   | { kind: "state"; disposition: PrDisposition }
   | { kind: "not-running" }
   | { kind: "failed" };
 
-export interface PodPrStateReader {
+export interface AgentPrStateReader {
   read(
     agentId: string,
     coords: { owner: string; repo: string; number: number },
-  ): Promise<PodPrReadResult>;
+  ): Promise<AgentPrReadResult>;
 }
 
 export function derivePrState(d: PrDisposition): PrState {

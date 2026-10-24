@@ -84,7 +84,7 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 
 	interval := c.checkInterval()
 	slog.Info("idle checker started",
-		"timeout", c.config.AgentBase.IdleTimeout.AsDuration(), "interval", interval)
+		"timeout", c.config.AgentBase.VMIdleTimeout.AsDuration(), "interval", interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -104,7 +104,7 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 }
 
 func (c *IdleChecker) shortestEffectiveTimeout() time.Duration {
-	global := c.config.AgentBase.IdleTimeout.AsDuration()
+	global := c.config.AgentBase.VMIdleTimeout.AsDuration()
 	observed := time.Duration(c.shortestObservedTimeout.Load())
 	if observed > 0 && (global <= 0 || observed < global) {
 		return observed
@@ -139,11 +139,11 @@ func (c *IdleChecker) check(ctx context.Context) {
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
-		effective := effectiveIdleTimeout(hibernationOverride(agent), isVMObject(agent), c.config.AgentBase)
+		effective := effectiveIdleTimeout(hibernationOverride(agent), c.config.AgentBase)
 		if effective > 0 && (shortest == 0 || effective < shortest) {
 			shortest = effective
 		}
-		if shouldRunMigrating(agent.GetAnnotations(), runtimeMigrationOfObject(agent), effective, now) {
+		if shouldRun(agent.GetAnnotations(), effective, now) {
 			continue
 		}
 
@@ -193,9 +193,6 @@ func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Uns
 // UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout. An install without virtualization runs no runner, and its controller holds no grant on Deployments, so the read is skipped there rather than refused on every sweep. A read that fails on an install that does run them hibernates nothing this pass: the pin is what keeps a roll's machines up, and one sweep of waiting costs less than a roll that has to give up.
 func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context, owner string) (map[string]bool, error) {
 	awaiting := map[string]bool{}
-	if !c.config.VM.Enabled {
-		return awaiting, nil
-	}
 	selector := "app.kubernetes.io/component=" + vmRunnerComponent
 	if owner != "" {
 		selector += "," + envoyOwnerLabel + "=" + owner
@@ -238,7 +235,7 @@ func hibernationPublished(agent *unstructured.Unstructured) bool {
 // UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why it went down rather than that it is up to nothing; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. A boot the runner reports copying a disk is held without that cap: the runner bounds it, for up to six hours, and a hibernation would stop the copy and start it again from nothing. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
 func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
 	ready, _, failed := vmStartConditions(agent)
-	if !isVMObject(agent) || idleTimeout <= 0 || failed {
+	if idleTimeout <= 0 || failed {
 		return false
 	}
 	if ready != nil && ready["status"] == string(metav1.ConditionTrue) {
@@ -251,7 +248,7 @@ func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, n
 
 func vmBootInProgress(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
 	ready, podReady, failed := vmStartConditions(agent)
-	if !isVMObject(agent) || idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
+	if idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
 		return false
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a machine the kernel or its seccomp filter killed is booting again, which is held like any boot: the reason says why the machine went down, not that it is up to nothing.
@@ -318,11 +315,6 @@ func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 		}
 	}
 	return atZero
-}
-
-func isVMObject(agent *unstructured.Unstructured) bool {
-	backend, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
-	return backend == "vm"
 }
 
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {

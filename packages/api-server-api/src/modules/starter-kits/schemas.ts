@@ -133,77 +133,70 @@ const harnessCommandNameSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9:_-]*$/, "a command name without the leading slash");
 
-export const starterKitSchema = z
-  .object({
-    schemaVersion: z.literal("v1"),
-    id: starterKitIdSchema,
-    name: z.string().min(1),
-    description: z.string().min(1),
-    tagline: z.string().min(1).optional(),
-    category: starterKitCategorySchema,
-    icon: z.string().min(1).optional(),
-    avatar: starterKitAvatarSchema.optional(),
-    video: z.url().optional(),
-    docsUrl: z.url().optional(),
-    image: starterKitImageSchema.optional(),
-    backend: agentSetupShape.backend,
-    egressPreset: egressPresetSchema.optional(),
-    egressRules: z.array(starterKitEgressRuleSchema).max(50).default([]),
-    resources: starterKitResourcesSchema.optional(),
-    knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
-    install: agentSetupShape.install,
-    harnesses: z.array(harnessFamilySchema).min(1).optional(),
-    providers: providerListSchema.min(1).optional(),
-    defaultModel: z
-      .string()
-      .min(1)
-      .max(128)
-      .regex(
-        /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]*$/,
-        "a model id: letters, digits and `.` `_` `-` `/` `:` `[` `]`",
-      )
-      .optional(),
-    seed: z
-      .object({
-        url: z.url().optional(),
-        self: z.literal(true).optional(),
-        ref: z.string().min(1).optional(),
-        commit: z
-          .string()
-          .regex(/^[0-9a-f]{40}$/i)
-          .optional(),
-        into: z.enum(["work", "home"]).default("work"),
-      })
-      .meta({
-        oneOf: [{ required: ["url"] }, { required: ["self"] }],
-      })
-      .refine((seed) => (seed.url ? 1 : 0) + (seed.self ? 1 : 0) === 1, {
-        message:
-          "a seed names exactly one of `url` (another repository) or `self: true` (the repository this kit is read from)",
-      })
-      .optional(),
-    onboarding: z
-      .union([
-        z.literal(false),
-        z.object({ prompt: z.string().min(1) }),
-        z.object({ command: harnessCommandNameSchema }),
-      ])
-      .optional(),
-    connections: z.array(starterKitConnectionRequirementSchema).default([]),
-    channels: z.array(starterKitChannelSchema).default([]),
-    schedules: z.array(starterKitScheduleSchema).default([]),
-    skills: agentSetupShape.skills,
-    bundledSkills: starterKitBundledSkillsSchema.optional(),
-    env: agentSetupShape.env,
-    hibernationTimeoutMin: z.number().int().min(0).optional(),
-    requireConnectionAddress: z.boolean().optional(),
-    startupItems: starterKitStartupItemsSchema,
-  })
-  .refine((kit) => kit.startupItems.length === 0 || kit.backend === "vm", {
-    message:
-      "startup items are openrc services, which only a machine runs: a kit that declares them declares `backend: vm`",
-    path: ["startupItems"],
-  });
+export const starterKitSchema = z.object({
+  schemaVersion: z.literal("v1"),
+  id: starterKitIdSchema,
+  name: z.string().min(1),
+  description: z.string().min(1),
+  tagline: z.string().min(1).optional(),
+  category: starterKitCategorySchema,
+  icon: z.string().min(1).optional(),
+  avatar: starterKitAvatarSchema.optional(),
+  video: z.url().optional(),
+  docsUrl: z.url().optional(),
+  image: starterKitImageSchema.optional(),
+  egressPreset: egressPresetSchema.optional(),
+  egressRules: z.array(starterKitEgressRuleSchema).max(50).default([]),
+  resources: starterKitResourcesSchema.optional(),
+  knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
+  install: agentSetupShape.install,
+  harnesses: z.array(harnessFamilySchema).min(1).optional(),
+  providers: providerListSchema.min(1).optional(),
+  defaultModel: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]*$/,
+      "a model id: letters, digits and `.` `_` `-` `/` `:` `[` `]`",
+    )
+    .optional(),
+  seed: z
+    .object({
+      url: z.url().optional(),
+      self: z.literal(true).optional(),
+      ref: z.string().min(1).optional(),
+      commit: z
+        .string()
+        .regex(/^[0-9a-f]{40}$/i)
+        .optional(),
+      into: z.enum(["work", "home"]).default("work"),
+    })
+    .meta({
+      oneOf: [{ required: ["url"] }, { required: ["self"] }],
+    })
+    .refine((seed) => (seed.url ? 1 : 0) + (seed.self ? 1 : 0) === 1, {
+      message:
+        "a seed names exactly one of `url` (another repository) or `self: true` (the repository this kit is read from)",
+    })
+    .optional(),
+  onboarding: z
+    .union([
+      z.literal(false),
+      z.object({ prompt: z.string().min(1) }),
+      z.object({ command: harnessCommandNameSchema }),
+    ])
+    .optional(),
+  connections: z.array(starterKitConnectionRequirementSchema).default([]),
+  channels: z.array(starterKitChannelSchema).default([]),
+  schedules: z.array(starterKitScheduleSchema).default([]),
+  skills: agentSetupShape.skills,
+  bundledSkills: starterKitBundledSkillsSchema.optional(),
+  env: agentSetupShape.env,
+  hibernationTimeoutMin: z.number().int().min(0).optional(),
+  requireConnectionAddress: z.boolean().optional(),
+  startupItems: starterKitStartupItemsSchema,
+});
 
 export const onboardingStepSchema = z.object({
   id: z.string().min(1).max(64),

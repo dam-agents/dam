@@ -63,13 +63,13 @@ function world(
     ({
       list: async () => [],
       get: async (id: string) =>
-        ({ id, state: "running", spec: { backend: { type: "vm" } } }) as Agent,
+        ({ id, state: "running", spec: {} }) as unknown as Agent,
       create: async (input: { name: string }) =>
         ({
           id: "agent-new",
           name: input.name,
           state: "starting",
-          spec: { backend: { type: "vm" } },
+          spec: {},
         }) as unknown as Agent,
       delete: async (id: string) => {
         if (failDelete.includes(id)) throw new Error("k8s down");

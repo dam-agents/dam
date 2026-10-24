@@ -1,15 +1,10 @@
-// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab; as in Safari, its tab bar shows only while the browser has two tabs or more, and the new-tab button sits in the top bar, which always shows. The spec boots its own container agent on the default Template — applied as an Agent object, since every create on this install makes a machine — whose browser and agent-browser come from the harness tools the default image bakes — the mock agents of the rest of the suite carry neither — so only the vm lane, which enables the Template, runs it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
+// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab; as in Safari, its tab bar shows only while the browser has two tabs or more, and the new-tab button sits in the top bar, which always shows. The spec boots its own agent on the default Template, whose browser and agent-browser come from the harness tools the default image bakes — the mock agents of the rest of the suite carry neither — so only a run with that Template enabled takes it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's machine, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
-import { deleteAgentIfPresent } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import {
-  applyLegacyContainerAgent,
-  waitAgentState,
-} from "../../lib/backend.js";
-import { AGENT_NS, kubectl } from "../../lib/cluster.js";
+import { createAgentOn, inGuest, waitAgentState } from "../../lib/backend.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -25,17 +20,7 @@ interface AgentTab {
 }
 
 function agentBrowser(...args: string[]): string {
-  return kubectl(
-    "-n",
-    AGENT_NS,
-    "exec",
-    `${agentId}-0`,
-    "-c",
-    "agent",
-    "--",
-    "agent-browser",
-    ...args,
-  );
+  return inGuest(agentId, ["agent-browser", ...args].join(" "));
 }
 
 function agentTabs(): AgentTab[] {
@@ -49,7 +34,10 @@ const agentSelected = () => agentTabs().find((t) => t.active)?.targetId;
 
 function agentOpens(title: string): string {
   agentBrowser("tab", "new", "about:blank");
-  agentBrowser("eval", `document.title = ${JSON.stringify(title)}`);
+  agentBrowser(
+    "eval",
+    JSON.stringify(`document.title = ${JSON.stringify(title)}`),
+  );
   const opened = agentTabs().find((t) => t.active);
   expect(opened, `agent-browser's tab for ${title}`).toBeDefined();
   return opened!.targetId;
@@ -98,9 +86,7 @@ test.beforeAll(async () => {
   test.setTimeout(300_000);
   api = createApiClient(await getAccessToken());
   await acceptTerms(api);
-  await deleteAgentIfPresent(api, AGENT);
-  await applyLegacyContainerAgent(api, AGENT, AGENT, "default");
-  agentId = AGENT;
+  agentId = await createAgentOn(api, AGENT, "default");
   await waitAgentState(api, agentId, "running");
 });
 
@@ -137,7 +123,7 @@ test("keeps the user and the agent on the same tab", async ({ page }) => {
   await test.step("the user selects a tab, then the agent another", async () => {
     await panelTab(page, alpha).getByRole("tab").click();
     await expectSameTab(page, alpha);
-    expect(agentBrowser("eval", "document.title")).toContain("Alpha");
+    expect(agentBrowser("eval", "'document.title'")).toContain("Alpha");
     agentBrowser("tab", beta);
     await expectSameTab(page, beta);
   });

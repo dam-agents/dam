@@ -1,4 +1,4 @@
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import {
   agentStreamable,
@@ -26,7 +26,7 @@ export function createAgentTrpcRelay(
     "get" | "ensureReady" | "patchAnnotation" | "peekCached"
   >,
   upstreamBase: (agentId: string) => string = (agentId) =>
-    `ws://${podBaseUrl(agentId, namespace)}`,
+    `ws://${agentServiceAddress(agentId, namespace)}`,
 ): AgentTrpcRelay {
   const stamper = createActivityStamper(repo);
 

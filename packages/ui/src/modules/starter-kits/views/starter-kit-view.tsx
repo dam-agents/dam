@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   Gift,
   Launch,
-  Meter,
   PlayFilledAlt,
   WarningAlt,
 } from "@carbon/icons-react";
@@ -35,12 +34,6 @@ import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { EditableIdentity } from "../../agents/components/editable-agent-identity.js";
 import { defaultAvatar } from "../../agents/lib/default-avatar.js";
-import { useBudgetReserved } from "../../budgets/api/queries.js";
-import {
-  formatSizeLabel,
-  sizeInMi,
-  slotUnitOf,
-} from "../../budgets/lib/slots.js";
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -48,7 +41,6 @@ import {
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -63,7 +55,6 @@ import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
-  kitRunsOnVm,
 } from "../lib/catalog-cards.js";
 import {
   buildStarterKitApplyInput,
@@ -376,9 +367,6 @@ function KitDetail({
 }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
-  const budget = useBudgetReserved();
-  const { answered, vm: installVm } = useVmRuntime();
-  const runsOnVm = kitRunsOnVm(kit, answered ? installVm : undefined);
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -474,14 +462,6 @@ function KitDetail({
       selectAgent(result.agent.id);
     } catch {}
   };
-
-  const size = useMemo(() => {
-    if (!kit.resources || !budget.data || runsOnVm !== false) return null;
-    const unit = slotUnitOf(budget.data);
-    const mi = sizeInMi(kit.resources);
-    if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
-    return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, runsOnVm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -683,20 +663,6 @@ function KitDetail({
                   code={variable.value}
                 />
               ))}
-            </Section>
-          )}
-
-          {size && (
-            <Section label="Compute">
-              <Row
-                icon={<Meter size={16} className="text-muted-foreground" />}
-                title={size.label}
-                detail={
-                  kit.resources?.storage
-                    ? `${kit.resources.storage} disk. ${kit.resources.note ?? ""}`.trim()
-                    : kit.resources?.note
-                }
-              />
             </Section>
           )}
 

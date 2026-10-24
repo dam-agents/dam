@@ -36,7 +36,7 @@ export interface InvocationWatchDeps {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A sub-agent's pod runs one Invocation, and only
+ * UNIT_BOUNDARY_DESCRIPTION: A sub-agent's machine runs one Invocation, and only
  * an accepted report_result ends it; a run that stops without one would hold
  * the Invocation as running until its deadline. The watch follows the run's
  * session and reports its trigger event as failed, with the cause, once the
@@ -55,8 +55,8 @@ export interface InvocationWatchDeps {
  * read again after the sub-agent probe, the one await, and a decision that
  * finds work running is taken again every recheckMs, so work that ends
  * without a further turn fails the run then, not at the deadline. An accepted result stands the
- * watch down. A pod restart needs no watch: the liveness sweep fails a
- * sub-agent whose pod restarted.
+ * watch down. A machine restart needs no watch: the liveness sweep fails a
+ * sub-agent whose machine restarted.
  */
 export function createInvocationWatch(
   deps: InvocationWatchDeps,

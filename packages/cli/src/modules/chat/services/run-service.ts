@@ -230,7 +230,7 @@ function resultSessionId(result: unknown): string | null {
  * answers permission requests — those are mirrored into the approvals queue,
  * and it prints where to act on them — and it survives a dropped socket: the
  * turn keeps running agent-side, so it reconnects with backoff, re-loads the
- * Session, and finishes from the pod's run-result record, printing only the
+ * Session, and finishes from the agent's run-result record, printing only the
  * text it has not printed yet. `get` reads that record after the fact and can
  * wait for the turn to end; `cancel` sends `session/cancel` into a running
  * turn. One deliberate simplification: after a reconnect it stops streaming

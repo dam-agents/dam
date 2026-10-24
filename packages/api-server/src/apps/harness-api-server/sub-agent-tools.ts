@@ -51,11 +51,11 @@ const MAX_AWAIT_IDS = 50;
 const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent: if your harness has one, it runs here, starts in seconds and costs no extra compute, so prefer it whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
 - different-harness: it must run on another harness (see list_harnesses);
 - own-setup: it needs its own repository (seed), install command, env or skills;
-- more-resources: more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
+- more-resources: more CPU, memory or disk than this sandbox;
 - isolation: the work must not be able to touch this workspace;
 - parallel: heavy parallel work beyond what this sandbox can run;
 - checked-result: a result the platform validates against a schema.
-A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources or a vm backend.
+A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources.
 
 When the work is a command whose output you need (a test suite, an eval, a benchmark, a build, a data transform), pass script instead of prompt. No model runs: the sub-agent runs the command once and you get its exit code and its exact stdout and stderr. A non-zero exit fails the sub-agent with the exit code and the tail of stderr. Write a prompt only when the work needs judgment. Pass prompt (with schema) or script, never both; a script takes no schema, model, mode or configOptions.
 
@@ -151,10 +151,7 @@ const spawnInput = {
   ),
   env: spawnShape.env.describe("Environment variables, as [{name, value}]."),
   resources: spawnShape.resources.describe(
-    "cpu, memory, storage (disk). Omitted values come from the harness's template; give a clone or build more memory.",
-  ),
-  backend: spawnShape.backend.describe(
-    '"vm" to run in a microVM, when the work needs a container runtime or a cluster inside.',
+    "cpu, memory and storage (disk) for the sub-agent's machine. Omitted values come from the harness's template; give a clone or build more memory.",
   ),
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",
@@ -242,10 +239,9 @@ export function unmetNeed(
     needs.includes("more-resources") &&
     !body.resources &&
     body.cpu === undefined &&
-    body.memory === undefined &&
-    body.backend !== "vm"
+    body.memory === undefined
   )
-    return "more-resources without resources or a vm backend";
+    return "more-resources without resources";
   return null;
 }
 
@@ -797,7 +793,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "get_budget",
-    "Read your owner's compute: what is reserved now (cpu, memory) and the default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
+    "Read your owner's default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
     {},
     () => run(async () => json(await ops.budget())),
   );

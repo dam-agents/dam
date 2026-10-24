@@ -77,7 +77,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
   /**
    * UNIT_BOUNDARY_DESCRIPTION: what is known of a provider Connection from
    * its env layer alone, before any listing: enough for a harness process
-   * spawned on a fresh pod to be pointed at the router (the env rail and the
+   * spawned on a fresh machine to be pointed at the router (the env rail and the
    * first trigger arrive together, ahead of the first listing).
    */
   const describe = (layer: RuntimeEnvState["providers"][number]) => {
@@ -219,8 +219,8 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a refresh asked from outside follows a change
-   * (a grant reaching the pod, which also restarts the agent's egress
-   * gateway), so its failures retry from the shortest delay again.
+   * (a grant reaching the machine, which also restarts the owner's
+   * gateway pod), so its failures retry from the shortest delay again.
    */
   const refresh = (): Promise<void> => {
     retryDelay = retryMs.initial;

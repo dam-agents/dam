@@ -2,14 +2,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { PodSession, SessionMessageEventPayload } from "agent-runtime-api";
+import type { Session, SessionMessageEventPayload } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import {
   registerSessionMessageTools,
   type SessionMessagePorts,
 } from "../../apps/harness-api-server/session-message-tools.js";
 
-function session(over: Partial<PodSession>): PodSession {
+function session(over: Partial<Session>): Session {
   return {
     sessionId: "s",
     mode: "chat",

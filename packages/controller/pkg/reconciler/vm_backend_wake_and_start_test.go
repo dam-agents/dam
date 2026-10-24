@@ -359,14 +359,3 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	r.budgetMu.Unlock()
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
-
-// TEST_SCENARIO: nothing answers the owner's machine API — the case every owner's first vm agent starts in, before its runner exists. The resize gate guards a machine that is already running, so with no such machine it must allow; refusing wedges the very reconcile that would build the runner.
-func TestResizeGateAllowsWhenTheRunnerCannotBeReached(t *testing.T) {
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
-
-	refusal, err := r.resizeAllows(context.Background(), agent, testOwner)
-	require.NoError(t, err, "an unreachable runner must not fail the reconcile")
-	assert.Empty(t, refusal)
-}

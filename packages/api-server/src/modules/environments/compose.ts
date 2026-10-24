@@ -23,7 +23,7 @@ import {
   createAccessListsRepository,
   type AccessListsRepository,
 } from "./infrastructure/access-lists-repository.js";
-import { podBaseUrl } from "../agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../agents/infrastructure/k8s.js";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
@@ -270,7 +270,9 @@ export function composeEnvironmentGate(
     ensureReady: deps.ensureReady,
     stampActivity: deps.stampActivity,
     upstream: (agentId) => {
-      const [host, port] = podBaseUrl(agentId, deps.namespace).split(":");
+      const [host, port] = agentServiceAddress(agentId, deps.namespace).split(
+        ":",
+      );
       return { host: host!, port: Number(port) };
     },
     brandName: deps.brandName,

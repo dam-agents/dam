@@ -73,12 +73,11 @@ export function SandboxHomeView() {
   const chatFormsEnabled = useChatFormsEnabled();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
-    environmentsEnabled && agent?.vm ? agent.id : null,
+    environmentsEnabled && agent ? agent.id : null,
     { poll: false },
   );
   const agentHasEnvironments = environmentsShown({
     enabled: environmentsEnabled,
-    vm: agent?.vm === true,
     count: environments.data?.length,
   });
   const sections = SECTIONS.filter(

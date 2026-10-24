@@ -77,8 +77,6 @@ export const templateSpecSchema = z
     hibernationTimeout: z.string().optional(),
     storageSize: z.string().optional(),
     storageClass: z.string().optional(),
-    runtimeClassName: z.string().optional(),
-    nodeSelector: z.record(z.string(), z.string()).optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();

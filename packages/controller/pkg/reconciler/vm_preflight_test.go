@@ -25,7 +25,7 @@ func preflightConfig() *config.Config {
 		ReleaseName:      "platform",
 		PodName:          "controller-0",
 		KubeAPIAddr:      "172.30.0.1:443",
-		VM: config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+		VM: config.VMConfig{Runner: config.VMRunnerSpec{
 			Image: "vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 			ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 			Devices:      map[string]string{"devices.kubevirt.io/kvm": "1", "devices.kubevirt.io/tun": "1"},
@@ -123,7 +123,7 @@ func TestAVMAgentCarriesThePreflightProblems(t *testing.T) {
 	dep.Status.ReadyReplicas = 0
 	_, srv := newFakeNode(t)
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		Devices: map[string]string{"devices.kubevirt.io/kvm": "1"},

@@ -46,7 +46,7 @@ function harness(flowTeamId: string) {
     owner: OWNER,
     repo: unused<AgentsDeps["repo"]>({ get: async () => infra }),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
-    agentIdleTimeoutMinutes: { container: 30, vm: 5 },
+    agentIdleTimeoutMinutes: 5,
     cleanupHooks: [],
     readTemplateSpec: async () => null,
     contributionsProgress: unused(),

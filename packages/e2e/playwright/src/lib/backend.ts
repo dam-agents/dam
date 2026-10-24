@@ -4,19 +4,12 @@ import type { AgentState } from "api-server-api";
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
-import { deleteAgentIfPresent } from "./agents.js";
 import {
   AGENT_NS,
-  type AgentCr,
-  applyAgentCr,
   kubectl,
   kubectlWithin,
   LOOKUP_TIMEOUT_MS,
-  readAgentCr,
 } from "./cluster.js";
-import { type Backend, laneBackend } from "./lane.js";
-
-export { type Backend, laneBackend };
 
 const tokenMaxAgeMs = 120_000;
 
@@ -35,22 +28,8 @@ export function refreshingToken(): () => Promise<string> {
   };
 }
 
-export async function requireBackend(
-  api: ApiClient,
-  backend: Backend,
-): Promise<void> {
-  const install = await api.features.install.query();
-  expect(
-    install.virtualization,
-    backend === "vm"
-      ? "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1"
-      : "a container project runs only against an install without virtualization.enabled; reinstall without E2E_VIRTUALIZATION=1",
-  ).toBe(backend === "vm");
-}
-
 export async function createAgentOn(
   api: ApiClient,
-  backend: Backend,
   name: string,
   templateId: string,
   { neverIdle = false }: { neverIdle?: boolean } = {},
@@ -58,70 +37,9 @@ export async function createAgentOn(
   const created = await api.agents.create.mutate({
     name,
     templateId,
-    ...(backend === "container" ? { vm: false } : {}),
     ...(neverIdle ? { hibernationTimeoutMin: 0 } : {}),
   });
-  expect(created.vm, `agent ${name} landed on the wrong backend`).toBe(
-    backend === "vm",
-  );
   return created.id;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: an install that can virtualize refuses every container create, so a spec that needs a container Agent gets one the way an operator does: the api-server assembles the spec for a throwaway Agent, and that spec is applied as an Agent object with the container backend under the name the spec asked for. The throwaway is deleted at once, so its machine and home leave nothing behind. Its spec was assembled for the vm backend, which drops the template's storageSize, runtimeClassName and nodeSelector, so a case that needs those passes them in `legacy`; the api-server's template view publishes none of them. What the create does beside the spec — connections, credentials, env — is not staged either.
-export async function applyLegacyContainerAgent(
-  api: ApiClient,
-  id: string,
-  name: string,
-  templateId: string,
-  legacy: {
-    storageSize?: string;
-    runtimeClassName?: string;
-    nodeSelector?: Record<string, string>;
-  } = {},
-): Promise<void> {
-  await deleteAgentIfPresent(api, `${name}-spec`);
-  const source = await api.agents.create.mutate({
-    name: `${name}-spec`,
-    templateId,
-    hibernationTimeoutMin: 0,
-  });
-  let cr: AgentCr;
-  try {
-    cr = readAgentCr(source.id);
-  } finally {
-    await api.agents.delete.mutate({ id: source.id });
-  }
-  const metadata = Object.fromEntries(
-    Object.entries(cr.metadata).filter(
-      ([key]) =>
-        ![
-          "resourceVersion",
-          "uid",
-          "creationTimestamp",
-          "deletionTimestamp",
-          "deletionGracePeriodSeconds",
-          "generation",
-          "managedFields",
-          "ownerReferences",
-          "finalizers",
-        ].includes(key),
-    ),
-  );
-  applyAgentCr({
-    apiVersion: cr.apiVersion,
-    kind: cr.kind,
-    metadata: { ...metadata, name: id },
-    spec: {
-      ...cr.spec,
-      name,
-      backend: { type: "container" },
-      ...(legacy.storageSize ? { storageSize: legacy.storageSize } : {}),
-      ...(legacy.runtimeClassName
-        ? { runtimeClassName: legacy.runtimeClassName }
-        : {}),
-      ...(legacy.nodeSelector ? { nodeSelector: legacy.nodeSelector } : {}),
-    },
-  });
 }
 
 export async function waitAgentState(
@@ -295,10 +213,8 @@ function agentOwner(agentId: string): string {
   );
 }
 
-function hostSelector(agentId: string, backend: Backend): string {
-  if (backend === "vm")
-    return `app.kubernetes.io/component=vm-runner,agent-platform.ai/owner=${agentOwner(agentId)}`;
-  return `statefulset.kubernetes.io/pod-name=${agentId}-0`;
+function runnerSelector(agentId: string): string {
+  return `app.kubernetes.io/component=vm-runner,agent-platform.ai/owner=${agentOwner(agentId)}`;
 }
 
 function hostPods(selector: string): { uid: string; ready: boolean }[] {
@@ -330,7 +246,7 @@ export function runnerGrows(
     AGENT_NS,
     "logs",
     "-l",
-    hostSelector(agentId, "vm"),
+    runnerSelector(agentId),
     "--tail=-1",
   );
   return logs.split("\n").flatMap((line) => {
@@ -357,7 +273,7 @@ export function runnerPod(agentId: string): string {
     "get",
     "pod",
     "-l",
-    hostSelector(agentId, "vm"),
+    runnerSelector(agentId),
     "-o",
     'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}',
   );
@@ -397,7 +313,7 @@ export function runnerKilledVmms(
     AGENT_NS,
     "logs",
     "-l",
-    hostSelector(agentId, "vm"),
+    runnerSelector(agentId),
     "--tail=-1",
   );
   return logs
@@ -523,11 +439,8 @@ export function inGuest(
   );
 }
 
-export async function deleteBackendHost(
-  agentId: string,
-  backend: Backend,
-): Promise<void> {
-  const selector = hostSelector(agentId, backend);
+export async function deleteRunnerHost(agentId: string): Promise<void> {
+  const selector = runnerSelector(agentId);
   const before = hostPods(selector).map((p) => p.uid);
   expect(
     before.length,

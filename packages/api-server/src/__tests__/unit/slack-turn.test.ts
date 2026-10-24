@@ -1613,7 +1613,7 @@ describe("slack turn — contract framing and attendance", () => {
           agentId: "agent-1",
           timeoutMs: 120_000,
           durationMs: 120_100,
-          failure: { kind: "agent-pod-not-ready" },
+          failure: { kind: "agent-not-ready" },
         });
       },
     });

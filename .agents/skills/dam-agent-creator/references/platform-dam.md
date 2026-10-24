@@ -4,22 +4,23 @@ Platform constraints every generated file respects; cite them when a wish confli
 
 ## Runtime environment
 
-- `$HOME` is `/home/agent` on a persistent `/workspace` PVC: files survive pod restarts, processes don't.
+- `$HOME` is `/home/agent`, on the one disk of the agent's machine: files survive a hibernation, a restart and a new image; processes don't.
   Whatever must survive is a file under `$HOME` (hence the definition checkout there and state in `$HOME/work/`).
-- **The home volume is virtiofs over a host NFS export.** A `.git` mutated by concurrent runs there gets `Stale file handle` (ESTALE) and `.nfs*` silly-rename corruption, so **runtime state is never a git repo** (State backup below).
-  Deleting a file another process holds open leaves a `.nfs*` file: prefer append-only writes and atomic `tmp + mv`, and never back up or commit `.nfs*` junk.
-  `/dev/shm` (tmpfs, RAM, per-pod, wiped on restart) is the only truly local filesystem: right for disposable git plumbing, never for anything authoritative.
+- **The agent runs as root in its own machine**, so it installs what a run needs: `apt-get`, a global `npm i -g`, a plain `pip install` write into the image's root, which lasts across stops and restarts and is lost when a new image starts the root afresh; `mise use -g`, `aube add -g` and `pip install --user` land in `$HOME` and last.
+  Prefer what the image ships, and put anything a later run depends on under `$HOME`.
+- **Runtime state is never a git repo.** Every run of the agent shares one machine and one `$HOME`, so a `.git` two runs mutate at once corrupts (a locked index, a half-written object) and the state is unrecoverable; `work/` is a plain data directory and git runs only in a disposable clone off `/dev/shm` (State backup below).
+  `/dev/shm` is a tmpfs of the guest — RAM, wiped at every boot — right for that clone and for git plumbing, never for anything authoritative.
 - The **chat UI (direct agent session / ACP)** is the operator surface, the only source of behavior changes.
-- Pod tooling: `bash`, `git`, `gh`, `jq`, `awk`, `sed`/`grep`/`cut`/`tr`, GNU `date` are available.
+- Machine tooling: `bash`, `git`, `gh`, `jq`, `awk`, `sed`/`grep`/`cut`/`tr`, GNU `date` are available.
   When a script may also run on macOS during development, guard date parsing: `date -d "$iso" +%s 2>/dev/null || date -j -f '%Y-%m-%dT%H:%M:%SZ' "$iso" +%s`.
 - **`jq` and `gh` on `PATH` are `mise` shims**: each exec re-resolves the toolchain (~250 ms vs ~17 ms for the real binary).
   A pre-flight execs `jq` dozens of times and hooks fire per tool call, so a hot script sources `scripts/lib/toolpath.sh` (template provided), which resolves each shimmed tool **once per shell process** and shadows it with a function calling the binary directly.
   It never modifies `PATH` (offline tests stub CLIs by prepending to it), never fails a run, and leaves tools already resolving outside `*/shims/*` alone.
-  The real fix belongs in the pod image, so onboarding reports the shim and the audit keeps warning until it lands: reported, never absorbed.
+  The real fix belongs in the agent image, so onboarding reports the shim and the audit keeps warning until it lands: reported, never absorbed.
 - Temp files go under `/tmp`, namespaced per item (`/tmp/<agent>-<item>/`), cleaned up by run end; leftovers are an audit finding.
-- **`/tmp` is container-local and empties on every pod restart**, and a pod restarts without notice.
-  Anything cached there (a mirror, a profile, installed helpers) is rebuilt after a restart, so the rebuild must fit the Precheck's budget: one batched fetch, never one request per file.
-  An ephemeral `/tmp` sentinel is the cheapest restart detector: log a `pod_boot` event when it is absent, so a run cut short by a restart is diagnosable.
+- **`/tmp` is a directory of the machine's root, emptied at every boot**, and a machine boots at every wake from hibernation, without notice.
+  Anything cached there (a mirror, a profile, installed helpers) is rebuilt after a boot, so the rebuild must fit the Precheck's budget: one batched fetch, never one request per file.
+  An ephemeral `/tmp` sentinel is the cheapest boot detector: log a `machine_boot` event when it is absent, so a run cut short by a boot is diagnosable.
 
 ## Starter Kits — how an agent gets created
 
@@ -66,7 +67,7 @@ Platform constraints every generated file respects; cite them when a wish confli
 - **Artifact Library**: `mcp__platform-outbound__create_artifact` / `update_artifact` publish a page (an update in place keeps the share URL), `create_artifact_upload_url` plus `curl -X PUT --data-binary` uploads a file.
   Every published page is **public to anyone holding its link**: README names each published surface with that caveat, and anything that would disclose instance data (findings, names) on such a page is opt-in.
 - **Spend ground truth**: `mcp__platform-outbound__get_metrics` (`days: 7`, `granularity: "summary"`) is the cost the platform attributed; the audit reconciles its own token estimate against it (`references/audit.md` → Cost reconciliation).
-- **The MCP endpoint from a script**: the `platform-outbound` server is stateless MCP over streamable HTTP, its URL in `$HOME/.mcp.json` (`mcpServers["platform-outbound"].url`, else `PLATFORM_MCP_URL`), and the pod's network identity is the credential, so a script can call a tool with no model in the loop (`curl` honours the pod's proxy).
+- **The MCP endpoint from a script**: the `platform-outbound` server is stateless MCP over streamable HTTP, its URL in `$HOME/.mcp.json` (`mcpServers["platform-outbound"].url`, else `PLATFORM_MCP_URL`), and the machine's network identity is the credential, so a script can call a tool with no model in the loop (`curl` honours the machine's proxy).
   Reserved for the one designed exception to "scripts never act", the monitor's direct delivery and dashboard publish (`references/architecture.md` → Monitor): arguments and answers travel in files and on stdin, never argv; every request gets the time left under the Precheck budget; a call that went out with no answer is `unknown`, never a failure or a success.
 
 ## Harness facts (Claude Code on the platform)
@@ -96,21 +97,21 @@ Platform constraints every generated file respects; cite them when a wish confli
 
 Anything reachable via granted connections + HTTPS or an MCP tool is fair game (issue trackers, wikis, monitoring).
 For each, the design answers: how the pre-flight lists items read-only, where dedup markers live, and the REST-equivalent workaround landscape.
-Flag unverified surfaces in the handoff; the first onboarding on the pod smoke-tests each one read-only.
+Flag unverified surfaces in the handoff; the first onboarding on the machine smoke-tests each one read-only.
 
 ## State backup (recommended default)
 
-A dedicated git **remote** for `work/`, named by an env var (`GITHUB_REPO_WORK` pattern), while `work/` stays a **plain data directory, never a git clone** (virtiofs/NFS, above).
+A dedicated git **remote** for `work/`, named by an env var (`GITHUB_REPO_WORK` pattern), while `work/` stays a **plain data directory, never a git clone** (concurrent runs, above).
 All git plumbing is in `scripts/work-backup.sh` (template provided), running in a disposable tmpfs clone under `/dev/shm`:
 
-- **`persist`** (end of every state-changing run): tar-snapshot `work/` into the clone (a pure read of the volume, `--exclude '.git' '.nfs*'`), commit, push.
+- **`persist`** (end of every state-changing run): tar-snapshot `work/` into the clone (a pure read of the live state, `--exclude '.git'`), commit, push.
   Mirror semantics: the remote tip converges to the live `work/`.
-- **`restore`** (fresh volume, ONBOARDING): remote → `work/`, data only, never a `.git`.
+- **`restore`** (a machine whose `work/` is empty, ONBOARDING): remote → `work/`, data only, never a `.git`.
 - **Durability**: nothing authoritative on tmpfs.
-  Live state = `work/` (persistent volume), history = the remote, clone = scratch re-seeded whenever missing or broken.
+  Live state = `work/` (on the machine's disk), history = the remote, clone = scratch re-seeded whenever missing or broken.
   Worst case loses one unpushed snapshot.
 - **Concurrency**: persist is serialized by a mkdir lock beside the clone (lock-or-skip with a stale-lock TTL; a skipped persist is safe since the running one snapshots the same files); across writers, a rejected non-fast-forward push re-seeds from the new tip and re-snapshots.
   Never force-push; a failed push is logged and retried next run.
-- The audit asserts no `work/.git` on the volume and counts `.nfs*` junk as an early concurrency signal.
+- The audit asserts no `work/.git` on the machine's disk and counts a `.git` appearing under `work/` as an early concurrency signal.
 
 Local-only is fine when everything important is reconstructable from external markers; the interview decides.

@@ -2,9 +2,9 @@ import { z } from "zod";
 import { sessionRepositorySchema } from "../changes/schemas.js";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
 
-export const podSessionModeSchema = z.enum(["chat", "terminal"]);
+export const sessionModeSchema = z.enum(["chat", "terminal"]);
 
-export const podSessionTypeSchema = z.enum([
+export const sessionTypeSchema = z.enum([
   "regular",
   "channel_slack",
   "channel_telegram",
@@ -14,10 +14,10 @@ export const podSessionTypeSchema = z.enum([
   "invocation",
 ]);
 
-export const podSessionSchema = z.object({
+export const sessionSchema = z.object({
   sessionId: z.string().min(1),
-  mode: podSessionModeSchema,
-  type: podSessionTypeSchema.catch("regular"),
+  mode: sessionModeSchema,
+  type: sessionTypeSchema.catch("regular"),
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
   title: z.string().nullable(),
@@ -115,14 +115,14 @@ export const delegationFramesSchema = z.object({
   frames: z.array(z.string()),
 });
 
-export const podSessionNoticeSchema = z.object({
+export const sessionNoticeSchema = z.object({
   topic: z.literal("sessions"),
 });
 
 export const sessionDirectoryEntrySchema = z.object({
   sessionId: z.string().min(1),
-  mode: podSessionModeSchema,
-  type: podSessionTypeSchema.catch("regular"),
+  mode: sessionModeSchema,
+  type: sessionTypeSchema.catch("regular"),
   createdAt: z.string(),
 });
 

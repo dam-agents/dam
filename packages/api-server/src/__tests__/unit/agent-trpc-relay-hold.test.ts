@@ -157,12 +157,12 @@ describe("agent tRPC relay during a wake", () => {
         agentId: "agent-a",
         timeoutMs: 120_000,
         durationMs: 120_000,
-        failure: { kind: "agent-pod-not-ready" },
+        failure: { kind: "agent-not-ready" },
       }),
     );
     const { code, reason } = await h.closed;
     expect(code).toBe(1011);
-    expect(reason).toBe("agent not ready: agent-pod-not-ready");
+    expect(reason).toBe("agent not ready: agent-not-ready");
   });
 
   // TEST_SCENARIO: Ready reaches the api-server only after a full controller reconcile. A hold that began on a hibernated agent opens the upstream as soon as the agent answers its health check while its gateway is ready, without waiting for Ready.

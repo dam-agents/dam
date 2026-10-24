@@ -47,12 +47,6 @@ export function buildDisableCommand(
           process.stderr.write(`error: no agent with id \`${agent.id}\`\n`);
           process.exit(EXIT_AGENT_NOT_RESOLVED);
         }
-        if (result.error.kind === "runtime-migrating") {
-          process.stderr.write(
-            `error: agent "${agent.name}" is moving to the new runtime; it can be ${disabled ? "disabled" : "enabled"} once the move ends\n`,
-          );
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
         printServiceError(result.error, host);
         process.exit(EXIT_RUNTIME_FAILURE);
       }

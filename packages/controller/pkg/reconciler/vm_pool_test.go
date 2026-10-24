@@ -232,25 +232,6 @@ func TestAUserBudgetStorageIsTheOwnersClaimCeiling(t *testing.T) {
 	assert.Equal(t, "100Gi", ceiling.String(), "another owner keeps the install's ceiling")
 }
 
-// TEST_SCENARIO: a UserBudget that sets only some fields leaves the container Ceiling's other dimension at the chart default, so a budget written for the VM pool alone does not shrink or lift the owner's container Ceiling.
-func TestAUserBudgetFieldLeftOutKeepsTheContainerDefault(t *testing.T) {
-	ctx := context.Background()
-	r, _ := setupReconciler(t, agentCR())
-	r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget = resource.MustParse("8"), resource.MustParse("16Gi")
-
-	applyUserBudget(t, r, budgetOwner, apiv1.UserBudgetSpec{CPU: new(resource.MustParse("2"))})
-	cpu, mem, err := r.ceilingFor(ctx, budgetOwner)
-	require.NoError(t, err)
-	assert.Equal(t, "2", cpu.String())
-	assert.Equal(t, "16Gi", mem.String())
-
-	applyUserBudget(t, r, budgetOwner, apiv1.UserBudgetSpec{Storage: new(resource.MustParse("1Ti"))})
-	cpu, mem, err = r.ceilingFor(ctx, budgetOwner)
-	require.NoError(t, err)
-	assert.Equal(t, "8", cpu.String())
-	assert.Equal(t, "16Gi", mem.String())
-}
-
 // TEST_SCENARIO: a pool that rises is the runner's new limit at once; one that falls stops at what the running machines are counted at plus the reserve, rounded up to the request step, so the kernel never finds the runner over a limit lowered under it; and it never rises above the limit the pod has while it falls.
 func TestARunnerLimitRisesToThePoolAndFallsOnlyAsUseAllows(t *testing.T) {
 	gi := func(n int64) resource.Quantity { return *resource.NewQuantity(n<<30, resource.BinarySI) }

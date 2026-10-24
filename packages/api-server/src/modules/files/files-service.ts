@@ -1,7 +1,7 @@
 import { TRPCClientError } from "@trpc/client";
 import { TRPCError } from "@trpc/server";
 import type { FilesService } from "api-server-api";
-import { agentPodClient } from "../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../core/agent-service-client.js";
 import { emit, EventType, type TurnOutcome } from "../../events.js";
 import type { AgentsRepository } from "../agents/index.js";
 
@@ -29,7 +29,7 @@ export function composeFilesModule(
           outcome,
           bytes,
         });
-      const runtime = agentPodClient(input.agentId, namespace, {
+      const runtime = agentServiceClient(input.agentId, namespace, {
         timeoutMs: UPLOAD_TIMEOUT_MS,
       });
       try {

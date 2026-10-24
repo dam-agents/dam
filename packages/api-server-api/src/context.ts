@@ -106,7 +106,6 @@ export interface ApiContext {
   providerStatus: ProviderStatusService;
   user: UserIdentity;
   e2eEnabled: boolean;
-  virtualizationEnabled: boolean;
   featureModes: FeatureModes;
   telemetryBackend: boolean;
 }

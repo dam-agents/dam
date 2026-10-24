@@ -6,9 +6,9 @@ export {
   workspaceNoticeSchema,
 } from "./modules/files/schemas.js";
 export type {
-  PodSession,
-  PodSessionMode,
-  PodSessionType,
+  Session,
+  SessionMode,
+  SessionType,
   SessionCategory,
   SessionDirectoryEntry,
   SessionHistory,
@@ -40,9 +40,9 @@ export {
   type SubAgentHarnessConfig,
 } from "./modules/harness-config/session-settings.js";
 export {
-  podSessionModeSchema,
-  podSessionNoticeSchema,
-  podSessionTypeSchema,
+  sessionModeSchema,
+  sessionNoticeSchema,
+  sessionTypeSchema,
   SESSION_CATEGORIES,
   SESSION_LIST_MAX_LIMIT,
   SESSION_TITLE_MAX_LENGTH,

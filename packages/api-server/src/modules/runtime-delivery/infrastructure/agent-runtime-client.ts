@@ -1,7 +1,7 @@
 import type { httpLink } from "@trpc/client";
 import type { HomeVolume } from "agent-runtime-api";
 import type { ApplyStateInput, ApplyStateResult } from "api-server-api";
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 
 const APPLY_STATE_TIMEOUT_MS = 60_000;
 // UNIT_BOUNDARY_DESCRIPTION: what HOME holds is a read on the way to a decision the browser is waiting for, so it gives up well inside a dialog's patience; an Agent that does not answer in time is one whose home the caller has not measured.
@@ -26,7 +26,7 @@ export function createAgentRuntimeClient(
 ): AgentRuntimeClient {
   const timeoutMs = opts.timeoutMs ?? APPLY_STATE_TIMEOUT_MS;
   const client = (ms: number) =>
-    agentPodClient(agentId, namespace, {
+    agentServiceClient(agentId, namespace, {
       timeoutMs: ms,
       batch: false,
       ...(opts.fetch && { fetch: opts.fetch }),

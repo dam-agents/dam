@@ -1,5 +1,5 @@
 import {
-  podSessionTypeSchema,
+  sessionTypeSchema,
   type SessionDirectoryEntry,
 } from "agent-runtime-api";
 import {
@@ -21,7 +21,7 @@ function parseStoredSession(row: {
   type: string;
 }): StoredSession | null {
   const mode = sessionModeSchema.safeParse(row.mode);
-  const type = podSessionTypeSchema.safeParse(row.type);
+  const type = sessionTypeSchema.safeParse(row.type);
   if (!mode.success || !type.success) return null;
   return { sessionId: row.sessionId, mode: mode.data, type: type.data };
 }
