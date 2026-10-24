@@ -9,6 +9,7 @@ import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { justAskPrompt } from "../../schedules/lib/just-ask.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
+import { SIDE_PANEL_TABS } from "./side-panel-bar.js";
 import { SidebarSection } from "./sidebar-section.js";
 
 export type ConfigPanelTab = Extract<
@@ -46,9 +47,23 @@ export function ConfigSidePanel({
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setSidePanelFocus = useStore((s) => s.setSidePanelFocus);
   const focus = useStore((s) => s.sidePanelFocus);
+  const Icon = SIDE_PANEL_TABS.find((entry) => entry.tab === tab)?.icon;
 
   return (
-    <SidebarSection title={CONFIG_PANEL_TITLES[tab]} open className="flex-1">
+    <SidebarSection
+      title={CONFIG_PANEL_TITLES[tab]}
+      open
+      className="flex-1"
+      headerLeft={
+        Icon && (
+          <Icon
+            size={16}
+            className="shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        )
+      }
+    >
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {match(tab)
           .with("connections", () => (
