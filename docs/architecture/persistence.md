@@ -172,7 +172,7 @@ It serves only once the new controller leads the Lease and has recorded that eve
 The archive is exported, encrypted to the operator's age key, by the api-server's own command; the plaintext never leaves the database, a pod's filesystem or a terminal.
 
 The contract release is the one that stops reading the custom resources, and it is armed rather than trusted.
-Its api-server refuses to start until `switch_completed_at` is set, at least a week has passed since it (the rollback window), the snapshot table still reads back to the digest the absorb recorded, and the operator attested that digest from the encrypted file that left the platform — `agentStore.contract.backupSha256`, or `emptyArchive` for an install that never absorbed a custom resource.
+Its api-server refuses to start until `switch_completed_at` is set, at least a week has passed since it (the rollback window), the snapshot table and the object-store copy both read back to the digest the absorb recorded, an operator export is recorded in `control` and encrypted to the install's key, and `agentStore.contract.backupSha256` is that export's ciphertext digest — or `emptyArchive` for an install that never absorbed a custom resource.
 It then writes `contract-at` into the marker and serves from the rows with no RBAC on `agent-platform.ai` at all; the controller in the same release skips the CRD schema check and holds no verb on the group either.
 A rehearsal may move that gate's clock with `agentStore.contract.now`; an install never sets it.
 The install's own `Agent` and `UserBudget` resources are deleted by `agent-store-cli delete-crs`, which refuses without the marker's `contract-at` and orphans the children because the anchors own them; the kinds themselves wait for the cluster-wide retirement.
@@ -197,7 +197,7 @@ Until the move's switch they carry the whole record: the api-server writes a `sp
 Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
 From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
 A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
-They are deleted per install by that install's contract release, and the kinds themselves only after every install on the cluster is past contract, by one operator action (`cluster:retire-crds`, mirrored into the dam-ops runbook) that backs every remaining resource up and then deletes the CRDs — never by a chart, a hook or a release.
+They are deleted per install by the operator's `delete-crs`, which refuses without a real-clock contract gate and orphans the children through their anchors; the kinds themselves only after every install on the cluster is past contract and no custom resource is left anywhere, by one operator action (`cluster:retire-crds`, mirrored into the dam-ops runbook) — never by a chart, a hook or a release.
 
 Two domain resources are deliberately not custom resources:
 

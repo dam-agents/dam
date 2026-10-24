@@ -74,7 +74,10 @@ The command encrypts to the install's `agentStore.backup.recipient` and refuses 
 The image carries no `tar`, so `kubectl cp` fails; `exec -- cat` is the form that works, and the pod's `/tmp` ciphertext is deleted after it.
 The plaintext is never printed.
 The switch's object-store copy is plaintext YAML in the platform's own bucket (it can carry a legacy `spec.env`); this encrypted file is the copy that leaves the platform.
-It is mandatory before the contract release; `agentStore.contract.backupSha256` carries the digest of the YAML archive (not of the ciphertext, which is randomized), and `agent-store-cli contract-check --sha256 <digest>` compares it exactly.
+`export-snapshot` also records the export in `control.agent_store_exports` — recipient, both digests and the moment — and prints the **ciphertext** digest.
+That digest is what `agentStore.contract.backupSha256` attests: only someone holding the file (or who ran the export) knows it, so the contract release cannot be armed without the file existing.
+The key holder decrypts the file and checks that its plaintext digest equals the one the export printed, which is the digest the absorb recorded.
+It is mandatory before the contract release; the release re-reads the object-store copy and compares it too, when the install has one.
 
 ## Rollback, inside the one-week window
 
@@ -180,11 +183,11 @@ Only after every install is past its window, in the same order dev, staging, pro
 
    ```sh
    kubectl exec -n <ns> deploy/<release>-apiserver -- \
-     node dist/js/agent-store-cli.js contract-check --sha256 <digest>
+     node dist/js/agent-store-cli.js contract-check --sha256 <ciphertext digest>
    ```
 
-   It refuses until the install was switched, a week has passed since `switch_completed_at`, the snapshot table still reads back to the digest the absorb recorded, and `--sha256` is that digest.
-   `--sha256` defaults to `agentStore.contract.backupSha256`; `--now <iso>` moves the clock, for a rehearsal only.
+   It refuses until the install was switched, a week has passed since `switch_completed_at`, the snapshot table and the object-store copy both read back to the digest the absorb recorded, an operator export is recorded for this install and encrypted to `agentStore.backup.recipient`, and `--sha256` is that export's **ciphertext** digest.
+   `--sha256` defaults to `agentStore.contract.backupSha256`; `--now <iso>` moves the clock, and needs `agentStore.contract.rehearsal: true` in the values — a rehearsal cluster only.
 
 2. Release the contract values, which are the switch's plus the attested digest:
 
@@ -194,7 +197,7 @@ Only after every install is past its window, in the same order dev, staging, pro
      cutover:
        acknowledged: true
      contract:
-       backupSha256: <the digest export-snapshot printed>
+       backupSha256: <the ciphertext digest export-snapshot printed>
    ```
 
    The api-server refuses to start if the gate does not pass, so a value set too early is a crash-loop for a second, then the release before it keeps serving.
@@ -209,7 +212,8 @@ Only after every install is past its window, in the same order dev, staging, pro
    # then the same without --dry-run
    ```
 
-   It refuses without the marker's `contract-at`, deletes each `Agent` and `UserBudget` with `Orphan` propagation — the anchors own the children, so no machine, Service or Secret goes with them — and a rerun, or a cluster whose CRDs are already gone, deletes nothing.
+   It refuses without the marker's `contract-at`, or when that stamp came from a rehearsal clock or is later than the real clock, deletes each `Agent` and `UserBudget` with `Orphan` propagation — the anchors own the children, so no machine, Service or Secret goes with them — and a rerun, or a cluster whose CRDs are already gone, deletes nothing.
+   This step is required before the retirement: that script refuses while any custom resource is left, because deleting a CRD cascades its resources and the children only Agents own would go with them.
 
 4. Only when every install on the cluster is past step 2 (its marker has `contract-at`), retire the kinds cluster-wide, once:
 
@@ -217,8 +221,9 @@ Only after every install is past its window, in the same order dev, staging, pro
    mise run cluster:retire-crds -- --backup ./crds-retired.yaml
    ```
 
-   It refuses while any install's namespace runs an api-server with no store marker, or a marker without `contract-at` — an install on the custom resources, or one inside its rollback window — and prints each of them.
-   It writes every remaining `Agent` and `UserBudget` across installs to the backup file (mode 600: a legacy `spec.env` may be in it), prints the file's SHA-256, then deletes `agents.agent-platform.ai` and `userbudgets.agent-platform.ai`.
+   It refuses while any install's namespace runs an api-server with no store marker, or a marker without a real-clock `contract-at` — an install on the custom resources, or one inside its rollback window — and prints each of them.
+   It then, again, refuses while any `Agent` or `UserBudget` exists anywhere, naming them: those must be deleted by step 3 in each install first.
+   Once the kinds are empty it writes the (empty) backup file (mode 600) with its SHA-256 and deletes `agents.agent-platform.ai` and `userbudgets.agent-platform.ai`.
    A second run reports them already retired.
    The same script is mirrored into dam-ops as `retire-crds.sh`, where a prod cluster runs it with `KUBECTL=` pointing at that cluster.
    No install's chart or hook ever deletes a shared CRD.
@@ -226,7 +231,8 @@ Only after every install is past its window, in the same order dev, staging, pro
    After this, nothing may apply the chart's `crds/` again: a dam-ops HelmRelease already sets `upgrade.crds: Skip`, and `mise run cluster:install` takes `PLATFORM_CRDS_RETIRED=1` on a local cluster.
    A new install on a retired cluster starts on the rows and takes `authority: contract` with `agentStore.contract.emptyArchive: true`.
 
-5. An install created after that point starts on the rows and takes `contract` with `agentStore.contract.emptyArchive: true` (it never absorbed a custom resource, so there is no archive to attest).
+5. An install created after that point installs with `agentStore.authority: contract`, `cutover.acknowledged: true` and `agentStore.contract.emptyArchive: true`: it lists no kind (the CRDs are gone), absorbs zero documents, records its switch and passes the gate without an archive to attest.
+   A `--rehearsal` cluster is the only place a moved clock is allowed, and its installs' markers say so, so no real deletion trusts them.
 
 What replaces the old operator habits:
 
