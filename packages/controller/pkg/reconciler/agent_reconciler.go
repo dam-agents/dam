@@ -61,6 +61,10 @@ type AgentReconciler struct {
 	requeue               func(name string, after time.Duration)
 	lifetime              context.Context
 	podResize             atomic.Int32
+	backend               AgentBackend
+	anchors               bool
+	absorbed              func(context.Context) error
+	anchorOrphanSince     sync.Map
 	agentCache            cache.GenericLister
 	agentCacheSynced      cache.InformerSynced
 	podCache              corelisters.PodLister
@@ -115,7 +119,8 @@ type AgentReconciler struct {
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
-	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL}
+	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL,
+		backend: crAgentBackend{dynamic: dyn, namespace: cfg.Namespace}}
 	r.busyProbe = func(ctx context.Context, name string) bool {
 		idle, answered := agentPodStatus(ctx, r.config.Namespace, name)
 		return answered && !idle
@@ -135,6 +140,61 @@ func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentRecon
 func (r *AgentReconciler) WithAgentCacheSynced(synced cache.InformerSynced) *AgentReconciler {
 	r.agentCacheSynced = synced
 	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: WithAgentBackend points the reconciler at the Agent store it reconciles.
+// UNIT_BOUNDARY_DESCRIPTION: A store that does not let the controller write a definition also means the
+// UNIT_BOUNDARY_DESCRIPTION: children are owned by the Agent's anchor rather than by an object in the
+// UNIT_BOUNDARY_DESCRIPTION: cluster that no longer exists.
+func (r *AgentReconciler) WithAgentBackend(backend AgentBackend) *AgentReconciler {
+	r.backend = backend
+	r.anchors = !backend.SpecWritable()
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: WithAbsorbedCheck is the database's half of the fence: every sweep that can
+// UNIT_BOUNDARY_DESCRIPTION: delete asks it first, so a store this cluster never moved into cannot be read
+// UNIT_BOUNDARY_DESCRIPTION: as an empty fleet. Nil in CRD mode, where there is no store to check.
+func (r *AgentReconciler) WithAbsorbedCheck(check func(context.Context) error) *AgentReconciler {
+	r.absorbed = check
+	return r
+}
+
+func (r *AgentReconciler) assertStoreAbsorbed(ctx context.Context) error {
+	if r.absorbed == nil {
+		return nil
+	}
+	return r.absorbed(ctx)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: AssertStoreAbsorbed is the gate the passes outside a reconcile call before
+// UNIT_BOUNDARY_DESCRIPTION: they collect anything.
+func (r *AgentReconciler) AssertStoreAbsorbed(ctx context.Context) error {
+	return r.assertStoreAbsorbed(ctx)
+}
+
+func (r *AgentReconciler) updateStatus(ctx context.Context, name string, mutate func(*apiv1.AgentStatus)) error {
+	return r.backend.UpdateStatus(ctx, name, mutate)
+}
+
+func (r *AgentReconciler) patchAgent(ctx context.Context, name string, ann map[string]*string) error {
+	return r.backend.PatchAgent(ctx, name, ann)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: stampAnnotation is the controller's own writes to an Agent: the machine and
+// UNIT_BOUNDARY_DESCRIPTION: OOM marks are status columns, and the reclaim mark is the signals CAS.
+func (r *AgentReconciler) stampAnnotation(ctx context.Context, name, key, value, resourceVersion string) error {
+	if key == annReclaimedAt {
+		return r.backend.StampReclaim(ctx, name, value, resourceVersion)
+	}
+	return r.backend.PatchAgent(ctx, name, map[string]*string{key: &value})
+}
+
+func (r *AgentReconciler) backendHealthy() error {
+	if r.backend == nil {
+		return nil
+	}
+	return r.backend.Healthy()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the agent cache can answer at all. A reconciler built without one — the tests — reads agents live, so it can always answer.
@@ -220,16 +280,26 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			err = r.setError(ctx, name, secretRefused)
 		}
 	}()
-	ownerRef := agentOwnerRef(agent)
-	agentSpec := &agent.Spec
-
 	timer := newReconcileTimer(ctx, "agent", name)
 	defer timer.done()
 
 	owner := agent.Labels["agent-platform.ai/owner"]
 
-	if err := r.ensureConcreteSize(ctx, agent); err != nil {
+	// UNIT_BOUNDARY_DESCRIPTION: a store that cannot answer is no basis for a decision that stops, moves or deletes anything. The reconcile retries instead, so a database outage leaves every machine exactly as it was.
+	if err := r.backendHealthy(); err != nil {
 		return fmt.Errorf("agent %s: %w", name, err)
+	}
+
+	ownerRef, err := r.childrenOwner(ctx, agent)
+	if err != nil {
+		return err
+	}
+	agentSpec := &agent.Spec
+
+	if r.backend.SpecWritable() {
+		if err := r.ensureConcreteSize(ctx, agent); err != nil {
+			return fmt.Errorf("agent %s: %w", name, err)
+		}
 	}
 
 	credentialSecrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, name, owner,
@@ -321,7 +391,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err != nil {
 				return fmt.Errorf("reading gateway service: %v", err)
 			}
-			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name); err != nil {
+			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name, r.anchors); err != nil {
 				return fmt.Errorf("ensuring gateway service: %v", err)
 			}
 			return nil
@@ -552,7 +622,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 
 	if hardStop {
-		if _, err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
+		if _, err := hibernateAgentPair(ctx, r.client, r.backend, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -609,7 +679,7 @@ func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.A
 	gatewayReady, gatewayFailReason, gatewayFailMsg := r.gatewayReadiness(ctx, agent)
 	ready := agentReady && gatewayReady
 
-	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+	return r.updateStatus(ctx, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", agentFailReason, agentFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", gatewayFailReason, gatewayFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
@@ -637,7 +707,7 @@ func (r *AgentReconciler) publishGatewayTurnedReady(ctx context.Context, agent *
 	if !pending(&agent.Status) || !r.podCurrentAndReady(ctx, GatewayName(agent.Name)) {
 		return nil
 	}
-	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	return r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
 		if pending(s) {
 			setStatusCondition(s, apiv1.ConditionGatewayPodReady, true, "PodReady", "", "", gen)
 			setStatusCondition(s, apiv1.ConditionReady, true, "AllPodsReady", "", "", gen)
@@ -673,7 +743,7 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 
 func (r *AgentReconciler) publishReconciled(ctx context.Context, agent *apiv1.Agent) error {
 	gen := agent.Generation
-	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	return r.updateStatus(ctx, agent.Name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
 		s.ObservedGeneration = gen
 	})
@@ -757,12 +827,21 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 		if slices.ContainsFunc(sec.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == ownerRef.UID }) {
 			return nil
 		}
-		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
-			APIVersion: ownerRef.APIVersion,
-			Kind:       ownerRef.Kind,
-			Name:       ownerRef.Name,
-			UID:        ownerRef.UID,
-		})
+		if r.anchors {
+			sec.OwnerReferences = adoptOwnerRefs(sec.OwnerReferences, metav1.OwnerReference{
+				APIVersion: ownerRef.APIVersion,
+				Kind:       ownerRef.Kind,
+				Name:       ownerRef.Name,
+				UID:        ownerRef.UID,
+			})
+		} else {
+			sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
+				APIVersion: ownerRef.APIVersion,
+				Kind:       ownerRef.Kind,
+				Name:       ownerRef.Name,
+				UID:        ownerRef.UID,
+			})
+		}
 		_, err = r.client.CoreV1().Secrets(r.config.Namespace).Update(ctx, sec, metav1.UpdateOptions{})
 		return err
 	})
@@ -770,7 +849,10 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 
 // UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat. The Agent is read live first, because a queued cleanup can run three quarters of an hour after the delete: a name that another Agent holds now is left alone, with its machine, home and objects, and one the same Agent still holds waits for the queue.
 func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid types.UID) error {
-	live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if r.anchors {
+		return r.deleteByAnchor(ctx, name)
+	}
+	live, err := r.backend.Get(ctx, name)
 	switch {
 	case err == nil && live.GetUID() != uid:
 		slog.Info("deleted agent cleanup: the name belongs to an agent created since, nothing is removed", "agent", name, "uid", uid, "live", live.GetUID())
@@ -781,9 +863,12 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 		return fmt.Errorf("reading the deleted agent: %w", err)
 	}
 
-	r.deleteReleaseNsAgentResources(ctx, name)
-
-	r.deletePVCs(ctx, name)
+	if err := r.deleteReleaseNsAgentResources(ctx, name); err != nil {
+		slog.Warn("deleted agent cleanup: release-namespace resources remain", "agent", name, "error", err)
+	}
+	if err := r.deletePVCs(ctx, name); err != nil {
+		slog.Warn("deleted agent cleanup: PVCs remain", "agent", name, "error", err)
+	}
 	if err := r.deleteMachine(ctx, name, owner); err != nil {
 		return err
 	}
@@ -807,36 +892,45 @@ func AgentOwner(labels map[string]string) string {
 	return labels[envoyOwnerLabel]
 }
 
-func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) {
+// UNIT_BOUNDARY_DESCRIPTION: the resources a release-namespace delete cannot cascade, because owner references do not cross namespaces. The errors are the caller's: with anchors, the anchor is the durable delete marker and one that is removed while these survive is a delete nobody retries.
+func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) error {
+	var errs []error
 	svcName := r.config.ExtAuthzServiceName(agentName)
 	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-		slog.Warn("deleting per-agent ext-authz Service", "service", svcName, "agent", agentName, "error", err)
+		errs = append(errs, fmt.Errorf("deleting per-agent ext-authz Service %s: %w", svcName, err))
 	}
 	for _, name := range []string{agentName + "-harness-allow", agentName + "-extauthz-allow"} {
 		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
 			Delete(ctx, name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-			slog.Warn("deleting per-agent AuthorizationPolicy", "policy", name, "agent", agentName, "error", err)
+			errs = append(errs, fmt.Errorf("deleting per-agent AuthorizationPolicy %s: %w", name, err))
 		}
 	}
+	return stderrors.Join(errs...)
 }
 
-func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
+func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) error {
+	var errs []error
 	for _, selector := range []string{LabelAgent + "=" + agentName} {
 		pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
 			metav1.ListOptions{LabelSelector: selector},
 		)
 		if err != nil {
-			slog.Warn("listing PVCs for agent", "agent", agentName, "selector", selector, "error", err)
+			errs = append(errs, fmt.Errorf("listing PVCs for agent %s: %w", agentName, err))
 			continue
 		}
 		for _, pvc := range pvcs.Items {
-			if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
-				slog.Warn("deleting PVC", "pvc", pvc.Name, "agent", agentName, "error", err)
+			if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("deleting PVC %s: %w", pvc.Name, err))
 			}
 		}
 	}
+	return stderrors.Join(errs...)
 }
 func (r *AgentReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
+	if err := r.assertStoreAbsorbed(ctx); err != nil {
+		slog.Warn("orphan leaf Secret GC: skipped, the Agent store is not the absorbed one", "error", err)
+		return
+	}
 	secrets, err := r.client.CoreV1().Secrets(r.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Warn("orphan leaf Secret GC: listing Secrets failed", "error", err)
@@ -850,7 +944,7 @@ func (r *AgentReconciler) ReconcileOrphanLeafSecrets(ctx context.Context) {
 			continue
 		}
 		scanned++
-		_, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, agentName, metav1.GetOptions{})
+		_, err := r.backend.Get(ctx, agentName)
 		if err == nil {
 			continue
 		}
@@ -879,7 +973,7 @@ func agentNameFromLeafSecret(sec corev1.Secret) (string, bool) {
 }
 
 func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error {
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+	if err := r.updateStatus(ctx, name, func(s *apiv1.AgentStatus) {
 		if c := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionReconciled); c != nil && c.Reason == "BackoffLimitExceeded" {
 			return
 		}
@@ -892,7 +986,7 @@ func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error 
 
 func (r *AgentReconciler) SetBackoffExceeded(ctx context.Context, name string, attempts int, cause error) {
 	msg := fmt.Sprintf("reconcile failed %d times, retrying with capped backoff: %v", attempts, cause)
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+	if err := r.updateStatus(ctx, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionReconciled, false, "Reconciled", "BackoffLimitExceeded", msg, 0)
 	}); err != nil {
 		slog.Warn("writing agent backoff-exceeded status", "agent", name, "error", err)
@@ -934,7 +1028,18 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		}
 		scaled := !running || (existing.Spec.Replicas != nil && *existing.Spec.Replicas == 1)
 		if scaled && existing.Annotations[annStatefulSetTemplate] == hash {
-			return nil
+			if !r.anchors || len(desired.OwnerReferences) == 0 {
+				return nil
+			}
+			if slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
+				return nil
+			}
+			existing.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+			updated, err := r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+			if err == nil && r.statefulSets != nil {
+				r.statefulSets.Mutation(updated)
+			}
+			return err
 		}
 		if running {
 			one := int32(1)
@@ -1030,6 +1135,14 @@ func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Serv
 		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 		return err
 	}
+	if err != nil || !r.anchors || len(desired.OwnerReferences) == 0 {
+		return err
+	}
+	if slices.ContainsFunc(existing.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == desired.OwnerReferences[0].UID }) {
+		return nil
+	}
+	existing.OwnerReferences = adoptOwnerRefs(existing.OwnerReferences, desired.OwnerReferences[0])
+	_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
 	return err
 }
 

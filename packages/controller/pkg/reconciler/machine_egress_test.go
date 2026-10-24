@@ -177,7 +177,7 @@ func TestAnExistingGatewayServiceGainsThePortsInPlace(t *testing.T) {
 	client := fake.NewSimpleClientset(old)
 
 	desired := BuildGatewayService("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
-	live, err := ensureGatewayService(context.Background(), client, desired, "agent", "my-instance")
+	live, err := ensureGatewayService(context.Background(), client, desired, "agent", "my-instance", false)
 	require.NoError(t, err)
 	assert.Equal(t, "172.30.9.9", live.Spec.ClusterIP)
 	assert.Len(t, live.Spec.Ports, 5)
@@ -188,7 +188,7 @@ func TestAnExistingGatewayServiceGainsThePortsInPlace(t *testing.T) {
 	assert.True(t, sameServicePorts(stored.Spec.Ports, desired.Spec.Ports))
 
 	client.ClearActions()
-	_, err = ensureGatewayService(context.Background(), client, desired, "agent", "my-instance")
+	_, err = ensureGatewayService(context.Background(), client, desired, "agent", "my-instance", false)
 	require.NoError(t, err)
 	for _, a := range client.Actions() {
 		assert.NotEqual(t, "update", a.GetVerb(), "a Service already carrying the ports must not be rewritten")

@@ -676,7 +676,7 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 		if st, err := client.Status(ctx, id); err == nil && st.Ready {
 			continue
 		}
-		if _, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{}); k8serrors.IsNotFound(err) {
+		if _, err := r.backend.Get(ctx, id); k8serrors.IsNotFound(err) {
 			continue
 		}
 		return dep

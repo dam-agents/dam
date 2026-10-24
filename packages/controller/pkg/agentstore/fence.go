@@ -14,7 +14,10 @@ const (
 	ModePostgres = "postgres"
 )
 
-const ReadsPostgres = false
+// UNIT_BOUNDARY_DESCRIPTION: ReadsPostgres is true from the release that reconciles the rows. An older
+// UNIT_BOUNDARY_DESCRIPTION: build that still says false refuses the postgres mode, which is how a
+// UNIT_BOUNDARY_DESCRIPTION: rollback target that predates the readers is kept off a switched cluster.
+const ReadsPostgres = true
 
 const (
 	MarkerKey   = "store"

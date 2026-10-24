@@ -50,6 +50,9 @@ func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
 	if r.config.VM.Runner.HostAddress != "" {
 		return nil
 	}
+	if !r.agentCacheReady() || r.backendHealthy() != nil {
+		return nil
+	}
 	pool, pending, agents, lost, unavailable, ok := r.vmPool(ctx)
 	if !ok {
 		return nil

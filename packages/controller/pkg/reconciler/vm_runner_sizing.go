@@ -132,13 +132,13 @@ func (r *AgentReconciler) ownerAgents(ctx context.Context, owner string) ([]runt
 		}
 		return items, nil
 	}
-	list, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
+	list, err := r.backend.List(ctx, selector)
 	if err != nil {
 		return nil, fmt.Errorf("listing the owner's agents: %w", err)
 	}
-	items := make([]runtime.Object, len(list.Items))
-	for i := range list.Items {
-		items[i] = &list.Items[i]
+	items := make([]runtime.Object, len(list))
+	for i := range list {
+		items[i] = &list[i]
 	}
 	return items, nil
 }

@@ -91,8 +91,13 @@ export const CONTROL_GRANTS: readonly Grant[] = [
   { object: "control.user_budgets", privileges: ["SELECT"] },
   {
     object: "control.agent_store",
-    columns: ["absorbed_at", "anchors_ensured_at", "switch_completed_at"],
+    columns: ["id", "absorbed_at", "anchors_ensured_at", "switch_completed_at"],
     privileges: ["SELECT"],
+  },
+  {
+    object: "control.agent_store",
+    columns: ["controller_holder", "anchors_ensured_at"],
+    privileges: ["UPDATE"],
   },
 ];
 

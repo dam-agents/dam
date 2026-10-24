@@ -2,12 +2,10 @@ package reconciler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/labels"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -36,17 +34,15 @@ type reclaimCandidate struct {
 }
 
 func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner string, forRefusedStart bool) ([]reclaimCandidate, error) {
-	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: envoyOwnerLabel + "=" + owner,
-	})
+	agents, err := r.backend.List(ctx, labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner}))
 	if err != nil {
 		return nil, fmt.Errorf("listing owner agents: %w", err)
 	}
 
 	now := r.clockNow().UTC()
 	var out []reclaimCandidate
-	for i := range agents.Items {
-		item := &agents.Items[i]
+	for i := range agents {
+		item := &agents[i]
 		if item.GetName() == self {
 			continue
 		}
@@ -121,30 +117,4 @@ func reclaimEligible(peer *apiv1.Agent, idleTimeout time.Duration, now time.Time
 		return time.Time{}, false
 	}
 	return last, true
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: writes the reclaim stamp, and only onto the
-// UNIT_BOUNDARY_DESCRIPTION: version of the Agent the reclaim re-read it at:
-// UNIT_BOUNDARY_DESCRIPTION: an api-server write landing between that read and
-// UNIT_BOUNDARY_DESCRIPTION: this patch bumps the version and the patch fails
-// UNIT_BOUNDARY_DESCRIPTION: with a conflict instead of spending the activity
-// UNIT_BOUNDARY_DESCRIPTION: of an agent somebody just touched.
-func (r *AgentReconciler) stampReclaimed(ctx context.Context, name, stamp, resourceVersion string) error {
-	return r.stampAnnotation(ctx, name, annReclaimedAt, stamp, resourceVersion)
-}
-
-func (r *AgentReconciler) stampAnnotation(ctx context.Context, name, key, value, resourceVersion string) error {
-	meta := map[string]any{"annotations": map[string]string{key: value}}
-	if resourceVersion != "" {
-		meta["resourceVersion"] = resourceVersion
-	}
-	raw, err := json.Marshal(map[string]any{"metadata": meta})
-	if err != nil {
-		return fmt.Errorf("encoding the %s stamp: %w", key, err)
-	}
-	if _, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).
-		Patch(ctx, name, types.MergePatchType, raw, metav1.PatchOptions{}); err != nil {
-		return fmt.Errorf("stamping %s on agent %s: %w", key, name, err)
-	}
-	return nil
 }

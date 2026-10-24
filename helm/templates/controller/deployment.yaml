@@ -33,6 +33,8 @@ spec:
           env:
             - name: LOG_LEVEL
               value: {{ .Values.controller.logLevel | default "info" | quote }}
+            - name: PLATFORM_HEALTH_PORT
+              value: {{ .Values.controller.healthPort | default 8081 | quote }}
             # Which store is authoritative for Agents and budgets. The binary
             # refuses to run the pairing the cluster's marker contradicts.
             - name: PLATFORM_AGENT_STORE
@@ -196,5 +198,43 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          ports:
+            - name: health
+              containerPort: {{ .Values.controller.healthPort | default 8081 }}
+          {{- if .Values.probes.enabled }}
+          # UNIT_BOUNDARY_DESCRIPTION: the kubelet is what turns a leader that holds the Lease with no fleet behind it into a restart. Readiness is the store answering in the last half minute, not leadership — a standby must read ready or a one-replica rollout waits for a leader it cannot have; liveness allows two minutes of silence. CRD mode has no store, so both are always healthy. The startup budget covers the first list and, after the switch, the anchor pass.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
           resources:
             {{- toYaml .Values.controller.resources | nindent 12 }}
+          {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}
+          volumeMounts:
+            - name: pg-ca
+              mountPath: /etc/platform/pg-ca
+              readOnly: true
+          {{- end }}
+      {{- if and (eq .Values.agentStore.authority "postgres") .Values.apiServer.db.caCert }}
+      volumes:
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-db-ca
+      {{- end }}

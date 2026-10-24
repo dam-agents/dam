@@ -570,6 +570,12 @@ jq -e '.["controller"].PLATFORM_AGENT_STORE == "crd"
   and .["controller"].PLATFORM_DATABASE_URL == null
   and .["controller"].POSTGRES_PASSWORD == null' <<<"$default_store" >/dev/null ||
   { echo "the default render does not run on the custom resources, or hands the controller a database credential: $default_store" >&2; exit 1; }
+# No release in this chart absorbs the store, so the Postgres mode fails the
+# render instead of starting two components that can only refuse it.
+if helm template platform . "${COMMON[@]}" --set agentStore.authority=postgres >/dev/null 2>&1; then
+  echo "a render setting agentStore.authority=postgres succeeded, but no release in this chart absorbs the store" >&2
+  exit 1
+fi
 # The marker's name is the chart's, and it is the one the api-server's Role pins:
 # a name the Role did not grant would fail closed on every boot.
 marker=$(jq -r '.["apiserver"].PLATFORM_AGENT_STORE_MARKER' <<<"$default_store")
