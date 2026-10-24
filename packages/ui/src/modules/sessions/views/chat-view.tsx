@@ -88,7 +88,10 @@ import {
   useEnvironmentsEnabled,
 } from "../../environments/api/queries.js";
 import { EnvironmentsPanel } from "../../environments/components/environments-panel.js";
-import { environmentsTabShown } from "../../environments/lib/environments-tab.js";
+import {
+  environmentsPanelShown,
+  environmentsTabShown,
+} from "../../environments/lib/environments-tab.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
@@ -290,7 +293,7 @@ export function ChatView() {
   const rightToolbar = useUnifiedRightToolbar();
   const environmentsEnabled = useEnvironmentsEnabled();
   const environments = useEnvironments(
-    newLayout && environmentsEnabled && agentView?.vm ? selectedAgent : null,
+    environmentsEnabled && agentView?.vm ? selectedAgent : null,
     { poll: false },
   );
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
@@ -740,15 +743,23 @@ export function ChatView() {
     canOpenBrowser,
     changes: changesAvailable,
     processesEnabled,
-    environments:
-      environmentsTabShown({
-        newLayout,
-        enabled: environmentsEnabled,
-        vm: agentView?.vm === true,
-        count: environments.data?.length,
-      }) ||
-      (environments.isLoading && sidePanelTab === "environments"),
+    // UNIT_BOUNDARY_DESCRIPTION: the experiment offers the Environments panel once the agent owns one, and while its access list is open before that; every other shell keeps the tab it had, which waits for neither.
+    environments: rightToolbar
+      ? environmentsPanelShown({
+          enabled: environmentsEnabled,
+          vm: agentView?.vm === true,
+          count: environments.data?.length,
+          open: sidePanelTab === "environments",
+        })
+      : environmentsTabShown({
+          newLayout,
+          enabled: environmentsEnabled,
+          vm: agentView?.vm === true,
+          count: environments.data?.length,
+        }) ||
+        (environments.isLoading && sidePanelTab === "environments"),
     configuration: rightToolbar,
+    chatForms: chatFormsEnabled,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
@@ -1248,7 +1259,7 @@ export function ChatView() {
                       tone="muted"
                       className="pl-3 text-sm"
                       onClick={() =>
-                        navigateToSandboxHome(choice.agentId, "setup")
+                        navigateToSandboxHome(choice.agentId, "providers")
                       }
                     >
                       {harnessCurrent?.model
@@ -1329,15 +1340,21 @@ export function ChatView() {
               {activeTab === "environments" && selectedAgent && (
                 <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
               )}
-              {isConfigPanelTab(activeTab) && selectedAgent && agentView && (
-                <ConfigSidePanel
-                  key={activeTab}
-                  tab={activeTab}
-                  agent={agentView}
-                  agentId={selectedAgent}
-                  onResumeSession={(id) => openAgentSession(selectedAgent, id)}
-                />
-              )}
+              {isConfigPanelTab(activeTab) &&
+                selectedAgent &&
+                agentView &&
+                agentDisplay && (
+                  <ConfigSidePanel
+                    key={`${selectedAgent}:${activeTab}`}
+                    tab={activeTab}
+                    agent={agentView}
+                    display={agentDisplay}
+                    agentId={selectedAgent}
+                    onResumeSession={(id) =>
+                      openAgentSession(selectedAgent, id)
+                    }
+                  />
+                )}
             </>
           }
           dock={dockPanel}

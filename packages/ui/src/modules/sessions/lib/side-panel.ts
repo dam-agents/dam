@@ -1,3 +1,5 @@
+import type { SandboxSection } from "../../platform/lib/routes.js";
+
 export type SidePanelTab =
   | "files"
   | "changes"
@@ -9,6 +11,11 @@ export type SidePanelTab =
   | "channels"
   | "skills"
   | "schedules"
+  | "agent"
+  | "providers"
+  | "network"
+  | "environment"
+  | "chat-forms"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -39,6 +46,7 @@ export type SidePanelAvailability = {
   processesEnabled: boolean;
   environments: boolean;
   configuration: boolean;
+  chatForms: boolean;
   gettingStarted: boolean;
 };
 
@@ -57,6 +65,12 @@ export function hiddenSidePanelTabs(
     channels: available.agent && available.configuration,
     skills: available.agent && available.configuration,
     schedules: available.agent && available.configuration,
+    agent: available.agent && available.configuration,
+    providers: available.agent && available.configuration,
+    network: available.agent && available.configuration,
+    environment: available.agent && available.configuration,
+    "chat-forms":
+      available.agent && available.configuration && available.chatForms,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -92,6 +106,64 @@ export function visibleSidePanelTab(
       return tab;
   }
 }
+
+export type ConfigurationTab = Extract<
+  SidePanelTab,
+  | "agent"
+  | "connections"
+  | "channels"
+  | "skills"
+  | "schedules"
+  | "environments"
+  | "providers"
+  | "network"
+  | "environment"
+  | "chat-forms"
+>;
+
+const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
+  setup: "agent",
+  providers: "providers",
+  connections: "connections",
+  network: "network",
+  environment: "environment",
+  channels: "channels",
+  "chat-forms": "chat-forms",
+  skills: "skills",
+  schedules: "schedules",
+  environments: "environments",
+  usage: "agent",
+};
+
+export function configTabForSection(section: SandboxSection): ConfigurationTab {
+  return SECTION_TAB[section];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which panel a configuration address opens, or
+ * none: only the install's flag turns the page's own address into the panel
+ * that holds its section, so a browser that last stored the experiment on
+ * never redirects a page the install says is off.
+ */
+export function configRedirectTab(
+  flag: boolean,
+  section: SandboxSection,
+): ConfigurationTab | null {
+  return flag ? configTabForSection(section) : null;
+}
+
+export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
+  "agent",
+  "connections",
+  "channels",
+  "skills",
+  "schedules",
+  "environments",
+  "providers",
+  "network",
+  "environment",
+  "chat-forms",
+];
 
 export type SidePanelSelection =
   | { kind: "collapse" }

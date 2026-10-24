@@ -96,9 +96,27 @@ it("caps the count at 9+", () => {
   );
 });
 
-// TEST_SCENARIO: An Agent's configuration keeps a tab of its own beside the chat, so Connections, Channels, Skills and Schedules open without leaving the conversation; each tab shows its own name, above the tabs that belong to every page.
-it("lists the Agent's configuration tabs", () => {
-  const html = renderToStaticMarkup(
+// TEST_SCENARIO: The tiled rail keeps the Agent's configuration behind one Configure tile, since the Experiment added ten panels; the classic bar, which only ever shows with the experiment off, keeps a button per tab.
+it("puts the configuration behind one Configure tile", () => {
+  const tiles = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: "schedules",
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  expect(tiles).toContain('data-testid="side-panel-configure"');
+  expect(tiles).toContain('aria-label="Configure"');
+  expect(tiles).not.toContain('data-testid="side-panel-tab-schedules"');
+  expect(tiles).toContain('data-testid="side-panel-tab-artifacts"');
+
+  // UNIT_BOUNDARY_DESCRIPTION: the configuration exists only with the tiled rail, so the classic bar never draws its tabs.
+  const classic = renderToStaticMarkup(
     createElement(
       TooltipProvider,
       null,
@@ -109,25 +127,53 @@ it("lists the Agent's configuration tabs", () => {
       }),
     ),
   );
-  for (const [tab, label] of [
-    ["connections", "Connections"],
-    ["channels", "Channels"],
-    ["skills", "Skills"],
-    ["schedules", "Schedules"],
-  ] as const) {
-    expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
-    expect(html).toContain(`aria-label="${label}"`);
-  }
-  const order = [
-    "processes",
-    "connections",
-    "channels",
-    "skills",
-    "schedules",
-    "getting-started",
-  ].map((tab) => html.indexOf(`data-testid="side-panel-tab-${tab}"`));
-  expect(order[0]).toBeGreaterThan(-1);
-  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(classic).not.toContain('data-testid="side-panel-configure"');
+  expect(classic).not.toContain('data-testid="side-panel-tab-schedules"');
+});
+
+// TEST_SCENARIO: JanUI with the experiment off keeps its Environments button in the rail, because that tab belongs to every shell and only the configuration tabs came with the experiment.
+it("keeps the Environments button in the classic bar", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: "environments",
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  expect(html).toContain('data-testid="side-panel-tab-environments"');
+  expect(html).toContain('aria-pressed="true"');
+});
+
+// TEST_SCENARIO: With the experiment off, the rail carries no Configure tile at all, so a chat without it looks exactly as before.
+it("shows no Configure tile without the configuration tabs", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: hiddenSidePanelTabs({
+          agent: true,
+          artifacts: true,
+          canOpenBrowser: true,
+          changes: true,
+          processesEnabled: true,
+          environments: false,
+          configuration: false,
+          chatForms: true,
+          gettingStarted: true,
+        }),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  expect(html).not.toContain('data-testid="side-panel-configure"');
+  expect(html).not.toContain('data-testid="side-panel-tab-schedules"');
 });
 
 // TEST_SCENARIO: The icon bar lists the views by how often users reach for them, Artifacts first.
@@ -166,6 +212,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           processesEnabled: true,
           environments: true,
           configuration: false,
+          chatForms: true,
           gettingStarted: true,
         }),
         onSelect: () => {},
@@ -213,7 +260,7 @@ it("scrolls the rail when the window cannot hold both clusters", () => {
   expect(nav).toContain("overflow-y-auto");
 });
 
-// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Documentation as a tile between Get started and Approvals.
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 22 px icons, only the open tab filled, no separate bar because the fill is the mark, and Get started above Approvals.
 it("draws JanUI's tiles at the sidebar strip's size", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -239,15 +286,10 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(open).toContain("size-10");
   expect(open).toContain("bg-muted");
   expect(html).toContain('width="22"');
-  const order = ["getting-started", "docs", "approvals"].map((id) =>
-    html.indexOf(
-      id === "docs"
-        ? 'data-testid="side-panel-docs"'
-        : `data-testid="side-panel-tab-${id}"`,
-    ),
+  const order = ["getting-started", "approvals"].map((id) =>
+    html.indexOf(`data-testid="side-panel-tab-${id}"`),
   );
   expect(order[1]).toBeGreaterThan(order[0]!);
-  expect(order[2]).toBeGreaterThan(order[1]!);
 });
 
 // TEST_SCENARIO: The JanUI rail names a tab through its aria-label and the panel header, not a hover tooltip that would cover the panel, as the left rail does; the classic layout's icon bar keeps its tooltip.

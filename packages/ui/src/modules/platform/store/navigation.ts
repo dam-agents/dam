@@ -1,7 +1,12 @@
 import type { StateCreator } from "zustand";
 
+import { isMobile } from "../../../lib/breakpoints.js";
 import { resolveReturnPathname } from "../../../lib/return-path.js";
 import type { PlatformStore } from "../../../store.js";
+import {
+  configTabForSection,
+  type SidePanelTab,
+} from "../../sessions/lib/side-panel.js";
 import {
   parseRoute,
   routeToNavigationState,
@@ -32,6 +37,7 @@ export interface NavigationSlice {
   ) => void;
   setUsagePeriod: (period: string) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
+  openConfigTab: (agentId: string, tab: SidePanelTab) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   setKitBrowserOpen: (open: boolean) => void;
   mobileScreen: "files" | "chat";
@@ -125,14 +131,45 @@ export const createNavigationSlice: StateCreator<
     set({ usagePeriod: period });
   },
   navigateToSandboxHome: (agentId, section = "setup") =>
-    leaveView(get, () => {
-      history.pushState(
-        null,
-        "",
-        routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
-      );
-      set({ view: "sandbox-home", agentId, sandboxSection: section });
-    }),
+    // UNIT_BOUNDARY_DESCRIPTION: with the experiment on, an Agent's configuration page has no surface of its own, so this one function every link, menu item and deep link goes through opens the chat with the panel that holds that section. With it off, the page opens as it always has.
+    get().unifiedToolbar
+      ? get().openConfigTab(agentId, configTabForSection(section))
+      : leaveView(get, () => {
+          history.pushState(
+            null,
+            "",
+            routeToPath({
+              view: "sandbox-home",
+              agentId,
+              sandboxSection: section,
+            }),
+          );
+          set({ view: "sandbox-home", agentId, sandboxSection: section });
+        }),
+  openConfigTab: (agentId, tab) => {
+    const { view, selectedAgent } = get();
+    if (view === "chat" && selectedAgent === agentId) {
+      set({ sidePanelTab: tab });
+      if (isMobile()) set({ mobileScreen: "files" });
+      return;
+    }
+    const path = routeToPath({ view: "chat", agent: agentId });
+    const open = () => {
+      history.pushState(null, "", path);
+      set({ view: "chat", selectedAgent: agentId, agentId: null });
+      set({ sidePanelTab: tab });
+      if (isMobile()) set({ mobileScreen: "files" });
+    };
+    // UNIT_BOUNDARY_DESCRIPTION: coming from the configuration page's own address replaces it, so Back never returns to a page that redirects again; from another agent's chat the change goes through leaveView, which asks before dropping unsaved edits and clears that Agent's Session.
+    if (view === "sandbox-home") {
+      history.replaceState(null, "", path);
+      set({ view: "chat", selectedAgent: agentId, agentId: null });
+      set({ sidePanelTab: tab });
+      if (isMobile()) set({ mobileScreen: "files" });
+      return;
+    }
+    leaveView(get, open);
+  },
   navigateToStarterKit: (catalog, kitId) =>
     leaveView(get, () => {
       history.pushState(

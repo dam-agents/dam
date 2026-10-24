@@ -2,25 +2,55 @@ import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { routeToPath } from "../../platform/lib/routes.js";
+import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
+import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
+import { AgentModelSettingsSection } from "../../sandboxes/components/agent-config-sections.js";
+import { AgentPanel } from "../../sandboxes/components/agent-panel.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
+import { SandboxProvidersSection } from "../../sandboxes/components/sandbox-providers-section.js";
+import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
+import { ConnectionAddressingSection } from "../../sandboxes/components/setup/setup-sections.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { justAskPrompt } from "../../schedules/lib/just-ask.js";
-import type { SidePanelTab } from "../lib/side-panel.js";
+import {
+  CONFIGURATION_TABS,
+  type ConfigurationTab,
+  type SidePanelTab,
+} from "../lib/side-panel.js";
 import { SIDE_PANEL_TABS } from "./side-panel-bar.js";
 import { SidebarSection } from "./sidebar-section.js";
 
-export type ConfigPanelTab = Extract<
-  SidePanelTab,
-  "connections" | "channels" | "skills" | "schedules"
->;
+export type ConfigPanelTab = Exclude<ConfigurationTab, "environments">;
+
+const SECTION_OF_TAB: Record<ConfigPanelTab, SandboxSection> = {
+  agent: "setup",
+  connections: "connections",
+  channels: "channels",
+  skills: "skills",
+  schedules: "schedules",
+  providers: "providers",
+  network: "network",
+  environment: "environment",
+  "chat-forms": "chat-forms",
+};
+
+export function configPanelTitle(tab: SidePanelTab): string {
+  return SIDE_PANEL_TABS.find((entry) => entry.tab === tab)?.label ?? tab;
+}
 
 export function isConfigPanelTab(
   tab: SidePanelTab | null,
 ): tab is ConfigPanelTab {
-  return tab !== null && tab in CONFIG_PANEL_TITLES;
+  return (
+    tab !== null &&
+    tab !== "environments" &&
+    (CONFIGURATION_TABS as readonly SidePanelTab[]).includes(tab)
+  );
 }
 
 /**
@@ -34,11 +64,13 @@ export function isConfigPanelTab(
 export function ConfigSidePanel({
   tab,
   agent,
+  display,
   agentId,
   onResumeSession,
 }: {
   tab: ConfigPanelTab;
   agent: AgentView;
+  display: AgentDisplay;
   agentId: string;
   onResumeSession: (sessionId: string) => void;
 }) {
@@ -47,29 +79,24 @@ export function ConfigSidePanel({
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setSidePanelFocus = useStore((s) => s.setSidePanelFocus);
   const focus = useStore((s) => s.sidePanelFocus);
-  const Icon = SIDE_PANEL_TABS.find((entry) => entry.tab === tab)?.icon;
+  // UNIT_BOUNDARY_DESCRIPTION: the page's own description goes above every panel, because it carries the copy that stops a mistake there — env vars say they are plain text and secrets belong in Connections, and network says an unmatched request waits for approval on Home.
+  const description = SECTIONS.find(
+    (entry) => entry.section === SECTION_OF_TAB[tab],
+  )?.description;
 
   return (
-    <SidebarSection
-      title={CONFIG_PANEL_TITLES[tab]}
-      open
-      className="flex-1"
-      headerLeft={
-        Icon && (
-          <Icon
-            size={16}
-            className="shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-        )
-      }
-    >
+    <SidebarSection title={configPanelTitle(tab)} open className="flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        {description && (
+          <p className="mb-4 text-sm text-muted-foreground">{description}</p>
+        )}
         {match(tab)
+          .with("agent", () => <AgentPanel agent={agent} display={display} />)
           .with("connections", () => (
             <ConnectionsSection
               agentId={agentId}
               header={() => null}
+              leading={<ConnectionAddressingSection agent={agent} />}
               oauthReturnView={routeToPath({
                 view: "chat",
                 agent: agentId,
@@ -93,15 +120,21 @@ export function ConfigSidePanel({
               }}
             />
           ))
+          .with("providers", () => (
+            <>
+              <SandboxProvidersSection agentId={agentId} header={() => null} />
+              <AgentModelSettingsSection agentId={agentId} />
+            </>
+          ))
+          .with("network", () => (
+            <AgentEgressEditor agentId={agentId} header={() => null} />
+          ))
+          .with("environment", () => (
+            <EnvTab agent={agent} header={() => null} />
+          ))
+          .with("chat-forms", () => <ChatFormSettings agentId={agentId} />)
           .exhaustive(() => null)}
       </div>
     </SidebarSection>
   );
 }
-
-export const CONFIG_PANEL_TITLES: Record<ConfigPanelTab, string> = {
-  connections: "Connections",
-  channels: "Channels",
-  skills: "Skills",
-  schedules: "Schedules",
-};
