@@ -30,13 +30,20 @@ export interface ParsedModel {
   family: ModelFamily;
   size: string;
   version: readonly number[];
+  snapshotDate?: string;
 }
+
+const SNAPSHOT = /^\d{8}$/;
+const VERSION_PART = /^\d{1,2}$/;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: gateways prefix a model id with their own path
  * (`ibm/aws/…`) and Bedrock with dots (`eu.anthropic.…`), so only the last
- * path segment is read, and its family, size and version tokens are found
- * wherever they sit in it; a name without a known size is not a family model.
+ * path segment is read, and a name is a family model only when it is one of
+ * the shapes builders publish: `claude-opus-5-5`, `claude-3-5-sonnet` and
+ * `gpt-6.1-sol`, with 1–2 version parts and an optional snapshot date after
+ * them. Any other token (a variant such as `-mini`) leaves the name out, so
+ * it stays a distinct model instead of merging with the model it resembles.
  */
 export function parseModelFamily(name: string): ParsedModel | null {
   const tokens = (name.toLowerCase().split("/").pop() ?? "").split(
@@ -45,11 +52,31 @@ export function parseModelFamily(name: string): ParsedModel | null {
   for (const family of MODEL_FAMILIES) {
     const at = tokens.indexOf(family.token);
     if (at < 0) continue;
-    const rest = tokens.slice(at + 1);
-    const size = rest.find((t) => family.sizes.includes(t));
-    if (size === undefined) continue;
-    const version = rest.filter((t) => /^\d+$/.test(t)).map(Number);
-    return { family, size, version };
+    const after = tokens.slice(at + 1);
+    const last = after[after.length - 1];
+    const snapshotDate =
+      after.length > 1 && last !== undefined && SNAPSHOT.test(last)
+        ? last
+        : undefined;
+    const rest = snapshotDate === undefined ? after : after.slice(0, -1);
+    for (const size of family.sizes) {
+      if (rest.length < 2 || rest.length > 3) continue;
+      const versionOf = (parts: readonly string[]) =>
+        parts.every((p) => VERSION_PART.test(p)) ? parts.map(Number) : null;
+      const version =
+        rest[0] === size
+          ? versionOf(rest.slice(1))
+          : rest[rest.length - 1] === size
+            ? versionOf(rest.slice(0, -1))
+            : null;
+      if (version !== null)
+        return {
+          family,
+          size,
+          version,
+          ...(snapshotDate !== undefined && { snapshotDate }),
+        };
+    }
   }
   return null;
 }
@@ -92,7 +119,9 @@ export interface LeftoverModels {
  * version any provider lists, one option per provider offering that version;
  * older versions and models of no known family are left for the menu to hide
  * behind More and list last. A provider that listed models has its unknown
- * ones kept; a provider that listed none is kept for its listing state.
+ * ones kept, and so has a name another name of the same provider already
+ * represents (a snapshot of the same version), so no selectable name is lost;
+ * a provider that listed none is kept for its listing state.
  */
 export function familyModelGroups(groups: readonly ModelGroup[]): {
   families: FamilySection[];
@@ -114,15 +143,18 @@ export function familyModelGroups(groups: readonly ModelGroup[]): {
         entry = {
           ...parsed,
           key,
-          label: `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)}${parsed.version.length > 0 ? ` ${parsed.version.join(".")}` : ""}`,
+          label: `${parsed.size.charAt(0).toUpperCase()}${parsed.size.slice(1)} ${parsed.version.join(".")}`,
           options: [],
         };
         known.set(key, entry);
       }
       if (
-        !entry.options.some((o) => o.group.connectionId === group.connectionId)
-      )
-        entry.options.push({ group, model });
+        entry.options.some((o) => o.group.connectionId === group.connectionId)
+      ) {
+        unknown.push(model);
+        continue;
+      }
+      entry.options.push({ group, model });
     }
     if (unknown.length > 0 || group.models.length === 0)
       leftovers.push({ group, models: unknown });

@@ -169,7 +169,11 @@ function FamilyModelSection({
   current: string | null;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() =>
+    section.older.some((entry) =>
+      entry.options.some((option) => sameModel(current, option.model.name)),
+    ),
+  );
   return (
     <section aria-label={section.family.name} className="flex flex-col px-1">
       <div className="flex h-6 items-center">
@@ -226,10 +230,8 @@ function FamilyModelRow({
   current: string | null;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
   const isCurrent = entry.options.some((o) => sameModel(current, o.model.name));
   const option =
-    entry.options.find((o) => o.group.connectionId === picked) ??
     entry.options.find((o) => sameModel(current, o.model.name)) ??
     entry.options[0]!;
   return (
@@ -258,10 +260,7 @@ function FamilyModelRow({
           label={entry.label}
           options={entry.options}
           selected={option}
-          onPick={(next) => {
-            setPicked(next.group.connectionId);
-            onChoose(next.model.name, next.group);
-          }}
+          onPick={(next) => onChoose(next.model.name, next.group)}
         />
       )}
     </li>
@@ -289,7 +288,8 @@ function ProviderChoice({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Provider for ${label}`}
+          title={selected.group.displayName}
+          aria-label={`Provider for ${label}: ${selected.group.displayName}`}
           className="flex shrink-0 items-center gap-0.5 rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <span className="max-w-24 truncate">

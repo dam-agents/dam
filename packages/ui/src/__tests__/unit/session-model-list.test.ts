@@ -61,7 +61,10 @@ afterEach(() => {
   cleanup = undefined;
 });
 
-function render(onChoose: (model: string, group: ModelGroup) => void) {
+function render(
+  onChoose: (model: string, group: ModelGroup) => void,
+  current: string | null = null,
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -69,7 +72,7 @@ function render(onChoose: (model: string, group: ModelGroup) => void) {
     root.render(
       createElement(SessionModelList, {
         groups: [ibm, anthropic],
-        current: null,
+        current,
         loading: false,
         failed: false,
         operable: true,
@@ -97,7 +100,7 @@ it("shows the newest size, expands the older versions and picks its model", () =
 
   expect(container.textContent).not.toContain("Opus 5.1");
   expect(
-    container.querySelector('[aria-label="Provider for Opus 5.5"]'),
+    container.querySelector('[aria-label="Provider for Opus 5.5: IBM"]'),
   ).not.toBeNull();
 
   const newest = buttons().find((b) => b.textContent?.startsWith("Opus 5.5"));
@@ -112,4 +115,11 @@ it("shows the newest size, expands the older versions and picks its model", () =
   expect(older).toBeDefined();
   click(older!);
   expect(onChoose).toHaveBeenCalledWith("ibm/aws/claude-opus-5-1", ibm);
+});
+
+// TEST_SCENARIO: A session on an older version opens that family expanded, so the current model is visible without opening More first.
+it("opens the family of the current older model", () => {
+  const { container } = render(() => {}, "ibm/aws/claude-opus-5-1");
+  expect(container.textContent).toContain("Opus 5.1");
+  expect(container.textContent).toContain("Less");
 });

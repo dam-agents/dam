@@ -701,8 +701,8 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).toContain("Opus 5.5");
     expect(html).not.toContain("Opus 5.1");
     expect(html).toContain("More");
-    expect(html).toContain('aria-label="Provider for Opus 5.5"');
-    expect(html).toContain('aria-label="Provider for Sol 5.6"');
+    expect(html).toContain('aria-label="Provider for Opus 5.5: IBM"');
+    expect(html).toContain('aria-label="Provider for Sol 5.6: IBM"');
     expect(html).toContain("rits/deepseek-ai/DeepSeek-V3.2");
     expect(html.indexOf('aria-label="Claude"')).toBeLessThan(
       html.indexOf('aria-label="IBM"'),

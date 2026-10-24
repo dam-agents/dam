@@ -68,11 +68,38 @@ describe("a model id's family, size and version", () => {
     expect(parseModelFamily("azure/gpt-5.5")).toBeNull();
   });
 
-  // TEST_SCENARIO: Versions compare numerically, so 5.5 beats 5.1 and 5.1 beats 5.
+  // TEST_SCENARIO: A name that only looks like a family model is not one: a variant after the size and a size word in the middle stay distinct models.
+  it("rejects a name of another shape", () => {
+    expect(parseModelFamily("gpt-6.1-sol-mini")).toBeNull();
+    expect(parseModelFamily("gpt-6.1-custom-sol-adapter")).toBeNull();
+    expect(parseModelFamily("claude-opus-5-5-mini")).toBeNull();
+  });
+
+  // TEST_SCENARIO: A snapshot date after the version is kept apart from it, so the dated snapshot is the same version and not a newer one.
+  it("reads a snapshot date apart from the version", () => {
+    expect(parseModelFamily("claude-opus-5-5-20261001")).toMatchObject({
+      size: "opus",
+      version: [5, 5],
+      snapshotDate: "20261001",
+    });
+    expect(parseModelFamily("claude-3-5-sonnet-20241022")).toMatchObject({
+      size: "sonnet",
+      version: [3, 5],
+      snapshotDate: "20241022",
+    });
+  });
+
+  // TEST_SCENARIO: Versions compare numerically, so 5.5 beats 5.1, 5.1 beats 5, and 5.10 beats 5.9.
   it("orders versions numerically", () => {
     expect(compareVersions([5, 5], [5, 1])).toBeGreaterThan(0);
     expect(compareVersions([5, 1], [5])).toBeGreaterThan(0);
     expect(compareVersions([4, 8], [5])).toBeLessThan(0);
+    expect(
+      compareVersions(
+        parseModelFamily("gpt-5.10-sol")!.version,
+        parseModelFamily("gpt-5.9-sol")!.version,
+      ),
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -140,6 +167,50 @@ describe("the menu's family groups", () => {
       ["ibm", ["rits/deepseek-ai/DeepSeek-V3.2"]],
       ["curve", ["rits/zai-org/glm-5-3"]],
       ["openai", []],
+    ]);
+  });
+
+  // TEST_SCENARIO: A variant name and a fully named model from one provider are two selectable models, not one dropped by the other.
+  it("keeps a variant beside the model it resembles", () => {
+    const { families, leftovers } = familyModelGroups([
+      group("ibm", "ibm/gpt-6.1-sol", "ibm/gpt-6.1-sol-mini"),
+    ]);
+    const sol = families[0]!.newest[0]!;
+    expect(sol.options.map((o) => o.model.name)).toEqual(["ibm/gpt-6.1-sol"]);
+    expect(leftovers[0]!.models.map((m) => m.name)).toEqual([
+      "ibm/gpt-6.1-sol-mini",
+    ]);
+  });
+
+  // TEST_SCENARIO: An undated model and the dated snapshot of the same version are one entry with both providers, and no dated version appears.
+  it("merges a snapshot of the same version with its base version", () => {
+    const { families } = familyModelGroups([
+      group("ibm", "ibm/aws/claude-opus-5-5"),
+      group("anthropic", "anthropic/claude-opus-5-5-20261001"),
+    ]);
+    const claude = families[0]!;
+    expect(claude.newest.map((e) => e.label)).toEqual(["Opus 5.5"]);
+    expect(claude.older).toEqual([]);
+    expect(claude.newest[0]!.options.map((o) => o.model.name)).toEqual([
+      "ibm/aws/claude-opus-5-5",
+      "anthropic/claude-opus-5-5-20261001",
+    ]);
+  });
+
+  // TEST_SCENARIO: A provider that lists its base model and its dated snapshot keeps both names selectable.
+  it("keeps a second snapshot name of the same provider selectable", () => {
+    const { families, leftovers } = familyModelGroups([
+      group(
+        "ibm",
+        "ibm/aws/claude-opus-5-5",
+        "ibm/aws/claude-opus-5-5-20261001",
+      ),
+    ]);
+    expect(families[0]!.newest[0]!.options.map((o) => o.model.name)).toEqual([
+      "ibm/aws/claude-opus-5-5",
+    ]);
+    expect(leftovers[0]!.models.map((m) => m.name)).toEqual([
+      "ibm/aws/claude-opus-5-5-20261001",
     ]);
   });
 });
