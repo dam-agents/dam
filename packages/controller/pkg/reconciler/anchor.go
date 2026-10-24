@@ -275,7 +275,11 @@ func (r *AgentReconciler) EnsureAnchors(ctx context.Context, enqueue func(name s
 			errs = append(errs, err)
 			continue
 		}
-		if _, err := r.ensureAnchor(ctx, agent); err != nil {
+		owner, err := r.ensureAnchor(ctx, agent)
+		if err == nil {
+			err = r.ensureChildrenOwnedByAnchor(ctx, agent, owner)
+		}
+		if err != nil {
 			if stderrors.Is(err, errAnchorStale) {
 				// UNIT_BOUNDARY_DESCRIPTION: the previous incarnation's anchor is a deletion to work, not a
 				// UNIT_BOUNDARY_DESCRIPTION: failure to retry: the delete worker removes it, and the pass reports

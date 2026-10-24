@@ -158,6 +158,16 @@ Two non-schema steps follow the migrations in the same startup sequence: a privi
 
 Before any of that, a component reads one marker ConfigMap — `<release>-agent-store` in the agent namespace — and refuses to start when it names a store the build cannot serve.
 The marker is written by the switch, so a build on the custom resources stops as soon as the authority has moved, and a build on Postgres starts only once the switch has absorbed them.
+The store is then bound to that install: the absorb records the release, namespace and API server it ran against, and the absorb, the barrier and a rollback refuse a database whose absorb stamp or install does not match the cluster's marker.
+
+The switch is one api-server startup behind that marker ([agent-store cutover](../notes/agent-store-cutover.md) is the operator's procedure).
+It recreates both Deployments instead of rolling them, so no old replica or periodic job acts on a fleet that exists only in rows.
+The api-server then reads every `Agent` and `UserBudget`, refuses any record it cannot carry as rows — a refusal names the record, and a connection grant that disagrees with `connection_grants` is one of them — and writes the rows, the archive in `crd_snapshots` and the store row's `absorbed_at` in one transaction.
+The archive's independent copy is written to the object store and read back before that transaction opens, so an install with an object store aborts rather than absorb with one copy; an install without one carries the in-database copy only, and the operator's encrypted file before the contract release is what replaces it.
+The object-store copy is plaintext in the platform's own bucket; only the operator's file leaves the platform, encrypted to the install's age key.
+A rerun finds `absorbed_at` and imports nothing again, whatever point a kill interrupted.
+It serves only once the new controller leads the Lease and has recorded that every Agent has its anchor — the store row's `controller_holder` and `anchors_ensured_at` — and it records `switch_completed_at` so a later controller outage never keeps the api-server down.
+The archive is exported, encrypted to the operator's age key, by the api-server's own command; the plaintext never leaves the database, a pod's filesystem or a terminal.
 
 ### Object store
 
@@ -177,7 +187,8 @@ An install with no object store fails closed: bulk-blob features are unavailable
 The two kinds the platform keeps in the Kubernetes API, `Agent` and `UserBudget` under `agent-platform.ai/v1`, are being replaced by rows in the Agent store above.
 Until the move's switch they carry the whole record: the api-server writes a `spec` the API server validates at admission and the controller writes a `status` through the subresource, with conditions as the source of truth (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) and `Ready` as the api-server's routing signal.
 Out-of-band signals ride annotations there: the last-activity stamp, the session and invocation pins, a stop request, the disable and reclaim marks, the restart revision, and the starter-kit and image-update bookkeeping — each of which becomes a column when the rows take over.
-From the switch they are frozen: nothing writes them, they hold what the snapshot archive holds, and they exist only so a rollback within its window has a state to restore.
+From the switch they are frozen: nothing writes them, and they hold what they held at the switch.
+A rollback inside its window restores them from the rows — the rows are the state it reads, and a frozen resource is where it writes that state back — so a change made after the switch survives the rollback.
 They are deleted per install, and the kinds themselves only after every install is past its rollback window, by an operator action rather than by any install's release.
 
 Two domain resources are deliberately not custom resources:

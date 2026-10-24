@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
 
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
-import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 import type { InvocationsRepository } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
@@ -488,18 +487,16 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
-    k8s: {
-      getCustomObject: async (plural: string, id: string) =>
-        plural === AGENTS_PLURAL && id === "driver-1"
-          ? {
-              metadata: {
-                uid: "uid-1",
-                labels: { "agent-platform.ai/owner": "owner-1" },
-              },
-              spec: {},
-            }
-          : null,
-    } as never,
+    readAgent: async (id: string) =>
+      id === "driver-1"
+        ? {
+            metadata: {
+              uid: "uid-1",
+              labels: { "agent-platform.ai/owner": "owner-1" },
+            },
+            spec: {},
+          }
+        : null,
     invocationsServiceFor: () =>
       ({
         spawn: async (input: Record<string, unknown>) => {

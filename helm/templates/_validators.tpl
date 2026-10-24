@@ -576,17 +576,24 @@ never happens — or, worse, a later one without the operator's timing.
 {{- if not (has ($store.authority | toString) (list "crd" "postgres")) -}}
 {{- fail (printf "agentStore.authority must be crd or postgres, got %q." ($store.authority | toString)) -}}
 {{- end -}}
-{{- /* Both components read Postgres, but no release in this chart performs
-       the absorb that makes a store authoritative. Rendering the mode now
-       would hand both components a store their own fences can only refuse,
-       so it fails here where an operator reads it, not in two
-       CrashLoopBackOffs; the switch release removes this refusal. */ -}}
-{{- if eq ($store.authority | toString) "postgres" -}}
-{{- fail "agentStore.authority=postgres is not served by any release in this chart yet: the absorb release fills the store and writes its marker. Leave it crd until that release exists." -}}
-{{- end -}}
+{{- /* The switch release recreates both Deployments and absorbs the custom
+       resources, and a production install auto-upgrades on a semver range: the
+       operator times it by acknowledging it, and the render is where that is
+       enforced. The acknowledgement means nothing to a release that stays on
+       the custom resources, so it fails there instead of being carried
+       forward into a later one. */ -}}
 {{- $cutover := $store.cutover | default dict -}}
+{{- if eq ($store.authority | toString) "postgres" -}}
+{{- if not $cutover.acknowledged -}}
+{{- fail "agentStore.authority=postgres is the cutover: it recreates both Deployments, absorbs the custom resources and serves a minute or two of api-server unavailability. Set agentStore.cutover.acknowledged=true to pick the time. A failed render leaves the previous release running, and nothing rolls back on its own." -}}
+{{- end -}}
+{{- else -}}
 {{- if $cutover.acknowledged -}}
-{{- fail "agentStore.cutover.acknowledged is set, but no release in this chart performs the cutover: the switch release that does refuses to render without it, and sets this value's meaning itself. Unset it." -}}
+{{- fail "agentStore.cutover.acknowledged is set, but agentStore.authority is crd: the acknowledgement times a cutover this release does not perform. Unset it, or set authority=postgres." -}}
+{{- end -}}
+{{- end -}}
+{{- if and $store.frozen (not $cutover.acknowledged) -}}
+{{- fail "agentStore.frozen=true freezes a rollback in progress. Set it with agentStore.authority=postgres and agentStore.cutover.acknowledged=true, so the release renders as the switch with both components down." -}}
 {{- end -}}
 {{- /* The api-server grants the controller's privileges to one fixed login
        name, so a chart that let the identity be configured separately would

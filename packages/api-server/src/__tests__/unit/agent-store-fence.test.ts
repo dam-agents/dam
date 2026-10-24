@@ -6,6 +6,7 @@ import {
   agentStoreMarkerName,
   agentStoreRefusal,
   readAgentStoreMarker,
+  verifyAgentStoreWriteFence,
 } from "../../modules/agent-store/fence.js";
 
 // TEST_OVERVIEW: The startup fence is what keeps one wrong pairing from serving: a build on the custom resources after the authority switched, or a build on Postgres before the switch absorbed anything. Both crash-loop instead, and both read the one marker the absorb leaves in the cluster.
@@ -48,7 +49,7 @@ describe("agent store fence", () => {
         { [AGENT_STORE_MARKER_KEY]: "postgres" },
         true,
       ],
-      ["postgres, absorbed", "postgres", ABSORBED, true],
+      ["postgres, absorbed", "postgres", ABSORBED, false],
     ];
 
     for (const [name, mode, marker, refused] of cases) {
@@ -65,7 +66,9 @@ describe("agent store fence", () => {
       ABSORBED,
     ])
       expect(
-        agentStoreRefusal("postgres", marker)?.includes("no Postgres reader"),
+        agentStoreRefusal("postgres", marker, {
+          readsPostgres: false,
+        })?.includes("no Postgres reader"),
       ).toBe(true);
   });
 
@@ -124,5 +127,38 @@ describe("agent store fence", () => {
     await expect(
       readAgentStoreMarker(broken, "platform-agents", "platform-agent-store"),
     ).rejects.toThrow("platform-agents/platform-agent-store");
+  });
+});
+
+describe("the switch's write fence", () => {
+  // TEST_SCENARIO: A leftover aggregate role grants `update` without `create` or `patch`; the proof must see every write verb, or the api-server serves while it can still overwrite a custom resource.
+  it("refuses while any write verb is still allowed", async () => {
+    const review = (allowed: string[]) => ({
+      createSelfSubjectAccessReview: async (input: {
+        body: { spec: { resourceAttributes: { verb: string } } };
+      }) => ({
+        status: {
+          allowed: allowed.includes(input.body.spec.resourceAttributes.verb),
+        },
+      }),
+    });
+    const client = review([]) as unknown as Parameters<
+      typeof verifyAgentStoreWriteFence
+    >[0];
+    expect(
+      await verifyAgentStoreWriteFence(client, "platform-agents"),
+    ).toBeNull();
+    const updateOnly = review(["update"]) as unknown as Parameters<
+      typeof verifyAgentStoreWriteFence
+    >[0];
+    expect(
+      await verifyAgentStoreWriteFence(updateOnly, "platform-agents"),
+    ).toMatch(/update agents/);
+    const deleteCollection = review([
+      "deletecollection",
+    ]) as unknown as Parameters<typeof verifyAgentStoreWriteFence>[0];
+    expect(
+      await verifyAgentStoreWriteFence(deleteCollection, "platform-agents"),
+    ).toMatch(/deletecollection agents/);
   });
 });

@@ -65,6 +65,7 @@ type AgentReconciler struct {
 	anchors               bool
 	absorbed              func(context.Context) error
 	anchorOrphanSince     sync.Map
+	releaseNsOrphanSince  sync.Map
 	agentCache            cache.GenericLister
 	agentCacheSynced      cache.InformerSynced
 	podCache              corelisters.PodLister

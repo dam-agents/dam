@@ -142,15 +142,13 @@ describe("input array bounds", () => {
   it("refuses an oversized array in an agent's spawn request body", async () => {
     const app = new Hono();
     mountInvocationRoutes(app, {
-      k8s: {
-        getCustomObject: async () => ({
-          metadata: {
-            uid: "uid-1",
-            labels: { "agent-platform.ai/owner": "owner-1" },
-          },
-          spec: {},
-        }),
-      },
+      readAgent: async () => ({
+        metadata: {
+          uid: "uid-1",
+          labels: { "agent-platform.ai/owner": "owner-1" },
+        },
+        spec: {},
+      }),
       invocationsServiceFor: () => ({}),
       connectionsServiceFor: () => ({}),
     } as never);

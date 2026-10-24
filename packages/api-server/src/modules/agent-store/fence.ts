@@ -9,7 +9,7 @@ export const AGENT_STORE_ABSORBED_KEY = "absorbed-at";
 export const agentStoreMarkerName = (releaseName: string): string =>
   `${releaseName}-agent-store`;
 
-export const AGENT_STORE_BUILD_READS_POSTGRES = false;
+export const AGENT_STORE_BUILD_READS_POSTGRES = true;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Says whether this build may serve, given the store
@@ -55,6 +55,26 @@ export function agentStoreRefusal(
   return null;
 }
 
+const isAlreadyExists = (cause: unknown): boolean =>
+  cause instanceof Error &&
+  "code" in cause &&
+  (cause as { code: unknown }).code === 409;
+
+export async function writeAgentStoreMarker(
+  api: k8s.CoreV1Api,
+  namespace: string,
+  name: string,
+  data: Record<string, string>,
+): Promise<void> {
+  const body = { metadata: { name }, data };
+  try {
+    await api.createNamespacedConfigMap({ namespace, body });
+  } catch (cause) {
+    if (!isAlreadyExists(cause)) throw cause;
+    await api.replaceNamespacedConfigMap({ name, namespace, body });
+  }
+}
+
 export async function readAgentStoreMarker(
   api: k8s.CoreV1Api,
   namespace: string,
@@ -71,4 +91,48 @@ export async function readAgentStoreMarker(
       }. The marker decides whether this build may serve, so a fence that cannot read it has not passed. Its Role must allow getting this ConfigMap in the agent namespace.`,
     );
   }
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: proves the switch's write fence instead of assuming
+ * it: once the rows own the Agents, the api-server's own identity must no longer
+ * be able to create, patch or delete an Agent or a budget.
+ *
+ * It asks the API server what this pod may do, so a chart that kept the old
+ * Role stops the switch rather than leaving two writers. A read stays allowed:
+ * the absorb reads the resources once, and nothing writes them again.
+ */
+export async function verifyAgentStoreWriteFence(
+  client: k8s.AuthorizationV1Api,
+  namespace: string,
+): Promise<string | null> {
+  const checks = [
+    { resource: "agents", verb: "create" },
+    { resource: "agents", verb: "update" },
+    { resource: "agents", verb: "patch" },
+    { resource: "agents", verb: "delete" },
+    { resource: "agents", verb: "deletecollection" },
+    { resource: "userbudgets", verb: "create" },
+    { resource: "userbudgets", verb: "update" },
+    { resource: "userbudgets", verb: "patch" },
+    { resource: "userbudgets", verb: "delete" },
+    { resource: "userbudgets", verb: "deletecollection" },
+  ];
+  for (const check of checks) {
+    const review = await client.createSelfSubjectAccessReview({
+      body: {
+        spec: {
+          resourceAttributes: {
+            namespace,
+            verb: check.verb,
+            group: "agent-platform.ai",
+            resource: check.resource,
+          },
+        },
+      },
+    });
+    if (review.status?.allowed === true)
+      return `this api-server's ServiceAccount can still ${check.verb} ${check.resource} in ${namespace}: the rows own Agents and budgets, so the switch release must not keep the custom resources' write grants. Narrow the Role before the cutover.`;
+  }
+  return null;
 }

@@ -179,6 +179,11 @@ const configSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  agentStoreBackupRecipient: z.string().optional(),
+  agentStoreFrozen: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   logLevel: z.enum(["error", "warn", "info", "debug"]).default("info"),
   port: z.coerce.number().default(4000),
   harnessServerPort: z.coerce.number().default(4001),
@@ -388,6 +393,8 @@ export function loadConfig(): Config {
     agentStore: process.env.PLATFORM_AGENT_STORE,
     agentStoreMarker: process.env.PLATFORM_AGENT_STORE_MARKER,
     agentStorePreviewReport: process.env.AGENT_STORE_PREVIEW_REPORT || "false",
+    agentStoreFrozen: process.env.PLATFORM_AGENT_STORE_FROZEN || "false",
+    agentStoreBackupRecipient: process.env.AGENT_STORE_BACKUP_RECIPIENT,
     logLevel: process.env.LOG_LEVEL,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,

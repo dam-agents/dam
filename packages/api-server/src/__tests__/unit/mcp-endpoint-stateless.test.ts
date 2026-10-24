@@ -19,16 +19,14 @@ function replica() {
       supportsUserLookup: async () => false,
       supportsMessageReactions: async () => false,
     },
-    k8s: {
-      namespace: "platform",
-      getCustomObject: async () => ({
-        metadata: {
-          labels: { "agent-platform.ai/owner": "owner-1" },
-          uid: "u",
-        },
-        spec: {},
-      }),
-    },
+    readAgent: async () => ({
+      metadata: {
+        labels: { "agent-platform.ai/owner": "owner-1" },
+        uid: "u",
+      },
+      spec: {},
+    }),
+    k8s: { namespace: "platform" },
     composeSkills: () => ({}),
     schedulesServiceFor: () => ({}),
     artifactLibraryFor: () => ({}),
