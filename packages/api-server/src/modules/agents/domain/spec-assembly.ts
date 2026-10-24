@@ -25,13 +25,12 @@ export function concreteResources(
         limits?: Record<string, string>;
       }
     | undefined,
-  size: { cpu?: string; memory?: string } | undefined,
   defaults: DefaultResourceLimits,
 ): { limits: Record<string, string>; requests?: Record<string, string> } {
   const limits = {
     ...resources?.limits,
-    cpu: size?.cpu ?? resources?.limits?.cpu ?? defaults.cpu,
-    memory: size?.memory ?? resources?.limits?.memory ?? defaults.memory,
+    cpu: resources?.limits?.cpu ?? defaults.cpu,
+    memory: resources?.limits?.memory ?? defaults.memory,
   };
   return resources?.requests
     ? { limits, requests: resources.requests }
@@ -44,7 +43,6 @@ export function assembleSpecFromTemplate(
   tmplSpec: TemplateSpec,
   opts: {
     description?: string;
-    size?: { cpu?: string; memory?: string };
     storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
@@ -56,7 +54,7 @@ export function assembleSpecFromTemplate(
     description: opts.description ?? tmplSpec.description,
     mounts: tmplSpec.mounts,
     env: tmplSpec.env,
-    resources: concreteResources(tmplSpec.resources, opts.size, defaultLimits),
+    resources: concreteResources(tmplSpec.resources, defaultLimits),
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     hibernationTimeout: tmplSpec.hibernationTimeout,
@@ -71,7 +69,6 @@ export function assembleSpecFromImage(
   opts: {
     image?: string;
     description?: string;
-    size?: { cpu?: string; memory?: string };
     storage?: string;
   },
   defaultLimits: DefaultResourceLimits,
@@ -80,7 +77,7 @@ export function assembleSpecFromImage(
     name,
     image: opts.image,
     description: opts.description,
-    resources: concreteResources(undefined, opts.size, defaultLimits),
+    resources: concreteResources(undefined, defaultLimits),
     storageSize: opts.storage,
     backend: { type: "vm" },
   };

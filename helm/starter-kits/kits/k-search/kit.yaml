@@ -13,8 +13,6 @@ image:
   ref: quay.io/dam-agents/k-search # @ci-pin k-search-image-tag
   providers: [ibm-litellm, curve-bender, openai]
 resources:
-  cpu: "2"
-  memory: 4Gi
   storage: 5Gi
 connections:
   - accepts: [modal]

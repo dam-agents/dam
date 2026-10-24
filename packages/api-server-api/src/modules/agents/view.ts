@@ -45,10 +45,6 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
     ...(agent.reclaimed ? { reclaimed: agent.reclaimed } : {}),
-    size: {
-      cpu: agent.spec.resources?.limits?.cpu,
-      memory: agent.spec.resources?.limits?.memory,
-    },
     podTerminationReason: agent.podTerminationReason,
     podTerminationCode: agent.podTerminationCode,
     notReadyMessage: agent.notReadyMessage,

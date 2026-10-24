@@ -160,10 +160,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     spendStatusFor,
   } = deps;
 
-  const defaultLimits = {
-    cpu: config.agentDefaultCpuLimit,
-    memory: config.agentDefaultMemoryLimit,
-  };
   const publishLimits = {
     perFileMaxBytes: config.kbSharePerFileMaxBytes,
     totalMaxBytes: config.kbShareTotalMaxBytes,
@@ -258,7 +254,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
       }).budgets,
-    defaultLimits,
     scriptOutputs: deps.scriptOutputs,
   };
 

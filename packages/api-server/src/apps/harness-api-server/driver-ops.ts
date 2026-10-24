@@ -16,10 +16,6 @@ import {
   type TemplatesService,
 } from "api-server-api";
 import {
-  concreteResources,
-  type DefaultResourceLimits,
-} from "../../modules/agents/index.js";
-import {
   AttenuationError,
   NoSpawnModelError,
   InvalidSchemaError,
@@ -67,7 +63,6 @@ export interface DriverOpsDeps {
   templates: TemplatesService;
   harnesses: HarnessCatalog;
   budgetsFor: (owner: string) => BudgetsService;
-  defaultLimits: DefaultResourceLimits;
   defaultModel?: (driverId: string, harness: string) => Promise<string | null>;
   scriptOutputs: Pick<ScriptOutputs, "link" | "ack" | "preview">;
 }
@@ -193,14 +188,6 @@ function driverOps(
     }
 
     const connections = body.connections ?? [];
-    const resources =
-      body.resources ??
-      (body.cpu !== undefined || body.memory !== undefined
-        ? {
-            ...(body.cpu !== undefined ? { cpu: body.cpu } : {}),
-            ...(body.memory !== undefined ? { memory: body.memory } : {}),
-          }
-        : undefined);
     const [granted, owned] = await Promise.all([
       conns.getAgentConnections(driverId),
       conns.listConnections(),
@@ -214,7 +201,7 @@ function driverOps(
       setup: {
         ...(body.seed ? { seed: body.seed } : {}),
         ...(body.install ? { install: body.install } : {}),
-        ...(resources ? { resources } : {}),
+        ...(body.resources ? { resources: body.resources } : {}),
         env: body.env,
         skills: body.skills,
       },
@@ -409,11 +396,6 @@ function driverOps(
           .with({ kind: "unnarrowed" }, () => ({}))
           .exhaustive();
       return templates.flatMap((t) => {
-        const size = concreteResources(
-          t.spec.resources,
-          undefined,
-          deps.defaultLimits,
-        ).limits;
         return t.id === DEFAULT_TEMPLATE_ID
           ? deps.harnesses.harnesses.map((h) => ({
               id: t.id,
@@ -421,7 +403,6 @@ function driverOps(
               image: t.spec.image,
               description: h.description,
               harness: h.name,
-              size,
               ...runsOn(h.name, h.providers),
             }))
           : [
@@ -431,20 +412,10 @@ function driverOps(
                 image: t.spec.image,
                 description: t.spec.description,
                 ...(t.spec.harness ? { harness: t.spec.harness } : {}),
-                size,
                 ...(t.spec.harness ? runsOn(undefined, t.spec.providers) : {}),
               },
             ];
       });
-    },
-
-    async budget() {
-      return {
-        defaultWorkerSize: {
-          cpu: deps.defaultLimits.cpu,
-          memory: deps.defaultLimits.memory,
-        },
-      };
     },
   };
 }
