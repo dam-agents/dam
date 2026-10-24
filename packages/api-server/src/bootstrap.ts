@@ -551,10 +551,14 @@ export async function bootstrap() {
       ),
     );
   });
+  let agentHint: (agentId: string, ownerSub: string) => void = () => {};
   const observe = ((kind: "add" | "update" | "delete", obj: KubeObject) => {
     outOfMemoryWatch(kind, obj);
     readyWatch(kind, obj);
     agentRemovalWatch(kind, obj);
+    const agentId = obj.metadata?.name;
+    const ownerSub = obj.metadata?.labels?.[LABEL_OWNER];
+    if (agentId && ownerSub) agentHint(agentId, ownerSub);
   }) as (kind: "add" | "update" | "delete", obj: KubeObject) => void;
   const agentStateCache =
     config.agentStore === "postgres"
@@ -1271,9 +1275,19 @@ export async function bootstrap() {
     },
   });
   liveEventsModule.start();
+  // UNIT_BOUNDARY_DESCRIPTION: after the switch the hints come from the row feed, through the cache's
+  // UNIT_BOUNDARY_DESCRIPTION: observe hook, because the custom resources are frozen and the watch has nothing
+  // UNIT_BOUNDARY_DESCRIPTION: to watch (and no `watch` verb). In CR mode the watch is the source.
+  agentHint =
+    config.agentStore === "postgres"
+      ? (agentId, ownerSub) => liveEventsModule.agentChanged(agentId, ownerSub)
+      : () => {};
   const agentWatchRole: LeaderRole = {
     name: "live-events-agent-watch",
-    onAcquired: () => liveEventsModule.startAgentWatch(),
+    onAcquired:
+      config.agentStore === "postgres"
+        ? () => {}
+        : () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
   };
 
