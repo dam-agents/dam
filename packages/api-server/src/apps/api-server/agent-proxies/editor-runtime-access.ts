@@ -25,8 +25,8 @@ export type EditorRuntimeAccess = (
  * UNIT_BOUNDARY_DESCRIPTION: Which calls an Agent Editor may make to a Shared
  * Agent's own runtime over HTTP. The agent's page reads its live model
  * settings and pending restart from the runtime, so an editor reaches those
- * few procedures and nothing else: sessions, files and terminals stay with
- * the owner. Every procedure in a batch must be one of them and its Agent
+ * few procedures and nothing else: sessions, files and terminals are not
+ * open to editors yet. Every procedure in a batch must be one of them and its Agent
  * Permission held. A change an editor makes is an audit record naming them.
  */
 export function createEditorRuntimeAccess(deps: {

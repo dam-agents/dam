@@ -60,7 +60,7 @@ The updates the Agent context once took in one procedure are now one procedure p
 
 The Agent's own runtime is reached through the agent proxies, which admit only the owner.
 The HTTP proxy also admits an editor for the few runtime calls the Agent's page needs: its live model settings, its process list and applying a pending restart.
-Sessions, files and terminals stay with the owner, and the live sockets admit no editor, so an editor's page reads the runtime over HTTP.
+Sessions, files and terminals are not open to editors yet, and the live sockets admit no editor, so an editor's page reads the runtime over HTTP.
 
 An editor opens the Agent's Environments like its owner: the owning Agent's editors are always on the list, and no Environment's own list narrows them out (see [environments](environments.md)).
 
