@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and with JanUI on, an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
+// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list, the Environments an Environment's create or delete changes, and the harnessConfig queries of the named agent only, and with JanUI on, an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
 import { type QueryKey, QueryObserver } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -49,6 +49,19 @@ it("refreshes the list and only the named agent's harnessConfig", async () => {
   await invalidateForLiveEvent({ topic: "agents", agentId: "A" });
 
   expect([list.calls(), statusA.calls(), statusB.calls()]).toEqual([2, 2, 1]);
+});
+
+// TEST_SCENARIO: an Environment is created as an Agent, so its create and delete arrive as an agents hint; that hint must refetch the owning agent's Environments too, since their list decides whether the Environments surfaces show at all and a new one must appear without waiting for the next poll.
+it("refreshes the Environments on an agents hint", async () => {
+  const environments = counter();
+  await watch(
+    trpc.environments.list.queryKey({ owningAgentId: "A" }),
+    environments.fn,
+  );
+
+  await invalidateForLiveEvent({ topic: "agents", agentId: "A" });
+
+  expect(environments.calls()).toBe(2);
 });
 
 // TEST_SCENARIO: binding presence decides whether an Agent has a default-model notice, and a binding can change in another tab or in Slack or Telegram itself. A schedules hint (a Schedule created or switched on) and an attention hint (a Slack or Telegram binding added or removed) must both refetch the owner's attention query, which carries those notices.

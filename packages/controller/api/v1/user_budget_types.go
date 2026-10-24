@@ -5,11 +5,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// UserBudgetSpec is one user's override of their compute: the pool their
-// Agents share on their VM runner — how much CPU the runner pod may use, the
-// memory its machines are admitted against, and the storage their disks grow
-// into. The uniform per-agent gateway overhead is deliberately excluded.
-// Each field is optional and falls back on its own to the chart-wide
+// UserBudgetSpec is one user's override of their compute: the Ceiling on
+// their container Agents — the sum of their Sizes, `spec.resources.limits`
+// (#1900), which hard-cap consumption — and the pool their vm Agents share on
+// their VM runner. The uniform per-agent gateway overhead is deliberately
+// excluded from the Ceiling; per-command Run pods are not counted. Each field
+// is optional and falls back on its own: the container Ceiling to the
+// chart-wide `controller.userBudgets`, the VM pool to
 // `virtualization.runner`. Operators write these; the controller enforces
 // them and the api-server reads them for display.
 type UserBudgetSpec struct {
@@ -70,10 +72,9 @@ type UserBudgetStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'budget-' + self.spec.owner",message="metadata.name must be 'budget-<spec.owner>' — one UserBudget per user"
 
-// UserBudget grants one user a raised (or lowered) VM pool: the CPU, memory
-// and storage their runner and its machines share. The name is pinned to
-// `budget-<spec.owner>` at admission, so at most one UserBudget can exist per
-// user by construction.
+// UserBudget grants one user a raised (or lowered) concurrent-compute
+// Ceiling and VM pool. The name is pinned to `budget-<spec.owner>` at admission, so at
+// most one UserBudget can exist per user by construction.
 type UserBudget struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

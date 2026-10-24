@@ -163,6 +163,10 @@ const parseJson = <T>(raw: string | undefined): T | undefined => {
   }
 };
 
+const nestedVirtualizationOf = (spec: Spec): boolean =>
+  (spec.backend as { vm?: { nestedVirtualization?: unknown } } | undefined)?.vm
+    ?.nestedVirtualization === true || spec.nestedVirtualization === true;
+
 const mountList = (spec: Spec): Array<Record<string, unknown>> =>
   Array.isArray(spec.mounts)
     ? (spec.mounts as Array<Record<string, unknown>>)
@@ -180,6 +184,9 @@ const mountList = (spec: Spec): Array<Record<string, unknown>> =>
  * resource carries without a timestamp takes the moment of the switch, which is
  * the only time it is known.
  *
+ * The nesting ask has two homes, because the custom resource keeps it under
+ * `spec.backend.vm` while the column is its own: an Agent from either shape
+ * reads the same here, and the rebuild puts it back where the controller looks.
  * Annotations it does not recognize are counted, not carried and not listed by
  * name: an operator-authored key has no reader after the switch, and turning it
  * into one would create a configuration surface nobody asked for.
@@ -417,7 +424,7 @@ export function mapAgent(
         imagePullSecretRef: nullable(spec.imagePullSecretRef),
         secretRef: nullable(spec.secretRef),
         hibernationTimeoutNs: timeoutNs === null ? null : Number(timeoutNs),
-        nestedVirtualization: spec.nestedVirtualization === true,
+        nestedVirtualization: nestedVirtualizationOf(spec),
         requireConnectionAddress: spec.requireConnectionAddress === true,
         telemetryAttributionId: nullable(spec.telemetryAttributionId),
         cpuLimit,

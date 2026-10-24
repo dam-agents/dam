@@ -30,7 +30,9 @@ An agent on the vm backend installs DAM into one of its own [Environments](../..
 
 1. **Create the Environment** with the `create_environment` tool (a shell cannot), with four endpoints on one port that is not 4444, which the install's own ingress uses: `app`, `keycloak`, `share` and `content`, each → `4400`.
    The install stops and names what is missing when they are not there.
-   An Environment has no `/dev/kvm` and no mesh, so the install runs without both, and the default `expires` of a week is usually right.
+   An Environment has no mesh, so the install runs without one, and the default `expires` of a week is usually right.
+   Every agent runs as a machine on a VM runner, so the Environment's guest needs `/dev/kvm`, and the install refuses without it.
+   Nothing in `create_environment` asks for nesting: the Environment's machine nests only when the install that owns it sets `controller.agent.templateDefaults.nestedVirtualization: true` and lets its runners nest (`virtualization.runner.nestedVirtualization`), on a node whose KVM allows it.
 2. **Install, or upgrade:** `mise run cluster:install -- --environment <name>`.
    It starts the Environment's k3s (in its default runlevel, so it comes back after the Environment sleeps), and reaches it over the Environment Link: `ssh env-<name>` for the node, a tunnel on a free local port for the API.
    Each platform and agent image whose source the registry has (`image:resolve` says REUSE) is pulled by the node itself, so a run on main builds nothing; a changed one is built here and streamed in with `k3s ctr images import -`.

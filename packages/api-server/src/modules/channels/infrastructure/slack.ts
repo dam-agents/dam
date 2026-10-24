@@ -3040,7 +3040,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ctx.channel,
         ctx.slackUserId,
         hasThread ? ctx.threadTs : undefined,
-        "Waking the agent — this can take a minute or two.",
+        "Waking the agent…",
         ctx.teamId,
       );
     };

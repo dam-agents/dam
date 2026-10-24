@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: JanUI's Environments tab of an agent's chat side panel lists that agent's Environments as the cards of its Environments section — name, whether it runs, expiry, a link per endpoint that opens in a new tab, and the owner's extend and delete controls — shows the section's empty text when it has none, and links to the section, where who may open them is edited.
+// TEST_OVERVIEW: JanUI's Environments tab of an agent's chat side panel lists that agent's Environments as the cards of its Environments section — name, whether it runs, expiry, a link per endpoint that opens in a new tab, and the owner's extend and delete controls — and links to the section, where who may open them is edited; the tab shows only once the agent owns one, so it shows Loading while another agent's list arrives.
 import type { EnvironmentView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,13 +8,17 @@ import { TooltipProvider } from "../../components/ui/tooltip.js";
 
 const state = vi.hoisted(() => ({
   environments: [] as unknown[],
+  pending: false,
   asked: [] as unknown[],
 }));
 
 vi.mock("../../modules/environments/api/queries.js", () => ({
   useEnvironments: (agentId: string | null) => {
     state.asked.push(agentId);
-    return { data: state.environments, isPending: false, isError: false };
+    return {
+      data: state.pending ? undefined : state.environments,
+      isPending: state.pending,
+    };
   },
 }));
 vi.mock("../../modules/environments/api/mutations.js", () => ({
@@ -72,11 +76,11 @@ it("lists the agent's Environments as their cards", () => {
   expect(html).toContain('data-testid="environments-panel-manage"');
 });
 
-// TEST_SCENARIO: an agent with no Environments shows the Environments section's empty text, which says the agent creates them with its tool.
-it("shows the section's empty text without Environments", () => {
-  state.environments = [];
+// TEST_SCENARIO: switching to another vm agent's chat keeps the tab open while that agent's list arrives, so the panel says it is loading rather than closing and reopening.
+it("says Loading while the agent's Environments arrive", () => {
+  state.pending = true;
   const html = render();
+  expect(html).toContain("Loading…");
   expect(html).not.toContain('data-testid="environment-card"');
-  expect(html).toContain("No Environments yet.");
-  expect(html).toContain("create_environment");
+  state.pending = false;
 });
