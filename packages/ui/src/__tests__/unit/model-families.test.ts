@@ -108,6 +108,11 @@ describe("a model id's family, size and version", () => {
       version: [],
     });
     expect(parseModelFamily("bob/wxO-model")?.size).toBe("wxO-model");
+    expect(parseModelFamily("nemotron-ultra-3")).toMatchObject({
+      size: "ultra",
+      version: [3],
+    });
+    expect(parseModelFamily("nvidia/NVIDIA-Nemotron-Ultra")).toBeNull();
   });
 
   // TEST_SCENARIO: A build stamp after the version, a snapshot date or a build number, is kept apart from it, so a stamped model is the same version and not a newer one.

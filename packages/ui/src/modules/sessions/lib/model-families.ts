@@ -120,7 +120,7 @@ export function parseModelFamily(name: string): ParsedModel | null {
       : undefined;
   const rest = buildStamp === undefined ? after : after.slice(0, -1);
   const versionOf = (parts: readonly string[]) =>
-    parts.every((p) => VERSION_PART.test(p))
+    parts.length > 0 && parts.every((p) => VERSION_PART.test(p))
       ? parts.map((p) => Number(p.replace(/^v/, "")))
       : null;
   if (family.sizes.length === 0) {

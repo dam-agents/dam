@@ -34,7 +34,6 @@ interface Props {
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
   onManageProviders: () => void;
-  harnessName?: string;
 }
 
 /**
@@ -68,7 +67,6 @@ function ListedModels({
   onRetry,
   onChoose,
   onManageProviders,
-  harnessName,
 }: Omit<Props, "agentId">) {
   if (groups.length === 0)
     return (
@@ -114,7 +112,6 @@ function ListedModels({
         current={current}
         loading={loading}
         waiting={waiting}
-        harnessName={harnessName}
         onRetry={onRetry}
         onChoose={onChoose}
       />
@@ -203,7 +200,6 @@ function OtherModelSection({
   current,
   loading,
   waiting,
-  harnessName,
   onRetry,
   onChoose,
 }: {
@@ -211,7 +207,6 @@ function OtherModelSection({
   current: string | null;
   loading: boolean;
   waiting: boolean;
-  harnessName: string | undefined;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
@@ -237,9 +232,7 @@ function OtherModelSection({
             className="px-2 py-1 text-muted-foreground"
           >
             {group.displayName}:{" "}
-            {group.status === "unsupported" ? (
-              `Not compatible with ${harnessName ?? "this harness"}.`
-            ) : loading || firstListing(group, waiting) ? (
+            {loading || firstListing(group, waiting) ? (
               <span className="inline-flex items-center gap-1.5">
                 <Spinner size={12} className="text-muted-foreground" />
                 Loading models…

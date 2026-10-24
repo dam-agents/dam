@@ -314,7 +314,6 @@ export function SessionPairPicker(props: Props) {
                 <SessionModelList
                   agentId={agentId}
                   groups={groups}
-                  harnessName={harnessName(harness)}
                   current={pair?.model ?? null}
                   loading={catalogModels.isLoading}
                   waiting={catalogModels.waiting}

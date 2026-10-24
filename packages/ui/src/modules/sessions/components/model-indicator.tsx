@@ -241,7 +241,6 @@ export function ModelIndicator({
             <SessionModelList
               agentId={agentId}
               groups={groups}
-              harnessName={harnessName}
               current={model}
               loading={catalogModels.isLoading}
               waiting={catalogModels.waiting}
