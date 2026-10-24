@@ -7,15 +7,12 @@ export type SidePanelTab =
   | "browser"
   | "processes"
   | "environments"
-  | "connections"
+  | "services"
   | "channels"
   | "skills"
   | "schedules"
   | "agent"
-  | "providers"
   | "network"
-  | "environment"
-  | "chat-forms"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -46,7 +43,6 @@ export type SidePanelAvailability = {
   processesEnabled: boolean;
   environments: boolean;
   channels: boolean;
-  chatForms: boolean;
   configuration: boolean;
   gettingStarted: boolean;
 };
@@ -62,16 +58,12 @@ export function hiddenSidePanelTabs(
     browser: available.agent && available.canOpenBrowser,
     processes: available.agent && available.processesEnabled,
     environments: available.agent && available.environments,
-    connections: available.agent && available.configuration,
+    services: available.agent && available.configuration,
     channels: available.agent && available.configuration && available.channels,
     skills: available.agent && available.configuration,
     schedules: available.agent && available.configuration,
     agent: available.agent && available.configuration,
-    providers: available.agent && available.configuration,
     network: available.agent && available.configuration,
-    environment: available.agent && available.configuration,
-    "chat-forms":
-      available.agent && available.configuration && available.chatForms,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -111,24 +103,21 @@ export function visibleSidePanelTab(
 export type ConfigurationTab = Extract<
   SidePanelTab,
   | "agent"
-  | "connections"
+  | "services"
   | "channels"
   | "skills"
   | "schedules"
   | "environments"
-  | "providers"
   | "network"
-  | "environment"
-  | "chat-forms"
 >;
 
 const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
   setup: "agent",
-  providers: "providers",
-  connections: "connections",
+  providers: "services",
+  connections: "services",
   network: "network",
-  environment: "environment",
-  "chat-forms": "chat-forms",
+  environment: "services",
+  "chat-forms": "agent",
   channels: "channels",
   skills: "skills",
   schedules: "schedules",
@@ -155,15 +144,12 @@ export function configRedirectTab(
 
 export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
   "agent",
-  "connections",
+  "services",
   "channels",
   "skills",
   "schedules",
   "environments",
-  "providers",
   "network",
-  "environment",
-  "chat-forms",
 ];
 
 export type SidePanelSelection =

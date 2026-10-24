@@ -2,21 +2,16 @@ import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
-import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
-import { AgentModelSettingsSection } from "../../sandboxes/components/agent-config-sections.js";
-import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
+import type { SandboxSection } from "../../platform/lib/routes.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
-import { SandboxProvidersSection } from "../../sandboxes/components/sandbox-providers-section.js";
 import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
+import { ServicesPanel } from "../../sandboxes/components/services-panel.js";
 import {
   type SessionDefaultKind,
   SessionDefaultsSection,
 } from "../../sandboxes/components/session-defaults-section.js";
-import { ConnectionAddressingSection } from "../../sandboxes/components/setup/setup-sections.js";
 import { SpendingPanel } from "../../sandboxes/components/spending-panel.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { justAskPrompt } from "../../schedules/lib/just-ask.js";
@@ -34,20 +29,15 @@ export type ConfigPanelTab = Exclude<ConfigurationTab, "environments">;
 export const DEFAULTS_BY_PANEL: Partial<
   Record<ConfigPanelTab, readonly SessionDefaultKind[]>
 > = {
-  providers: ["chat"],
   channels: ["channel"],
   schedules: ["scheduled"],
 };
 
 const SECTION_OF_TAB: Partial<Record<ConfigPanelTab, SandboxSection>> = {
-  connections: "connections",
   channels: "channels",
   skills: "skills",
   schedules: "schedules",
-  providers: "providers",
   network: "network",
-  environment: "environment",
-  "chat-forms": "chat-forms",
 };
 
 export function configPanelTitle(tab: SidePanelTab): string {
@@ -102,20 +92,12 @@ export function ConfigSidePanel({
         )}
         {match(tab)
           .with("agent", () => <SpendingPanel agentId={agentId} />)
-          .with("connections", () => (
-            <>
-              <ConnectionsSection
-                agentId={agentId}
-                header={() => null}
-                leading={<ConnectionAddressingSection agent={agent} />}
-                oauthReturnView={routeToPath({
-                  view: "chat",
-                  agent: agentId,
-                  ...(sessionId ? { session: sessionId } : {}),
-                })}
-                onGoToChannels={() => setSidePanelTab("channels")}
-              />
-            </>
+          .with("services", () => (
+            <ServicesPanel
+              agent={agent}
+              sessionId={sessionId}
+              onGoToChannels={() => setSidePanelTab("channels")}
+            />
           ))
           .with("channels", () => (
             <>
@@ -146,23 +128,9 @@ export function ConfigSidePanel({
               />
             </>
           ))
-          .with("providers", () => (
-            <>
-              <SandboxProvidersSection
-                agentId={agentId}
-                header={() => null}
-                defaultsKinds={DEFAULTS_BY_PANEL.providers}
-              />
-              <AgentModelSettingsSection agentId={agentId} />
-            </>
-          ))
           .with("network", () => (
             <AgentEgressEditor agentId={agentId} header={() => null} />
           ))
-          .with("environment", () => (
-            <EnvTab agent={agent} header={() => null} />
-          ))
-          .with("chat-forms", () => <ChatFormSettings agentId={agentId} />)
           .exhaustive(() => null)}
       </div>
     </SidebarSection>

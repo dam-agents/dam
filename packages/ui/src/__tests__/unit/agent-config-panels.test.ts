@@ -63,16 +63,16 @@ beforeEach(() => {
 // TEST_SCENARIO: every section of the configuration page has a panel that carries its knobs, so no setting is left without a home once the page is gone. The Environments panel keeps its own renderer, and Documentation is no section of the page.
 it("maps every configuration section to a panel", () => {
   const panels = SECTIONS.map(configTabForSection);
-  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share ten panels: General and Usage are the Agent panel.
-  expect(new Set(panels).size).toBe(10);
+  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share seven panels: Providers, Connections and Environment vars are the Services panel, General and Usage the Spending one, and Chat forms has none.
+  expect(new Set(panels).size).toBe(7);
   expect(panels).toEqual([
     "agent",
-    "providers",
-    "connections",
+    "services",
+    "services",
     "network",
-    "environment",
+    "services",
     "channels",
-    "chat-forms",
+    "agent",
     "skills",
     "schedules",
     "environments",
@@ -82,14 +82,11 @@ it("maps every configuration section to a panel", () => {
     [
       "agent",
       "channels",
-      "connections",
       "environments",
       "network",
-      "providers",
       "schedules",
+      "services",
       "skills",
-      "environment",
-      "chat-forms",
     ].sort(),
   );
 });
@@ -100,7 +97,7 @@ it("has a rail entry for every configuration panel", () => {
   for (const tab of CONFIGURATION_TABS) expect(railTabs).toContain(tab);
 });
 
-// TEST_SCENARIO: with the experiment on, a link or a bookmark for the configuration page opens the chat on the panel that holds that section; with it off, the page opens as it always has.
+// TEST_SCENARIO: with the experiment on, a link or a bookmark for the configuration page opens the chat on the panel that holds that section — Providers and Environment vars among them open Services; with it off, the page opens as it always has.
 it("opens the panel instead of the page, and the page when the experiment is off", () => {
   const on = navigationStore(true);
   on.getState().navigateToSandboxHome("agent-1", "network");
@@ -112,7 +109,7 @@ it("opens the panel instead of the page, and the page when the experiment is off
   on.setState({ view: "chat", selectedAgent: "agent-1", sidePanelTab: null });
   const before = history.length;
   on.getState().navigateToSandboxHome("agent-1", "providers");
-  expect(on.getState().sidePanelTab).toBe("providers");
+  expect(on.getState().sidePanelTab).toBe("services");
   expect(history.length).toBe(before);
 
   const off = navigationStore(false);
@@ -146,7 +143,6 @@ it("hides every configuration panel with the experiment off", () => {
     processesEnabled: true,
     environments: true,
     channels: true,
-    chatForms: true,
     gettingStarted: true,
   };
   const on = hiddenSidePanelTabs({ ...available, configuration: true });

@@ -112,15 +112,12 @@ it("gives every configuration panel its own tile", () => {
   );
   for (const tab of [
     "agent",
-    "connections",
+    "services",
     "channels",
     "skills",
     "schedules",
     "environments",
-    "providers",
     "network",
-    "environment",
-    "chat-forms",
   ])
     expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
   expect(html).not.toContain('data-testid="side-panel-configure"');
@@ -163,7 +160,6 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
           environments: true,
           configuration: false,
           channels: true,
-          chatForms: true,
           gettingStarted: true,
         }),
         onSelect: () => {},

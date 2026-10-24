@@ -758,7 +758,6 @@ export function ChatView() {
         }) ||
         (environments.isLoading && sidePanelTab === "environments"),
     configuration: rightToolbar,
-    chatForms: chatFormsEnabled,
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
