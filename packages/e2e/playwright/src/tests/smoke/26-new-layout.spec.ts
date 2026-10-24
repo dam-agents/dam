@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation. The Unified right toolbar experiment is its own flag: on, the right rail draws tiles with Documentation and Artifacts among them, and an Agent's chat gets that rail without JanUI too. A Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, and an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation. The Unified right toolbar experiment is its own flag: on, the right rail draws its tiles, Artifacts among them, and an Agent's chat gets that rail without JanUI too. A Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -91,12 +91,11 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("side-panel-tab-artifacts")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Documentation and Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar without Documentation. On a phone the bar stays inside the viewport with the panel closed, whichever flag draws it.
+// TEST_SCENARIO: the right toolbar is its own experiment: with JanUI off it still draws the 56 px tiled bar with Artifacts, and with JanUI on but the toolbar off that shell gets the 49 px classic icon bar. Documentation is the left navigation's, and no surface of the bar shows it. On a phone the bar stays inside the viewport with the panel closed, whichever flag draws it.
 test("draws the right toolbar from its own flag", async ({ page }) => {
   await setNewLayout(false);
   await setUnifiedRightToolbar(true);
   await openHome(page);
-  await expect(page.getByTestId("side-panel-docs")).toBeVisible();
   await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
     56,
@@ -105,7 +104,7 @@ test("draws the right toolbar from its own flag", async ({ page }) => {
   await setNewLayout(true);
   await setUnifiedRightToolbar(false);
   await openHome(page);
-  await expect(page.getByTestId("side-panel-docs")).toHaveCount(0);
+
   await expect(page.getByTestId("side-panel-tab-artifacts")).toBeVisible();
   expect((await page.getByTestId("side-panel-bar").boundingBox())?.width).toBe(
     49,
@@ -131,7 +130,7 @@ test("draws the right toolbar from its own flag", async ({ page }) => {
   await expectRailOnScreen();
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and, with the Unified right toolbar experiment on, the right rail has its tiles from Artifacts down to Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
@@ -146,7 +145,6 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await expect(tree.getByTestId("sidebar-new-agent-row")).toBeVisible();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(page.getByTestId("agent-row")).toHaveCount(0);
-  await expect(page.getByTestId("side-panel-docs")).toBeVisible();
 
   const node = agentNode(page, AGENTS[0]);
   const row = node.getByTestId("sidebar-agent-row");
