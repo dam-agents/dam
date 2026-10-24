@@ -52,6 +52,7 @@ function world(initial: Partial<World> = {}) {
             null,
             null,
             null,
+            null,
             { modelRouter: true },
           ],
         ],

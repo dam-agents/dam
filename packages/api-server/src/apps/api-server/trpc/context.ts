@@ -354,9 +354,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           ?.ownerSub === user.sub,
       ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
       defaultModelNotices: async () =>
-        createDefaultModelNoticeReader(db)(
-          (await agentsRepo.list(user.sub)).map((agent) => agent.id),
-        ),
+        createDefaultModelNoticeReader(
+          db,
+          profileResolver,
+        )((await agentsRepo.list(user.sub)).map((agent) => agent.id)),
       outageAlerts: () => outageAlerts.noticesFor(user.sub, new Date()),
     });
     const files = composeFilesModule(

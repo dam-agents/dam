@@ -23,6 +23,7 @@ import {
   defaultModelNoticesOf,
 } from "../domain/default-model-notice.js";
 import { readUnattendedWork } from "./unattended-work.js";
+import type { StoredProfileResolver } from "../../profiles/index.js";
 
 const parsePair = (value: unknown): SessionPair | null => {
   const parsed = sessionPairSchema.safeParse(value);
@@ -39,6 +40,7 @@ const parsePair = (value: unknown): SessionPair | null => {
  */
 export function createDefaultModelNoticeReader(
   db: Db,
+  profiles?: StoredProfileResolver,
 ): (agentIds: readonly string[]) => Promise<DefaultModelNotice[]> {
   return async (agentIds) => {
     if (agentIds.length === 0) return [];
@@ -48,6 +50,7 @@ export function createDefaultModelNoticeReader(
         pair: agentsTable.sessionPair,
         channelPair: agentsTable.channelSessionPair,
         scheduledPair: agentsTable.scheduledSessionPair,
+        sessionProfile: agentsTable.sessionProfile,
         note: agentsTable.defaultModelNote,
         capabilities: agentsTable.runtimeCapabilities,
       })
@@ -61,7 +64,10 @@ export function createDefaultModelNoticeReader(
       );
     const withPair = rows.filter(
       (r) =>
-        r.pair !== null || r.channelPair !== null || r.scheduledPair !== null,
+        r.pair !== null ||
+        r.channelPair !== null ||
+        r.scheduledPair !== null ||
+        r.sessionProfile !== null,
     );
     if (withPair.length === 0) return [];
     const grants = await db
@@ -96,16 +102,36 @@ export function createDefaultModelNoticeReader(
       db,
       withPair.map((r) => r.id),
     );
+    /* UNIT_BOUNDARY_DESCRIPTION: a chat default held by a profile is resolved
+     * here the way every reader resolves it, so a reference that cannot run
+     * does not fall out of the notice as if nothing were set. */
+    const resolved = new Map(
+      await Promise.all(
+        withPair.map(async (r) => {
+          if (r.sessionProfile === null || profiles === undefined)
+            return [r.id, null] as const;
+          return [
+            r.id,
+            await profiles.resolveStored({
+              profileId: r.sessionProfile,
+              agentId: r.id,
+            }),
+          ] as const;
+        }),
+      ),
+    );
     return withPair.flatMap((r) => {
       const note = defaultModelNoteSchema.safeParse(r.note);
+      const profile = resolved.get(r.id) ?? null;
       return defaultModelNoticesOf({
         agentId: r.id,
         routed: routesByModelName(r.capabilities),
         saved: {
-          chat: parsePair(r.pair),
+          chat: profile ? profile.pair : parsePair(r.pair),
           channel: parsePair(r.channelPair),
           scheduled: parsePair(r.scheduledPair),
         },
+        unavailable: profile?.unavailable ?? null,
         note: note.success ? note.data : null,
         grantedAliases: granted.get(r.id) ?? new Set(),
         runsUnattended: unattended.has(r.id),
