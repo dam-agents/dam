@@ -7,7 +7,7 @@ import {
   type AgentsRepository,
 } from "../agents/infrastructure/agents-repository.js";
 import { createControlAgentsRepository } from "../agent-store/agents-repository.js";
-import type { AgentStoreMode } from "../agent-store/fence.js";
+import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createEgressRuleMatchAdapter } from "../egress-rules/compose.js";
@@ -88,13 +88,12 @@ export function composeSkillsModule(deps: {
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo:
-      deps.agentStore.authority === "postgres"
-        ? createControlAgentsRepository(
-            deps.db,
-            deps.agentStateCache as RunningAgentStateCache,
-          )
-        : createAgentsRepository(k8sClient, deps.agentStateCache),
+    agentsRepo: readsRows(deps.agentStore.authority)
+      ? createControlAgentsRepository(
+          deps.db,
+          deps.agentStateCache as RunningAgentStateCache,
+        )
+      : createAgentsRepository(k8sClient, deps.agentStateCache),
     templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),

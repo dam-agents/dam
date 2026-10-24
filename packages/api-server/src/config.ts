@@ -173,13 +173,19 @@ const configSchema = z.object({
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
-  agentStore: z.enum(["crd", "postgres"]).default("crd"),
+  agentStore: z.enum(["crd", "postgres", "contract"]).default("crd"),
   agentStoreMarker: z.string().optional(),
   agentStorePreviewReport: z
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
   agentStoreBackupRecipient: z.string().optional(),
+  agentStoreContractSha256: z.string().optional(),
+  agentStoreContractEmptyArchive: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  agentStoreContractNow: z.string().datetime().optional(),
   agentStoreFrozen: z
     .enum(["true", "false"])
     .default("false")
@@ -395,6 +401,10 @@ export function loadConfig(): Config {
     agentStorePreviewReport: process.env.AGENT_STORE_PREVIEW_REPORT || "false",
     agentStoreFrozen: process.env.PLATFORM_AGENT_STORE_FROZEN || "false",
     agentStoreBackupRecipient: process.env.AGENT_STORE_BACKUP_RECIPIENT,
+    agentStoreContractSha256: process.env.AGENT_STORE_CONTRACT_BACKUP_SHA256,
+    agentStoreContractEmptyArchive:
+      process.env.AGENT_STORE_CONTRACT_EMPTY_ARCHIVE || "false",
+    agentStoreContractNow: process.env.AGENT_STORE_CONTRACT_NOW || undefined,
     logLevel: process.env.LOG_LEVEL,
     port: process.env.PORT,
     harnessServerPort: process.env.MCP_PORT,
