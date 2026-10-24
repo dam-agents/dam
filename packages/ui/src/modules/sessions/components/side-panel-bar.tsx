@@ -9,10 +9,10 @@ import {
   Gears,
   LogoSlack,
   MachineLearningModel,
-  Network_2,
   Notification,
   PricingQuickProposal,
   Task,
+  Wifi,
   Wikis,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
@@ -55,7 +55,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "channels", label: "Channels", icon: LogoSlack },
   { tab: "skills", label: "Skills", icon: MachineLearningModel },
   { tab: "schedules", label: "Schedules", icon: EventSchedule },
-  { tab: "network", label: "Network access", icon: Network_2 },
+  { tab: "network", label: "Network access", icon: Wifi },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
