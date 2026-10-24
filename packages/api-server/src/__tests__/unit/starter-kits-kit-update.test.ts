@@ -156,10 +156,14 @@ describe("kit update", () => {
     expect(task).not.toMatch(/the user is done/i);
     expect(task).toContain("until you report it");
 
-    const closing = task.trimEnd().split("\n\n").at(-1) ?? "";
+    const closing = task.slice(task.indexOf("Finishing this update:"));
     expect(closing).toContain("report_kit_updated");
     expect(closing).toContain(NEW);
     expect(closing).toMatch(/without asking the user/i);
+    expect(task.indexOf("Finishing this update:")).toBeGreaterThan(
+      task.indexOf("8. "),
+    );
+    expect(task.slice(task.indexOf("8. "))).toMatch(/Only after steps 1-7/);
   });
 
   // TEST_SCENARIO: the completion tool exists only while an update is pending, and both the briefing and the tool itself tell the agent to report without the user's word, since the tool is what clears the pending mark.

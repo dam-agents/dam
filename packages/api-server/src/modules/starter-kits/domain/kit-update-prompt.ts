@@ -106,7 +106,7 @@ export function composeKitUpdatePrompt(facts: KitUpdateFacts): string {
     `5. Ask whether any decision should hold for future updates (for example "always keep my version of X"). Write those to <git dir>/${KIT_UPDATE_PREFERENCES_FILE}. It is outside history and never pushed.`,
     "6. Run the migration steps the definition declares for the versions crossed, if it declares any (CHANGELOG.md Upgrade blocks).",
     "7. Apply the platform half below with the user: create a MISSING schedule only after the user agrees, with create_schedule; install a declared skill the agent lacks with install_skill. You cannot create connections or set env: tell the user exactly which connection to add or which env value to set in the agent's settings.",
-    `8. When the checkout contains ${targetCommit} (git merge-base --is-ancestor ${targetCommit} HEAD), finish as described under "Finishing this update" at the end.`,
+    `8. Only after steps 1-7 are done: when the checkout contains ${targetCommit} (git merge-base --is-ancestor ${targetCommit} HEAD), finish as described under "Finishing this update" at the end.`,
     "",
     ...platformHalf(facts),
     ...chatFormLines(facts.chatForms),
