@@ -1,7 +1,13 @@
 // TEST_OVERVIEW: Kit Update offers a newer definition when the stamped seed branch has moved, starts it as a pending session, and moves the Seed Stamp only for the commit the update targeted.
-import { describe, expect, it } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { describe, expect, it, vi } from "vitest";
 import type { Agent, KitUpdatePending, SeedStamp } from "api-server-api";
 
+import {
+  createMcpSession,
+  type McpSessionDeps,
+} from "../../apps/harness-api-server/mcp-endpoint.js";
 import { changelogBetween } from "../../modules/starter-kits/domain/changelog-range.js";
 import { createKitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import { createKitUpdates } from "../../modules/starter-kits/services/kit-updates.js";
@@ -140,6 +146,59 @@ describe("kit update", () => {
     const task = (h.bumped[0]?.payload as { task: string }).task;
     expect(task).toContain("was created from a link rather than a catalog");
     expect(task).not.toContain("no longer listed");
+  });
+
+  // TEST_SCENARIO: nothing in the platform reports an update but the agent's own tool, so the briefing must not make the report wait on the user saying the update is finished — that is what left updates pending — and the closing instruction must be the last thing it reads.
+  it("tells the agent to report the update itself, without waiting for the user", async () => {
+    const h = harness(agent());
+    await h.updates.startUpdate("agent-1");
+    const task = (h.bumped[0]?.payload as { task: string }).task;
+    expect(task).not.toMatch(/the user is done/i);
+    expect(task).toContain("until you report it");
+
+    const closing = task.trimEnd().split("\n\n").at(-1) ?? "";
+    expect(closing).toContain("report_kit_updated");
+    expect(closing).toContain(NEW);
+    expect(closing).toMatch(/without asking the user/i);
+  });
+
+  // TEST_SCENARIO: the completion tool exists only while an update is pending, and both the briefing and the tool itself tell the agent to report without the user's word, since the tool is what clears the pending mark.
+  it("carries a completion tool that reports the target commit itself", async () => {
+    const report = vi.fn(async () => {});
+    async function tools(kitUpdate: McpSessionDeps["kitUpdate"]) {
+      const session = createMcpSession("agent-1", {
+        channelManager: {},
+        k8s: { namespace: "platform" },
+        kitUpdate,
+      } as unknown as McpSessionDeps);
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await session.server.connect(serverTransport);
+      const client = new Client({ name: "test-harness", version: "1.0.0" });
+      await client.connect(clientTransport);
+      return client;
+    }
+
+    const idle = await tools(null);
+    expect((await idle.listTools()).tools.map((t) => t.name)).not.toContain(
+      "report_kit_updated",
+    );
+
+    const pending = await tools({
+      report,
+      cancel: async () => {},
+    });
+    const tool = (await pending.listTools()).tools.find(
+      (t) => t.name === "report_kit_updated",
+    );
+    expect(tool?.description).toMatch(/do not ask the user for permission/i);
+
+    const call = await pending.callTool({
+      name: "report_kit_updated",
+      arguments: { commit: NEW },
+    });
+    expect(call.isError).toBeFalsy();
+    expect(report).toHaveBeenCalledWith("agent-1", NEW);
   });
 
   // TEST_SCENARIO: the hover card shows only the changelog versions the update crosses.

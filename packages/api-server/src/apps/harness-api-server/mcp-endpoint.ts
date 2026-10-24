@@ -962,7 +962,7 @@ export function createMcpSession(
     const kitUpdate = deps.kitUpdate;
     server.tool(
       "report_kit_updated",
-      "Call this once a Kit Update the user started is finished: the definition checkout is at the commit the update targets and the user is done deciding. Call it even when the user declined every change. Pass the full target commit from the update briefing.",
+      "Call this the moment a Kit Update's work is done: the definition checkout contains the commit the update targets and you have nothing left to ask the user. The update stays pending, and the user keeps seeing an Update prompt, until you call it, so call it in the turn you finish and do not ask the user for permission first. Call it even when the user declined every change. Pass the full target commit from the update briefing.",
       { commit: z.string().regex(/^[0-9a-f]{40}$/i) },
       ({ commit }) =>
         textTool(

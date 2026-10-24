@@ -106,9 +106,14 @@ export function composeKitUpdatePrompt(facts: KitUpdateFacts): string {
     `5. Ask whether any decision should hold for future updates (for example "always keep my version of X"). Write those to <git dir>/${KIT_UPDATE_PREFERENCES_FILE}. It is outside history and never pushed.`,
     "6. Run the migration steps the definition declares for the versions crossed, if it declares any (CHANGELOG.md Upgrade blocks).",
     "7. Apply the platform half below with the user: create a MISSING schedule only after the user agrees, with create_schedule; install a declared skill the agent lacks with install_skill. You cannot create connections or set env: tell the user exactly which connection to add or which env value to set in the agent's settings.",
-    `8. When the checkout contains ${targetCommit} (git merge-base --is-ancestor ${targetCommit} HEAD) and the user is done, call report_kit_updated with commit ${targetCommit}, even if the user declined every change. If the user wants to stop without updating, call cancel_kit_update instead.`,
+    `8. When the checkout contains ${targetCommit} (git merge-base --is-ancestor ${targetCommit} HEAD), finish as described under "Finishing this update" at the end.`,
     "",
     ...platformHalf(facts),
     ...chatFormLines(facts.chatForms),
+    "",
+    "Finishing this update:",
+    "- The update stays pending, and the user keeps seeing an Update prompt on this agent, until you report it. Nothing else reports it: not the checkout moving, not your summary of the work.",
+    `- The moment the checkout contains ${targetCommit} and you have nothing left to ask the user, call report_kit_updated with commit ${targetCommit} in that same turn, even if the user declined every change. Do that without asking the user whether to report it, and without waiting for the user to say the update is finished.`,
+    "- Call cancel_kit_update instead only when the user wants to stop without updating: the agent stays on the commit it was on and the user can start the update again later.",
   ].join("\n");
 }
