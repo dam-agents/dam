@@ -26,13 +26,12 @@ export type BrowserAction = TabAction | "restart" | "clearData";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the browser panel's control of the agent's one
  * browser — the one agent-browser drives. Watching keeps it running and reports
- * its state, its tabs, the one on screen and its page, and whether it is in
- * testing mode; the actions are the panel's toolbar and tab bar, each on the
- * tab it names — or the one on screen when it names none — and refused when
- * that tab is gone; a new tab answers with its target id. The testing mode switch picks how it is
- * launched, for every launch from then on. Offered
- * only on an agent that requires named connections, and only on an image with
- * the display stack; otherwise every call answers why, before anything starts.
+ * its state, its tabs, the one on screen and its page; the actions are the
+ * panel's toolbar and tab bar, each on the tab it names — or the one on screen
+ * when it names none — and refused when that tab is gone; a new tab answers
+ * with its target id. Offered only on an agent that requires named
+ * connections, and only on an image with the display stack; otherwise every
+ * call answers why, before anything starts.
  */
 export interface BrowserService {
   watch(
@@ -49,5 +48,4 @@ export interface BrowserService {
   selectTab(tab: string): Promise<Result<void, BrowserDomainError>>;
   newTab(): Promise<Result<string, BrowserDomainError>>;
   closeTab(tab: string): Promise<Result<void, BrowserDomainError>>;
-  setTestingMode(on: boolean): Promise<Result<void, BrowserDomainError>>;
 }

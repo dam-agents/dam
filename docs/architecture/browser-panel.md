@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -29,21 +29,16 @@ The image sets agent-browser's defaults through its `AGENT_BROWSER_*` variables:
 So every plain `agent-browser` command — the agent's, and the runtime's for the panel — runs on that one browser: the user watches what the agent does and shares its sign-ins, and the agent sees what the user does.
 A command-line flag still overrides its variable, so an agent that passes `--session` or `--profile` gets a browser of its own that the panel does not show; the agent instructions and the `agent-browser` skill say not to.
 
-**Testing mode.** Chromium reports itself automated (`navigator.webdriver`) whenever its DevTools port is open, and agent-browser drives it through that port, so by default every page sees an automated browser; some sites' bot checks then refuse the user's own clicks.
-The panel's menu has a "Browser testing mode" switch, on by default.
-With it off, Chromium is launched with that report turned off (`--disable-blink-features=AutomationControlled`), a launch switch, not a script in the page, and the DevTools port stays: the agent and the panel control the browser as before.
-It changes only that report: a site may still tell the browser apart by other signs, and turning testing mode off does not promise that its check passes.
-The choice is a file in the agent's home, `~/.local/share/platform/browser-launch`, beside the profile, so it survives a restarted browser, a restarted agent and "Clear browser data".
-agent-browser launches Chromium through the image's launcher, `platform-browser` (its `AGENT_BROWSER_EXECUTABLE_PATH`), which reads that file on every launch, so a browser the agent's own command starts is launched the same way as the panel's, and opening the panel, a new turn or the agent's command never sets it back.
-Switching saves the choice and restarts the browser at once, on the same profile, and opens the page it showed again; the panels show it starting meanwhile.
-A runtime too old to report the mode shows the switch disabled.
+**The automation report is off.** Chromium reports itself automated (`navigator.webdriver`) whenever its DevTools port is open, and agent-browser drives it through that port, so every page would see an automated browser, and some sites' bot checks then refuse the user's own clicks.
+So Chromium is launched with that report turned off (`--disable-blink-features=AutomationControlled`), a launch switch, not a script in the page, and the DevTools port stays: the agent and the panel control the browser as before.
+It changes only that report, so a site may still tell the browser apart by other signs.
 
 **Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions, component updates, autofill's form predictions, translation and the spell-check dictionary.
 Every such call is egress the gateway holds for the user's approval, though no page asked for it.
 A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions, translation (and its bubble over pages in another language), Google's AI and search side panel features, and the error-page web service whose captive-portal check calls `connectivitycheck.gstatic.com`, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
 It also blocks the spell-check dictionary languages, so the browser neither loads nor downloads a dictionary from `redirector.gvt1.com`; turning spell-check off outright would still fetch one.
 The list holds English, because an image that sets no locale gets that dictionary; a derived image with another locale adds its language too.
-`platform-browser` carries `--disable-background-networking` and `--disable-component-update` into every launch, whatever the testing mode, so the launcher does not rely on agent-browser's own defaults for them.
+`platform-browser` carries `--disable-background-networking` and `--disable-component-update` into every launch, so the launcher does not rely on agent-browser's own defaults for them.
 `AGENT_BROWSER_ARGS` points the account check, the push-messaging check-in and the component updater at a closed loopback port, and turns off autofill's queries to Google's form-prediction server.
 The component updater also brings security data, such as certificate revocation lists, so the browser goes without their updates.
 Safe Browsing stays on, but with background networking off it never updates its lists, so its protection ages; Chrome for Testing does no real-time Safe Browsing lookups, which need a Google-branded build.
@@ -152,7 +147,6 @@ Nothing about the link is trusted: it carries only an address, which must be htt
 The browser's profile lives in the agent's home, so sign-ins survive hibernation and a closed panel.
 The agent can use them — the panel says so once — and "Clear browser data" stops the browser and deletes the profile.
 "Restart browser" stops it and the supervisor launches a fresh one on the same profile while the panels stay connected.
-Both keep the testing mode choice.
 Every browser command has a short deadline and runs in its own process group, killed whole when the deadline passes, so a stuck page cannot pile commands up.
 Launches, failures and restarts go to a log file in the agent's home, so a misbehaving panel can be read after the fact.
 
