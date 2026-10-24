@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#MISE description="The CRD retirement script refuses every install that is not contracted, and retires once"
+#MISE raw=true
+# The script deletes the two shared CRDs, so its refusals are the whole safety
+# story: an install still on the custom resources, one inside its rollback
+# window, and a second run must all be told apart from a cluster that is ready.
+set -euo pipefail
+ROOT="${MISE_CONFIG_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+FAILED=0
+
+cat >"$WORK/kubectl" <<'FAKE'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "get configmaps")
+    cat "$FAKE_DIR/markers.json" ;;
+  "get deployments")
+    cat "$FAKE_DIR/deployments.json" ;;
+  "get crd")
+    [ -f "$FAKE_DIR/crd-exists" ] || { echo "Error from server (NotFound): customresourcedefinitions.apiextensions.k8s.io \"$3\" not found" >&2; exit 1; } ;;
+  "get agents.agent-platform.ai,userbudgets.agent-platform.ai")
+    cat "$FAKE_DIR/resources.yaml" ;;
+  "delete crd")
+    [ -f "$FAKE_DIR/crd-exists" ] || exit 0
+    rm -f "$FAKE_DIR/crd-exists"
+    echo "customresourcedefinition.apiextensions.k8s.io/$3 deleted" ;;
+  *) echo "unexpected kubectl call: $*" >&2; exit 90 ;;
+esac
+FAKE
+chmod +x "$WORK/kubectl"
+
+markers() { # $1 = JSON data of each marker, or - for no marker at all
+  if [ "$1" = - ]; then
+    echo '{"items":[]}' >"$WORK/markers.json"
+    return
+  fi
+  cat >"$WORK/markers.json" <<JSON
+{"items":[{"metadata":{"namespace":"platform","name":"platform-agent-store"},"data":{$1}}]}
+JSON
+}
+deploys() {
+  cat >"$WORK/deployments.json" <<'JSON'
+{"items":[{"metadata":{"namespace":"platform","name":"platform-apiserver"}}]}
+JSON
+}
+scenario() { # $1 name, $2 markers json data, $3 crd-exists yes|no, $4 expected exit, $5 expected text
+  markers "$2"
+  deploys
+  [ "$3" = yes ] && touch "$WORK/crd-exists" || rm -f "$WORK/crd-exists"
+  cat >"$WORK/resources.yaml" <<'YAML'
+apiVersion: v1
+kind: List
+items:
+- apiVersion: agent-platform.ai/v1
+  kind: Agent
+  metadata: {name: agent-a}
+YAML
+  set +e
+  out=$(FAKE_DIR="$WORK" KUBECTL="$WORK/kubectl" "$ROOT/.mise/tasks/cluster/retire-crds" \
+    --backup "$WORK/backup.yaml" 2>&1)
+  code=$?
+  set -e
+  if [ "$code" != "$4" ]; then
+    echo "FAIL $1: exit $code, want $4" >&2
+    echo "$out" >&2
+    FAILED=1
+    return
+  fi
+  if ! grep -qF "$5" <<<"$out"; then
+    echo "FAIL $1: output does not say \"$5\"" >&2
+    echo "$out" >&2
+    FAILED=1
+    return
+  fi
+  if [ "$4" != 0 ] && [ -f "$WORK/backup.yaml" ]; then
+    echo "FAIL $1: a refused run wrote a backup" >&2
+    FAILED=1
+    return
+  fi
+  rm -f "$WORK/backup.yaml"
+  echo "ok   $1"
+}
+
+scenario "an install still on the custom resources blocks it" \
+  '"store":"crd"' no 1 "no contract-at"
+scenario "an install inside its rollback window blocks it" \
+  '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z"' no 1 "rollback window"
+scenario "an api-server with no store marker blocks it" \
+  - no 1 "never switched"
+scenario "a fully contracted cluster retires once" \
+  '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z","contract-at":"2026-10-31T00:00:00Z"' \
+  yes 0 "the CRDs are retired"
+scenario "a second run finds nothing to retire" \
+  '"store":"postgres","absorbed-at":"2026-10-24T00:00:00Z","contract-at":"2026-10-31T00:00:00Z"' \
+  no 0 "already retired"
+exit "$FAILED"

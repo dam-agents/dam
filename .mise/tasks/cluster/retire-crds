@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#MISE description="Retire the Agent and UserBudget CRDs cluster-wide, once every install on the cluster is past contract"
+#MISE raw=true
+#USAGE flag "--dry-run" help="Report what it would back up and delete, and touch nothing"
+#USAGE flag "--backup <path>" default="crds-retired.yaml" help="File the final YAML backup of every custom resource goes to"
+# The one cluster-wide, irreversible step of the Agents-in-Postgres move. It
+# runs once, after every install on the cluster has passed its contract gate:
+# the install writes contract-at into its store marker only when the rollback
+# window has closed and its archive is attested, so a marker without it is an
+# install still on the custom resources or still inside its window.
+# No install's chart, hook or component ever deletes a shared CRD.
+#
+# This file is mirrored, verbatim, into dam-ops (`retire-crds.sh`) and needs
+# nothing but kubectl and jq: set KUBECTL to point it at another cluster.
+set -euo pipefail
+
+KUBECTL="${KUBECTL:-kubectl}"
+DRY_RUN=0
+BACKUP="crds-retired.yaml"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1; shift ;;
+    --backup) BACKUP="$2"; shift 2 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+problems=()
+markers=$("$KUBECTL" get configmaps -A -o json |
+  jq -r '.items[] | select(.metadata.name | endswith("-agent-store")) |
+    "\(.metadata.namespace) \(.metadata.name) \(.data.store // "") \(.data["contract-at"] // "")"')
+while read -r namespace name store contracted; do
+  [ -n "${namespace:-}" ] || continue
+  if [ "$contracted" = "" ]; then
+    problems+=("$namespace/$name: store ${store:-unset} with no contract-at, so this install is still on the custom resources or still inside its rollback window")
+  fi
+done <<<"$markers"
+
+namespaces=$("$KUBECTL" get deployments -A -l app.kubernetes.io/component=apiserver -o json |
+  jq -r '.items[].metadata.namespace' | sort -u)
+while read -r namespace; do
+  [ -n "${namespace:-}" ] || continue
+  if ! grep -q "^$namespace " <<<"$markers"; then
+    problems+=("$namespace: an api-server runs with no Agent store marker, so this install never switched")
+  fi
+done <<<"$namespaces"
+
+if [ "${#problems[@]}" -gt 0 ]; then
+  echo "retire-crds refuses: every install on the cluster must pass its contract gate first." >&2
+  printf '  %s\n' "${problems[@]}" >&2
+  echo "  An install inside its rollback window keeps its custom resources; running the contract release on it is what closes that window." >&2
+  exit 1
+fi
+
+if ! "$KUBECTL" get crd agents.agent-platform.ai >/dev/null 2>&1; then
+  echo "the Agent and UserBudget CRDs are already retired: nothing to back up and nothing to delete."
+  exit 0
+fi
+
+resources=$("$KUBECTL" get agents.agent-platform.ai,userbudgets.agent-platform.ai -A -o yaml 2>/dev/null ||
+  echo "apiVersion: v1
+kind: List
+items: []")
+count=$(grep -c '^  kind: \(Agent\|UserBudget\)$' <<<"$resources" || true)
+if [ "$DRY_RUN" = 1 ]; then
+  echo "would back up $count custom resource(s) to $BACKUP and delete the two CRDs; nothing was touched."
+  exit 0
+fi
+{
+  echo "# The Agent and UserBudget custom resources as they stood when the CRDs were retired."
+  echo "# Written by retire-crds at $(date -u +%Y-%m-%dT%H:%M:%SZ); keep it with the installs' archives."
+  printf '%s\n' "$resources"
+} >"$BACKUP"
+chmod 600 "$BACKUP"
+if command -v sha256sum >/dev/null 2>&1; then
+  digest=$(sha256sum "$BACKUP" | cut -d' ' -f1)
+else
+  digest=$(shasum -a 256 "$BACKUP" | cut -d' ' -f1)
+fi
+echo "backed up $count custom resource(s) across $(wc -w <<<"$namespaces") install namespace(s) to $BACKUP (sha256 $digest)"
+
+"$KUBECTL" delete crd agents.agent-platform.ai userbudgets.agent-platform.ai --ignore-not-found
+echo "the CRDs are retired. Every install reads Postgres; read the rows with \`agent-store-cli export-crds\`."
