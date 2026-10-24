@@ -41,7 +41,6 @@ import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
   addableProviders,
   attachableProviders,
-  type ModelGroup,
   modelGroups,
   modelIndicatorLabel,
   sameModel,
@@ -339,11 +338,6 @@ export function SessionPairPicker(props: Props) {
                       ...(Object.keys(kept).length > 0 && { settings: kept }),
                     });
                   }}
-                  {...(!manageProviders && {
-                    onDisconnect: (group: ModelGroup) =>
-                      confirmDisconnect(group.displayName, group.connectionId),
-                  })}
-                  disconnecting={pending}
                 />
                 {addable.map(({ connection, conflict }) => (
                   <section

@@ -1,4 +1,4 @@
-import { ChevronDown, Unlink } from "@carbon/icons-react";
+import { ChevronDown } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,21 +12,15 @@ import {
 import { labelVariants } from "@/components/ui/label";
 import { PopoverClose } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { type ModelGroup, sameModel } from "../lib/catalog-groups.js";
 import {
-  contextLabel,
-  type ModelGroup,
-  modelLabel,
-  sameModel,
-} from "../lib/catalog-groups.js";
-import {
-  type FamilyModel,
   familyModelGroups,
   type FamilySection,
-  type LeftoverModels,
+  type MenuEntry,
   type ModelOption,
+  type OtherSection,
 } from "../lib/model-families.js";
 import { AwakeModelsGate } from "./awake-models-gate.js";
 
@@ -39,8 +33,6 @@ interface Props {
   failed: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
-  onDisconnect?: (group: ModelGroup) => void;
-  disconnecting?: boolean;
   harnessName?: string;
 }
 
@@ -54,9 +46,9 @@ const firstListing = (group: ModelGroup, waiting: boolean) =>
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, grouped by
- * model family and size with older versions behind More, the providers of a
- * model picked on the entry itself, and everything the families do not know
- * with its provider below.
+ * model family and size with older and variant models behind More, the
+ * providers of a model picked on the entry itself, and models of no known
+ * family under Other.
  */
 export function SessionModelList({ agentId, ...listed }: Props) {
   return (
@@ -74,8 +66,6 @@ function ListedModels({
   failed,
   onRetry,
   onChoose,
-  onDisconnect,
-  disconnecting = false,
   harnessName,
 }: Omit<Props, "agentId">) {
   if (groups.length === 0)
@@ -103,7 +93,7 @@ function ListedModels({
         )}
       </p>
     );
-  const { families, leftovers } = familyModelGroups(groups);
+  const { families, other } = familyModelGroups(groups);
   return (
     <>
       {families.map((section) => (
@@ -114,48 +104,15 @@ function ListedModels({
           onChoose={onChoose}
         />
       ))}
-      {leftovers.map((leftover) => (
-        <LeftoverSection
-          key={leftover.group.connectionId}
-          leftover={leftover}
-          current={current}
-          loading={loading}
-          waiting={waiting}
-          harnessName={harnessName}
-          onRetry={onRetry}
-          onChoose={onChoose}
-        />
-      ))}
-      {onDisconnect && (
-        <section
-          aria-label="Providers"
-          className="flex flex-col border-t border-border px-1 pt-1"
-        >
-          {groups.map((group) => (
-            <div
-              key={group.connectionId}
-              className="flex h-6 items-center justify-between gap-2"
-            >
-              <span className="truncate text-muted-foreground">
-                {group.displayName}
-              </span>
-              <Tooltip content="Disconnect">
-                <PopoverClose asChild>
-                  <button
-                    type="button"
-                    disabled={disconnecting}
-                    aria-label={`Disconnect ${group.displayName}`}
-                    onClick={() => onDisconnect(group)}
-                    className="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 disabled:opacity-50"
-                  >
-                    <Unlink size={14} />
-                  </button>
-                </PopoverClose>
-              </Tooltip>
-            </div>
-          ))}
-        </section>
-      )}
+      <OtherModelSection
+        other={other}
+        current={current}
+        loading={loading}
+        waiting={waiting}
+        harnessName={harnessName}
+        onRetry={onRetry}
+        onChoose={onChoose}
+      />
     </>
   );
 }
@@ -170,7 +127,7 @@ function FamilyModelSection({
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
   const [expanded, setExpanded] = useState(() =>
-    section.older.some((entry) =>
+    section.more.some((entry) =>
       entry.options.some((option) => sameModel(current, option.model.name)),
     ),
   );
@@ -182,24 +139,15 @@ function FamilyModelSection({
         </h3>
       </div>
       <ul className="flex flex-col">
-        {section.newest.map((entry) => (
-          <FamilyModelRow
+        {(expanded ? section.expanded : section.newest).map((entry) => (
+          <ModelRow
             key={entry.key}
             entry={entry}
             current={current}
             onChoose={onChoose}
           />
         ))}
-        {expanded &&
-          section.older.map((entry) => (
-            <FamilyModelRow
-              key={entry.key}
-              entry={entry}
-              current={current}
-              onChoose={onChoose}
-            />
-          ))}
-        {section.older.length > 0 && (
+        {section.more.length > 0 && (
           <li>
             <button
               type="button"
@@ -221,12 +169,80 @@ function FamilyModelSection({
   );
 }
 
-function FamilyModelRow({
+function OtherModelSection({
+  other,
+  current,
+  loading,
+  waiting,
+  harnessName,
+  onRetry,
+  onChoose,
+}: {
+  other: OtherSection;
+  current: string | null;
+  loading: boolean;
+  waiting: boolean;
+  harnessName: string | undefined;
+  onRetry: () => void;
+  onChoose: (model: string, group: ModelGroup) => void;
+}) {
+  if (other.models.length === 0 && other.unlisted.length === 0) return null;
+  return (
+    <section aria-label="Other" className="flex flex-col px-1">
+      <div className="flex h-6 items-center">
+        <h3 className={cn("truncate", labelVariants())}>Other</h3>
+      </div>
+      <ul className="flex flex-col">
+        {other.models.map((entry) => (
+          <ModelRow
+            key={entry.key}
+            entry={entry}
+            current={current}
+            onChoose={onChoose}
+          />
+        ))}
+        {other.unlisted.map((group) => (
+          <li
+            key={group.connectionId}
+            className="px-2 py-1 text-muted-foreground"
+          >
+            {group.displayName}:{" "}
+            {group.status === "unsupported" ? (
+              `Not compatible with ${harnessName ?? "this harness"}.`
+            ) : loading || firstListing(group, waiting) ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner size={12} className="text-muted-foreground" />
+                Loading models…
+              </span>
+            ) : group.status === "unavailable" ? (
+              "Couldn't list this provider's models."
+            ) : (
+              "No models listed."
+            )}
+            {group.status === "unavailable" &&
+              !firstListing(group, waiting) && (
+                <Button
+                  variant="link"
+                  size="inline"
+                  className="ml-1"
+                  onClick={onRetry}
+                >
+                  Retry
+                </Button>
+              )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ModelRow({
   entry,
   current,
   onChoose,
 }: {
-  entry: FamilyModel;
+  entry: MenuEntry;
   current: string | null;
   onChoose: (model: string, group: ModelGroup) => void;
 }) {
@@ -248,11 +264,6 @@ function FamilyModelRow({
           )}
         >
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-          {contextLabel(option.model) && (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">
-              {contextLabel(option.model)}
-            </span>
-          )}
         </button>
       </PopoverClose>
       {entry.options.length > 1 && (
@@ -290,11 +301,9 @@ function ProviderChoice({
           type="button"
           title={selected.group.displayName}
           aria-label={`Provider for ${label}: ${selected.group.displayName}`}
-          className="flex shrink-0 items-center gap-0.5 rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
-          <span className="max-w-24 truncate">
-            {selected.group.displayName}
-          </span>
+          {selected.group.displayName}
           <ChevronDown size={12} aria-hidden />
         </button>
       </DropdownMenuTrigger>
@@ -312,84 +321,5 @@ function ProviderChoice({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function LeftoverSection({
-  leftover,
-  current,
-  loading,
-  waiting,
-  harnessName,
-  onRetry,
-  onChoose,
-}: {
-  leftover: LeftoverModels;
-  current: string | null;
-  loading: boolean;
-  waiting: boolean;
-  harnessName: string | undefined;
-  onRetry: () => void;
-  onChoose: (model: string, group: ModelGroup) => void;
-}) {
-  const { group, models } = leftover;
-  return (
-    <section aria-label={group.displayName} className="flex flex-col px-1">
-      <div className="flex h-6 items-center">
-        <h3 className={cn("truncate", labelVariants())}>{group.displayName}</h3>
-      </div>
-      <ul className="flex flex-col">
-        {models.map((m) => (
-          <li key={m.name}>
-            <PopoverClose asChild>
-              <button
-                type="button"
-                aria-current={sameModel(current, m.name) ? "true" : undefined}
-                title={m.name}
-                onClick={() => onChoose(m.name, group)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground",
-                  sameModel(current, m.name) && "font-medium text-foreground",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
-                {contextLabel(m) && (
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                    {contextLabel(m)}
-                  </span>
-                )}
-              </button>
-            </PopoverClose>
-          </li>
-        ))}
-        {models.length === 0 && (
-          <li className="px-2 py-1 text-muted-foreground">
-            {group.status === "unsupported" ? (
-              `Not compatible with ${harnessName ?? "this harness"}.`
-            ) : loading || firstListing(group, waiting) ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Spinner size={12} className="text-muted-foreground" />
-                Loading models…
-              </span>
-            ) : group.status === "unavailable" ? (
-              "Couldn't list this provider's models."
-            ) : (
-              "No models listed."
-            )}
-            {group.status === "unavailable" &&
-              !firstListing(group, waiting) && (
-                <Button
-                  variant="link"
-                  size="inline"
-                  className="ml-1"
-                  onClick={onRetry}
-                >
-                  Retry
-                </Button>
-              )}
-          </li>
-        )}
-      </ul>
-    </section>
   );
 }

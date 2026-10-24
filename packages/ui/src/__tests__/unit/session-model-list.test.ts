@@ -43,6 +43,8 @@ const ibm: ModelGroup = {
   models: [
     model("ibm/aws/claude-opus-5-5", 200_000),
     model("ibm/aws/claude-opus-5-1", 200_000),
+    model("ibm/azure/gpt-5.5", 1_100_000),
+    model("ibm/rits/zai-org/glm-5-3", 128_000),
   ],
 };
 const anthropic: ModelGroup = {
@@ -115,6 +117,29 @@ it("shows the newest size, expands the older versions and picks its model", () =
   expect(older).toBeDefined();
   click(older!);
   expect(onChoose).toHaveBeenCalledWith("ibm/aws/claude-opus-5-1", ibm);
+});
+
+// TEST_SCENARIO: A model of no known family is an entry under Other, and the menu no longer offers a provider disconnect.
+it("puts an unknown family under Other and offers no disconnect", () => {
+  const { container } = render(() => {});
+  const sections = [...container.querySelectorAll("section")].map((s) =>
+    s.getAttribute("aria-label"),
+  );
+  expect(sections).toEqual(["Claude", "GPT", "Other"]);
+  expect(container.textContent).toContain("rits/zai-org/glm-5-3");
+  expect(container.textContent).not.toContain("Disconnect");
+});
+
+// TEST_SCENARIO: A model of a known family with no recognised size stays behind that family's More.
+it("keeps a known family's unrecognised model behind More", () => {
+  const { container } = render(() => {});
+  const gpt = container.querySelector('section[aria-label="GPT"]')!;
+  expect(gpt.textContent).not.toContain("azure/gpt-5.5");
+  const more = [...gpt.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "More",
+  );
+  click(more!);
+  expect(gpt.textContent).toContain("azure/gpt-5.5");
 });
 
 // TEST_SCENARIO: A session on an older version opens that family expanded, so the current model is visible without opening More first.

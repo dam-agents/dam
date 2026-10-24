@@ -8,7 +8,7 @@ import {
   parseModelFamily,
 } from "../../modules/sessions/lib/model-families.js";
 
-// TEST_OVERVIEW: The model menu recognises a model by family and size tier, ignoring the gateway prefixes and the version in its id, so it can show one entry per size on the newest version and put the older versions behind More.
+// TEST_OVERVIEW: The model menu recognises a model by family and size tier, ignoring the gateway prefixes and the version in its id, so it can show one entry per size on the newest version and put older and unrecognised versions behind More. Every other model stays selectable, under its family's More or under Other.
 
 const model = (name: string): CatalogModelView => ({
   name,
@@ -111,6 +111,7 @@ describe("the menu's family groups", () => {
       "ibm/aws/claude-opus-5-1",
       "ibm/aws/claude-sonnet-5-5",
       "ibm/azure/gpt-5.6-sol",
+      "ibm/azure/gpt-5.5",
       "ibm/rits/deepseek-ai/DeepSeek-V3.2",
     ),
     group(
@@ -121,7 +122,7 @@ describe("the menu's family groups", () => {
     group("curve", "cb/gpt-5.6-sol", "cb/rits/zai-org/glm-5-3"),
   ];
 
-  // TEST_SCENARIO: One entry per size, largest size first, the newest version on the entry and the older one behind More.
+  // TEST_SCENARIO: Collapsed, one entry per size, largest size first, the newest version on the entry. Open, the whole family is ordered by version newest first, then by size largest first.
   it("keeps the newest version of each size and hides the rest", () => {
     const { families } = familyModelGroups(groups);
     const claude = families.find((s) => s.family.name === "Claude")!;
@@ -130,7 +131,38 @@ describe("the menu's family groups", () => {
       "Sonnet 5.5",
       "Haiku 4.5",
     ]);
-    expect(claude.older.map((e) => e.label)).toEqual(["Opus 5.1"]);
+    expect(claude.more.map((e) => e.label)).toEqual(["Opus 5.1"]);
+    expect(claude.expanded.map((e) => e.label)).toEqual([
+      "Opus 5.5",
+      "Sonnet 5.5",
+      "Opus 5.1",
+      "Haiku 4.5",
+    ]);
+  });
+
+  // TEST_SCENARIO: With More open, a lower version of a larger size follows every entry of a newer version, and sizes sort largest first within one version.
+  it("orders the open family by version first, then by size", () => {
+    const { families } = familyModelGroups([
+      group(
+        "ibm",
+        "ibm/claude-opus-5-5",
+        "ibm/claude-sonnet-5",
+        "ibm/claude-haiku-5",
+        "ibm/claude-opus-4-8",
+      ),
+    ]);
+    const claude = families[0]!;
+    expect(claude.newest.map((e) => e.label)).toEqual([
+      "Opus 5.5",
+      "Sonnet 5",
+      "Haiku 5",
+    ]);
+    expect(claude.expanded.map((e) => e.label)).toEqual([
+      "Opus 5.5",
+      "Sonnet 5",
+      "Haiku 5",
+      "Opus 4.8",
+    ]);
   });
 
   // TEST_SCENARIO: The same model listed by two providers is one entry with both providers as options, in catalog order.
@@ -152,34 +184,52 @@ describe("the menu's family groups", () => {
     ]);
   });
 
-  // TEST_SCENARIO: Models of no known family keep their provider's group for the bottom of the menu, and a provider that listed nothing is kept for its listing state.
-  it("leaves unknown models and unlisted providers for the bottom", () => {
-    const { leftovers } = familyModelGroups([
+  // TEST_SCENARIO: A model of a known family whose size or variant is not recognised goes behind that family's More, not into Other.
+  it("hides a known family's unrecognised model behind More", () => {
+    const { families, other } = familyModelGroups(groups);
+    const gpt = families.find((s) => s.family.name === "GPT")!;
+    expect(gpt.more.map((e) => e.label)).toEqual(["azure/gpt-5.5"]);
+    expect(gpt.more[0]!.options[0]!.model.name).toBe("ibm/azure/gpt-5.5");
+    expect(other.models.some((e) => e.label === "azure/gpt-5.5")).toBe(false);
+  });
+
+  // TEST_SCENARIO: Models of no known family are their own entries under Other, grouped by upstream id across providers.
+  it("puts an unknown family under Other", () => {
+    const { other } = familyModelGroups([
+      ...groups,
+      group("other-provider", "x/rits/deepseek-ai/DeepSeek-V3.2"),
+    ]);
+    expect(other.models.map((e) => e.label)).toEqual([
+      "rits/deepseek-ai/DeepSeek-V3.2",
+      "rits/zai-org/glm-5-3",
+    ]);
+    const deepseek = other.models[0]!;
+    expect(deepseek.options.map((o) => o.group.connectionId)).toEqual([
+      "ibm",
+      "other-provider",
+    ]);
+  });
+
+  // TEST_SCENARIO: A provider that listed nothing is kept for its listing state.
+  it("keeps an unlisted provider for its state", () => {
+    const { other } = familyModelGroups([
       ...groups,
       { ...group("openai"), status: "unavailable" },
     ]);
-    expect(
-      leftovers.map((l) => [
-        l.group.connectionId,
-        l.models.map((m) => m.upstreamId),
-      ]),
-    ).toEqual([
-      ["ibm", ["rits/deepseek-ai/DeepSeek-V3.2"]],
-      ["curve", ["rits/zai-org/glm-5-3"]],
-      ["openai", []],
-    ]);
+    expect(other.unlisted.map((g) => g.connectionId)).toEqual(["openai"]);
   });
 
   // TEST_SCENARIO: A variant name and a fully named model from one provider are two selectable models, not one dropped by the other.
   it("keeps a variant beside the model it resembles", () => {
-    const { families, leftovers } = familyModelGroups([
+    const { families } = familyModelGroups([
       group("ibm", "ibm/gpt-6.1-sol", "ibm/gpt-6.1-sol-mini"),
     ]);
-    const sol = families[0]!.newest[0]!;
-    expect(sol.options.map((o) => o.model.name)).toEqual(["ibm/gpt-6.1-sol"]);
-    expect(leftovers[0]!.models.map((m) => m.name)).toEqual([
-      "ibm/gpt-6.1-sol-mini",
+    const gpt = families[0]!;
+    expect(gpt.newest[0]!.options.map((o) => o.model.name)).toEqual([
+      "ibm/gpt-6.1-sol",
     ]);
+    expect(gpt.more.map((e) => e.label)).toEqual(["gpt-6.1-sol-mini"]);
+    expect(gpt.more[0]!.options[0]!.model.name).toBe("ibm/gpt-6.1-sol-mini");
   });
 
   // TEST_SCENARIO: An undated model and the dated snapshot of the same version are one entry with both providers, and no dated version appears.
@@ -190,7 +240,7 @@ describe("the menu's family groups", () => {
     ]);
     const claude = families[0]!;
     expect(claude.newest.map((e) => e.label)).toEqual(["Opus 5.5"]);
-    expect(claude.older).toEqual([]);
+    expect(claude.more).toEqual([]);
     expect(claude.newest[0]!.options.map((o) => o.model.name)).toEqual([
       "ibm/aws/claude-opus-5-5",
       "anthropic/claude-opus-5-5-20261001",
@@ -199,7 +249,7 @@ describe("the menu's family groups", () => {
 
   // TEST_SCENARIO: A provider that lists its base model and its dated snapshot keeps both names selectable.
   it("keeps a second snapshot name of the same provider selectable", () => {
-    const { families, leftovers } = familyModelGroups([
+    const { families } = familyModelGroups([
       group(
         "ibm",
         "ibm/aws/claude-opus-5-5",
@@ -209,8 +259,8 @@ describe("the menu's family groups", () => {
     expect(families[0]!.newest[0]!.options.map((o) => o.model.name)).toEqual([
       "ibm/aws/claude-opus-5-5",
     ]);
-    expect(leftovers[0]!.models.map((m) => m.name)).toEqual([
-      "ibm/aws/claude-opus-5-5-20261001",
+    expect(families[0]!.more.map((e) => e.label)).toEqual([
+      "aws/claude-opus-5-5-20261001",
     ]);
   });
 });

@@ -596,9 +596,10 @@ describe("one model list on a runtime that routes by model name", () => {
   });
 
   /** TEST_SCENARIO: Before a session starts, every attached provider's
-   * models are one grouped list under the Connections' names, each entry
-   * the upstream id with its context window, and the per-provider model
-   * hooks of the old runtime are never asked. */
+   * models are one grouped list by family, a model of a known family with
+   * no recognised size behind that family's More, a model of no known
+   * family under Other, and the per-provider model hooks of the old runtime
+   * are never asked. */
   it("lists every provider's models in one grouped list", () => {
     const html = renderToStaticMarkup(
       createElement(SessionPairPicker, {
@@ -609,13 +610,13 @@ describe("one model list on a runtime that routes by model name", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain('aria-label="IBM"');
-    expect(html).toContain('aria-label="Curve"');
-    expect(html).toContain("gpt-5.5");
+    expect(html).toContain('aria-label="GPT"');
+    expect(html).toContain('aria-label="Other"');
+    expect(html).toContain("More");
     expect(html).toContain("rits/zai-org/glm-5-3");
-    expect(html).toContain("200K");
-    expect(html).toContain("128K");
-    expect(html).toContain('aria-label="Disconnect IBM"');
+    expect(html).not.toContain('aria-label="IBM"');
+    expect(html).not.toContain('aria-label="Curve"');
+    expect(html).not.toContain("Disconnect IBM");
     expect(state.providersAsked).toEqual([]);
   });
 
@@ -646,8 +647,7 @@ describe("one model list on a runtime that routes by model name", () => {
 
   /** TEST_SCENARIO: Known models are grouped by family and size, one entry
    * per size on the newest version with the providers that offer it, older
-   * versions behind More, and models of no known family last under their
-   * provider. */
+   * versions behind More, and models of no known family last under Other. */
   it("groups known models by family and size, with a provider choice", () => {
     state.catalog = {
       harness: "pi",
@@ -704,8 +704,12 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).toContain('aria-label="Provider for Opus 5.5: IBM"');
     expect(html).toContain('aria-label="Provider for Sol 5.6: IBM"');
     expect(html).toContain("rits/deepseek-ai/DeepSeek-V3.2");
+    expect(html).toContain('aria-label="Other"');
     expect(html.indexOf('aria-label="Claude"')).toBeLessThan(
-      html.indexOf('aria-label="IBM"'),
+      html.indexOf('aria-label="GPT"'),
+    );
+    expect(html.indexOf('aria-label="GPT"')).toBeLessThan(
+      html.indexOf('aria-label="Other"'),
     );
   });
 
@@ -833,7 +837,7 @@ describe("JanUI's picker and the default's editor", () => {
   /** TEST_SCENARIO: In JanUI the picker neither attaches nor
    * disconnects providers; one row counts the attached providers among the
    * owner's and leads to the agent's Providers page. The current layout
-   * keeps its controls. */
+   * keeps its Configure providers link, and neither offers a disconnect. */
   it("swaps provider controls for one Manage providers row", () => {
     const html = render({ newLayout: true });
     expect(html).not.toContain("Disconnect IBM");
@@ -843,7 +847,8 @@ describe("JanUI's picker and the default's editor", () => {
       /data-testid="session-pair-manage-providers"[^>]*>Manage providers \(2\/3 connected\)/,
     );
     const current = render({});
-    expect(current).toContain("Disconnect IBM");
+    expect(current).not.toContain("Disconnect IBM");
+    expect(current).toContain("Configure providers and defaults");
     expect(current).not.toContain("session-pair-manage-providers");
   });
 });
