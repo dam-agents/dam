@@ -13,6 +13,7 @@ import {
   useLeaveAgent,
   useSetAgentEditors,
 } from "../../agents/api/mutations.js";
+import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { EDITORS_WARNING } from "../../agents/lib/agent-editors.js";
 import { ViewerListEditor } from "../../artifacts/components/viewer-list-editor.js";
 import { sameViewers } from "../../artifacts/lib/viewer-allowlist.js";
@@ -48,6 +49,12 @@ function OwnerPeople({
   const ownEmail = signedInEmail();
   return (
     <section className="mb-8 flex flex-col gap-4" data-testid="agent-people">
+      <OwnerOnlyNotice
+        title="Only the owner adds and removes editors."
+        testId="people-owner-only"
+      >
+        You can leave this agent yourself.
+      </OwnerOnlyNotice>
       <div className="flex flex-col gap-2">
         <SectionLabel>Owner</SectionLabel>
         <p className="text-sm text-foreground">

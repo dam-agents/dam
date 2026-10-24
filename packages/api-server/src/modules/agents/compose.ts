@@ -23,6 +23,9 @@ import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import { createAgentEditorsRepository } from "./infrastructure/agent-editors-repository.js";
+import { accessTo } from "./domain/agent-access.js";
+import { permissionsOf } from "./domain/agent-permissions.js";
+import type { AgentPermission } from "api-server-api";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -100,6 +103,7 @@ export function composeAgentsModule(deps: {
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
   editorEmail: string | null;
+  actor?: string;
   resolveUserEmail: (sub: string) => Promise<string | null>;
 }): {
   agents: AgentsService;
@@ -126,6 +130,7 @@ export function composeAgentsModule(deps: {
       telemetry: deps.install.telemetry,
       storageGate: deps.storageGate,
       owner: deps.owner,
+      actor: deps.actor ?? deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       lastHelloAt: async (agentId) =>
         (await agentsRuntimeRepo.get(agentId))?.runtimeLastHelloAt ?? null,
@@ -139,7 +144,8 @@ export function composeAgentsModule(deps: {
       agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
-      listChannelsByAgent: listChannelsByAgent(deps.db, owner),
+      listChannelsByAgent: (agentId, agentOwner) =>
+        listChannelsByAgent(deps.db, agentOwner)(agentId),
       deleteChannelByType: deleteChannelByType(deps.db, owner),
       deleteSlackChannelByAgent: deleteSlackChannelByAgent(deps.db, owner),
       deleteChannelsByAgentIds: deleteChannelsByAgentIds(deps.db, owner),
@@ -357,5 +363,28 @@ export function composeAgentEditors(db: Db): {
       if (emails.length > 0)
         emit({ type: EventType.AgentEditorsChanged, agentId, emails });
     },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How a signed-in person stands as an Agent Editor
+ * of one Agent: whose Agent it is and which Agent Permissions they hold on
+ * it. Null when they are not its editor: they own it, it does not exist, or
+ * their verified email is not on its Editor List.
+ */
+export function composeEditorStanding(deps: {
+  db: Db;
+  repo: AgentsRepository;
+}): (
+  agentId: string,
+  caller: { sub: string; editorEmail: string },
+) => Promise<{ ownerSub: string; permissions: AgentPermission[] } | null> {
+  const editors = createAgentEditorsRepository(deps.db);
+  return async (agentId, caller) => {
+    const infra = await deps.repo.get(agentId);
+    if (!infra?.owner || infra.owner === caller.sub) return null;
+    const list = await editors.list(agentId);
+    if (accessTo(infra.owner, list, caller) !== "editor") return null;
+    return { ownerSub: infra.owner, permissions: permissionsOf("editor") };
   };
 }

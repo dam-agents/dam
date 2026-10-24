@@ -40,6 +40,7 @@ function setup() {
   const enqueueAfterCommit = vi.fn(async () => {});
   const agents = createAgentsService({
     owner: "owner-1",
+    actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [existing],
       get: async (id) => (id === existing.id ? existing : null),

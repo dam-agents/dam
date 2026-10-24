@@ -1,5 +1,5 @@
 export type { AppRouter } from "./router.js";
-export type { ApiContext, UserIdentity } from "./context.js";
+export type { AgentActing, ApiContext, UserIdentity } from "./context.js";
 
 export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 
@@ -130,6 +130,7 @@ export {
   agentCreateInputSchema,
   avatarSchema,
   agentKindSchema,
+  agentPatchSchema,
   agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";
 export type {
@@ -150,6 +151,11 @@ export {
   toListedAgentView,
 } from "./modules/agents/view.js";
 export { editorEmailOf } from "./modules/agents/editor-email.js";
+export {
+  AGENT_PERMISSIONS,
+  type AgentPermission,
+  type AgentTarget,
+} from "./modules/agents/permissions.js";
 export {
   budgetCpuSchema,
   budgetSizeSchema,

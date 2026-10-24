@@ -13,9 +13,10 @@ import type { AgentView } from "../../types.js";
 
 const wake = vi.hoisted(() => vi.fn());
 vi.mock("../../modules/agents/api/queries.js", () => ({
-  useAgentsList: () => [
-    { id: "a1", state: "hibernated", overBudget: false, disabled: false },
-  ],
+  useAgent: (id: string | null) =>
+    id === "a1"
+      ? { id: "a1", state: "hibernated", overBudget: false, disabled: false }
+      : null,
 }));
 vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
   useWakeAgent: () => ({ wake }),

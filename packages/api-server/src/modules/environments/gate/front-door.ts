@@ -30,6 +30,7 @@ export interface FrontDoorDeps {
   addressUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
   ownerList: (owningAgentId: string) => Promise<string[]>;
+  editorsOf: (owningAgentId: string) => Promise<string[]>;
   signIn: Pick<EnvironmentSignIn, "handoff" | "startChain" | "continueChain">;
   share: ShareSignIn;
   brandName: string;
@@ -123,6 +124,7 @@ export function createEnvironmentFrontDoor(deps: FrontDoorDeps): Hono {
       effectiveAccess(
         await deps.ownerList(record.owningAgentId),
         record.access,
+        await deps.editorsOf(record.owningAgentId),
       ),
       session,
       parsed.address,

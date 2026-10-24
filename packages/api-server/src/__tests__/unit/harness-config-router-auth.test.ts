@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApiContext } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { markTermsProven } from "api-server-api/trpc";
+import { callerContext } from "../helpers/caller-context.js";
 
 type User = ApiContext["user"];
 
@@ -35,7 +36,7 @@ function setup(user: User) {
     })),
     apply: vi.fn(async () => {}),
   };
-  const ctx = { harnessConfig, user } as unknown as ApiContext;
+  const ctx = callerContext({ harnessConfig, user });
   markTermsProven(ctx);
   return { caller: appRouter.createCaller(ctx), harnessConfig };
 }

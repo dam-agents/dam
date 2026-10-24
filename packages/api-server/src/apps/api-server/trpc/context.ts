@@ -2,8 +2,13 @@ import type { ApiContext, UserIdentity } from "api-server-api";
 import { ChannelType, editorEmailOf } from "api-server-api";
 import {
   composeAgentsModule,
+  composeEditorStanding,
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
+import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
+import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
+import { createAgentTargetResolver } from "./agent-target.js";
+import { createActOnAgent } from "./act-on-agent.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { TRPCError } from "@trpc/server";
@@ -125,7 +130,21 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   };
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
-  return (user: UserIdentity, surface: string): ApiContext => {
+  const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  const agentOfTarget = createAgentTargetResolver({
+    schedules: schedulesBoot.repo,
+    egressRules: createEgressRulesRepository(db),
+    environments: createEnvironmentsRepository(db),
+  });
+
+  const contextFor = (user: UserIdentity, surface: string): ApiContext => {
+    const actOnAgent = createActOnAgent({
+      user,
+      self: () => ctx,
+      agentOfTarget,
+      editorStanding,
+      contextFor: (identity) => contextFor(identity, surface),
+    });
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
@@ -175,6 +194,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       install: agentsInstallSettings(config),
       storageGate,
       owner: user.sub,
+      actor: user.actingEditor ?? user.sub,
       editorEmail: editorEmailOf(user),
       resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
       db,
@@ -418,7 +438,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    return {
+    const ctx: ApiContext = {
       templates: templatesRepo,
       harnesses,
       repos: reposService,
@@ -471,6 +491,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
+      actOnAgent,
     };
+    return ctx;
   };
+  return contextFor;
 }

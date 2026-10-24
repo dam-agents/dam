@@ -1,4 +1,4 @@
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 
 export function SpendAgentAvatar({
@@ -8,7 +8,7 @@ export function SpendAgentAvatar({
   agentId: string;
   name: string;
 }) {
-  const agent = useAgentsList().find((a) => a.id === agentId);
+  const agent = useAgent(agentId);
   return (
     <AgentAvatar
       name={name}

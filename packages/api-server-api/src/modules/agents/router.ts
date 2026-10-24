@@ -2,6 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import { match } from "ts-pattern";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
@@ -24,13 +26,26 @@ import {
   agentRestartInputSchema,
   agentPeekBindFlowInputSchema,
   agentUpdateInputSchema,
+  agentSetCredentialInjectionInputSchema,
+  agentSetEnvInputSchema,
+  agentSetSecretRefInputSchema,
+  agentSetWhisperInputSchema,
   agentSetDisabledInputSchema,
   agentSleepInputSchema,
   agentUpgradeInputSchema,
   agentWakeInputSchema,
   agentRetryWorkspaceInputSchema,
 } from "./schemas.js";
+import type { ApiContext } from "../../context.js";
+import type { AgentUpdateInput } from "./types.js";
+import { AGENT_PERMISSIONS } from "./permissions.js";
 import { listedAgents, toAgentView, toListedAgentView } from "./view.js";
+
+async function updated(ctx: ApiContext, patch: AgentUpdateInput) {
+  const agent = await ctx.agents.update(patch);
+  if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
+  return toAgentView(agent);
+}
 
 export const agentsRouter = t.router({
   list: readAgentProcedure
@@ -77,6 +92,7 @@ export const agentsRouter = t.router({
 
   setEditors: signedInProcedure
     .input(agentSetEditorsInputSchema)
+    .use(agentPermission("editors", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.setEditors(input.id, input.editors);
       if (res.ok) return { editors: res.value };
@@ -107,6 +123,7 @@ export const agentsRouter = t.router({
 
   backgroundWork: readAgentProcedure
     .input(agentBackgroundWorkInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.id)))
     .query(async ({ ctx, input }) => {
       checkAgentBinding(ctx, input.id);
       const work = await ctx.agents.backgroundWork(input.id);
@@ -120,24 +137,49 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.create(input);
       return toListedAgentView({
         agent,
-        access: { role: "owner", editors: [] },
+        access: {
+          role: "owner",
+          editors: [],
+          permissions: [...AGENT_PERMISSIONS],
+        },
       });
     }),
 
   update: manageAgentsProcedure
     .input(agentUpdateInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.update(input);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toAgentView(agent);
-    }),
+    .use(agentPermission("settings", (input) => agentTarget(input.id)))
+    .mutation(({ ctx, input }) => updated(ctx, input)),
+
+  setEnv: manageAgentsProcedure
+    .input(agentSetEnvInputSchema)
+    .use(agentPermission("envVars", (input) => agentTarget(input.id)))
+    .mutation(({ ctx, input }) => updated(ctx, input)),
+
+  setSecretRef: manageAgentsProcedure
+    .input(agentSetSecretRefInputSchema)
+    .use(agentPermission("secretRef", (input) => agentTarget(input.id)))
+    .mutation(({ ctx, input }) => updated(ctx, input)),
+
+  setCredentialInjection: manageAgentsProcedure
+    .input(agentSetCredentialInjectionInputSchema)
+    .use(
+      agentPermission("credentialInjection", (input) => agentTarget(input.id)),
+    )
+    .mutation(({ ctx, input }) => updated(ctx, input)),
+
+  setWhisper: manageAgentsProcedure
+    .input(agentSetWhisperInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.id)))
+    .mutation(({ ctx, input }) => updated(ctx, input)),
 
   delete: manageAgentsProcedure
     .input(agentDeleteInputSchema)
+    .use(agentPermission("delete", (input) => agentTarget(input.id)))
     .mutation(({ ctx, input }) => ctx.agents.delete(input.id)),
 
   restart: manageAgentsProcedure
     .input(agentRestartInputSchema)
+    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const ok = await ctx.agents.restart(input.id);
       if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
@@ -145,6 +187,7 @@ export const agentsRouter = t.router({
 
   wake: manageAgentsProcedure
     .input(agentWakeInputSchema)
+    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.wake(input.id);
       if (res.ok) return toAgentView(res.value);
@@ -158,6 +201,7 @@ export const agentsRouter = t.router({
 
   retryWorkspace: manageAgentsProcedure
     .input(agentRetryWorkspaceInputSchema)
+    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.retryWorkspace(input.id, input.kind);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
@@ -166,6 +210,7 @@ export const agentsRouter = t.router({
 
   sleep: manageAgentsProcedure
     .input(agentSleepInputSchema)
+    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.sleep(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
@@ -174,6 +219,7 @@ export const agentsRouter = t.router({
 
   setDisabled: manageAgentsProcedure
     .input(agentSetDisabledInputSchema)
+    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.setDisabled(input.id, input.disabled);
       if (res.ok) return toAgentView(res.value);
@@ -182,6 +228,7 @@ export const agentsRouter = t.router({
 
   upgrade: manageAgentsProcedure
     .input(agentUpgradeInputSchema)
+    .use(agentPermission("lifecycle", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const res = await ctx.agents.upgrade(input.id, input.expectedToImage);
       if (res.ok) return toAgentView(res.value);
@@ -204,6 +251,7 @@ export const agentsRouter = t.router({
 
   connectSlack: manageAgentsProcedure
     .input(agentConnectSlackInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({
@@ -248,6 +296,7 @@ export const agentsRouter = t.router({
 
   disconnectSlack: manageAgentsProcedure
     .input(agentDisconnectSlackInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.id)))
     .mutation(async ({ ctx, input }) => {
       const agent = await ctx.agents.disconnectSlack(
         input.id,
@@ -267,6 +316,7 @@ export const agentsRouter = t.router({
 
   bindSlackChannel: manageAgentsProcedure
     .input(agentBindSlackChannelInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.slack)
         throw new TRPCError({
@@ -315,6 +365,7 @@ export const agentsRouter = t.router({
 
   listTelegramChats: manageAgentsProcedure
     .input(agentListTelegramChatsInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({
@@ -336,6 +387,7 @@ export const agentsRouter = t.router({
 
   unbindTelegramChat: manageAgentsProcedure
     .input(agentUnbindTelegramChatInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({
@@ -356,6 +408,7 @@ export const agentsRouter = t.router({
 
   bindTelegramChat: manageAgentsProcedure
     .input(agentBindTelegramChatInputSchema)
+    .use(agentPermission("channels", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.channels.available.telegram)
         throw new TRPCError({

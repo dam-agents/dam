@@ -57,6 +57,7 @@ function proxyApp(port: number) {
     createAgentTrpcProxy({
       namespace: "ns",
       verifyOwner: async () => true,
+      editorRuntime: async () => false,
       ensureReady: async () => undefined,
       upstreamBase: () => `http://127.0.0.1:${port}`,
     }),

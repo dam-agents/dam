@@ -22,10 +22,11 @@ export function useSyncRestartingAgents() {
   useEffect(() => {
     if (!data) return;
     const current = useStore.getState().restartingAgents;
-    const next = transitionRestartingAgents(current, data.list);
+    const agents = [...data.list, ...data.shared];
+    const next = transitionRestartingAgents(current, agents);
     if (next === current) return;
     setRestartingAgents(next);
-    const freshlyParked = data.list.find(
+    const freshlyParked = agents.find(
       (a) => a.overBudget && current.get(a.id)?.parkedAtClick === false,
     );
     if (freshlyParked) {

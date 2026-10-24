@@ -140,18 +140,21 @@ export type AccessDecision =
  * UNIT_BOUNDARY_DESCRIPTION: The people who may open one Environment: those on
  * its owner's list for the owning agent, narrowed to the Environment's own
  * list when its agent set one. The agent can only narrow: an email on the
- * Environment's list but not on the owner's opens nothing. Emails compare
- * trimmed and lowercased.
+ * Environment's list but not on the owner's opens nothing. The owning agent's
+ * Agent Editors are always in, like its owner, so no list narrows them out.
+ * Emails compare trimmed and lowercased.
  */
 export function effectiveAccess(
   ownerList: readonly string[],
   environmentList: readonly string[] | null,
+  editors: readonly string[],
 ): string[] {
   const normalize = (e: string) => e.trim().toLowerCase();
   const owners = ownerList.map(normalize);
-  if (environmentList === null) return owners;
-  const narrowed = new Set(environmentList.map(normalize));
-  return owners.filter((e) => narrowed.has(e));
+  const narrowed =
+    environmentList === null ? null : new Set(environmentList.map(normalize));
+  const listed = narrowed ? owners.filter((e) => narrowed.has(e)) : owners;
+  return [...new Set([...listed, ...editors.map(normalize)])];
 }
 
 /**

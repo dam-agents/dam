@@ -44,6 +44,7 @@ function setup(stored: { avatar?: string } = {}) {
   );
   const agents = createAgentsService({
     owner: "owner-1",
+    actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [],
       get: async (id) =>

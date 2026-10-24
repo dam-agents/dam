@@ -15,6 +15,8 @@ import {
 import { createAcpRelay } from "./agent-proxies/acp-relay.js";
 import { createAgentTrpcRelay } from "./agent-proxies/agent-trpc-relay.js";
 import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
+import { createEditorRuntimeAccess } from "./agent-proxies/editor-runtime-access.js";
+import { composeEditorStanding } from "../../modules/agents/index.js";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
 import {
@@ -66,6 +68,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
   const verifyOwner = (agentId: string, ownerSub: string) =>
     deps.agentsRepo.isOwnedBy(agentId, ownerSub);
   const ensureReady = (agentId: string) => deps.agentsRepo.ensureReady(agentId);
+  const editorRuntime = createEditorRuntimeAccess({
+    editorStanding: composeEditorStanding({
+      db: deps.db,
+      repo: deps.agentsRepo,
+    }),
+  });
   const composeApiContext = createApiContextFactory(deps);
 
   const authenticate: Authenticate = (token, site: AuthSite) =>
@@ -97,6 +105,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     createAgentTrpcProxy({
       namespace: config.namespace,
       verifyOwner,
+      editorRuntime,
       ensureReady,
     }),
   );

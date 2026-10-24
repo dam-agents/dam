@@ -816,6 +816,7 @@ export async function bootstrap() {
   const { gate: environmentGate, frontDoor: environmentFrontDoor } =
     composeEnvironmentGate({
       db,
+      editorsOf: composeAgentEditors(db).editorsOf,
       redis: sharedRedis,
       urlTemplate: config.environmentsUrl,
       shareBaseUrl: config.shareBaseUrl,

@@ -8,15 +8,21 @@ import {
 
 const EDITORS_TTL_MS = 30_000;
 
+const SET_UP_TOPICS: ReadonlySet<string> = new Set([
+  "agents",
+  "schedules",
+  "harnessConfig",
+]);
+
 export interface EditorFanoutBus extends LiveEventsBus {
   forgetEditors(agentId: string): void;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A live events bus that also tells an Agent's
- * Agent Editors when the Agent changes. Every publisher addresses the owner;
- * this copies each agents hint to the email audience of every editor of that
- * Agent. The Editor List is read from a short per-replica cache, dropped on
+ * Agent Editors when the Agent's set-up changes. Every publisher addresses
+ * the owner; this copies each hint about the Agent, its schedules and its
+ * model settings to the email audience of every editor of that Agent. The Editor List is read from a short per-replica cache, dropped on
  * this replica when the list changes; another replica sees the change within
  * the cache's lifetime, and a person added or removed gets their own hint
  * from the change itself.
@@ -40,13 +46,17 @@ export function createEditorFanoutBus(
   return {
     publish(audience, event) {
       bus.publish(audience, event);
-      if (event.topic !== "agents" || isEditorAudience(audience)) return;
-      cachedEditorsOf(event.agentId).then(
+      const agentId =
+        SET_UP_TOPICS.has(event.topic) && "agentId" in event
+          ? event.agentId
+          : undefined;
+      if (agentId === undefined || isEditorAudience(audience)) return;
+      cachedEditorsOf(agentId).then(
         (emails) => {
           for (const email of emails) bus.publish(editorAudience(email), event);
         },
         (err: unknown) =>
-          log(`editor hints for ${event.agentId} failed: ${formatError(err)}`),
+          log(`editor hints for ${agentId} failed: ${formatError(err)}`),
       );
     },
     subscribe: (audience, listener) => bus.subscribe(audience, listener),

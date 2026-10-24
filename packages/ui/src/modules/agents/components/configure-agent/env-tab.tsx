@@ -30,14 +30,14 @@ import {
   type EnvVar,
   isValidEnvName,
 } from "../../../../types.js";
-import { useAppConnections } from "../../../connections/api/queries.js";
+import { useAgentPageConnections } from "../../../connections/api/queries.js";
 import type { SectionHeaderSlot } from "../../../sandboxes/components/sandbox-home-header.js";
 import { useGuardedClose } from "../../../sandboxes/hooks/use-guarded-close.js";
 import {
   type InheritedEnv,
   useInheritedEnvs,
 } from "../../../sandboxes/hooks/use-inherited-envs.js";
-import { useUpdateAgent } from "../../api/mutations.js";
+import { useSetAgentEnv } from "../../api/mutations.js";
 import { useAgentConnections } from "../../api/queries.js";
 
 const ENV_NAME_RULE =
@@ -67,8 +67,8 @@ export function EnvTab({
   agent: AgentView;
   header: SectionHeaderSlot;
 }) {
-  const updateAgent = useUpdateAgent();
-  const { data: apps = [] } = useAppConnections();
+  const updateAgent = useSetAgentEnv();
+  const { data: apps = [] } = useAgentPageConnections(agent.id);
   const { data: agentConnections } = useAgentConnections(agent.id);
   const pendingEnv = updateAgent.isPending
     ? updateAgent.variables.env

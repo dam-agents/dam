@@ -57,7 +57,7 @@ export function SkillSourceActions({
   source: SkillSource;
   busy: boolean;
   onRescan: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   onHide?: () => void;
   hideBlocker?: string | null;
   hideDisabled?: boolean;
@@ -96,7 +96,7 @@ export function SkillSourceActions({
           </span>
         </DropdownMenuItem>
       )}
-      {canRemove && (
+      {canRemove && onRemove && (
         <DropdownMenuItem tone="danger" onSelect={onRemove}>
           <TrashCan size={14} />
           <span className="flex-1">Remove source</span>
