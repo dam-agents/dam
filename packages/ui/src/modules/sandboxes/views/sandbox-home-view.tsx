@@ -18,8 +18,8 @@ import {
 } from "../../environments/api/queries.js";
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
-import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
@@ -60,15 +60,13 @@ export function SandboxHomeView() {
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openConfigTab = useStore((s) => s.openConfigTab);
-  const rightToolbar = useUnifiedRightToolbar();
+  // UNIT_BOUNDARY_DESCRIPTION: only the install's answer moves the page, never the last value this browser stored, so a bookmark does not bounce to the chat while the flags load — or after the user turned the experiment off.
+  const features = useFeatures();
+  const rightToolbar =
+    features.isSuccess && features.data?.["unified-right-toolbar"] === true;
   // UNIT_BOUNDARY_DESCRIPTION: with the experiment on this page has no surface of its own, so a deep link or a bookmark replaces itself with the chat and opens the panel that holds the section; every knob keeps its home there.
   useEffect(() => {
     if (!rightToolbar || !agentId) return;
-    history.replaceState(
-      null,
-      "",
-      routeToPath({ view: "chat", agent: agentId }),
-    );
     openConfigTab(agentId, configTabForSection(section));
   }, [rightToolbar, agentId, section, openConfigTab]);
   const openAgentSession = useStore((s) => s.openAgentSession);
