@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { controlAgents } from "db";
 import type { KubeObject } from "../agents/infrastructure/k8s.js";
 import { parseGoDurationNs } from "../../duration.js";
@@ -525,7 +526,8 @@ export function rowsFromResource(
         agentId: id,
         version: 0,
         lastActivityAt,
-        lastActivityToken: null,
+        // UNIT_BOUNDARY_DESCRIPTION: the token names the activity a reclaim mark was stamped for, and the controller's compare-and-set needs one to consume. A row written with an activity and no token could never be reclaimed, so the writer mints one here — create and the absorb are both writers of this mapping.
+        lastActivityToken: lastActivityAt === null ? null : randomUUID(),
         sessionPinned: annotations[ACTIVE_SESSION_KEY] === "true",
         invocationPinned: annotations[INVOCATIONS_ACTIVE_KEY] === "true",
         invocationPinVersion: 0,

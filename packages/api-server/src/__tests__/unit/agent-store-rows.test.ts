@@ -139,6 +139,27 @@ describe("an Agent crossing to rows and back", () => {
     );
   });
 
+  // TEST_SCENARIO: A reclaim mark names the activity it was stamped for by its token, and the controller's compare-and-set needs a token to consume. Every row written with an activity — a create's now, an absorbed Agent's stamp — must carry one, or the idle machine that a refused start needs room from can never be put to sleep. A row with no activity keeps no token.
+  it("mints an activity token for every activity it writes", () => {
+    const mapped = rowsFromResource(stored, DEFAULTS, SWITCHED_AT);
+    expect(mapped.rows!.signals.lastActivityAt).not.toBeNull();
+    expect(mapped.rows!.signals.lastActivityToken).toMatch(/^[0-9a-f-]{36}$/);
+
+    const quiet = rowsFromResource(
+      {
+        ...stored,
+        metadata: {
+          ...stored.metadata,
+          annotations: {},
+        },
+      } as KubeObject,
+      DEFAULTS,
+      SWITCHED_AT,
+    );
+    expect(quiet.rows!.signals.lastActivityAt).toBeNull();
+    expect(quiet.rows!.signals.lastActivityToken).toBeNull();
+  });
+
   // TEST_SCENARIO: The reclaim mark is the controller's column alone, so the api-server's mapping does not carry it; a rebuilt Agent reads as never reclaimed until the controller marks it again. The report says so rather than letting a reader assume the mark survived.
   it("drops the reclaim mark and counts it", () => {
     const mapped = rowsFromResource(
