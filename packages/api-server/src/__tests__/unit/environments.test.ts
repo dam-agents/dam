@@ -143,7 +143,6 @@ describe("creating an Environment", () => {
 
     expect(agents.created[0]).toMatchObject({
       name: "dev · pr-42",
-      vm: true,
       environmentOf: vmOwning.id,
       noDefaultProvider: true,
       egressPreset: "none",
@@ -166,23 +165,15 @@ describe("creating an Environment", () => {
   });
 
   // TEST_SCENARIO: only a vm Agent can own Environments, since they run on its owner's VM runner beside it, and an Environment cannot own one in turn.
-  it("refuses a container agent and an Environment as the owner", async () => {
-    const container = {
-      id: "agent-container0000001",
-      name: "c",
-      spec: {},
-    } as unknown as Partial<Agent>;
+  it("refuses an Environment as the owner", async () => {
     const env = {
       id: "agent-environment00001",
       name: "e",
       spec: { backend: { type: "vm" }, environmentOf: vmOwning.id },
     } as unknown as Partial<Agent>;
-    const { service, agents } = setup({ agents: [container, env] });
+    const { service, agents } = setup({ agents: [env] });
     const endpoints = [{ name: "app", port: 80 }];
 
-    await expect(
-      service.forOwningAgent(container.id!).create({ name: "a", endpoints }),
-    ).rejects.toThrow(/vm backend/);
     await expect(
       service.forOwningAgent(env.id!).create({ name: "a", endpoints }),
     ).rejects.toThrow(/cannot own/);

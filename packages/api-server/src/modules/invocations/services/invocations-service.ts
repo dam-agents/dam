@@ -43,7 +43,6 @@ import {
 } from "../domain/harness-config-refusal.js";
 import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
-import type { TargetAdmission } from "./target-admission.js";
 import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
 import type {
   InvocationOrigin,
@@ -217,7 +216,6 @@ export function createInvocationsService(deps: {
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   scriptOutputsAvailable: boolean;
-  targetAdmission?: TargetAdmission;
   spendHold?: SpendHoldGate;
   reaper: TargetReaper;
   reportGraceMs?: number;
@@ -263,16 +261,6 @@ export function createInvocationsService(deps: {
     work: LaunchWork,
   ): Promise<{ id: string }> {
     const created = createInputFromSetup(input.setup);
-    if (deps.targetAdmission) {
-      await deps.targetAdmission.assertCanEverFit({
-        ...(input.target.templateId
-          ? { templateId: input.target.templateId }
-          : {}),
-        ...(created.size ? { size: created.size } : {}),
-        ...(created.vm ? { vm: true } : {}),
-      });
-    }
-
     const rootId = await deps.driverResolution.resolveRoot(input.driverAgentId);
     if (rootId === null) {
       throw new UnresolvableDriverError(input.driverAgentId);

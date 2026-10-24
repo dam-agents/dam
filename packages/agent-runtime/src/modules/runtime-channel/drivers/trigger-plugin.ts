@@ -49,7 +49,7 @@ function withContext(task: string, context: string | undefined): string {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: how long a trigger waits for the model
- * catalog's first listing on a fresh pod, where the env rail and the trigger
+ * catalog's first listing on a fresh machine, where the env rail and the trigger
  * arrive together: a harness process spawned before the listing gets no
  * tier models. The wait is bounded so a provider outage never holds a run.
  */

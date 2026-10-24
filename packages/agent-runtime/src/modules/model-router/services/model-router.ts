@@ -345,7 +345,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       .providers.find((l) => l.id === entry.connectionId);
     const wire = layer ? upstreamWireOf(entry.template, layer.env) : null;
     if (!wire) {
-      const text = `provider '${entry.alias}' has no endpoint in this pod's env`;
+      const text = `provider '${entry.alias}' has no endpoint in this machine's env`;
       deps.onRefused?.({ session, status: 503, text, permanent: false });
       return reply(res, 503, dialect, text);
     }

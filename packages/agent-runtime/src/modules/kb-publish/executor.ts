@@ -23,9 +23,9 @@ export type KbPublishWork = Omit<KbPublishWorkOrder, "ticket">;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: uploads one object to a server-minted presigned
- * URL using the global fetch — agent pods run with NODE_USE_ENV_PROXY=1, so
- * fetch already rides HTTP(S)_PROXY through the paired gateway, the pod's
- * only network exit. One retry on network errors, 5xx and an attempt that
+ * URL using the global fetch — agents run with NODE_USE_ENV_PROXY=1, so
+ * fetch already rides HTTP(S)_PROXY through the machine's gateway, its only
+ * network exit. One retry on network errors, 5xx and an attempt that
  * outlives its timeout; a 4xx is final (typically an expired link — the
  * server re-mints on the next request). The timeout bounds a PUT the store
  * never answers: without it the flush, and the share's publish claim, hang.

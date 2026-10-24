@@ -117,7 +117,7 @@ describe("slack wake-failure surfacing", () => {
   it("hard failure: posts human copy, never the internal error string", async () => {
     const h = harness(async () => {
       throw wakeError({
-        kind: "agent-pod-failed",
+        kind: "agent-start-failed",
         terminationReason: "ImagePullFailure",
       });
     });
@@ -137,7 +137,7 @@ describe("slack wake-failure surfacing", () => {
     const h = harness(async (_id, opts) => {
       calls++;
       opts?.onWaking?.();
-      if (calls === 1) throw wakeError({ kind: "agent-pod-not-ready" });
+      if (calls === 1) throw wakeError({ kind: "agent-not-ready" });
     });
     await h.mention();
 
@@ -155,7 +155,7 @@ describe("slack wake-failure surfacing", () => {
     let calls = 0;
     const h = harness(async () => {
       calls++;
-      throw wakeError({ kind: "agent-pod-not-ready" });
+      throw wakeError({ kind: "agent-not-ready" });
     }, 0);
     await h.mention();
 

@@ -2,7 +2,6 @@ import { err, ok, type Result } from "../../../result.js";
 import type {
   AuthRequiredError,
   NotFoundError,
-  RuntimeMigratingError,
   TransportError,
 } from "../domain/errors.js";
 import type { AgentView } from "../domain/agent-view.js";
@@ -11,7 +10,7 @@ import {
   trpcCall,
   trpcErrorCode,
 } from "../../shared/trpc/classify.js";
-import type { RuntimeFleet } from "api-server-api";
+import type { AgentUpdateInput, RuntimeFleet } from "api-server-api";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
@@ -34,10 +33,18 @@ export interface AgentService {
     id: string,
     disabled: boolean,
   ): Promise<
-    Result<
-      AgentView,
-      TransportError | AuthRequiredError | NotFoundError | RuntimeMigratingError
-    >
+    Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
+  >;
+  updateIdentity(
+    input: Pick<AgentUpdateInput, "id" | "name" | "avatar">,
+  ): Promise<
+    Result<AgentView, TransportError | AuthRequiredError | NotFoundError>
+  >;
+  unlockedCharacters(): Promise<
+    Result<readonly string[], TransportError | AuthRequiredError>
+  >;
+  customAvatarsEnabled(): Promise<
+    Result<boolean, TransportError | AuthRequiredError>
   >;
 }
 
@@ -86,10 +93,27 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
       try {
         return ok(await deps.trpc.agents.setDisabled.mutate({ id, disabled }));
       } catch (e) {
-        if (trpcErrorCode(e) === "CONFLICT")
-          return err({ kind: "runtime-migrating" });
         return notFoundOnMutate(e, id);
       }
+    },
+    async updateIdentity(input) {
+      try {
+        return ok(await deps.trpc.agents.update.mutate(input));
+      } catch (e) {
+        return notFoundOnMutate(e, input.id);
+      }
+    },
+    async unlockedCharacters() {
+      return trpcCall(async () =>
+        (await deps.trpc.gettingStarted.progress.query()).unlocks.map(
+          (u) => u.character,
+        ),
+      );
+    },
+    async customAvatarsEnabled() {
+      return trpcCall(
+        async () => (await deps.trpc.features.flags.query())["custom-avatars"],
+      );
     },
   };
 }

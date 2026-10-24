@@ -106,10 +106,6 @@
         "ref"
       ]
     },
-    "backend": {
-      "type": "string",
-      "const": "vm"
-    },
     "egressPreset": {
       "type": "string",
       "enum": [

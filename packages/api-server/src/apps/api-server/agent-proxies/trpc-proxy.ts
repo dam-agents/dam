@@ -12,7 +12,7 @@ import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
 } from "../../../modules/agents/index.js";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
 import type { ApiVariables } from "../deps.js";
 
@@ -60,7 +60,8 @@ type ProxyCtx = Context<{ Variables: ApiVariables }>;
 export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
   const upstreamBase =
     deps.upstreamBase ??
-    ((agentId: string) => `http://${podBaseUrl(agentId, deps.namespace)}`);
+    ((agentId: string) =>
+      `http://${agentServiceAddress(agentId, deps.namespace)}`);
   return async (c: ProxyCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;

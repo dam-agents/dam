@@ -1,10 +1,10 @@
 # VM image cache
 
-Last verified: 2026-10-19
+Last verified: 2026-10-23
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 That tree is never on the runner's claim: it lives in a **node cache**, a host directory the install's runners scheduled on the node share, so the same few harness images are fetched once per node rather than once per owner.
-The install names a root once the `vm` Backend is on — `imageCache.hostPath` — and the chart keeps this install's cache in its own subdirectory of it, `<release namespace>/<release name>`: nodes are shared, and an install given another install's cache directory is a second writer of it, so the directory is named after the pair the cluster already keeps unique rather than left to whoever sets the value.
+The install names the root, `imageCache.hostPath`, and the chart keeps this install's cache in its own subdirectory of it, `<release namespace>/<release name>`: nodes are shared, and an install given another install's cache directory is a second writer of it, so the directory is named after the pair the cluster already keeps unique rather than left to whoever sets the value.
 It refuses a root that is not a path on the node, and one whose subdirectory lands inside the release directory, which the stager prunes.
 It is a host directory, not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.

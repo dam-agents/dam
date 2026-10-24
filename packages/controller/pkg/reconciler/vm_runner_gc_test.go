@@ -47,14 +47,10 @@ func runnerDeploymentExists(t *testing.T, r *AgentReconciler, owner string) bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: turns the owner's only Agent into a container agent, so its runner serves no vm agent and holds no machine: exactly what the sweep collects.
+// UNIT_BOUNDARY_DESCRIPTION: a runner is unused when its owner has no Agent left and the runner holds no machine, since every Agent of that owner lives on it.
 func leaveRunnerUnused(t *testing.T, r *AgentReconciler, node *fakeNode) {
 	t.Helper()
-	ctx := context.Background()
-	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	unstructured.RemoveNestedField(stored.Object, "spec", "backend")
-	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
-	require.NoError(t, err)
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(context.Background(), "my-agent", metav1.DeleteOptions{}))
 	node.mu.Lock()
 	node.specs = map[string]vmrunner.MachineSpec{}
 	node.mu.Unlock()
@@ -96,10 +92,7 @@ func TestTheSweepWaitsForAReconcileHoldingTheOwnersLock(t *testing.T) {
 	}
 	u, err := agentToUnstructured(agent)
 	require.NoError(t, err)
-	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	u.SetResourceVersion(stored.GetResourceVersion())
-	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, u, metav1.UpdateOptions{})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
 	require.NoError(t, err)
 	node.mu.Lock()
 	node.specs["my-agent"] = vmrunner.MachineSpec{Running: true}
@@ -111,7 +104,7 @@ func TestTheSweepWaitsForAReconcileHoldingTheOwnersLock(t *testing.T) {
 	assert.True(t, runnerClaimExists(t, r, testOwner), "the claim holding the new machine's disk is kept")
 }
 
-// TEST_SCENARIO: the sweep's fresh List of the owner's Agents is one opinion; the informer cache is a second, and an Agent either one knows of keeps the runner. Here the Agent becomes a vm agent after the List and before the cache is read.
+// TEST_SCENARIO: the sweep's fresh List of the owner's Agents is one opinion; the informer cache is a second, and an Agent either one knows of keeps the runner. Here the Agent appears again after the List and before the cache is read.
 func TestTheSweepRechecksTheCacheAfterItsList(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -127,11 +120,9 @@ func TestTheSweepRechecksTheCacheAfterItsList(t *testing.T) {
 	dyn.PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
 		lists++
 		if lists == 2 {
-			stored, err := dyn.Tracker().Get(AgentsGVR, "test-agents", "my-agent")
-			require.NoError(t, err)
-			u := stored.(*unstructured.Unstructured).DeepCopy()
-			require.NoError(t, unstructured.SetNestedField(u.Object, "vm", "spec", "backend", "type"))
-			require.NoError(t, dyn.Tracker().Update(AgentsGVR, u, "test-agents"))
+			u, uerr := agentToUnstructured(agent)
+			require.NoError(t, uerr)
+			require.NoError(t, dyn.Tracker().Create(AgentsGVR, u, "test-agents"))
 		}
 		return false, nil, nil
 	})
@@ -398,33 +389,6 @@ func TestTheSweepForgetsTheMachinesTheRunnerNoLongerHolds(t *testing.T) {
 	require.True(t, kept, "the machine the runner still holds keeps its time")
 	assert.WithinDuration(t, time.Now(), first.(time.Time), time.Minute)
 	assert.Empty(t, node.deleted)
-}
-
-// TEST_SCENARIO: an aborted migration marks the machine it could not delete as left, and that mark is the only record of a machine the Agent no longer claims. The informer cache can still hold the copy from before the abort, so a sweep that keeps the machine on that copy's word must keep the mark too, or the machine is never collected.
-func TestASweepKeepsTheMarkOfAMachineItKept(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.Reconcile(ctx, agent))
-	require.Contains(t, node.specs, "my-agent")
-
-	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
-	require.NoError(t, indexer.Add(stored.DeepCopy()))
-	ann := stored.GetAnnotations()
-	ann[annRuntimeMigrationMachineLeft] = "true"
-	stored.SetAnnotations(ann)
-	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
-	require.NoError(t, err)
-	r.WithAgentCache(cache.NewGenericLister(indexer, AgentsGVR.GroupResource()))
-
-	r.ReconcileOrphanMachines(ctx)
-
-	assert.NotContains(t, node.deleted, "my-agent", "the cache's copy before the abort still names the machine")
-	after, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, "true", after.GetAnnotations()[annRuntimeMigrationMachineLeft], "so the mark stays until the machine goes")
 }
 
 type unreadableAgentCache struct{}

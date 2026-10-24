@@ -204,6 +204,7 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
+      if (row.payload.kind === "egress_proposal") return NOT_ACTIONABLE;
       if (row.type === "ext_authz") {
         return resolveOnce(deps, row, "allow_once", "allow");
       }
@@ -216,7 +217,10 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
-      if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
+      if (
+        row.payload.kind === "ext_authz" ||
+        row.payload.kind === "egress_proposal"
+      ) {
         const { host, port, method, path } = row.payload;
         return writeRuleAndResolve(
           deps,
@@ -234,7 +238,10 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "allow");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
-      if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
+      if (
+        row.payload.kind === "ext_authz" ||
+        row.payload.kind === "egress_proposal"
+      ) {
         const { host, port } = row.payload;
         return writeRuleAndResolve(
           deps,
@@ -252,6 +259,9 @@ export function createApprovalsService(
         return answerSpendQuestion(deps, row, "deny");
       }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
+      if (row.payload.kind === "egress_proposal") {
+        return declineProposal(deps, row);
+      }
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const { host, port, method, path } = row.payload;
         return writeRuleAndResolve(
@@ -286,10 +296,28 @@ async function dismissOne(
     return answerSpendQuestion(deps, row, "deny");
   }
   if (!row || row.status !== "pending") return NOT_ACTIONABLE;
+  if (row.payload.kind === "egress_proposal") {
+    return declineProposal(deps, row);
+  }
   if (row.type === "ext_authz") {
     return resolveOnce(deps, row, "deny_once", "deny");
   }
   return resolveAndDeliverAcpNative(deps, row, "deny_once");
+}
+
+async function declineProposal(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+): Promise<ApprovalActionOutcome> {
+  if (row.status !== "pending") return NOT_ACTIONABLE;
+  const casWon = await deps.repo.resolvePending(row.id, "deny", deps.ownerSub, {
+    markDelivered: true,
+  });
+  if (casWon) emitResolved(row, "deny");
+  auditVerdict(deps, row, "deny", { verdict: "deny", ruleWritten: false });
+  return casWon
+    ? { outcome: "applied", type: row.type, rule: null }
+    : NOT_ACTIONABLE;
 }
 
 async function answerSpendQuestion(
@@ -359,6 +387,7 @@ async function writeRuleAndResolve(
     row.id,
     rule.verdict,
     deps.ownerSub,
+    { markDelivered: row.type === "egress_proposal" },
   );
   const expiredFlipped = casWon
     ? false

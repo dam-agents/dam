@@ -193,7 +193,7 @@ function MainApp() {
           <main
             id="main"
             tabIndex={-1}
-            className="relative z-content flex-1 min-w-0 outline-none"
+            className="relative z-content has-[[data-full-page]]:z-overlay flex-1 min-w-0 outline-none"
           >
             <ChatView />
           </main>

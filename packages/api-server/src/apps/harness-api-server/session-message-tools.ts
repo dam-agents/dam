@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { PodSession, SessionMessageEventPayload } from "agent-runtime-api";
+import type { Session, SessionMessageEventPayload } from "agent-runtime-api";
 import { z } from "zod";
 import { errorResult, json, run } from "../../core/mcp-tool-result.js";
 
@@ -11,13 +11,13 @@ export interface SessionMessagePorts {
   listSessions(query: {
     sessionId?: string;
     limit?: number;
-  }): Promise<PodSession[]>;
+  }): Promise<Session[]>;
   callerSessionId(): Promise<string | null>;
   acceptsSessionMessages(): Promise<boolean>;
   send(payload: SessionMessageEventPayload): Promise<void>;
 }
 
-function summary(session: PodSession, caller: string | null) {
+function summary(session: Session, caller: string | null) {
   return {
     sessionId: session.sessionId,
     title: session.title,

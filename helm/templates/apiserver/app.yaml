@@ -275,14 +275,10 @@ spec:
             {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
-            {{- if .Values.virtualization.enabled }}
-            - name: VIRTUALIZATION_ENABLED
-              value: "true"
             - name: VM_POOL_STORAGE
               value: {{ .Values.virtualization.runner.storage | quote }}
             - name: VM_POOL_MEMORY
               value: {{ (((.Values.virtualization.runner.resources | default dict).limits) | default dict).memory | default "" | toString | quote }}
-            {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
               value: "true"
@@ -374,8 +370,6 @@ spec:
             - name: AGENT_WORK_DIR
               value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
-              value: {{ .Values.controller.agent.base.idleTimeout | quote }}
-            - name: AGENT_VM_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.vmIdleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
             # so create-time resource stamping (#1900) cannot drift from the
@@ -389,10 +383,6 @@ spec:
             # disk for its home.
             - name: AGENT_DEFAULT_STORAGE_SIZE
               value: {{ .Values.controller.agent.templateDefaults.storageSize | quote }}
-            # The mounts the controller renders for an Agent that names none,
-            # which a runtime migration plans from as the controller does.
-            - name: AGENT_DEFAULT_MOUNTS
-              value: {{ .Values.controller.agent.templateDefaults.mounts | default list | toJson | replace "$HOME" "/home/agent" | quote }}
             # Default per-user ceiling (#1900), same value the controller
             # enforces with; display-only here (the meter's ceiling figure).
             - name: DEFAULT_USER_CPU_BUDGET

@@ -51,11 +51,11 @@ const MAX_AWAIT_IDS = 50;
 const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent: if your harness has one, it runs here, starts in seconds and costs no extra compute, so prefer it whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
 - different-harness: it must run on another harness (see list_harnesses);
 - own-setup: it needs its own repository (seed), install command, env or skills;
-- more-resources: more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
+- more-resources: more CPU, memory or disk than this sandbox;
 - isolation: the work must not be able to touch this workspace;
 - parallel: heavy parallel work beyond what this sandbox can run;
 - checked-result: a result the platform validates against a schema.
-A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources or a vm backend.
+A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources.
 
 When the work is a command whose output you need (a test suite, an eval, a benchmark, a build, a data transform), pass script instead of prompt. No model runs: the sub-agent runs the command once and you get its exit code and its exact stdout and stderr. A non-zero exit fails the sub-agent with the exit code and the tail of stderr. Write a prompt only when the work needs judgment. Pass prompt (with schema) or script, never both; a script takes no schema, model, mode or configOptions.
 
@@ -129,7 +129,7 @@ const spawnInput = {
       "A shell command run once with bash -lc in the sub-agent's workspace, after seed and install, with no model turn. You get its exit code, stdout and stderr. Pass this or prompt.",
     ),
   harness: spawnShape.harness.describe(
-    "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image; with neither, the harness the user set for this session's platform sub-agents.",
+    "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image; with neither, the harness the user set for this session's platform sub-agents, else your own.",
   ),
   image: spawnShape.image.describe(
     "A custom image to run instead of the default one. Pass harness too only when the image carries that harness.",
@@ -151,10 +151,7 @@ const spawnInput = {
   ),
   env: spawnShape.env.describe("Environment variables, as [{name, value}]."),
   resources: spawnShape.resources.describe(
-    "cpu, memory, storage (disk). Omitted values come from the harness's template; give a clone or build more memory.",
-  ),
-  backend: spawnShape.backend.describe(
-    '"vm" to run in a microVM, when the work needs a container runtime or a cluster inside.',
+    "cpu, memory and storage (disk) for the sub-agent's machine. Omitted values come from the harness's template; give a clone or build more memory.",
   ),
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",
@@ -242,10 +239,9 @@ export function unmetNeed(
     needs.includes("more-resources") &&
     !body.resources &&
     body.cpu === undefined &&
-    body.memory === undefined &&
-    body.backend !== "vm"
+    body.memory === undefined
   )
-    return "more-resources without resources or a vm backend";
+    return "more-resources without resources";
   return null;
 }
 
@@ -378,7 +374,9 @@ export type ResolvedSubAgent =
  * UNIT_BOUNDARY_DESCRIPTION: what a platform sub-agent runs on, setting by
  * setting. The session's platform sub-agent settings bind: a spawn on
  * another harness is refused, a spawn naming none gets the set one, and a
- * set model, mode or config option outranks the spawn's. Below them the
+ * set model, mode or config option outranks the spawn's. With no set
+ * harness, a spawn naming neither harness nor image runs on the agent's own,
+ * since models read the harness as optional and leave it out. Below them the
  * spawn's own choice, then, on the session's own harness, the session's
  * model and settings, then the harness defaults; with no model at all the
  * spawn route refuses the spawn. The session's settings
@@ -388,6 +386,7 @@ export type ResolvedSubAgent =
 export function resolveSubAgent(
   args: SpawnArgs,
   session: SessionSubAgentContext | null,
+  ownHarness: string | null,
 ): ResolvedSubAgent {
   const set = session ? platformSubagentChoice(session.settings) : null;
   if (set?.harness && args.harness && args.harness !== set.harness)
@@ -396,7 +395,8 @@ export function resolveSubAgent(
       message: `this session's platform sub-agent setting runs every sub-agent on ${set.harness}, not ${args.harness}. Spawn on ${set.harness}, or ask the user to change the setting`,
     };
   const harness =
-    args.harness ?? (args.image ? undefined : (set?.harness ?? undefined));
+    args.harness ??
+    (args.image ? undefined : (set?.harness ?? ownHarness ?? undefined));
   const bound = set?.harness && harness === set.harness ? set : null;
   const inherited =
     harness !== undefined && harness === session?.harness
@@ -562,7 +562,11 @@ export function registerSubAgentTools(
         );
       }
       const unidentified = session === null && deps.sessionIdentified === false;
-      const resolved = resolveSubAgent(rest, session);
+      const [ownHarness, driverSessionId] = await Promise.all([
+        session?.harness ? Promise.resolve(session.harness) : ops.harness(),
+        deps.spawningSession(),
+      ]);
+      const resolved = resolveSubAgent(rest, session, ownHarness);
       if (!resolved.ok)
         return errorResult(`spawn_subagent refused: ${resolved.message}`);
       const { ok: _ok, bound, modelFrom, ...choice } = resolved;
@@ -572,10 +576,6 @@ export function registerSubAgentTools(
             ? `spawn_subagent refused: ${UNIDENTIFIED_SESSION}`
             : `spawn_subagent refused: ${issues.map((i) => i.message).join("; ")}`,
         );
-      const [ownHarness, driverSessionId] = await Promise.all([
-        session?.harness ? Promise.resolve(session.harness) : ops.harness(),
-        deps.spawningSession(),
-      ]);
       const from = { origin: "tool" as const, driverSessionId };
       const refusedNeed = (unmet: string) =>
         errorResult(
@@ -793,7 +793,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "get_budget",
-    "Read your owner's compute: what is reserved now (cpu, memory) and the default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
+    "Read your owner's default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
     {},
     () => run(async () => json(await ops.budget())),
   );

@@ -1,10 +1,10 @@
 import {
-  podSessionModeSchema,
-  podSessionTypeSchema,
+  sessionModeSchema,
+  sessionTypeSchema,
   sessionMatchesQuery,
-  type PodSession,
-  type PodSessionMode,
-  type PodSessionType,
+  type Session,
+  type SessionMode,
+  type SessionType,
   type SessionDirectoryEntry,
   type SessionListCursor,
   type SessionListQuery,
@@ -48,13 +48,13 @@ export interface SessionListPredicates {
   platformSessionOf?: (harnessSessionId: string) => string | undefined;
 }
 
-function asMode(value: string | undefined): PodSessionMode {
-  const parsed = podSessionModeSchema.safeParse(value);
+function asMode(value: string | undefined): SessionMode {
+  const parsed = sessionModeSchema.safeParse(value);
   return parsed.success ? parsed.data : "chat";
 }
 
-function asType(value: string | undefined): PodSessionType {
-  const parsed = podSessionTypeSchema.safeParse(value);
+function asType(value: string | undefined): SessionType {
+  const parsed = sessionTypeSchema.safeParse(value);
   return parsed.success ? parsed.data : "regular";
 }
 
@@ -63,7 +63,7 @@ function fromEntry(
   entry: SessionMetaLike,
   listed: ListedHarnessSession | undefined,
   running: boolean,
-): PodSession {
+): Session {
   return {
     sessionId,
     mode: asMode(entry.meta.mode),
@@ -94,7 +94,7 @@ function fromEntry(
 function fromHarnessOnly(
   listed: ListedHarnessSession,
   running: boolean,
-): PodSession {
+): Session {
   return {
     sessionId: listed.sessionId,
     mode: "terminal",
@@ -128,8 +128,8 @@ export function composeSessionList(
   listed: readonly ListedHarnessSession[],
   entries: Readonly<Record<string, SessionMetaLike>>,
   { isTombstoned, isRunning, platformSessionOf }: SessionListPredicates,
-): PodSession[] {
-  const composed: PodSession[] = [];
+): Session[] {
+  const composed: Session[] = [];
   const listedById = new Map<string, ListedHarnessSession>();
 
   for (const harnessSession of listed) {
@@ -159,7 +159,7 @@ export function composeSessionList(
   return composed;
 }
 
-function activityAt(session: PodSession): string {
+function activityAt(session: Session): string {
   return session.updatedAt ?? session.createdAt;
 }
 
@@ -167,22 +167,19 @@ function compareCodeUnits(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function compareToCursor(
-  session: PodSession,
-  cursor: SessionListCursor,
-): number {
+function compareToCursor(session: Session, cursor: SessionListCursor): number {
   return (
     compareCodeUnits(cursor.activityAt, activityAt(session)) ||
     compareCodeUnits(session.sessionId, cursor.sessionId)
   );
 }
 
-function cursorOf(session: PodSession): SessionListCursor {
+function cursorOf(session: Session): SessionListCursor {
   return { activityAt: activityAt(session), sessionId: session.sessionId };
 }
 
 export function pageSessions(
-  sessions: readonly PodSession[],
+  sessions: readonly Session[],
   query: SessionListQuery = {},
 ): SessionPage {
   const { after, limit } = query;

@@ -46,7 +46,7 @@ import type {
   FolderRow,
   SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
-import type { AgentApiPodClient } from "../infrastructure/agent-api-pod-client.js";
+import type { AgentApiClient } from "../infrastructure/agent-api-client.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -100,7 +100,7 @@ export interface ArtifactLibraryDeps {
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<void>;
-  agentApi: AgentApiPodClient;
+  agentApi: AgentApiClient;
 }
 
 type AgentApiAccess =

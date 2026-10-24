@@ -1874,13 +1874,13 @@ func TestRenderEnvoyBootstrap_AConnectionsOwnCAStillWinsOverExtraCAs(t *testing.
 func TestBuildEnvoyBootstrapConfigMap_CarriesTheTrustBundleOnlyWhenConfigured(t *testing.T) {
 	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
 
-	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, nil, nil, false)
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", bootstrapTestCfg, owner, nil, nil, false)
 	require.NoError(t, err)
 	assert.NotContains(t, cm.Data, envoyUpstreamCAKey)
 
 	cfg := *bootstrapTestCfg
 	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
-	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, &cfg, owner, nil, nil, false)
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", &cfg, owner, nil, nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, cfg.GatewayUpstreamTrustBundle, cm.Data[envoyUpstreamCAKey])
 }

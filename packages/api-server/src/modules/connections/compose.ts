@@ -40,6 +40,10 @@ import {
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
 import { createSecretRequestsService } from "./services/secret-requests.js";
+import {
+  createAgentSecretRequests,
+  type AgentSecretRequests,
+} from "./services/agent-secret-requests.js";
 import type {
   PendingSecretRequest,
   SecretRequestOutcome,
@@ -305,7 +309,7 @@ export function composeSecretRequestsForOwner(opts: {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
   connections: Pick<
     ConnectionsService,
-    "createFromTemplate" | "update" | "getConnection"
+    "createFromTemplate" | "update" | "getConnection" | "updateAgentConnections"
   >;
   agentName: (agentId: string) => Promise<string | null>;
 }): SecretRequestsService {
@@ -318,5 +322,24 @@ export function composeSecretRequestsForOwner(opts: {
     repo: createConnectionsRepository(opts.db),
     connections: opts.connections,
     agentName: opts.agentName,
+  });
+}
+
+export function composeAgentSecretRequests(opts: {
+  ownerId: string;
+  agentId: string;
+  db: Db;
+  uiBaseUrl: string;
+  stores: SecretRequestStores;
+  templates: ReturnType<typeof createConnectionTemplateRegistry>;
+}): AgentSecretRequests {
+  return createAgentSecretRequests({
+    ownerId: opts.ownerId,
+    agentId: opts.agentId,
+    uiBaseUrl: opts.uiBaseUrl,
+    pending: opts.stores.pending,
+    outcomes: opts.stores.outcomes,
+    templates: opts.templates,
+    repo: createConnectionsRepository(opts.db),
   });
 }

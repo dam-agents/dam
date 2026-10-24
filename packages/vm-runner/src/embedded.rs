@@ -277,6 +277,7 @@ impl Runtime for Smolvm {
         }
         if let Some(record) = &record {
             write_boot_image(record)?;
+            write_boot_unpacked_as(record)?;
             write_launch(record)?;
         }
         let boot = u32::try_from(boot_mib).context("boot memory")?;
@@ -644,6 +645,39 @@ fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
         return Err(e).with_context(|| format!("naming the boot's image in {}", path.display()));
     }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: copies the stager's record of an unprivileged unpack into the share, or removes the share's copy for a tree without one, so platform-init maps an owner only for a tree a stager recorded unpacking without privilege and keeps the image's owners for every tree unpacked with it. A record that cannot be read copies nothing: a tree with no proof of an unprivileged unpack boots as it always did.
+fn write_boot_unpacked_as(record: &VmRecord) -> anyhow::Result<()> {
+    let Some((share, _, _)) = record
+        .mounts
+        .iter()
+        .find(|(_, target, _)| target == SHARE_PATH)
+    else {
+        return Ok(());
+    };
+    let path = Path::new(share).join(crate::share::UNPACKED_AS_FILE);
+    let stager = record
+        .image
+        .as_deref()
+        .and_then(packed_layers_dir_for_ref)
+        .and_then(|tree| {
+            tree.parent()
+                .map(|entry| entry.join(crate::share::UNPACKED_AS_FILE))
+        })
+        .and_then(|marker| std::fs::read_to_string(marker).ok())
+        .and_then(|text| text.lines().next().map(str::trim).map(str::to_string))
+        .filter(|line| !line.is_empty());
+    let written = match stager {
+        Some(line) => {
+            crate::files::write(&path, format!("{line}\n").as_bytes(), crate::share::CA_MODE)
+        }
+        None => std::fs::remove_file(&path).or_else(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(e),
+        }),
+    };
+    written.with_context(|| format!("recording who unpacked the image in {}", path.display()))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's root to platform-init, which keeps the root while the line stays the same. An image that declares its root generation in its own env (ROOT_GENERATION_ENV) is named by that key alone, so a new image of the same key keeps what the agent wrote outside HOME, and any other key, an extending image's included, starts an empty root. The key is compared whole and never parsed. Any other image is named exactly: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway. Only the image's env is read, never the spec's.
@@ -1080,6 +1114,22 @@ mod tests {
             vec!["/entry".to_string()],
             "a record an older runner wrote names platform-init first, which is the init itself now"
         );
+
+        let entry = home.path.join("images/quay.io_x_vm_1");
+        fs::write(entry.join(crate::share::UNPACKED_AS_FILE), b"501 20\n").unwrap();
+        write_boot_unpacked_as(&record).unwrap();
+        assert_eq!(
+            fs::read_to_string(share.join(crate::share::UNPACKED_AS_FILE)).unwrap(),
+            "501 20\n",
+            "a start must hand platform-init the record of an unprivileged unpack"
+        );
+        fs::remove_file(entry.join(crate::share::UNPACKED_AS_FILE)).unwrap();
+        write_boot_unpacked_as(&record).unwrap();
+        assert!(
+            !share.join(crate::share::UNPACKED_AS_FILE).exists(),
+            "a tree without the stager's record must not keep the last boot's"
+        );
+
         assert_eq!(
             (record.dns, record.dns_filter_hosts),
             (Some(GUEST_DNS_SINK), Some(Vec::new())),

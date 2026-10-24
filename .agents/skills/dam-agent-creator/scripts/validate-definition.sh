@@ -7,7 +7,7 @@
 #                is flagged. Generation-time only: the skill names its references,
 #                and a generated repo's own CI passes none.
 # Prints PASS/WARN/FAIL lines; exit 0 = no FAILs, exit 1 = at least one FAIL.
-# BSD/GNU-portable (runs on dev macOS and the Linux pod).
+# BSD/GNU-portable (runs on dev macOS and in the machine).
 
 set -u
 export LC_ALL=C

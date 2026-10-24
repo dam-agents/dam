@@ -1,6 +1,6 @@
 import type { KbPublishSyncInput } from "agent-runtime-api";
 
-import { agentPodClient } from "../../../core/agent-pod-client.js";
+import { agentServiceClient } from "../../../core/agent-service-client.js";
 
 const SYNC_TIMEOUT_MS = 10_000;
 
@@ -21,7 +21,7 @@ export function createKbPublishPodClient(
   return {
     async sync(agentId, input) {
       try {
-        await agentPodClient(agentId, namespace, {
+        await agentServiceClient(agentId, namespace, {
           timeoutMs: SYNC_TIMEOUT_MS,
           batch: false,
         }).kbPublish.sync.mutate(input);

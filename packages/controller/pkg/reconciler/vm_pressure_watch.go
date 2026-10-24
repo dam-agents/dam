@@ -112,7 +112,7 @@ func (r *AgentReconciler) pressurePass(ctx context.Context, owner string, p vmru
 	}
 	var agents []*apiv1.Agent
 	for _, obj := range items {
-		if a, err := FromCacheObject[apiv1.Agent](obj); err == nil && vmSideOf(a) != nil {
+		if a, err := FromCacheObject[apiv1.Agent](obj); err == nil {
 			agents = append(agents, a)
 		}
 	}

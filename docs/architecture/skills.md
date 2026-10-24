@@ -1,22 +1,22 @@
 # Skills
 
-Last verified: 2026-10-16
+Last verified: 2026-10-23
 
 ## Overview
 
 A **skill** is a directory containing a `SKILL.md` manifest (YAML frontmatter — `name`, `description`) plus supporting files.
-Platform does not interpret skills; it **transports** them between external git repositories and the per-agent PVC, where the harness reads them from configured paths.
+Platform does not interpret skills; it **transports** them between external git repositories and the machine's disk, where the harness reads them from configured paths.
 Sources are external git repos — there is no Platform-hosted catalog.
 
 The subsystem splits across two bounded contexts ([`docs/ubiquitous-language.md`](../ubiquitous-language.md)), one page each:
 
 - **api-server side — this page.** Owns the catalog: which sources are connected, which skills are installed where, and what was published from which agent.
   All of it is api-server-only Application State and lives in Postgres or in api-server config.
-  The api-server never touches a pod's filesystem directly.
-- **agent-runtime side — [agent-skills](agent-skills.md).** Owns the pod-local files: scanning a source, materializing a skill into the configured paths, walking the disk to enumerate local skills, and publishing a local skill upstream.
+  The api-server never touches an agent's filesystem directly.
+- **agent-runtime side — [agent-skills](agent-skills.md).** Owns the files inside the agent: scanning a source, materializing a skill into the configured paths, walking the disk to enumerate local skills, and publishing a local skill upstream.
   It also owns Skill Path and Skill Origin, the provenance verdict every Local Skill carries.
 
-The two contexts share the agent-runtime as the only path that reaches a pod, and the paired gateway pod as the only path that reaches GitHub with credentials.
+The two contexts share the agent-runtime as the only path that reaches an agent's disk, and the paired gateway pod as the only path that reaches GitHub with credentials.
 Everything else is a tRPC call between them.
 
 ## Diagram
@@ -41,9 +41,9 @@ flowchart LR
     hidden[(agent_hidden_skill_sources)]
   end
 
-  subgraph pod[agent pod]
+  subgraph machine[the machine]
     rt-skills[agent-runtime skills]
-    pvc[(per-agent PVC<br/>skill paths)]
+    disk[(machine disk<br/>skill paths)]
   end
 
   subgraph gateway[gateway pod]
@@ -65,11 +65,11 @@ flowchart LR
 
   rt-skills -->|HTTPS_PROXY| envoy
   envoy -->|inject user's OAuth token| github
-  rt-skills <--> pvc
+  rt-skills <--> disk
 ```
 
 The api-server scans **public** GitHub catalogs directly (no credentials needed) and falls back to agent-runtime for everything else.
-agent-runtime is the only component that talks to GitHub with credentials, and it does so without holding any: the request leaves the agent pod through the paired gateway pod, where Envoy injects the GitHub token of the account the Agent acts as — the active one when it holds several ([connections](connections.md#addressing-a-connection)) — from a K8s Secret on the wire ([security-and-credentials](security-and-credentials.md)).
+agent-runtime is the only component that talks to GitHub with credentials, and it does so without holding any: the request leaves the machine through the paired gateway pod, where Envoy injects the GitHub token of the account the Agent acts as — the active one when it holds several ([connections](connections.md#addressing-a-connection)) — from a K8s Secret on the wire ([security-and-credentials](security-and-credentials.md)).
 
 ## Concepts
 
@@ -116,7 +116,7 @@ Another path of the same repository is another source; changing a source's path 
 ### Skill, Installed Skill Ref, Local Skill
 
 A **Scanned Skill** is what a scan reports about one skill in a Source, from either scanner: its identity, a `version` that is the source's HEAD commit SHA, a `contentHash` that is a deterministic SHA-256 over the skill directory (what drift detection compares), and the repo-relative directory it was found in (whichever [Source Root](#source-roots) that came from — what a pinned single-file read needs to locate it).
-A pod predating that last field reports none, which is why the api-server's own shape keeps it optional.
+An agent whose runtime predates that last field reports none, which is why the api-server's own shape keeps it optional.
 The field-level shape lives in the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)).
 
 An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent, and the path of the source it was installed from.
@@ -126,7 +126,7 @@ An install names the path of the source it comes from.
 One that names none keeps the path the agent already installed the skill from; a first install takes the repository's path-less source, or its only source, and is refused when several paths could match.
 The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
 
-A **Local Skill** is a directory present in some [Skill Path](agent-skills.md#skill-path) on the pod, regardless of how it got there; the pod judges its [Skill Origin](agent-skills.md#skill-origin) at the same time.
+A **Local Skill** is a directory present in some [Skill Path](agent-skills.md#skill-path) on the machine, regardless of how it got there; the machine judges its [Skill Origin](agent-skills.md#skill-origin) at the same time.
 The reconciled `state` view splits Locals into:
 
 - **Installed** — also tracked in `agent_skills`.
@@ -154,8 +154,8 @@ The row's existence is what gives the skill a badge at all — replacing a name-
 
 **Resolving that state.** `prState` is filled in by a periodic job rather than by the `state` query, so GitHub cost tracks the number of unresolved pull requests rather than how many users have the Skills page open.
 Each unresolved record is attempted at most hourly — the cadence that holds the anonymous 60-requests/hour-per-IP ceiling up to roughly fifty concurrently unresolved records, with scheduling sophistication deliberately deferred until reality demands it.
-An attempt is one **anonymous** read from the api-server — which preserves the invariant below, since anonymous is not "with credentials" — escalating on a `404` (private as much as gone) to the publishing agent's own pod, where the paired gateway injects the owner's token.
-Only pods **already warm** answer: a badge is never worth waking a hibernated agent.
+An attempt is one **anonymous** read from the api-server — which preserves the invariant below, since anonymous is not "with credentials" — escalating on a `404` (private as much as gone) to the publishing agent's own machine, where the paired gateway injects the owner's token.
+Only agents **already running** answer: a badge is never worth waking a hibernated agent.
 The in-product preview escalates the same way but deliberately **does** wake, because it serves a request a user made (see [api-server skills service](#api-server-skills-service)).
 `merged` and `closed` are terminal — once observed they are persisted and never re-read, so the badge only ever gets more accurate.
 Conditional requests are **not** a budget mechanism: an anonymous `304` is charged exactly like a `200`, so an ETag saves bandwidth only.
@@ -163,11 +163,11 @@ Conditional requests are **not** a budget mechanism: an anonymous `304` is charg
 ### Platform Skill
 
 A **platform skill** is one the platform ships to make a feature usable.
-It is a reading over the pod's [Skill Origin](agent-skills.md#skill-origin) verdict, not a fourth value: the skill must be judged `system` or `system-modified` against the image **and** carry a name in the **platform skill registry**, a static skill-name-to-feature map in the contract package ([`platform-skills.ts`](../../packages/api-server-api/src/modules/skills/platform-skills.ts)).
-The registry lives here rather than on the pod because agent-runtime never consults it — it reports the verdict, and this side decides what the verdict means.
+It is a reading over the machine's [Skill Origin](agent-skills.md#skill-origin) verdict, not a fourth value: the skill must be judged `system` or `system-modified` against the image **and** carry a name in the **platform skill registry**, a static skill-name-to-feature map in the contract package ([`platform-skills.ts`](../../packages/api-server-api/src/modules/skills/platform-skills.ts)).
+The registry lives here rather than in the agent because agent-runtime never consults it — it reports the verdict, and this side decides what the verdict means.
 
 Both halves are load-bearing.
-A name is only a directory on the agent-writable PVC, so a user skill squatting on a registry name is judged `user` and never borrows the badge; origin alone cannot separate a feature's skill from an image's own built-in.
+A name is only a directory on the agent-writable disk, so a user skill squatting on a registry name is judged `user` and never borrows the badge; origin alone cannot separate a feature's skill from an image's own built-in.
 Keeping the map in code rather than in a marker or a row is what keeps provenance judged against the image.
 
 That one map is what both surfaces read.
@@ -206,7 +206,7 @@ Top-level `*` is a **fallback only** — consulted when none of the deliberate r
 Discovery is one level deep per root; there is no recursive walk.
 
 The union is then **deduped by Skill name** (`name` frontmatter, else the directory basename — the same identity `agent_skills` and install key on), first-found-wins in root order.
-Name, not raw path, is the identity because the on-pod store is a flat name-keyed directory and the catalog row is keyed on name: two same-named directories are not separately representable, so the earlier root wins and the later one is dropped (and logged).
+Name, not raw path, is the identity because the on-disk store is a flat name-keyed directory and the catalog row is keyed on name: two same-named directories are not separately representable, so the earlier root wins and the later one is dropped (and logged).
 This collapses the common case where a repo symlinks one root to another (e.g. `.claude/skills` → `.agents/skills`): both roots enumerate the same real skill, and dedupe yields a single entry.
 Per-skill symlinks are still skipped — only real directories are scanned.
 
@@ -234,22 +234,22 @@ Owns:
   This is the path that lets the catalog UI render even when no agent is running.
 - **SKILL.md content read** (`getSkillContent`) — serves one skill's raw `SKILL.md` for the in-product preview.
   It resolves the skill's directory and commit from the same scan dispatch `list` uses, then fetches that one file pinned at that commit, so a preview costs no repo download and renders the revision the catalog listed.
-  Which side issues the fetch follows which side answered the scan: a public source is read anonymously from the api-server, a private one from the pod, where the paired gateway injects the owner's token.
+  Which side issues the fetch follows which side answered the scan: a public source is read anonymously from the api-server, a private one from the machine, where the paired gateway injects the owner's token.
   The private branch therefore inherits that dispatch's wake — a preview of a private source **starts a hibernated agent** rather than refusing, the opposite of the publish badge's never-wakes rule ([Skill Publish Record](#skill-publish-record)).
   A non-GitHub source returns `NOT_IMPLEMENTED`: the pinned single-file read is GitHub-only.
   A Local Skill has no source and no commit to pin, so the Read Local passthrough below answers its preview instead.
 - **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port.
   Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the shared `ensureReady` primitive rather than refusing (still requires an `agentId` to target).
-- **Install / uninstall orchestration** — wakes a hibernated agent before recording the change, then upserts the `agent_skills` row and bumps the outbox; the unified apply worker applies it onto the (now-warm) pod.
-  The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
+- **Install / uninstall orchestration** — wakes a hibernated agent before recording the change, then upserts the `agent_skills` row and bumps the outbox; the unified apply worker applies it onto the (now-running) machine.
+  The api-server is the only workload whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
   A **batch** variant takes many installs and uninstalls together and is the path every bulk action uses: because install is declarative, N changes cost N row writes but **one** outbox bump, so a bulk action settles once instead of once per skill.
   The security log stays per skill — "what did this agent install, from where" has to remain answerable after an incident, and one aggregate line loses that.
   A batch naming the same skill in both directions is refused outright rather than resolved to a winner.
 - **Create Local orchestration** — wakes a hibernated agent via `ensureReady`, delegates the write to agent-runtime `writeLocal`, and security-logs it.
   Records no catalog row: an uploaded skill is a standalone Local Skill by design, so the reconciled `state` read picks it up on the next poll — no `agent_skills` row, no outbox bump.
-  A pod-side collision comes back as `CONFLICT` and is passed through with its message (the offending names) intact.
-- **Read Local passthrough** — wakes a hibernated agent, then forwards agent-runtime's files and caps verdict unchanged (the pod's `NOT_FOUND` / `PAYLOAD_TOO_LARGE` surface as-is).
-  Persists nothing and is deliberately unlogged — the Files panel already serves arbitrary pod file content unlogged, so a skill read is strictly less.
+  An in-agent collision comes back as `CONFLICT` and is passed through with its message (the offending names) intact.
+- **Read Local passthrough** — wakes a hibernated agent, then forwards agent-runtime's files and caps verdict unchanged (the agent's `NOT_FOUND` / `PAYLOAD_TOO_LARGE` surface as-is).
+  Persists nothing and is deliberately unlogged — the Files panel already serves arbitrary agent file content unlogged, so a skill read is strictly less.
   The browser has two consumers for that result: a download — a single `.md` for a lone `SKILL.md`, else a `.zip` whose entries sit under the skill's directory — and the in-product preview of a Local Skill, standalone or image-shipped, which renders the `SKILL.md` out of the same files.
   That makes a Local Skill the expensive half of preview: it pays for the whole skill directory where a source-backed preview reads one pinned file, and a directory over the caps refuses the preview outright rather than degrading it.
 - **Delete Local orchestration** — wakes a hibernated agent via `ensureReady`, refuses a name tracked in `agent_skills` with `CONFLICT` (uninstall is that skill's removal path), delegates the removal to agent-runtime `deleteLocal`, and security-logs it.
@@ -258,7 +258,7 @@ Owns:
 - **Publish orchestration** ([`publish-service`](../../packages/api-server/src/modules/skills/services/publish-service.ts)) — validates that the source is a GitHub URL (only host that supports publish), refuses untouched system skills (see [Skill Origin](agent-skills.md#skill-origin)), wakes a hibernated agent, calls agent-runtime, and on success writes the `agent_skill_publishes` row and invalidates the scan cache for that source.
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`.
   `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
-- **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (once the pod has caught up), and folds in the `agent_skill_publishes` rows.
+- **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (once the agent has caught up), and folds in the `agent_skill_publishes` rows.
 - **Cleanup** — the module exports a delete-by-agent cleanup that removes the `agent_skills`, `agent_skill_publishes` and `agent_hidden_skill_sources` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep.
   User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
 
@@ -275,7 +275,7 @@ sequenceDiagram
   participant RT as agent-runtime<br/>skills
   participant ENV as gateway pod (Envoy)
   participant GH as GitHub
-  participant PVC as PVC<br/>skill paths
+  participant disk as machine disk<br/>skill paths
 
   U->>API: skills.install(agentId, source, name, version)
   API->>RT: skills.install (NetworkPolicy-gated, no Bearer)
@@ -283,7 +283,7 @@ sequenceDiagram
   ENV->>GH: + Authorization: Bearer <user GH token>
   GH-->>ENV: tarball
   ENV-->>RT: tarball
-  RT->>PVC: write skill dir into every configured path
+  RT->>disk: write skill dir into every configured path
   RT-->>API: { contentHash }
   API->>DB: upsert agent_skills row
   API-->>U: updated installed list
@@ -294,17 +294,17 @@ Public-source installs work identically except Envoy's filter chain has no crede
 ### Fetch mode
 
 An agent may be denied the repository a skill comes from but allowed one directory of it — a black-box QA agent that must not read the source of the product it tests, yet installs that product's test profile.
-The api-server decides how the pod fetches each GitHub skill-ref from the agent's [egress rules](security-and-credentials.md#hitl-ext_authz), with the same matcher the egress gate uses:
+The api-server decides how the agent fetches each GitHub skill-ref from the agent's [egress rules](security-and-credentials.md#hitl-ext_authz), with the same matcher the egress gate uses:
 
-- No rule denies the archive (`GET api.github.com /repos/{owner}/{repo}/tarball/{version}` or `GET codeload.github.com /{owner}/{repo}/…`): the pod fetches the tarball, as it always has.
+- No rule denies the archive (`GET api.github.com /repos/{owner}/{repo}/tarball/{version}` or `GET codeload.github.com /{owner}/{repo}/…`): the agent fetches the tarball, as it always has.
   A request that matches no rule counts as not denied, since the gate may still let it through.
-- The archive is denied, the source has a path, and `GET api.github.com /repos/{owner}/{repo}/contents/{path}?ref={version}` is not denied: the skill-ref carries `fetch: "directory"`, and the pod fetches only that directory ([agent-skills.md](agent-skills.md#the-service)).
+- The archive is denied, the source has a path, and `GET api.github.com /repos/{owner}/{repo}/contents/{path}?ref={version}` is not denied: the skill-ref carries `fetch: "directory"`, and the agent fetches only that directory ([agent-skills.md](agent-skills.md#the-service)).
 - Otherwise install and batch apply refuse the skill up front with `PRECONDITION_FAILED` and a message that names the repository and tells the user to set a path the agent may read; nothing is recorded.
 
 The rules that open one directory are `GET /repos/{owner}/{repo}/contents/{path}/*` and `GET /repos/{owner}/{repo}/contents/{path}?*`: every request of a directory fetch carries the ref as a query, and the prefix form `contents/{path}*` would also open siblings such as `{path}-tools/` or `{path}.md`.
 The allowed directory must hold no symlink, because the Contents API answers a symlink to a file with that file's content, wherever it lives.
 
-The pod scan of a private source asks the same question at `HEAD`.
+The in-agent scan of a private source asks the same question at `HEAD`.
 In directory mode it reads that head from the default branch's ref — `GET /repos/{owner}/{repo}` and `GET /repos/{owner}/{repo}/git/refs/heads/{branch}`, which the agent allows too — never from the head commit, whose diff can show files outside the path.
 The mark is part of the delivered state's hash, so changing the agent's egress rules redelivers its skills in the new mode.
 
@@ -323,7 +323,7 @@ sequenceDiagram
   U->>API: skills.publish(agentId, sourceId, name)
   API->>API: validate sourceId is GitHub
   API->>RT: skills.publish (NetworkPolicy-gated, no Bearer)
-  RT->>RT: read skill from PVC<br/>(per-file + total size caps)
+  RT->>RT: read skill from disk<br/>(per-file + total size caps)
   RT->>ENV: REST: blobs / tree / commit / branch / PR
   ENV->>GH: + Authorization: Bearer <user GH token>
   GH-->>ENV: PR url
@@ -350,7 +350,7 @@ Both resolve the source and dispatch:
 
 This dispatch is one piece of code, shared with the content read — so a preview can never resolve a source differently from the list it was opened from.
 
-Which branch answered is also what settles **visibility**: the archive serves only public repositories, so an answer from it proves public, and falling through its 404 into the pod proves private.
+Which branch answered is also what settles **visibility**: the archive serves only public repositories, so an answer from it proves public, and falling through its 404 into the agent proves private.
 A host the archive is never asked about stays unknown rather than being inferred from the branch that answered it.
 
 **Every scan failure leaves that dispatch as a named verdict** — a `ScanFailure` of `{ code, title, detail }`, carried structurally on the error.
@@ -381,13 +381,13 @@ Then it drops "ghost" rows (tracked rows whose directory has been deleted out-of
 The Postgres rows stop drifting from the filesystem without requiring a separate reconciler — every read is the reconciler.
 
 Two things qualify that.
-**The local list is not durable** — installed refs live in Postgres and survive the pod going away, but local skills exist only on the PVC.
-So `state` records the list it computed while the agent ran, and serves that recording — dated, and marked as a snapshot — while the pod is unreachable.
+**The local list is not durable** — installed refs live in Postgres and survive the agent going away, but local skills exist only on the machine's disk.
+So `state` records the list it computed while the agent ran, and serves that recording — dated, and marked as a snapshot — while the agent does not answer.
 Nothing recorded means the agent has never run, which is distinct from having no local skills.
 A snapshot never drives reconciliation; it is not evidence about the current disk.
-**And reaping waits for the pod to catch up** — install is declarative, so a freshly-installed skill's directory is legitimately absent until the apply fetches it, and reaping then would not merely lose the install: the reap re-delivers, so the pod removes the files it just fetched.
-A row is a ghost only on evidence from one moment that the pod has **cleanly applied** the current version ([runtime channel](runtime-delivery.md#the-runtime-channel)) — a failed apply settles without applying — and only once the row is old enough to have been delivered at all, an age that every write to the row renews.
-The delete and its re-delivery bump commit together, or the pod keeps an applied hash naming a set that no longer exists.
+**And reaping waits for the agent to catch up** — install is declarative, so a freshly-installed skill's directory is legitimately absent until the apply fetches it, and reaping then would not merely lose the install: the reap re-delivers, so the agent removes the files it just fetched.
+A row is a ghost only on evidence from one moment that the agent has **cleanly applied** the current version ([runtime channel](runtime-delivery.md#the-runtime-channel)) — a failed apply settles without applying — and only once the row is old enough to have been delivered at all, an age that every write to the row renews.
+The delete and its re-delivery bump commit together, or the agent keeps an applied hash naming a set that no longer exists.
 The cost is an out-of-band deletion noticed one read later.
 
 ## Persistence touchpoints
@@ -408,16 +408,15 @@ Both are computed at request time.
 
 The snapshot of the local list is not a table of its own: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup has nothing extra to do.
 
-The on-pod state lives on the per-agent PVC under the configured Skill Paths.
-PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup handles the row-side.
+The in-agent state lives on the machine's disk under the configured Skill Paths, which goes with the Agent on delete ([vm storage § the disk](vm-storage.md#the-disk)); the Skills cleanup handles the row-side.
 User-owned `skill_sources` and `skill_sets` survive agent deletion — they are catalog connections and named selections, not agent state.
 
 ## Invariants
 
-- **Filesystem is authoritative for installed state — once the pod has caught up.** `agent_skills` is a declarative record that self-heals on every `state` read whose agent has cleanly applied.
+- **Filesystem is authoritative for installed state — once the agent has caught up.** `agent_skills` is a declarative record that self-heals on every `state` read whose agent has cleanly applied.
   A skill removed via the Files panel disappears from the UI without any explicit uninstall.
   While an apply is in flight the filesystem is not yet evidence about what was just requested, so the self-heal waits.
-- **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the agent pod's NetworkPolicy admits ingress only from the api-server pod, so no in-process auth is needed on that hop.
+- **api-server never touches the agent's filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the runner's NetworkPolicy admits ingress to the machine's port only from api-server pods, so no in-process auth is needed on that hop.
 - **MCP `agentId` is server-bound.** The per-agent MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channel-turns](channel-turns.md)) and pins the `agentId` from the verified token, not from tool input.
 
-The pod-side invariants — provenance judged against the image, agent-runtime never holding a GitHub credential, publish being REST-only — are stated on [agent-skills](agent-skills.md#invariants).
+The in-agent invariants — provenance judged against the image, agent-runtime never holding a GitHub credential, publish being REST-only — are stated on [agent-skills](agent-skills.md#invariants).

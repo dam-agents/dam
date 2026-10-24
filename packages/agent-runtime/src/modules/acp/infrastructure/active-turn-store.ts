@@ -38,10 +38,10 @@ export interface ActiveTurnStore {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Marks the session of every turn while it runs, on
- * this pod's own disk, so the next boot can tell which turns an abnormal death
+ * this machine's own disk, so the next boot can tell which turns an abnormal death
  * cut short. A marker is written when a turn starts and removed when the turn
  * ends in-process — completed, or dropped because the harness recycled — and on
- * session delete. It is deliberately NOT removed when the pod is shutting down
+ * session delete. It is deliberately NOT removed when the machine is shutting down
  * (SIGTERM), since that shutdown may be an eviction that SIGKILLs after its
  * grace period: the marker must outlive it so the next boot recovers the turn.
  * That shutdown marks this process's markers stopped instead, so the next boot
@@ -50,7 +50,7 @@ export interface ActiveTurnStore {
  * So a surviving marker names precisely a turn whose in-process end agent-
  * runtime never saw — the process went down (an OOM group-kill, an eviction)
  * with the turn still running. `attempts` counts recovery resumes so a
- * continuation that dies again cannot crash-loop the pod. The count belongs to
+ * continuation that dies again cannot crash-loop the machine. The count belongs to
  * one interruption: only the turn recovery itself starts, right after bumping
  * it, keeps it on record. Any other turn is a new interruption to come and
  * starts again at zero, or one resume that died would leave the Session

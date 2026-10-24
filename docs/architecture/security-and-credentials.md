@@ -7,12 +7,12 @@ Last verified: 2026-10-23
 Three rules carry the security model:
 
 1. **Agents never hold upstream credentials.** Real upstream tokens (GitHub, Anthropic, Slack, internal gateways) live in K8s Secrets labelled with the owner's `sub`.
-   The Envoy proxy in the paired gateway pod — for vm Agents on an install that turns it on, the owner's gateway pod ([owner gateway identity](#owner-gateway-identity)) — injects them into outbound traffic on the wire; the agent pod never mounts Secret bytes.
+   The Envoy proxy in the Agent's gateway pod — a pod of its own by default, its owner's single one where the install turns that on ([owner gateway identity](#owner-gateway-identity)) — injects them into outbound traffic on the wire; nothing is ever mounted into the machine.
 2. **Identity flows from Keycloak.** Browser users authenticate against Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on every resource the user creates.
    Per-user credential isolation is the `agent-platform.ai/owner` label on the K8s Secret — the controller's selector refuses to mount any other owner's Secret into a given owner's gateway pod.
    An Agent's `secretRef`, whose keys become its environment, is honoured only for a Secret with its owner's label that the platform does not manage.
-3. **Two boundaries, layered.** The agent → gateway hop is gated at the *kernel* by per-pair NetworkPolicies at both ends; the gateway → api-server hops (harness and ext-authz) are gated at the *mesh* by per-Agent Istio AuthorizationPolicies on the gateway pod's SPIFFE principal (not on no-mesh dev clusters).
-   The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:    none`) so the kernel sees real destinations rather than HBONE tunnelled to ztunnel; its only admitted intra-cluster destination is the paired gateway pod on the Envoy proxy port.
+3. **Two boundaries, layered.** The machine → gateway hop is held at the *kernel*: the machine's egress allowlist is exactly its gateway's ClusterIP, and the runner pod it boots on may dial that gateway and nothing else; the gateway → api-server hops (harness and ext-authz) are gated at the *mesh* by per-Agent Istio AuthorizationPolicies on the gateway pod's SPIFFE principal (not on no-mesh dev clusters).
+   A machine is a guest, not a pod: it has no mesh identity and no service account token, so what it reaches is decided by an allowlist and by the runner's policy, and a destination it names is never what decides.
    The gateway pod stays in ambient; istiod stamps it with a SPIFFE workload cert whose SA name equals the Agent name.
    Two per-Agent AuthorizationPolicies enforce the gateway-originated boundary cryptographically: the api-server's harness waypoint ALLOWs the gateway principal to `/api/agents/<id>/*`; the per-Agent ext-authz Service ALLOWs only the matching SA.
 
@@ -30,7 +30,7 @@ flowchart LR
     keycloak[Keycloak]
   end
 
-  subgraph agentpod[Agent pod]
+  subgraph machine[Machine]
     agent-runtime
   end
 
@@ -45,27 +45,29 @@ flowchart LR
 
   api-server -->|write K8s Secrets<br/>agent-platform.ai/owner=sub| gatewaypod
   controller -->|render bootstrap + leaf cert<br/>list owner Secrets| gatewaypod
-  controller -->|render agent + paired gateway<br/>+ per-pair NetworkPolicies<br/>+ harness/ext-authz AuthorizationPolicies| agentpod
+  controller -->|render the machine on its runner<br/>+ the gateway + per-pair NetworkPolicies<br/>+ harness/ext-authz AuthorizationPolicies| machine
 
-  agent-runtime -->|HTTPS_PROXY=&lt;agent&gt;-gateway| envoy
+  agent-runtime -->|every name resolves to<br/>&lt;agent&gt;-gateway| envoy
   envoy -->|ext_authz Check| api-server
   envoy -->|inject credentials| external
 ```
 
-The credential boundary is the pod: K8s Secrets are mounted into the gateway pod only, and the agent pod has no admitted route to TCP 80/443 other than its paired gateway.
+The credential boundary is the gateway pod: K8s Secrets are mounted there alone, and the machine has no route to a host of its own choosing other than through its gateway.
 Enforcement is layered:
 
-- **Per-pair NetworkPolicies** gate the agent → paired gateway hop at both ends.
-- **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md), which dials its owner's gateways and nothing else.
+- **The machine's egress allowlist**, enforced by smolvm inside the network the guest itself owns, names its gateway's ClusterIP and nothing else — no node, no sibling machine, no cloud metadata endpoint.
+  Every name the guest resolves is answered with that address by the gateway's resolver, so host choice is what the gateway then judges, never where the bytes went.
+- **Runner NetworkPolicies** are the kernel gate behind that allowlist: the [runner](vm-runner.md) reaches its owner's gateways on the proxy and resolver ports and nothing else, and resolves nothing, so no DNS port is admitted anywhere.
   The node [image cache](vm-image-cache.md) service that fetches every image has a policy of its own: the public internet minus every range the cluster owns, the cluster DNS pods, and the pods or ranges an install names for an in-cluster registry or a mirror outside the cluster.
-- **Agent ingress NetworkPolicy** admits ingress to the agent port only from the api-server (ACP/tRPC relay) and the controller (idle-checker busy-probe).
-  agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary; kubelet probes are node-originated and unaffected.
+- **Gateway ingress NetworkPolicy** admits the proxy port and the machine resolver port only from the owner's runner, which is the one caller a machine's traffic can arrive as.
+- **Machine ingress** admits the runner's machine API and the range it publishes machines on only from the api-server (ACP/tRPC relay) and the controller (idle-checker busy-probe).
+  agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary.
 - **Gateway Envoy ext_authz** gates everything the gateway forwards on behalf of the agent — external upstreams via the HITL rule model, while platform-internal upstreams pass without a per-request human decision: the harness path (control-plane traffic to the api-server) and the artifact object store, where each request already carries a platform-minted authorization — a short-lived link scoped to a single object and operation, issued by the api-server after ownership checks and validated by the store itself ([artifact-library](artifact-library.md)).
   This is the destination-side egress gate; no NetworkPolicies on Postgres / Redis / Keycloak / the harness or ext-authz Services are needed because the agent has no admitted route to any of them.
 - **Mesh AuthorizationPolicy** gates the gateway-originated hops by the gateway pod's SPIFFE principal: harness via the api-server's waypoint, ext-authz on the per-Agent Service.
   The agent has no SPIFFE identity in this model.
 
-The agent pod has no service account token (`automountServiceAccountToken: false`), and there is no co-located sidecar to share a network or PID namespace with.
+The machine holds no service account token and no Kubernetes identity at all, and nothing of the platform's shares its network or process namespace: the guest boots under the runner's own kernel, and that pod's policy is what stands between the two.
 
 ## Identity
 
@@ -123,7 +125,7 @@ The realm role `keycloak.operatorRole` (`platform-operator` by default) marks an
 The api-server reads the role from the token's realm roles, so only an interactive sign-in acts as an operator; an API key never does.
 Every operator action checks the role on each call, and a client asks the api-server whether the caller is an operator before it shows such an action.
 An install with no operator role has no operators, and every operator action is refused.
-Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)) and compute Budget ([budgets](budgets.md#the-ceiling)).
+Operators set each user's Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)) and compute Budget ([budgets](budgets.md#the-pool)).
 
 ## Keycloak event logging
 
@@ -191,7 +193,7 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
 
 - **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret stores the access key ID and secret access key, plus a credentials file baked from them that the gateway's signing step reads.
   S3 authenticates by signing each request with the secret key, so there is no value to inject: the agent holds a placeholder key ID that names the Connection, and the gateway re-signs its requests with the real pair ([credential-gateway](credential-gateway.md#request-signing)).
-  The pair is proven against the endpoint before it is stored and again at every rotation, and never reaches the agent pod: only the api-server, which proves it, and the gateway, which signs with it, ever hold it.
+  The pair is proven against the endpoint before it is stored and again at every rotation, and never reaches the machine: only the api-server, which proves it, and the gateway, which signs with it, ever hold it.
 
 **Multi-host connections.** A single OAuth connection can inject the same token on more than one host with **different auth schemes per host**, all from one K8s Secret.
 The Secret carries an annotated list of per-host injection descriptors; the controller fans it into one Envoy filter chain per host, stacking entries that share a host, and mounts the Secret once.
@@ -206,16 +208,18 @@ The Secret also carries the SDS documents Envoy reads, one per injection step �
 Pulling the agent's container image from a private registry uses a **structurally separate** credential class from the egress credentials above.
 It does not ride the Envoy path at all:
 
-- **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
-  It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's `imagePullSecrets`.
-  A vm Agent has no pod, so its runner hands those Secrets, in order, to the cache, for that fetch alone, never storing them; a shared cache checks a private entry per boot, not per read ([persistence](vm-image-cache.md)).
-  Either way the agent never holds the bytes — because of *where the Secret is consumed*, not Envoy injection.
+- **The runner consumes it, not Envoy.**
+  It is a `kubernetes.io/dockerconfigjson` Secret the [runner](vm-runner.md) hands, in order, to the node image cache, for that fetch alone, never storing them; a shared cache checks a private entry per boot, not per read ([vm image cache](vm-image-cache.md)).
+  The agent never holds the bytes — because of *where* the Secret is consumed, not Envoy injection.
 - **Scope is the Agent, not the owner.** Egress credentials are owner-scoped and reusable across every Agent that owner runs; a pull credential is agent-scoped — one Secret per Agent (still carrying the creator's `agent-platform.ai/owner` for tenancy), created with the Agent and torn down with it.
 - **Per-agent precedence over the install-wide default.** An operator may configure a default pull secret for every agent.
   An Agent's own pull-secret ref is listed *first*, ahead of that default, which is kept as a fallback — override, not replace.
+- **A Template may carry one of its own.** An install whose Template image sits in a private registry declares that registry's credential on the Template, and the install writes it as a Secret in the agent namespace, which every Agent created from that Template names ahead of the install-wide default; a registry credential the user brings at create replaces it.
+  The name is stamped on the Agent at create and does not follow the Template afterwards: a Template that stops declaring the credential, or stops being rendered at all, leaves its Agents naming a Secret nothing writes any more, and their machines fetch without it and fail.
+  Keeping it available for as long as any Agent names it is therefore the operator's obligation: the install writes that Secret only while its Template is rendered and declares the credential.
 
 The api-server builds the Secret from structured registry input and writes it before the Agent record, rolling it back if that create fails; its teardown lives on [persistence](persistence.md).
-The credential is validated only at pull time — a bad credential surfaces as an image-pull failure (a vm Agent's image reads unavailable), not a create-time error.
+The credential is validated only at pull time — a bad credential surfaces as an image-pull failure (an Agent's image reads unavailable), not a create-time error.
 
 Scope is long-lived static credentials (registry PAT, robot account, basic auth, a GCP Artifact Registry JSON key as the password).
 Short-lived or dynamically-minted registry tokens (e.g. ECR) are out of scope.
@@ -239,7 +243,7 @@ Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — injected into a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the agent pod holds placeholders and never Secret bytes.
+Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — injected into a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the machine holds placeholders and never Secret bytes.
 A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
 The mechanics — L7 promotion, per-host chains, injection steps, request signing, path rewriting, addressing between Connections, and how a bad Secret degrades rather than wedges the gateway — live on [credential-gateway](credential-gateway.md).
 
@@ -257,6 +261,13 @@ That re-published prompt is for attached ACP clients such as the CLI.
 The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
+
+An Agent can also **propose** a rule before it needs one (the `egress_proposal` tool on its platform MCP server): a host, optionally a port, a method and a path, and one sentence of reason.
+A held request waits only as long as the hold, so a job that runs while nobody watches would fail on a host its owner never saw; a proposal waits seven days instead.
+It is an approval of its own type that holds no request: the owner sees the rule and the Agent's reason where waiting network approvals show, and allows it, allows the whole host, or declines.
+Only the owner's verdict writes a rule, the same rule a verdict on a held request writes; the Agent never writes one.
+One rule shape is one proposal, so asking again joins the open one; a rule for every host is not proposed, a request a rule already allows files nothing, and an Agent holds at most twenty proposals open.
+The Agent reads back the verdict of its own proposals only.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
@@ -308,40 +319,34 @@ Deleting a driver cascades: its running Invocations are failed and their targets
 ## Channel turns
 
 Binding a conversation surface — a Slack channel/DM or a Telegram chat — lends the Agent, credentials included, to everyone the messenger admits there ([channels](channels.md)).
-Every channel turn relays to the main agent pod ([channel-turns](channel-turns.md)) and runs under the Agent's own credential set, gated by the owner's egress rules like any other turn; no per-speaker credential selection happens.
+Every channel turn relays to the main agent ([channel-turns](channel-turns.md)) and runs under the Agent's own credential set, gated by the owner's egress rules like any other turn; no per-speaker credential selection happens.
 Such a turn can also place a file in the Agent's workspace: an attachment sent in the conversation is written there for the agent to open, so a speaker with no platform identity is a writer to persistent state ([persistence](persistence.md)).
 What such a turn cannot do is raise a *hold* — the decision has nowhere to be made from a messenger, so an unmatched request is refused rather than waited on (above).
 The binding owner's Terms-of-Use acceptance gates each turn — the terms bind the party whose credentials run it — and the security log attributes the allow to the messenger-native sender id with basis *place*.
 
 ## `dam-run`
 
-The in-pod `dam-run` CLI is a compatibility shim that runs its command as a regular local process in the same pod (see [agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)).
+The `dam-run` CLI is a compatibility shim that runs its command as a regular local process on the machine (see [agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)).
 It adds no privilege: the command runs inside the agent's existing sandbox, with the agent's existing egress boundary.
 
 ## Intra-cluster identity and admission
 
-The agent and the gateway are gated by different mechanisms — they live on opposite sides of the credential boundary, so the threat models differ:
+The machine and the gateway are gated by different mechanisms — they live on opposite sides of the credential boundary, so the threat models differ:
 
-- **`platform-migration` ServiceAccount** in the agent namespace — the identity of the controller's copy Jobs, run as **uid 0** like the VM runner.
-  The storage-migration Job needs root only for the target side of the copy (owning a freshly provisioned volume root, restoring exact file ownership); every read of the agent's data drops to the agent's own uid, so a root-squashing source share never sees uid 0.
-  The [runtime-migration](vm-runtime-migration.md) Job reads the home read-only, as root on block storage, sending it with a one-use seed capability.
-  The api-server reads each owner's runner the same way, never with its token: the controller writes a per-runner usage Secret holding the runner's URL, its CA and a usage capability derived from the token, which the runner accepts on its read-only usage route alone ([vm storage](vm-storage.md#the-owners-claim)).
-  The SA has no API roles and no mounted token, so it cannot act against the API; it exists only to scope OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH) for it.
-  Neither pod joins the mesh.
+- **VM runner ServiceAccount** in the agent namespace — the identity of the owner's [runner](vm-runner.md) pod, with no API roles and no mounted token, so it cannot act against the API, and no mesh identity.
+  The api-server reads that runner without its token: the controller writes a per-runner usage Secret holding the runner's URL, its CA and a usage capability derived from the token, which the runner accepts on its read-only usage route alone ([vm storage](vm-storage.md#the-owners-claim)).
 - **Image cache ServiceAccount** — no token, no Role: it mounts the default pull secrets it preloads with ([persistence](vm-image-cache.md)).
 - **Per-Agent ServiceAccount** in the agent namespace, name == Agent ID.
-  Both pods of the long-lived pair run as this SA, but only the *gateway* pod is a mesh participant — istiod stamps it with a SPIFFE workload cert.
-  The agent pod opts out of ambient (`istio.io/dataplane-mode: none`) and carries no SPIFFE identity.
-  `automountServiceAccountToken` stays false on both pods; the gateway's SPIFFE cert is independent of SA-token mounts.
-- **Agent → paired gateway** is gated at the kernel at both ends.
-  The per-pair `<id>-agent-egress` NetworkPolicy has one egress rule: the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy proxy port.
-  The gateway injects credentials for any caller, so `<id>-gateway-ingress` admits that port only from the paired agent pod and, for a machine, the owner's VM runner.
-  DNS is not admitted — the agent addresses its gateway by ClusterIP, and name resolution for external hosts happens in the gateway, so anything in the pod that tries to resolve names directly fails closed.
-  HBONE 15008 is not admitted; the agent has no ztunnel and never speaks HBONE.
-  Pair pinning is structural — the policy's pod-selector is the gateway pod itself, so a compromised agent has no admitted IP-and-port combination to reach anything else in the cluster.
-- **api-server / controller → agent** is gated at the kernel by the chart-rendered `agent-ingress-platform-only` NetworkPolicy.
-  The agent port admits ingress only from api-server pods (ACP/tRPC relay — the api-server has verified the user JWT and agent ownership before forwarding) and controller pods (idle-checker busy-probe).
-  Everything else, gateway pods included, is dropped; the policy selects `role=agent`, so ephemeral executor pods are covered too.
+  The gateway pod runs as this SA and is a mesh participant — istiod stamps it with a SPIFFE workload cert; the machine has no Kubernetes identity to carry one.
+  `automountServiceAccountToken` stays false; the gateway's SPIFFE cert is independent of SA-token mounts.
+- **Machine → its gateway** is the only hop the machine has.
+  Its egress allowlist names the paired gateway's ClusterIP, and every name its resolver is asked for is answered with that address, so the connection leaves for the gateway whatever host the guest meant.
+  The gateway injects credentials for any caller, so `<id>-gateway-ingress` admits the proxy port and the machine resolver port only from the owner's runner pod, the one caller such traffic can arrive as.
+  HBONE 15008 is not admitted; the machine has no ztunnel and never speaks HBONE.
+  Pair pinning is structural — the policy's pod-selector is the gateway pod itself and the machine's whole egress is that pod's Service, so a compromised guest has no address and port combination that reaches anything else in the cluster.
+- **api-server / controller → machine** is gated at the kernel by the runner's ingress NetworkPolicy.
+  The machine API and the range the runner publishes machines on admit ingress only from api-server pods (ACP/tRPC relay — the api-server has verified the user JWT and agent ownership before forwarding) and controller pods (idle-checker busy-probe).
+  Everything else, gateway pods included, is dropped; the agent's Service selects the runner, so the api-server dials a machine exactly as it dials any other agent.
 - **Gateway → api-server harness.** All agent egress (including the harness call) flows through the paired gateway pod's Envoy, so what reaches the mesh is gateway → harness.
   The harness Service is `<rel>-apiserver-harness`, carrying `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod in front of it.
   A per-Agent AuthorizationPolicy on the waypoint ALLOWs the gateway's SA principal to `/api/agents/<id>/*`; handlers can treat URL `:id` as authenticated.
@@ -350,12 +355,12 @@ The agent and the gateway are gated by different mechanisms — they live on opp
   The destination Service is cryptographically pinned to the calling Agent; the api-server derives Agent ID from the gRPC `:authority`.
 - **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't either the waypoint's SA (harness) or a per-Agent SA from the agent namespace (ext-authz), closing the direct pod-IP bypass.
 
-NetworkPolicy is the security boundary for the agent's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
-Each pod's gate matches its threat model: the agent runs untrusted code and is held at the kernel layer; the gateway is platform-controlled and its identity flows through the mesh.
+The egress allowlist and the runner's NetworkPolicy are the security boundary for the machine's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
+Each gate matches its threat model: the machine runs untrusted code and is held at the guest's own network and at the runner's kernel; the gateway is platform-controlled and its identity flows through the mesh.
 
 ### Owner gateway identity
 
-With `virtualization.gateway.perOwner` on, a vm Agent egresses through its owner's one gateway pod instead of a pod of its own ([credential-gateway](credential-gateway.md#owner-gateway)); container Agents and the default install keep the pairing above.
+With `virtualization.gateway.perOwner` on, an Agent egresses through its owner's one gateway pod instead of a pod of its own ([credential-gateway](credential-gateway.md#owner-gateway)); the default install keeps the pairing above.
 What changes in the boundaries:
 
 - **Agent identity is a Service port, not a pod.** Each agent keeps its own gateway Service and ClusterIP, the only destination its machine may reach, and that Service declares only the ports that map onto the agent's own listener.
@@ -365,7 +370,7 @@ What changes in the boundaries:
 - **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
   Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
   The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.
-- **Blast radius.** One owner gateway process holds every credential granted to any of the owner's vm Agents, where a per-agent gateway holds one agent's.
+- **Blast radius.** One owner gateway process holds every credential granted to any of the owner's Agents, where a per-agent gateway holds one agent's.
   An escaped guest, which owns the runner pod's network namespace, already reaches every gateway of its owner by pod address through the runner's egress (measured on dam-cl), and another owner's not at all, so the owner gateway does not widen what an escape reaches.
 
 ## Dev cluster

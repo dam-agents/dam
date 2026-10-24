@@ -113,6 +113,7 @@ export const agentCreateInputSchema = z.object({
   connectionIds: z.array(z.string()).optional(),
   providerConnectionId: z.string().min(1).optional(),
   size: agentSizeSchema.optional(),
+  // UNIT_BOUNDARY_DESCRIPTION: kept only so a create that still asks for a container Agent is refused with a reason. Every Agent is a machine; the field is not written to the spec.
   vm: z.boolean().optional(),
   storage: storageQuantitySchema.optional(),
   sweepable: z.boolean().optional(),
@@ -122,7 +123,7 @@ export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
   name: agentNameSchema.max(255).optional(),
   description: z.string().optional(),
-  avatar: avatarSchema.optional(),
+  avatar: avatarSchema.nullable().optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),

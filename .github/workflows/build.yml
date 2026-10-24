@@ -123,7 +123,7 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-check-test-
             cargo-${{ runner.os }}-
-      # build-images and e2e.yml's lanes restore the Go and pnpm caches too,
+      # build-images and e2e.yml's jobs restore the Go and pnpm caches too,
       # read-only.
       - id: go-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -163,7 +163,7 @@ jobs:
       # installs the mbx the action reuses and the rustc its cache key follows;
       # the wrapper in `.mise/config.toml` is what puts the build's `cargo`
       # through it. Releases keep their own cache: a release must not read one
-      # it did not build (see rust-release, and e2e's lane).
+      # it did not build (see rust-release, and e2e's jobs).
       - id: mbx
         if: steps.rust-needed.outputs.needed == 'true'
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
@@ -384,7 +384,7 @@ jobs:
           elif [ "$VERIFY" = true ]; then images=("${images[@]/%/:cacheonly}"); fi
           .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
       # Main writes it on a miss, once the build has compiled into it; a PR's
-      # e2e-vm job (e2e.yml) reads the amd64 one.
+      # e2e jobs (e2e.yml) read the amd64 one.
       - if: ${{ inputs.main-push && steps.rust-release.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
@@ -204,7 +204,7 @@ export function createAcpRelay(
         pending.length = 0;
       });
 
-      const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp${
+      const upstreamUrl = `ws://${agentServiceAddress(agentId, namespace)}/api/acp${
         passive ? "?passive=1" : ""
       }`;
 
@@ -229,7 +229,7 @@ export function createAcpRelay(
             repo,
             agentId,
             repo.ensureReady(agentId),
-            `http://${podBaseUrl(agentId, namespace)}/healthz`,
+            `http://${agentServiceAddress(agentId, namespace)}/healthz`,
             () => clientGone,
           );
         })

@@ -1,8 +1,8 @@
 # Sessions
 
-Last verified: 2026-10-22
+Last verified: 2026-10-23
 
-## Session inside the pod
+## Session inside the machine
 
 agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process, except where the harness must know at start which side of a split they fall on (a native Connection, or a Claude Code model that is not Claude, see [harness configuration](harness-config.md#session-settings)).
 Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason rather than run on a substitute.
@@ -118,7 +118,7 @@ An agent can send a message from one of its sessions into another, for example f
 The `list_sessions` tool lists the agent's chat sessions with whether a turn is running in each; `send_session_message` sends text into one of them.
 Both reach only the calling agent's own sessions.
 
-The message travels as a **session-message** [event](runtime-delivery.md#event), not over a connection to the pod: the platform resolves the sending session from the session reference the tool call carries, writes the event, and the runtime resumes the target session with the text.
+The message travels as a **session-message** [event](runtime-delivery.md#event), not over a connection to the agent: the platform resolves the sending session from the session reference the tool call carries, writes the event, and the runtime resumes the target session with the text.
 So the sender is the one the platform resolved, never one the caller wrote; the prompt opens with a line naming the sending session's title, type and id.
 The prompt is unattended, as a scheduled fire is, and steerable, as a typed message is: in a running turn it joins at the next steer point, and an idle session starts a turn with it.
 The answer stays in the receiving session.
@@ -139,7 +139,7 @@ A client fails a prompt on evidence instead:
 
 A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
 A queue holding only unattended fires is never parked: nobody is coming back for it, and it needs nobody.
-A queue leaves the scheduler by four routes — the window expiring, the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the pod, whole, inline images capped; the refusal errors each sender instead.
+A queue leaves the scheduler by four routes — the window expiring, the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the machine, whole, inline images capped; the refusal errors each sender instead.
 Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
 Recovery is always a send the user initiates: an automatic resend cannot know whether a prompt was dropped before or after the agent saw it, so it risks running it twice.
 A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
@@ -149,8 +149,7 @@ One failure is deliberately **not** detected: an agent alive but permanently stu
 Silence after acceptance is timed nowhere — a deadline there fails healthy turns whose first word is merely slow — and telling wedged from slow is a separate problem from delivery.
 
 **Surviving memory pressure.** The harness and its tool processes share one memory ceiling, so a runaway command would take the whole agent down with it.
-Which ceiling depends on how the agent runs: a container is capped by its cgroup, while a machine on the `vm` Backend has no cgroup limit at all and is bounded by its own memory, read from the kernel's headroom estimate so that reclaimable cache is not mistaken for consumption.
-A container that carries no cgroup limit is left unwatched rather than measured against the node it shares, whose memory a neighbour moves.
+A machine has no cgroup limit at all: it is bounded by its own memory, read from the kernel's headroom estimate so that reclaimable cache is not mistaken for consumption.
 agent-runtime pushes back first: nearing the limit it kills the largest tool process, sparing every harness and the conversation processes any carried harness's manifest names, so the agent recovers mid-turn; only when those are the hog does the kernel's kill land.
 A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
 The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
@@ -179,7 +178,7 @@ A harness can work on after it answered a prompt: Claude Code answers a prompt t
 Closing the session then would cut that turn off, and Claude Code reads the close as the user interrupting.
 So the runtime asks the harness for its session state: on every session/new, session/load and session/resume it sends to Claude Code, it adds a `session_state_changed` filter to `_meta.claudeCode.emitRawSDKMessages`, and the adapter reports each change of state as a `_claude/sdkMessage` notification, which the runtime keeps out of the transcript.
 The image's manifest names that dialect (`harnessState`); a harness without one reports nothing and is idle once its prompt is answered.
-From a busy report to the idle one, in every session, the session is not reaped, the runtime is busy, and the Active-Turn marker stays, so a pod that dies in the Autonomous Turn resumes it on the next boot with the `<turn-interrupted>` notice.
+From a busy report to the idle one, in every session, the session is not reaped, the runtime is busy, and the Active-Turn marker stays, so a machine that dies in the Autonomous Turn resumes it on the next boot with the `<turn-interrupted>` notice.
 A busy report with no prompt turn running writes the marker itself.
 Claude Code can lose its idle report, so a busy session that stays silent for ten minutes — no session/update, no open tool call, no pending agent request, no reported background work — is treated as idle, with a warning in the log.
 
@@ -196,16 +195,26 @@ Such a PTY makes the runtime busy only while its work is [kept](agent-processes.
 When the PTY ends, the session's report goes with it, so a dead terminal cannot keep the agent busy.
 There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
 
-SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection in-pod OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.
+A terminal viewer whose connection drops connects again to the same session by itself; `dam chat` and the web terminal follow one set of rules from the contract package.
+It reconnects only after a connection that carried a frame, so a first connect that fails is reported at once.
+A drop is transient when the socket is lost, the relay goes away or restarts, the upgrade meets a server error, or the relay loses the agent's end of the connection.
+The PTY exiting, a newer viewer taking the session over, a refused lease, a refused sign-in, and an Agent that will not wake (asleep, disabled, gone, or past its wake timeout) end the attach, because a new attempt would get the same answer.
+The relay closes for those last ones with an "agent not ready" reason, which is how a viewer tells them apart from a lost agent connection.
+Attempts back off at 1, 2, 5, 10 and then every 30 seconds, as `dam run` does, and stop two minutes after the drop of the last connection that carried a frame.
+A reconnect never asks for a reset and never wakes the Agent: it only waits out a wake asked for elsewhere, so a retry can neither kill the session it is trying to reach nor wake an Agent its owner put to sleep meanwhile.
+The PTY usually still lives, since the detach grace and the quiet clock outlast a short drop, and the reattach replays its scrollback onto a cleared screen.
+The viewer can stop the attempts: Ctrl+C in `dam chat`, a Stop button in the web terminal.
+
+SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.
 The transport and its auth belong to the CLI surface that uses it ([cli](cli.md#ssh-access)) and to agent-runtime's relay duties ([platform-topology](platform-topology.md)).
 For lifecycle an SSH connection matters only as a pin: while it is open the Agent will not hibernate, and the runtime's own idleness probe cannot see it ([Hibernate](agent-lifecycle.md#hibernate) states which signal carries it and how a lost connection's pin is reclaimed).
 
-Beyond per-session children, agent-runtime supervises at most one **pod service** — an optional background process the agent image provides at a well-known path, running for the life of the pod.
+Beyond per-session children, agent-runtime supervises at most one **pod service** — an optional background process the agent image provides at a well-known path, running for the life of the machine.
 The runtime starts it once the runtime-channel env exists, restarts it when it crashes, and after a clean exit leaves it down until the env next changes.
 When the env changes, the service is signalled, and one that does not handle the signal is restarted with the fresh env.
 The runtime no longer writes a separate merged env snapshot for pod services, so a service that stays up across the signal keeps the env it started with.
-Its output joins the pod log stream.
-The pod's init reaps processes orphaned by a dying harness or service, so none linger as zombies.
+Its output joins the machine's log stream.
+platform-init reaps processes orphaned by a dying harness or service, so none linger as zombies.
 No shipped image carries a pod service; the hook stays for a custom image.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP, which the runtime merges into its session-metadata store.
@@ -214,6 +223,6 @@ The metadata write raises a session-watch notice, so other clients re-read and f
 The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and resets the runtime session, dropping everything the runtime held for that session id.
 
 Beyond ACP frames, agent-runtime also serves a tRPC surface on the harness port for skill management and skill reads.
-The api-server is the sole caller; management calls wake a hibernated pod through the reachability primitive (above) before reaching it, while reads degrade gracefully and never wake.
-Skill files land on the PVC under the configured Skill Paths and are picked up by the harness on the next session start (no hot-reload).
+The api-server is the sole caller; management calls wake a hibernated Agent through the reachability primitive (above) before reaching it, while reads degrade gracefully and never wake.
+Skill files land on the agent's disk under the configured Skill Paths and are picked up by the harness on the next session start (no hot-reload).
 See [agent-skills](agent-skills.md).

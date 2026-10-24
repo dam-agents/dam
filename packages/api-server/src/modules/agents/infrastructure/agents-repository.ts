@@ -62,11 +62,11 @@ export interface AgentsRepository {
   ): Promise<InfraAgent | null>;
   patchSpec(id: string, patch: Record<string, unknown>): Promise<void>;
   getLive(id: string, owner: string | undefined): Promise<InfraAgent | null>;
-  writeRuntimeMigration(
+  writeAgentSpec(
     id: string,
     owner: string | undefined,
-    patch: RuntimeMigrationWrite,
-  ): Promise<RuntimeMigrationWriteResult>;
+    patch: AgentSpecWrite,
+  ): Promise<AgentSpecWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
   wake(
@@ -105,44 +105,20 @@ export interface AgentsRepository {
   ): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one write of a runtime migration's request, abort, retry or Backend switch. A null annotation removes it. The write names the version it was decided from, so a controller status write in between — the machine reported booted — makes it conflict rather than go through on stale state; a write with no version to name is refused as a conflict.
-export interface RuntimeMigrationWrite {
+// UNIT_BOUNDARY_DESCRIPTION: one spec write decided from a live read: a null annotation removes it. The write names the version it was decided from, so a controller status write in between makes it conflict rather than go through on stale state; a write with no version to name is refused as a conflict.
+export interface AgentSpecWrite {
   spec?: Record<string, unknown>;
   annotations: Record<string, string | null>;
   resourceVersion: string | undefined;
 }
 
-export type RuntimeMigrationWriteResult =
+export type AgentSpecWriteResult =
   | { ok: true; value: InfraAgent }
   | { ok: false; reason: "not-found" | "conflict" };
 
 export interface AgentActivityStamp {
   previous: string | null;
   written: string;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the Backend is fixed at create, and the api-server is the one writer of the Agent spec, so this is where that holds. The runtime migration is the one sanctioned change of Backend and goes through writeRuntimeMigration; every other spec write that names the Backend is a bug and fails loudly.
-function assertBackendUntouched(patch: Record<string, unknown>): void {
-  if ("backend" in patch)
-    throw new Error(
-      "an agent's backend changes only through a runtime migration",
-    );
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a wake for an Agent a runtime migration holds down could only wait out the timeout, so it is refused at once, with a cause that says whether the move is under way or failed after it stopped the container.
-function refuseWhileMigrating(
-  id: string,
-  infra: InfraAgent,
-  durationMs: number,
-): void {
-  const hold = infra.runtimeMigrationHold ?? "none";
-  if (hold === "none") return;
-  throw new AgentWakeTimeoutError({
-    agentId: id,
-    timeoutMs: WAKE_TIMEOUT_MS,
-    durationMs,
-    failure: { kind: hold === "failed" ? "migration-failed" : "migrating" },
-  });
 }
 
 export function createAgentsRepository(
@@ -252,7 +228,6 @@ export function createAgentsRepository(
     },
 
     async updateSpec(id, owner, patch) {
-      assertBackendUntouched(patch);
       const obj = await ownedObject(id, owner);
       if (!obj) return null;
       const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
@@ -264,7 +239,6 @@ export function createAgentsRepository(
     },
 
     async patchSpec(id, patch) {
-      assertBackendUntouched(patch);
       await k8s.patchCustomObject(AGENTS_PLURAL, id, { spec: patch });
     },
 
@@ -273,7 +247,7 @@ export function createAgentsRepository(
       return obj ? parseInfraAgent(obj) : null;
     },
 
-    async writeRuntimeMigration(id, owner, patch) {
+    async writeAgentSpec(id, owner, patch) {
       const obj = await ownedObject(id, owner);
       if (!obj) return { ok: false, reason: "not-found" };
       if (!patch.resourceVersion) return { ok: false, reason: "conflict" };
@@ -448,9 +422,11 @@ export function createAgentsRepository(
     },
 
     async patchAnnotations(id, annotations) {
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+      const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: { annotations },
       });
+      const written = updated.metadata?.resourceVersion;
+      if (written) await cache.awaitObserved(id, written);
     },
 
     async listAgentIdsWithAnnotation(key, value) {
@@ -538,7 +514,6 @@ export function createAgentsRepository(
             !!current.metadata.annotations[DISABLED_KEY],
           );
         }
-        refuseWhileMigrating(id, parseInfraAgent(current), 0);
         if (await repo.isReady(id)) {
           if (!waitOnly) await bumpLastActivity(id);
           return;
@@ -571,7 +546,6 @@ export function createAgentsRepository(
               );
             }
             const infra = parseInfraAgent(obj);
-            refuseWhileMigrating(id, infra, Date.now() - startedAt);
             if (waitOnly && infra.hibernated && !infra.wakeRequested) {
               throw new AgentWakeTimeoutError({
                 agentId: id,

@@ -13,11 +13,11 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// TEST_OVERVIEW: nesting is asked for per Agent, through spec.backend.vm.nestedVirtualization, or for every vm agent at once through controller.agent.templateDefaults.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
+// TEST_OVERVIEW: nesting is asked for per Agent, through the nestedVirtualization the Agent's Backend still carries, or for every agent at once through controller.agent.templateDefaults.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
 
 func nestingAgent() *apiv1.Agent {
 	agent := vmAgentCR()
-	agent.Spec.Backend.VM = &apiv1.VMBackend{NestedVirtualization: true}
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm", VM: &apiv1.VMBackend{NestedVirtualization: true}}
 	return agent
 }
 

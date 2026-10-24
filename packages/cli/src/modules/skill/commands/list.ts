@@ -56,7 +56,7 @@ export function buildListCommand(deps: {
       }
       if (state.installed.length === 0 && state.standalone.length === 0) {
         process.stderr.write(
-          `Agent ${ref} has no skills. Install one with \`dam skill install ${ref} --source <id|url> --name <skill>\`, or author one on the pod (Files panel / \`dam file put\`) to see it as standalone.\n`,
+          `Agent ${ref} has no skills. Install one with \`dam skill install ${ref} --source <id|url> --name <skill>\`, or author one on the agent (Files panel / \`dam file put\`) to see it as standalone.\n`,
         );
         process.exit(EXIT_SUCCESS);
       }

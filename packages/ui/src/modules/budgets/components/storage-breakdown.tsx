@@ -3,9 +3,9 @@ import { useStore } from "../../../store.js";
 import { STORAGE_PARTS, type StorageRow } from "../lib/pools.js";
 
 const PART_HINT: Record<string, string> = {
-  [STORAGE_PARTS.seeds]:
-    "Copies of agents' files moving onto VM agents. Each copy is deleted when its move finishes or is cancelled; a move that failed keeps its copy until it is retried or undone.",
-  [STORAGE_PARTS.rest]: "Logs and records that keep your VM agents running.",
+  [STORAGE_PARTS.retained]:
+    "Space a machine's disk copy still holds on your server's storage.",
+  [STORAGE_PARTS.rest]: "Logs and records that keep your agents running.",
 };
 
 interface Props {

@@ -1,5 +1,5 @@
 # Sourced by the launch scripts: points Copilot's BYOK provider at the Model
-# Router on the pod's loopback. Copilot speaks one wire API per process, so it
+# Router on the machine's loopback. Copilot speaks one wire API per process, so it
 # runs on the providers that serve Chat Completions.
 # The app the image unpacked at build time, so no start unpacks it into $HOME.
 # copilot on PATH is aube's shim in node_modules/.bin, or npm's link to the

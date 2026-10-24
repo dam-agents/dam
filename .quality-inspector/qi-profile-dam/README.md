@@ -11,23 +11,45 @@ Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `e
 - The cert-manager and Gateway API manifests are `github.com` release files the inspector's kit opens (quality-inspector 3.1.0 or later); the `trusted` preset allows the hosts GitHub redirects them to, so `egress` names neither.
 - `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
   The inspector's VM kernel cannot run the Istio ambient dataplane, so the nested install runs without it; applied as a `file` prerequisite (quality-inspector 2.21.0 or later).
-- `sandbox` (quality-inspector 3.4.0 or later; the GitHub sign-in 3.9.0) — two throwaway accounts the inspector's operator creates once at onboarding: a GitHub test user with an organization, one repository, an OAuth App and a fine-grained token (`sandbox/github.md`), and a Slack workspace with DAM's app and a test person (`sandbox/slack.md`).
+- `sandbox` (quality-inspector 3.4.0 or later; the GitHub sign-in 3.9.0) — throwaway accounts the inspector's operator creates once at onboarding: a GitHub test user with an organization, one repository, an OAuth App and a fine-grained token (`sandbox/github.md`), and a Slack workspace with DAM's app and a test person (`sandbox/slack.md`).
+  A second GitHub test user in that organization (`github2`, `sandbox/github-second.md`) and a second test person in that channel (`slack2`, `sandbox/slack-second.md`) let a test act as two people.
+  They are optional and accounts of their own: the overlays `@sandbox:github` and `@sandbox:slack` do not wait on their lines, and `bin/sandbox check` passes while all of an account's lines are empty (the kit's `verify-onboarding.sh` still lists them as not set).
   The install connects the workspace through `apiServer.slackAppToken` and the legacy `apiServer.slackBotToken` import (overlay `@sandbox:slack`), takes the OAuth App as its GitHub default (`apiServer.oauthAppDefaults.github`) and lets the nested gateways reach the VM's gateway (`controller.gatewayEgress.extraCidrs`, both overlay `@sandbox:github`).
   The GitHub sign-in's pages are the only `github.com` paths in `egress`, each with its method — the inspector's kit admits no other shape there; `suite/lib/sandbox.ts` → `githubSignIn` drives them, so a test never names GitHub.
   `controller.gatewayUpstreamExtraCAs` is the VM gateway's CA, so nested gateways and the api-server trust the TLS it intercepts.
   `bin/sandbox check` proves the accounts; `suite/lib/sandbox.ts` is the test person; `egress` names only the sandbox repository's issue and pull-request writes, git's clone and push of it (quality-inspector 3.9.0 or later), the GitHub sign-in and Slack.
-- `scenarios/` — the product team's flows the inspector replays nightly.
-- `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, and what the nested install cannot do.
+- `scenarios/` — the smoke regression suite: the journeys the inspector replays nightly, listed under [Smoke regression suite](#smoke-regression-suite).
+- `SKILL.md` — DAM from a tester's point of view: vocabulary, the test accounts and what each may do, what the nested install cannot do, and what the per-PR e2e suite already keeps true (`## Tested elsewhere`; a PR that adds or removes such a flow there updates the list).
   User-facing only — never implementation detail.
 
 **Keep it in step with the chart.**
 A change that alters what a fresh install needs — a new prerequisite, a renamed value the QA install sets (`keycloak.testUser`, `keycloak.extraTestUsers`, `terms`, `ingress.catchAllAppHost`) — updates `profile.json` in the same PR.
+
+## Smoke regression suite
+
+The journeys every release must keep, one file each in `scenarios/`.
+What goes in, how it stays small and when a journey leaves: [`docs/guidelines/smoke-regression-suite.md`](../../docs/guidelines/smoke-regression-suite.md).
+Adding, renaming or removing a file updates this table in the same PR.
+
+| Journey                                                                                               | What it walks                                                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`a-users-full-day-from-login-to-slack`](scenarios/a-users-full-day-from-login-to-slack.md)           | create an agent, connect GitHub through the sign-in, a pull request asked for in chat, connect Slack, a scheduled task posts to Slack while the agent sleeps     |
+| [`agent-files-a-github-issue-asked-in-slack`](scenarios/agent-files-a-github-issue-asked-in-slack.md) | connect GitHub and Slack, an issue asked for in a Slack thread                                                                                                   |
+| [`agent-opens-a-pull-request-asked-in-slack`](scenarios/agent-opens-a-pull-request-asked-in-slack.md) | connect GitHub and Slack, a pull request asked for in a Slack thread                                                                                             |
+| [`cli-work-comes-back-as-a-shared-artifact`](scenarios/cli-work-comes-back-as-a-shared-artifact.md)   | an API key drives the agent from the CLI, Home, an artifact and its new version, a public link opened and closed for the member, the usage report and its denial |
 
 ## Delivery
 
 The inspector's operator adds this repository as a skill source with path `.quality-inspector` and assigns `qi-profile-dam`; the platform fetches only this directory.
 The inspector's kit (quality-inspector 3.0.0 or later) opens `GET /repos/*/*/contents/.quality-inspector/*` and `GET /repos/*/*/contents/.quality-inspector?*` for every repository and nothing else of it, so this directory needs no egress rule of its own.
 Keep `.quality-inspector/` free of symlinks and submodules: the Contents API answers a symlink to a file with that file's content, and the inspector's gate fails on one.
+
+## Egress rules
+
+An inspector that runs on DAM needs no rule typed by hand: it proposes each `egress` entry it lacks to its owner with the platform's `egress_proposal` tool (`propose`), with the entry's host, method and path and its `why` as the reason, once `{profile.<key>}` is filled in.
+The owner allows each one where waiting approvals show — on Home or in the inspector's chat — and the rule is written as the owner would type it; its `status` action tells the inspector which ones are allowed.
+An older DAM without the tool keeps the manual path: the operator adds the rule in the agent's network settings.
+`bin/sandbox check` names a missing rule the same way.
 
 ## Config (`work/CONFIG.md` of the inspector)
 
@@ -40,7 +62,9 @@ Keep `.quality-inspector/` free of symlinks and submodules: the Contents API ans
 
 ## Sandbox accounts
 
-| Account  | The operator creates                                                                                                              | Lines in `work/env/credentials.env`                                                                           |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `github` | a test user with an authenticator code, an organization, one repository, an OAuth App, a fine-grained token (`sandbox/github.md`) | `E2E_SANDBOX_GITHUB_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`, `_OAUTH_CLIENT_ID`, `_OAUTH_CLIENT_SECRET` |
-| `slack`  | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`)                          | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID`                                    |
+| Account   | The operator creates                                                                                                                                                 | Lines in `work/env/credentials.env`                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `github`  | a test user with an authenticator code, an organization, one repository, an OAuth App, a fine-grained token (`sandbox/github.md`)                                    | `E2E_SANDBOX_GITHUB_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`, `_OAUTH_CLIENT_ID`, `_OAUTH_CLIENT_SECRET` |
+| `slack`   | a workspace, a channel, DAM's app from `etc/slack/app-manifest.yaml`, a test person (`sandbox/slack.md`)                                                             | `E2E_SANDBOX_SLACK_BOT_TOKEN`, `_APP_TOKEN`, `_HUMAN_TOKEN`, `_CHANNEL_ID`                                    |
+| `github2` | a second test user with an authenticator code, a member of `github`'s organization with Write on its repository, its fine-grained token (`sandbox/github-second.md`) | `E2E_SANDBOX_GITHUB2_TOKEN`, `_LOGIN`, `_PASSWORD`, `_TOTP_SECRET`                                            |
+| `slack2`  | a second test person in `slack`'s channel, with an app of its own (`sandbox/slack-second.md`)                                                                        | `E2E_SANDBOX_SLACK2_HUMAN_TOKEN`                                                                              |

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-#MISE description="Open a shell inside the k3s VM (or run command directly in sandbox mode)"
+#MISE description="Open a shell inside the k3s VM (or run command directly in sandbox mode, or on an Environment with --environment <name>)"
 #MISE raw=true
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$CLUSTER_TARGET" = environment ]; then
+  if [ $# -eq 0 ]; then env_ssh -t; else node_env_sh "$@"; fi
+elif [ -n "${IS_SANDBOX:-}" ]; then
   if [ $# -eq 0 ]; then
     exec bash
   else

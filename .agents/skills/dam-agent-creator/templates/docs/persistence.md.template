@@ -16,14 +16,14 @@ the agent definition itself.
 | `/home/agent/work` | **plain data directory** (no `.git`) | Live runtime state. Shared across concurrent runs; the source of truth. |
 | `$GITHUB_REPO_WORK` | git remote | Durable, versioned **backup** of `work/`. Written only via a disposable tmpfs clone (below). |
 
-`work/` is **never** a git repo: the home volume is virtiofs over NFS, and a `.git`
-mutated there under concurrent runs produces `Stale file handle` (ESTALE) and `.nfs*`
-silly-rename corruption. All git plumbing happens off the shared volume, in a tmpfs
-clone under `/dev/shm`; `work/` itself is only ever read.
+`work/` is **never** a git repo: every run of the agent shares one machine and one
+`$HOME`, and a `.git` two runs mutate at once corrupts (a locked index, a half-written
+object). All git plumbing happens in a disposable tmpfs clone under `/dev/shm`;
+`work/` itself is only ever read.
 
 The outer `.gitignore` is an allowlist (`/*` then re-include the definition files), so
 **all** of `work/` and the HOME secrets (`.ssh`, `.claude`, `.config`) are invisible to
-the outer repo. A fresh volume seeds state files from the templates in `ONBOARDING.md`
+the outer repo. A fresh machine seeds state files from the templates in `ONBOARDING.md`
 or restores them from the backup remote; a definition update (fast-forward, or a hard
 reset when the checkout diverged) never collides with live runtime state. **Never run
 `git clean` in `/home/agent`** and never `git add` outside the allowlist (the backup's
@@ -32,7 +32,7 @@ reset when the checkout diverged) never collides with live runtime state. **Neve
 ## Backup & restore (`scripts/work-backup.sh`)
 
 Pre-flight scripts never commit or push — their local bookkeeping is written straight to
-the `work/` files and stays on the volume until backed up. At the end of every run where
+the `work/` files and stays on the disk until backed up. At the end of every run where
 the agent did work, as the very last action and only when `$GITHUB_REPO_WORK` is set:
 
 ```bash
@@ -42,7 +42,7 @@ LOG_JOB=<mode> bash "$HOME/scripts/work-backup.sh" persist
 The script (full rationale in its header) snapshots the current `work/` files into a
 **disposable tmpfs clone**, commits, and pushes. Nothing authoritative lives on tmpfs —
 live state is `work/`, history is the remote, and the clone is re-seeded whenever
-missing or broken, so a pod restart wiping `/dev/shm` never matters. The persist step is
+missing or broken, so a boot wiping `/dev/shm` never matters. The persist step is
 serialized by a mkdir lock next to the clone (lock-or-skip: a skipped persist is safe —
 the running one snapshots the same shared `work/` moments later, and the next run sweeps
 up any remainder); a rejected non-fast-forward push re-seeds from the new remote tip and
@@ -50,7 +50,7 @@ retries with a fresh snapshot. Never force-push; a push that fails all retries i
 and retried next run — not a run failure, because the data is safe on `work/`.
 
 `restore` is the inverse — remote → `work/` (data only, never a `.git`) — run once on a
-fresh volume (`ONBOARDING.md` Step 2a).
+fresh machine (`ONBOARDING.md` Step 2a).
 
 ## Definition version & upgrade
 

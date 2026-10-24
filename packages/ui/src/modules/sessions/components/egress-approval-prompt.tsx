@@ -13,7 +13,10 @@ import {
   groupBy,
 } from "../../approvals/lib/group-approvals.js";
 import { egressApprovalsWaiting } from "../../approvals/lib/waiting-egress.js";
-import { approvalDetail } from "../../home/lib/approval-copy.js";
+import {
+  approvalDetail,
+  approvalReason,
+} from "../../home/lib/approval-copy.js";
 import { ChatColumn } from "./chat-column.js";
 
 const EXPIRY_TICK_MS = 15_000;
@@ -32,10 +35,12 @@ function EgressApprovalCard({
   denying: boolean;
 }) {
   const approval = group[0]!;
-  const { actions, inflight, hostLabel, openSettings } = useApprovalActions(
-    approval,
-    group.map((a) => a.id),
-  );
+  const { actions, primary, inflight, hostLabel, openSettings } =
+    useApprovalActions(
+      approval,
+      group.map((a) => a.id),
+    );
+  const reason = approvalReason(approval);
   return (
     <div
       data-testid="chat-egress-approval"
@@ -43,7 +48,11 @@ function EgressApprovalCard({
     >
       <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
         <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
-        <span className="min-w-0">Allow network access?</span>
+        <span className="min-w-0">
+          {reason === null
+            ? "Allow network access?"
+            : "Allow this network rule?"}
+        </span>
       </div>
       <div className="pl-4 font-mono text-sm text-muted-foreground break-all">
         {approvalDetail(approval)}
@@ -51,10 +60,18 @@ function EgressApprovalCard({
           <span className="font-sans"> · {group.length} requests</span>
         )}
       </div>
+      {reason !== null && (
+        <p
+          data-testid="chat-egress-proposal-reason"
+          className="pl-4 text-sm text-muted-foreground break-words"
+        >
+          {reason}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <ApprovalActionsMenu
           actions={actions}
-          inline={["allow-once", "dismiss"]}
+          inline={[primary, "dismiss"]}
           variant="outline"
           className="bg-background"
           inflight={inflight}

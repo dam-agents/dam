@@ -83,7 +83,6 @@ export interface StarterKitsServiceDeps {
       decidedBy: string,
     ): Promise<void>;
   };
-  virtualizationEnabled?: boolean;
   chatFormPreferences?: (
     agentId: string,
   ) => Promise<ChatFormPreferences | null>;
@@ -124,7 +123,7 @@ export function createStarterKitsService(
           code: "BAD_REQUEST",
           message: `the kit at ${link.url} is ${linked.kit.id}, not ${kitId}`,
         });
-      return requireRunnable(linked);
+      return linked;
     }
     const loaded = await deps.repo.get(catalog, kitId);
     if (!loaded)
@@ -257,17 +256,6 @@ export function createStarterKitsService(
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
 
-  const runnableHere = (loaded: LoadedKit): boolean =>
-    loaded.kit.backend !== "vm" || deps.virtualizationEnabled === true;
-
-  function requireRunnable<K extends LoadedKit>(loaded: K): K {
-    if (runnableHere(loaded)) return loaded;
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "this kit runs as a microVM, which this install cannot run",
-    });
-  }
-
   const kitUpdates = createKitUpdates({
     owner: deps.owner,
     repo: deps.repo,
@@ -293,16 +281,16 @@ export function createStarterKitsService(
     ...kitUpdates,
 
     async list() {
-      return (await deps.repo.list()).filter(runnableHere).map(toView);
+      return (await deps.repo.list()).map(toView);
     },
 
     async get(catalog, id) {
       const loaded = await deps.repo.get(catalog, id);
-      return loaded && runnableHere(loaded) ? toView(loaded) : null;
+      return loaded ? toView(loaded) : null;
     },
 
     async inspect(url) {
-      return toView(requireRunnable(await deps.linkedKits.read(url)));
+      return toView(await deps.linkedKits.read(url));
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {

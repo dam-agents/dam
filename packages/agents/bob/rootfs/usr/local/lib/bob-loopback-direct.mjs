@@ -1,6 +1,6 @@
 /** UNIT_BOUNDARY_DESCRIPTION: Bob's global undici ProxyAgent sends every
  * request through the proxy, NO_PROXY or not, so its calls to the Model
- * Router on the pod's loopback would reach the gateway pod's loopback and
+ * Router on the machine's loopback would reach the gateway pod's loopback and
  * fail. This preload sends loopback requests to the dispatcher Node installs
  * under NODE_USE_ENV_PROXY, which honours NO_PROXY, by wrapping the one
  * Object.defineProperty write undici's setGlobalDispatcher makes. */

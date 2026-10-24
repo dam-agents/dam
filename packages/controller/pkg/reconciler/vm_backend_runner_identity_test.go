@@ -93,15 +93,6 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	require.NoError(t, err, "and the other owner's runner is untouched")
 }
 
-// TEST_SCENARIO: an install without a VM runner cannot run vm agents; the Agent says so instead of silently running as a container.
-func TestVMBackendDisabledFailsReconcile(t *testing.T) {
-	agent := vmAgentCR()
-	r, _ := setupReconciler(t, agent)
-	err := r.Reconcile(context.Background(), agent)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "virtualization is disabled")
-}
-
 // TEST_SCENARIO: switching virtualization off and on deletes the runner ServiceAccount and renders a new one, which carries a new UID. A controller that resolved the owner once would keep stamping the dead UID, and every object it wrote would be collected the instant it appeared — a runner that never shows up and never explains why.
 func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 	ctx := context.Background()
@@ -175,7 +166,7 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret(), runnerTLSSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images"}}
+	r.config.VM = config.VMConfig{Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)

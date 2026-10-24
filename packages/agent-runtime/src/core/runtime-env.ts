@@ -21,7 +21,7 @@ export const mergedSpawnEnv = (
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a provider or harness layer's variable wins over
- * the pod's own env, since an image may bake a placeholder key and the
+ * the machine's own env, since an image may bake a placeholder key and the
  * Connection's addressed placeholder must reach the process for the
  * credential gateway to name the Connection.
  */

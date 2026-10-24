@@ -41,7 +41,7 @@ export const MAX_RESUME_ATTEMPTS = 5;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: On boot, resumes every Session whose turn an
- * abnormal pod death interrupted, so work continues unattended instead of
+ * abnormal death interrupted, so work continues unattended instead of
  * silently stopping until someone notices — a scheduled fire and a person's
  * chat alike. It reads the leftover Active-Turn markers and, for each with
  * attempts left and not deleted, resumes the Session through the Trigger
@@ -56,7 +56,7 @@ export const MAX_RESUME_ATTEMPTS = 5;
  * A continuation that dies again is resumed again, up to
  * MAX_RESUME_ATTEMPTS times for one interruption. The attempt is counted before
  * the resume is tried, so a continuation that keeps running out of memory
- * cannot crash-loop the pod. This is
+ * cannot crash-loop the machine. This is
  * not the no-auto-resend case: an Active-Turn marker is written only once the
  * harness has *taken* the prompt, so resuming continues a turn the agent
  * already saw — it never re-sends a queued prompt the agent never received

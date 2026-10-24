@@ -18,17 +18,15 @@ import { useEnvironments, useEnvironmentsEnabled } from "../api/queries.js";
  */
 export function SidebarEnvironments({
   agentId,
-  vm,
   indent,
   onNavigate,
 }: {
   agentId: string;
-  vm: boolean;
   indent: string;
   onNavigate?: () => void;
 }) {
   const enabled = useEnvironmentsEnabled();
-  const environments = useEnvironments(enabled && vm ? agentId : null);
+  const environments = useEnvironments(enabled ? agentId : null);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const list = environments.data ?? [];
   if (list.length === 0) return null;

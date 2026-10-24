@@ -42,6 +42,7 @@ import {
   amountsLabel,
   sessionSpendTitle,
 } from "../../spend/lib/amounts-label.js";
+import { KitUpdateSessionTag } from "../../starter-kits/components/kit-update-session-tag.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
@@ -208,7 +209,7 @@ export function SessionRow({
                 <span className={`text-sm min-w-0 truncate ${titleClass}`}>
                   {titleLabel}
                 </span>
-                {onboarding && (
+                {onboarding ? (
                   <Badge
                     variant={onboarding.variant}
                     size="sm"
@@ -216,6 +217,10 @@ export function SessionRow({
                   >
                     {onboarding.label}
                   </Badge>
+                ) : (
+                  s.initialization === true && (
+                    <KitUpdateSessionTag session={s} />
+                  )
                 )}
               </button>
               {pinned && !quietPin && (

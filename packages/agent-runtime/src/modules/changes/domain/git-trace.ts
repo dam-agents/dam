@@ -108,7 +108,7 @@ export function gitCommandOf(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the git configuration that makes every git
- * process in the pod write its trace for agent-runtime: one file per process
+ * process in the machine write its trace for agent-runtime: one file per process
  * in a directory the runtime owns, with only the Session variables named.
  * A directory, unlike a socket, never blocks git: a socket whose reader
  * stalls makes every git command wait, while a runtime that is down or slow

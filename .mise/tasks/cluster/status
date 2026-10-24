@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #MISE description="Show cluster and pod status (--watch refreshes every 2s)"
 #MISE raw=true
+# --environment <name> first shows one of this agent's Environments.
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
 STATUS_CMD="
-if [ -n \"${IS_SANDBOX:-}\" ]; then
+if [ \"$CLUSTER_TARGET\" = environment ]; then
+  echo '=== Environment $CLUSTER_ENVIRONMENT: k3s service ==='
+  env_k3s status || true
+elif [ -n \"${IS_SANDBOX:-}\" ]; then
   echo '=== k3s service ==='
   if [ -x /etc/init.d/k3s ]; then as_root rc-service k3s status || true
   elif [ -d /run/systemd/system ]; then as_root systemctl is-active k3s || true
@@ -53,7 +57,7 @@ case "${1:-}" in
       if [ -n "$CERT_HITS" ]; then
         echo 'WARNING: expired ambient-mesh certs detected (issue #283).'
         echo 'Known symptoms: UI login failure, keycloak "Connection reset" during install,'
-        echo 'agent pods looping "[runtime] hello failed" (workspace seeding never starts).'
+        echo 'machines looping "[runtime] hello failed" (workspace seeding never starts).'
         echo 'Fix now: mise run cluster:fix-certs   (the watchdog auto-heals within ~10 min)'
         printf '%s\n' "$CERT_HITS"
       else

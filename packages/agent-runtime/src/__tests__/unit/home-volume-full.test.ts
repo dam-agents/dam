@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -55,47 +55,34 @@ describe("readHomeVolume", () => {
 
 describe("reportHomeVolumeFullOnCrash", () => {
   let stop: (() => void) | undefined;
-  afterEach(() => stop?.());
+  let stderr: string[] = [];
+  const original = process.stderr.write.bind(process.stderr);
 
-  function terminationLog(): string {
-    const path = join(mkdtempSync(join(tmpdir(), "term-")), "termination-log");
-    writeFileSync(path, "");
-    return path;
-  }
-
-  it("writes the reason when the crash is a full home", () => {
-    const log = terminationLog();
-    stop = reportHomeVolumeFullOnCrash("/home", {
-      terminationLog: log,
-      free: () => 0,
-    });
-    process.emit("uncaughtExceptionMonitor", enospc(), "uncaughtException");
-    expect(readFileSync(log, "utf8")).toBe(HOME_VOLUME_FULL_REASON);
+  beforeEach(() => {
+    stderr = [];
+    process.stderr.write = ((chunk: unknown) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+  });
+  afterEach(() => {
+    stop?.();
+    process.stderr.write = original;
   });
 
-  it("leaves the termination message alone for any other crash", () => {
-    const log = terminationLog();
-    stop = reportHomeVolumeFullOnCrash("/home", {
-      terminationLog: log,
-      free: () => 0,
-    });
+  it("says why it exits when the crash is a full home", () => {
+    stop = reportHomeVolumeFullOnCrash("/home", { free: () => 0 });
+    process.emit("uncaughtExceptionMonitor", enospc(), "uncaughtException");
+    expect(stderr.join("")).toContain("the home volume /home is full");
+  });
+
+  it("says nothing for any other crash", () => {
+    stop = reportHomeVolumeFullOnCrash("/home", { free: () => 0 });
     process.emit(
       "uncaughtExceptionMonitor",
       new Error("boom"),
       "uncaughtException",
     );
-    expect(readFileSync(log, "utf8")).toBe("");
-  });
-
-  it("does not create a termination log the container was not given", () => {
-    const missing = join(mkdtempSync(join(tmpdir(), "term-")), "absent");
-    stop = reportHomeVolumeFullOnCrash("/home", {
-      terminationLog: missing,
-      free: () => 0,
-    });
-    expect(() =>
-      process.emit("uncaughtExceptionMonitor", enospc(), "uncaughtException"),
-    ).not.toThrow();
-    expect(() => readFileSync(missing)).toThrow();
+    expect(stderr).toEqual([]);
   });
 });

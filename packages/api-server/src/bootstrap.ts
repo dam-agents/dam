@@ -9,7 +9,7 @@ import {
   createApi,
   createK8sClient,
   createLeaseApi,
-  podBaseUrl,
+  agentServiceAddress,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeStorageGate,
@@ -48,15 +48,13 @@ import {
   setSlackChannelAmbient,
   setSlackChannelDefault,
   createAgentSweep,
-  createRuntimeMigrationSwitch,
   createImageUpdate,
-  podIsIdle,
+  agentServiceIsIdle,
   createAvatarImagesRepository,
   MAX_AVATAR_BYTES,
   storeAvatarImage,
   sweepAvatarImages,
 } from "./modules/agents/index.js";
-import { createAgentRuntimeClient } from "./modules/runtime-delivery/infrastructure/agent-runtime-client.js";
 import {
   composePrStateResolver,
   connectScanCacheBus,
@@ -219,7 +217,7 @@ import {
   composeShareRenderTokens,
   composeShareBridge,
   composeShareViewer,
-  createAgentApiPodClient,
+  createAgentApiClient,
   createByLinkHostGate,
   createContentApp,
   createShareAuthRoutes,
@@ -260,7 +258,7 @@ import {
   createSpawnSessionsAdapter,
   createInvocationTasksAdapter,
   createInvocationsCleanupHook,
-  createPodSessionClient,
+  createDelegationFramesClient,
   createInvocationSetupFailure,
   composeScriptOutputs,
   runtimeRunsScripts,
@@ -276,6 +274,7 @@ import {
 } from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
+  composeEgressProposals,
   composeSpendLimitQuestions,
   composeToolApprovalReports,
   createApprovalsCleanupHook,
@@ -301,6 +300,7 @@ import {
 } from "./modules/egress-rules/compose.js";
 import {
   composeConnectionsAtBoot,
+  composeAgentSecretRequests,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
   createConnectionNames,
@@ -310,6 +310,7 @@ import {
   listConnectionTemplateIds,
   listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
+import { oauthCallbackUrl } from "./modules/connections/domain/oauth-callback-url.js";
 import { SECRET_REQUEST_TTL_MS } from "./modules/connections/services/secret-requests.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { sweepManagedConnections } from "./modules/connections/sagas/managed-connections.js";
@@ -448,7 +449,7 @@ export async function bootstrap() {
     },
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
-  const delegationFrames = createPodSessionClient({
+  const delegationFrames = createDelegationFramesClient({
     namespace: config.namespace,
     isReady: (agentId) => agentsRepo.isReady(agentId),
   });
@@ -668,10 +669,7 @@ export async function bootstrap() {
     namespace: config.namespace,
     bullConnection,
     agentRunningPort: {
-      // UNIT_BOUNDARY_DESCRIPTION: a migrated machine is Ready only after the Backend switches, but its runtime waits just 15 s for the env the copy left behind before it starts the harness without it. A verified machine already holds the Agent's Service, so it takes the push at once.
-      isRunning: async (agentId) =>
-        (await agentsRepo.isReady(agentId)) ||
-        agentsRepo.peekCached(agentId)?.runtimeMigration?.phase === "verified",
+      isRunning: (agentId) => agentsRepo.isReady(agentId),
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
@@ -884,7 +882,7 @@ export async function bootstrap() {
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
-      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+      oauthCallbackUrl: oauthCallbackUrl(config.uiBaseUrl),
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
@@ -1363,7 +1361,7 @@ export async function bootstrap() {
       firePair: (agentId) => channelFirePair(agentId, "channel"),
     });
 
-  const agentApiPodClient = createAgentApiPodClient(config.namespace);
+  const agentApiClient = createAgentApiClient(config.namespace);
   const shareBridge = composeShareBridge({
     featureOn: async (owner) =>
       (
@@ -1375,7 +1373,7 @@ export async function bootstrap() {
         }).features.flags()
       )["interactive-artifacts"],
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    agentApi: agentApiPodClient,
+    agentApi: agentApiClient,
     makeAcpClient,
     spendHold: channelSpendHold,
     attendance: turnAttendance,
@@ -1595,7 +1593,7 @@ export async function bootstrap() {
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
-      `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
+      `ws://${agentServiceAddress(agentId, config.namespace)}/api/acp`,
   });
 
   const objectStoreAgentUrl = config.objectStorageAgentEndpoint
@@ -1682,9 +1680,6 @@ export async function bootstrap() {
         agent.starterKitOnboarded === undefined
       );
     },
-    runtimeMigrating: async (agentId) =>
-      ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
-      "none",
     spendHold,
     agentDisabled: async (agentId) =>
       (await agentsRepo.get(agentId))?.disabled === true,
@@ -1772,7 +1767,7 @@ export async function bootstrap() {
       shareBaseUrl: config.shareBaseUrl,
       agentExists: opts?.agentExists,
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-      agentApi: agentApiPodClient,
+      agentApi: agentApiClient,
     }).artifactLibrary;
   const artifactLibraryForSystem = (owner: string) =>
     artifactLibraryFor(owner, "system");
@@ -1986,14 +1981,7 @@ export async function bootstrap() {
     composeAgentsModule({
       api,
       readSlackLoopGuardDrops: (ids) => loopGuardDrops.readMany(ids),
-      storageGate: composeStorageGate({
-        k8s: k8sClient,
-        owner,
-        vmPool: {
-          storage: config.vmPoolStorage,
-          memory: config.vmPoolMemory,
-        },
-      }),
+      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
@@ -2126,51 +2114,13 @@ export async function bootstrap() {
     environments.sweepExpired(),
   );
 
-  const runtimeMigrationSwitch = createRuntimeMigrationSwitch({
-    listAgents: () => agentsRepo.list(),
-    getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
-    writeMigration: (id, patch) =>
-      liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
-    migration: async (agent) => {
-      const install = agentsInstallSettings(config);
-      // UNIT_BOUNDARY_DESCRIPTION: the pool is the owner's own runner's figures, and the home is what the Agent's runtime measured on its volume; either unreadable refuses nothing, since the runner stops what it has no room for on its own.
-      const [capacity, homeBytes] = await Promise.all([
-        composeStorageGate({
-          k8s: k8sClient,
-          owner: agent.owner ?? "",
-          vmPool: {
-            storage: config.vmPoolStorage,
-            memory: config.vmPoolMemory,
-          },
-        })
-          .readCapacity()
-          .catch(() => null),
-        createAgentRuntimeClient(agent.id, config.namespace)
-          .homeVolume()
-          .then((v) => (v ? Math.max(0, v.totalBytes - v.freeBytes) : null))
-          .catch(() => null),
-      ]);
-      return {
-        virtualizationEnabled: install.virtualizationEnabled,
-        defaultMounts: install.agentDefaultMounts,
-        defaultStorageSize: install.agentDefaultStorageSize,
-        capacity,
-        homeBytes,
-      };
-    },
-    log: (message) => process.stderr.write(`${message}\n`),
-  });
-  await periodicJobs.register("runtime-migration-switch", 2_000, () =>
-    runtimeMigrationSwitch.tick(),
-  );
-
   const imageUpdate = createImageUpdate({
     listAgents: () => agentsRepo.list(),
     getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
     readTemplateSpec: templatesRepo.readSpec,
     writeSpec: (id, write) =>
-      liveAgentsRepo.writeRuntimeMigration(id, undefined, write),
-    podIsIdle: (id) => podIsIdle(id, config.namespace),
+      liveAgentsRepo.writeAgentSpec(id, undefined, write),
+    agentServiceIsIdle: (id) => agentServiceIsIdle(id, config.namespace),
     idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),
   });
@@ -2217,11 +2167,10 @@ export async function bootstrap() {
         emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),
         subsMatching: (text, max) => userDirectory.searchSubs(text, max),
       },
-      listAgents: () => agentsRepo.list(),
       defaults: {
         cpu: config.defaultUserCpuBudget,
         memory: config.defaultUserMemoryBudget,
-        storage: config.virtualizationEnabled ? config.vmPoolStorage : null,
+        storage: config.vmPoolStorage,
       },
     }),
     providerStatus: providerStatus.service,
@@ -2295,6 +2244,22 @@ export async function bootstrap() {
   const harnessDeps = {
     toolApprovalsFor: (owner: string) =>
       composeToolApprovalReports(approvalsRelay, owner),
+    agentSecretRequestsFor: (owner: string, agentId: string) =>
+      composeAgentSecretRequests({
+        ownerId: owner,
+        agentId,
+        db,
+        uiBaseUrl: config.uiBaseUrl,
+        stores: connectionsBoot.secretRequestStores,
+        templates: connectionsBoot.templates,
+      }),
+    egressProposalsFor: (owner: string, agentId: string) =>
+      composeEgressProposals({
+        db,
+        ruleMatcher: createEgressRuleMatchAdapter(db),
+        agentId,
+        ownerSub: owner,
+      }),
     satellitesBoot,
     secretStore,
     spendHold,

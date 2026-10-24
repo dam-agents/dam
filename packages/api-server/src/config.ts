@@ -40,32 +40,6 @@ const positiveQuantitySchema = z
     message: "must be a positive quantity",
   });
 
-const defaultMountsSchema = z
-  .string()
-  .default(
-    JSON.stringify([
-      { path: "/home/agent", persist: true },
-      { path: "/tmp", persist: false },
-    ]),
-  )
-  .transform((raw, ctx) => {
-    try {
-      return JSON.parse(raw) as unknown;
-    } catch {
-      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
-      return z.NEVER;
-    }
-  })
-  .pipe(
-    z.array(
-      z.object({
-        path: z.string().min(1),
-        persist: z.boolean().default(false),
-        size: z.string().optional(),
-      }),
-    ),
-  );
-
 // UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode, with every feature it does not name read as the chart's default mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
 const featureModesSchema = z
   .object({
@@ -233,7 +207,6 @@ const configSchema = z.object({
   imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
-  virtualizationEnabled: z.stringbool().default(false),
   // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing.
   vmPoolStorage: z.string().default("100Gi"),
   vmPoolMemory: z.string().default(""),
@@ -258,15 +231,11 @@ const configSchema = z.object({
   keycloakOperatorRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
   agentWorkDir: z.string().default("/home/agent/work"),
-  agentIdleTimeoutMinutes: z.object({
-    container: z.number().int().min(0),
-    vm: z.number().int().min(0),
-  }),
+  agentIdleTimeoutMinutes: z.number().int().min(0),
   outageAlertDelayMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
   agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
-  agentDefaultMounts: defaultMountsSchema,
   defaultUserCpuBudget: positiveQuantitySchema.default("4"),
   defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   skillSourcesSeed: z.string().default(""),
@@ -387,16 +356,14 @@ const validatedConfigSchema = configSchema
     },
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module that plans a migration without the install's default mounts, disk default or retention window.
+// UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module without the install's default mounts or disk default.
 export function agentsInstallSettings(config: Config) {
   return {
-    virtualizationEnabled: config.virtualizationEnabled,
     defaultHarness: config.harnesses.default,
     telemetry: Object.values(config.harnesses.catalog).some(
       (h) => h.telemetryEnv.length > 0,
     ),
     agentDefaultStorageSize: config.agentDefaultStorageSize,
-    agentDefaultMounts: config.agentDefaultMounts,
   };
 }
 
@@ -438,7 +405,6 @@ export function loadConfig(): Config {
     imgbbApiKey: process.env.IMGBB_API_KEY,
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
-    virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
     vmPoolStorage: process.env.VM_POOL_STORAGE,
     vmPoolMemory: process.env.VM_POOL_MEMORY,
     featureModes: {
@@ -467,19 +433,15 @@ export function loadConfig(): Config {
     keycloakOperatorRole: process.env.KEYCLOAK_OPERATOR_ROLE,
     agentHome: process.env.AGENT_HOME,
     agentWorkDir: process.env.AGENT_WORK_DIR,
-    agentIdleTimeoutMinutes: {
-      container: durationToMinutesStrict(
-        process.env.AGENT_IDLE_TIMEOUT ?? "1h",
-      ),
-      vm: durationToMinutesStrict(process.env.AGENT_VM_IDLE_TIMEOUT ?? "5m"),
-    },
+    agentIdleTimeoutMinutes: durationToMinutesStrict(
+      process.env.AGENT_IDLE_TIMEOUT ?? "5m",
+    ),
     outageAlertDelayMinutes: durationToMinutesStrict(
       process.env.OUTAGE_ALERT_DELAY ?? "15m",
     ),
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
     agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,
-    agentDefaultMounts: process.env.AGENT_DEFAULT_MOUNTS,
     defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
     defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,

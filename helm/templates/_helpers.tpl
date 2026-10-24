@@ -568,7 +568,7 @@ capabilities:
   add: ["CHOWN", "FOWNER", "FSETID", "DAC_OVERRIDE"]
 appArmorProfile:
   type: Unconfined
-{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+{{- if .Values.openshift.enabled }}
 seLinuxOptions:
   type: spc_t
   level: s0
@@ -764,88 +764,6 @@ subjects:
   - kind: ServiceAccount
     name: {{ .name }}
     namespace: {{ $ns }}
-{{- end }}
-
-{{/*
-A custom SCC tightening restricted-v2 as far as it goes: drop ALL, no
-privilege escalation, runtime/default seccomp, no host namespaces or host
-volumes, RunAsAny only for the ids a pod brings. The two parameters are the
-whole difference between the chart's SCCs — the capabilities a pod opts into,
-and the volume types the workload mounts.
-Args: dict "root" $ "name" <scc> "capabilities" (list …) "volumes" (list …).
-*/}}
-{{- define "platform.scc" -}}
-apiVersion: security.openshift.io/v1
-kind: SecurityContextConstraints
-metadata:
-  name: {{ .name }}
-  labels:
-    {{- include "platform.labels" .root | nindent 4 }}
-allowHostDirVolumePlugin: false
-allowHostIPC: false
-allowHostNetwork: false
-allowHostPID: false
-allowHostPorts: false
-allowPrivilegeEscalation: false
-allowPrivilegedContainer: false
-allowedCapabilities:
-{{- toYaml .capabilities | nindent 2 }}
-defaultAddCapabilities: null
-fsGroup:
-  type: RunAsAny
-groups: []
-priority: null
-readOnlyRootFilesystem: false
-requiredDropCapabilities:
-  - ALL
-runAsUser:
-  type: RunAsAny
-seLinuxContext:
-  type: MustRunAs
-seccompProfiles:
-  - runtime/default
-supplementalGroups:
-  type: RunAsAny
-users: []
-volumes:
-{{- toYaml .volumes | nindent 2 }}
-{{- end }}
-
-{{/*
-Grant `use` on a custom SCC. OpenShift auto-generates
-`system:openshift:scc:<name>` ClusterRoles for the built-in SCCs only, so a
-custom SCC needs a ClusterRole of its own — the SCC is cluster-scoped, so a
-namespaced Role could not reference it. The RoleBinding stays in the agent
-namespace, which keeps the grant to that namespace's subjects.
-Args: dict "root" $ "name" <clusterrole> "scc" <scc> "binding" <rolebinding>
-"subjects" (list of subject dicts).
-*/}}
-{{- define "platform.sccUse" -}}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ .name }}
-  labels:
-    {{- include "platform.labels" .root | nindent 4 }}
-rules:
-  - apiGroups: ["security.openshift.io"]
-    resources: ["securitycontextconstraints"]
-    resourceNames: ["{{ .scc }}"]
-    verbs: ["use"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ .binding }}
-  namespace: {{ .root.Values.agentNamespace }}
-  labels:
-    {{- include "platform.labels" .root | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ .name }}
-subjects:
-{{- toYaml .subjects | nindent 2 }}
 {{- end }}
 
 {{/*

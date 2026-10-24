@@ -36,6 +36,9 @@ pub const SEED_EXPECTED_FILE: &str = "seed-expected";
 // UNIT_BOUNDARY_DESCRIPTION: the share's record of the image the boot about to run boots, which platform-init reads at guest::IMAGE_PATH to decide whether the machine keeps its root. A start writes it, not write_share, because every boot passes a start and the image a start boots is the one in smolvm's record at that moment.
 pub const IMAGE_FILE: &str = "image";
 
+// UNIT_BOUNDARY_DESCRIPTION: the stager's record of an unprivileged unpack, copied into the share for a boot whose tree carries one, and removed for a tree that does not. platform-init reads it at guest::UNPACKED_AS_PATH: one line, the uid and gid the stager gave every file of the tree. A start copies it rather than trusting the tree's own metadata, because a privileged unpack can leave a foreign-owned top directory over files it kept root's, and only a stager's own record says the whole tree belongs to one owner.
+pub const UNPACKED_AS_FILE: &str = "unpacked-as";
+
 // UNIT_BOUNDARY_DESCRIPTION: the share's mark that the owner's claim is short of room, which platform-init reads at guest::STORAGE_SHORT_PATH: one line, the id of the runner's request to give back scratch and the bytes asked of this machine. write_share leaves it alone: the runner's storage check owns it, and sets, replaces or clears it in every machine's share at each look.
 pub const STORAGE_SHORT_FILE: &str = "storage-short";
 

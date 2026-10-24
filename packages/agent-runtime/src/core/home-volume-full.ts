@@ -1,4 +1,4 @@
-import { statfsSync, writeFileSync } from "node:fs";
+import { statfsSync } from "node:fs";
 import { statfs } from "node:fs/promises";
 import type { HomeVolume } from "agent-runtime-api";
 
@@ -43,22 +43,13 @@ export function isHomeVolumeFull(
 
 export function reportHomeVolumeFullOnCrash(
   homeDir: string,
-  {
-    terminationLog = "/dev/termination-log",
-    free = freeBytes,
-  }: {
-    terminationLog?: string;
-    free?: (dir: string) => number | null;
-  } = {},
+  { free = freeBytes }: { free?: (dir: string) => number | null } = {},
 ): () => void {
   const monitor = (err: Error) => {
     if (!isHomeVolumeFull(err, homeDir, free)) return;
     process.stderr.write(
       `[server] the home volume ${homeDir} is full; exiting\n`,
     );
-    try {
-      writeFileSync(terminationLog, HOME_VOLUME_FULL_REASON, { flag: "r+" });
-    } catch {}
   };
   process.on("uncaughtExceptionMonitor", monitor);
   return () => process.off("uncaughtExceptionMonitor", monitor);

@@ -21,7 +21,7 @@ import { createScanCache } from "./infrastructure/scan-cache.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createSkillSetsRepository } from "./infrastructure/skill-sets-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
-import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
+import { createAgentPrStateReader } from "./infrastructure/agent-pr-state-reader.js";
 import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
@@ -52,7 +52,7 @@ export function composePrStateResolver(deps: {
   return createPrStateResolver({
     agentSkills: createAgentSkillsRepository(deps.db),
     reader: createGitHubPrStateReader(),
-    podReader: createPodPrStateReader({
+    agentReader: createAgentPrStateReader({
       agents: deps.agents,
       runtimeClient: createAgentRuntimeSkillsClient(deps.namespace),
       log: deps.log,

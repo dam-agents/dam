@@ -48,13 +48,13 @@ spec:
               value: {{ .Values.agentNamespace }}
             - name: PLATFORM_RELEASE_NAMESPACE
               value: {{ .Release.Namespace }}
-            # Three layers shape controller-rendered pods. Each ships as its
-            # own JSON env var; the controller fails loudly on unknown fields
-            # so values.yaml typos surface at startup.
-            #   - AGENT_BASE: chart-only platform policy (security, scheduling,
-            #     cluster details). Never overridable by an agent ConfigMap.
-            #   - AGENT_TEMPLATE_DEFAULTS: chart-wide fallbacks for fields a
-            #     template can override (template wins when set).
+            # Chart-wide agent defaults, each its own JSON env var; the
+            # controller fails loudly on unknown fields so values.yaml typos
+            # surface at startup.
+            #   - AGENT_BASE: chart-only policy, never overridable by an agent
+            #     ConfigMap.
+            #   - AGENT_TEMPLATE_DEFAULTS: fallbacks for fields a template can
+            #     override (template wins when set).
             - name: AGENT_BASE
               value: {{ .Values.controller.agent.base | toJson | quote }}
             # `$HOME` literals in mount paths are substituted at
@@ -62,15 +62,8 @@ spec:
             # controller and api-server only ever see absolute paths.
             - name: AGENT_TEMPLATE_DEFAULTS
               value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" "/home/agent" | quote }}
-            # Warm PVC pool (#692): pre-provisioned spare workspace volumes a new
-            # agent claims instantly. Disabled by default; see controller.warmPool.
-            - name: WARM_POOL
-              value: {{ .Values.controller.warmPool | toJson | quote }}
-            # One-time RWX -> RWO workspace migration (#2988); see
-            # controller.storageMigration.
-            - name: STORAGE_MIGRATION
-              value: {{ .Values.controller.storageMigration | toJson | quote }}
-            # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
+            # Every agent's machine runs on its owner's VM runner; see
+            # `virtualization` in values.yaml.
             {{- $r := .Values.virtualization.runner }}
             {{- $cache := .Values.virtualization.imageCache | default dict }}
             {{- $devices := $r.devices | default (dict "devices.kubevirt.io/kvm" "1") }}
@@ -91,25 +84,15 @@ spec:
                   "hostAddress" ($r.hostAddress | default "")
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "stalledTimeout" ($r.rollout.stalledTimeout | default "30m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int) "cloneSource" (dig "cloneSource" true (.Values.virtualization.runtimeMigration | default dict))) "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
-            {{- if .Values.virtualization.enabled }}
+              value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
-            {{- end }}
             # Per-user compute ceiling defaults (#1900); a UserBudget CR
             # overrides them for one user. Enforced at the 0→1 scale-up.
             - name: DEFAULT_USER_CPU_BUDGET
               value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
             - name: DEFAULT_USER_MEMORY_BUDGET
               value: {{ .Values.controller.userBudgets.defaultMemory | quote }}
-            # Requests are derived from limits at render (#1900); see
-            # controller.requestsFromLimits in values.yaml.
-            - name: REQUESTS_FROM_LIMITS_FRACTION
-              value: {{ .Values.controller.requestsFromLimits.fraction | quote }}
-            - name: REQUESTS_FROM_LIMITS_MIN_CPU
-              value: {{ .Values.controller.requestsFromLimits.minCpu | quote }}
-            - name: REQUESTS_FROM_LIMITS_MIN_MEMORY
-              value: {{ .Values.controller.requestsFromLimits.minMemory | quote }}
             # The Size materialized into any Agent spec lacking a limits
             # dimension (#1900) — fill-if-absent on reconcile; see
             # controller.agent.legacyAgentSize in values.yaml.
@@ -167,8 +150,6 @@ spec:
             - name: PLATFORM_GATEWAY_OTLP_PROTOCOL
               value: "grpc"
             {{- end }}
-            - name: PLATFORM_RELEASE_DOMAIN
-              value: "svc.cluster.local"
             - name: ENVOY_IMAGE
               value: {{ .Values.controller.envoyImage | quote }}
             {{- with .Values.controller.gatewayUpstreamExtraCAs }}
@@ -189,8 +170,6 @@ spec:
             # render time as `<release>-extauthz-<id>.<release-ns>.svc.cluster.local`
             # from PLATFORM_RELEASE_NAME + PLATFORM_RELEASE_NAMESPACE; no
             # static EXT_AUTHZ_HOST is needed.
-            - name: AGENT_PROBES_ENABLED
-              value: {{ .Values.probes.enabled | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: EXT_AUTHZ_HOLD_SECONDS

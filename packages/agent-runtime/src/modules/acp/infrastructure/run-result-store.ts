@@ -55,7 +55,7 @@ function withinCap(
  * record per Session, newest turn wins; it goes when the Session is deleted,
  * or — the document is byte-capped — when another session's write needs the
  * room: oldest records evict first, never the one being written. The record
- * lives on this pod's disk, so it survives restarts as long as the pod's home
+ * lives on this machine's disk, so it survives restarts as long as the machine's home
  * does, and no longer.
  */
 export function createRunResultStore(

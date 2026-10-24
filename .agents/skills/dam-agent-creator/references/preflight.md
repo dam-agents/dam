@@ -130,8 +130,8 @@ Changing an entry command later is a **major** bump (deployed schedules must be 
 
 1. `bash -n scripts/preflight.sh` — syntax.
 2. Read-only dry run per mode against the real integration where reachable (`preflight.sh <mode> | jq .`): valid JSON, decisions match observable reality, `nothing_to_do` on a quiet target.
-3. Pod compatibility: GNU-date-first with BSD fallback where the script may also run on macOS in development (`references/platform-dam.md`).
-4. Source `scripts/lib/toolpath.sh` first when the script execs a shimmed CLI in a loop: on the pod `jq`/`gh` are `mise` shims costing ~250 ms per exec (`references/platform-dam.md` → Runtime environment).
+3. Machine compatibility: GNU-date-first with BSD fallback where the script may also run on macOS in development (`references/platform-dam.md`).
+4. Source `scripts/lib/toolpath.sh` first when the script execs a shimmed CLI in a loop: in the image `jq`/`gh` are `mise` shims costing ~250 ms per exec (`references/platform-dam.md` → Runtime environment).
 5. Test the adapter's verdicts in `scripts/tests/` with a stubbed pre-flight on `PATH`: quiet → exit 1 and no output; worklist → exit 0 with a readable file at the printed path; `error`, non-JSON, missing script and a pass over the budget → exit 2 each, with the reason on stdout.
    Fail-open rules are the ones nobody notices breaking.
 6. Time one real run per mode: past the adapter's budget the Precheck breaks on every occurrence and the schedule silently loses its optimization.

@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { WebSocket } from "ws";
-import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import { agentServiceAddress } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
-import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
+import { AGENT_NOT_READY_REASON } from "api-server-api";
+import {
+  isAgentStoppedError,
+  isAgentWakeTimeoutError,
+} from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
@@ -24,7 +28,7 @@ export function createTerminalRelay(
   presence: SessionPresence,
   bus: RedisBus,
   upstreamBase: (agentId: string) => string = (agentId) =>
-    `ws://${podBaseUrl(agentId, namespace)}`,
+    `ws://${agentServiceAddress(agentId, namespace)}`,
 ): TerminalRelay {
   const stamper = createActivityStamper(repo);
   const replicaId = randomUUID();
@@ -91,9 +95,11 @@ export function createTerminalRelay(
       process.stderr.write(
         `[terminal-relay] failed to connect: ${(err as Error)?.message ?? err}\n`,
       );
-      return isAgentWakeTimeoutError(err)
-        ? `agent not ready: ${err.failure.kind}`
-        : "failed to connect to agent";
+      if (isAgentWakeTimeoutError(err))
+        return `${AGENT_NOT_READY_REASON}: ${err.failure.kind}`;
+      if (isAgentStoppedError(err))
+        return `${AGENT_NOT_READY_REASON}: ${err.disabled ? "disabled" : "stopped"}`;
+      return "failed to connect to agent";
     },
     closeOnUpstreamClose: (code, reason) => ({
       code: sanitizeCloseCode(code),

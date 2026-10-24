@@ -2,7 +2,10 @@
 #MISE description="Stop the k3s VM (preserves data)"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-if [ -n "${IS_SANDBOX:-}" ]; then
+if [ "$CLUSTER_TARGET" = environment ]; then
+  # Only k3s: the Environment itself sleeps on its own once nothing uses it.
+  env_k3s stop
+elif [ -n "${IS_SANDBOX:-}" ]; then
   if [ -d /run/systemd/system ] && [ ! -x /etc/init.d/k3s ]; then
     as_root systemctl stop k3s
   else

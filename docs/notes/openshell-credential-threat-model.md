@@ -2,6 +2,10 @@
 
 Last verified: 2026-08-04
 
+Status: historical note, 2026-08-04.
+It compares two Kata-isolated agent pods, an agent pod and its gateway pod, which was the platform's architecture when it was written.
+Agents are smolvm machines today and the gateway is a pod of its own, so read it as the record of that design, not as a description of the platform.
+
 A code-cited comparison of where real credentials live in NVIDIA OpenShell vs. our paired-pod design, and what an agent running untrusted code can actually do to reach them under each model.
 Written to address a specific claim heard in the wild: that **OpenShell injects credentials at the gateway** and/or that **the agent ends up with the real bearer token in its environment**.
 Both readings are wrong on the code; the more interesting question is what each model is actually robust against.

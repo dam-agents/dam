@@ -4,6 +4,10 @@
 #USAGE flag "--force" help="Skip the confirmation prompt"
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+if [ "$CLUSTER_TARGET" = environment ]; then
+  echo "An Environment's cluster goes with the Environment: delete it with the delete_environment tool, or uninstall the chart with cluster:uninstall." >&2
+  exit 1
+fi
 
 if [ "${usage_force:-}" != true ]; then
   if [ -n "${IS_SANDBOX:-}" ]; then

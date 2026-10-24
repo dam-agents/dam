@@ -5,7 +5,7 @@ set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
+if [ "$CLUSTER_TARGET" = lima ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
   echo "k3s VM '$LIMA_INSTANCE' does not exist — nothing to prune."
   exit 0
 fi
@@ -14,11 +14,12 @@ echo "== k3s VM =="
 # cluster:import and image:stage-vm copy image tars into the guest's /tmp and
 # remove them after, but a run interrupted in between leaves one behind. In
 # the sandbox they import in place, from the repo.
-[ -n "${IS_SANDBOX:-}" ] || limactl shell "$LIMA_INSTANCE" bash -c 'sudo rm -f /tmp/*.tar'
+[ "$CLUSTER_TARGET" != lima ] || limactl shell "$LIMA_INSTANCE" bash -c 'sudo rm -f /tmp/*.tar'
 # The same prune the load tasks run.
 prune_dangling_images
-if [ -n "${IS_SANDBOX:-}" ]; then
-  df -h /
-else
-  limactl shell "$LIMA_INSTANCE" df -h /
-fi
+# k3s keeps its data in the home on an Environment, the one path on its disk.
+case "$CLUSTER_TARGET" in
+  environment) node_sh df -h /home/agent ;;
+  host) df -h / ;;
+  lima) limactl shell "$LIMA_INSTANCE" df -h / ;;
+esac

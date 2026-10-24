@@ -19,9 +19,6 @@ controller:
     tag: latest
     pullPolicy: Never
   logLevel: debug
-  agent:
-    templateDefaults:
-      imagePullPolicy: IfNotPresent
 
   # Room for one driver (2 CPU / 3Gi) plus one heavy nous worker
   # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
@@ -44,10 +41,9 @@ controller:
     defaultCpu: "6"
     defaultMemory: "14Gi"
 
-# The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
-# nested virtualization, handed to the pod as `squat.ai/kvm` by the device
-# plugin cluster:install applies from helm/extra/kvm-device-plugin.yaml.
-# Rendered only with virtualization.enabled.
+# The VM runner in the lima k3s VM: /dev/kvm comes from lima's nested
+# virtualization, handed to the pod as `squat.ai/kvm` by the device plugin
+# cluster:install applies from helm/extra/kvm-device-plugin.yaml.
 virtualization:
   runner:
     image:

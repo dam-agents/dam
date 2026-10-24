@@ -1,6 +1,6 @@
 import type { ClientConnection } from "@agentclientprotocol/sdk";
 import {
-  type PodSession,
+  type Session,
   type SessionListCursor,
   type SessionListQuery,
   sessionMatchesQuery,
@@ -124,7 +124,7 @@ async function listSessionsOn(
     .sort(byRecencyThenId);
 }
 
-const POD_TYPE: Record<PodSession["type"], SessionType> = {
+const SESSION_TYPE: Record<Session["type"], SessionType> = {
   regular: SessionType.Regular,
   channel_slack: SessionType.ChannelSlack,
   channel_telegram: SessionType.ChannelTelegram,
@@ -134,17 +134,17 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   invocation: SessionType.Invocation,
 };
 
-const POD_MODE: Record<PodSession["mode"], SessionMode> = {
+const SESSION_MODE: Record<Session["mode"], SessionMode> = {
   chat: SessionMode.Chat,
   terminal: SessionMode.Terminal,
 };
 
-function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
+function toSessionViewFromApi(agentId: string, s: Session): SessionView {
   return {
     sessionId: s.sessionId,
     agentId,
-    type: POD_TYPE[s.type],
-    mode: POD_MODE[s.mode],
+    type: SESSION_TYPE[s.type],
+    mode: SESSION_MODE[s.mode],
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
     initialization: s.initialization ?? null,
@@ -190,7 +190,7 @@ export async function listAgentSessionPage(
   const page = await agentTrpc(agentId).sessions.list.query(query);
   return {
     sessions: page.sessions
-      .map((s) => toSessionViewFromPod(agentId, s))
+      .map((s) => toSessionViewFromApi(agentId, s))
       .filter((s) => sessionMatchesQuery(s, query))
       .sort(byRecencyThenId),
     nextCursor: page.nextCursor ?? null,

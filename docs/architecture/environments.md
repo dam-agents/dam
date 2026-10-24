@@ -1,6 +1,6 @@
 # Environments
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -9,13 +9,13 @@ The Agent that creates it is its **Owning Agent**.
 Users see an Environment as its own kind of thing under its agent, never as an agent: it is left out of every agent list, picker and count, and shows only with its Owning Agent, as an Environment.
 The api-server's agent list leaves it out, so the app, the CLI and an API key's agent picker never show it; it is still found by id.
 
-The feature is behind the per-user `environments` [feature](features.md), offered only on an install that runs microVMs.
+The feature is behind the per-user `environments` [feature](features.md).
 
 ## What an Environment is
 
 Underneath, an Environment is an ordinary Agent record with one more field, `environmentOf`, naming the Owning Agent.
-The cluster refuses to add, remove or change that field after create, and refuses it on any backend but `vm`.
-So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owning Agent, and every other part of the platform treats it as a vm Agent: its gateway, wake and sleep, budget and storage pool, relays and telemetry.
+The cluster refuses to add, remove or change that field after create.
+So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owning Agent, and every other part of the platform treats it as an Agent: its gateway, wake and sleep, budget and storage pool, relays and telemetry.
 
 It is created with nothing that would let it act as its Owning Agent:
 
@@ -27,12 +27,12 @@ A row in the `environments` table holds what only this module reads: its name am
 
 ## Lifecycle
 
-- **Create.** Only a vm Agent can own Environments; an Environment cannot own one.
+- **Create.** Only an Agent can own Environments; an Environment cannot own one.
   An agent holds at most `environments.maxPerAgent` of them (default 5), each name once.
   The Agent is named `<owning agent> · <name>`, which keeps it unique among the owner's agents.
   If the row cannot be written, the Agent is deleted again.
 - **Start.** A `start` command is delivered once, as a workspace command, that writes it as a [Startup Item](agent-processes.md#startup-items), an openrc user service, which then runs at every boot.
-- **Sleep.** An Environment sleeps like any vm sandbox, after the install's idle time, and keeps its disk; there is no setting of its own.
+- **Sleep.** An Environment sleeps like any machine, after the install's idle time, and keeps its disk; there is no setting of its own.
 - **Expiry.** Every Environment has an expiry, a week by default and at most `environments.expiryMaxDays` ahead (default 30); a later date is cut to the maximum.
   The Owning Agent and the owner set and extend it, and a sweep every five minutes deletes an Environment whose expiry passed.
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
@@ -47,7 +47,7 @@ The link is one-way: only the Owning Agent's machine can open it, the runner joi
   `scp`, `ssh -L` and streaming an image in, `docker save IMAGE | ssh env-<name> k3s ctr images import -`, work as with any host.
 - **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it until it next boots; only the Owning Agent reaches the link, so the link itself is the authorization.
 - **On the Environment**, an openrc service of the image, `platform-env`, runs `socat` on the vsock port, which hands each connection to a short script that trusts the key and runs `sshd -i`; it starts only on a machine that is an Environment.
-  A shell gets the gateway and CA settings an openrc service gets, so `docker` and `k3s` pull as they do at boot.
+  A shell gets what an openrc service gets of the machine's environment: the image's tool `PATH`, the gateway and CA settings, so `docker` and `k3s` pull as they do at boot, the image's `XDG_RUNTIME_DIR`, where `rc-service --user` finds the agent's own services, and `MISE_SYSTEM_DATA_DIR`, where a login shell's mise finds the image's tools.
 - **An open link keeps both machines awake.** The proxy on the agent and the script `socat` starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
 
 The agent's side is a small Python helper, since Node has no vsock, and both sides carry the bytes with `socat`.
@@ -121,16 +121,34 @@ Its host names differ from the public ones, which the chart and the api-server b
   The Environments front door is on the public share host alone.
   Links the platform writes into messages and tool results stay on the public addresses.
 
+`mise run cluster:install -- --environment <name>` installs or upgrades the platform in an Environment from a checkout, the same way every time (the `cluster-ops` skill has the steps).
+The cluster tasks then act on the Environment's k3s instead of their own host's: the node over the link, the API through a tunnel the tasks open and reuse.
+The public URLs are the Environment's `app`, `keycloak`, `share` and `content` endpoints, all on one port; the install stops, naming what to create, when one is missing.
+It runs no mesh, which the Environment's kernel cannot.
+Every Agent is a machine on a VM runner, so the install needs the Environment's guest to open `/dev/kvm`.
+Nothing in the create asks for nesting, so the Environment's machine nests only when the install that owns it sets `controller.agent.templateDefaults.nestedVirtualization` and lets its runners nest, on a node whose KVM allows it.
+An Environment without it refuses the install and names that.
+Each image whose source the registry already has is pulled by the Environment itself, and only a changed one is built by the agent and streamed in over the link.
+Beside the chart it installs two pieces the gate needs:
+
+- **A host-name bridge** on the endpoints' port: the gate relays every endpoint to that one loopback port with `Host: 127.0.0.1:<port>`, while the cluster's ingress routes by host name, so the bridge restores the host from `X-Forwarded-Host` and names the public scheme and port.
+- **Trusted forwarded headers** on the ingress's app entrypoint, which only the Environment's loopback reaches, so Keycloak learns the browser uses HTTPS and sets its cookies `Secure`.
+
+`--backchannel` turns the backchannel on, and `mise run cluster:open -- --environment <name> --port <port>` forwards its port (4444 unless `--backchannel-port` moved it) over the link to the agent's machine.
+
 ## Surfaces
 
-**The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to a vm Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
+**The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to an Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
-In the app, a vm agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
+In the app, an agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, at most 50, edited once it has loaded, and a row per Environment with each endpoint's link, whether it runs, its expiry, how many of the list may open it, and the owner's controls to extend and delete it.
+The section is in the page's section navigation only once the agent has an Environment, since the agent creates them and an empty one teaches nothing, and it stays at its own address with its empty text, so a stale link still works.
+While the agent has none, the Manage card of its General section links to the section, because the list of people can be set before the first Environment exists and is the list that first Environment inherits.
 What an Environment runs, its Startup Items and their output, is not shown there yet.
-The sidebar lists an agent's Environments under it, once it is expanded: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
-With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, the section's empty text when there is none, and a link to the section, where the list of people is edited.
+The sidebar lists an agent's Environments under it, once it is expanded and only once it has one: a row each, with whether it runs, that opens the Environments section, and a link per endpoint that opens the app in a new tab.
+With the JanUI experiment on ([home-feed.md](home-feed.md#the-janui-experiment)), the sidebar tree lists none, and the agent's chat has an **Environments** tab in its side panel instead, once the agent has one: the same row per Environment as the section, with its links, whether it runs, its expiry and the extend and delete controls, and a link to the section, where the list of people is edited.
 The owner creates none there; the agent does.
+Every Environments surface refreshes when one is created or deleted elsewhere, since an Environment is created as an Agent and its owner's agent hint refetches the list that decides whether they show; the hint sent at its create can arrive before its row is written, and the status hints that follow catch up.
 
 The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.

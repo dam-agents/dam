@@ -39,8 +39,9 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["agents/status"]
     verbs: ["get", "update", "patch"]
-  # The children the controller renders (Envoy bootstrap CM, StatefulSets,
-  # Services, …) are owner-refed to the Agent CR with blockOwnerDeletion.
+  # The children the controller renders (Envoy bootstrap CM, runner
+  # Deployments, Services, …) are owner-refed to the Agent CR with
+  # blockOwnerDeletion.
   # K8s admission only permits that if the creator can update the owner's
   # finalizers, so the controller needs the agents finalizers subresource.
   # (Previously the children were owned by the agent ConfigMap, hence the old
@@ -82,22 +83,16 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if .Values.virtualization.enabled }}
-  # vm agents: the controller runs one VM runner per owner, so it creates and
-  # removes those Deployments itself (see `virtualization` in values.yaml).
-  # Gated, because on a split-namespace install this is a ClusterRole and
-  # Deployment write includes the platform's own Deployments.
+  # Every agent runs on a VM runner, and the controller runs one per owner, so
+  # it creates and removes those Deployments itself (see `virtualization` in
+  # values.yaml). Gated, because on a split-namespace install this is a
+  # ClusterRole and Deployment write includes the platform's own Deployments.
   # Read-only, and only to explain a failure the agent's status should name:
   # why a VM runner is not ready (its Deployment reports zero ready replicas
-  # and nothing else, while the pod carries the scheduling or image failure),
-  # and why a runtime migration's copy Job failed (its pod's termination
-  # message is the copy's own error).
+  # and nothing else, while the pod carries the scheduling or image failure).
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
-  # A runtime migration reports its steps as Events on the Agent, and reads
-  # the Events of its copy Job's pod to say why that pod is not starting
-  # (a volume that will not attach, a pod the scheduler cannot place).
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["list", "create"]
@@ -128,10 +123,6 @@ rules:
   - apiGroups: ["apps"]
     resources: ["replicasets"]
     verbs: ["list"]
-{{- end }}
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -142,43 +133,23 @@ rules:
     resources: ["endpointslices"]
     verbs: ["get", "create", "update"]
 
-  # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
-  # pool (#692) additionally creates pre-provisioned spares and updates them to
-  # claim one for a new agent (relabel), so create/update/patch are required
-  # when it's enabled — harmless to grant unconditionally.
+  # Machine disks: reclaiming an owner's orphaned claims and the runner's own
+  # pool of them.
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
-  # Read-only StorageClass access so the warm pool can warn at startup when its
-  # configured class binds WaitForFirstConsumer (which defeats pre-warming).
-  # Best-effort: the manager degrades to a logged warning without this (e.g.
-  # under namespace-scoped RBAC, where cluster-scoped StorageClasses aren't
-  # grantable).
-  - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses"]
-    verbs: ["get", "list"]
-  # A runtime migration clones a home volume only when a CSI driver serves it,
-  # which only its PersistentVolume says.
   - apiGroups: [""]
-    resources: ["persistentvolumes"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    # Run executor pods are bare Pods, not StatefulSets, so the controller
-    # needs full CRUD on pods in the agent namespace to bring them up and
-    # tear them down. Owner-refed to the Run CR.
+    # A gateway pod on a superseded revision is deleted, and a rotated
+    # credential is announced by patching the pod's annotations so the kubelet
+    # syncs its Secret volumes at once.
     resources: ["pods"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["get", "list", "watch", "delete", "patch"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if or .Values.virtualization.enabled (and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- end }}
 ---
 # CRDs are cluster-scoped, so the startup schema assert needs a
 # ClusterRole even under otherwise namespace-scoped RBAC; resourceNames limits
@@ -211,47 +182,6 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "platform.controller.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
-{{- if and .Values.virtualization.enabled (not $clusterScoped) }}
----
-# StorageClasses are cluster-scoped, so a namespace-scoped install needs this
-# read-only grant for the warm pool's and the storage migration's class
-# checks; a runner's claim is always created at its owner's storage pool and
-# reads no class. A runtime migration clones a home volume only when a CSI
-# driver serves it,
-# which only its cluster-scoped PersistentVolume says; without that grant the
-# copy reads the volume in place.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: controller
-rules:
-  - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["persistentvolumes"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: controller
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "platform.controller.serviceAccountName" . }}-storageclass-read
-subjects:
-  - kind: ServiceAccount
-    name: {{ include "platform.controller.serviceAccountName" . }}
-    namespace: {{ .Release.Namespace }}
-{{- end }}
-{{- if .Values.virtualization.enabled }}
 ---
 # Nodes are cluster-scoped, so the vm preflight needs a ClusterRole even under
 # otherwise namespace-scoped RBAC. Read-only, and only to check that some node
@@ -291,7 +221,6 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "platform.controller.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
-{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if $clusterScoped }}

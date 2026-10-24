@@ -1,10 +1,10 @@
-import type { PodSession } from "agent-runtime-api";
+import type { Session } from "agent-runtime-api";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import type { AttentionRecordRow } from "../../modules/attention/domain/types.js";
 import type { AttentionRepository } from "../../modules/attention/infrastructure/attention-repository.js";
-import { createPodSessionClient } from "../../modules/attention/infrastructure/pod-session-watch.js";
+import { createSessionWatchClient } from "../../modules/attention/infrastructure/session-watch-client.js";
 import { createSessionWatcher } from "../../modules/attention/services/session-watcher.js";
 
 /*
@@ -21,7 +21,7 @@ function session(
   sessionId: string,
   updatedAt: string | null,
   threadTs: string | null = null,
-): PodSession {
+): Session {
   return {
     sessionId,
     mode: "chat",
@@ -62,14 +62,14 @@ interface Harness {
   upserted: string[];
   deleted: string[][];
   reads: number;
-  setSessions: (sessions: PodSession[], incomplete?: boolean) => void;
+  setSessions: (sessions: Session[], incomplete?: boolean) => void;
   failNextWrite: () => void;
   settleRead: () => void;
   holdReads: (held: boolean) => void;
 }
 
 function harness(): Harness {
-  let listed: PodSession[] = [];
+  let listed: Session[] = [];
   let incomplete = false;
   let onNotice: () => void = () => {};
   let failWrite = false;
@@ -127,7 +127,7 @@ function harness(): Harness {
     listAgents: async () => [agent("a1", "owner-1")],
     runtimeFeaturesFor: async () =>
       new Map([["a1", { liveUpdates: true } as never]]),
-    pods: {
+    sessions: {
       watchAgent: (_agentId, notice) => {
         onNotice = notice;
         return { close: () => {}, listSessions: read };
@@ -141,7 +141,7 @@ function harness(): Harness {
   return Object.assign(state, {
     watcher,
     notify: () => onNotice(),
-    setSessions: (sessions: PodSession[], partial = false) => {
+    setSessions: (sessions: Session[], partial = false) => {
       listed = sessions;
       incomplete = partial;
     },
@@ -172,7 +172,7 @@ describe("createSessionWatcher", () => {
   });
 
   /*
-   * TEST_SCENARIO: two notices arrive while a pod read is still in flight. A
+   * TEST_SCENARIO: two notices arrive while a runtime read is still in flight. A
    * second capture must not start beside the first — two in flight can
    * interleave and let the slower one delete rows the newer list already
    * wrote — but the last notice must still be honored once the first pass
@@ -338,9 +338,10 @@ describe("createSessionWatcher", () => {
 
   /*
    * TEST_SCENARIO: an Agent is deleted seconds after it was created, before its
-   * pod ever answered. It has no live updates yet, so it is polled, and the
-   * poll's read is still waiting on a pod that will never exist. The delete
-   * must end that read, or its socket retries until the process restarts.
+   * runtime ever answered. It has no live updates yet, so it is polled, and
+   * the poll's read is still waiting on a runtime that will never exist. The
+   * delete must end that read, or its socket retries until the process
+   * restarts.
    */
   it("aborts a polled agent's read when the agent is deleted", async () => {
     let agents = [agent("a1", "owner-1")];
@@ -348,7 +349,7 @@ describe("createSessionWatcher", () => {
     const watcher = createSessionWatcher({
       listAgents: async () => agents,
       runtimeFeaturesFor: async () => new Map(),
-      pods: {
+      sessions: {
         watchAgent: () => {
           throw new Error("a polled agent opens no watch");
         },
@@ -374,22 +375,22 @@ describe("createSessionWatcher", () => {
   });
 });
 
-describe("createPodSessionClient", () => {
+describe("createSessionWatchClient", () => {
   const dials: string[] = [];
 
-  class UnreachablePodSocket extends EventTarget {
+  class UnreachableRuntimeSocket extends EventTarget {
     static readonly CONNECTING = 0;
     static readonly OPEN = 1;
     static readonly CLOSING = 2;
     static readonly CLOSED = 3;
-    readyState = UnreachablePodSocket.CONNECTING;
+    readyState = UnreachableRuntimeSocket.CONNECTING;
     binaryType = "blob";
 
     constructor(url: string) {
       super();
       dials.push(url);
       setTimeout(() => {
-        this.readyState = UnreachablePodSocket.CLOSED;
+        this.readyState = UnreachableRuntimeSocket.CLOSED;
         this.dispatchEvent(new Event("error"));
         this.dispatchEvent(new Event("close"));
       }, 0);
@@ -398,7 +399,7 @@ describe("createPodSessionClient", () => {
     send() {}
 
     close() {
-      this.readyState = UnreachablePodSocket.CLOSED;
+      this.readyState = UnreachableRuntimeSocket.CLOSED;
     }
   }
 
@@ -407,7 +408,7 @@ describe("createPodSessionClient", () => {
   });
 
   /*
-   * TEST_SCENARIO: a one-off read targets an Agent whose pod cannot be
+   * TEST_SCENARIO: a one-off read targets an Agent whose runtime cannot be
    * reached. Once the caller gives up, the read must fail and its socket must
    * stop retrying, rather than keep dialling a name that no longer resolves.
    * A dial already in flight at the abort may still fail once, so the count
@@ -416,14 +417,14 @@ describe("createPodSessionClient", () => {
    */
   it("stops a read and its retries when the caller aborts", async () => {
     const errors: string[] = [];
-    const pods = createPodSessionClient(
+    const sessions = createSessionWatchClient(
       "no-such-namespace.invalid",
       (m) => errors.push(m),
-      UnreachablePodSocket as unknown as typeof WebSocket,
+      UnreachableRuntimeSocket as unknown as typeof WebSocket,
     );
     const reads = new AbortController();
 
-    const read = pods.listSessions("agent-gone", reads.signal);
+    const read = sessions.listSessions("agent-gone", reads.signal);
     await vi.waitFor(() => expect(errors.length).toBeGreaterThan(0));
     reads.abort();
     await expect(read).rejects.toThrow();
@@ -439,7 +440,7 @@ describe("createPodSessionClient", () => {
     expect(dials.length).toBe(seenDials);
   }, 15_000);
   /*
-   * TEST_SCENARIO: a live watch's read targets a pod that stops answering.
+   * TEST_SCENARIO: a live watch's read targets a runtime that stops answering.
    * The read must be bounded like a one-off read, so a capture cannot wait on
    * it until the watch is released. The bound is stubbed so the test does not
    * wait the real ten seconds.
@@ -449,12 +450,12 @@ describe("createPodSessionClient", () => {
     const timeout = vi
       .spyOn(AbortSignal, "timeout")
       .mockReturnValue(bound.signal);
-    const pods = createPodSessionClient(
+    const sessions = createSessionWatchClient(
       "no-such-namespace.invalid",
       () => {},
-      UnreachablePodSocket as unknown as typeof WebSocket,
+      UnreachableRuntimeSocket as unknown as typeof WebSocket,
     );
-    const watch = pods.watchAgent("agent-gone", () => {});
+    const watch = sessions.watchAgent("agent-gone", () => {});
 
     try {
       const read = watch.listSessions();

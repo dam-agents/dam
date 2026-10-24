@@ -107,8 +107,6 @@ export type {
   SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
-  RuntimeMigration,
-  RuntimeMigrationPhase,
   ConnectSlackResult,
   BindSlackChannelResult,
   BindTelegramChatResult,
@@ -613,6 +611,7 @@ export {
   connectionCreateInputSchema,
   connectionHeaderNameSchema,
   connectionNameSchema,
+  secretlessConnectionCreateInputSchema,
 } from "./modules/connections/schemas.js";
 export type {
   ConnectionCreateInput,
@@ -665,6 +664,23 @@ export {
   decodeFrame,
 } from "./modules/terminal/protocol.js";
 
+export {
+  AGENT_NOT_READY_REASON,
+  DEFAULT_RECONNECT_POLICY,
+  RECONNECT_BACKOFF_MS,
+  RECONNECT_GIVE_UP_MS,
+  describeTerminalDrop,
+  nextReconnectDelay,
+  planReconnect,
+  terminalDropRetries,
+} from "./modules/terminal/reconnect.js";
+export type {
+  ReconnectClock,
+  ReconnectPolicy,
+  ReconnectStep,
+  TerminalDrop,
+} from "./modules/terminal/reconnect.js";
+
 export type {
   LocalSkill,
   ScanFailure,
@@ -714,6 +730,7 @@ export type {
   ApprovalVerdict,
   ApprovalPayload,
   SpendLimitPayload,
+  EgressProposalPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -722,6 +739,11 @@ export type {
   ApprovalActionOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
+export {
+  EGRESS_PROPOSAL_REASON_MAX,
+  egressProposalInputSchema,
+} from "./modules/approvals/schemas.js";
+export type { EgressProposalInput } from "./modules/approvals/schemas.js";
 export {
   acpNativeRowId,
   permissionOptionKindsOf,

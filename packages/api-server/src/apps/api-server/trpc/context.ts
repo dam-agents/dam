@@ -46,6 +46,7 @@ import {
   composeConnectionsForOwner,
   composeSecretRequestsForOwner,
 } from "../../../modules/connections/compose.js";
+import { oauthCallbackUrl } from "../../../modules/connections/domain/oauth-callback-url.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
 import { composeAttentionService } from "../../../modules/attention/compose.js";
 import { createApprovalsRepository } from "../../../modules/approvals/infrastructure/approvals-repository.js";
@@ -137,7 +138,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
-      oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
+      oauthCallbackUrl: oauthCallbackUrl(config.uiBaseUrl),
       brandName: config.brand.name,
       curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses,
@@ -152,23 +153,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentName: async (agentId) =>
         (await agentsRepo.get(agentId, user.sub))?.name ?? null,
     });
-    const { budgets, resizeGate, storageGate } = composeBudgetsModule({
+    const { budgets, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
-      listAgents: () => agentsRepo.list(user.sub),
-      defaultCeiling: {
-        cpu: config.defaultUserCpuBudget,
-        memory: config.defaultUserMemoryBudget,
-      },
-      slotSize: defaultLimits,
+      listAgentIds: async () =>
+        (await agentsRepo.list(user.sub)).map((a) => a.id),
       isSlackUnlinked: async () =>
         channelManager.availableChannels()[ChannelType.Slack] === true &&
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
-      vmPool: {
-        storage: config.vmPoolStorage,
-        memory: config.vmPoolMemory,
-      },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -178,7 +171,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,
       install: agentsInstallSettings(config),
-      resizeGate,
       storageGate,
       owner: user.sub,
       db,
@@ -303,7 +295,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       linkedKits,
-      virtualizationEnabled: config.virtualizationEnabled,
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
           agentId,
@@ -469,7 +460,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,
-      virtualizationEnabled: config.virtualizationEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
     };

@@ -120,8 +120,12 @@ describe("which tab the side panel shows", () => {
 });
 
 describe("the Environments tab", () => {
-  it("TEST_SCENARIO: JanUI's chat of a vm agent with the feature on has an Environments tab; the current layout, the feature off or a container agent has none, so a tab left open there closes", () => {
-    const shown = (o: { newLayout: boolean; enabled: boolean; vm: boolean }) =>
+  it("TEST_SCENARIO: JanUI's chat of an agent that owns an Environment, with the feature on, has an Environments tab; the current layout, the feature off, or an agent with none yet has none, so a tab left open there closes", () => {
+    const shown = (o: {
+      newLayout: boolean;
+      enabled: boolean;
+      count: number | undefined;
+    }) =>
       hiddenSidePanelTabs({
         agent: true,
         artifacts: true,
@@ -135,13 +139,14 @@ describe("the Environments tab", () => {
       visibleSidePanelTab(
         "environments",
         NOTHING_DOCKED,
-        shown({ newLayout: true, enabled: true, vm: true }),
+        shown({ newLayout: true, enabled: true, count: 1 }),
       ),
     ).toBe("environments");
     for (const off of [
-      { newLayout: false, enabled: true, vm: true },
-      { newLayout: true, enabled: false, vm: true },
-      { newLayout: true, enabled: true, vm: false },
+      { newLayout: false, enabled: true, count: 1 },
+      { newLayout: true, enabled: false, count: 1 },
+      { newLayout: true, enabled: true, count: 0 },
+      { newLayout: true, enabled: true, count: undefined },
     ])
       expect(
         visibleSidePanelTab("environments", NOTHING_DOCKED, shown(off)),

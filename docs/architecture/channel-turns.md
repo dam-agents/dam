@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-21
+Last verified: 2026-10-23
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -15,13 +15,13 @@ sequenceDiagram
   participant M as Messenger API
   participant W as Worker<br/>(Slack/Telegram)
   participant API as api-server relay
-  participant POD as agent pod
+  participant MACH as machine
 
   U->>M: post message in thread
   M-->>W: event delivery<br/>(Socket Mode / long-poll)
   W->>W: identity / auth checks
   W->>API: ACP session/list
-  API-->>W: sessions + platform meta<br/>(wakes pod if hibernated)
+  API-->>W: sessions + platform meta<br/>(wakes the Agent if hibernated)
   alt a session's thread key matches
     W->>M: Slack only: read after this Agent's last turn
     M-->>W: messages it has not seen
@@ -31,12 +31,12 @@ sequenceDiagram
     API-->>W: sessionId
     W->>API: ACP session/prompt<br/>(thread history as context)
   end
-  API->>POD: relay frames<br/>(wake if hibernated)
-  POD->>API: reply / react tool call<br/>(outbound MCP, see below)
+  API->>MACH: relay frames<br/>(wake if hibernated)
+  MACH->>API: reply / react tool call<br/>(outbound MCP, see below)
   API->>W: reply(threadTs, text) / react
   W->>M: post reply in thread
   M-->>U: reply visible
-  Note over POD,W: plain assistant text is not posted;<br/>the agent must call a tool
+  Note over MACH,W: plain assistant text is not posted;<br/>the agent must call a tool
 ```
 
 A few observations the diagram glosses over:
@@ -66,14 +66,13 @@ A few observations the diagram glosses over:
   That makes an asking mode unusable for a channel-bound Agent on such a harness rather than merely strict, which is a property of the harness and belongs in its own configuration copy.
   Both answers are recorded in the security log ([logging](logging.md)), so a turn that quietly did less than it was asked stays diagnosable afterwards.
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI.
-  Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
-- **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note once and keeps waiting while the cause stays transient, bounded by elapsed time, so a healthy-but-slow start never loses the turn.
-  A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
+  Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the Agent ([agent-lifecycle](agent-lifecycle.md), §Wake).
+- **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the machine is still progressing posts a still-starting note once and keeps waiting while the cause stays transient, bounded by elapsed time, so a healthy-but-slow start never loses the turn.
+  A hard failure (a machine that restarts, a bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
-  An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that an operator has to finish or undo the move.
   Telegram replies with the same copy on wake failures (no early notice, no extended wait), on addressed turns only: an ambient turn fails silently, as on Slack.
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
-  The relay hands the message to the pod and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
+  The relay hands the message to the machine and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
   It also situates the turn: the bot's identity, when the message was sent, which kind of conversation it is, and a permalink where Slack resolves one.
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
@@ -94,10 +93,10 @@ A few observations the diagram glosses over:
   A Stop that arrives after the turn ended only clears the status.
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
-  A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
+  A resume that fails (the home does not hold it, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
   A fresh session opens on the Agent's channel default harness, provider, model and settings, which is the chat default unless the owner saved one for channels ([harness configuration](harness-config.md)); with no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the Providers page, and when no granted provider fits, it fails rather than running elsewhere.
   A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.
-  A thread's session follows the channel default from its next turn unless someone picked its model or settings by hand ([sessions](sessions.md#session-inside-the-pod)).
+  A thread's session follows the channel default from its next turn unless someone picked its model or settings by hand ([sessions](sessions.md#session-inside-the-machine)).
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
   A resuming turn therefore also carries what arrived after its own last turn, labelled as above and marked unseen: its own posts stay out, and nothing new means no block.
   Catch-up looks strictly backward from the turn's own messages — anything sent after them is already queued for a turn of its own and is never presented as missed.
@@ -173,7 +172,7 @@ An addressed turn that fails is answered in plain language keyed to what happene
 The failure reason still rides the turn event either way.
 
 An abandoned turn is handed to the **recovery watch**, which polls the session's run status for as long as the runtime reports it alive.
-The work counts as over only on a positive signal: the runtime says the turn ended or that its own boot recovery gave the turn up, or the platform reports the pod gone — which under a running turn means the turn is over, because the idle checker never hibernates a pod holding one.
+The work counts as over only on a positive signal: the runtime says the turn ended or that its own boot recovery gave the turn up, or the platform reports the machine gone — which under a running turn means the turn is over, because the idle checker never hibernates a machine holding one.
 A failed status read is unknown and simply polled again; only a session that never shows life runs out the watch's rolling window.
 Once the work is over, delivery is judged by **how it ended, never by timing**: a turn that ended in-process made its full disposition and is nudged only when it posted and declined nothing — the same verdict a never-abandoned turn gets — while an interrupted turn never completed, so any interim post was a partial and it is nudged unless its silence was deliberate.
 The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
@@ -241,11 +240,14 @@ What the agent sees:
   Gated by the binding; the log records the message and tally, never who reacted.
   Slack only.
 - **Slack turn tools** — `reply`, `react`, and `hand_off_to_agent` — are how an Agent disposes of the turn it is handling.
-  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can: the text lands before the file, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
+  A reply may additionally surface in the channel (Slack's native "also send to channel"), off by default, and may carry one file, as `send_channel_message` can.
+  A message with a file is **one post**: the file is shared with the Agent's text and its footer on it, so the picture sits on the answer it belongs to rather than in a bare post of its own.
+  Slack's file share refuses a `markdown` block, so the text rides on it as mrkdwn `section` blocks converted from the Agent's Markdown.
+  Where one post cannot carry it — the reply also goes to the channel, the message turns link or media previews off, the text is too long for one post, or Slack refuses the share with the text on it — the text is posted first and the file shared after it, so an upload the workspace refuses still leaves the answer delivered, and is reported beside a success rather than as a failed post.
   A reply with only a file posts it as one message, and cannot also go to the channel.
   A thread-triggered turn is never nudged towards it: the thread is where the answer belongs, and surfacing it to the channel takes an explicit ask.
   The one turn still nudged is a coalesced batch of top-level messages, which has no thread the channel is already watching.
-  A single Agent pod multiplexes every thread over one harness process and one outbound MCP identity, so a `reply` or `react` call that does not name its target carries nothing to tell concurrent turns apart (a hand-off always names its thread): where the candidates disagree the worker **refuses and asks for the injected id** rather than guess — posting one thread's reply into another is the failure worth preventing.
+  A single machine multiplexes every thread over one harness process and one outbound MCP identity, so a `reply` or `react` call that does not name its target carries nothing to tell concurrent turns apart (a hand-off always names its thread): where the candidates disagree the worker **refuses and asks for the injected id** rather than guess — posting one thread's reply into another is the failure worth preventing.
   Where there is no candidate at all, because the turn finished or its lost relay aged out of the lingering record, the call is refused the same way rather than aimed at the thread the Agent used last; one that names its thread still lands.
   A call targeting a turn posts into that turn's own conversation, not whatever the Agent is bound to at call time, so a mid-turn rebind cannot redirect an in-flight reply.
 - **A whisper is answered privately.** Its prompt marks the message as whispered — by whom, from where — and tells the Agent to keep it out of anything others can read, in that turn or a later one ([channels](channels.md)).
@@ -299,7 +301,9 @@ Its owner removes one with `/platform delete <message link> [reason]`, naming th
 Nothing is rendered on the post and nothing is added to Slack's message menus, which is the whole point: a rendered button stands in front of everyone in the conversation although only one person may press it, and a message shortcut, the one affordance Slack draws without touching the post, is registered app-wide and so lands on every message in the workspace, agent or not.
 Only the Agent's owner may delete: the typist's identity link must resolve to the owner, and anyone unlinked is told to link first.
 The platform reads the linked message back from Slack to recover its footer, refusing a link it cannot resolve and one that names a post no Agent wrote.
-The owner then confirms in a Slack modal, with any reason they typed already filled in; the platform deletes the text first, then the files uploaded with it, whose ids ride in the post's **message metadata**: a file's id is reserved before its post, and its bytes are sent and the file shared after it, so the post never needs an edit and the text never waits for the upload.
+The owner then confirms in a Slack modal, with any reason they typed already filled in; the platform deletes the text first, then the files uploaded with it.
+A file shared with its text is part of that one post, so reading the post back names it.
+A text posted apart from its file carries the file's id in the post's **message metadata**: the id is reserved before the post, and the bytes are sent and the file shared after it, so the post never needs an edit.
 Metadata carries those ids because it is invisible in the client and comes back on a later read, where a button's value died with the button.
 A reply's session is then told once, with a short notice, unless the Agent is stopped; a top-level post names no session, so nobody is told.
 A post that is only an attachment, top-level or a thread reply, is a single file message instead: its footer block rides on the file itself, so its own link names the Agent, and the files it carries are deleted with it.

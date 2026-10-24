@@ -19,6 +19,10 @@ import {
   registerOAuthClient,
 } from "../infrastructure/mcp-discovery.js";
 import {
+  oauthClientSource,
+  platformOAuthClientName,
+} from "./client-id-metadata.js";
+import {
   AWS_CREDENTIALS_SECRET_FIELD,
   buildConnectionSdsFields,
   CONNECTION_TOKEN_PLACEHOLDER,
@@ -287,18 +291,23 @@ async function buildOAuthDcr(
     clientId = input.clientId;
     clientSecret = input.clientSecret;
   } else {
-    if (!meta.registrationEndpoint) {
+    const source = oauthClientSource(meta, oauthCallbackUrl);
+    if (!source) {
       throw new Error(
-        `MCP server at ${input.url} does not support dynamic client registration`,
+        `MCP server at ${input.url} supports neither dynamic client registration nor client ID metadata documents — enter a client ID registered with its authorization server`,
       );
     }
-    const dcr = await registerOAuthClient({
-      registrationEndpoint: meta.registrationEndpoint,
-      clientName: `${brandName} Agent Platform`,
-      redirectUris: [oauthCallbackUrl],
-    });
-    clientId = dcr.clientId;
-    clientSecret = dcr.clientSecret;
+    if (source.kind === "metadata-document") {
+      clientId = source.clientId;
+    } else {
+      const dcr = await registerOAuthClient({
+        registrationEndpoint: source.registrationEndpoint,
+        clientName: platformOAuthClientName(brandName),
+        redirectUris: [oauthCallbackUrl],
+      });
+      clientId = dcr.clientId;
+      clientSecret = dcr.clientSecret;
+    }
   }
 
   const secrets = new Map<string, Record<string, string>>();

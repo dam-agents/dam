@@ -22,7 +22,7 @@ const CODEX_INSTRUCTIONS_STUB = "You are Codex, a coding agent.";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a harness asks for its model list as soon as it
- * starts, before a fresh pod's first listing, and Codex caches an empty
+ * starts, before a fresh machine's first listing, and Codex caches an empty
  * answer for five minutes; so a catalog request waits this long for the first
  * listing, and still-empty answers 503, which a harness retries.
  */
