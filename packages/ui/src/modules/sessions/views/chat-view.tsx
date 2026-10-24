@@ -148,6 +148,7 @@ import {
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
 import { CurveBenderAlert } from "../components/curve-bender-alert.js";
+import { DocumentationPanel } from "../components/documentation-panel.js";
 import { JustAskHint } from "../components/just-ask-hint.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionOptions } from "../components/new-session-launcher.js";
@@ -1329,15 +1330,24 @@ export function ChatView() {
               {activeTab === "environments" && selectedAgent && (
                 <EnvironmentsPanel agentId={selectedAgent} className="flex-1" />
               )}
-              {isConfigPanelTab(activeTab) && selectedAgent && agentView && (
-                <ConfigSidePanel
-                  key={activeTab}
-                  tab={activeTab}
-                  agent={agentView}
-                  agentId={selectedAgent}
-                  onResumeSession={(id) => openAgentSession(selectedAgent, id)}
-                />
+              {activeTab === "documentation" && (
+                <DocumentationPanel className="flex-1" />
               )}
+              {isConfigPanelTab(activeTab) &&
+                selectedAgent &&
+                agentView &&
+                agentDisplay && (
+                  <ConfigSidePanel
+                    key={activeTab}
+                    tab={activeTab}
+                    agent={agentView}
+                    display={agentDisplay}
+                    agentId={selectedAgent}
+                    onResumeSession={(id) =>
+                      openAgentSession(selectedAgent, id)
+                    }
+                  />
+                )}
             </>
           }
           dock={dockPanel}

@@ -147,6 +147,10 @@ function MainApp() {
 
   const newLayout = useNewLayout();
   const rightToolbar = useUnifiedRightToolbar();
+  const setUnifiedToolbar = useStore((s) => s.setUnifiedToolbar);
+  useEffect(() => {
+    setUnifiedToolbar(rightToolbar);
+  }, [rightToolbar, setUnifiedToolbar]);
   useEffect(() => {
     if (newLayout) document.documentElement.dataset.layout = "new";
     else delete document.documentElement.dataset.layout;

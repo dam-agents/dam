@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: JanUI's Environments tab of an agent's chat side panel lists that agent's Environments as the cards of its Environments section — name, whether it runs, expiry, a link per endpoint that opens in a new tab, and the owner's extend and delete controls — and links to the section, where who may open them is edited; the tab shows only once the agent owns one, so it shows Loading while another agent's list arrives.
+// TEST_OVERVIEW: JanUI's Environments tab of an agent's chat side panel lists that agent's Environments as the cards of its Environments section — name, whether it runs, expiry, a link per endpoint that opens in a new tab, and the owner's extend and delete controls — and edits who may open them in place, above the cards. The tab shows only once the agent owns one, so it shows Loading while another agent's list arrives.
 import type { EnvironmentView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,6 +20,7 @@ vi.mock("../../modules/environments/api/queries.js", () => ({
       isPending: state.pending,
     };
   },
+  useEnvironmentAccessList: () => ({ data: [], isPending: false }),
 }));
 vi.mock("../../modules/environments/api/mutations.js", () => ({
   useExtendEnvironment: () => ({ mutate: vi.fn(), isPending: false }),
@@ -73,7 +74,7 @@ it("lists the agent's Environments as their cards", () => {
   expect(html).toContain('href="https://app-pr-42-abcdef.env.example.com"');
   expect(html).toContain('target="_blank"');
   expect(html).toContain('aria-label="Actions for pr-42"');
-  expect(html).toContain('data-testid="environments-panel-manage"');
+  expect(html).toContain('data-testid="environment-access"');
 });
 
 // TEST_SCENARIO: switching to another vm agent's chat keeps the tab open while that agent's list arrives, so the panel says it is loading rather than closing and reopening.

@@ -2,15 +2,20 @@ import {
   Book,
   Branch,
   type CarbonIconType,
+  ChatOperational,
   Cloud,
   DataStructured,
   DocumentAttachment,
   EventSchedule,
   Folder,
   Gears,
+  KeyValues,
   LogoSlack,
   MachineLearningModel,
+  Model,
+  Network_2,
   Notification,
+  SettingsAdjust,
   Task,
   Wikis,
 } from "@carbon/icons-react";
@@ -18,6 +23,12 @@ import { Fragment, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   RAIL_BADGE,
   RAIL_COLUMN,
@@ -28,9 +39,12 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { DOCS_URL } from "../../../constants.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
-import type { SidePanelTab } from "../lib/side-panel.js";
+import {
+  CONFIGURATION_TABS,
+  type ConfigurationTab,
+  type SidePanelTab,
+} from "../lib/side-panel.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the tiled rail is the Unified right toolbar's own surface, so its Artifacts tile draws the document icon whatever shell the page has; every other button that opens the panel, and every artifact link and list, keeps the layout's own icon.
 export const SIDE_PANEL_TABS: readonly {
@@ -49,19 +63,31 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
+  { tab: "agent", label: "Agent", icon: SettingsAdjust },
   { tab: "environments", label: "Environments", icon: Cloud },
   { tab: "connections", label: "Connections", icon: DataStructured },
   { tab: "channels", label: "Channels", icon: LogoSlack },
   { tab: "skills", label: "Skills", icon: MachineLearningModel },
   { tab: "schedules", label: "Schedules", icon: EventSchedule },
+  { tab: "providers", label: "Providers", icon: Model },
+  { tab: "network", label: "Network access", icon: Network_2 },
+  { tab: "environment", label: "Environment variables", icon: KeyValues },
+  { tab: "chat-forms", label: "Chat forms", icon: ChatOperational },
   { tab: "getting-started", label: "Get started", icon: Task },
+  { tab: "documentation", label: "Documentation", icon: Book },
   { tab: "approvals", label: "Approvals", icon: Notification },
 ];
 
 const APP_TABS: ReadonlySet<SidePanelTab> = new Set([
+  "documentation",
   "getting-started",
   "approvals",
 ]);
+
+const CONFIG_TABS: ReadonlySet<SidePanelTab> = new Set(CONFIGURATION_TABS);
+
+const CONFIG_TAB_ENTRY = (tab: SidePanelTab) =>
+  SIDE_PANEL_TABS.find((entry) => entry.tab === tab);
 
 export interface SidePanelBadge {
   count: number;
@@ -210,11 +236,27 @@ export function SidePanelBar({
     >
       <SidePanelTabButtons
         tabs={SIDE_PANEL_TABS.filter(
-          ({ tab }) => !APP_TABS.has(tab) && !hidden.has(tab),
+          ({ tab }) =>
+            !APP_TABS.has(tab) && !CONFIG_TABS.has(tab) && !hidden.has(tab),
         )}
         tiles={tiles}
         {...props}
       />
+      {tiles && (
+        <ConfigureTabs
+          hidden={hidden}
+          active={props.active}
+          onSelect={props.onSelect}
+        />
+      )}
+      {!tiles && (
+        <SidePanelTabButtons
+          tabs={SIDE_PANEL_TABS.filter(
+            ({ tab }) => CONFIG_TABS.has(tab) && !hidden.has(tab),
+          )}
+          {...props}
+        />
+      )}
       <div
         className={cn(
           "mt-auto flex flex-col",
@@ -228,7 +270,6 @@ export function SidePanelBar({
               tiles
               {...props}
             />
-            <DocsLink />
             <SidePanelTabButtons
               tabs={appTabs.filter((t) => t.tab === "approvals")}
               tiles
@@ -243,17 +284,66 @@ export function SidePanelBar({
   );
 }
 
-function DocsLink() {
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Agent's configuration, one rail tile that
+ * opens the list of its panels. The set grew past what the rail can hold one
+ * tile per surface, and a user still reaches every knob in one click fewer
+ * than the old page took.
+ */
+function ConfigureTabs({
+  hidden,
+  active,
+  onSelect,
+}: {
+  hidden: ReadonlySet<SidePanelTab>;
+  active: SidePanelTab | null;
+  onSelect: (tab: SidePanelTab) => void;
+}) {
+  const tabs = CONFIGURATION_TABS.filter((tab) => !hidden.has(tab));
+  if (tabs.length === 0) return null;
+  const open = active !== null && CONFIG_TABS.has(active);
   return (
-    <a
-      href={DOCS_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Documentation"
-      data-testid="side-panel-docs"
-      className={railTile(false)}
-    >
-      <Book size={RAIL_GLYPH} />
-    </a>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Configure"
+          aria-pressed={open}
+          data-testid="side-panel-configure"
+          className={railTile(open)}
+        >
+          <SettingsAdjust size={RAIL_GLYPH} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="left" align="start">
+        {tabs.map((tab) => {
+          const entry = CONFIG_TAB_ENTRY(tab);
+          const Icon = entry?.icon;
+          return (
+            <DropdownMenuItem
+              key={tab}
+              data-testid={`side-panel-config-item-${tab}`}
+              onSelect={() => onSelect(tab)}
+            >
+              {Icon && <Icon size={16} aria-hidden />}
+              {CONFIG_TAB_LABELS[tab]}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
+
+const CONFIG_TAB_LABELS: Record<ConfigurationTab, string> = {
+  agent: "Agent",
+  connections: "Connections",
+  channels: "Channels",
+  skills: "Skills",
+  schedules: "Schedules",
+  environments: "Environments",
+  providers: "Providers",
+  network: "Network access",
+  environment: "Environment variables",
+  "chat-forms": "Chat forms",
+};

@@ -2,19 +2,37 @@ import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
+import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { AgentModelSettingsSection } from "../../sandboxes/components/agent-config-sections.js";
+import { AgentPanel } from "../../sandboxes/components/agent-panel.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
+import { SandboxProvidersSection } from "../../sandboxes/components/sandbox-providers-section.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
+import { SessionDefaultsSection } from "../../sandboxes/components/session-defaults-section.js";
+import { ConnectionAddressingSection } from "../../sandboxes/components/setup/setup-sections.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { justAskPrompt } from "../../schedules/lib/just-ask.js";
-import type { SidePanelTab } from "../lib/side-panel.js";
+import type { ConfigurationTab, SidePanelTab } from "../lib/side-panel.js";
 import { SidebarSection } from "./sidebar-section.js";
 
-export type ConfigPanelTab = Extract<
-  SidePanelTab,
-  "connections" | "channels" | "skills" | "schedules"
->;
+export type ConfigPanelTab = Exclude<ConfigurationTab, "environments">;
+
+export const CONFIG_PANEL_TITLES: Record<ConfigPanelTab, string> = {
+  agent: "Agent",
+  connections: "Connections",
+  channels: "Channels",
+  skills: "Skills",
+  schedules: "Schedules",
+  providers: "Providers",
+  network: "Network access",
+  environment: "Environment variables",
+  "chat-forms": "Chat forms",
+};
 
 export function isConfigPanelTab(
   tab: SidePanelTab | null,
@@ -33,11 +51,13 @@ export function isConfigPanelTab(
 export function ConfigSidePanel({
   tab,
   agent,
+  display,
   agentId,
   onResumeSession,
 }: {
   tab: ConfigPanelTab;
   agent: AgentView;
+  display: AgentDisplay;
   agentId: string;
   onResumeSession: (sessionId: string) => void;
 }) {
@@ -51,10 +71,12 @@ export function ConfigSidePanel({
     <SidebarSection title={CONFIG_PANEL_TITLES[tab]} open className="flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {match(tab)
+          .with("agent", () => <AgentPanel agent={agent} display={display} />)
           .with("connections", () => (
             <ConnectionsSection
               agentId={agentId}
               header={() => null}
+              leading={<ConnectionAddressingSection agent={agent} />}
               oauthReturnView={routeToPath({
                 view: "chat",
                 agent: agentId,
@@ -78,15 +100,22 @@ export function ConfigSidePanel({
               }}
             />
           ))
+          .with("providers", () => (
+            <>
+              <SandboxProvidersSection agentId={agentId} header={() => null} />
+              <SessionDefaultsSection agentId={agentId} />
+              <AgentModelSettingsSection agentId={agentId} />
+            </>
+          ))
+          .with("network", () => (
+            <AgentEgressEditor agentId={agentId} header={() => null} />
+          ))
+          .with("environment", () => (
+            <EnvTab agent={agent} header={() => null} />
+          ))
+          .with("chat-forms", () => <ChatFormSettings agentId={agentId} />)
           .exhaustive(() => null)}
       </div>
     </SidebarSection>
   );
 }
-
-export const CONFIG_PANEL_TITLES: Record<ConfigPanelTab, string> = {
-  connections: "Connections",
-  channels: "Channels",
-  skills: "Skills",
-  schedules: "Schedules",
-};

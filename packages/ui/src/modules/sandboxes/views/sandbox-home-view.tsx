@@ -1,4 +1,5 @@
 import type { PendingRestart } from "agent-runtime-api";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -18,11 +19,13 @@ import {
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
+import { useUnifiedRightToolbar } from "../../features/hooks/use-unified-right-toolbar.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { configTabForSection } from "../../sessions/lib/side-panel.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
 import { AgentUpdateRow } from "../components/agent-update-row.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
@@ -56,6 +59,18 @@ export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const openConfigTab = useStore((s) => s.openConfigTab);
+  const rightToolbar = useUnifiedRightToolbar();
+  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on this page has no surface of its own, so a deep link or a bookmark replaces itself with the chat and opens the panel that holds the section; every knob keeps its home there.
+  useEffect(() => {
+    if (!rightToolbar || !agentId) return;
+    history.replaceState(
+      null,
+      "",
+      routeToPath({ view: "chat", agent: agentId }),
+    );
+    openConfigTab(agentId, configTabForSection(section));
+  }, [rightToolbar, agentId, section, openConfigTab]);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsQuery = useAgents();
   const agent = agentId
@@ -100,6 +115,8 @@ export function SandboxHomeView() {
         showUpdate={!(newLayout && section === "setup")}
       />
     );
+
+  if (rightToolbar) return null;
 
   if (!agent || !display) {
     return (

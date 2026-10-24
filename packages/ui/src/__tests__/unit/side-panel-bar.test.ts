@@ -130,6 +130,67 @@ it("lists the Agent's configuration tabs", () => {
   expect(order).toEqual([...order].sort((a, b) => a - b));
 });
 
+// TEST_SCENARIO: The tiled rail keeps the Agent's configuration behind one Configure tile, since the Experiment added ten panels; the classic bar, which only ever shows with the experiment off, keeps a button per tab.
+it("puts the configuration behind one Configure tile", () => {
+  const tiles = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: "schedules",
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  expect(tiles).toContain('data-testid="side-panel-configure"');
+  expect(tiles).toContain('aria-label="Configure"');
+  expect(tiles).not.toContain('data-testid="side-panel-tab-schedules"');
+  expect(tiles).toContain('data-testid="side-panel-tab-artifacts"');
+
+  const classic = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  expect(classic).not.toContain('data-testid="side-panel-configure"');
+  expect(classic).toContain('data-testid="side-panel-tab-schedules"');
+});
+
+// TEST_SCENARIO: With the experiment off, the rail carries no Configure tile at all, so a chat without it looks exactly as before.
+it("shows no Configure tile without the configuration tabs", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: hiddenSidePanelTabs({
+          agent: true,
+          artifacts: true,
+          canOpenBrowser: true,
+          changes: true,
+          processesEnabled: true,
+          environments: false,
+          configuration: false,
+          gettingStarted: true,
+        }),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  expect(html).not.toContain('data-testid="side-panel-configure"');
+  expect(html).not.toContain('data-testid="side-panel-tab-schedules"');
+});
+
 // TEST_SCENARIO: The icon bar lists the views by how often users reach for them, Artifacts first.
 it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   const html = renderToStaticMarkup(
@@ -239,12 +300,8 @@ it("draws JanUI's tiles at the sidebar strip's size", () => {
   expect(open).toContain("size-10");
   expect(open).toContain("bg-muted");
   expect(html).toContain('width="22"');
-  const order = ["getting-started", "docs", "approvals"].map((id) =>
-    html.indexOf(
-      id === "docs"
-        ? 'data-testid="side-panel-docs"'
-        : `data-testid="side-panel-tab-${id}"`,
-    ),
+  const order = ["getting-started", "documentation", "approvals"].map((id) =>
+    html.indexOf(`data-testid="side-panel-tab-${id}"`),
   );
   expect(order[1]).toBeGreaterThan(order[0]!);
   expect(order[2]).toBeGreaterThan(order[1]!);
