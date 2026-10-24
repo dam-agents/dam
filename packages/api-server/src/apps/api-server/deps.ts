@@ -3,6 +3,7 @@ import type { EnvironmentGate } from "../../modules/environments/index.js";
 import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
+import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type {
   E2eService,
@@ -120,6 +121,9 @@ export interface ApiServerDeps {
   mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   mountCaseStudiesRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
+  /* UNIT_BOUNDARY_DESCRIPTION: `agents` keeps its owner pseudonymised, so a
+   * module that joins it by owner hashes the caller's subject the same way. */
+  subPseudonymizer: SubPseudonymizer;
   metricsReader: MetricsReader | null;
   telemetryReader: TelemetryReader | null;
   sessionDirectory: SessionDirectory;

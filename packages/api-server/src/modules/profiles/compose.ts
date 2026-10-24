@@ -1,4 +1,5 @@
 import type { Db } from "db";
+import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import {
   aliasForTemplateId,
   CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
@@ -8,7 +9,6 @@ import {
 import { createProfilesRepository } from "./infrastructure/profiles-repository.js";
 import {
   createProfilesService,
-  type BindDefaultAgentProfile,
   type SeededProvider,
 } from "./services/profiles-service.js";
 import { createProfileResolver } from "./services/profile-resolution.js";
@@ -29,21 +29,19 @@ export function composeProfilesForOwner(deps: {
   owner: string;
   catalog: Pick<HarnessCatalog, "default" | "harnesses">;
   sharedProvider: boolean;
+  subPseudonymizer: SubPseudonymizer;
 }): {
   profiles: ReturnType<typeof createProfilesService>;
   resolver: ReturnType<typeof createProfileResolver>;
-  bindDefaultAgentProfile: BindDefaultAgentProfile;
 } {
-  const repo = createProfilesRepository(deps.db);
-  const profiles = createProfilesService({
-    repo,
-    owner: deps.owner,
-    catalog: deps.catalog,
-    seededProvider: seededProvider(deps.sharedProvider),
-  });
+  const repo = createProfilesRepository(deps.db, deps.subPseudonymizer);
   return {
-    profiles,
+    profiles: createProfilesService({
+      repo,
+      owner: deps.owner,
+      catalog: deps.catalog,
+      seededProvider: seededProvider(deps.sharedProvider),
+    }),
     resolver: createProfileResolver({ repo }),
-    bindDefaultAgentProfile: profiles.bindDefaultAgentProfile,
   };
 }

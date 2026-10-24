@@ -98,7 +98,6 @@ function setup(
   const writeEnv = vi.fn(async () => {});
   const runtimeBump = vi.fn(async () => 1);
   const defaultProviders = vi.fn(async (): Promise<string[]> => []);
-  const bindDefaultAgentProfile = vi.fn(async () => {});
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
@@ -131,7 +130,6 @@ function setup(
       defaultProviders,
       applyAfterCreate: applyGrants,
     },
-    defaultProfileBinder: { bindDefaultAgentProfile },
     listChannelsByOwner: async () => new Map(),
     listChannelsByAgent: async () => [],
     deleteChannelByType: async () => {},
@@ -163,7 +161,6 @@ function setup(
     writeEnv,
     runtimeBump,
     defaultProviders,
-    bindDefaultAgentProfile,
     connections,
     agents,
   };
@@ -266,79 +263,6 @@ describe("agent creation with a designated provider", () => {
       image: input.image,
     });
     expect(result.grantedConnectionIds).toEqual([]);
-  });
-});
-
-describe("the default profile a new agent starts on", () => {
-  const templates = { default: { image: "platform/default:latest" } };
-  const byTemplate = { name: "test-agent", templateId: "default" };
-
-  /** TEST_SCENARIO: A create names the harness and the grants it holds, so the
-   * owner's seeded profile is bound only where it actually fits the agent. */
-  it("hands the binder the harness and the grants the agent got", async () => {
-    const { caller, bindDefaultAgentProfile } = setup([provider], templates);
-    const created = await caller.agents.create({
-      ...byTemplate,
-      providerConnectionId: provider.id,
-    });
-    expect(bindDefaultAgentProfile).toHaveBeenCalledWith({
-      agentId: created.id,
-      harness: "claude-code",
-      grantedConnectionIds: [provider.id],
-    });
-  });
-
-  /** TEST_SCENARIO: A kit that names the model its agent needs decides the
-   * default, so the seeded profile must not stand in for it. */
-  it("stays out of the way when a starter kit names the model", async () => {
-    const { agents, bindDefaultAgentProfile } = setup([provider], templates);
-    await agents.create({
-      ...byTemplate,
-      providerConnectionId: provider.id,
-      starterKitDefaultModel: "cb/some-model",
-    });
-    expect(bindDefaultAgentProfile).not.toHaveBeenCalled();
-  });
-
-  /** TEST_SCENARIO: A create from an image names no harness, so nothing can
-   * say whether the seeded profile fits the image's. */
-  it("binds nothing to a create that names no harness", async () => {
-    const { caller, bindDefaultAgentProfile } = setup([provider]);
-    await caller.agents.create({
-      name: "test-agent",
-      image: "example.com/agent:latest",
-      providerConnectionId: provider.id,
-    });
-    expect(bindDefaultAgentProfile).not.toHaveBeenCalled();
-  });
-
-  /** TEST_SCENARIO: An Environment never starts a session, so it takes no
-   * chat default. */
-  it("binds nothing to an environment", async () => {
-    const { agents, bindDefaultAgentProfile } = setup([provider], templates);
-    await agents.create({
-      ...byTemplate,
-      providerConnectionId: provider.id,
-      environmentOf: "agent-root",
-    });
-    expect(bindDefaultAgentProfile).not.toHaveBeenCalled();
-  });
-
-  /** TEST_SCENARIO: A failed binding is not a failed create; the first-hello
-   * conversion still gives the agent a default. */
-  it("does not fail the create when the binder throws", async () => {
-    const { caller, bindDefaultAgentProfile, persist } = setup(
-      [provider],
-      templates,
-    );
-    bindDefaultAgentProfile.mockRejectedValueOnce(new Error("boom"));
-    await expect(
-      caller.agents.create({
-        ...byTemplate,
-        providerConnectionId: provider.id,
-      }),
-    ).resolves.toMatchObject({ name: "test-agent" });
-    expect(persist).toHaveBeenCalledOnce();
   });
 });
 

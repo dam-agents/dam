@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import {
   agents,
   and,
+  asc,
   channels,
   connectionGrants,
   connections,
@@ -18,6 +19,7 @@ import {
   type DbTx,
 } from "db";
 import { getLogger } from "../../../core/logger.js";
+import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
 import type { SessionSettings } from "agent-runtime-api";
 import {
   PROVIDER_TEMPLATE_IDS,
@@ -60,7 +62,6 @@ export type DeleteOutcome =
 export interface ProfilesRepository {
   list(owner: string): Promise<ProfileRow[]>;
   get(owner: string, id: string): Promise<ProfileRow | null>;
-  seeded(owner: string): Promise<ProfileRow | null>;
   insert(owner: string, profile: ProfileWrite): Promise<ProfileRow>;
   update(
     owner: string,
@@ -73,16 +74,6 @@ export interface ProfilesRepository {
   usageCounts(owner: string): Promise<Map<string, ProfileUsageCounts>>;
   /** UNIT_BOUNDARY_DESCRIPTION: the owner's seed marker and the seeded profile commit together, so a failed seed leaves no marker and the next list retries it. */
   seed(owner: string, profile: ProfileWrite | null): Promise<void>;
-  bindChatProfile(
-    owner: string,
-    agentId: string,
-    profileId: string,
-  ): Promise<void>;
-  holdsTemplate(
-    owner: string,
-    connectionIds: readonly string[],
-    templateId: string,
-  ): Promise<boolean>;
   /** UNIT_BOUNDARY_DESCRIPTION: the owner's provider Connections, which a profile's template resolves against. */
   ownerConnections(owner: string): Promise<AliasedConnection[]>;
   /** UNIT_BOUNDARY_DESCRIPTION: the provider Connections the agent is granted, the set a rival alias is looked for in. */
@@ -121,7 +112,10 @@ function rowToProfile(row: Row): ProfileRow {
   };
 }
 
-export function createProfilesRepository(db: Db): ProfilesRepository {
+export function createProfilesRepository(
+  db: Db,
+  pseudo: SubPseudonymizer,
+): ProfilesRepository {
   async function read(owner: string, id: string): Promise<ProfileRow | null> {
     const rows = await db
       .select()
@@ -130,17 +124,18 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
     return rows[0] ? rowToProfile(rows[0]) : null;
   }
 
-  async function seeded(owner: string): Promise<ProfileRow | null> {
-    const rows = await db
-      .select()
-      .from(profiles)
-      .where(and(eq(profiles.owner, owner), eq(profiles.seed, SEEDED_DEFAULT)));
-    return rows[0] ? rowToProfile(rows[0]) : null;
-  }
+  /* UNIT_BOUNDARY_DESCRIPTION: `agents` keeps its owner pseudonymised, so every
+   * owner predicate against it hashes the caller's subject the way the Agent
+   * store does; the other records keep the raw one. */
+  const agentOwner = (owner: string) => pseudo.hashSub(owner);
 
-  async function usageOf(owner: string, id: string): Promise<ProfileUsage> {
+  async function usageOf(
+    executor: Db | DbTx,
+    owner: string,
+    id: string,
+  ): Promise<ProfileUsage> {
     const [agentRows, channelRows, scheduleRows] = await Promise.all([
-      db
+      executor
         .select({
           id: agents.id,
           chat: agents.sessionProfile,
@@ -149,15 +144,14 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
         .from(agents)
         .where(
           and(
-            eq(agents.ownerSub, owner),
-            isNull(agents.deletedAt),
+            eq(agents.ownerSub, agentOwner(owner)),
             or(
               eq(agents.sessionProfile, id),
               eq(agents.platformSubagentProfile, id),
             ),
           ),
         ),
-      db
+      executor
         .select({
           agentId: channels.agentId,
           label:
@@ -167,7 +161,7 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
         })
         .from(channels)
         .where(and(eq(channels.owner, owner), eq(channels.profileId, id))),
-      db
+      executor
         .select({
           id: schedules.id,
           name: schedules.name,
@@ -204,8 +198,6 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
     },
 
     get: read,
-
-    seeded,
 
     async insert(owner, profile) {
       const rows = await db
@@ -245,7 +237,7 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
           .where(and(eq(profiles.owner, owner), eq(profiles.id, id)))
           .for("update");
         if (held.length === 0) return { outcome: "missing" };
-        const usage = await usageOf(owner, id);
+        const usage = await usageOf(tx, owner, id);
         if (
           usage.agents.length + usage.channels.length + usage.schedules.length >
           0
@@ -258,7 +250,7 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
       });
     },
 
-    usage: usageOf,
+    usage: (owner, id) => usageOf(db, owner, id),
 
     async usageCounts(owner) {
       const counts = new Map<string, ProfileUsageCounts>();
@@ -280,8 +272,7 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
           .from(agents)
           .where(
             and(
-              eq(agents.ownerSub, owner),
-              isNull(agents.deletedAt),
+              eq(agents.ownerSub, agentOwner(owner)),
               or(
                 isNotNull(agents.sessionProfile),
                 isNotNull(agents.platformSubagentProfile),
@@ -331,20 +322,6 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
       });
     },
 
-    async bindChatProfile(owner, agentId, profileId) {
-      await db
-        .update(agents)
-        .set({ sessionProfile: profileId, sessionPair: null })
-        .where(
-          and(
-            eq(agents.id, agentId),
-            eq(agents.ownerSub, owner),
-            isNull(agents.sessionProfile),
-            isNull(agents.sessionPair),
-          ),
-        );
-    },
-
     async ownerConnections(owner) {
       return db
         .select({
@@ -358,7 +335,8 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
             eq(connections.owner, owner),
             inArray(connections.templateId, [...PROVIDER_TEMPLATE_IDS]),
           ),
-        );
+        )
+        .orderBy(asc(connections.createdAt));
     },
 
     async agentConnections(owner, agentId) {
@@ -380,22 +358,6 @@ export function createProfilesRepository(db: Db): ProfilesRepository {
             inArray(connections.templateId, [...PROVIDER_TEMPLATE_IDS]),
           ),
         );
-    },
-
-    async holdsTemplate(owner, connectionIds, templateId) {
-      if (connectionIds.length === 0) return false;
-      const rows = await db
-        .select({ id: connections.id })
-        .from(connections)
-        .where(
-          and(
-            eq(connections.owner, owner),
-            inArray(connections.id, [...connectionIds]),
-            eq(connections.templateId, templateId),
-          ),
-        )
-        .limit(1);
-      return rows.length > 0;
     },
   };
 }

@@ -95,7 +95,14 @@ async function resolveProvider(
   const owned = (await repo.ownerConnections(owner)).filter(
     (connection) => connection.templateId === profile.providerTemplate,
   );
-  const template = owned[0];
+  const granted =
+    agentId === undefined ? [] : await repo.agentConnections(owner, agentId);
+  /* UNIT_BOUNDARY_DESCRIPTION: the agent's own grant wins over the owner's
+   * oldest, so an owner holding two Connections of one template never has the
+   * second reported as a rival of itself. */
+  const template =
+    owned.find((connection) => granted.some((g) => g.id === connection.id)) ??
+    owned[0];
   if (!template)
     return {
       connectionId: null,
@@ -105,10 +112,7 @@ async function resolveProvider(
         detail: `${displayNameForTemplate(profile.providerTemplate) ?? profile.providerTemplate} is not connected`,
       },
     };
-  if (agentId === undefined)
-    return { connectionId: template.id, grantable: null, unavailable: null };
-  const granted = await repo.agentConnections(owner, agentId);
-  if (granted.some((connection) => connection.id === template.id))
+  if (agentId === undefined || granted.some((c) => c.id === template.id))
     return { connectionId: template.id, grantable: null, unavailable: null };
   const rival = providerAliasConflict(granted, template);
   if (rival)

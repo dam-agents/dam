@@ -2463,6 +2463,7 @@ export async function bootstrap() {
     mountUsageRoutes: usage.mount,
     mountCaseStudiesRoutes: caseStudies.mount,
     listRegisteredAgentIds,
+    subPseudonymizer,
     metricsReader,
     telemetryReader,
     sessionDirectory,

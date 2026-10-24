@@ -11,9 +11,13 @@ import {
   CURVE_BENDER_WORK_MODEL,
   aliasForTemplateId,
 } from "api-server-api";
+import { createSubPseudonymizer } from "../src/core/sub-pseudonymizer.js";
 import { createProfilesRepository } from "../src/modules/profiles/infrastructure/profiles-repository.js";
-import { createSessionPairRepo } from "../src/modules/harness-config/infrastructure/session-pair-repo.js";
 import { createProfilesService } from "../src/modules/profiles/services/profiles-service.js";
+import {
+  markAgentDeleted,
+  upsertAgent,
+} from "../src/modules/usage/infrastructure/agents-postgres-repository.js";
 
 const url = process.env.PROFILES_DATABASE_URL;
 if (!url) {
@@ -38,6 +42,11 @@ const catalog = {
 };
 
 const { db, sql: client } = createDb(url);
+/* UNIT_BOUNDARY_DESCRIPTION: the Agent store keeps owners pseudonymised, so the
+ * fixtures go in through the same writer and the same hash as production; a
+ * raw sub here would hide an owner-key mismatch instead of failing on it. */
+const pseudo = createSubPseudonymizer("profiles-integrity-check");
+const registerAgent = upsertAgent(db, pseudo);
 
 const failures: string[] = [];
 let checked = 0;
@@ -54,7 +63,7 @@ let seq = 0;
 const unique = (prefix: string) => `${prefix}-${Date.now()}-${++seq}`;
 
 function serviceFor(owner: string) {
-  const repo = createProfilesRepository(db);
+  const repo = createProfilesRepository(db, pseudo);
   return {
     repo,
     service: createProfilesService({
@@ -71,22 +80,24 @@ function serviceFor(owner: string) {
 
 async function insertAgent(owner: string, values: Record<string, unknown> = {}) {
   const id = unique("agent");
-  const columns = {
-    id,
-    owner_sub: owner,
-    ...values,
-  };
-  await db.execute(sql`
-    INSERT INTO agents (${sql.raw(Object.keys(columns).map((k) => `"${k}"`).join(", "))})
-    VALUES (${sql.join(
-      Object.values(columns).map((value) =>
-        value && typeof value === "object" && !(value instanceof Date)
-          ? sql`${JSON.stringify(value)}::jsonb`
-          : sql`${value}`,
-      ),
-      sql`, `,
-    )})
-  `);
+  await registerAgent({ id, ownerSub: owner });
+  const columns = Object.entries(values);
+  if (columns.length > 0)
+    await db.execute(sql`
+      UPDATE agents
+      SET ${sql.join(
+        columns.map(
+          ([key, value]) =>
+            sql`${sql.raw(`"${key}"`)} = ${
+              value && typeof value === "object" && !(value instanceof Date)
+                ? sql`${JSON.stringify(value)}::jsonb`
+                : sql`${value}`
+            }`,
+        ),
+        sql`, `,
+      )}
+      WHERE id = ${id}
+    `);
   return id;
 }
 
@@ -241,42 +252,40 @@ async function main() {
     "counted",
   );
 
-  process.stdout.write("\nthe chat default's two shapes\n");
-  const second = await service.create({
-    name: "Second",
+  process.stdout.write("\nsoft-deleted agents\n");
+  const softProfile = await service.create({
+    name: "Soft",
     harness: "claude-code",
     providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
     model: MODEL,
   });
-  const pairRepo = createSessionPairRepo(db);
-  const profileAgent = await insertAgent(owner, { session_profile: second.id });
-  const pair = {
-    harness: "claude-code",
-    provider,
-    model: MODEL,
-  };
-  const wrote = await pairRepo.writeIfEmpty(profileAgent, pair);
-  const chatOf = async (agentId: string) => {
-    const rows = (await db.execute(sql`
-      SELECT session_profile AS profile, session_pair AS pair
-      FROM agents WHERE id = ${agentId}
-    `)) as unknown as { profile: string | null; pair: unknown }[];
-    return rows[0]!;
-  };
-  const afterConvert = await chatOf(profileAgent);
+  const softAgent = await insertAgent(owner, { session_profile: softProfile.id });
+  await markAgentDeleted(db)(softAgent);
+  const softDeleted = await rejects(() => service.delete(softProfile.id));
   check(
-    "the first-hello conversion leaves an agent on its profile alone",
-    !wrote && afterConvert.profile === second.id && afterConvert.pair === null,
-    JSON.stringify({ wrote, afterConvert }),
+    "a profile an agent held is deletable once that agent is deleted",
+    softDeleted === null,
+    String(softDeleted),
   );
-  await pairRepo.write(profileAgent, "chat", pair);
-  const afterPick = await chatOf(profileAgent);
+
+  process.stdout.write("\na profile named Default\n");
+  const seedOwner = unique("owner");
+  const seedService = serviceFor(seedOwner).service;
+  const namedDefault = await rejects(() =>
+    seedService.create({
+      name: "Default",
+      harness: "claude-code",
+      providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      model: MODEL,
+    }),
+  );
+  const seededFirst = await seedService.list();
   check(
-    "a custom chat pick detaches the agent from its profile",
-    afterPick.profile === null && afterPick.pair !== null,
-    JSON.stringify(afterPick),
+    "creating a profile named Default after the seed is refused, and the seed stands",
+    namedDefault === "CONFLICT" &&
+      seededFirst.filter((p) => p.seeded).length === 1,
+    JSON.stringify({ namedDefault, seededFirst: seededFirst.map((p) => [p.name, p.seeded]) }),
   );
-  await service.delete(second.id);
 
   process.stdout.write("\nunbinding\n");
   await db.execute(
@@ -297,12 +306,14 @@ async function main() {
     JSON.stringify(deleted),
   );
 
-  await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${owner}`);
+  await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${pseudo.hashSub(owner)}`);
   await db.execute(sql`DELETE FROM schedules WHERE owner = ${owner}`);
   await db.execute(sql`DELETE FROM connections WHERE owner = ${owner}`);
   await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${owner}`);
   await db.execute(sql`DELETE FROM profiles WHERE owner = ${owner}`);
-  await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${otherOwner}`);
+  await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${pseudo.hashSub(otherOwner)}`);
+  await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${seedOwner}`);
+  await db.execute(sql`DELETE FROM profiles WHERE owner = ${seedOwner}`);
   await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${otherOwner}`);
   await db.execute(sql`DELETE FROM profiles WHERE owner = ${otherOwner}`);
 }

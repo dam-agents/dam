@@ -65,18 +65,16 @@ interface Fake {
     seeds: (ProfileWrite | null)[];
     inserts: ProfileWrite[];
     updates: { id: string; profile: Partial<ProfileWrite> }[];
-    binds: { agentId: string; profileId: string }[];
     deleted: string[];
+    order: string[];
   };
   rows: ProfileRow[];
 }
 
 function fakeRepo(opts: {
   rows?: ProfileRow[];
-  seeded?: ProfileRow | null;
   usage?: ProfileUsage;
   deleteOutcome?: DeleteOutcome;
-  holds?: boolean;
   counts?: Map<string, { agents: number; channels: number; schedules: number }>;
 }): Fake {
   const rows = [...(opts.rows ?? [])];
@@ -84,15 +82,15 @@ function fakeRepo(opts: {
     seeds: [],
     inserts: [],
     updates: [],
-    binds: [],
     deleted: [],
+    order: [],
   };
   const repo: ProfilesRepository = {
     list: async () => rows,
     get: async (_owner, id) => rows.find((r) => r.id === id) ?? null,
-    seeded: async () => opts.seeded ?? null,
     insert: async (_owner, profile) => {
       calls.inserts.push(profile);
+      calls.order.push("insert");
       const inserted = row({
         id: `profile-${rows.length + 2}`,
         seed: null,
@@ -115,11 +113,8 @@ function fakeRepo(opts: {
     usageCounts: async () => opts.counts ?? new Map(),
     seed: async (_owner, profile) => {
       calls.seeds.push(profile);
+      calls.order.push("seed");
     },
-    bindChatProfile: async (_owner, agentId, profileId) => {
-      calls.binds.push({ agentId, profileId });
-    },
-    holdsTemplate: async () => opts.holds ?? true,
     ownerConnections: async () => [],
     agentConnections: async () => [],
   };
@@ -150,7 +145,7 @@ async function refusal(run: () => Promise<unknown>): Promise<TRPCError> {
 
 describe("profiles service — the seeded Default", () => {
   it("asks the repository to seed the shared CurveBender profile on every list", async () => {
-    const fake = fakeRepo({ rows: [row()], seeded: row() });
+    const fake = fakeRepo({ rows: [row()] });
     await service(fake).list();
     expect(fake.calls.seeds).toEqual([
       {
@@ -171,16 +166,24 @@ describe("profiles service — the seeded Default", () => {
   });
 
   it("keeps the seeded profile recognisable after a rename", async () => {
-    const fake = fakeRepo({
-      rows: [row({ name: "Cheap and fast" })],
-      seeded: row(),
-    });
+    const fake = fakeRepo({ rows: [row({ name: "Cheap and fast" })] });
     const [listed] = await service(fake).list();
     expect(listed).toMatchObject({ name: "Cheap and fast", seeded: true });
   });
 
+  it("seeds before a create, so a user-made Default cannot swallow the seeded one", async () => {
+    const fake = fakeRepo({ rows: [] });
+    await service(fake).create({
+      name: "Default",
+      harness: "claude-code",
+      providerTemplate: "curve-bender-deployment",
+      model: shared.model,
+    });
+    expect(fake.calls.order).toEqual(["seed", "insert"]);
+  });
+
   it("does not seed from the delete path, so a deleted Default stays gone", async () => {
-    const fake = fakeRepo({ seeded: null });
+    const fake = fakeRepo({});
     await service(fake).delete("profile-1");
     expect(fake.calls.seeds).toEqual([]);
   });
@@ -319,49 +322,5 @@ describe("profiles service — validation", () => {
       service(fake).update({ id: "profile-x", name: "Other" }),
     );
     expect(err.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("profiles service — binding a new agent's default", () => {
-  it("binds the seeded profile when the agent's harness and provider fit", async () => {
-    const fake = fakeRepo({ seeded: row() });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
-    });
-    expect(fake.calls.binds).toEqual([
-      { agentId: "agent-1", profileId: "profile-1" },
-    ]);
-  });
-
-  it("binds nothing when the agent's harness is not the profile's", async () => {
-    const fake = fakeRepo({ seeded: row() });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "bob",
-      grantedConnectionIds: ["conn-1"],
-    });
-    expect(fake.calls.binds).toEqual([]);
-  });
-
-  it("binds nothing when the agent was not granted the profile's provider", async () => {
-    const fake = fakeRepo({ seeded: row(), holds: false });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
-    });
-    expect(fake.calls.binds).toEqual([]);
-  });
-
-  it("binds nothing when no profile was seeded", async () => {
-    const fake = fakeRepo({ seeded: null });
-    await service(fake).bindDefaultAgentProfile({
-      agentId: "agent-1",
-      harness: "claude-code",
-      grantedConnectionIds: ["conn-1"],
-    });
-    expect(fake.calls.binds).toEqual([]);
   });
 });

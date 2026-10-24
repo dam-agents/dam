@@ -122,11 +122,20 @@ export function fillAgentStarterKitFacts(db: Db) {
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: a deleted Agent drops the profile references it
+ * held, because a chat default only means something for an Agent that can
+ * chat. Keeping them would let a row its owner can no longer see hold a
+ * profile against deletion, with only the foreign key to say so. */
 export function markAgentDeleted(db: Db) {
   return async (id: string): Promise<void> => {
     await db
       .update(agents)
-      .set({ deletedAt: sql`NOW()`, ...CLEARED_RUNTIME_STATE })
+      .set({
+        deletedAt: sql`NOW()`,
+        sessionProfile: null,
+        platformSubagentProfile: null,
+        ...CLEARED_RUNTIME_STATE,
+      })
       .where(and(eq(agents.id, id), isNull(agents.deletedAt)));
   };
 }

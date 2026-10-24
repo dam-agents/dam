@@ -43,7 +43,6 @@ function repo(opts: {
   return {
     list: async () => [],
     get: async () => (opts.profile === undefined ? row() : opts.profile),
-    seeded: async () => null,
     insert: async () => row(),
     update: async () => null,
     deleteIfUnused: async (): Promise<DeleteOutcome> => ({
@@ -52,8 +51,6 @@ function repo(opts: {
     usage: async () => ({ agents: [], channels: [], schedules: [] }),
     usageCounts: async () => new Map(),
     seed: async (_owner: string, _profile: ProfileWrite | null) => undefined,
-    bindChatProfile: async () => undefined,
-    holdsTemplate: async () => false,
     ownerConnections: async () => opts.owned ?? [],
     agentConnections: async () => opts.granted ?? [],
   };
@@ -116,6 +113,43 @@ describe("profile resolution", () => {
     });
     expect(resolved?.pair.provider).toBeNull();
     expect(resolved?.grantableProvider).toBeNull();
+  });
+
+  it("takes the agent's own grant when the owner holds two Connections of the template", async () => {
+    const second: AliasedConnection = {
+      id: "conn-shared-2",
+      name: "CurveBender (shared) 2",
+      templateId: "curve-bender-deployment",
+    };
+    const resolver = createProfileResolver({
+      repo: repo({ owned: [sharedOwned, second], granted: [second] }),
+    });
+    const resolved = await resolver.resolve({
+      profileId: "profile-1",
+      owner: "owner-1",
+      agentId: "agent-1",
+    });
+    expect(resolved?.pair.provider).toBe("conn-shared-2");
+    expect(resolved?.unavailable).toBeNull();
+    expect(resolved?.grantableProvider).toBeNull();
+  });
+
+  it("falls back to the owner's oldest Connection when the agent holds none", async () => {
+    const second: AliasedConnection = {
+      id: "conn-shared-2",
+      name: "CurveBender (shared) 2",
+      templateId: "curve-bender-deployment",
+    };
+    const resolver = createProfileResolver({
+      repo: repo({ owned: [sharedOwned, second], granted: [] }),
+    });
+    const resolved = await resolver.resolve({
+      profileId: "profile-1",
+      owner: "owner-1",
+      agentId: "agent-1",
+    });
+    expect(resolved?.pair.provider).toBe("conn-shared");
+    expect(resolved?.grantableProvider).toBe("conn-shared");
   });
 
   it("reports a provider the owner does not hold", async () => {

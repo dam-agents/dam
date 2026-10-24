@@ -81,15 +81,8 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
       await db
         .update(agentsTable)
         .set(
-          /* UNIT_BOUNDARY_DESCRIPTION: a custom pick is the chat default
-           * instead of a profile, so writing one detaches the agent from the
-           * profile it pointed at rather than holding both. */
           match(kind)
-            .with("chat", () => ({
-              sessionPair: pair,
-              sessionProfile: null,
-              defaultModelNote: null,
-            }))
+            .with("chat", () => ({ sessionPair: pair, defaultModelNote: null }))
             .with("channel", () => ({ channelSessionPair: pair }))
             .with("scheduled", () => ({ scheduledSessionPair: pair }))
             .exhaustive(),
@@ -109,19 +102,12 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
         .where(eq(agentsTable.id, agentId));
     },
 
-    /* UNIT_BOUNDARY_DESCRIPTION: an agent whose chat default is a profile is
-     * already configured, so the one-time conversion never writes a custom pair
-     * beside the reference (the XOR check would refuse it anyway). */
     async writeIfEmpty(agentId, pair, note) {
       const rows = await db
         .update(agentsTable)
         .set({ sessionPair: pair, defaultModelNote: note ?? null })
         .where(
-          and(
-            eq(agentsTable.id, agentId),
-            isNull(agentsTable.sessionPair),
-            isNull(agentsTable.sessionProfile),
-          ),
+          and(eq(agentsTable.id, agentId), isNull(agentsTable.sessionPair)),
         )
         .returning({ id: agentsTable.id });
       return rows.length > 0;

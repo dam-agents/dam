@@ -32,24 +32,9 @@ export interface ProfilesServiceDeps {
   seededProvider: SeededProvider | null;
 }
 
-/** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, so the owner's seeded profile is what its first chat runs on instead of waiting for the first-hello conversion. */
-export interface BindDefaultAgentProfileInput {
-  agentId: string;
-  harness: string;
-  grantedConnectionIds: readonly string[];
-}
-
-export type BindDefaultAgentProfile = (
-  input: BindDefaultAgentProfileInput,
-) => Promise<void>;
-
-export type ProfilesWithBinder = ProfilesService & {
-  bindDefaultAgentProfile: BindDefaultAgentProfile;
-};
-
 export function createProfilesService(
   deps: ProfilesServiceDeps,
-): ProfilesWithBinder {
+): ProfilesService {
   const { repo, owner, catalog } = deps;
 
   function validate(profile: {
@@ -149,6 +134,9 @@ export function createProfilesService(
     },
 
     async create(input: ProfileCreateInput) {
+      /* UNIT_BOUNDARY_DESCRIPTION: seed first, so an owner who names a profile
+       * "Default" before their first list cannot swallow the seeded one. */
+      await ensureDefault();
       validate(input);
       try {
         const row = await repo.insert(owner, {
@@ -207,21 +195,6 @@ export function createProfilesService(
           code: "PRECONDITION_FAILED",
           message: `that profile is in use by ${inUse(outcome.usage)}`,
         });
-    },
-
-    async bindDefaultAgentProfile(input) {
-      await ensureDefault();
-      const seeded = await repo.seeded(owner);
-      if (!seeded || seeded.harness !== input.harness) return;
-      if (
-        !(await repo.holdsTemplate(
-          owner,
-          input.grantedConnectionIds,
-          seeded.providerTemplate,
-        ))
-      )
-        return;
-      await repo.bindChatProfile(owner, input.agentId, seeded.id);
     },
   };
 }
