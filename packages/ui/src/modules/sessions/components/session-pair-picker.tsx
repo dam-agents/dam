@@ -449,20 +449,22 @@ export function SessionPairPicker(props: Props) {
                     Back to default
                   </button>
                 )}
-              {pair && !onDefaultPair(pair, chosen, remembered) && (
-                <button
-                  type="button"
-                  data-testid="session-pair-set-default"
-                  onClick={() =>
-                    rememberSessionPair(agentId, pair, "chat", () =>
-                      clearPair(agentId),
-                    )
-                  }
-                  className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground"
-                >
-                  Set as default
-                </button>
-              )}
+              {pair &&
+                pair.model !== null &&
+                !onDefaultPair(pair, chosen, remembered) && (
+                  <button
+                    type="button"
+                    data-testid="session-pair-set-default"
+                    onClick={() =>
+                      rememberSessionPair(agentId, pair, "chat", () =>
+                        clearPair(agentId),
+                      )
+                    }
+                    className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground"
+                  >
+                    Set as default
+                  </button>
+                )}
             </div>
           ) : (
             <div className="border-t border-border pt-1">

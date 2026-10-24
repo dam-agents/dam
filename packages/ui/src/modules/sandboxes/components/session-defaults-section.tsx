@@ -34,10 +34,11 @@ const KIND_HINT: Record<DefaultKind, string> = {
 };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the agent's three defaults on its Providers
- * page. Channel and scheduled start as "Same as chat" and show the chat
- * values they inherit; switching that off gives them a default of their own,
- * and switching it on again clears it.
+ * UNIT_BOUNDARY_DESCRIPTION: the defaults a page shows for its kind of
+ * session — the chat, channel and scheduled ones on the Providers page, and a
+ * single kind under its own panel. Channel and scheduled start as "Same as
+ * chat" and show the chat values they inherit; switching that off gives them a
+ * default of their own, and switching it on again clears it.
  */
 export function SessionDefaultsSection({
   agentId,

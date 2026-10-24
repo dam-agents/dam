@@ -25,7 +25,7 @@ import { SidebarSection } from "./sidebar-section.js";
 
 export type ConfigPanelTab = Exclude<ConfigurationTab, "environments">;
 
-// UNIT_BOUNDARY_DESCRIPTION: each session default sits with the surface it governs — the chat default on the providers with the providers it runs on, a channel thread's on Channels, a schedule's on Schedules — so the one setting is set where its effect is read.
+// UNIT_BOUNDARY_DESCRIPTION: each session default sits with the surface it governs — a channel thread's on Channels, a schedule's on Schedules — so the one setting is set where its effect is read. The chat default is set on the model switcher, by Set as default, and no panel shows it.
 export const DEFAULTS_BY_PANEL: Partial<
   Record<ConfigPanelTab, readonly SessionDefaultKind[]>
 > = {
