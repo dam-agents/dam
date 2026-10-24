@@ -5,7 +5,6 @@ import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useEnvironments } from "../api/queries.js";
 import { EnvironmentCard } from "./environment-card.js";
-import { NO_ENVIRONMENTS } from "./environments-section.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's Environments tab of an agent's chat side
@@ -13,7 +12,8 @@ import { NO_ENVIRONMENTS } from "./environments-section.js";
  * section, with whether it runs, its expiry, a link per endpoint and the
  * owner's controls to extend and delete it. Who may open them is edited in
  * that section, which the tab links to; the agent creates them, so the tab
- * offers no create.
+ * offers no create. The tab shows only once the agent owns one, so it loads
+ * only while another agent's list arrives.
  */
 export function EnvironmentsPanel({
   agentId,
@@ -48,12 +48,8 @@ export function EnvironmentsPanel({
         className="min-h-0 flex-1 overflow-y-auto"
         data-testid="environments-panel"
       >
-        {environments.isError && list.length === 0 ? (
-          <EmptyState bordered={false}>Couldn't load Environments.</EmptyState>
-        ) : environments.isPending ? (
+        {environments.isPending ? (
           <EmptyState bordered={false}>Loading…</EmptyState>
-        ) : list.length === 0 ? (
-          <EmptyState bordered={false}>{NO_ENVIRONMENTS}</EmptyState>
         ) : (
           <ul className="flex flex-col divide-y divide-border">
             {list.map((environment) => (

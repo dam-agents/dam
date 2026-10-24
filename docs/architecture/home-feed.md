@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -124,7 +124,7 @@ The Pinned section reads a pinned Session from the record, and one the record do
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 Opening an Agent's list wakes a hibernated Agent the same way, and a list left waiting on an Agent that stays asleep offers the same retry; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
-An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and an Agent's chat also has an Environments tab while the `environments` feature is on.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Artifacts, Files, Changes, Browser and Processes become tabs of the panel, with Get started and Approvals below them and Documentation between the two while the Unified right toolbar experiment draws the bar, Changes is one only while the Agent has a git repository, and an Agent's chat also has an Environments tab while the `environments` feature is on and the Agent owns at least one Environment.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 
 ## The Unified right toolbar experiment

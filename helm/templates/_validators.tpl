@@ -19,6 +19,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
 {{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
+{{- include "platform.validate.templatesRenamedFromAgentTemplates" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -561,5 +562,19 @@ Fail at render instead, naming what took each one's place.
 {{- fail "virtualization.runner.imageArchiveHostPath is no longer read. Staged image trees live in the node image cache directory the chart derives from virtualization.imageCache.hostPath, beside the trees its service fetches; `mise run image:stage-vm` stages there. Remove the key, or move its directory to imageCache.hostPath." -}}
 {{- end -}}{{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
 {{- fail "virtualization.runner.canaryImage and virtualization.runner.canary are no longer read: every runner runs virtualization.runner.image, rolled across owners by virtualization.runner.rollout. Remove the keys." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The Templates were renamed from `agentTemplates` with no alias. Helm keeps the
+old map and reads none of it, so an install that kept the key renders no
+Template it declares and no pull Secret one of them brings, while the Agents
+created from those Templates still name that Secret — their machines then
+fetch the image anonymously and fail. Fail at render instead, naming the key
+to rename.
+*/}}
+{{- define "platform.validate.templatesRenamedFromAgentTemplates" -}}
+{{- if hasKey .Values "agentTemplates" -}}
+{{- fail "agentTemplates is no longer read: the key was renamed to harnessTemplates with no alias, so this install would render none of the Templates it declares and no pull Secret one of them brings, while the Agents created from those Templates still name it. Rename the key to harnessTemplates in every values file." -}}
 {{- end -}}
 {{- end -}}
