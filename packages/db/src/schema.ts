@@ -33,6 +33,12 @@ export const channels = pgTable(
     owner: text("owner").notNull(),
     type: text("type").notNull(),
     config: jsonb("config").notNull(),
+    /* UNIT_BOUNDARY_DESCRIPTION: the profile a channel's turns run on; null
+     * keeps the pre-profile chain (the agent's channel pair, else its chat
+     * pair), so a channel that predates profiles keeps running as it did. */
+    profileId: text("profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -373,6 +379,45 @@ export const externalActorLinks = pgTable(
   ],
 );
 
+export const profiles = pgTable(
+  "profiles",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    /* UNIT_BOUNDARY_DESCRIPTION: marks the one profile the platform seeds for
+     * an owner, which is never seeded again after a rename or a delete. */
+    seed: text("seed"),
+    harness: text("harness").notNull(),
+    providerTemplate: text("provider_template").notNull(),
+    model: text("model").notNull(),
+    settings: jsonb("settings").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("profiles_owner_name_idx").on(table.owner, table.name),
+    uniqueIndex("profiles_owner_seed_idx")
+      .on(table.owner, table.seed)
+      .where(sql`${table.seed} is not null`),
+    index("profiles_owner_idx").on(table.owner),
+  ],
+);
+
+/* UNIT_BOUNDARY_DESCRIPTION: one row per owner, written the first time the
+ * owner's profiles are listed. It is what keeps a renamed or deleted seeded
+ * profile from being seeded again. */
+export const profileSeeds = pgTable("profile_seeds", {
+  owner: text("owner").primaryKey(),
+  seededAt: timestamp("seeded_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agents = pgTable(
   "agents",
   {
@@ -392,6 +437,13 @@ export const agents = pgTable(
     sessionPair: jsonb("session_pair"),
     channelSessionPair: jsonb("channel_session_pair"),
     scheduledSessionPair: jsonb("scheduled_session_pair"),
+    sessionProfile: text("session_profile").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    platformSubagentProfile: text("platform_subagent_profile").references(
+      () => profiles.id,
+      { onDelete: "restrict" },
+    ),
     defaultModelNote: jsonb("default_model_note"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
@@ -399,7 +451,15 @@ export const agents = pgTable(
     onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
     spawnedByAgentId: text("spawned_by_agent_id"),
   },
-  (table) => [index("agents_owner_idx").on(table.ownerSub)],
+  (table) => [
+    index("agents_owner_idx").on(table.ownerSub),
+    /* UNIT_BOUNDARY_DESCRIPTION: the chat default is a profile reference or an
+     * inline pair, never both, so no reader has to decide which one wins. */
+    check(
+      "agents_session_pair_xor_profile",
+      sql`${table.sessionProfile} is null or ${table.sessionPair} is null`,
+    ),
+  ],
 );
 
 export const harnessConfigResets = pgTable(

@@ -23,6 +23,8 @@ export {
   pendingApprovals,
   connections,
   connectionGrants,
+  profiles,
+  profileSeeds,
   agents,
   runtimeStateOutbox,
   runtimeEvents,
