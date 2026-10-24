@@ -4,10 +4,11 @@ import { BOB_HOST } from "api-server-api";
 import { createProviderKeyProbe } from "../../modules/connections/infrastructure/provider-key-probe.js";
 
 /**
- * TEST_OVERVIEW: a Bob Shell key is tried on Bob's model list with the Apikey
- * scheme and a User-Agent naming Bob. Bob's own invalid-key 401 is a refusal;
- * its Cloudflare 403, a 5xx or a network error says nothing about the key and
- * comes back unverified.
+ * TEST_OVERVIEW: a Bob Shell key is tried on the profile route its Bobcoin
+ * budget comes from, with the Apikey scheme and a User-Agent naming Bob, since
+ * Bob refuses its model list to a key it otherwise accepts. Bob's own
+ * invalid-key 401 is a refusal; its Cloudflare 403, a 5xx or a network error
+ * says nothing about the key and comes back unverified.
  */
 
 const BOB_INVALID_KEY = JSON.stringify({
@@ -15,11 +16,11 @@ const BOB_INVALID_KEY = JSON.stringify({
   message: "API Key verification failed: Invalid or expired API Key",
 });
 
-function stubFetch(res: () => Response) {
+function stubFetch(res: (url: string) => Response) {
   const calls: { url: string; headers: Record<string, string> }[] = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     calls.push({ url, headers: init?.headers as Record<string, string> });
-    return res();
+    return res(url);
   });
   return calls;
 }
@@ -32,12 +33,16 @@ describe("provider key probe for Bob", () => {
   const probe = (templateId: string, key = "bob-key") =>
     createProviderKeyProbe().probe(templateId, key);
 
-  // TEST_SCENARIO: a Bob key is tried on Bob's model list with the Apikey scheme and a User-Agent naming Bob, since Bob's Cloudflare rule refuses any other agent; a key Bob accepts comes back ok.
-  it("accepts a key Bob's model list answers", async () => {
-    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+  // TEST_SCENARIO: a Bob key is tried on the profile route its Bobcoin budget comes from, since Bob answers its model list with a 403 to a key it accepts everywhere else; that route answering comes back ok, and the request carries the Apikey scheme and a User-Agent naming Bob, since Bob's Cloudflare rule refuses any other agent.
+  it("accepts a key Bob's profile route answers", async () => {
+    const calls = stubFetch((url) =>
+      url.endsWith("/admin/v1/profile")
+        ? new Response("{}", { status: 200 })
+        : new Response("", { status: 403 }),
+    );
     await expect(probe("bob")).resolves.toEqual({ ok: true });
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe(`https://${BOB_HOST}/inference/v1/models`);
+    expect(calls[0]?.url).toBe(`https://${BOB_HOST}/admin/v1/profile`);
     expect(calls[0]?.headers["authorization"]).toBe("Apikey bob-key");
     expect(calls[0]?.headers["user-agent"]).toMatch(/bob/);
   });
