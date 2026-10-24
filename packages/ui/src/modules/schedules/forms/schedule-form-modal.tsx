@@ -19,6 +19,7 @@ interface Props {
   agentId: string;
   existing?: Schedule;
   onClose: () => void;
+  onCreated?: (draft: { rrule: string; task: string }) => void;
 }
 
 interface Converting {
@@ -26,7 +27,12 @@ interface Converting {
   conversion: ExactCronConversion;
 }
 
-export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
+export function ScheduleFormModal({
+  agentId,
+  existing,
+  onClose,
+  onCreated,
+}: Props) {
   const [kind, setKind] = useState<ScheduleKind>(
     existing?.type === "once" ? "once" : "repeat",
   );
@@ -85,7 +91,7 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
       {kind === "once" ? (
         <OnceScheduleForm {...formProps} />
       ) : (
-        <RecurringScheduleForm {...formProps} />
+        <RecurringScheduleForm {...formProps} onCreated={onCreated} />
       )}
     </Modal>
   );

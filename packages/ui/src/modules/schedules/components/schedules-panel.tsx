@@ -22,11 +22,13 @@ export function SchedulesPanel({
   header,
   onResumeSession,
   focusId,
+  onCreated,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
   onResumeSession: (sessionId: string) => void;
   focusId?: string | null;
+  onCreated?: (draft: { rrule: string; task: string }) => void;
 }) {
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
@@ -117,6 +119,7 @@ export function SchedulesPanel({
           agentId={agentId}
           existing={form.mode === "edit" ? form.schedule : undefined}
           onClose={closeForm}
+          onCreated={onCreated}
         />
       )}
 

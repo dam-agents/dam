@@ -28,6 +28,7 @@ interface Props {
   leadingFields?: ReactNode;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onCreated?: (draft: { rrule: string; task: string }) => void;
 }
 
 export function RecurringScheduleForm({
@@ -38,6 +39,7 @@ export function RecurringScheduleForm({
   leadingFields,
   onClose,
   onDirtyChange,
+  onCreated,
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
@@ -77,6 +79,7 @@ export function RecurringScheduleForm({
           ? `Schedule "${v.name}" saved`
           : `Schedule "${v.name}" added`,
       });
+      if (!existing) onCreated?.({ rrule: common.rrule, task: v.task });
       onClose();
     };
     if (existing) {

@@ -1,9 +1,11 @@
+import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { justAskPrompt } from "../../schedules/lib/just-ask.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 import { SidebarSection } from "./sidebar-section.js";
 
@@ -38,6 +40,8 @@ export function ConfigSidePanel({
   focusScheduleId: string | null;
   onResumeSession: (sessionId: string) => void;
 }) {
+  const showJustAskHint = useStore((s) => s.showJustAskHint);
+
   return (
     <SidebarSection title={CONFIG_PANEL_TITLES[tab]} open className="flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
@@ -61,6 +65,10 @@ export function ConfigSidePanel({
             header={() => null}
             onResumeSession={onResumeSession}
             focusId={focusScheduleId}
+            onCreated={({ rrule, task }) => {
+              const prompt = justAskPrompt(rrule, task);
+              if (prompt) showJustAskHint({ agentId, prompt });
+            }}
           />
         )}
       </div>

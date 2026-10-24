@@ -144,6 +144,7 @@ import {
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
 import { CurveBenderAlert } from "../components/curve-bender-alert.js";
+import { JustAskHint } from "../components/just-ask-hint.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -294,6 +295,8 @@ export function ChatView() {
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
+  const justAskHint = useStore((s) => s.justAskHint);
+  const dismissJustAskHint = useStore((s) => s.dismissJustAskHint);
   const hasPendingPermission = useHasPendingPermission();
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
@@ -1075,6 +1078,16 @@ export function ChatView() {
                   claimed={delegationOwners}
                 />
               )}
+              {justAskHint &&
+                justAskHint.agentId === selectedAgent &&
+                agentView && (
+                  <JustAskHint
+                    hint={justAskHint}
+                    agentName={agentView.name}
+                    avatar={agentView.avatar}
+                    onDismiss={dismissJustAskHint}
+                  />
+                )}
               <QueuedPrompts onFileClick={openFileHandler} />
               {telemetryEnabled && sessionTurns.isError && (
                 <p className="py-1 text-2xs text-muted-foreground/70">
