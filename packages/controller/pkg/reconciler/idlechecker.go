@@ -15,6 +15,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
@@ -35,6 +36,7 @@ const (
 type IdleChecker struct {
 	client                  kubernetes.Interface
 	dynamic                 dynamic.Interface
+	backend                 AgentBackend
 	config                  *config.Config
 	halt                    MachineHalt
 	ownerLock               func(owner string) *sync.Mutex
@@ -70,8 +72,16 @@ func (c *IdleChecker) lockOf(owner string) *sync.Mutex {
 	return c.ownerLocks[owner]
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: WithAgentBackend points the sweep at the same Agent store as the reconciler,
+// UNIT_BOUNDARY_DESCRIPTION: so the decisions it makes from a row are safe under the same gate.
+func (c *IdleChecker) WithAgentBackend(backend AgentBackend) *IdleChecker {
+	c.backend = backend
+	return c
+}
+
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
-	c := &IdleChecker{client: client, dynamic: dyn, config: cfg}
+	c := &IdleChecker{client: client, dynamic: dyn, config: cfg,
+		backend: crAgentBackend{dynamic: dyn, namespace: cfg.Namespace}}
 	c.busyProbe = func(ctx context.Context, name string) bool {
 		idle, answered := agentPodStatus(ctx, c.config.Namespace, name)
 		return answered && !idle
@@ -125,7 +135,13 @@ func (c *IdleChecker) check(ctx context.Context) {
 	var passErr error
 	defer func() { finish(passErr) }()
 	start := time.Now()
-	agents, err := c.dynamic.Resource(AgentsGVR).Namespace(c.config.Namespace).List(ctx, metav1.ListOptions{})
+	// UNIT_BOUNDARY_DESCRIPTION: a store that cannot answer lately cannot say who went quiet. A sweep that hibernated from a stale fleet is exactly the decision this gate exists for, so the pass does nothing and the next one asks again.
+	if err := c.backend.Healthy(); err != nil {
+		slog.WarnContext(ctx, "idle checker: not sweeping, the Agent store is not answering", "error", err)
+		passErr = err
+		return
+	}
+	agents, err := c.backend.List(ctx, labels.Everything())
 	if err != nil {
 		slog.ErrorContext(ctx, "idle checker: listing agents", "error", err)
 		passErr = err
@@ -136,8 +152,8 @@ func (c *IdleChecker) check(ctx context.Context) {
 	atZero := c.agentsAtZero(ctx)
 	hibernated := 0
 	shortest := time.Duration(0)
-	for i := range agents.Items {
-		agent := &agents.Items[i]
+	for i := range agents {
+		agent := &agents[i]
 		name := agent.GetName()
 		effective := effectiveIdleTimeout(hibernationOverride(agent), c.config.AgentBase)
 		if effective > 0 && (shortest == 0 || effective < shortest) {
@@ -164,7 +180,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 	}
 	c.shortestObservedTimeout.Store(int64(shortest))
 	slog.Debug("idle checker sweep complete",
-		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+		"scanned", len(agents), "hibernated", hibernated, "duration", time.Since(start))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: hibernates one idle Agent, unless a runner roll started since the sweep read which machines are pinned. The owner's lock is the one a roll start takes, so holding it here makes the pin read and the halt one decision: a roll that begins while the pod is being probed is seen by the read inside the lock, and the machine it waits on is left up. The probe stays outside the lock, so the lock is never held for its three seconds.
@@ -356,13 +372,13 @@ func agentPodStatus(ctx context.Context, namespace, agentName string) (idle, ans
 }
 
 func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
-	_, err := hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
+	_, err := hibernateAgentPair(ctx, c.client, c.backend, c.halt, owner, c.config.Namespace, name)
 	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers. A machine the runner is still stopping is no error: the agent reads as stopping, and its reconcile watches the machine and publishes hibernation once it reads stopped.
 // UNIT_BOUNDARY_DESCRIPTION: it answers whether the pair is down beside its error, because a status write that fails after the stop was accepted and the gateway scaled down has already freed the room: the caller that freed it for a refused start counts that room, and the error still retries the publication.
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) (bool, error) {
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, backend AgentBackend, halt MachineHalt, owner, namespace, name string) (bool, error) {
 	var haltErr error
 	if halt != nil {
 		haltErr = halt(ctx, owner, name)
@@ -377,7 +393,7 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		if stopping {
 			reason, msg = apiv1.ReasonMachineStopping, "hibernating: the machine is stopping"
 		}
-		if err := updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
+		if err := backend.UpdateStatus(ctx, name, func(s *apiv1.AgentStatus) {
 			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, 0)
 			setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", 0)
 		}); err != nil {
@@ -388,11 +404,11 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		}
 		return false, fmt.Errorf("stopping the machine of %s: %w", name, haltErr)
 	}
-	return true, publishHibernated(ctx, dyn, namespace, name)
+	return true, publishHibernated(ctx, backend, name)
 }
 
-func publishHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
-	return updateAgentStatus(ctx, dyn, namespace, name, hibernatedStatus)
+func publishHibernated(ctx context.Context, backend AgentBackend, name string) error {
+	return backend.UpdateStatus(ctx, name, hibernatedStatus)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the conditions a hibernated agent carries, for the reconcile that writes them beside the kill in one status update.

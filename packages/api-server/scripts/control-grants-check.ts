@@ -59,6 +59,9 @@ function check(name: string, ok: boolean, detail = ""): void {
   }
 }
 
+// TEST_SCENARIO: A caller that runs another check against the same role leaves it and its grants in place, which is what the controller's own check needs.
+const keepRole = process.env.CONTROL_GRANTS_KEEP_ROLE === "1";
+
 async function dropRole(): Promise<void> {
   const present = await roleDb.execute<{ present: boolean }>(
     sql`SELECT to_regrole(${CONTROL_ROLE}) IS NOT NULL AS present`,
@@ -178,7 +181,18 @@ const ATTEMPTS: Attempt[] = [
   {
     name: "reads the store's own state",
     expect: "reach",
-    run: (tx) => tx.execute(sql`SELECT absorbed_at FROM control.agent_store`),
+    run: (tx) =>
+      tx.execute(
+        sql`SELECT id, absorbed_at, anchors_ensured_at, switch_completed_at FROM control.agent_store`,
+      ),
+  },
+  {
+    name: "records the anchor pass",
+    expect: "reach",
+    run: (tx) =>
+      tx.execute(
+        sql`UPDATE control.agent_store SET controller_holder = 'pod', anchors_ensured_at = now() WHERE id = 1`,
+      ),
   },
   {
     name: "updates a definition",
@@ -239,6 +253,16 @@ const ATTEMPTS: Attempt[] = [
     run: (tx) => tx.execute(sql`SELECT starter_kit FROM control.agent_kit_state`),
   },
   {
+    name: "reads the absorb report",
+    expect: "refuse",
+    run: (tx) => tx.execute(sql`SELECT absorb_report FROM control.agent_store`),
+  },
+  {
+    name: "reads the backup reference",
+    expect: "refuse",
+    run: (tx) => tx.execute(sql`SELECT backup_ref FROM control.agent_store`),
+  },
+  {
     name: "reads the snapshot archive",
     expect: "refuse",
     run: (tx) => tx.execute(sql`SELECT yaml FROM control.crd_snapshots`),
@@ -267,7 +291,8 @@ const ATTEMPTS: Attempt[] = [
 async function main(): Promise<void> {
   await dropRole();
   await roleDb.execute(
-    sql`CREATE ROLE ${sql.identifier(CONTROL_ROLE)} NOLOGIN NOSUPERUSER`,
+    // UNIT_BOUNDARY_DESCRIPTION: a real install's role logs in; a disposable one is created the same way, so the check runs statements as the identity an install has.
+    sql`CREATE ROLE ${sql.identifier(CONTROL_ROLE)} LOGIN NOSUPERUSER`,
   );
 
   const grants = await reconcileControlGrants(db);
@@ -321,7 +346,7 @@ async function main(): Promise<void> {
   await db.execute(
     sql`DELETE FROM public.connections WHERE id = 'conn-grants-check'`,
   );
-  await dropRole();
+  if (!keepRole) await dropRole();
 }
 
 await main()
@@ -329,7 +354,7 @@ await main()
     failures.push(`the run stopped: ${reasonOf(cause)}`);
   })
   .then(async () => {
-    await dropRole().catch(() => {});
+    if (!keepRole) await dropRole().catch(() => {});
     process.stdout.write(
       `\n${checked - failures.length}/${checked} checks passed\n`,
     );

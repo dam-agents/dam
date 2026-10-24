@@ -576,12 +576,13 @@ never happens — or, worse, a later one without the operator's timing.
 {{- if not (has ($store.authority | toString) (list "crd" "postgres")) -}}
 {{- fail (printf "agentStore.authority must be crd or postgres, got %q." ($store.authority | toString)) -}}
 {{- end -}}
-{{- /* No binary in this chart reads Postgres: the switch release adds the
-       readers and removes this refusal. Rendering the mode now would hand both
-       components a store they can only refuse, so it fails here where an
-       operator reads it, not in two CrashLoopBackOffs. */ -}}
+{{- /* Both components read Postgres, but no release in this chart performs
+       the absorb that makes a store authoritative. Rendering the mode now
+       would hand both components a store their own fences can only refuse,
+       so it fails here where an operator reads it, not in two
+       CrashLoopBackOffs; the switch release removes this refusal. */ -}}
 {{- if eq ($store.authority | toString) "postgres" -}}
-{{- fail "agentStore.authority=postgres is not served by any release in this chart yet: both components would refuse to start. Leave it crd; the switch release reads Postgres and removes this refusal." -}}
+{{- fail "agentStore.authority=postgres is not served by any release in this chart yet: the absorb release fills the store and writes its marker. Leave it crd until that release exists." -}}
 {{- end -}}
 {{- $cutover := $store.cutover | default dict -}}
 {{- if $cutover.acknowledged -}}
