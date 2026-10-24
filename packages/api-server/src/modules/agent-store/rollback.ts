@@ -50,7 +50,7 @@ export function rollbackVerdict(input: {
   if (!installMatches(input.install, input.liveInstall))
     return {
       action: "refuse",
-      reason: `this database was absorbed by another install (${input.install?.releaseName ?? "unknown"}/${input.install?.namespace ?? "unknown"} at ${input.install?.apiServer ?? "unknown"}), not by ${input.liveInstall.releaseName}/${input.liveInstall.namespace} at ${input.liveInstall.apiServer ?? "unknown"}: writing this cluster's resources from its rows would mix two installs`,
+      reason: `this database was absorbed by another install (${input.install?.releaseName ?? "unknown"}/${input.install?.namespace ?? "unknown"} at ${input.install?.apiServer ?? "unknown"}), not by ${input.liveInstall.releaseName}/${input.liveInstall.namespace} at ${input.liveInstall.apiServer ?? "unknown"}: writing this cluster's resources from its rows would mix two installs. The identity includes the API server address the absorb used, so run the rollback in a pod in the cluster, not from a workstation`,
     };
   if (
     input.markerAbsorbedAt !== null &&

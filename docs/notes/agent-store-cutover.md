@@ -84,8 +84,10 @@ A rollback is a restore of the custom resources from the rows, not a restore of 
    Both components exit instead of serving, so nothing writes rows while the exporter runs.
    This is another short outage.
 2. Restore:
-   - `node dist/js/agent-store-cli.js rollback --dry-run` first, from a machine with the cluster credentials and a database connection; it prints what it would do and changes nothing.
-   - then the same without `--dry-run`, from a one-off pod or the same machine.
+   - `node dist/js/agent-store-cli.js rollback --dry-run` first; it prints what it would do and changes nothing.
+   - then the same without `--dry-run`.
+   - Run it in a one-off pod in the cluster (the api-server image, the rollback Role, the api-server's own database environment), not from a workstation: the store is bound to the install by the API server address the absorb used, and a workstation dials a different one.
+     The pod also keeps the database credential off a laptop.
    - It refuses unless the database was absorbed and the cluster's marker says so; a wrong `DATABASE_URL` is a refusal, not a fleet that vanished.
      A rerun after a finished rollback does nothing.
      It writes each row back to a custom resource (whole: a grant revoked, a host removed or a flag turned off after the switch comes back cleared, and the status is restored), creates the ones that were created after the switch (new UIDs), deletes only resources the absorb recorded and whose rows are gone — Agents and UserBudgets alike, so a budget removed in row mode does not come back — re-points every child of each Agent — NetworkPolicies included — to its restored custom resource, deletes the anchors with orphan propagation, verifies that no child still references an anchor, deletes the marker, and only then clears the rows and the absorb stamp.

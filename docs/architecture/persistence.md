@@ -158,6 +158,7 @@ Two non-schema steps follow the migrations in the same startup sequence: a privi
 
 Before any of that, a component reads one marker ConfigMap — `<release>-agent-store` in the agent namespace — and refuses to start when it names a store the build cannot serve.
 The marker is written by the switch, so a build on the custom resources stops as soon as the authority has moved, and a build on Postgres starts only once the switch has absorbed them.
+The store is then bound to that install: the absorb records the release, namespace and API server it ran against, and the absorb, the barrier and a rollback refuse a database whose absorb stamp or install does not match the cluster's marker.
 
 The switch is one api-server startup behind that marker ([agent-store cutover](../notes/agent-store-cutover.md) is the operator's procedure).
 It recreates both Deployments instead of rolling them, so no old replica or periodic job acts on a fleet that exists only in rows.
