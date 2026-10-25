@@ -553,6 +553,21 @@ async function main() {
   await db.execute(
     sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${channelConnection}, ${channelAgent}) ON CONFLICT DO NOTHING`,
   );
+  /* UNIT_BOUNDARY_DESCRIPTION: a Telegram chat is a binding of its own, so the
+   * profile it runs on is in use and its delete is refused with the chat named,
+   * not by a foreign key alone. */
+  const channelUsage = await channelService.service.usage(channelProfile.id);
+  check(
+    "usage counts a Telegram chat as a channel that runs on the profile",
+    channelUsage.channels.length === 2,
+    JSON.stringify(channelUsage.channels),
+  );
+  check(
+    "a profile a chat runs on cannot be deleted",
+    (await rejects(() => channelService.service.delete(channelProfile.id))) ===
+      "PRECONDITION_FAILED",
+    "delete",
+  );
   await db.execute(
     sql`DELETE FROM telegram_conversations WHERE agent_id = ${channelAgent}`,
   );

@@ -15,6 +15,7 @@ import {
   profiles,
   schedules,
   sql,
+  telegramConversations,
   type Db,
   type DbTx,
 } from "db";
@@ -174,59 +175,78 @@ export function createProfilesRepository(
     const agentIds = boundTo(binding);
     if (agentIds !== undefined && agentIds.length === 0)
       return { agents: [], channels: [], schedules: [] };
-    const [agentRows, channelRows, scheduleRows] = await Promise.all([
-      executor
-        .select({
-          id: agents.id,
-          chat: agents.sessionProfile,
-          platform: agents.platformSubagentProfile,
-        })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.ownerSub, agentOwner(owner)),
-            or(
-              eq(agents.sessionProfile, id),
-              eq(agents.platformSubagentProfile, id),
+    const [agentRows, channelRows, scheduleRows, telegramRows] =
+      await Promise.all([
+        executor
+          .select({
+            id: agents.id,
+            chat: agents.sessionProfile,
+            platform: agents.platformSubagentProfile,
+          })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.ownerSub, agentOwner(owner)),
+              or(
+                eq(agents.sessionProfile, id),
+                eq(agents.platformSubagentProfile, id),
+              ),
+              ...(agentIds === undefined ? [] : [inArray(agents.id, agentIds)]),
             ),
-            ...(agentIds === undefined ? [] : [inArray(agents.id, agentIds)]),
           ),
-        ),
-      executor
-        .select({
-          agentId: channels.agentId,
-          label:
-            sql<string>`coalesce(${channels.config}->>'slackChannelId', ${channels.config}->>'conversationId', ${channels.type})`.as(
-              "label",
+        executor
+          .select({
+            agentId: channels.agentId,
+            label:
+              sql<string>`coalesce(${channels.config}->>'slackChannelId', ${channels.config}->>'conversationId', ${channels.type})`.as(
+                "label",
+              ),
+          })
+          .from(channels)
+          .where(
+            and(
+              eq(channels.owner, owner),
+              eq(channels.profileId, id),
+              ...(agentIds === undefined
+                ? []
+                : [inArray(channels.agentId, agentIds)]),
             ),
-        })
-        .from(channels)
-        .where(
-          and(
-            eq(channels.owner, owner),
-            eq(channels.profileId, id),
-            ...(agentIds === undefined
-              ? []
-              : [inArray(channels.agentId, agentIds)]),
           ),
-        ),
-      executor
-        .select({
-          id: schedules.id,
-          name: schedules.name,
-          agentId: schedules.agentId,
-        })
-        .from(schedules)
-        .where(
-          and(
-            eq(schedules.owner, owner),
-            sql`${schedules.spec}->>'profile' = ${id}`,
-            ...(agentIds === undefined
-              ? []
-              : [inArray(schedules.agentId, agentIds)]),
+        executor
+          .select({
+            id: schedules.id,
+            name: schedules.name,
+            agentId: schedules.agentId,
+          })
+          .from(schedules)
+          .where(
+            and(
+              eq(schedules.owner, owner),
+              sql`${schedules.spec}->>'profile' = ${id}`,
+              ...(agentIds === undefined
+                ? []
+                : [inArray(schedules.agentId, agentIds)]),
+            ),
           ),
-        ),
-    ]);
+        /* UNIT_BOUNDARY_DESCRIPTION: a Telegram chat names its profile on its own
+         * binding row, so it counts against the profile exactly as a Slack channel
+         * does — a profile a chat runs on is in use, and its delete is refused
+         * with that named rather than by a foreign key alone. */
+        executor
+          .select({
+            agentId: telegramConversations.agentId,
+            label: telegramConversations.conversationId,
+          })
+          .from(telegramConversations)
+          .where(
+            and(
+              eq(telegramConversations.profileId, id),
+              ...(agentIds === undefined
+                ? []
+                : [inArray(telegramConversations.agentId, agentIds)]),
+            ),
+          ),
+      ]);
     return {
       agents: agentRows.map((row) => {
         const slots: ProfileSlot[] = [];
@@ -234,7 +254,10 @@ export function createProfilesRepository(
         if (row.platform === id) slots.push("platformSubagent");
         return { id: row.id, slots };
       }),
-      channels: channelRows,
+      channels: [...channelRows, ...telegramRows].map((row) => ({
+        agentId: row.agentId,
+        label: row.label,
+      })),
       schedules: scheduleRows,
     };
   }
@@ -324,48 +347,65 @@ export function createProfilesRepository(
         };
         counts.set(id, { ...current, [kind]: current[kind] + 1 });
       };
-      const [agentRows, channelRows, scheduleRows] = await Promise.all([
-        db
-          .select({
-            chat: agents.sessionProfile,
-            platform: agents.platformSubagentProfile,
-          })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.ownerSub, agentOwner(owner)),
-              or(
-                isNotNull(agents.sessionProfile),
-                isNotNull(agents.platformSubagentProfile),
+      const [agentRows, channelRows, scheduleRows, telegramRows] =
+        await Promise.all([
+          db
+            .select({
+              chat: agents.sessionProfile,
+              platform: agents.platformSubagentProfile,
+            })
+            .from(agents)
+            .where(
+              and(
+                eq(agents.ownerSub, agentOwner(owner)),
+                or(
+                  isNotNull(agents.sessionProfile),
+                  isNotNull(agents.platformSubagentProfile),
+                ),
+                ...(agentIds === undefined
+                  ? []
+                  : [inArray(agents.id, agentIds)]),
               ),
-              ...(agentIds === undefined ? [] : [inArray(agents.id, agentIds)]),
             ),
-          ),
-        db
-          .select({ id: channels.profileId })
-          .from(channels)
-          .where(
-            and(
-              eq(channels.owner, owner),
-              isNotNull(channels.profileId),
-              ...(agentIds === undefined
-                ? []
-                : [inArray(channels.agentId, agentIds)]),
+          db
+            .select({ id: channels.profileId })
+            .from(channels)
+            .where(
+              and(
+                eq(channels.owner, owner),
+                isNotNull(channels.profileId),
+                ...(agentIds === undefined
+                  ? []
+                  : [inArray(channels.agentId, agentIds)]),
+              ),
             ),
-          ),
-        db
-          .select({ id: sql<string | null>`${schedules.spec}->>'profile'` })
-          .from(schedules)
-          .where(
-            and(
-              eq(schedules.owner, owner),
-              sql`${schedules.spec}->>'profile' is not null`,
-              ...(agentIds === undefined
-                ? []
-                : [inArray(schedules.agentId, agentIds)]),
+          db
+            .select({ id: sql<string | null>`${schedules.spec}->>'profile'` })
+            .from(schedules)
+            .where(
+              and(
+                eq(schedules.owner, owner),
+                sql`${schedules.spec}->>'profile' is not null`,
+                ...(agentIds === undefined
+                  ? []
+                  : [inArray(schedules.agentId, agentIds)]),
+              ),
             ),
-          ),
-      ]);
+          /* UNIT_BOUNDARY_DESCRIPTION: a Telegram chat is a binding of its own, so
+           * the profile it runs on counts as in use exactly as a Slack channel's
+           * does. */
+          db
+            .select({ id: telegramConversations.profileId })
+            .from(telegramConversations)
+            .where(
+              and(
+                isNotNull(telegramConversations.profileId),
+                ...(agentIds === undefined
+                  ? []
+                  : [inArray(telegramConversations.agentId, agentIds)]),
+              ),
+            ),
+        ]);
       /* UNIT_BOUNDARY_DESCRIPTION: an agent that names the same profile in both
        * of its slots is one agent using it, not two. */
       for (const row of agentRows) {
@@ -373,6 +413,7 @@ export function createProfilesRepository(
         if (row.platform !== row.chat) add(row.platform, "agents");
       }
       for (const row of channelRows) add(row.id, "channels");
+      for (const row of telegramRows) add(row.id, "channels");
       for (const row of scheduleRows) add(row.id, "schedules");
       return counts;
     },
