@@ -32,6 +32,8 @@ const RUNTIME_NAMESPACES: ReadonlyMap<string, AgentPermission> = new Map([
   ["changes", "sessions"],
 ]);
 
+const PROCEDURE_PATH = /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/;
+
 export interface EditorStanding {
   ownerSub: string;
   permissions: AgentPermission[];
@@ -50,12 +52,16 @@ export type EditorStandingOf = (
  * running processes) need `sessions`, the live model settings need `view`,
  * and startup items and a pending restart need `lifecycle`. A procedure not on
  * the map stays with the owner: SSH keys, publishing and the platform's own
- * calls. A change an editor makes is an audit record naming them.
+ * calls. A path with any character a procedure name cannot have is refused,
+ * so a percent-escaped comma cannot hide a second procedure from this check
+ * when tRPC decodes the path. A change an editor makes is an audit record
+ * naming them.
  */
 export function editorMayCall(
   permissions: readonly AgentPermission[],
   path: string,
 ): boolean {
+  if (!PROCEDURE_PATH.test(path)) return false;
   const permission =
     RUNTIME_PROCEDURES.get(path) ??
     RUNTIME_NAMESPACES.get(path.split(".")[0] ?? "");

@@ -412,6 +412,20 @@ describe("an editor reaching the shared agent's runtime", () => {
       ),
     ).toBe(false);
   });
+
+  // TEST_SCENARIO: tRPC decodes the URL path before it splits a batch on commas, so "files.x%2Cssh.authorizeKey" runs ssh.authorizeKey. A path with a character a procedure name cannot have is refused, even under a namespace the editor may use.
+  it("refuses a procedure hidden by an escaped comma", async () => {
+    expect(
+      await runtime(
+        "alice-bot",
+        BOB,
+        call(["files.x%2Cssh.authorizeKey"], true),
+      ),
+    ).toBe(false);
+    expect(await runtime("alice-bot", BOB, call(["sessions.list%2C"]))).toBe(
+      false,
+    );
+  });
 });
 
 describe("an editor on the runtime's tRPC socket", () => {

@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -72,6 +72,7 @@ Every runtime procedure an editor may call maps to one permission, one map for t
 The session screen and its side panels need `sessions`: sessions, files, the browser, changes, and a turn's processes.
 The live model settings need `view`, and startup items and a pending restart need `lifecycle`.
 A procedure not on the map, such as adding an SSH key or publishing, stays with the owner.
+A path with a character a procedure name cannot have, such as a percent escape, is refused, because tRPC decodes the path before it splits a batch.
 Over HTTP a batch with one such call is refused whole; on the socket the relay answers that one call with `FORBIDDEN` and passes the rest.
 A session is full access to the Agent's machine anyway, since the Agent reads and changes any file it is asked to, so the side panels give an editor nothing more.
 
