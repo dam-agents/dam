@@ -4,7 +4,7 @@ import { isMobile } from "../../../lib/breakpoints.js";
 import { resolveReturnPathname } from "../../../lib/return-path.js";
 import type { PlatformStore } from "../../../store.js";
 import {
-  configTabForSection,
+  configRedirectTab,
   type SidePanelTab,
 } from "../../sessions/lib/side-panel.js";
 import {
@@ -130,22 +130,26 @@ export const createNavigationSlice: StateCreator<
     );
     set({ usagePeriod: period });
   },
-  navigateToSandboxHome: (agentId, section = "setup") =>
-    // UNIT_BOUNDARY_DESCRIPTION: with the experiment on, an Agent's configuration page has no surface of its own, so this one function every link, menu item and deep link goes through opens the chat with the panel that holds that section. With it off, the page opens as it always has.
-    get().unifiedToolbar
-      ? get().openConfigTab(agentId, configTabForSection(section))
-      : leaveView(get, () => {
-          history.pushState(
-            null,
-            "",
-            routeToPath({
-              view: "sandbox-home",
-              agentId,
-              sandboxSection: section,
-            }),
-          );
-          set({ view: "sandbox-home", agentId, sandboxSection: section });
+  navigateToSandboxHome: (agentId, section = "setup") => {
+    const tab = configRedirectTab(get().unifiedToolbar, section);
+    // UNIT_BOUNDARY_DESCRIPTION: with the experiment on, an Agent's configuration page has no surface of its own, so this one function every link, menu item and deep link goes through opens the chat with the panel that holds that section. With it off, the page opens as it always has — and so does a section no panel holds, which is People.
+    if (tab !== null) {
+      get().openConfigTab(agentId, tab);
+      return;
+    }
+    leaveView(get, () => {
+      history.pushState(
+        null,
+        "",
+        routeToPath({
+          view: "sandbox-home",
+          agentId,
+          sandboxSection: section,
         }),
+      );
+      set({ view: "sandbox-home", agentId, sandboxSection: section });
+    });
+  },
   openConfigTab: (agentId, tab) => {
     const { view, selectedAgent } = get();
     if (view === "chat" && selectedAgent === agentId) {
