@@ -4,7 +4,7 @@ description: Spawn platform sub-agents on DAM — fresh agents in their own sand
   Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step in a fresh sandbox.
   Its first step decides whether a platform sub-agent is needed at all.
   Hand-offs, fan-outs and long waits use the spawn_subagent and await_subagents tools; a driver SDK script (Python driver_sdk, JS driver-sdk.mjs) is only for orchestration logic that finishes in one foreground command.
-allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__fetch_subagent_output, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
+allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__fetch_subagent_output, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, Bash(python3 *), Bash(node *), Write
 ---
 
 # Spawn a sub-agent
@@ -24,12 +24,12 @@ Go through the needs below.
 
 - `different-harness` — it must run on another harness;
 - `own-setup` — its own repository to clone, an install command, env or skills;
-- `more-resources` — more CPU, memory or disk than this sandbox, or a microVM for a container runtime or a cluster;
+- `more-resources` — more disk than this sandbox, or a microVM for a container runtime or a cluster;
 - `isolation` — the work must not be able to touch this workspace;
 - `parallel` — heavy parallel work beyond what this sandbox can run;
 - `checked-result` — a result the platform checks against a schema.
 
-The platform refuses a need the request does not bear out: `different-harness` on your own harness, `own-setup` without seed, install, env or skills, `more-resources` without resources or a vm backend.
+The platform refuses a need the request does not bear out: `different-harness` on your own harness, `own-setup` without seed, install, env or skills, `more-resources` without `resources.storage`.
 "The user said sub-agent" is not a need: unless they named the platform, a harness or a sandbox, they mean work done in this sandbox.
 
 ## Step 2 — Delegate with the tools
@@ -121,7 +121,7 @@ result = d.spawn(
     seed={"url": "https://github.example/acme/tool", "commit": my_commit},
     install="uv venv && uv pip install ./tool",  # runs in the workspace before the prompt
     env={"MODE": "cell"},
-    resources={"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
+    resources={"storage": "10Gi"},
     ttl_ms=4 * 3600_000,
     label="cell:persona/task",
 )
@@ -132,7 +132,7 @@ result = d.spawn(
 | `seed`        | Repository cloned into the workspace: `url`, optional `ref` or `commit`, `into` (`"work"` default or `"home"`). Pin `commit` to the commit you are running from, so it runs the same code. |
 | `install`     | Shell command run once in the workspace before the prompt. Must finish within 15 minutes; longer setup belongs in an image.                                                                |
 | `env`         | Environment variables (Python: a dict; JS: `[{ name, value }]`).                                                                                                                           |
-| `resources`   | `cpu`, `memory`, `storage` (disk). Omitted values come from the harness's defaults.                                                                                                        |
+| `resources`   | `storage` (disk). CPU and memory are the owner's pool, never a spawn's choice; an omitted disk comes from the harness's defaults.                                                          |
 | `backend`     | `"vm"` for a microVM, when the work needs a container runtime or a cluster inside.                                                                                                         |
 | `skills`      | External skills to install: `[{"source": <skill source url>, "name": ...}]`.                                                                                                               |
 | `connections` | Connection ids to grant, a subset of your own.                                                                                                                                             |
@@ -146,8 +146,8 @@ A **seed or install that fails fails the spawn at once** with the reason (for ex
 A quick compute or gate gets a short one (`10 * 60_000`); a clone + build + large change gets a long one.
 Time spent queued for compute counts too.
 
-**Give a heavy sub-agent more memory.** The harness default (often 1Gi) OOM-kills a clone plus install or build.
-An OOM-killed sub-agent fails fast with its reason.
+**Give a heavy sub-agent more disk.** A clone plus an install or build fills the harness's default disk (often 10Gi), and a full disk fails the spawn at once.
+CPU and memory come from the owner's pool, so a spawn cannot raise them; a sub-agent that runs out of memory restarts and fails with its reason.
 
 ## Run a command from a driver script
 
@@ -161,7 +161,7 @@ out = d.spawn_script(
     harness="claude-code",                       # the image the script runs in
     seed={"url": "https://github.example/acme/tool", "commit": my_commit},
     install="uv sync",
-    resources={"cpu": "4", "memory": "8Gi"},
+    resources={"storage": "20Gi"},
     ttl_ms=30 * 60_000,
     label="eval:smoke",
 )
@@ -230,8 +230,7 @@ The server validates the result against JSON Schema.
 
 ## Fan-out and compute
 
-- `d.budget()` returns your compute ceiling and what is reserved now; each `list_images()` entry carries its `size`.
-  Spawns past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.
+- Spawns past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.
 - In a script, run parallel spawns from threads (Python) or `Promise.all` (JS); a wide or long fan-out belongs to the tools.
 - **You stay awake while your sub-agents run.** The platform keeps this agent from hibernating while any sub-agent it spawned is still running.
 
