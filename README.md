@@ -139,28 +139,32 @@ Open [localhost:4444](http://localhost:4444) and log in with `dev` / `dev`.
 
 ### Several installs in one local cluster
 
-The cluster is one per machine, and every worktree gets an install of its own on it, in its own namespace, with its own agents, database and Keycloak.
+The cluster is one per machine, and every worktree gets an install of its own on it, in its own namespace, with its own agents, database, Keycloak and port.
 The install's **name** comes from the worktree's branch, so `mise run cluster:install` in two worktrees installs twice instead of upgrading once.
-Each install answers at `http://<name>.localhost:4444`; the repository's own checkout is the default install at [localhost:4444](http://localhost:4444), so nothing changes for a single checkout.
+Each install answers on a port of its own — the first free one of 4400–4499, which one Lima port-forward rule carries to this host — and the repository's own checkout is the default install at [localhost:4444](http://localhost:4444), so nothing changes for a single checkout.
+On a Mac each install also runs its own VM runner, so agents boot in every install.
 
 ```sh
 mise run cluster:install                      # this worktree's install, named after its branch
 DAM_INSTALL=review mise run cluster:install   # name it yourself
-mise run cluster:installs -- --all            # what the cluster holds, and where each answers
+mise run cluster:installs -- --all            # what the cluster holds, where each answers, its runner
 mise run cluster:uninstall                    # remove this worktree's install, leaving the others
 ```
 
-The name decides the namespace, the Helm release, the agent namespace, the host names and the local image tag, and it is fixed once the install exists: it comes from `--name`, `DAM_INSTALL` or the branch on every run, so another branch in one worktree makes a second install rather than renaming the first.
+The name decides the namespace, the Helm release, the agent namespace, the port, the local image tag and the install's host runner, and it is fixed once the install exists: it comes from `--name`, `DAM_INSTALL` or the branch on every run, so another branch in one worktree makes a second install rather than renaming the first.
 A worktree (a linked checkout) never gets the default install, `main` included; the repository's own checkout is the only one that does.
 `DAM_INSTALL=default` joins the default install.
 
+The first install of a cluster adds one Lima port-forward rule for the range and restarts the cluster's VM once (never again), because Lima reads its forwards when the VM starts.
+
 What the installs still share, because the cluster has one of each:
 
-- the cluster, its node and its disk: two installs' pods compete for the VM's CPU and memory;
+- the cluster, its node and its disk: two installs' pods compete for the VM's CPU and memory, and two host runners share the Mac's;
 - the Istio mesh, cert-manager, the Gateway API CRDs and the platform CRDs: installed once — the default install re-applies the CRDs on every run, a named install only adds the ones the cluster lacks;
-- the Traefik entrypoint on port 4444 — host names keep the installs apart, not ports;
-- the VM runner: on a Mac one runner serves the default install, and everywhere else the runner pods need a node that can open `/dev/kvm`.
-  An install without a runner serves its UI, sign-in and API, and an agent created there reports that it cannot start.
+- the one Traefik the cluster runs, with an entrypoint per install (the installs merge them into one `HelmChartConfig`, and each Ingress names its own);
+- the VM runner's program, its image volume and, on a Mac, the hypervisor: a runner per install is still one Mac's worth of CPUs.
+
+Two installs do not serialise against each other: install the default install before the others on a fresh cluster.
 
 ### The Rust build cache
 
