@@ -86,12 +86,65 @@ export function ProfileList({
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: a profile is selected while the picker's values are the ones it resolves to; a tune of any of them reads as a custom pick. */
-function sameAsProfile(pair: SessionPair, profile: ProfileWithUsage): boolean {
+export function sameAsProfile(
+  pair: SessionPair,
+  profile: ProfileWithUsage,
+): boolean {
   const settings = (value: Readonly<Record<string, string>> | undefined) =>
     JSON.stringify(Object.entries(value ?? {}).sort());
   return (
     pair.harness === profile.harness &&
     pair.model === profile.model &&
     settings(pair.settings) === settings(profile.settings)
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot (D93) offers the same
+ * profiles and stores its own reference, which contributes only a harness and a
+ * model; it is shown only for a harness that can pass those settings on.
+ */
+export function PlatformSubagentSlot({
+  profiles,
+  value,
+  onPick,
+}: {
+  profiles: readonly ProfileWithUsage[];
+  value: string | null;
+  onPick: (profile: ProfileWithUsage | null) => void;
+}) {
+  const current = profiles.find((profile) => profile.id === value) ?? null;
+  return (
+    <label className="flex flex-col gap-0.5 rounded px-2 py-1">
+      <span className="text-xs text-muted-foreground">
+        Platform subagent model
+      </span>
+      <select
+        aria-label="Platform subagent model"
+        value={value ?? ""}
+        onChange={(e) => {
+          const next = profiles.find((p) => p.id === e.target.value) ?? null;
+          onPick(next);
+        }}
+        className="w-full rounded border border-input bg-transparent px-2 py-1 text-sm text-foreground"
+      >
+        <option value="">Agent picks</option>
+        {profiles.map((profile) => (
+          <option
+            key={profile.id}
+            value={profile.id}
+            disabled={profile.availability?.available === false}
+          >
+            {profile.name}
+            {profile.availability?.available === false ? " — unavailable" : ""}
+          </option>
+        ))}
+      </select>
+      {current?.availability?.available === false && (
+        <span className="text-xs text-warning">
+          {current.availability.reason}
+        </span>
+      )}
+    </label>
   );
 }

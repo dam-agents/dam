@@ -19,7 +19,10 @@ import {
 
 import { useStore } from "../../../store.js";
 import { useProfiles } from "../../profiles/api/queries.js";
-import { ProfileList } from "../../profiles/components/profile-list.js";
+import {
+  PlatformSubagentSlot,
+  ProfileList,
+} from "../../profiles/components/profile-list.js";
 import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
   useGrantProvider,
@@ -78,6 +81,12 @@ export function ModelIndicator({
    * new chat shows, so one place teaches the other. */
   const [custom, setCustom] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the profile the session's pick came from, kept
+   * while the user tunes it, so the save can offer to update that profile. */
+  const [fromProfile, setFromProfile] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const { data: profiles = [] } = useProfiles(agentId);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { data: catalog } = useHarnessCatalog();
@@ -140,7 +149,7 @@ export function ModelIndicator({
       <SaveAsProfile
         pair={{ harness, provider, model, ...(settings && { settings }) }}
         providerTemplate={activeProvider.templateId}
-        profile={null}
+        profile={fromProfile}
         onClose={() => setSavingProfile(false)}
         onSaved={() => setSavingProfile(false)}
       />
@@ -260,6 +269,7 @@ export function ModelIndicator({
                   ...(settings && { settings }),
                 }}
                 onPick={(profile) => {
+                  setFromProfile({ id: profile.id, name: profile.name });
                   onChoose(profile.model);
                   rememberSessionPair(
                     agentId,
@@ -279,12 +289,32 @@ export function ModelIndicator({
                 onCustom={() => setCustom(true)}
                 onManage={() => navigateToSandboxHome(agentId, "providers")}
               />
+              {capability?.platformSubagentSettings === true && (
+                <PlatformSubagentSlot
+                  profiles={profiles.filter((p) => p.harness === harness)}
+                  value={
+                    profiles.find(
+                      (p) =>
+                        p.harness === settings["platformSubagent.harness"] &&
+                        p.model === settings["platformSubagent.model"],
+                    )?.id ?? null
+                  }
+                  onPick={(profile) =>
+                    onConfigure({
+                      "platformSubagent.harness": profile?.harness ?? "",
+                      "platformSubagent.model": profile?.model ?? "",
+                    })
+                  }
+                />
+              )}
               <button
                 type="button"
                 onClick={() => setSavingProfile(true)}
                 className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                Save as a profile
+                {fromProfile
+                  ? `Update “${fromProfile.name}”`
+                  : "Save as a profile"}
               </button>
             </div>
           ) : routed ? (

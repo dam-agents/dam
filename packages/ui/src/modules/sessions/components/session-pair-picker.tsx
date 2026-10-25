@@ -26,7 +26,10 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useProfiles } from "../../profiles/api/queries.js";
-import { ProfileList } from "../../profiles/components/profile-list.js";
+import {
+  PlatformSubagentSlot,
+  ProfileList,
+} from "../../profiles/components/profile-list.js";
 import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
   rememberSessionPair,
@@ -113,6 +116,12 @@ export function SessionPairPicker(props: Props) {
    * is one row away, so a routine pick is a name rather than a catalog. */
   const [custom, setCustom] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  /* UNIT_BOUNDARY_DESCRIPTION: the profile the pick came from, kept while the
+   * user tunes it in the full picker, so the save can offer to update it. */
+  const [fromProfile, setFromProfile] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const { data: profiles = [] } = useProfiles(agentId);
   const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);
@@ -186,7 +195,10 @@ export function SessionPairPicker(props: Props) {
    * this session. It saves what the pick names: a profile stays a reference. */
   const choose = (
     chosenPair: SessionPair,
-    references?: { profileId?: string | null },
+    references?: {
+      profileId?: string | null;
+      platformSubagentProfileId?: string | null;
+    },
   ) => {
     setPair(agentId, chosenPair);
     if (routed)
@@ -196,6 +208,7 @@ export function SessionPairPicker(props: Props) {
     const connection = providers.granted.find(
       (p) => p.templateId === profile.providerTemplate,
     );
+    setFromProfile({ id: profile.id, name: profile.name });
     choose(
       {
         harness: profile.harness,
@@ -282,10 +295,11 @@ export function SessionPairPicker(props: Props) {
       <SaveAsProfile
         pair={pair}
         providerTemplate={profileConnection.templateId}
-        profile={null}
+        profile={fromProfile}
         onClose={() => setSavingProfile(false)}
-        onSaved={(profileId) => {
+        onSaved={(profileId, name) => {
           setSavingProfile(false);
+          setFromProfile({ id: profileId, name });
           choose(pair, { profileId });
         }}
       />
@@ -317,6 +331,22 @@ export function SessionPairPicker(props: Props) {
                 onCustom={() => setCustom(true)}
                 onManage={() => navigateToSandboxHome(agentId, "providers")}
               />
+              {capability?.platformSubagentSettings === true && (
+                <PlatformSubagentSlot
+                  profiles={profiles}
+                  value={profileOfSlot(pair, profiles)?.id ?? null}
+                  onPick={(profile) => {
+                    if (!pair) return;
+                    const next = withSlot(pair, profile);
+                    setFromProfile(
+                      profile ? { id: profile.id, name: profile.name } : null,
+                    );
+                    choose(next, {
+                      platformSubagentProfileId: profile?.id ?? null,
+                    });
+                  }}
+                />
+              )}
               {pair && (
                 <button
                   type="button"
@@ -337,6 +367,15 @@ export function SessionPairPicker(props: Props) {
                 >
                   <ChevronLeft size={14} aria-hidden />
                   Use a profile
+                </button>
+              )}
+              {routed && fromProfile !== null && pair && (
+                <button
+                  type="button"
+                  onClick={() => setSavingProfile(true)}
+                  className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  Update “{fromProfile.name}”
                 </button>
               )}
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
@@ -822,5 +861,38 @@ function HarnessModelCount({
     <span className="ml-auto shrink-0 text-xs text-muted-foreground">
       {count} {count === 1 ? "model" : "models"}
     </span>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the slot stores the profile, and the session runs on the harness and model it gives, which is all a slot contributes (D93). */
+function withSlot(
+  pair: SessionPair,
+  profile: ProfileWithUsage | null,
+): SessionPair {
+  const settings = { ...(pair.settings ?? {}) };
+  delete settings["platformSubagent.harness"];
+  delete settings["platformSubagent.model"];
+  if (profile !== null) {
+    settings["platformSubagent.harness"] = profile.harness;
+    settings["platformSubagent.model"] = profile.model;
+  }
+  return {
+    ...pair,
+    ...(Object.keys(settings).length > 0
+      ? { settings }
+      : { settings: undefined }),
+  };
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: which profile's harness and model the slot currently names, so the dropdown shows the choice rather than an empty row. */
+function profileOfSlot(
+  pair: SessionPair | null,
+  profiles: readonly ProfileWithUsage[],
+): ProfileWithUsage | null {
+  const harness = pair?.settings?.["platformSubagent.harness"];
+  const model = pair?.settings?.["platformSubagent.model"];
+  if (harness === undefined || model === undefined) return null;
+  return (
+    profiles.find((p) => p.harness === harness && p.model === model) ?? null
   );
 }
