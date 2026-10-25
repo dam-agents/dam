@@ -24,7 +24,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import {
   PlatformSubagentSlot,
@@ -33,14 +32,12 @@ import {
 import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
   rememberSessionPair,
-  samePair,
   useGrantProvider,
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
-  useRememberedPair,
 } from "../api/session-pair.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useProviderUsage } from "../hooks/use-provider-usage.js";
@@ -125,9 +122,7 @@ export function SessionPairPicker(props: Props) {
   const { data: profiles = [] } = useProfiles(agentId);
   const manageProviders = newLayout;
   const setPair = useStore((s) => s.setNextSessionPair);
-  const clearPair = useStore((s) => s.clearNextSessionPair);
-  const { data: remembered } = useRememberedPair(agentId);
-  const { data: status } = useHarnessConfigStatus(agentId);
+
   const providers = useProviderConnections(agentId);
   const usage = useProviderUsage(agentId);
   const { revoke, pending: revoking } = useGrantProvider(agentId);
@@ -369,13 +364,15 @@ export function SessionPairPicker(props: Props) {
                   Use a profile
                 </button>
               )}
-              {routed && fromProfile !== null && pair && (
+              {routed && pair && (
                 <button
                   type="button"
                   onClick={() => setSavingProfile(true)}
                   className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
-                  Update “{fromProfile.name}”
+                  {fromProfile
+                    ? `Update “${fromProfile.name}”`
+                    : "Save as a profile"}
                 </button>
               )}
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
@@ -514,55 +511,22 @@ export function SessionPairPicker(props: Props) {
               />
             </div>
           )}
-          {(!routed || (pair && routed && status?.followsDefaults)) && (
+          {!routed && (
             <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
-              {pair && routed && status?.followsDefaults && (
-                <NewSessionFollowState
-                  onDefault={
-                    chosen === null ||
-                    (!!remembered && samePair(pair, remembered))
-                  }
-                  onFollow={() => clearPair(agentId)}
-                />
-              )}
-              {!routed && (
-                <PopoverClose asChild>
-                  <button
-                    type="button"
-                    onClick={() => navigateToSandboxHome(agentId, "providers")}
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    Configure providers and defaults
-                  </button>
-                </PopoverClose>
-              )}
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  onClick={() => navigateToSandboxHome(agentId, "providers")}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Configure providers and defaults
+                </button>
+              </PopoverClose>
             </div>
           )}
         </PopoverContent>
       </Popover>
     </>
-  );
-}
-
-function NewSessionFollowState({
-  onDefault,
-  onFollow,
-}: {
-  onDefault: boolean;
-  onFollow: () => void;
-}) {
-  if (onDefault) return <span>On the chat default</span>;
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span>Own choice</span>
-      <button
-        type="button"
-        onClick={onFollow}
-        className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
-      >
-        Back to default
-      </button>
-    </span>
   );
 }
 
