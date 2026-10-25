@@ -502,7 +502,12 @@ export function useAcpConnection(
         useStore
           .getState()
           .setContinuedFrom(continuedFrom.success ? continuedFrom.data : null);
-        if (turn.success && !turn.data.inFlight)
+        if (
+          turn.success &&
+          !turn.data.inFlight &&
+          queue.success &&
+          queue.data.length === 0
+        )
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);
         bindEngagement(sid);
