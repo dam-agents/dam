@@ -26,18 +26,25 @@ export const channelsRouter = t.router({
     .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.channels.setProfile(input);
-      /* UNIT_BOUNDARY_DESCRIPTION: a write that matched no binding, or a profile
-       * the agent's owner does not hold, is a refusal rather than a success the
-       * UI would show as done. */
-      if (result === "not-owned")
+      /* UNIT_BOUNDARY_DESCRIPTION: a write that matched no binding, a profile the
+       * agent's owner does not hold, or one its turns would refuse is a refusal
+       * rather than a success the UI would show as done. */
+      if (result.outcome === "not-owned")
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "That profile is not one this agent's owner holds",
         });
-      if (result === "no-such-channel")
+      if (result.outcome === "no-such-channel")
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "This agent has no such channel bound",
+        });
+      if (result.outcome === "unavailable")
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: result.attachable
+            ? `${result.reason} — attach it on the agent first`
+            : `That profile cannot run on this agent: ${result.reason}`,
         });
       return true;
     }),

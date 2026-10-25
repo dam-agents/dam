@@ -18,6 +18,7 @@ import { createProfileResolver } from "../src/modules/profiles/services/profile-
 import { createSessionPairRepo } from "../src/modules/harness-config/infrastructure/session-pair-repo.js";
 import { createSchedulesRepository } from "../src/modules/schedules/infrastructure/schedules-repository.js";
 import { createChannelPairResolver } from "../src/modules/channels/services/channel-pair-resolver.js";
+import { setChannelProfile } from "../src/modules/channels/infrastructure/channel-profile-repository.js";
 import {
   isAgentRowDeleted,
   markAgentDeleted,
@@ -549,6 +550,25 @@ async function main() {
     "a profile that cannot run on the agent is a refusal, not a fallback",
     refused.kind === "unavailable" && refused.detail.length > 0,
     "resolver",
+  );
+  /* UNIT_BOUNDARY_DESCRIPTION: the same refusal at the write, so no path stores
+   * a channel reference whose every later turn would be refused (R3). */
+  const writeRefused = await setChannelProfile(
+    db,
+    channelService.resolver,
+  )({
+    owner: channelOwner,
+    agentId: channelAgent,
+    type: "slack",
+    slackChannelId: "C-2",
+    profileId: channelProfile.id,
+  });
+  check(
+    "a channel cannot be given a profile whose provider the agent does not hold",
+    writeRefused.outcome === "unavailable" &&
+      writeRefused.attachable &&
+      writeRefused.reason.length > 0,
+    JSON.stringify(writeRefused),
   );
   await db.execute(
     sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${channelConnection}, ${channelAgent}) ON CONFLICT DO NOTHING`,

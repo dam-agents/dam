@@ -54,9 +54,11 @@ const INPUT = {
   profileId: "profile-owner",
 };
 
+const SAVED: SetChannelProfileResult = { outcome: "saved" };
+
 function world(
   user: UserIdentity,
-  answer: SetChannelProfileResult | (() => SetChannelProfileResult) = "saved",
+  answer: SetChannelProfileResult | (() => SetChannelProfileResult) = SAVED,
 ) {
   const madeFor: UserIdentity[] = [];
   const writes: { owner: string; input: typeof INPUT }[] = [];
@@ -65,7 +67,8 @@ function world(
     telegramBotUsername: () => null,
     setProfile: vi.fn(async (input: typeof INPUT) => {
       const verdict = typeof answer === "function" ? answer() : answer;
-      if (verdict === "saved") writes.push({ owner: identity.sub, input });
+      if (verdict.outcome === "saved")
+        writes.push({ owner: identity.sub, input });
       return verdict;
     }),
   });
@@ -126,16 +129,50 @@ describe("setting a channel's profile", () => {
   /** TEST_SCENARIO: a binding that no longer exists is a refusal, not a success
    * the UI would show as done. */
   it("refuses when the agent has no such channel", async () => {
-    const w = world(person(OWNER, "alice@example.com"), "no-such-channel");
+    const w = world(person(OWNER, "alice@example.com"), {
+      outcome: "no-such-channel",
+    });
     await expect(w.caller.channels.setProfile(INPUT)).rejects.toMatchObject({
       code: "NOT_FOUND",
+    });
+  });
+
+  /** TEST_SCENARIO: a profile whose provider the agent does not hold is refused
+   * with the attach named, so no channel stores a reference its turns would
+   * refuse. */
+  it("refuses a profile whose provider is not attached", async () => {
+    const w = world(person(OWNER, "alice@example.com"), {
+      outcome: "unavailable",
+      reason: "CurveBender (shared) isn't attached to this agent yet",
+      attachable: true,
+    });
+    await expect(w.caller.channels.setProfile(INPUT)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("attach it on the agent first"),
+    });
+    expect(w.writes).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: a profile that cannot run for another reason is refused with
+   * that reason. */
+  it("refuses a profile that cannot run here", async () => {
+    const w = world(person(OWNER, "alice@example.com"), {
+      outcome: "unavailable",
+      reason: "AWS Bedrock is not connected",
+      attachable: false,
+    });
+    await expect(w.caller.channels.setProfile(INPUT)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("AWS Bedrock is not connected"),
     });
   });
 
   /** TEST_SCENARIO: another owner's profile is refused rather than stored as a
    * reference that resolves to nothing. */
   it("refuses a profile the agent's owner does not hold", async () => {
-    const w = world(person(OWNER, "alice@example.com"), "not-owned");
+    const w = world(person(OWNER, "alice@example.com"), {
+      outcome: "not-owned",
+    });
     await expect(w.caller.channels.setProfile(INPUT)).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });

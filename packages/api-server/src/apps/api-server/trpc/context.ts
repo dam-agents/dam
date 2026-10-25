@@ -488,7 +488,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         available: channelManager.availableChannels(),
         telegramBotUsername: () => channelManager.telegramBotUsername(),
         setProfile: (input) =>
-          setChannelProfile(db)({ ...input, owner: user.sub }),
+          setChannelProfile(
+            db,
+            profileResolver,
+          )({
+            ...input,
+            owner: user.sub,
+          }),
       },
       connections,
       secretRequests,

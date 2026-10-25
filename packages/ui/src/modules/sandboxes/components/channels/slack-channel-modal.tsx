@@ -23,6 +23,7 @@ import { ProfilePicker } from "../../../profiles/components/profile-picker.js";
 import { useProfileAttach } from "../../../profiles/hooks/use-profile-attach.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
+import { saveChannelProfile } from "../../lib/channel-profile-save.js";
 import { ChannelSwitchCard } from "./channel-switch-card.js";
 
 export function SlackChannelModal({
@@ -206,8 +207,16 @@ function ProfileControls({
       value={value}
       placeholder="the agent's chat default"
       testId="slack-channel-profile"
-      onPick={(profile) => onChange(profile.id)}
-      onAttach={(profile) => void attach(profile)}
+      onPick={(profile) =>
+        void saveChannelProfile({
+          profile,
+          attach,
+          save: onChange,
+        })
+      }
+      onAttach={(profile) =>
+        void saveChannelProfile({ profile, attach, save: onChange })
+      }
       onManage={manage}
     />
   );
