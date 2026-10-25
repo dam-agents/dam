@@ -14,6 +14,7 @@ import {
   type ProfileWithUsage,
   type ProfilesService,
 } from "api-server-api";
+import { PLATFORM_SUBAGENT_PREFIX } from "agent-runtime-api";
 import {
   SEEDED_DEFAULT,
   type ProfileRow,
@@ -99,6 +100,29 @@ export function createProfilesService(
       });
   }
 
+  /* UNIT_BOUNDARY_DESCRIPTION: a profile holds the session settings its harness
+   * keeps for a session, and never the platform sub-agent slot, whose reference
+   * lives on the agent (plan §a). A value the owner can see is refused here, as
+   * the model and the harness are; whether a harness offers a value needs that
+   * harness's live catalog, which is an agent's, so it is checked where the
+   * profile is used. */
+  function validateSettings(
+    settings: Record<string, string> | undefined,
+  ): void {
+    for (const [id, value] of Object.entries(settings ?? {})) {
+      if (id.startsWith(PLATFORM_SUBAGENT_PREFIX))
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `a profile cannot hold ${id}; the platform sub-agent slot belongs to the agent`,
+        });
+      if (value.trim() === "")
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${id} needs a value`,
+        });
+    }
+  }
+
   async function view(id: string): Promise<ProfileWithUsage> {
     const row = await repo.get(owner, id);
     if (!row)
@@ -139,18 +163,18 @@ export function createProfilesService(
 
   async function ensureDefault(): Promise<void> {
     const seeded = deps.seededProvider;
-    await repo.seed(
-      owner,
-      seeded === null
-        ? null
-        : {
-            name: "Default",
-            harness: catalog.default,
-            providerTemplate: seeded.providerTemplate,
-            model: seeded.model,
-            settings: {},
-          },
-    );
+    /* UNIT_BOUNDARY_DESCRIPTION: an install that serves no shared provider has
+     * nothing to write, so it claims no marker either — the marker is what says
+     * "this owner has had their seeded Default", and an owner who configures
+     * the shared provider later still gets one. */
+    if (seeded === null) return;
+    await repo.seed(owner, {
+      name: "Default",
+      harness: catalog.default,
+      providerTemplate: seeded.providerTemplate,
+      model: seeded.model,
+      settings: {},
+    });
   }
 
   return {
@@ -195,6 +219,7 @@ export function createProfilesService(
        * "Default" before their first list cannot swallow the seeded one. */
       await ensureDefault();
       validate(input);
+      validateSettings(input.settings);
       try {
         const row = await repo.insert(owner, {
           name: input.name,
@@ -222,6 +247,7 @@ export function createProfilesService(
         providerTemplate: input.providerTemplate ?? current.providerTemplate,
         model: input.model ?? current.model,
       });
+      validateSettings(input.settings);
       try {
         await repo.update(owner, input.id, {
           ...(input.name !== undefined && { name: input.name }),

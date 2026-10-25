@@ -378,13 +378,18 @@ export function createProfilesRepository(
     },
 
     async seed(owner, profile) {
+      /* UNIT_BOUNDARY_DESCRIPTION: an install that serves no seeded provider has
+       * nothing to write, so it claims nothing: the marker is taken by the same
+       * transaction that writes the profile, and a user who configures the
+       * shared provider later still gets their Default. */
+      if (profile === null) return;
       await db.transaction(async (tx: DbTx) => {
         const claimed = await tx
           .insert(profileSeeds)
           .values({ owner })
           .onConflictDoNothing()
           .returning({ owner: profileSeeds.owner });
-        if (claimed.length === 0 || profile === null) return;
+        if (claimed.length === 0) return;
         await tx
           .insert(profiles)
           .values({
