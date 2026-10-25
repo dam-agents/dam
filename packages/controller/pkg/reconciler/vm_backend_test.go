@@ -660,7 +660,7 @@ func TestAStaleAgentReconcilesLikeACleanOne(t *testing.T) {
 	ctx := context.Background()
 	stale := vmAgentCR()
 	stale.Spec.Backend = &apiv1.Backend{Type: "container"}
-	stale.Spec.RuntimeClassName = "kata"
+	stale.Spec.RuntimeClassName = "gvisor"
 	stale.Spec.NodeSelector = map[string]string{"gpu": "true"}
 	stale.Status.RuntimeMigrationAttempts = 3
 	staleReconciler, staleNode, _ := setupVMReconciler(t, stale)

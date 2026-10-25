@@ -97,7 +97,7 @@ export function togglePinKeepingFocus(
         ),
       ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
-        `[data-agent-id="${CSS.escape(agentId)}"] button[aria-expanded]`,
+        `[data-agent-id="${CSS.escape(agentId)}"] [data-agent-main]`,
       ) ??
       document.querySelector<HTMLElement>('[data-testid="sidebar-group-by"]')
     )?.focus();

@@ -26,9 +26,3 @@ export function platformSkillFeature(
   }
   return PLATFORM_SKILLS.get(skill.name);
 }
-
-export function platformSkillsForFeature(id: PlatformFeatureId): string[] {
-  return [...PLATFORM_SKILLS]
-    .filter(([, feature]) => feature.id === id)
-    .map(([name]) => name);
-}

@@ -12,6 +12,7 @@ import {
   ANN_ROLL_REV,
   DISABLED_KEY,
   INVOCATIONS_ACTIVE_KEY,
+  ANN_KIT_UPDATE_PENDING,
   LAST_ACTIVITY_KEY,
   RECLAIMED_AT_KEY,
   STOP_REQUESTED_KEY,
@@ -26,20 +27,9 @@ import {
 } from "./agent-mappers.js";
 import {
   pollUntilReady,
-  REFUSAL_FAIL_FAST_GRACE_MS,
   PAUSE_SETTLE_POLL_MS,
   PAUSE_SETTLE_TIMEOUT_MS,
-  WAKE_POLL_INITIAL_MS,
-  WAKE_POLL_MAX_MS,
-  WAKE_TIMEOUT_MS,
 } from "./poll-until-ready.js";
-import {
-  AgentWakeTimeoutError,
-  classifyWakeFailure,
-  REFUSED_START_REASONS,
-  wakeFailureReasonToken,
-} from "../domain/wake-failure.js";
-import { AgentStoppedError } from "../domain/agent-stopped.js";
 import { createAgentWake } from "./agent-wake.js";
 import { getLogger } from "../../../core/logger.js";
 
@@ -91,6 +81,11 @@ export interface AgentsRepository {
     id: string,
     annotations: Record<string, string | null>,
   ): Promise<void>;
+  nudgeKitUpdate(
+    id: string,
+    expectedCommit: string,
+    at: string,
+  ): Promise<boolean>;
   listAgentIdsWithAnnotation(key: string, value: string): Promise<string[]>;
 
   wakeIfHibernated(id: string): Promise<AgentActivityStamp | null>;
@@ -136,8 +131,6 @@ export function createAgentsRepository(
   k8s: K8sClient,
   cache: AgentStateCache,
 ): AgentsRepository {
-  const inflight = new Map<string, Promise<void>>();
-
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
 
   const patchUnlessDisabled = async (
@@ -169,6 +162,38 @@ export function createAgentsRepository(
     const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
     if (!obj) return null;
     return owner && !agentIsOwnedBy(obj, owner) ? null : obj;
+  }
+
+  async function nudgeKitUpdate(
+    id: string,
+    expectedCommit: string,
+    at: string,
+  ): Promise<boolean> {
+    const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+    const pending = obj ? parseInfraAgent(obj).kitUpdatePending : undefined;
+    if (!obj || !pending) return false;
+    if (
+      pending.targetCommit.toLowerCase() !== expectedCommit.toLowerCase() ||
+      pending.nudgedAt !== undefined
+    )
+      return false;
+    try {
+      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+        metadata: {
+          resourceVersion: obj.metadata?.resourceVersion,
+          annotations: {
+            [ANN_KIT_UPDATE_PENDING]: JSON.stringify({
+              ...pending,
+              nudgedAt: at,
+            }),
+          },
+        },
+      });
+      return true;
+    } catch (e) {
+      if (isConflict(e) || isNotFound(e)) return false;
+      throw e;
+    }
   }
 
   // UNIT_BOUNDARY_DESCRIPTION: the stop annotation set, written once. `live` lets a caller that has already read the Agent pass it rather than pay a second read.
@@ -447,6 +472,8 @@ export function createAgentsRepository(
       const written = updated.metadata?.resourceVersion;
       if (written) await cache.awaitObserved(id, written);
     },
+
+    nudgeKitUpdate,
 
     async listAgentIdsWithAnnotation(key, value) {
       const objs = await cache.list();

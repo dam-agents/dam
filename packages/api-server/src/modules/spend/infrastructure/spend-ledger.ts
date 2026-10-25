@@ -125,7 +125,6 @@ export function createSpendLedger(db: Db): SpendLedger {
     sql`${spendDaily[key]} + excluded.${sql.identifier(spendDaily[key].name)}`;
   const sumOf = (key: Counted) =>
     sql<string>`coalesce(sum(${spendDaily[key]}), 0)`;
-  const hasCalls = sql`sum(${spendDaily.calls}) > 0`;
 
   const callsAsDays = (at: CallWindow) =>
     db

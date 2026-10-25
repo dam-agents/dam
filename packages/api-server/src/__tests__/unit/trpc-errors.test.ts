@@ -119,7 +119,7 @@ describe("harness tRPC error mapping", () => {
     } as HarnessContext);
   }
 
-  /* TEST_SCENARIO: An agent pod reports its sessions over the harness API, and the same duplicate row meets that path; the runtime must see CONFLICT, not a 500. */
+  /* TEST_SCENARIO: An agent's machine reports its sessions over the harness API, and the same duplicate row meets that path; the runtime must see CONFLICT, not a 500. */
   it("maps a unique violation to CONFLICT", async () => {
     await expect(
       harnessCaller({

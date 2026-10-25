@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
-import type { UsageService, UserIdentity } from "api-server-api";
+import type { UsageService } from "api-server-api";
 import { emit, EventType } from "../../events.js";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import {

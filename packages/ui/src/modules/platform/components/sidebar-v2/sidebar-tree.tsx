@@ -49,6 +49,7 @@ import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import {
   awaitsApproval,
   isExpanded,
+  openWithPage,
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
@@ -70,9 +71,13 @@ import { GroupByMenu } from "./sidebar-group-by-menu.js";
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one tree: the pinned
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
  * each opening to its own Sessions alone; its Environments are a tab of the
- * chat's side panel instead. The Agent that is open in the page opens
- * in the tree too until its row closes it, and stays open on a page with no
- * Agent, such as Home; any other Agent opens and closes from its row. The
+ * chat's side panel instead. A click on a closed Agent's row opens its
+ * new-session page, whose side panel holds its files and artifacts, and its
+ * list with it; a click on an open one only closes the list and leaves the
+ * page where it is, and the chevron over its avatar only opens and closes the
+ * list. The Agent that is open in the page opens in the tree too until its
+ * row closes it, and stays open on a page with no Agent, such as Home; any
+ * other Agent opens and closes from its row. The
  * open state lives in the store, so a page change that remounts the tree
  * keeps it. An Agent's attention hint refreshes that Agent's own list,
  * so an open list stays live without its chat.
@@ -242,6 +247,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                         toggleExpanded(toggled, agent.id, expandAgentId),
                       )
                     }
+                    onOpen={() => setToggled(openWithPage(toggled, agent.id))}
                     order={orderActions}
                     shownIds={shownIds}
                     lastActivityAt={lastActivityAt.get(agent.id)}
@@ -279,6 +285,7 @@ function AgentNode({
   current,
   cue,
   onToggle,
+  onOpen,
   order,
   shownIds,
   lastActivityAt,
@@ -289,6 +296,7 @@ function AgentNode({
   current: boolean;
   cue: "approval" | "unread" | null;
   onToggle: () => void;
+  onOpen: () => void;
   order: ReturnType<typeof useSidebarOrderActions>;
   shownIds: readonly string[];
   lastActivityAt?: string | undefined;
@@ -329,13 +337,19 @@ function AgentNode({
         >
           <button
             type="button"
-            onClick={onToggle}
-            aria-expanded={expanded}
-            aria-controls={expanded ? listId : undefined}
+            onClick={
+              expanded
+                ? onToggle
+                : go(() => {
+                    onOpen();
+                    startSession(agent.id);
+                  })
+            }
             aria-current={current && !newSessionPage ? "page" : undefined}
             aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
             aria-describedby={sublineId}
             data-testid="sidebar-agent-row"
+            data-agent-main
             className={cn(
               SQUIRCLE,
               "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
@@ -348,21 +362,13 @@ function AgentNode({
                 : "text-foreground",
             )}
           >
-            <span className={cn(TREE_LEADING, "relative items-center")}>
+            <span className={cn(TREE_LEADING, "items-center")}>
               <AgentAvatar
                 name={agent.name}
                 avatar={agent.avatar}
                 size={TREE_AVATAR}
                 mood={mood}
                 className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
-              />
-              <ChevronRight
-                size={SIDEBAR_GLYPH}
-                aria-hidden
-                className={cn(
-                  "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none [@media(hover:none)]:visible",
-                  expanded && "rotate-90",
-                )}
               />
             </span>
             <span
@@ -384,6 +390,28 @@ function AgentNode({
               </span>
             </span>
             {cue && !expanded && <AgentCue tone={cue} />}
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={expanded ? listId : undefined}
+            aria-label={`Sessions of ${agent.name}`}
+            data-testid="sidebar-agent-toggle"
+            className={cn(
+              "absolute inset-y-0 left-0 w-10 items-center justify-center rounded-lg text-muted-foreground",
+              "flex opacity-0 group-has-[:focus-visible]/agent:opacity-100 group-hover/agent:opacity-100 [@media(hover:none)]:opacity-100",
+              FOCUS_RING,
+            )}
+          >
+            <ChevronRight
+              size={SIDEBAR_GLYPH}
+              aria-hidden
+              className={cn(
+                "transition-transform motion-reduce:transition-none",
+                expanded && "rotate-90",
+              )}
+            />
           </button>
           <div className="absolute right-1">
             <AgentRowActions

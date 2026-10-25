@@ -74,6 +74,7 @@ export interface SessionsSlice {
   pendingResumeSessionMode: SessionMode | null;
   pendingResumeFresh: boolean;
   chatRequest: ChatRequest | null;
+  newSessionAgent: string | null;
   toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
@@ -84,6 +85,7 @@ export interface SessionsSlice {
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   requestChat: (request: ChatRequest | null) => void;
+  markNewSession: (agentId: string | null) => void;
   setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
@@ -195,6 +197,7 @@ export const createSessionsSlice: StateCreator<
     pendingResumeSessionMode: null,
     pendingResumeFresh: false,
     chatRequest: null,
+    newSessionAgent: null,
     toolActivityExpanded: readPersistedFlag(
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
       false,
@@ -210,6 +213,7 @@ export const createSessionsSlice: StateCreator<
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
     requestChat: (request) => set({ chatRequest: request }),
+    markNewSession: (agentId) => set({ newSessionAgent: agentId }),
     setToolActivityExpanded: (expanded) => {
       writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
       set({ toolActivityExpanded: expanded });

@@ -26,7 +26,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   stopRequested: false,
   disabled: false,
   overBudget: false,
-  size: {},
   state,
   podRestarts: 0,
   contributionFailures: [],

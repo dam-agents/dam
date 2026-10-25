@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -177,7 +177,7 @@ A Driver that crashed mid-fan-out stays up until its targets' deadlines end thei
 
 ## Sub-agent tools
 
-The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, the setup, and the harness config as flat model, mode and config options, or a script in place of the prompt — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **fetch_subagent_output** saves a script's stream to a file; **list_harnesses**, **list_connections** and **get_budget** answer what the SDK's reads answer.
+The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, the setup, and the harness config as flat model, mode and config options, or a script in place of the prompt — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **fetch_subagent_output** saves a script's stream to a file; **list_harnesses** and **list_connections** answer what the SDK's reads answer.
 The description steers a command whose output the agent needs to a script, so no model turn retells it.
 Scripts stay the path for orchestration logic — loops, scoring one result with another — and wait for their sub-agents in the foreground; long waits and wide fan-outs use the tools, because only a tool spawn's result is delivered as a turn.
 
@@ -199,8 +199,8 @@ Script spawns are never pushed — the SDK polls, and an extra turn per child wo
 A runtime too old to know the kind drops it at dispatch; await_subagents still works.
 
 **The model is told when not to use it, and must say why it does.** Most harnesses carry their own in-sandbox subagents, which start in seconds and cost nothing extra.
-spawn_subagent's description opens by steering the model there when its harness has one, and names what only a platform sub-agent gives: another harness, its own setup, more resources or a microVM, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
-The call must name one or more of these as `needs`, and the server refuses a need the request does not bear out — another harness that is the Driver's own, a setup with no seed, install, env or skills, more resources with none asked, a schema-checked result from a script — so a stated need is one the model acted on; the three it cannot check pass as stated.
+spawn_subagent's description opens by steering the model there when its harness has one, and names what only a platform sub-agent gives: another harness, its own setup, more disk, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
+The call must name one or more of these as `needs`, and the server refuses a need the request does not bear out — another harness that is the Driver's own, a setup with no seed, install, env or skills, more disk with none asked, a schema-checked result from a script — so a stated need is one the model acted on; the three it cannot check pass as stated.
 Every harness gets the delegation skill from the base image, and the base image's instructions repeat the rule in two sentences.
 The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
@@ -208,7 +208,7 @@ The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 ## Driver SDK
 
-The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, read the owner's budget, and write result schemas in shorthand.
+The client a Driver uses, baked into every agent image in two languages with one surface — JS and Python, both dependency-free and self-configuring from the agent's platform URL: spawn and wait, spawn a script and read its streams, list the harnesses on offer and the Driver's own connections, and write result schemas in shorthand.
 A failure raises with the platform's reason; a failed script's error still reads its streams.
 Reads retry transient errors; a spawn is sent once, because a duplicated spawn is a second target, not a duplicate.
 The HTTP routes are the contract; the clients stay thin.

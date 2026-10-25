@@ -21,7 +21,6 @@ import {
   type BindTelegramChatResult,
   type BindSlackChannelResult,
   type ConnectSlackResult,
-  type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
   type RuntimeFleetAgent,
@@ -48,7 +47,6 @@ import {
 import {
   ANN_AGENT_KIND,
   ANN_KB_SHARE_ROOTS,
-  ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
   ANN_STARTER_KIT,
@@ -1093,7 +1091,6 @@ export function createAgentsService(deps: {
           tmpl.spec,
           {
             description: input.description,
-            size: input.size,
             storage: input.storage,
           },
           deps.agentDefaultLimits,
@@ -1111,7 +1108,6 @@ export function createAgentsService(deps: {
           {
             image: input.image,
             description: input.description,
-            size: input.size,
             storage: input.storage,
           },
           deps.agentDefaultLimits,
@@ -1369,7 +1365,6 @@ export function createAgentsService(deps: {
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
       if (input.whisper !== undefined)
         patch.whispersOff = input.whisper ? null : true;
-      if (input.size !== undefined) patch.resources = { limits: input.size };
       const infra =
         Object.keys(patch).length > 0
           ? await deps.repo.updateSpec(input.id, deps.owner, patch)

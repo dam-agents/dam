@@ -23,10 +23,7 @@ import type {
   SessionPair,
 } from "api-server-api";
 import { z } from "zod";
-import type {
-  SessionPairRepo,
-  SessionPairReferences,
-} from "../infrastructure/session-pair-repo.js";
+import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import {
   qualifiedPairModel,
   sameModelName,

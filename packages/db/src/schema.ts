@@ -12,7 +12,6 @@ import {
   boolean,
   bigint,
   integer,
-  doublePrecision,
   customType,
   unique,
   smallint,

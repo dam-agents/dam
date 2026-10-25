@@ -60,7 +60,7 @@ import {
 } from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import { catalogChoices } from "./domain/catalog-choices.js";
-import type { CatalogProvider, ModelCatalog } from "../model-catalog/index.js";
+import type { ModelCatalog } from "../model-catalog/index.js";
 import { servedModels } from "../model-router/index.js";
 import {
   createSessionDirectoryReporter,

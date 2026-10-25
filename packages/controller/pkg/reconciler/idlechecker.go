@@ -83,7 +83,7 @@ func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *con
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg,
 		backend: crAgentBackend{dynamic: dyn, namespace: cfg.Namespace}}
 	c.busyProbe = func(ctx context.Context, name string) bool {
-		idle, answered := agentPodStatus(ctx, c.config.Namespace, name)
+		idle, answered := agentIdleStatus(ctx, c.config.Namespace, name)
 		return answered && !idle
 	}
 	return c
@@ -346,7 +346,7 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. The idle checker and a runner roll take a silence as idle, so an agent that is down still hibernates and a stuck guest does not hold up the roll that would replace it; a reclaim does not, since a guest saturated by a long turn is silent too.
-func agentPodStatus(ctx context.Context, namespace, agentName string) (idle, answered bool) {
+func agentIdleStatus(ctx context.Context, namespace, agentName string) (idle, answered bool) {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

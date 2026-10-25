@@ -109,13 +109,11 @@ schedules:
       repair or re-run anything in response, and back up work/
       (`scripts/work-backup.sh persist`).
 
-# TODO(creator): keep only when the workload needs more than the install default.
-# Limits only — the controller derives requests. `storage` is fixed at create.
+# TODO(creator): keep only when the workload needs more disk than the install
+# default. `storage` is fixed at create; CPU and memory come from the owner's pool.
 resources:
-  cpu: "1"
-  memory: 2Gi
   storage: 5Gi
-  note: TODO(creator) — why this size.
+  note: TODO(creator) — why this disk.
 
 # TODO(creator): keep only when the job needs other web access than the platform
 # default (trusted sites): none | trusted | all.
