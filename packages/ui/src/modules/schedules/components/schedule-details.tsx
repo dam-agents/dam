@@ -204,7 +204,7 @@ function ScheduleModel({
     if (!model)
       return (
         <>
-          Scheduled default
+          The agent&apos;s chat default
           {fallback?.model && (
             <p className="mt-1 text-xs font-normal text-muted-foreground">
               Now: {modelIndicatorLabel(groups, fallback.model)}

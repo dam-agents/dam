@@ -199,6 +199,16 @@ describe("the schedule form's Profile field", () => {
     expect(html).toContain("Harness");
   });
 
+  /** TEST_SCENARIO: a schedule of its own values leaves them at the agent's chat
+   * default, which is what an empty choice means now that nothing writes a
+   * scheduled default (D90/D92). */
+  it("names the empty choice the agent's chat default, not a scheduled default", () => {
+    state.profiles = [profile()];
+    const html = renderToStaticMarkup(createElement(Field, { profile: "" }));
+    expect(html).toContain("The agent&#x27;s chat default");
+    expect(html).not.toContain("Scheduled default");
+  });
+
   /** TEST_SCENARIO: an install with no profile at all keeps the pickers alone, so nothing new blocks a schedule. */
   it("leaves the pickers alone when the owner has no profile", () => {
     const html = renderToStaticMarkup(createElement(Field, { profile: "" }));

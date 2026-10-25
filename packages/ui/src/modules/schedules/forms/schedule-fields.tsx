@@ -579,8 +579,9 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks, for a
- * schedule that carries them instead of naming a profile. "Scheduled default"
- * is the empty choice and says what that default is now. On a runtime without
+ * schedule that carries them instead of naming a profile (D92). The empty
+ * choice is not a scheduled default — nothing writes one any more (D90) — it is
+ * the agent's chat default, and it says what that is now. On a runtime without
  * the Model Router the old single model field stands.
  */
 function CustomChoicesField({
@@ -682,10 +683,9 @@ function CustomChoicesField({
     ? modelIndicatorLabel(groups, fallback.model)
     : null;
   const now = (value: string) =>
-    sameAsChat ? `Now: ${value}, same as chat` : `Now: ${value}`;
-  const defaultHint = sameAsChat
-    ? "Scheduled default runs on the agent's scheduled default, set by a chat's model picker, which is the same as its chat default."
-    : "Scheduled default runs on the agent's scheduled default, set by a chat's model picker.";
+    sameAsChat ? `Now: ${value}, the agent's chat default` : `Now: ${value}`;
+  const defaultHint =
+    "Left as the agent's chat default, a schedule runs on whatever the agent's chat default is, which a chat's model picker sets.";
   return (
     <div className="flex flex-col gap-4">
       <FormField label="Harness" hint={defaultHint}>
@@ -698,15 +698,15 @@ function CustomChoicesField({
               choices={harnessChoices}
               value={field.value || null}
               clearable
-              placeholder="Scheduled default"
-              clearedLabel="Scheduled default"
+              placeholder="The agent's chat default"
+              clearedLabel="The agent's chat default"
               clearedDescription={
                 fallback?.harness
                   ? now(
                       harnessChoices.find((c) => c.id === fallback.harness)
                         ?.name ?? fallback.harness,
                     )
-                  : "Follows the agent's scheduled default"
+                  : "Follows the agent's chat default"
               }
               onSelect={(id) => {
                 field.onChange(id ?? "");
@@ -719,7 +719,7 @@ function CustomChoicesField({
       </FormField>
       <FormField
         label="Model"
-        hint="Each model is named with its provider. Scheduled default uses the scheduled default's model for the harness."
+        hint="Each model is named with its provider. The agent's chat default runs on its model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
         <AwakeModelsGate agentId={agentId}>
@@ -728,12 +728,10 @@ function CustomChoicesField({
             choices={modelChoices}
             value={modelValue || null}
             clearable
-            placeholder="Scheduled default"
-            clearedLabel="Scheduled default"
+            placeholder="The agent's chat default"
+            clearedLabel="The agent's chat default"
             clearedDescription={
-              todayModel
-                ? now(todayModel)
-                : "Follows the scheduled default's model for the harness"
+              todayModel ? now(todayModel) : "Follows the agent's chat default"
             }
             onSelect={(id) => {
               modelField.onChange(id ?? "");
