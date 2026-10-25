@@ -263,7 +263,7 @@ export function SessionPairPicker(props: Props) {
   /* UNIT_BOUNDARY_DESCRIPTION: an unavailable profile is repaired before it is
    * picked: the owner's Connection of its provider is attached to this agent,
    * whose grant refuses a rival alias, and then the pick is made. */
-  const attachAndPick = (profile: ProfileWithUsage) => {
+  const attachAndPick = (profile: ProfileWithUsage, forSubagent = false) => {
     const connection = providers.owned.find(
       (p) => p.templateId === profile.providerTemplate,
     );
@@ -272,7 +272,21 @@ export function SessionPairPicker(props: Props) {
       return;
     }
     void grant(connection.id).then((ok) => {
-      if (ok) chooseProfile(profile);
+      if (!ok) return;
+      if (forSubagent) {
+        if (pair)
+          choose(
+            withSubagent(
+              pair,
+              profile,
+              capability,
+              groups.flatMap((g) => g.models.map((m) => ({ name: m.name }))),
+            ),
+            { platformSubagentProfileId: profile.id },
+          );
+        return;
+      }
+      chooseProfile(profile);
     });
   };
   const confirmDisconnect = (name: string, id: string) => {
@@ -388,12 +402,23 @@ export function SessionPairPicker(props: Props) {
                     });
                 }}
                 onPick={(profile) => {
-                  if (pair)
-                    choose(withSubagent(pair, profile), {
-                      platformSubagentProfileId: profile.id,
-                    });
+                  if (!pair) return;
+                  /* UNIT_BOUNDARY_DESCRIPTION: the rule's values come from the
+                   * primary harness's capability and the models it lists, so a
+                   * subagent pick writes the native model too. */
+                  choose(
+                    withSubagent(
+                      pair,
+                      profile,
+                      capability,
+                      groups.flatMap((g) =>
+                        g.models.map((m) => ({ name: m.name })),
+                      ),
+                    ),
+                    { platformSubagentProfileId: profile.id },
+                  );
                 }}
-                onAttach={attachAndPick}
+                onAttach={(profile) => attachAndPick(profile, true)}
                 onManage={() => navigateToSettings("providers")}
               />
             </div>
