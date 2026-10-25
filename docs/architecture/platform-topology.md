@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -164,7 +164,7 @@ See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/ag
 
 ### VM runner
 
-The pods every agent runs on: **one runner per owner**, a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent, created and removed by the controller; a local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
+The pods every agent runs on: **one runner per owner**, a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent, created and removed by the controller; a local cluster on a Mac runs one [host runner](vm-host-runner.md) per install outside the cluster instead.
 Each Agent is a persistent machine on its owner's runner, published through the agent's Service so the api-server dials it as it would a pod; the runner is the agents' trust boundary, per owner rather than per Agent.
 A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time, and a new runner release can be handed the machines inside the pod instead, unless it declares another reboot key than the pod runs, which rolls the pod to reboot them (a pod whose own release declares no key takes it in place).
 [vm-runner](vm-runner.md) owns the runner in depth: its gates, machine API, image cache and guest; [upgrades](vm-runner-upgrades.md) owns its rolls and hand-offs.

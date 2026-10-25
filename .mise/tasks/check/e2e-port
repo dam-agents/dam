@@ -4,6 +4,8 @@
 # artifacts on 127.0.0.1 at the Artifact API Port. The cluster's ingress on
 # that port takes their requests, so the page gets the UI instead of its data,
 # and nothing reports it. The port is set in several files that must agree.
+# The template's Traefik entrypoint is not one of them: cluster:install merges it
+# into the cluster's own config, from e2e:install's --set=port.
 set -euo pipefail
 artifact="$(sed -n 's/^export const ARTIFACT_API_PORT = \([0-9]*\);$/\1/p' packages/agent-runtime-api/src/modules/artifact-api/schemas.ts)"
 [ -n "$artifact" ] || { echo "ARTIFACT_API_PORT is no longer a literal in schemas.ts; teach this check where it is" >&2; exit 1; }
@@ -13,8 +15,7 @@ port="$(sed -n 's/^  --set=port=\([0-9]*\)$/\1/p' .mise/tasks/e2e/install)"
 lima=etc/lima/k3s-test.yaml
 for got in \
   "$(yq '.portForwards[0].guestPort' "$lima")" \
-  "$(yq '.portForwards[0].hostPort' "$lima")" \
-  "$(grep -oE '^ +(port|exposedPort): [0-9]+$' "$lima" | grep -oE '[0-9]+' | sort -u | paste -sd' ')"; do
+  "$(yq '.portForwards[0].hostPort' "$lima")"; do
   [ "$got" = "$port" ] || { echo "$lima has port $got where e2e:install has $port" >&2; exit 1; }
 done
 for task in gate loop run; do

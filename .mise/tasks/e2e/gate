@@ -2,7 +2,7 @@
 #MISE description="Wait until the e2e cluster stably serves the UI and Keycloak on :6555"
 #MISE hide=true
 #MISE raw=true
-#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default" }
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"

@@ -1,8 +1,8 @@
 # VM host runner
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
-On a Mac, the local cluster runs its agents on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
+On a Mac, each install runs its agents on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
 The host runner is the same vm-runner and machine API, built for the Mac.
 It is a local-development shape only: an install turns it on by naming the address pods reach the Mac at (`virtualization.runner.hostAddress`), and `cluster:install` does so on a Mac unless told to nest.
@@ -40,7 +40,7 @@ And the forwarded NodePort is open to any process on the Mac, which can use a ga
 smolvm loads that same copy at run time, and no other.
 A build that could reach a system-wide copy would record that one instead, leaving a runner that starts only while the copy is where it was, so the build refuses a binary whose loader would search the system for one.
 
-**Images and disks.** The host runner is the one runner with no node image cache: no cache service runs beside it, so it fetches nothing from a registry and boots only the image trees the install stages onto a case-sensitive volume it owns.
+**Images and disks.** The host runner is the one runner with no node image cache: no cache service runs beside it, so it fetches nothing from a registry and boots only the image trees the install stages onto a case-sensitive volume on the Mac that every install's runner there shares, each tree named after the image reference it carries the install's tag in.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so the runner's own user owns every file of one: a Mac gives an unprivileged unpack no way to restore the owners the image names.
 The stager records that owner beside the tree, and platform-init boots such a tree on an idmapped view of it, which shows the owner as the guest's root, so the system files ssh, sudo and sudoers check are root's.
@@ -56,9 +56,9 @@ The runner refuses to start under a HOME whose machine sockets would not fit, na
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.
 Stopping it stops its machines, as a pod's termination does; the controller's sweep starts them again once the runner is back.
-`cluster:stop` of the cluster that last started it stops it; `cluster:delete` also removes its machines.
+`cluster:stop` stops this install's runner; `cluster:delete` stops every runner that serves the VM it deletes, and removes their machines.
 Nothing restarts it after the Mac reboots: `cluster:host-runner` (re)starts it.
-There is one host runner per Mac, serving the cluster that started it last.
+There is one host runner per install: each has its own directory under `~/.local/state/platform-vm-runner` (the default install's is that directory itself), its own token and certificate, the port the controller reads from `virtualization.runner.hostPort`, and the range of ports it publishes its machines on, which follows that port.
 A Mac has no `/proc`, so the runner finds a VMM that outlived its stop by scanning the kernel's process list and reading each process's arguments, and powers it off as it would in a pod.
 It asks the kernel for the processes of the user it runs as, since a VMM is its own child and a process of another user is no VMM of this machine, and it reads a whole listing or none: the kernel keeps its own snapshot of the table and answers a prefix of it without an error, so a listing that fills the room it was given, or that a second listing of the same room disagrees with, is read again with more room.
 A process installing a new image answers no arguments, or an error, for the moment the kernel takes to swap them — the read is EIO for the copy it cannot make and EINVAL while the new task is not reachable yet — and every VMM is in that moment at its start, so the runner reads it again instead of taking it for gone, as it does for any read that failed while the process was still there.

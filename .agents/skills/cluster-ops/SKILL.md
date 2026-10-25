@@ -24,6 +24,53 @@ Every `cluster:*` task honors `LIMA_INSTANCE` (default `platform-k3s`) to target
 
 Services are at `*.localhost:4444` (Traefik, auto-forwarded by lima); `*.localtest.me:4444` is an alias.
 
+## Several installs on one cluster
+
+The cluster holds one install per worktree.
+Each install is a Helm release `platform-<name>` in namespace `platform-<name>`, with agent namespace `platform-<name>-agents`, its own port, its own images tagged `platform-<component>:<name>`, its own ClusterIssuers and CA secrets, and — on a Mac — its own host runner.
+The **name** is `.mise/lib/cluster.sh`'s: `--name`, else `DAM_INSTALL`, else the slug of the worktree's branch (so an agent in a worktree gets its own install without passing anything).
+The repository's own checkout is the **default** install and keeps the old names — release `platform`, namespace `default`, agents in `platform-agents`, port 4444, images `:latest` — and so does the e2e lane (`DAM_INSTALL=default` in the `e2e:*` tasks, on its own VM).
+A *linked* worktree never gets the default install, `main` included: only the repository's own checkout owns `default`, so two checkouts cannot land on one install by accident.
+`DAM_INSTALL=default` in a worktree joins the default install.
+An explicit `--name`/`DAM_INSTALL` is refused when it is longer than 20 characters, holds anything but `[a-z0-9-]`, or ends in `-agents` (its namespace `platform-<name>` would be another install's `platform-<name>-agents`); a branch whose slug would do either is refused the same way, so pass `--name`.
+
+- `mise run cluster:install` (or `cluster:helm`, `cluster:build`) — all install-aware; `--name <name>` names another one.
+- `mise run cluster:installs -- --all` — every install, its namespace, its address and status, plus every host runner.
+- `mise run cluster:uninstall` — removes this worktree's install only: its runner, its entrypoint, its agent namespace, the chart, the PVCs, its namespace, the runner PriorityClass the chart keeps and its CA secrets.
+- `mise run cluster:status` — this worktree's pods (and the install list).
+
+**A port per install, one Traefik.**
+Every install serves the same host names (`localhost`, `keycloak.localhost`, `share.`, `content.`, `*.env.localhost`) on a port of its own: 4444 for the default install, otherwise the first free port of 4400–4499.
+One Lima port-forward rule carries that whole range to this host (`etc/lima/k3s.yaml`); the first install of a cluster adds it and restarts the VM once (Lima reads forwards at start), and `cluster:install` checks for it on every run, so it happens at most once per VM.
+The cluster's one `HelmChartConfig traefik` holds an entrypoint per install (`platform`, `platform-<name>`), merged rather than overwritten: `traefik_entrypoint_port` re-reads it and writes it back with a compare-and-swap on the object's `resourceVersion`, so two installs starting at once take two ports and neither drops the other's entrypoint; that config is also the only record of which port is whose (`cluster:installs` reads it).
+Each install's Ingress names its entrypoint (`ingress.annotations.traefik.ingress.kubernetes.io/router.entrypoints`), because Traefik attaches a router with no entrypoints to all of them.
+A named install also sets `router.priority=1000`: an Ingress installed before the annotation existed — the default install's, until its next `cluster:install` — still claims `Host(localhost)` on every entrypoint, and Traefik breaks that tie by rule length.
+With every install annotated, the priority decides nothing.
+
+**Per-install image tags.**
+A tag is node-wide state, so a named install aliases every local image it imports (`k3s ctr -n k8s.io images tag`), names its values' `platform-*` images `:<name>`, and stages its agent images under that reference.
+The default install keeps `:latest`, which any install's import still overwrites: rebuild in one worktree and the *default* install's pods run its build until it rebuilds too.
+
+**A host runner per install, on a Mac.**
+Each install's runner keeps its own directory (`~/.local/state/platform-vm-runner/<name>`, the default install's is the base directory), its own token and TLS certificate (the chart names them after the release), its own port (4600 for the default install, otherwise the first free one of 4601–4699, recorded in `port` beside its token) and its own 100 machine ports (`33000 + 100*(port-4600)`).
+The controller dials it at `virtualization.runner.hostPort`, so each install's controller reaches its own.
+The program (the runner binary, the smolvm release, the guest kernel) and the image volume are shared, because they are the same files for every install.
+A runner's memory is an admission ceiling, not a reservation: the default install takes a third of the Mac's RAM, a named install a quarter, and `PLATFORM_VM_RUNNER_MEMORY_MIB` overrides it — two runners are two ceilings on one Mac's real CPU and RAM.
+On a host with `/dev/kvm` (Linux, a sandbox, or a Mac VM created with nesting) an install runs its agents on runner pods instead, and none of this applies.
+
+**What stays cluster-wide, and why:**
+
+- the CRDs: cluster-scoped and install-only.
+  The **default** install re-applies `helm/crds/` on every run, which is what keeps the local cluster's schema current; a **named** install skips them unless a CRD is missing, so a worktree's schema change cannot rewrite the CRDs every install on the cluster runs against.
+  Helm's own `crds/` copy is skipped once the kinds exist (`--skip-crds`);
+- cert-manager, the Gateway API CRDs and the Istio mesh — one per cluster, and a named install follows the cluster's mesh mode rather than changing it (`--no-mesh` is refused when the dataplane is there, and only the default install writes the `kube-system/platform-local-no-mesh` marker),
+- the KVM device plugin (one per node; a named install applies the same manifest),
+- ClickStack (`CLICKSTACK=1`) — its operators are cluster-scoped and watch one namespace, so only the default install may run it,
+- the runner pods' node path `/var/lib/platform-vm-images` (per-release subdirectories), the build caches, `~/platform-src.d`, and a Mac's hypervisor.
+
+Nothing serialises installs that run at the same time: they share the CRD apply, the Traefik `HelmChartConfig`, the KVM device plugin, the image import and the image prune.
+Every one of those is idempotent on a warm cluster, and none is safe on a fresh one (Istio and cert-manager install on a check-then-install): install the default install first, then the others.
+
 ## In an Environment
 
 An agent on the vm backend installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.
@@ -92,9 +139,9 @@ Unset it to try the mesh anyway.
 ## VM runner (KVM)
 
 Every agent is a microVM, so `cluster:install` needs a host that can run machines, and fails where it cannot open `/dev/kvm`.
-On a Mac it runs agents on one runner on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
+On a Mac it runs agents on a runner of the install's own, on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, with a named install's under that directory's `<name>/`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
 Everywhere else, and in the e2e install, the runner pods need a usable `/dev/kvm` on the k3s node: nested virtualization in the lima VM (Apple silicon M3+, macOS 15+), or a KVM host in sandbox mode; `cluster:install` then applies the KVM device plugin (`helm/extra/kvm-device-plugin.yaml`), and values-local.yaml names its `squat.ai/kvm` and the node image cache directory.
-The e2e install keeps the runner pods on a Mac too, since the suite restarts the runner by deleting its pod and the one host runner belongs to the dev cluster.
+The e2e install keeps the runner pods on a Mac too, since the suite restarts the runner by deleting its pod.
 `mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) stages the mock image for the VM runners and runs the smoke suite; `E2E_GATEWAY_PER_OWNER=1` installs with one gateway pod per owner (`virtualization.gateway.perOwner`) instead of the default gateway pod per agent.
 Boot waits are four minutes for a boot and five for a smoke test, so a guest that stops answering fails the run in minutes.
 
