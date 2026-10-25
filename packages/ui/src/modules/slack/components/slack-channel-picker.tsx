@@ -78,6 +78,9 @@ export function SlackChannelPicker({
       );
     return (
       <>
+        <label htmlFor={inputId}>
+          <SectionLabel>Channels</SectionLabel>
+        </label>
         <SlackChannelCombobox
           inputId={inputId}
           channels={channels}
@@ -97,9 +100,6 @@ export function SlackChannelPicker({
 
   return (
     <div className="flex flex-col gap-2" data-testid="slack-channel-picker">
-      <label htmlFor={inputId}>
-        <SectionLabel>Channels</SectionLabel>
-      </label>
       {body}
       <PickedChannels
         ids={value}

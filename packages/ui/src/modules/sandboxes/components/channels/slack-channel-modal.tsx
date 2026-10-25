@@ -155,6 +155,7 @@ export function SlackChannelModal({
           label={editing ? "Save" : "Connect"}
           pendingLabel={editing ? "Saving…" : "Connecting…"}
           pending={isSubmitting}
+          disabled={!channel && watch("channelIds").length === 0}
           cancelDisabled={isSubmitting}
           testId="slack-save"
         />
