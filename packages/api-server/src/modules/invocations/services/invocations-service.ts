@@ -285,8 +285,6 @@ export function createInvocationsService(deps: {
       templateId: input.target.templateId ?? null,
       image: input.target.image ?? null,
       connections: input.connections,
-      cpu: created.size?.cpu ?? null,
-      memory: created.size?.memory ?? null,
       ttlMs,
       expiresAt,
       ...work.record,

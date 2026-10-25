@@ -1879,17 +1879,13 @@ controller:
       # still set here is ignored with a startup warning.)
 
       storageSize: "10Gi"
-      # Default agent Size when neither the user's slider nor the template
-      # chooses one. Limits are the user-facing concept (#1900): the Budget
-      # bounds Σ limits of a user's running agents, so limits ARE the
-      # agent's "power". A `requests` set here (or in a template) is carried
-      # onto the Agent as written — an operator escape hatch, not a user
-      # concept.
-      #
-      # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
-      # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
-      # an existing sandbox — NEW sandboxes get it directly, existing ones are
-      # backfilled at the identical `legacyAgentSize` below.
+      # The resource limits every Agent's spec is stamped with at create.
+      # Nothing user-facing chooses them: on a runner pod a machine's size is
+      # half its owner's pool whatever the spec says (`virtualization.runner`,
+      # see docs/architecture/vm-memory.md). The macOS host runner, which
+      # cannot see the share of the host it may give its machines, sizes each
+      # machine from these. A `requests` set here (or in a template) is
+      # carried onto the Agent as written — an operator escape hatch.
       resources:
         limits:
           cpu: "1"
@@ -1940,15 +1936,11 @@ controller:
       cpu: "1"
       memory: "2Gi"
 
-  # -- Per-user compute Ceiling defaults (#1900): the maximum CPU and memory
-  # one user's running agents can use concurrently, as the sum of their Sizes
-  # (`spec.resources.limits`, which hard-cap usage; the uniform per-agent
-  # gateway overhead is deliberately not counted — price it into these
-  # defaults). Enforced by the controller at the 0→1 scale-up; a user at the
-  # ceiling must pause, stop, or shrink a running sandbox before starting
-  # another. A platform operator raises (or lowers) them per user in the
-  # Operator tab of Settings or with `dam budget`, which write a UserBudget CR
-  # named `budget-<keycloak-sub>` in the agent namespace.
+  # -- Per-user pool defaults: the CPU and memory one user's machines share.
+  # Enforced by the owner's VM runner at the start of a machine (see
+  # docs/architecture/budgets.md). A platform operator raises (or lowers) them
+  # per user in the Operator tab of Settings or with `dam budget`, which write
+  # a UserBudget CR named `budget-<keycloak-sub>` in the agent namespace.
   userBudgets:
     defaultCpu: "8"
     defaultMemory: "16Gi"

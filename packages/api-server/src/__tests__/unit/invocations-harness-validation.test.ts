@@ -65,7 +65,6 @@ function makeApp(
           memory: { reservedBytes: 0, ceilingBytes: 14 * 1024 ** 3 },
         }),
       }) as never,
-    defaultLimits: { cpu: "1", memory: "1Gi" },
   });
   return { app, spawned };
 }

@@ -35,8 +35,6 @@ interface Props {
 
 function subtitle(node: DelegationNode): string {
   const parts = ["Temporary agent", node.templateId ?? node.image];
-  if (node.cpu) parts.push(`${node.cpu} CPU`);
-  if (node.memory) parts.push(node.memory);
   return parts.filter((p): p is string => !!p).join(" · ");
 }
 

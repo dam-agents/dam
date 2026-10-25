@@ -1,7 +1,6 @@
 import type {
   AgentCreateInput,
   AgentSetup,
-  AgentSetupResources,
   AgentSetupSeed,
 } from "api-server-api";
 
@@ -21,27 +20,16 @@ export function seedGitRepo(
   };
 }
 
-function sizeAndStorage(
-  resources: AgentSetupResources | undefined,
-): Pick<AgentCreateInput, "size" | "storage"> {
-  if (!resources) return {};
-  const { cpu, memory, storage } = resources;
-  return {
-    ...(cpu !== undefined || memory !== undefined
-      ? { size: { cpu, memory } }
-      : {}),
-    ...(storage !== undefined ? { storage } : {}),
-  };
-}
-
 export function createInputFromSetup(
   setup: Pick<AgentSetup, "resources" | "env"> & {
     seed?: AgentSetupSeed;
   },
-): Pick<AgentCreateInput, "gitRepo" | "size" | "storage" | "env"> {
+): Pick<AgentCreateInput, "gitRepo" | "storage" | "env"> {
   return {
     ...(setup.seed ? { gitRepo: seedGitRepo(setup.seed) } : {}),
-    ...sizeAndStorage(setup.resources),
+    ...(setup.resources?.storage !== undefined
+      ? { storage: setup.resources.storage }
+      : {}),
     ...(setup.env && setup.env.length > 0 ? { env: setup.env } : {}),
   };
 }

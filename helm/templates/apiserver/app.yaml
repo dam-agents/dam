@@ -439,8 +439,8 @@ spec:
             # disk for its home.
             - name: AGENT_DEFAULT_STORAGE_SIZE
               value: {{ .Values.controller.agent.templateDefaults.storageSize | quote }}
-            # Default per-user ceiling (#1900), same value the controller
-            # enforces with; display-only here (the meter's ceiling figure).
+            # Default per-user pool, the same value the controller enforces
+            # with; the budget surfaces show it.
             - name: DEFAULT_USER_CPU_BUDGET
               value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
             - name: DEFAULT_USER_MEMORY_BUDGET

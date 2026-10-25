@@ -121,12 +121,6 @@ export function mountInvocationRoutes(
     if (!ops) return c.json({ error: "not found" }, 404);
     return c.json({ images: await ops.images() });
   });
-
-  app.get("/api/agents/:id/budget", async (c) => {
-    const ops = await driverOps(c.req.param("id")!);
-    if (!ops) return c.json({ error: "not found" }, 404);
-    return c.json(await ops.budget());
-  });
 }
 
 function spawnFor(ops: DriverOps, raw: unknown): () => Promise<SpawnOutcome> {
