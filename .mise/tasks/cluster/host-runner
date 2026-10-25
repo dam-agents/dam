@@ -3,9 +3,16 @@
 # cluster:install runs vm agents on it here, instead of on a runner pod nested
 # inside the k3s VM. It serves every owner from ~/.local/state/platform-vm-
 # runner, listening on loopback, where the k3s VM's pods reach it.
+# It holds one install's token and CA and listens on one fixed port, so it is
+# one per Mac: the default install's.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+if [ -n "$CLUSTER_INSTALL" ]; then
+  echo "FATAL: the host runner is one per Mac and belongs to the default install (it holds its token, CA and port)." >&2
+  echo "Install '$CLUSTER_INSTALL' runs its agents on runner pods, which need /dev/kvm on the cluster's node." >&2
+  exit 1
+fi
 R="$HOST_RUNNER_DIR"
 pkg="$MISE_CONFIG_ROOT/packages/vm-runner"
 mkdir -p "$R" "$HOST_RUNNER_VM_HOME"
@@ -75,12 +82,12 @@ fi
 # The chart renders the runner's token and asks cert-manager for its serving
 # certificate (virtualization.runner.hostAddress); the runner holds copies.
 secret=platform-vm-runner-host
-for _ in $(seq 1 60); do kubectl -n platform-agents get secret "$secret-tls" >/dev/null 2>&1 && break; sleep 2; done
+for _ in $(seq 1 60); do kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret-tls" >/dev/null 2>&1 && break; sleep 2; done
 (
   umask 077
-  kubectl -n platform-agents get secret "$secret" -o jsonpath='{.data.token}' | base64 -d > "$R/token"
-  kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$R/tls.crt"
-  kubectl -n platform-agents get secret "$secret-tls" -o jsonpath='{.data.tls\.key}' | base64 -d > "$R/tls.key"
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret" -o jsonpath='{.data.token}' | base64 -d > "$R/token"
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret-tls" -o jsonpath='{.data.tls\.crt}' | base64 -d > "$R/tls.crt"
+  kubectl -n "$CLUSTER_AGENT_NAMESPACE" get secret "$secret-tls" -o jsonpath='{.data.tls\.key}' | base64 -d > "$R/tls.key"
 )
 # The runner boots only the trees cluster:install stages onto this volume: it
 # runs no node image cache service, so it fetches nothing from a registry.

@@ -18,6 +18,80 @@ case "${1:-}" in
   --environment=*) export CLUSTER_ENVIRONMENT="${1#--environment=}"; shift ;;
 esac
 
+# The install's name: several installs of the chart can live on one cluster, one
+# per worktree, and every cluster:* task acts on this worktree's. --name/DAM_INSTALL
+# names it; otherwise a linked worktree derives it from its branch, and the
+# repo's own checkout is the default install, which keeps main's names and port
+# (no per-worktree migration for a single-checkout developer). The default is
+# the empty name, not `default`: release, namespace and URLs stay what they were.
+cluster_install_name() {
+  if [ -n "${DAM_INSTALL:-}" ]; then printf '%s' "$DAM_INSTALL"; return 0; fi
+  local dir common branch
+  dir="$(git -C "$MISE_CONFIG_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 0
+  common="$(git -C "$MISE_CONFIG_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+  # The repo's own checkout owns `default`; a linked worktree never does, so two
+  # agents in two worktrees never land on one install by surprise.
+  [ "$dir" != "$common" ] || return 0
+  branch="$(git -C "$MISE_CONFIG_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  [ "$branch" != HEAD ] || branch="$(basename "$MISE_CONFIG_ROOT")"
+  # A DNS label, short enough for every name the chart and the controller build
+  # from the release: `<release>-extauthz-agent-<16 hex>` is the longest, and
+  # Kubernetes caps a name at 63, so the release (9 + name) may take 32.
+  # `default` here is the reserved name of the shared install, never a worktree's.
+  local slug
+  slug="$(printf '%s' "$branch" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//' | cut -c1-20 | sed 's/-$//')"
+  case "$slug" in
+    ''|default) slug="wt-$(basename "$MISE_CONFIG_ROOT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//' | cut -c1-16 | sed 's/-$//')" ;;
+  esac
+  printf '%s' "$slug"
+}
+
+if [ -n "${usage_name:-}" ]; then
+  export CLUSTER_INSTALL="$usage_name"
+fi
+case "${1:-}" in
+  --name) export CLUSTER_INSTALL="${2:?--name needs a name}"; shift 2 ;;
+  --name=*) export CLUSTER_INSTALL="${1#--name=}"; shift ;;
+esac
+export CLUSTER_INSTALL="${CLUSTER_INSTALL:-$(cluster_install_name)}"
+[ "$CLUSTER_INSTALL" != default ] || CLUSTER_INSTALL=""
+if [ -n "$CLUSTER_INSTALL" ]; then
+  case "$CLUSTER_INSTALL" in
+    [a-z0-9]*) ;;
+    *) echo "FATAL: install name '$CLUSTER_INSTALL' must start with a lowercase letter or digit" >&2; exit 1 ;;
+  esac
+  case "$CLUSTER_INSTALL" in
+    *[!a-z0-9-]*) echo "FATAL: install name '$CLUSTER_INSTALL' may hold only lowercase letters, digits and dashes" >&2; exit 1 ;;
+  esac
+fi
+# Everything the install's objects are named after. The chart's own values page
+# repeats this for a production install; a local one gets it from these.
+export CLUSTER_RELEASE="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}"
+export CLUSTER_NAMESPACE="${CLUSTER_INSTALL:+platform-}${CLUSTER_INSTALL:-default}"
+export CLUSTER_AGENT_NAMESPACE="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}-agents"
+export CLUSTER_DOMAIN="${CLUSTER_INSTALL:+$CLUSTER_INSTALL.}localhost"
+export CLUSTER_APP_PORT=4444
+# Every install routes on the one Traefik entrypoint the VM forwards; the host
+# name is what keeps them apart (docs/design in the PR).
+export CLUSTER_URL="http://$CLUSTER_DOMAIN:$CLUSTER_APP_PORT"
+
+# install_image_tags <component>...: aliases each freshly imported local image as
+# this install's own tag. A tag is node-wide state, so two installs on one node
+# sharing `:latest` would run each other's builds; `cluster:import` leaves the
+# tar's own `:latest` in place for the default install and the e2e lane.
+install_image_tags() {
+  [ -n "$CLUSTER_INSTALL" ] || return 0
+  local c rc=0
+  for c in "$@"; do
+    node_sh k3s ctr -n k8s.io images tag --force "docker.io/library/platform-$c:latest" \
+      "docker.io/library/platform-$c:$CLUSTER_INSTALL" >/dev/null || {
+      echo "WARN: could not tag platform-$c:$CLUSTER_INSTALL on the node" >&2; rc=1
+    }
+  done
+  return $rc
+}
+export -f install_image_tags
+
 export LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
 if [ -n "${CLUSTER_ENVIRONMENT:-}" ]; then
   export CLUSTER_TARGET=environment

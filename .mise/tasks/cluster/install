@@ -7,6 +7,7 @@
 #USAGE flag "--no-restart"
 #USAGE flag "--no-mesh"
 #USAGE flag "--environment <name>" help="Install into this agent's Environment of that name, over the Environment Link"
+#USAGE flag "--name <name>" help="Install under this name, beside the other installs on the cluster (default: this worktree's)"
 #USAGE flag "--backchannel" help="With --environment: also answer on the backchannel addresses, which cluster:open forwards to this agent"
 #USAGE flag "--backchannel-port <port>" default="4444" help="The port of the backchannel addresses, which cluster:open forwards"
 # Every agent runs as a microVM on a VM runner: on a Mac on one VM runner on the
@@ -66,6 +67,18 @@ if [ -n "${PLATFORM_SANDBOX:-}" ] && [ "$NO_MESH" != true ]; then
   NO_MESH=true
   NO_MESH_BY="PLATFORM_SANDBOX=$PLATFORM_SANDBOX mise run cluster:install"
 fi
+# The mesh is the cluster's, not an install's: a named install follows whichever
+# mode the cluster already runs, and never turns the shared dataplane off (the
+# marker ConfigMap is the default install's to write).
+if [ -n "$CLUSTER_INSTALL" ] && [ "$CLUSTER_TARGET" != environment ]; then
+  if kubectl -n kube-system get configmap "$NO_MESH_MARKER" >/dev/null 2>&1; then
+    NO_MESH=true
+    NO_MESH_BY="the cluster's $NO_MESH_MARKER ConfigMap"
+  elif [ "$NO_MESH" = true ] && helm -n istio-system status istiod >/dev/null 2>&1; then
+    echo "FATAL: this cluster runs the Istio dataplane for every install on it; --no-mesh here would turn it off for all of them. Run it as the default install, or leave the mesh on." >&2
+    exit 1
+  fi
+fi
 no_mesh_warning() {
   [ "$NO_MESH" = true ] || return 0
   cat >&2 <<WARN
@@ -109,6 +122,12 @@ OUTER_GATEWAY_CA=/etc/platform/ca/ca.crt
 # address are read on it, and its endpoints name the public URLs.
 APP_PORT=4444
 BACKCHANNEL="${usage_backchannel:-false}"
+# An Environment is an install of its own, on its own cluster, whose addresses
+# its endpoints name: a name would only fight them.
+if [ "$CLUSTER_TARGET" = environment ] && [ -n "$CLUSTER_INSTALL" ]; then
+  echo "FATAL: --name is for the installs on this host's cluster; an Environment's install is the Environment's (pass --environment <name> alone)." >&2
+  exit 1
+fi
 if [ "$CLUSTER_TARGET" = environment ]; then
   ENV_VALUES="$(env_describe | env_chart_values)" || { echo "FATAL: cannot install into Environment $CLUSTER_ENVIRONMENT; see above" >&2; exit 1; }
   while IFS='=' read -r key value; do
@@ -150,6 +169,43 @@ fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
 
+# A named install's own names: the release namespace, the host names, and a
+# ClusterIssuer family and CA secrets of its own (cluster-scoped names would
+# otherwise collide with the default install's). The chart's values.yaml keeps
+# the default install's names, so a production install renders as it did.
+if [ -n "$CLUSTER_INSTALL" ]; then
+  HELM_EXTRA_ARGS+=(
+    "--set=domain=$CLUSTER_DOMAIN"
+    # `localtest.me` is the default install's alias, and the Environments' hosts
+    # are named after the domain: both would be claimed by two installs at once.
+    "--set=ingress.aliasDomains={}"
+    "--set=environments.domain=env.$CLUSTER_DOMAIN"
+    "--set-string=agentNamespace=$CLUSTER_AGENT_NAMESPACE"
+    "--set-string=controller.envoyMitm.bootstrapIssuerName=platform-$CLUSTER_INSTALL-selfsigned-bootstrap"
+    "--set-string=controller.envoyMitm.caIssuerName=platform-$CLUSTER_INSTALL-mitm-ca-issuer"
+    "--set-string=controller.envoyMitm.caSecretName=platform-$CLUSTER_INSTALL-mitm-ca"
+    "--set-string=virtualization.runnerCA.bootstrapIssuerName=platform-$CLUSTER_INSTALL-vm-runner-bootstrap"
+    "--set-string=virtualization.runnerCA.issuerName=platform-$CLUSTER_INSTALL-vm-runner-ca-issuer"
+    "--set-string=virtualization.runnerCA.secretName=platform-$CLUSTER_INSTALL-vm-runner-ca"
+  )
+  # Every local image the values run gets this install's tag: a tag is node-wide
+  # state, so `:latest` would let two worktrees ride each other's builds. Walked
+  # out of the values, so a component added there needs no edit here.
+  while IFS= read -r path; do
+    HELM_EXTRA_ARGS+=("--set=$path=$CLUSTER_INSTALL")
+  done < <(yq -r '.. | select(tag == "!!map" and has("repository")) | path | join(".")' helm/values-local.yaml |
+    while IFS= read -r p; do
+      case "$(yq -r ".$p.repository" helm/values-local.yaml)" in
+        platform-*) printf '%s.tag\n' "$p" ;;
+      esac
+    done)
+  # Starter kits name their image as one string, not as repository+tag.
+  while IFS= read -r path; do
+    ref="$(yq -r ".$path" helm/values-local.yaml)"
+    HELM_EXTRA_ARGS+=("--set=$path=${ref%:latest}:$CLUSTER_INSTALL")
+  done < <(yq -r '.. | select(tag == "!!str" and test("^platform-[a-z0-9-]+:latest$")) | path | join(".")' helm/values-local.yaml)
+fi
+
 # Resolve the optional personal overlay (values-dev.yaml, gitignored) up front so
 # the agent render in step 3 sees the same values the install uses. Committed dev
 # defaults (terms.*, keycloak admin) live in values-local.yaml.
@@ -169,11 +225,42 @@ kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 
 # boots several times slower, and only M3 and later nest at all.
 # PLATFORM_NESTED_VIRT=1 keeps the pods.
 HOST_RUNNER=""
-if [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
+if [ -n "$CLUSTER_INSTALL" ]; then
+  # One host runner per Mac: it holds one install's token and CA, listens on one
+  # fixed port, and its state is one directory. So a named install runs its
+  # agents on runner pods, the path a Linux host with /dev/kvm takes, and never
+  # touches the default install's runner. On a Mac whose VM was made without
+  # nested virtualization that leaves no KVM to boot a machine on: the warning
+  # after step 1 says so, and the install still serves its UI.
+  export PLATFORM_NESTED_VIRT=1
+elif [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   HOST_RUNNER=1
   export VM_HOST_RUNNER=1
   HELM_EXTRA_ARGS+=(--set=virtualization.runner.hostAddress="$HOST_RUNNER_ADDRESS")
+fi
+no_kvm_warning() {
+  [ -n "$1" ] || return 0
+  cat >&2 <<WARN
+
+################################################################################
+#
+#  WARNING: this install has no way to run an agent on this machine.
+#
+#  $1
+#  Its UI, sign-in, API and controller work; an agent you create stays without
+#  a machine. 'mise run cluster:installs' lists the installs and their runners.
+#
+#  The runner is the one thing a cluster cannot share between installs, so this
+#  is a limit of the machine, not of the install.
+#
+################################################################################
+
+WARN
+}
+if [ -n "$CLUSTER_INSTALL" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$CLUSTER_TARGET" = lima ] &&
+   { ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE" || ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm 2>/dev/null; }; then
+  NO_KVM_REASON="VM '$LIMA_INSTANCE' has no /dev/kvm (it was created without nested virtualization, which only a recreated VM gains), and this Mac's one host runner belongs to the default install."
 fi
 # A host runner reaches each machine's gateway through a NodePort, which lima
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
@@ -188,6 +275,7 @@ if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
   echo "FATAL: this host cannot open /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   exit 1
 fi
+[ -z "${NO_KVM_REASON:-}" ] || no_kvm_warning "$NO_KVM_REASON"
 
 # k3s writes the kubeconfig before the node registers, and OpenRC's `rc-service
 # restart` returns before the API answers: waiting for a node is what gives the
@@ -324,11 +412,16 @@ else
     limactl start "$LIMA_INSTANCE"
   fi
   # A VM made without nested virtualization cannot gain it (create-time only),
-  # and its runner pods would have no /dev/kvm to boot a machine on.
+  # and its runner pods would have no /dev/kvm to boot a machine on. A named
+  # install gets a warning instead: no runner is reachable for it anyway.
   if [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
-    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it" >&2
-    echo "(nested virtualization is create-time only: cluster:delete, then reinstall; it needs Apple silicon M3+ on macOS 15+)." >&2
-    exit 1
+    if [ -z "$CLUSTER_INSTALL" ]; then
+      echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it" >&2
+      echo "(nested virtualization is create-time only: cluster:delete, then reinstall; it needs Apple silicon M3+ on macOS 15+)." >&2
+      exit 1
+    fi
+    NO_KVM_REASON="VM '$LIMA_INSTANCE' has no /dev/kvm (it was created without nested virtualization, which only a recreated VM gains), and this Mac's one host runner belongs to the default install."
+    no_kvm_warning "$NO_KVM_REASON"
   fi
   echo "Waiting for k3s to be ready..."
   wait_for_nodes
@@ -385,8 +478,10 @@ fi
 # VM runner pods run in a user namespace, where the runtime bind-mounts
 # /dev/kvm with its host owner unmapped: a 0660 root:kvm device, Ubuntu's
 # mode, opens for nobody in the pod. Open it to all, as systemd's own rule
-# does; the udev rule keeps the mode across a reboot of the lima VM.
-if [ -z "$HOST_RUNNER" ]; then
+# does; the udev rule keeps the mode across a reboot of the lima VM. A node with
+# no /dev/kvm at all (a named install on a VM without nesting) has no rule to
+# write, and the warning above already said so.
+if [ -z "$HOST_RUNNER" ] && [ -z "${NO_KVM_REASON:-}" ]; then
   KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
   if [ -n "${IS_SANDBOX:-}" ]; then
     as_root chmod 0666 /dev/kvm
@@ -418,7 +513,7 @@ prepull_images() {
         helm template istio-cni istio/cni --version "$ISTIO_VERSION" --set profile=ambient
         helm template ztunnel istio/ztunnel --version "$ISTIO_VERSION"
       fi
-      helm template platform helm -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}"
+      helm template "$CLUSTER_RELEASE" helm -n "$CLUSTER_NAMESPACE" -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}"
       if [ -z "$HOST_RUNNER" ]; then cat helm/extra/kvm-device-plugin.yaml; fi
     } | yq -r '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' |
       grep -v '^---$' | grep -vE '(^|/)platform-' | sort -u
@@ -473,7 +568,7 @@ else
   # "<name>.yaml"; emit "<name>.yaml\t<image>" per data entry. Enabled built-in
   # kits whose image is a local `platform-*` tag join the list as "kit:<id>"; a
   # kit on a published image is left for the node to pull.
-  RENDERED=$(helm template platform helm \
+  RENDERED=$(helm template "$CLUSTER_RELEASE" helm -n "$CLUSTER_NAMESPACE" \
       -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}")
   # image:stage-vm renders the chart itself to learn the directory every runner
   # mounts the node image cache in, and this render knows the values it cannot:
@@ -547,6 +642,7 @@ else
         if [ "$task" = //packages/agents:oci ]; then mise run "$task" -- "$c" || return 1; else mise run "$task" || return 1; fi
       fi
       mise run cluster:import -- "$(.mise/tasks/image/resolve import-path "$c")" || return 1
+      install_image_tags "$c" || true
     done
   }
   # CI brings the cluster up while this run's images are still building, and
@@ -554,7 +650,7 @@ else
   # imported while the rest are still on their way, so only the last to land
   # is imported after the wait.
   load_images() {
-    local c remaining=("$@") left images=()
+    local c remaining=("$@") left images=() loaded=()
     if [ "$CLUSTER_TARGET" = environment ]; then
       load_env_images "$@"
       return
@@ -565,10 +661,11 @@ else
       # only one family of the images.
       echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
       while [ ${#remaining[@]} -gt 0 ]; do
-        left=() images=()
+        left=() images=() loaded=()
         for c in "${remaining[@]}"; do
           if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
             images+=("$(.mise/tasks/image/resolve import-path "$c")")
+            loaded+=("$c")
           else
             left+=("$c")
           fi
@@ -576,6 +673,7 @@ else
         if [ ${#images[@]} -gt 0 ]; then
           echo "Loading into k3s: ${images[*]}"
           mise run cluster:import -- "${images[@]}" || return 1
+          install_image_tags "${loaded[@]}" || true
         fi
         images=()
         remaining=(${left[@]+"${left[@]}"})
@@ -590,6 +688,7 @@ else
     echo "Loading images into k3s: ${remaining[*]}"
     for c in "${remaining[@]}"; do images+=("$(.mise/tasks/image/resolve import-path "$c")"); done
     mise run cluster:import -- "${images[@]}" || return 1
+    install_image_tags "${remaining[@]}" || true
   }
   # Both loads run beside the mesh install below, which spends most of its time
   # waiting, and the chart install waits only for the platform images: no pod
@@ -649,6 +748,17 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   TRAEFIK_FORWARDED='
         forwardedHeaders:
           insecure: true'
+elif [ -n "$CLUSTER_INSTALL" ]; then
+  # Every install on the cluster routes on the one entrypoint the VM forwards;
+  # the host name keeps them apart (values-local.yaml's e2e lane only ever runs
+  # on its own VM). So a named install checks the port instead of moving it.
+  ENTRY_PORT="$(kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null |
+    yq '.ports.platform.exposedPort // ""' 2>/dev/null)"
+  if [ -n "$ENTRY_PORT" ] && [ "$ENTRY_PORT" != "$CLUSTER_APP_PORT" ]; then
+    echo "FATAL: the cluster's Traefik app entrypoint is on port $ENTRY_PORT, and this install's addresses name $CLUSTER_APP_PORT. Installs share one entrypoint; a port is not per install (see the multi-install design)." >&2
+    exit 1
+  fi
+  APP_PORT="$CLUSTER_APP_PORT"
 else
   if [ -n "$HELM_VALUES" ]; then
     APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"
@@ -971,22 +1081,34 @@ fi
 
 if [ "$NO_MESH" = true ]; then
   # Out of the mesh, and marked as the one kind of cluster the chart accepts
-  # istio.enforce=false on.
-  if [ -n "$(kubectl get namespace default -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}')" ]; then
-    kubectl label namespace default istio.io/dataplane-mode-
+  # istio.enforce=false on. The marker is the cluster's, not an install's.
+  if [ -n "$(kubectl get namespace "$CLUSTER_NAMESPACE" -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null)" ]; then
+    kubectl label namespace "$CLUSTER_NAMESPACE" istio.io/dataplane-mode-
   fi
-  kubectl -n kube-system create configmap "$NO_MESH_MARKER" \
-    --from-literal=created-by="$NO_MESH_BY" \
-    --dry-run=client -o yaml | kubectl apply -f -
+  # The marker is the cluster's: only the default install writes it.
+  if [ -z "$CLUSTER_INSTALL" ]; then
+    kubectl -n kube-system create configmap "$NO_MESH_MARKER" \
+      --from-literal=created-by="$NO_MESH_BY" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  fi
   HELM_EXTRA_ARGS+=(--set istio.enforce=false)
 else
   # Release namespace must be ambient so the api-server pod and the
   # Istio-synthesised waypoint Pod participate in mesh mTLS. The helm
-  # install below targets the `default` namespace; label it now (the
+  # install below targets this install's namespace; label it now (the
   # chart's validate-istio.yaml asserts this label is present).
-  kubectl label namespace default istio.io/dataplane-mode=ambient --overwrite
-  # A cluster that has its mesh again no longer takes an unenforced install.
-  kubectl -n kube-system delete configmap "$NO_MESH_MARKER" --ignore-not-found
+  kubectl get namespace "$CLUSTER_NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$CLUSTER_NAMESPACE" >/dev/null
+  kubectl label namespace "$CLUSTER_NAMESPACE" istio.io/dataplane-mode=ambient --overwrite
+  # A cluster that has its mesh again no longer takes an unenforced install;
+  # only the default install may clear the cluster's marker.
+  [ -n "$CLUSTER_INSTALL" ] || kubectl -n kube-system delete configmap "$NO_MESH_MARKER" --ignore-not-found
+fi
+
+# ClickStack's operators are cluster-scoped and watch one namespace, so only one
+# install on a cluster can run it.
+if [ -n "${CLICKSTACK:-}" ] && [ -n "$CLUSTER_INSTALL" ]; then
+  echo "FATAL: CLICKSTACK=1 installs cluster-scoped operators that watch one namespace, so only one install on a cluster can run it; install it as the default install." >&2
+  exit 1
 fi
 
 # 4. Helm install or upgrade.
@@ -1046,7 +1168,7 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set registry.operator=quay.io/dam-agents \
     --set operator.version=1.13.1 \
     --set community.agent.version=108.0.27.9091-1 \
-    --set operator.watchNamespace=default \
+    --set operator.watchNamespace="$CLUSTER_NAMESPACE" \
     --set 'operator.watchedResources={mongodbcommunity}'
   kubectl wait --for=condition=Established --timeout=120s \
     crd/clickhouseclusters.clickhouse.com \
@@ -1073,8 +1195,13 @@ fi
 # install-only, and the line above is what keeps them current locally. A fresh
 # install still gets them from Helm.
 CRD_ARGS=()
-if helm status platform >/dev/null 2>&1; then CRD_ARGS+=(--skip-crds); fi
-helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}" "${CRD_ARGS[@]}"
+# The kinds are the cluster's, not an install's: whatever wrote them first (this
+# install, helm, another install) they are current, and Helm skips a crds/ entry
+# whose CRD exists — but only a release that already has them says so. Keyed on
+# the CRD, so a second install never offers them.
+if helm status "$CLUSTER_RELEASE" -n "$CLUSTER_NAMESPACE" >/dev/null 2>&1 ||
+   kubectl get crd agents.agent-platform.ai >/dev/null 2>&1; then CRD_ARGS+=(--skip-crds); fi
+helm upgrade --install "$CLUSTER_RELEASE" helm -f helm/values-local.yaml -n "$CLUSTER_NAMESPACE" --create-namespace --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}" "${CRD_ARGS[@]}"
 
 e2e_mark "chart applied"
 if [ -n "${AGENT_LOAD_PID:-}" ]; then
@@ -1086,7 +1213,7 @@ if [ "$NO_RESTART" = true ]; then
   echo "Skipping pod restart (--no-restart)"
 else
   echo "Restarting pods..."
-  kubectl rollout restart deployment platform-controller platform-apiserver platform-ui platform-keycloak
+  kubectl -n "$CLUSTER_NAMESPACE" rollout restart deployment -l "app.kubernetes.io/instance=$CLUSTER_RELEASE"
   # Runners are created per owner with a hashed name, so restart them by label.
   # The node image cache DaemonSet runs the same image. Both live in the agent
   # namespace, and either may not exist yet. With the host runner, runner pods
@@ -1095,19 +1222,19 @@ else
   for workload in deployment/vm-runner daemonset/vm-image-cache; do
     [ -n "$HOST_RUNNER" ] && [ "$workload" = deployment/vm-runner ] && continue
     selector="app.kubernetes.io/component=${workload#*/}"
-    if [ -n "$(kubectl -n platform-agents get "${workload%/*}" -l "$selector" -o name)" ]; then
-      kubectl -n platform-agents rollout restart "${workload%/*}" -l "$selector"
+    if [ -n "$(kubectl -n "$CLUSTER_AGENT_NAMESPACE" get "${workload%/*}" -l "$selector" -o name 2>/dev/null)" ]; then
+      kubectl -n "$CLUSTER_AGENT_NAMESPACE" rollout restart "${workload%/*}" -l "$selector"
     fi
   done
-  # Agent gateways and runners pin :latest too — delete them so they come back
-  # on the freshly loaded image.
-  kubectl delete pods -n platform-agents --all --ignore-not-found
+  # Agent gateways and runners pin the local tag too — delete them so they come
+  # back on the freshly loaded image.
+  kubectl delete pods -n "$CLUSTER_AGENT_NAMESPACE" --all --ignore-not-found
 fi
 
 # 6. Wait for all Platform deployments to become Available (replaces helm --wait,
 # but happens AFTER post-install hooks have run, so no deadlock).
 echo "Waiting for deployments to be ready..."
-kubectl wait --for=condition=Available deployment --all --timeout=10m
+kubectl -n "$CLUSTER_NAMESPACE" wait --for=condition=Available deployment --all --timeout=10m
 e2e_mark "deployments ready"
 
 # 6b. vm-backend images onto the node, where every VM runner mounts them read
@@ -1133,9 +1260,9 @@ fi
 # (re)starts after Mongo is ready.)
 if [ -n "${CLICKSTACK:-}" ] && [ "$NO_RESTART" != true ]; then
   echo "Restarting HyperDX onto a ready MongoDB..."
-  kubectl rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
-  kubectl rollout restart deployment platform-clickstack-app
-  kubectl rollout status deployment platform-clickstack-app --timeout=5m
+  kubectl -n "$CLUSTER_NAMESPACE" rollout status statefulset/platform-clickstack-mongodb --timeout=5m || true
+  kubectl -n "$CLUSTER_NAMESPACE" rollout restart deployment platform-clickstack-app
+  kubectl -n "$CLUSTER_NAMESPACE" rollout status deployment platform-clickstack-app --timeout=5m
 fi
 
 # 7. Prune the image layers repeated reinstalls leave dangling.
@@ -1147,7 +1274,9 @@ wait "$PREPULL_PID" 2>/dev/null || true
 echo ""
 echo "=== Cluster ready ==="
 no_mesh_warning
+[ -z "${NO_KVM_REASON:-}" ] || no_kvm_warning "$NO_KVM_REASON"
 echo "KUBECONFIG=$KUBECONFIG"
+echo "Open it at $CLUSTER_URL"
 if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Open it at $(printf '%s\n' "$ENV_VALUES" | sed -n 's/^urls.ui=//p'), behind the Environment's sign-in."
   if [ "$BACKCHANNEL" = true ]; then
@@ -1155,7 +1284,7 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   fi
 fi
 echo ""
-kubectl get pods
+kubectl -n "$CLUSTER_NAMESPACE" get pods
 
 # Where the install's wall clock went. `helm --wait` returns only once the
 # slowest pod is Ready, so the one number it reports hides which service held
@@ -1175,7 +1304,7 @@ kubectl get pods
 # worse than no instrumentation.
 echo ""
 echo "--- Readiness timeline (pod creation -> Ready) ---"
-kubectl get pods -o json 2>/dev/null | python3 -c '
+kubectl -n "$CLUSTER_NAMESPACE" get pods -o json 2>/dev/null | python3 -c '
 import json, sys
 from datetime import datetime
 

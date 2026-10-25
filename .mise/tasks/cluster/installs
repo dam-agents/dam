@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#MISE description="Show the installs on the cluster: names, namespaces, addresses, runners"
+#MISE raw=true
+#USAGE flag "--name <name>" help="Only this install"
+#USAGE flag "--all" help="Every install on the cluster"
+set -eo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+
+# An install is a `platform*` Helm release in a namespace of its own, so the
+# release list is the install list: nothing else records one.
+ONLY="$CLUSTER_RELEASE"
+[ "${usage_all:-false}" != true ] || ONLY=""
+ONLY="$ONLY" helm list -A -o json 2>/dev/null | python3 -c '
+import json, os, sys
+try:
+    releases = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+only = os.environ.get("ONLY", "")
+port = os.environ.get("CLUSTER_APP_PORT", "4444")
+rows = []
+for r in releases:
+    if not r["name"].startswith("platform") or (only and r["name"] != only):
+        continue
+    name = "" if r["name"] == "platform" else r["name"][len("platform-"):]
+    host = name + ".localhost" if name else "localhost"
+    rows.append((r["namespace"], r["name"], name or "(default)",
+                 "http://%s:%s" % (host, port), r["status"], r["updated"][:19]))
+if not rows:
+    print("no matching install; --all lists every install on the cluster")
+else:
+    print("%-24s %-24s %-12s %-34s %-12s %s" % ("NAMESPACE", "RELEASE", "NAME", "ADDRESS", "STATUS", "UPDATED"))
+    for ns, rel, name, address, status, updated in sorted(rows):
+        print("%-24s %-24s %-12s %-34s %-12s %s" % (ns, rel, name, address, status, updated))
+'
+
+echo ""
+echo "=== Runners ==="
+kubectl get deploy,ds -A -l app.kubernetes.io/component=vm-runner -o custom-columns='KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.readyReplicas' 2>/dev/null ||
+  echo "no runner workloads"
+# One host runner per Mac, serving whichever install started it last: it holds
+# that install's token and one fixed port, so no other install can use it.
+. "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+if [ -f "$HOST_RUNNER_DIR/instance" ]; then
+  pid="$(cat "$HOST_RUNNER_DIR/runner.pid" 2>/dev/null)"
+  if [ -n "$pid" ] && ps -p "$pid" -o command= 2>/dev/null | grep -q "^$HOST_RUNNER_DIR/vm-runner "; then
+    echo "host runner: running, serving VM $(cat "$HOST_RUNNER_DIR/instance") (the default install started it)"
+  else
+    echo "host runner: not running; the default install's next 'mise run cluster:install' starts it"
+  fi
+fi
