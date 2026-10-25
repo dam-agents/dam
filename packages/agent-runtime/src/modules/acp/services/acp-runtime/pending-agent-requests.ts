@@ -10,7 +10,7 @@ interface PendingRequest {
 
 export interface PendingAgentRequests {
   onAgentRequest(id: JsonRpcId, sessionId: string | null, line: string): void;
-  answer(frame: JsonRpcResponse): boolean;
+  answer(frame: JsonRpcResponse): AnsweredRequest | null;
   onEngaged(channel: ClientChannel, sessionId: string): void;
   reassess(sessionId: string): void;
   hasFor(sessionId: string): boolean;
@@ -18,6 +18,11 @@ export interface PendingAgentRequests {
   size(): number;
   forget(sessionId: string): void;
   clear(): void;
+}
+
+export interface AnsweredRequest {
+  sessionId: string | null;
+  line: string;
 }
 
 export interface PendingAgentRequestsDeps {
@@ -150,13 +155,13 @@ export function createPendingAgentRequests(
 
     answer(frame) {
       const req = pending.get(frame.id);
-      if (!req) return false;
+      if (!req) return null;
       pending.delete(frame.id);
       if (req.sessionId !== null) updateExpiryTimer(req.sessionId);
       deps.sendToAgent(frame);
       if (req.sessionId !== null)
         deps.observer.answered(frame.id, req.sessionId, frame.result);
-      return true;
+      return { sessionId: req.sessionId, line: req.line };
     },
 
     onEngaged(channel, sessionId) {

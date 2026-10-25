@@ -5,10 +5,12 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
+import { getUser } from "../../../auth.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useSidebarAgents } from "../../agents/hooks/use-sidebar-agents.js";
 import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
+import { senderNames } from "../../sessions/lib/sender-names.js";
 import { useActivityConversations } from "../hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../hooks/use-activity-sessions.js";
 import { isFiltered } from "../lib/activity-filter.js";
@@ -33,6 +35,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
   const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
   const [shown, setShown] = useState(PAGE);
   const now = useNow(MINUTE_MS);
+  const viewerSub = getUser()?.profile.sub;
   const agents = useAgentsList();
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
   const conversationOf = useActivityConversations(sessions, agents);
@@ -78,6 +81,9 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
             selected={item.id === openSessionKey}
             now={now}
             conversation={conversationOf(item.session)}
+            startedBy={senderNames(viewerSub, item.agent.access).otherName(
+              item.session.startedBy,
+            )}
             onOpen={() => {
               setAgentOpen(item.session.agentId, isOpen(item.session.agentId));
               openSession(

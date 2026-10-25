@@ -34,6 +34,12 @@ function toItem(row: AttentionRecordRow): AttentionItem {
     activityAt: row.activityAt?.toISOString() ?? null,
     seenAt: row.seenAt?.toISOString() ?? null,
     working: row.working,
+    ...(row.startedBySub && {
+      startedBy: {
+        sub: row.startedBySub,
+        ...(row.startedByEmail && { email: row.startedByEmail }),
+      },
+    }),
   };
 }
 

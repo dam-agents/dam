@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam, spawnDam } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import {
   ALL_SCOPES,
   type Agent,
-  type AgentsService,
   type ApiContext,
   type UserIdentity,
 } from "api-server-api";
@@ -26,10 +26,10 @@ async function startFixture(opts: {
   get?: (id: string) => Promise<Agent | null>;
   expectAuthorization?: string;
 }): Promise<{ url: string; close: () => Promise<void> }> {
-  const agents: Partial<AgentsService> = {
+  const agents = ownedAgents({
     list: opts.list,
     get: opts.get ?? (async () => null),
-  };
+  });
 
   const invocationsQuery = { listTargets: async () => [] };
   const terms = { isAccepted: async () => true };
@@ -39,6 +39,7 @@ async function startFixture(opts: {
       invocationsQuery,
       terms,
       user: FIXTURE_USER,
+      actOnAgent: async () => ({ ok: true, ctx }),
     } as Record<string, unknown>,
     {
       get(target, prop) {

@@ -78,6 +78,8 @@ function toRow(
     activityAt: toDate(session.updatedAt),
     seenAt: toDate(session.seenAt),
     working: session.running,
+    startedBySub: session.startedBy?.sub ?? null,
+    startedByEmail: session.startedBy?.email ?? null,
   };
 }
 

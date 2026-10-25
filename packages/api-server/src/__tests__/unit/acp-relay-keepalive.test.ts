@@ -41,6 +41,9 @@ async function attach(presence: SessionPresence, autoPong = true) {
       sub: "u",
       surface: "ui",
       attached: () => {},
+      editor: null,
+      email: null,
+      opened: () => {},
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

@@ -6,13 +6,16 @@ import {
   platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
+  platformSendersMetaSchema,
   platformSupersededMetaSchema,
   platformUndeliveredMetaSchema,
+  platformVerdictsMetaSchema,
   SessionMode,
   SessionType,
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
@@ -29,6 +32,8 @@ import {
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import { agentsKeys } from "../../agents/api/queries.js";
+import { isAccessRevokedClose } from "../../agents/lib/access-revoked.js";
 import { readContinuedFrom } from "../../invocations/api/queries.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { seedStartedSession } from "../api/queries.js";
@@ -154,7 +159,7 @@ export function useAcpConnection(
 
   const attachCloseHandler = useCallback(
     (ws: WebSocket) => {
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (event) => {
         if (connectionRef.current?.ws !== ws) return;
         connectionRef.current = null;
         clearEngagement();
@@ -162,6 +167,10 @@ export function useAcpConnection(
         delivery.cancelAll();
         setMessages((prev) => failQueuedOnDisconnect(prev));
         setState("idle");
+        if (isAccessRevokedClose(event.code)) {
+          void queryClient.invalidateQueries({ queryKey: agentsKeys.root });
+          return;
+        }
         reconnectFnRef.current?.();
       });
     },
@@ -382,6 +391,8 @@ export function useAcpConnection(
               runStarts?: unknown;
               queue?: unknown;
               continuedFrom?: unknown;
+              senders?: unknown;
+              verdicts?: unknown;
             };
           };
         } | null
@@ -402,6 +413,12 @@ export function useAcpConnection(
         : [];
       const queue = platformQueueMetaSchema.safeParse(
         platformMeta?.queue ?? [],
+      );
+      const senders = platformSendersMetaSchema.safeParse(
+        platformMeta?.senders ?? [],
+      );
+      const verdicts = platformVerdictsMetaSchema.safeParse(
+        platformMeta?.verdicts ?? [],
       );
       const continuedFrom = platformContinuedFromSchema.safeParse(
         platformMeta?.continuedFrom,
@@ -466,6 +483,14 @@ export function useAcpConnection(
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
         useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
+        useStore.getState().setAttribution({
+          senders: senders.success ? senders.data : [],
+          verdicts: verdicts.success ? verdicts.data : [],
+          turnSender:
+            turn.success && turn.data.inFlight
+              ? (turn.data.sender ?? null)
+              : null,
+        });
         useStore
           .getState()
           .setContinuedFrom(continuedFrom.success ? continuedFrom.data : null);

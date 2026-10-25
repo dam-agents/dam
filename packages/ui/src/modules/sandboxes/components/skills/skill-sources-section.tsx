@@ -27,7 +27,7 @@ export function SkillSourcesSection({
   onOpenSkill: (source: SkillSource, skill: Skill) => void;
   onAddSets: () => void;
   onToggleAll: (source: SkillSource, on: boolean, scope?: Skill[]) => void;
-  onRemove: (source: SkillSource) => void;
+  onRemove?: (source: SkillSource) => void;
   onManageConnections: (() => void) | undefined;
 }) {
   const { sources, sourcesLoaded, hiddenSources, sets } = surface;
@@ -66,7 +66,7 @@ export function SkillSourcesSection({
             source={src}
             surface={surface}
             derived={derived}
-            onRemove={() => onRemove(src)}
+            onRemove={onRemove && (() => onRemove(src))}
             onHide={() => void surface.setSourceHidden(src.id, true)}
             onOpenSkill={(skill) => onOpenSkill(src, skill)}
             onToggleAll={(on, scope) => onToggleAll(src, on, scope)}

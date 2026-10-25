@@ -27,6 +27,7 @@ const h = vi.hoisted(() => {
     setQueuedPrompts: () => {},
     setRewriting: () => {},
     setRunStarts: () => {},
+    setAttribution: () => {},
     setContinuedFrom: () => {},
     setSessionError: vi.fn(),
   };

@@ -6,6 +6,7 @@ export {
   workspaceNoticeSchema,
 } from "./modules/files/schemas.js";
 export type {
+  Sender,
   Session,
   SessionMode,
   SessionType,
@@ -40,6 +41,7 @@ export {
   type SubAgentHarnessConfig,
 } from "./modules/harness-config/session-settings.js";
 export {
+  senderSchema,
   sessionModeSchema,
   sessionNoticeSchema,
   sessionTypeSchema,

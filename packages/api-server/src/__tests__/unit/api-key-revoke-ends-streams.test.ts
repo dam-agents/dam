@@ -184,7 +184,8 @@ describe("API key revocation and open streams", () => {
     const route = relayRoute(
       createRelayAdmission({
         authenticate,
-        verifyOwner: async () => true,
+        standingOf: async () => ({ role: "owner" }),
+        editorSockets: { track: () => {}, close: () => {} },
         isTermsAccepted: async () => true,
         surfaceAttribution: attribution,
       }),
@@ -192,6 +193,7 @@ describe("API key revocation and open streams", () => {
         handleUpgrade: (req, socket, head) =>
           wss.handleUpgrade(req, socket, head, () => {}),
       },
+      "terminal",
       "terminal",
     );
     const server = createServer();

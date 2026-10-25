@@ -1,3 +1,4 @@
+import { senderSchema } from "agent-runtime-api";
 import { z } from "zod";
 
 export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
@@ -169,6 +170,7 @@ export const platformClippedReplayMetaSchema = z.object({
 
 export const platformReplayTurnMetaSchema = z.object({
   inFlight: z.boolean(),
+  sender: senderSchema.optional(),
   interruptedAt: z.string().optional(),
   interruptedByStop: z.boolean().optional(),
 });
@@ -361,6 +363,131 @@ export function buildPlatformRunStartedNotification(
   });
 }
 
+export const platformSenderEntrySchema = z.object({
+  at: z.string().datetime({ offset: true }),
+  promptId: z.string().min(1).optional(),
+  sender: senderSchema,
+});
+export type PlatformSenderEntry = z.infer<typeof platformSenderEntrySchema>;
+
+export const platformSendersMetaSchema = z.array(platformSenderEntrySchema);
+
+export const platformSenderRecordedParamsSchema = z.object({
+  sessionId: z.string(),
+  entry: platformSenderEntrySchema,
+});
+export type PlatformSenderRecordedParams = z.infer<
+  typeof platformSenderRecordedParamsSchema
+>;
+
+const platformSenderRecordedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/senderRecorded"),
+  params: platformSenderRecordedParamsSchema,
+});
+type PlatformSenderRecordedNotification = z.infer<
+  typeof platformSenderRecordedNotificationSchema
+>;
+
+export function buildPlatformSenderRecordedNotification(
+  params: PlatformSenderRecordedParams,
+): PlatformSenderRecordedNotification {
+  return platformSenderRecordedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/senderRecorded",
+    params,
+  });
+}
+
+export const platformTurnStartedParamsSchema = z.object({
+  sessionId: z.string(),
+  sender: senderSchema.optional(),
+});
+export type PlatformTurnStartedParams = z.infer<
+  typeof platformTurnStartedParamsSchema
+>;
+
+const platformTurnStartedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/turnStarted"),
+  params: platformTurnStartedParamsSchema,
+});
+type PlatformTurnStartedNotification = z.infer<
+  typeof platformTurnStartedNotificationSchema
+>;
+
+export function buildPlatformTurnStartedNotification(
+  params: PlatformTurnStartedParams,
+): PlatformTurnStartedNotification {
+  return platformTurnStartedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/turnStarted",
+    params,
+  });
+}
+
+export const platformVerdictKindSchema = z.enum([
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+]);
+export type PlatformVerdictKind = z.infer<typeof platformVerdictKindSchema>;
+
+export const platformVerdictSchema = z.object({
+  toolCallId: z.string().min(1),
+  kind: platformVerdictKindSchema,
+  by: senderSchema,
+});
+export type PlatformVerdict = z.infer<typeof platformVerdictSchema>;
+
+export const platformVerdictsMetaSchema = z.array(platformVerdictSchema);
+
+export const platformVerdictRecordedParamsSchema = z.object({
+  sessionId: z.string(),
+  verdict: platformVerdictSchema,
+});
+export type PlatformVerdictRecordedParams = z.infer<
+  typeof platformVerdictRecordedParamsSchema
+>;
+
+const platformVerdictRecordedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/verdictRecorded"),
+  params: platformVerdictRecordedParamsSchema,
+});
+type PlatformVerdictRecordedNotification = z.infer<
+  typeof platformVerdictRecordedNotificationSchema
+>;
+
+export function buildPlatformVerdictRecordedNotification(
+  params: PlatformVerdictRecordedParams,
+): PlatformVerdictRecordedNotification {
+  return platformVerdictRecordedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/verdictRecorded",
+    params,
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: where the api-server's relay writes the person
+ * signed in on the socket: the Sender of a prompt, a queue edit or a rewrite
+ * in `params._meta.platform.sender`, and who answered a permission request in
+ * `result._meta.platform.answeredBy`. The relay replaces what a client wrote
+ * there, so the runtime trusts only these two places.
+ */
+export function stampedSenderOf(
+  holder: unknown,
+  key: "sender" | "answeredBy",
+): z.infer<typeof senderSchema> | null {
+  if (!isNonNullObject(holder)) return null;
+  const meta = holder._meta;
+  if (!isNonNullObject(meta) || !isNonNullObject(meta.platform)) return null;
+  const parsed = senderSchema.safeParse(meta.platform[key]);
+  return parsed.success ? parsed.data : null;
+}
+
 export const platformPromptStartedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),
@@ -394,6 +521,7 @@ export const queuedPromptSchema = z.object({
   queuedAt: z.string(),
   editable: z.boolean(),
   starting: z.boolean().optional(),
+  sender: senderSchema.optional(),
 });
 export type QueuedPrompt = z.infer<typeof queuedPromptSchema>;
 

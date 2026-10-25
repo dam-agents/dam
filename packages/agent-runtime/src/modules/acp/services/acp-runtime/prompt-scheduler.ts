@@ -4,6 +4,7 @@ import {
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+import type { Sender } from "agent-runtime-api";
 import type { PromptBlock, QueuedPrompt } from "api-server-api";
 
 import { randomUUID } from "node:crypto";
@@ -42,6 +43,7 @@ export interface PromptSubmission {
   steerNow?: boolean;
   queuedAt?: string;
   modeRole?: ModeRole;
+  sender?: Sender;
 }
 
 /**
@@ -107,7 +109,10 @@ export interface PromptScheduler {
     promptId: string,
     edit: (
       entry: PromptSubmission,
-    ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
+    ) => Pick<
+      PromptSubmission,
+      "source" | "frame" | "typed" | "blocks" | "sender"
+    >,
   ): boolean;
   remove(sessionId: string, promptId: string): PromptSubmission | null;
   steerNow(sessionId: string, promptId: string): SteerNowFate;
@@ -769,6 +774,7 @@ export function createPromptScheduler(
         queuedAt: entry.queuedAt ?? "",
         editable: entry.editable === true && entry.promptId !== null,
         ...(i < starting && { starting: true }),
+        ...(entry.sender !== undefined && { sender: entry.sender }),
       }));
     },
 

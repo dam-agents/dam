@@ -77,6 +77,8 @@ export function notifyingSessionMetadataStore(
     all: () => store.all(),
     isTombstoned: (sessionId) => store.isTombstoned(sessionId),
     runStartsOf: (sessionId) => store.runStartsOf(sessionId),
+    sendersOf: (sessionId) => store.sendersOf(sessionId),
+    verdictsOf: (sessionId) => store.verdictsOf(sessionId),
     markUnstored: (sessionId) => store.markUnstored(sessionId),
     markStored: (sessionId) => store.markStored(sessionId),
 
@@ -99,6 +101,17 @@ export function notifyingSessionMetadataStore(
     },
     finishRun(sessionId) {
       store.finishRun(sessionId);
+      changes.notify();
+    },
+    recordSender(sessionId, entry) {
+      store.recordSender(sessionId, entry);
+      changes.notify();
+    },
+    recordVerdict(sessionId, verdict) {
+      store.recordVerdict(sessionId, verdict);
+    },
+    copyAttribution(sessionId, fromSessionId, opts) {
+      store.copyAttribution(sessionId, fromSessionId, opts);
       changes.notify();
     },
     adopt(sessionId, fromSessionId, meta) {

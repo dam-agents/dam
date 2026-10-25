@@ -28,6 +28,12 @@ vi.mock("../../store.js", () => ({
     }),
 }));
 vi.mock("../../modules/agents/hooks/use-sidebar-agents.js", () => ({
+  useSidebarSharedAgents: () => ({
+    shared: [],
+    active: [],
+    folded: [],
+    openAgentId: null,
+  }),
   useSidebarAgents: () => ({
     agents: env.agents,
     openAgentId: null,

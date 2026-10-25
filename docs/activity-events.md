@@ -20,6 +20,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `AgentCreated` | _elsewhere_ | agents |
 | `AgentUpdated` | _elsewhere_ | agents, runtime-delivery, starter-kits |
 | `AgentDeleted` | _elsewhere_ | agents, agent-artifacts-sweeper |
+| `AgentEditorsChanged` | _elsewhere_ | agents |
 | `AgentRestarted` | _elsewhere_ | agents |
 | `AgentWoken` | _elsewhere_ | agents |
 | `SlackConnected` | `slack_channel_bound` | agents |

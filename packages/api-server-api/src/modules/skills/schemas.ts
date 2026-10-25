@@ -189,6 +189,10 @@ export const skillSetCreateInputSchema = z.object({
   skills: z.array(skillSetEntrySchema).min(1).max(500),
 });
 
+export const skillSetListInputSchema = z
+  .object({ agentId: z.string().min(1).optional() })
+  .optional();
+
 export const skillSetDeleteInputSchema = z.object({ id: z.string().min(1) });
 
 export const skillSetApplyInputSchema = z.object({

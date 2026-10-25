@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
@@ -14,10 +16,16 @@ import {
   egressRuleRevokeInputSchema,
   egressRuleUpdateInputSchema,
 } from "./schemas.js";
+import type { AgentTarget } from "../agents/permissions.js";
+
+function ruleTarget(ruleId: string): AgentTarget {
+  return { kind: "egressRule", ruleId };
+}
 
 export const egressRulesRouter = t.router({
   listForAgent: readAgentProcedure
     .input(egressRuleListForAgentInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.egressRules.listForAgent(input.agentId);
@@ -25,6 +33,7 @@ export const egressRulesRouter = t.router({
 
   get: readAgentProcedure
     .input(egressRuleGetInputSchema)
+    .use(agentPermission("view", (input) => ruleTarget(input.id)))
     .query(async ({ ctx, input }) => {
       const rule = await ctx.egressRules.get(input.id);
       try {
@@ -40,6 +49,7 @@ export const egressRulesRouter = t.router({
 
   currentPreset: readAgentProcedure
     .input(egressRuleCurrentPresetInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.egressRules.currentPreset(input.agentId);
@@ -47,18 +57,22 @@ export const egressRulesRouter = t.router({
 
   create: manageAgentsProcedure
     .input(egressRuleCreateInputSchema)
+    .use(agentPermission("egressRules", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) => ctx.egressRules.create(input)),
 
   update: manageAgentsProcedure
     .input(egressRuleUpdateInputSchema)
+    .use(agentPermission("egressRules", (input) => ruleTarget(input.id)))
     .mutation(({ ctx, input }) => ctx.egressRules.update(input)),
 
   revoke: manageAgentsProcedure
     .input(egressRuleRevokeInputSchema)
+    .use(agentPermission("egressRules", (input) => ruleTarget(input.id)))
     .mutation(({ ctx, input }) => ctx.egressRules.revoke(input.id)),
 
   applyPreset: manageAgentsProcedure
     .input(egressRuleApplyPresetInputSchema)
+    .use(agentPermission("egressRules", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) =>
       ctx.egressRules.applyPreset(input.agentId, input.preset),
     ),

@@ -3,12 +3,14 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
-import { useUpdateAgent } from "../../../agents/api/mutations.js";
+import { useSetCredentialInjection } from "../../../agents/api/mutations.js";
+import { holds } from "../../../agents/lib/agent-permissions.js";
 import { GATEWAY_RESTART_TITLE } from "../../../egress-rules/gateway-restart.js";
 
 export function ConnectionAddressingSection({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const update = useUpdateAgent();
+  const update = useSetCredentialInjection();
+  const changeable = holds(agent.access, "credentialInjection");
   const value =
     (update.isPending
       ? update.variables.requireConnectionAddress
@@ -32,8 +34,17 @@ export function ConnectionAddressingSection({ agent }: { agent: AgentView }) {
         title="Inject only into addressed requests"
         description="Credentials go only into requests that name a connection; others are sent as-is. The browser panel needs it. Turn it off for an agent whose tools need credentials added to requests that name no connection."
         checked={value}
+        disabled={!changeable}
         onCheckedChange={(next) => void onChange(next)}
       />
+      {!changeable && (
+        <p
+          className="mt-2 text-xs text-muted-foreground"
+          data-testid="credential-injection-owner-only"
+        >
+          Only the owner changes how credentials are injected.
+        </p>
+      )}
     </section>
   );
 }

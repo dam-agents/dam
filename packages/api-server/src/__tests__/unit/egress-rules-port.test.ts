@@ -98,6 +98,8 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
       trustedHosts: [],
       isAgentOwnedBy: async () => true,
       ownerSub: "sub-1",
+      actor: "sub-1",
+      resolveUserEmail: async () => null,
     });
 
     await svc.create({
@@ -124,6 +126,8 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
       trustedHosts: [],
       isAgentOwnedBy: async () => true,
       ownerSub: "sub-1",
+      actor: "sub-1",
+      resolveUserEmail: async () => null,
     });
 
     await svc.create({
@@ -158,6 +162,8 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
       trustedHosts: [],
       isAgentOwnedBy: async () => true,
       ownerSub: "sub-1",
+      actor: "sub-1",
+      resolveUserEmail: async () => null,
     });
 
     await svc.revoke("r1");
@@ -196,6 +202,8 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
       trustedHosts: [],
       isAgentOwnedBy: async () => true,
       ownerSub: "sub-1",
+      actor: "sub-1",
+      resolveUserEmail: async () => null,
     });
 
     await svc.revoke("r1");

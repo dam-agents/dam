@@ -1,5 +1,5 @@
 export type { AppRouter } from "./router.js";
-export type { ApiContext, UserIdentity } from "./context.js";
+export type { AgentActing, ApiContext, UserIdentity } from "./context.js";
 
 export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 
@@ -121,12 +121,18 @@ export type {
   ChannelConfig,
   RuntimeFleet,
   RuntimeFleetAgent,
+  AgentAccess,
+  AgentWithAccess,
+  AgentListScope,
+  SetAgentEditorsResult,
+  LeaveAgentResult,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
   agentCreateInputSchema,
   avatarSchema,
   agentKindSchema,
+  agentPatchSchema,
   agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";
 export type {
@@ -141,7 +147,17 @@ export {
   isStartRefusal,
   TerminationCode,
 } from "./modules/agents/types.js";
-export { listedAgents, toAgentView } from "./modules/agents/view.js";
+export {
+  listedAgents,
+  toAgentView,
+  toListedAgentView,
+} from "./modules/agents/view.js";
+export { editorEmailOf } from "./modules/agents/editor-email.js";
+export {
+  AGENT_PERMISSIONS,
+  type AgentPermission,
+  type AgentTarget,
+} from "./modules/agents/permissions.js";
 export {
   budgetCpuSchema,
   budgetSizeSchema,
@@ -826,6 +842,18 @@ export {
   buildPlatformPromptAcceptedNotification,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformSenderEntrySchema,
+  platformSendersMetaSchema,
+  platformSenderRecordedParamsSchema,
+  buildPlatformSenderRecordedNotification,
+  platformTurnStartedParamsSchema,
+  buildPlatformTurnStartedNotification,
+  platformVerdictKindSchema,
+  platformVerdictSchema,
+  platformVerdictsMetaSchema,
+  platformVerdictRecordedParamsSchema,
+  buildPlatformVerdictRecordedNotification,
+  stampedSenderOf,
   platformRunStartsMetaSchema,
   platformRunStartedParamsSchema,
   buildPlatformRunStartedNotification,
@@ -881,6 +909,12 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,
   PlatformRunStartedParams,
+  PlatformSenderEntry,
+  PlatformSenderRecordedParams,
+  PlatformTurnStartedParams,
+  PlatformVerdict,
+  PlatformVerdictKind,
+  PlatformVerdictRecordedParams,
   PlatformRunResult,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,

@@ -22,7 +22,11 @@ export interface CreateEgressRulesServiceDeps {
   trustedHosts: readonly string[];
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
+  actor: string;
+  resolveUserEmail(sub: string): Promise<string | null>;
 }
+
+const WRITTEN_BY_A_PERSON = new Set(["manual", "inbox"]);
 
 function toView(row: EgressRuleRow): EgressRuleView {
   return {
@@ -63,7 +67,30 @@ export function createEgressRulesService(
     async listForAgent(agentId) {
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return [];
       const rows = await deps.repo.listForAgent(agentId);
-      return rows.map(toView);
+      const deciders = [
+        ...new Set(
+          rows
+            .filter((row) => WRITTEN_BY_A_PERSON.has(row.source))
+            .map((row) => row.decidedBy),
+        ),
+      ];
+      const emails = new Map(
+        await Promise.all(
+          deciders.map(
+            async (sub) =>
+              [
+                sub,
+                await deps.resolveUserEmail(sub).catch(() => null),
+              ] as const,
+          ),
+        ),
+      );
+      return rows.map((row) => {
+        const email = WRITTEN_BY_A_PERSON.has(row.source)
+          ? emails.get(row.decidedBy)
+          : null;
+        return { ...toView(row), ...(email && { decidedByEmail: email }) };
+      });
     },
 
     async get(id) {
@@ -102,7 +129,7 @@ export function createEgressRulesService(
         method: input.method,
         pathPattern: input.pathPattern,
         verdict: input.verdict,
-        decidedBy: deps.ownerSub,
+        decidedBy: deps.actor,
         source: "manual",
       });
       if (outcome.kind === "verdict-clash") {
@@ -162,7 +189,7 @@ export function createEgressRulesService(
         method,
         pathPattern,
         verdict,
-        decidedBy: deps.ownerSub,
+        decidedBy: deps.actor,
         source: "manual",
       });
       if (!updated) {

@@ -5,14 +5,24 @@ import type { JsonRpcId } from "api-server-api";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
+import type { Sender } from "agent-runtime-api";
 import type {
   PlatformContinuedFrom,
+  PlatformSenderEntry,
   PlatformUndeliveredPrompt,
+  PlatformVerdict,
   QueuedPrompt,
 } from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
+
+interface Attribution {
+  senders: PlatformSenderEntry[];
+  verdicts: PlatformVerdict[];
+}
+
+const NO_ATTRIBUTION: Attribution = { senders: [], verdicts: [] };
 
 interface Waiter {
   kind: WaiterKind;
@@ -80,6 +90,8 @@ export interface SessionBootstrapDeps {
   queueOf(sessionId: string): QueuedPrompt[];
   supersededFor(sessionId: string): string[];
   runStartsOf(sessionId: string): string[];
+  attributionOf(sessionId: string): Attribution;
+  turnSenderOf(sessionId: string): Sender | undefined;
   continuedFromOf(sessionId: string): PlatformContinuedFrom | null;
   onLoadOrphaned(sessionId: string, outboundId: number): void;
   mcpServersFor(sessionId: string): unknown[];
@@ -136,6 +148,7 @@ export function createSessionBootstrap(
     runStarts: string[],
     queue: QueuedPrompt[],
     continuedFrom: PlatformContinuedFrom | null,
+    attribution: Attribution,
   ): unknown {
     const extras: Record<string, unknown> = {};
     if (clip.clipped)
@@ -146,6 +159,8 @@ export function createSessionBootstrap(
     if (runStarts.length > 0) extras.runStarts = runStarts;
     if (queue.length > 0) extras.queue = queue;
     if (continuedFrom !== null) extras.continuedFrom = continuedFrom;
+    if (attribution.senders.length > 0) extras.senders = attribution.senders;
+    if (attribution.verdicts.length > 0) extras.verdicts = attribution.verdicts;
     if (Object.keys(extras).length === 0) return value;
     const base =
       typeof value === "object" && value !== null
@@ -170,8 +185,10 @@ export function createSessionBootstrap(
 
   function turnMetaOf(sessionId: string): PlatformReplayTurnMeta {
     const interruption = deps.interruption(sessionId);
+    const sender = deps.turnSenderOf(sessionId);
     return {
       inFlight: deps.turnInFlight(sessionId),
+      ...(sender !== undefined && { sender }),
       ...(interruption && { interruptedAt: interruption.startedAt }),
       ...(interruption?.stopped && { interruptedByStop: true }),
     };
@@ -218,6 +235,7 @@ export function createSessionBootstrap(
         kind === "load" ? deps.runStartsOf(sessionId) : [],
         kind === "load" ? deps.queueOf(sessionId) : [],
         kind === "load" ? deps.continuedFromOf(sessionId) : null,
+        kind === "load" ? deps.attributionOf(sessionId) : NO_ATTRIBUTION,
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -405,6 +423,7 @@ export function createSessionBootstrap(
               [],
               [],
               null,
+              NO_ATTRIBUTION,
             ),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));

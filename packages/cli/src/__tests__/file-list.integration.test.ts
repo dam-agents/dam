@@ -15,6 +15,7 @@ import { appRouter as runtimeRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext, DirListResult } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 
 describe("dam file list (integration)", () => {
   let home: string;
@@ -61,9 +62,10 @@ describe("dam file list (integration)", () => {
     };
     const apiContext = {
       user: { sub: "fixture-user", scopes: ALL_SCOPES, agentIds: "*" },
+      actOnAgent: async () => ({ ok: true, ctx: apiContext }),
       terms: { isAccepted: async () => true },
       invocationsQuery: { listTargets: async () => [] },
-      agents: {
+      agents: ownedAgents({
         get: async (): Promise<Agent> => ({
           id: "agent-0000000000000001",
           name: "demo",
@@ -82,7 +84,7 @@ describe("dam file list (integration)", () => {
           channels: [],
           ...agentState,
         }),
-      },
+      }),
     } as unknown as ApiContext;
     const runtimeContext = {
       files: {
