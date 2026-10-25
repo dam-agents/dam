@@ -71,6 +71,7 @@ import {
   type AcpClientFactory,
   type PromptUpdate,
 } from "../../../core/acp-client.js";
+import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
@@ -1283,6 +1284,10 @@ async function turnContractContext(
 
 export type SlackWorkerDeps = {
   makeAcpClient: AcpClientFactory;
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair a fresh session in a channel starts on,
+   * read from that channel's profile (D119); the worker resolves it per turn so
+   * a profile edit reaches the next thread. */
+  channelPair?: ChannelPairResolver;
   createGateway: () => SlackGateway;
   agents: () => AgentsService;
   identityLinks: IdentityLinkService;
@@ -1323,6 +1328,7 @@ export type SlackWorkerDeps = {
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const {
     makeAcpClient,
+    channelPair,
     createGateway,
     agents,
     identityLinks,
@@ -2796,6 +2802,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
+    channelId?: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
@@ -2807,9 +2814,27 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     legacyThreadKey?: string;
     signal?: AbortSignal;
   }): Promise<string> {
+    /* UNIT_BOUNDARY_DESCRIPTION: a fresh channel session starts on the channel's
+     * profile, which the meta names before the agent default fills anything in;
+     * a resumed thread keeps the values it already runs on (D94 A). */
+    const channelValues =
+      channelPair && args.channelId
+        ? await channelPair(args.instanceName, {
+            type: "slack",
+            slackChannelId: args.channelId,
+          })
+        : null;
     const platformMeta = {
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
+      ...(channelValues && {
+        harness: channelValues.harness,
+        ...(channelValues.provider !== null && {
+          provider: channelValues.provider,
+        }),
+        ...(channelValues.model !== null && { model: channelValues.model }),
+        ...(channelValues.settings && { settings: channelValues.settings }),
+      }),
     };
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
@@ -3063,6 +3088,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await runSessionTurn({
         instanceName,
         threadKey,
+        channelId: ctx.channel,
         legacyThreadKey: ctx.threadTs,
         onReady: () => {
           restartsAtStart = readRestarts(instanceName);

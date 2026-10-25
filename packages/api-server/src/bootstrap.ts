@@ -164,6 +164,7 @@ import {
 } from "./modules/channels/infrastructure/slack-installs-repository.js";
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
+import { createChannelPairResolver } from "./modules/channels/services/channel-pair-resolver.js";
 import {
   createSlackTokenRotation,
   noSlackTokenRotation,
@@ -1666,6 +1667,13 @@ export async function bootstrap() {
       : undefined;
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
+  /* UNIT_BOUNDARY_DESCRIPTION: a channel's own profile decides what a fresh
+   * session in it starts on (D91, D119); a row without one, or one that cannot
+   * run on the agent, leaves the turn on the agent's default as before. */
+  const channelPair = createChannelPairResolver({
+    db,
+    resolver: profileResolver,
+  });
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
@@ -1748,6 +1756,7 @@ export async function bootstrap() {
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
+        channelPair,
         createGateway: slackGatewayFactory,
         agents: () => systemAgents,
         identityLinks: identityLinkService,
@@ -1799,6 +1808,7 @@ export async function bootstrap() {
     config.telegramBotToken && chatSdkState
       ? createTelegramWorker({
           botToken: config.telegramBotToken,
+          channelPair,
           configuredBotUsername: config.telegramBotUsername,
           makeAcpClient,
           state: chatSdkState,

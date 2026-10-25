@@ -17,6 +17,7 @@ import { createProfilesService } from "../src/modules/profiles/services/profiles
 import { createProfileResolver } from "../src/modules/profiles/services/profile-resolution.js";
 import { createSessionPairRepo } from "../src/modules/harness-config/infrastructure/session-pair-repo.js";
 import { createSchedulesRepository } from "../src/modules/schedules/infrastructure/schedules-repository.js";
+import { createChannelPairResolver } from "../src/modules/channels/services/channel-pair-resolver.js";
 import {
   isAgentRowDeleted,
   markAgentDeleted,
@@ -469,6 +470,52 @@ async function main() {
   await db.execute(sql`DELETE FROM connections WHERE owner = ${slotOwner}`);
   await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${slotOwner}`);
   await db.execute(sql`DELETE FROM profiles WHERE owner = ${slotOwner}`);
+
+  process.stdout.write("\na channel's own profile\n");
+  const channelOwner = unique("owner");
+  const channelService = serviceFor(channelOwner);
+  const channelAgent = await insertAgent(channelOwner);
+  const channelConnection = await insertConnection(
+    channelOwner,
+    "curve-bender-deployment",
+  );
+  await db.execute(
+    sql`INSERT INTO connection_grants (connection_id, agent_id) VALUES (${channelConnection}, ${channelAgent}) ON CONFLICT DO NOTHING`,
+  );
+  const channelProfile = await channelService.service.create({
+    name: "Support",
+    harness: "claude-code",
+    providerTemplate: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    model: MODEL,
+  });
+  await db.execute(
+    sql`INSERT INTO channels (agent_id, owner, type, config, profile_id)
+        VALUES (${channelAgent}, ${channelOwner}, 'slack',
+                ${JSON.stringify({ slackChannelId: "C-1" })}::jsonb, ${channelProfile.id})`,
+  );
+  await db.execute(
+    sql`INSERT INTO channels (agent_id, owner, type, config)
+        VALUES (${channelAgent}, ${channelOwner}, 'slack',
+                ${JSON.stringify({ slackChannelId: "C-2" })}::jsonb)`,
+  );
+  const channelPair = createChannelPairResolver({
+    db,
+    resolver: channelService.resolver,
+  });
+  check(
+    "a channel with a profile turns on it, and one without yields none",
+    (await channelPair(channelAgent, { type: "slack", slackChannelId: "C-1" }))
+      ?.model === MODEL &&
+      (await channelPair(channelAgent, {
+        type: "slack",
+        slackChannelId: "C-2",
+      })) === null,
+    "resolver",
+  );
+  await db.execute(sql`DELETE FROM channels WHERE owner = ${channelOwner}`);
+  await db.execute(sql`DELETE FROM agents WHERE owner_sub = ${pseudo.hashSub(channelOwner)}`);
+  await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${channelOwner}`);
+  await db.execute(sql`DELETE FROM profiles WHERE owner = ${channelOwner}`);
 
   process.stdout.write("\nunbinding\n");
   await db.execute(

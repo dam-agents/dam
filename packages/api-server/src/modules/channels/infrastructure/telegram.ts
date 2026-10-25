@@ -26,6 +26,7 @@ import {
   AcpSessionLoadError,
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
+import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { channelDeny } from "./channel-authz.js";
@@ -582,6 +583,8 @@ export function createTelegramWorker(deps: {
   botToken: string;
   configuredBotUsername?: string | null;
   makeAcpClient: AcpClientFactory;
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair a fresh session in a Telegram chat starts on, read from that channel's profile (D119). */
+  channelPair?: ChannelPairResolver;
   state: StateAdapter;
   agents: () => AgentsService;
   conversations: TelegramConversationsPort & TelegramOwnerChatsPort;
@@ -713,10 +716,27 @@ export function createTelegramWorker(deps: {
           );
         }
       }
+      /* UNIT_BOUNDARY_DESCRIPTION: a fresh chat starts on the channel's profile,
+       * named in the meta before the agent's default fills anything in; a
+       * resumed chat keeps the values it already runs on (D94 A). */
+      const channelValues = deps.channelPair
+        ? await deps.channelPair(agentId, {
+            type: "telegram",
+            conversationId: thread.id,
+          })
+        : null;
       await acp.sendPrompt(prompt, {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
+          ...(channelValues && {
+            harness: channelValues.harness,
+            ...(channelValues.provider !== null && {
+              provider: channelValues.provider,
+            }),
+            ...(channelValues.model !== null && { model: channelValues.model }),
+            ...(channelValues.settings && { settings: channelValues.settings }),
+          }),
         },
         ...(onSession ? { onSession } : {}),
       });
