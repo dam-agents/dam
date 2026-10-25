@@ -1147,8 +1147,8 @@ export function undeliveredNudge(
     ...(opts.outOfMemory
       ? [
           "The turn was cut short because the agent ran out of memory and restarted. " +
-            "Tell the person so, and that the agent's owner can give it more memory: " +
-            "ⵗ → Configure agent → set the Compute Resources dropdown to a higher tier.",
+            "Tell the person so, and that only a platform operator can raise the " +
+            "owner's memory budget, which is what would give the agent more room.",
         ]
       : []),
     `Post your result now with the reply tool (threadTs="${threadTs}").`,
