@@ -561,7 +561,14 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
           }}
           onPick={(profile) => profileField.onChange(profile.id)}
           onCustom={() => profileField.onChange("")}
-          onAttach={(profile) => void attach(profile)}
+          /* UNIT_BOUNDARY_DESCRIPTION: a repair that worked selects the profile,
+           * so the schedule the user is making runs on it — the attach alone
+           * would leave the form on Custom selection. */
+          onAttach={(profile) =>
+            void attach(profile).then(
+              (ok) => ok && profileField.onChange(profile.id),
+            )
+          }
           onManage={manage}
           testId="schedule-profile"
         />

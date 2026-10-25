@@ -1,6 +1,8 @@
 import type { ProfileWithUsage } from "api-server-api";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import {
   useGrantProvider,
   useProviderConnections,
@@ -26,7 +28,16 @@ export function useProfileAttach(agentId: string | null) {
         navigateToSettings("providers");
         return Promise.resolve(false);
       }
-      return grant(connection.id);
+      /* UNIT_BOUNDARY_DESCRIPTION: the profile becomes usable once its provider
+       * is granted, so the owner's profiles are refetched — a form that keeps
+       * offering the same row as unavailable would leave the pick unmakeable. */
+      return grant(connection.id).then(async (ok) => {
+        if (ok)
+          await queryClient.invalidateQueries({
+            queryKey: trpc.profiles.list.queryKey(),
+          });
+        return ok;
+      });
     },
   };
 }

@@ -20,6 +20,7 @@ import {
   onceFormSchema,
   type OnceFormValues,
   onceLocalMoment,
+  onceUpdateChoices,
 } from "./once-form-schema.js";
 import { ScheduleDialog } from "./schedule-dialog.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
@@ -51,7 +52,7 @@ export function OnceScheduleForm({
     resolver: zodResolver(onceFormSchema),
     defaultValues: { ...onceFormDefaults(existing), ...draft },
   });
-  const { errors, dirtyFields } = form.formState;
+  const { errors } = form.formState;
   const when = form.watch("when");
 
   const onValid = (v: OnceFormValues) => {
@@ -67,18 +68,8 @@ export function OnceScheduleForm({
       });
       onClose();
     };
-    const settings = Object.fromEntries(
-      Object.entries(v.settings).filter(([, value]) => value !== ""),
-    );
-    /* UNIT_BOUNDARY_DESCRIPTION: choices travel only when the user changed
-     * them, so a profile edited after the form opened is not detached by the
-     * values the form was loaded with. */
     const name = { name: v.name, task: v.task, timezone: v.timezone };
-    const custom = {
-      ...(v.harness ? { harness: v.harness } : {}),
-      ...(v.model ? { model: v.model } : {}),
-      ...(Object.keys(settings).length > 0 ? { settings } : {}),
-    };
+    const choices = onceUpdateChoices(v);
     const title = v.sessionTitle ? { sessionTitle: v.sessionTitle } : {};
     if (existing) {
       updateOnce.mutate(
@@ -87,20 +78,10 @@ export function OnceScheduleForm({
           ...name,
           ...title,
           at: `${v.date}T${v.time}`,
-          ...(dirtyFields.profile
-            ? {
-                profile: v.profile || null,
-                /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule
-                 * of its own carries the values it was running on, since the
-                 * form shows them and the stored spec holds none. */
-                ...(v.profile ? {} : custom),
-              }
-            : {}),
-          ...(dirtyFields.harness && v.harness ? { harness: v.harness } : {}),
-          ...(dirtyFields.model && v.model ? { model: v.model } : {}),
-          ...(dirtyFields.settings && Object.keys(settings).length > 0
-            ? { settings }
-            : {}),
+          ...choices,
+          /* UNIT_BOUNDARY_DESCRIPTION: leaving a profile for a schedule of its
+           * own tells the server to drop the reference it stored. */
+          ...(!v.profile && existing.profile ? { profile: null } : {}),
         },
         { onSuccess },
       );
@@ -111,10 +92,7 @@ export function OnceScheduleForm({
           ...name,
           ...title,
           ...(at ? { at } : {}),
-          ...(v.profile ? { profile: v.profile } : {}),
-          ...(v.harness ? { harness: v.harness } : {}),
-          ...(v.model ? { model: v.model } : {}),
-          ...(Object.keys(settings).length > 0 ? { settings } : {}),
+          ...choices,
         },
         { onSuccess },
       );

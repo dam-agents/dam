@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import type { ProfileWithUsage } from "api-server-api";
+import { useState } from "react";
 
 import {
   Popover,
@@ -47,8 +48,16 @@ export function ProfilePicker({
 }) {
   const selected = profiles.find((p) => p.id === value) ?? null;
   const current = selected?.name ?? custom?.label ?? placeholder;
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick ends the choice, so the list closes on
+   * every one of them — a pick, Custom selection and a repair alike — rather
+   * than leaving the menu over the form it just wrote to. */
+  const [open, setOpen] = useState(false);
+  const choose = (act: () => void) => {
+    setOpen(false);
+    act();
+  };
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -81,14 +90,14 @@ export function ProfilePicker({
           profiles={profiles}
           current={null}
           selectedId={value}
-          onPick={onPick}
-          onAttach={onAttach}
-          onManage={onManage}
+          onPick={(profile) => choose(() => onPick(profile))}
+          onAttach={(profile) => choose(() => onAttach(profile))}
+          onManage={() => choose(onManage)}
         />
         {custom && onCustom && (
           <button
             type="button"
-            onClick={onCustom}
+            onClick={() => choose(onCustom)}
             className="mt-1 flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
           >
             <span className="min-w-0">

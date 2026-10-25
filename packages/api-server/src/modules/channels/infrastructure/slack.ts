@@ -2804,7 +2804,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
-    channelId?: string;
+    /* UNIT_BOUNDARY_DESCRIPTION: every turn knows its channel, ambient ones
+     * included, so a fresh session starts on the profile that channel runs on. */
+    channelId: string;
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
@@ -2820,13 +2822,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
      * session is created, so a thread already running keeps the values it runs
      * on (D94 A, D119) and is never refused for a profile it does not use. */
     const freshSessionMeta = async () => {
-      const channelDecision: ChannelPairDecision =
-        channelPair && args.channelId
-          ? await channelPair(args.instanceName, {
-              type: "slack",
-              slackChannelId: args.channelId,
-            })
-          : { kind: "none" };
+      const channelDecision: ChannelPairDecision = channelPair
+        ? await channelPair(args.instanceName, {
+            type: "slack",
+            slackChannelId: args.channelId,
+          })
+        : { kind: "none" };
       if (channelDecision.kind === "unavailable")
         throw new ChannelProfileRefusedError(
           channelDecision.profileName,
@@ -5519,6 +5520,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       runSessionTurn({
         instanceName: args.instanceName,
         threadKey: args.threadKey,
+        channelId: args.channel,
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
           : {}),

@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-26
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -42,7 +42,7 @@ A session may also pick the settings its harness manifest lists under `sessionSe
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 An agent remembers one **chat default**, which preselects the next session, and two **legacy** pairs, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on, kept for rows written before profiles.
 A pick in a chat saves the chat default, a profile pick saves the reference and not its values, and the subagent slot a reference of its own.
-**An owner's profiles** hold a harness, a provider template, a model and session settings; they are edited from a chat's model picker, listed in Settings › Providers, and named by the chat default, `channels.profile_id` and `schedules.spec.profile`.
+**An owner's profiles** hold a harness, a provider template, a model and settings; they are edited from a chat's model picker, listed in Settings › Providers, and named by the chat default, by a channel's or a chat's binding and by a schedule.
 The api-server resolves a reference into the pair the runtime is sent, so an edit reaches every run following it while a session that picked keeps its own.
 A channel or schedule naming none follows its kind's legacy pair; picking a profile grants its provider on the agent.
 Home marks a default that is not set or whose provider the agent no longer holds, and so does the agent's Models tile.

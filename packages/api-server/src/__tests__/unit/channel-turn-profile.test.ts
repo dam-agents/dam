@@ -135,6 +135,28 @@ describe("a channel's turn", () => {
     expect(h.prompts).toHaveLength(0);
   });
 
+  /** TEST_SCENARIO: an ambient Slack session is a fresh session too, so it
+   * starts on the channel's profile rather than on the agent's default. */
+  it("starts an ambient Slack session on the channel's profile", async () => {
+    const h = slackWorkerHarness({
+      ambient: true,
+      channelPair: async () => ({ kind: "profile", pair: PAIR }),
+    });
+    await h.worker.connect();
+    await h.gw.fireMessage({
+      user: "U1",
+      channel: "C1",
+      ts: "3.3",
+      text: "a note for the channel",
+      teamId: "T-e2e",
+    });
+    await h.settled(() => h.created.length > 0);
+    expect(h.created[0]?.platform).toMatchObject({
+      harness: PAIR.harness,
+      model: PAIR.model,
+    });
+  });
+
   /** TEST_SCENARIO: a chat bound before profiles names none, so the turn sends no
    * pair and the agent's own default applies as it always did. */
   it("sends no pair for a chat that names no profile", async () => {

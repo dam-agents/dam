@@ -108,5 +108,5 @@ export function slackWorkerHarness(
     return done();
   }
 
-  return { gw, prompts, worker, settled };
+  return { gw, prompts, created, worker, settled };
 }
