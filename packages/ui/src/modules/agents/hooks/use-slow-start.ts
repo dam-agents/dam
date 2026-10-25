@@ -17,7 +17,10 @@ export function useSlowStartIds(): ReadonlySet<string> {
   useEffect(() => {
     if (!data) return;
     const current = useStore.getState().startingSince;
-    const next = transitionStartingSince(current, data.list);
+    const next = transitionStartingSince(current, [
+      ...data.list,
+      ...data.shared,
+    ]);
     if (next !== current) setStartingSince(next);
   }, [data, setStartingSince]);
 

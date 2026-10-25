@@ -20,7 +20,13 @@ import {
 } from "../../../telegram/api/queries.js";
 import { ChannelRow } from "./channel-row.js";
 
-export function TelegramChannelCard({ agentId }: { agentId: string }) {
+export function TelegramChannelCard({
+  agentId,
+  readOnly = false,
+}: {
+  agentId: string;
+  readOnly?: boolean;
+}) {
   const chats = useTelegramChats(agentId);
   const unbind = useUnbindTelegramChat();
   const [instructionsOpen, setInstructionsOpen] = useState(false);
@@ -35,7 +41,7 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
             Telegram chats
           </span>
         }
-        onNew={() => setInstructionsOpen(true)}
+        onNew={readOnly ? undefined : () => setInstructionsOpen(true)}
         newTestId="telegram-connect"
         newLabel="Add Telegram chat"
         loading={chats.isPending}
@@ -43,20 +49,22 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
         isEmpty={list.length === 0}
         empty="No chats connected yet."
         addRow={
-          <AddRow
-            onClick={() => setInstructionsOpen(true)}
-            testId="telegram-connect"
-          >
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium text-foreground">
-                Add Telegram chat
-              </p>
-              <p className="truncate text-sm text-muted-foreground">
-                People message this agent from a chat it is added to.
-              </p>
-            </div>
-          </AddRow>
+          !readOnly && (
+            <AddRow
+              onClick={() => setInstructionsOpen(true)}
+              testId="telegram-connect"
+            >
+              <Add size={16} className="shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-md font-medium text-foreground">
+                  Add Telegram chat
+                </p>
+                <p className="truncate text-sm text-muted-foreground">
+                  People message this agent from a chat it is added to.
+                </p>
+              </div>
+            </AddRow>
+          )
         }
       >
         {list.map((chat) => (
@@ -66,18 +74,20 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
             actionsLabel={`Telegram chat ${chat.title} actions`}
             menuTestId="telegram-chat-menu"
             actions={
-              <DropdownMenuItem
-                tone="danger"
-                disabled={unbind.isPending}
-                onSelect={() =>
-                  unbind.mutate({
-                    agentId,
-                    conversationId: chat.conversationId,
-                  })
-                }
-              >
-                Disconnect
-              </DropdownMenuItem>
+              !readOnly && (
+                <DropdownMenuItem
+                  tone="danger"
+                  disabled={unbind.isPending}
+                  onSelect={() =>
+                    unbind.mutate({
+                      agentId,
+                      conversationId: chat.conversationId,
+                    })
+                  }
+                >
+                  Disconnect
+                </DropdownMenuItem>
+              )
             }
           />
         ))}

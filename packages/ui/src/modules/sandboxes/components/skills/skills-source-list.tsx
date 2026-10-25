@@ -30,7 +30,7 @@ function SourceListRow({
   error: ScanFailure | null;
   divided: boolean;
   onRescan: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   onManageConnections?: () => void;
 }) {
   return (
@@ -111,7 +111,7 @@ export function SkillSourceList({
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   onRescan: (source: SkillSource) => void;
-  onRemove: (source: SkillSource) => void;
+  onRemove?: (source: SkillSource) => void;
   onManageConnections?: () => void;
 }) {
   if (!loaded) return <SourceListSkeleton />;
@@ -136,7 +136,7 @@ export function SkillSourceList({
           error={errorBySource[source.id] ?? null}
           divided={i > 0}
           onRescan={() => onRescan(source)}
-          onRemove={() => onRemove(source)}
+          onRemove={onRemove && (() => onRemove(source))}
           onManageConnections={onManageConnections}
         />
       ))}

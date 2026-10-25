@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => null,
   useAgentsList: () => [],
 }));
 vi.mock("../../modules/agents/utils/agent-kind.js", () => ({

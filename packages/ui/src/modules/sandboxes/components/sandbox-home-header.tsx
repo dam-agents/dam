@@ -7,8 +7,10 @@ import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
+import { SharedBadge } from "../../agents/components/shared-badge.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
+import { isSharedAgent, ownerLine } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
 interface Props {
@@ -29,9 +31,18 @@ export function SandboxIdentity({ agent, display }: Props) {
         />
       </div>
       <div className="flex flex-wrap items-center gap-2 empty:hidden">
+        {isSharedAgent(agent) && <SharedBadge />}
         <GatewayFailureBadge agent={agent} />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
       </div>
+      {agent.access.role === "editor" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="agent-owner-line"
+        >
+          {ownerLine(agent.access.ownerEmail)}
+        </p>
+      )}
     </div>
   );
 }

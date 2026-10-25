@@ -22,6 +22,7 @@ describe("agent hints without the custom-resource watch", () => {
       log: () => {},
       k8s: { watchCustomObjects: () => () => {} },
       onAgentChanged: (agentId) => void changed.push(agentId),
+      editorsOf: async () => [],
     });
     module.agentChanged("agent-1", "owner-1");
     expect(published).toHaveLength(1);

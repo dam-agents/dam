@@ -1,8 +1,8 @@
-import type { WebSocketServer } from "ws";
+import type { WebSocket, WebSocketServer } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { URLPattern } from "node:url";
-import type { UserIdentity } from "api-server-api";
+import type { AgentPermission, UserIdentity } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import type { IsAcceptedPort } from "../../../modules/terms/index.js";
@@ -19,6 +19,7 @@ import {
 } from "../admission/auth.js";
 import { watchApiKey } from "../admission/api-key-watch.js";
 import { emit, EventType } from "../../../events.js";
+import type { EditorSockets } from "./editor-sockets.js";
 
 export type RelayDenialKind = "not-owner" | "not-permitted" | "terms-stale";
 
@@ -34,19 +35,34 @@ const upgradeDenial: Record<RelayAdmissionDenialKind, string> = {
   "not-permitted": "403 Forbidden",
 };
 
+export interface RelayEditor {
+  email: string;
+  ownerSub: string;
+  permissions: AgentPermission[];
+}
+
+export type RelayStanding =
+  { role: "owner" } | ({ role: "editor" } & RelayEditor);
+
 export type RelayAdmissionResult =
   | {
       ok: true;
       user: UserIdentity;
       surface: string;
+      editor: RelayEditor | null;
       attached: () => void;
+      opened: (client: WebSocket) => void;
       watchKey: (onDead: () => void) => () => void;
     }
   | { ok: false; kind: RelayAdmissionDenialKind };
 
 export interface RelayAdmissionDeps {
   authenticate: Authenticate;
-  verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
+  standingOf: (
+    agentId: string,
+    user: UserIdentity,
+  ) => Promise<RelayStanding | null>;
+  editorSockets: EditorSockets;
   isTermsAccepted: IsAcceptedPort;
   surfaceAttribution: SurfaceAttribution;
 }
@@ -55,11 +71,11 @@ export type RelayAdmission = (
   req: IncomingMessage,
   url: URL,
   agentId: string,
-  relayKind: string,
+  relay: { kind: string; permission: AgentPermission },
 ) => Promise<RelayAdmissionResult>;
 
 export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
-  return async (req, url, agentId, relayKind) => {
+  return async (req, url, agentId, { kind: relayKind, permission }) => {
     const connectedAt = performance.now();
     const site: WsAuthSite = {
       edge: "ws",
@@ -73,7 +89,8 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
     if (!admitted.ok) return admitted;
     const { user } = admitted.principal;
 
-    if (!(await deps.verifyOwner(agentId, user.sub))) {
+    const standing = await deps.standingOf(agentId, user);
+    if (standing === null) {
       securityLog("warn", "ws.owner_mismatch", {
         category: "authz",
         actor: user.sub,
@@ -86,6 +103,22 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
         detail: { relay: relayKind },
       });
       return { ok: false, kind: "not-owner" };
+    }
+    const editor = standing.role === "editor" ? standing : null;
+    if (editor) {
+      const allowed = editor.permissions.includes(permission);
+      securityLog(allowed ? "info" : "warn", "agent.editor_act", {
+        category: "authz",
+        actor: user.sub,
+        actorKind: "user",
+        surface: "ws",
+        agentId,
+        result: allowed ? "success" : "failure",
+        decision: allowed ? "allow" : "deny",
+        sourceIp: site.sourceIp,
+        detail: { ownerSub: editor.ownerSub, permission, relay: relayKind },
+      });
+      if (!allowed) return { ok: false, kind: "not-permitted" };
     }
     if (!hasScope(user, "agents:operate") || !hasAgentBinding(user, agentId)) {
       return { ok: false, kind: "not-permitted" };
@@ -120,6 +153,19 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       ok: true,
       user,
       surface,
+      editor: editor && {
+        email: editor.email,
+        ownerSub: editor.ownerSub,
+        permissions: editor.permissions,
+      },
+      opened: (client) => {
+        if (editor)
+          deps.editorSockets.track(
+            agentId,
+            { sub: user.sub, email: editor.email },
+            client,
+          );
+      },
       attached: () =>
         logWsAttach(
           user.sub,
@@ -139,8 +185,11 @@ interface UpgradeTarget {
 }
 export interface RelayActor {
   sub: string;
+  email: string | null;
   surface: string;
+  editor: RelayEditor | null;
   attached: () => void;
+  opened: (client: WebSocket) => void;
 }
 
 interface RelayTarget {
@@ -211,6 +260,7 @@ export function relayRoute(
   admission: RelayAdmission,
   relay: RelayTarget,
   relayKind: string,
+  permission: AgentPermission,
   agentAllows?: (agentId: string) => Promise<boolean>,
 ): UpgradeRouteHandler {
   return async (req, socket, head, url, params) => {
@@ -223,7 +273,10 @@ export function relayRoute(
       socket.write(`HTTP/1.1 ${upgradeDenial[kind]}\r\n${HSTS}\r\n\r\n`);
       socket.destroy();
     };
-    const admitted = await admission(req, url, agentId, relayKind);
+    const admitted = await admission(req, url, agentId, {
+      kind: relayKind,
+      permission,
+    });
     if (!admitted.ok) return deny(admitted.kind);
     if (agentAllows && !(await agentAllows(agentId)))
       return deny("not-permitted");
@@ -234,8 +287,11 @@ export function relayRoute(
     );
     relay.handleUpgrade(req, socket, head, agentId, {
       sub: admitted.user.sub,
+      email: admitted.user.email ?? null,
       surface: admitted.surface,
+      editor: admitted.editor,
       attached: admitted.attached,
+      opened: admitted.opened,
     });
   };
 }

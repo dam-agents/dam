@@ -4,8 +4,11 @@ import {
   platformPromptStartedParamsSchema,
   platformQueueChangedParamsSchema,
   platformRunStartedParamsSchema,
+  platformSenderRecordedParamsSchema,
   platformSessionResetParamsSchema,
   platformTurnEndedParamsSchema,
+  platformTurnStartedParamsSchema,
+  platformVerdictRecordedParamsSchema,
 } from "api-server-api";
 import type { z } from "zod";
 
@@ -57,6 +60,9 @@ export const PLATFORM_NOTIFICATION_METHODS = [
   "platform/runStarted",
   "platform/queueChanged",
   "platform/sessionReset",
+  "platform/senderRecorded",
+  "platform/turnStarted",
+  "platform/verdictRecorded",
 ] as const;
 
 interface RoutedExtUpdate {
@@ -111,6 +117,41 @@ export function routeExtNotification(
       if (!p) return null;
       return {
         update: { sessionUpdate: "platform_run_started", ...p },
+        sessionId: p.sessionId,
+        frame,
+      };
+    }
+    case "platform/senderRecorded": {
+      const p = parseExtParams(
+        method,
+        platformSenderRecordedParamsSchema,
+        params,
+      );
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_sender_recorded", ...p },
+        sessionId: p.sessionId,
+        frame,
+      };
+    }
+    case "platform/turnStarted": {
+      const p = parseExtParams(method, platformTurnStartedParamsSchema, params);
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_turn_started", ...p },
+        sessionId: p.sessionId,
+        frame,
+      };
+    }
+    case "platform/verdictRecorded": {
+      const p = parseExtParams(
+        method,
+        platformVerdictRecordedParamsSchema,
+        params,
+      );
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_verdict_recorded", ...p },
         sessionId: p.sessionId,
         frame,
       };

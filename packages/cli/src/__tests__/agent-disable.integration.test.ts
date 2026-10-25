@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import {
@@ -27,10 +28,11 @@ async function startFixture(
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const ctx = new Proxy(
     {
-      agents,
+      agents: ownedAgents(agents),
       invocationsQuery: { listTargets: async () => [] },
       terms: { isAccepted: async () => true },
       user: FIXTURE_USER,
+      actOnAgent: async () => ({ ok: true, ctx }),
     } as Record<string, unknown>,
     {
       get(target, prop) {

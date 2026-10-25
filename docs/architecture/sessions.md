@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Session inside the machine
 
@@ -34,6 +34,13 @@ From a session-history provider that source can also supply the harness's own na
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
 A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.
 A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
+
+The runtime keeps who did what in a Session the same way, in its metadata, for [Agent Editors](agent-editors.md#who-did-what).
+A prompt, a queue edit or a rewrite that carries a **Sender** in `_meta.platform.sender`, which the api-server's relay writes, records that Sender with its prompt id and the time the prompt started, and the first one recorded is the Session's **Session Starter**; the harness never sees it.
+A permission answer that carries who answered in `result._meta.platform.answeredBy` records the verdict under the harness's tool call id.
+Engaged viewers hear each Sender and verdict as it is recorded, and the Sender of each turn as it starts; a load hands back the Senders, the verdicts and the running turn's Sender, and the session list carries the Session Starter.
+A client matches a Sender to its message by prompt id, and by time when the log was rebuilt from the harness's history and the ids changed, as it places run starts.
+A rewind keeps the Senders, the verdicts and the Session Starter; a fork keeps the Senders and the verdicts, and its Session Starter is whoever sent its first prompt.
 
 A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP.
 The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor).

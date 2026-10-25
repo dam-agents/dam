@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  senderSchema,
   sessionNoticeSchema,
   sessionModeSchema,
   sessionSchema,
@@ -27,6 +28,7 @@ export interface SessionSubAgentContext {
 export type SessionMode = z.infer<typeof sessionModeSchema>;
 export type SessionType = z.infer<typeof sessionTypeSchema>;
 export type Session = z.infer<typeof sessionSchema>;
+export type Sender = z.infer<typeof senderSchema>;
 export type SessionNotice = z.infer<typeof sessionNoticeSchema>;
 export type SessionCategory = z.infer<typeof sessionCategorySchema>;
 export type SessionListCursor = z.infer<typeof sessionListCursorSchema>;

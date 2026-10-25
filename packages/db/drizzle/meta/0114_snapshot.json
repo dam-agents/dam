@@ -1,5 +1,5 @@
 {
-  "id": "16ac0eb8-d552-440d-b699-4b40c882cbab",
+  "id": "c3368871-4a14-4eeb-a6bf-23ae6d22a97c",
   "prevId": "14646340-425f-4d3a-8a9d-3e4972422b1a",
   "version": "7",
   "dialect": "postgresql",
@@ -465,6 +465,62 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.agent_editors": {
+      "name": "agent_editors",
+      "schema": "",
+      "columns": {
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "agent_editors_email_idx": {
+          "name": "agent_editors_email_idx",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "agent_editors_agent_id_email_pk": {
+          "name": "agent_editors_agent_id_email_pk",
+          "columns": [
+            "agent_id",
+            "email"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -952,18 +1008,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "session_profile": {
-          "name": "session_profile",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "platform_subagent_profile": {
-          "name": "platform_subagent_profile",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "default_model_note": {
           "name": "default_model_note",
           "type": "jsonb",
@@ -1018,43 +1062,11 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "agents_session_profile_profiles_id_fk": {
-          "name": "agents_session_profile_profiles_id_fk",
-          "tableFrom": "agents",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "session_profile"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "agents_platform_subagent_profile_profiles_id_fk": {
-          "name": "agents_platform_subagent_profile_profiles_id_fk",
-          "tableFrom": "agents",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "platform_subagent_profile"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "agents_session_pair_xor_profile": {
-          "name": "agents_session_pair_xor_profile",
-          "value": "\"agents\".\"session_profile\" is null or \"agents\".\"session_pair\" is null"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.api_keys": {
@@ -1666,12 +1678,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "profile_id": {
-          "name": "profile_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1753,21 +1759,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "channels_profile_id_profiles_id_fk": {
-          "name": "channels_profile_id_profiles_id_fk",
-          "tableFrom": "channels",
-          "tableTo": "profiles",
-          "columnsFrom": [
-            "profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -3555,167 +3547,6 @@
           ],
           "isUnique": false,
           "where": "status = 'resolved' AND delivered_at IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.profile_seeds": {
-      "name": "profile_seeds",
-      "schema": "",
-      "columns": {
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "seeded_at": {
-          "name": "seeded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.profiles": {
-      "name": "profiles",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seed": {
-          "name": "seed",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "harness": {
-          "name": "harness",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_template": {
-          "name": "provider_template",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settings": {
-          "name": "settings",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "profiles_owner_name_idx": {
-          "name": "profiles_owner_name_idx",
-          "columns": [
-            {
-              "expression": "owner",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "profiles_owner_seed_idx": {
-          "name": "profiles_owner_seed_idx",
-          "columns": [
-            {
-              "expression": "owner",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seed",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"profiles\".\"seed\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "profiles_owner_idx": {
-          "name": "profiles_owner_idx",
-          "columns": [
-            {
-              "expression": "owner",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

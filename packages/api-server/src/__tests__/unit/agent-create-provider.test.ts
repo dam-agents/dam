@@ -102,6 +102,7 @@ function setup(
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
+    actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [],
       create: persist,
@@ -142,6 +143,9 @@ function setup(
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused<AgentsDeps["editors"]>(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
   });
   const ctx = unused<ApiContext>({
     agents,

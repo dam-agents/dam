@@ -25,6 +25,7 @@ import { emit, EventType } from "../../../events.js";
 import { getLogger } from "../../../core/logger.js";
 import type { FirePair } from "../../../modules/harness-config/index.js";
 import { fillSavedDefault } from "./saved-default.js";
+import { stampSender } from "./sender-stamp.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 
@@ -95,6 +96,7 @@ export function createAcpRelay(
         } catch {}
       });
       keepAlive(client);
+      actor.opened(client);
 
       const passive =
         new URL(req.url ?? "", "http://localhost").searchParams.get(
@@ -102,6 +104,9 @@ export function createAcpRelay(
         ) === "1";
 
       let identity: { owner: string; agentId: string } | null = null;
+
+      const email = actor.editor?.email ?? actor.email;
+      const person = { sub: actor.sub, ...(email !== null && { email }) };
 
       const mirroredRows = new Map<string, string>();
 
@@ -164,6 +169,19 @@ export function createAcpRelay(
         });
       }
 
+      function answeredForEditor(parsed: unknown): boolean {
+        if (
+          !actor.editor ||
+          !isRequest(parsed) ||
+          parsed.method !== "platform/markSeen"
+        )
+          return false;
+        client.send(
+          JSON.stringify({ jsonrpc: "2.0", id: parsed.id, result: {} }),
+        );
+        return true;
+      }
+
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
         if (typeof msg.id !== "string" && typeof msg.id !== "number") return;
         const key = String(msg.id);
@@ -172,7 +190,9 @@ export function createAcpRelay(
           { outcome?: { outcome?: unknown; optionId?: unknown } } | undefined;
         if (!rowId || typeof result?.outcome?.outcome !== "string") return;
         approvals
-          .resolveAcpNativeFromInSession(rowId, result.outcome)
+          .resolveAcpNativeFromInSession(rowId, result.outcome, {
+            decidedBy: actor.sub,
+          })
           .then(() => mirroredRows.delete(key))
           .catch(() => {});
       }
@@ -204,8 +224,11 @@ export function createAcpRelay(
         pending.length = 0;
       });
 
+      const upstreamQuery = new URLSearchParams();
+      if (passive) upstreamQuery.set("passive", "1");
+      if (actor.editor) upstreamQuery.set("seen", "0");
       const upstreamUrl = `ws://${agentServiceAddress(agentId, namespace)}/api/acp${
-        passive ? "?passive=1" : ""
+        upstreamQuery.size > 0 ? `?${upstreamQuery.toString()}` : ""
       }`;
 
       repo
@@ -250,7 +273,7 @@ export function createAcpRelay(
               upstream.send(data, { binary: isBinary });
           };
           const forward = (
-            data: Buffer | ArrayBuffer | Buffer[],
+            data: Buffer | ArrayBuffer | Buffer[] | string,
             isBinary: boolean,
             parsed: unknown,
           ) => {
@@ -289,8 +312,14 @@ export function createAcpRelay(
 
           for (const msg of pending) {
             const parsed = msg.isBinary ? null : tryParse(msg.data);
+            if (answeredForEditor(parsed)) continue;
             if (parsed !== null) trackIfPrompt(parsed);
-            forward(msg.data, msg.isBinary, parsed);
+            const stamped = stampSender(parsed, person);
+            forward(
+              stamped ? JSON.stringify(stamped) : msg.data,
+              msg.isBinary,
+              stamped ?? parsed,
+            );
           }
           pending.length = 0;
 
@@ -299,11 +328,17 @@ export function createAcpRelay(
             if (upstream.readyState !== WebSocket.OPEN) return;
 
             const parsed = isBinary ? null : tryParse(data);
+            if (answeredForEditor(parsed)) return;
             if (parsed !== null) trackIfPrompt(parsed);
 
             if (!passive) stamper.bump(agentId);
 
-            forward(data, isBinary, parsed);
+            const stamped = stampSender(parsed, person);
+            forward(
+              stamped ? JSON.stringify(stamped) : data,
+              isBinary,
+              stamped ?? parsed,
+            );
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });
 

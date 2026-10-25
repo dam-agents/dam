@@ -42,7 +42,7 @@ import {
   useHarnessConfigStatus,
 } from "../../agents/api/harness-config.js";
 import {
-  useAgents,
+  useAgent,
   useIsAgentInaccessible,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
@@ -64,6 +64,7 @@ import { ContributionGapNotice } from "../../agents/components/contribution-gap-
 import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
+import { SharedAgentBadge } from "../../agents/components/shared-badge.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { AgentUpdateDot } from "../../agents/components/update-available-action.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
@@ -72,6 +73,8 @@ import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
+import { isOwnAgent, isSharedAgent } from "../../agents/lib/agent-editors.js";
+import { holds } from "../../agents/lib/agent-permissions.js";
 import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
@@ -172,6 +175,7 @@ import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useNewSessionChoice } from "../hooks/use-new-session-choice.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useSenderNames } from "../hooks/use-sender-names.js";
 import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
   pushSessionPath,
@@ -208,6 +212,7 @@ import {
   userRunsOf,
 } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
+import { withVerdicts } from "../lib/verdicts.js";
 import type { SessionError } from "../store/sessions.js";
 
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
@@ -217,8 +222,6 @@ const SEND_SETTLE_MS = 300;
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
-  const { data: agentsData } = useAgents();
-  const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
   const leavingForPublicPage = usePublicAgentFallback(
@@ -238,7 +241,7 @@ export function ChatView() {
     () => new Set(restartingAgents.keys()),
     [restartingAgents],
   );
-  const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
+  const agentView = useAgent(selectedAgent);
   const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
     ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
@@ -258,16 +261,27 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const attribution = useStore((s) => s.attribution);
+  const names = useSenderNames(selectedAgent);
   const shown = useMemo(
-    () => messages.filter((m) => !isQueuedSend(m)),
-    [messages],
+    () =>
+      withVerdicts(
+        messages.filter((m) => !isQueuedSend(m)),
+        attribution.verdicts,
+      ),
+    [messages, attribution.verdicts],
   );
   const now = useNow(60_000);
   const runStarts = useStore((s) => s.runStarts);
   const items = useMemo(
-    () => threadItems(shown, runStarts),
-    [shown, runStarts],
+    () =>
+      threadItems(shown, runStarts, {
+        entries: attribution.senders,
+        viewerSub: names.viewerSub,
+      }),
+    [shown, runStarts, attribution.senders, names.viewerSub],
   );
+  const workingFor = names.otherName(attribution.turnSender) ?? undefined;
   const userRuns = useMemo(() => userRunsOf(items), [items]);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
@@ -601,7 +615,7 @@ export function ChatView() {
 
   useOpenInitializationSession({
     agentId: selectedAgent,
-    active: view === "chat" && agentView !== null,
+    active: view === "chat" && agentView !== null && isOwnAgent(agentView),
     idle: chatIdle,
     resumeSession,
   });
@@ -692,6 +706,10 @@ export function ChatView() {
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const canOpenBrowser = agentView?.requireConnectionAddress === true;
+  const sessionsElsewhere =
+    agentView === null ||
+    holds(agentView.access, "terminal") ||
+    holds(agentView.access, "channels");
   // UNIT_BOUNDARY_DESCRIPTION: the browser, changes and delegation docks belong to one agent, so a dock left by a previously selected agent counts as nothing docked here.
   const shownDock =
     dock === null
@@ -925,8 +943,15 @@ export function ChatView() {
                         </span>
                       </button>
                     </h2>
+                    {newLayout && agentView && isSharedAgent(agentView) && (
+                      <div className="mb-3 flex justify-center">
+                        <SharedAgentBadge access={agentView.access} />
+                      </div>
+                    )}
                     <p className="text-sm text-muted-foreground">
-                      Send a message to begin or open a new session in:
+                      {sessionsElsewhere
+                        ? "Send a message to begin or open a new session in:"
+                        : "Send a message to begin."}
                     </p>
                     {agentView && (
                       <NewSessionOptions
@@ -958,7 +983,7 @@ export function ChatView() {
                         return (
                           <ThreadDivider
                             key={item.key}
-                            label={dividerLabel(item, now)}
+                            label={dividerLabel(item, now, names.nameOf)}
                           />
                         );
                       }
@@ -984,6 +1009,7 @@ export function ChatView() {
                                 k === members.length - 1 ? actions : undefined
                               }
                               isLast={item.index + k === shown.length - 1}
+                              workingFor={workingFor}
                               showModel={runStarts.length > 0}
                               {...timeProps(m.at, now)}
                               hasPendingPermission={hasPendingPermission}
@@ -1324,9 +1350,12 @@ export function ChatView() {
                 data-chat-status
                 className="flex shrink-0 items-center gap-2"
               >
+                {agentView && isSharedAgent(agentView) && (
+                  <SharedAgentBadge access={agentView.access} />
+                )}
                 <ChatHeaderStatus
                   selectedAgent={selectedAgent}
-                  agents={agents}
+                  agent={agentView}
                   busy={busy}
                   connectionState={connectionState}
                   sessionId={sessionId}
@@ -1391,7 +1420,7 @@ export function ChatView() {
               )}
               <ChatHeaderStatus
                 selectedAgent={selectedAgent}
-                agents={agents}
+                agent={agentView}
                 busy={busy}
                 connectionState={connectionState}
                 sessionId={sessionId}
@@ -1456,20 +1485,19 @@ export function ChatView() {
 
 function ChatHeaderStatus({
   selectedAgent,
-  agents,
+  agent,
   busy,
   connectionState,
   sessionId,
   processesEnabled,
 }: {
   selectedAgent: string | null;
-  agents: AgentView[];
+  agent: AgentView | null;
   busy: boolean;
   connectionState: ConnectionState;
   sessionId: string | null;
   processesEnabled: boolean;
 }) {
-  const agent = agents.find((a) => a.id === selectedAgent);
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
   const reconnecting =
     connectionState === "reconnecting" || connectionState === "reloading";

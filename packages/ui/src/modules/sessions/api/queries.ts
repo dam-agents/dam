@@ -370,6 +370,7 @@ export function provisionalSessionView(item: AttentionItem): SessionView {
     updatedAt: item.activityAt,
     running: item.working,
     seenAt: item.seenAt,
+    ...(item.startedBy !== undefined && { startedBy: item.startedBy }),
   };
 }
 

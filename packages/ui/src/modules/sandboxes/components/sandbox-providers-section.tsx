@@ -6,7 +6,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AddRow } from "@/components/ui/list-section";
 
 import { useStore } from "../../../store.js";
+import { useAgent } from "../../agents/api/queries.js";
+import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
+import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
 import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
   useGrantProvider,
@@ -35,12 +38,26 @@ export function SandboxProvidersSection({
   const catalog = useHarnessCatalog().data?.harnesses;
   const root = useRootDriver(agentId);
   const usage = useProviderUsage(agentId);
+  const access = useAgent(agentId)?.access;
+  const managesProviders = !access || holds(access, "connections");
 
   return (
     <div className="flex flex-col gap-3">
       {header()}
+      {access && !managesProviders && (
+        <OwnerOnlyNotice
+          title="Only the owner adds and removes providers."
+          testId="providers-owner-only"
+        >
+          This agent uses {ownerName(access)}&apos;s providers. You can still
+          change its default model and its spend limits.
+        </OwnerOnlyNotice>
+      )}
       {root && <RootDriverSpendNote root={root} />}
-      {loaded && owned.length === 0 && (
+      {loaded && owned.length === 0 && !managesProviders && (
+        <EmptyState>This agent has no provider yet.</EmptyState>
+      )}
+      {loaded && owned.length === 0 && managesProviders && (
         <EmptyState
           action={
             <Button size="sm" onClick={() => navigateToSettings("providers")}>
@@ -60,7 +77,7 @@ export function SandboxProvidersSection({
             provider={p}
             harnesses={catalog && providerHarnesses(catalog, p)}
             checked={attached}
-            disabled={pending}
+            disabled={pending || !managesProviders}
             onCheckedChange={(on) =>
               on
                 ? void grant(p.id)
@@ -82,7 +99,7 @@ export function SandboxProvidersSection({
           </ProviderToggleRow>
         );
       })}
-      {owned.length > 0 && (
+      {owned.length > 0 && managesProviders && (
         <Card className="overflow-hidden">
           <AddRow onClick={() => navigateToSettings("providers")}>
             <Settings size={16} className="shrink-0" />

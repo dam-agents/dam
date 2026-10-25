@@ -4,6 +4,7 @@ import {
   createWorld,
   frames,
   type Client,
+  type SessionMetadata,
   type World,
 } from "./acp-world.js";
 import type { HistoryProvider } from "../../../infrastructure/history-provider.js";
@@ -94,7 +95,7 @@ async function settle(): Promise<void> {
 
 async function readyWorld(
   histories: Record<string, string[]>,
-): Promise<{ world: World; bob: Client }> {
+): Promise<{ world: World; bob: Client; metadata: SessionMetadata }> {
   const metadata = createSessionMetadata();
   metadata.store.set(SESSION, {});
   const world = createWorld({
@@ -107,18 +108,24 @@ async function readyWorld(
     agentCapabilities: { sessionCapabilities: { fork: {} } },
   });
   await settle();
-  return { world, bob };
+  return { world, bob, metadata };
 }
 
-function rewriteFrom(id: number, messageId: string) {
+function rewriteFrom(
+  id: number,
+  messageId: string,
+  mode: "fork" | "rewind" = "fork",
+  sender?: { sub: string; email: string },
+) {
   return {
     jsonrpc: "2.0",
     id,
     method: "platform/rewriteFrom",
     params: {
       sessionId: SESSION,
-      mode: "fork",
+      mode,
       messageId,
+      ...(sender !== undefined && { _meta: { platform: { sender } } }),
       prompt: [
         { type: "text", text: "I changed my mind, wish me the worst day!" },
       ],
@@ -190,4 +197,42 @@ describe("acp-runtime: rewriting a conversation", () => {
       "2026-10-08T07:00:40Z",
     ]);
   });
+
+  /**
+   * TEST_SCENARIO: The owner started a session and an editor forks it from a
+   * later message. The fork keeps the Senders of the copied messages, so the
+   * chat still names who sent them. Its Session Starter is the editor, since
+   * lists show a fork as a new conversation. A rewind instead keeps the
+   * original's Session Starter, because it keeps going as the same one.
+   */
+  it.each([
+    ["fork", "editor-sub"],
+    ["rewind", "owner-sub"],
+  ] as const)(
+    "should keep the Senders on a %s and name its starter",
+    async (mode, starter) => {
+      const owner = { sub: "owner-sub", email: "owner@example.com" };
+      const editor = { sub: "editor-sub", email: "editor@example.com" };
+      const { world, bob, metadata } = await readyWorld({
+        [SESSION]: original,
+        [COPY]: copy,
+      });
+      metadata.store.recordSender(SESSION, {
+        at: "2026-10-08T07:00:00Z",
+        promptId: "u1",
+        sender: owner,
+      });
+
+      bob.send(rewriteFrom(2, "u2", mode, editor));
+      await settle();
+      world.harness().replyTo("session/fork", { sessionId: COPY });
+      await settle();
+
+      world.harness().replyTo("session/load", {});
+      await settle();
+      const senders = metadata.store.sendersOf(COPY).map((e) => e.sender.sub);
+      expect(senders).toEqual(["owner-sub", "editor-sub"]);
+      expect(metadata.store.get(COPY)?.starter?.sub).toBe(starter);
+    },
+  );
 });

@@ -23,12 +23,14 @@ export function SidebarActivityRow({
   selected,
   now,
   conversation,
+  startedBy = null,
   onOpen,
 }: {
   item: AgentActivitySession;
   selected: boolean;
   now: Date;
   conversation: string | undefined;
+  startedBy?: string | null;
   onOpen: () => void;
 }) {
   const { session, agent, at, working, unread, needsApproval } = item;
@@ -89,6 +91,14 @@ export function SidebarActivityRow({
           <span className="shrink-0" title={formatTimestamp(at)}>
             {timeAgo(at, now)}
           </span>
+          {startedBy !== null && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate" data-testid="session-started-by">
+                {startedBy}
+              </span>
+            </>
+          )}
           {messenger && (
             <ConnectionIcon
               iconSlug={messenger.slug}

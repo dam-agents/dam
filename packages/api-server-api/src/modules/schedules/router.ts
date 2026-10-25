@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
@@ -21,6 +23,7 @@ import {
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
+import type { AgentTarget } from "../agents/permissions.js";
 import type { OnceSessionChoice, Schedule, ScheduleSpecOnce } from "./types.js";
 
 function onceSessionChoice(spec: ScheduleSpecOnce): OnceSessionChoice {
@@ -81,9 +84,14 @@ function toView(sched: Schedule) {
   }
 }
 
+function scheduleTarget(scheduleIds: readonly string[]): AgentTarget {
+  return { kind: "schedules", scheduleIds };
+}
+
 export const schedulesRouter = t.router({
   list: readAgentProcedure
     .input(scheduleListInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(async ({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       const schedules = await ctx.schedules.list(input.agentId);
@@ -99,6 +107,7 @@ export const schedulesRouter = t.router({
 
   get: readAgentProcedure
     .input(scheduleGetInputSchema)
+    .use(agentPermission("view", (input) => scheduleTarget([input.id])))
     .query(async ({ ctx, input }) => {
       const sched = await ctx.schedules.get(input.id);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
@@ -108,6 +117,7 @@ export const schedulesRouter = t.router({
 
   createCron: manageAgentsProcedure
     .input(scheduleCreateCronInputSchema)
+    .use(agentPermission("schedules", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createCron(input);
       return toView(sched);
@@ -115,6 +125,7 @@ export const schedulesRouter = t.router({
 
   updateCron: manageAgentsProcedure
     .input(scheduleUpdateCronInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.updateCron(input);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
@@ -123,6 +134,7 @@ export const schedulesRouter = t.router({
 
   createRRule: manageAgentsProcedure
     .input(scheduleCreateRRuleInputSchema)
+    .use(agentPermission("schedules", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createRRule(input);
       return toView(sched);
@@ -130,6 +142,7 @@ export const schedulesRouter = t.router({
 
   updateRRule: manageAgentsProcedure
     .input(scheduleUpdateRRuleInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.updateRRule(input);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
@@ -138,6 +151,7 @@ export const schedulesRouter = t.router({
 
   createOnce: manageAgentsProcedure
     .input(scheduleCreateOnceInputSchema)
+    .use(agentPermission("schedules", (input) => agentTarget(input.agentId)))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createOnce(input);
       return toView(sched);
@@ -145,6 +159,7 @@ export const schedulesRouter = t.router({
 
   updateOnce: manageAgentsProcedure
     .input(scheduleUpdateOnceInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.updateOnce(input);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
@@ -153,10 +168,12 @@ export const schedulesRouter = t.router({
 
   delete: manageAgentsProcedure
     .input(scheduleDeleteInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(({ ctx, input }) => ctx.schedules.delete(input.id)),
 
   toggle: manageAgentsProcedure
     .input(scheduleToggleInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.toggle(input.id, input.enabled);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
@@ -165,6 +182,7 @@ export const schedulesRouter = t.router({
 
   clearSessionChoices: manageAgentsProcedure
     .input(scheduleClearSessionChoicesInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget(input.ids)))
     .mutation(async ({ ctx, input }) => {
       const failed: { id: string; reason: string }[] = [];
       for (const id of input.ids) {
@@ -183,9 +201,11 @@ export const schedulesRouter = t.router({
 
   resetSession: manageAgentsProcedure
     .input(scheduleResetSessionInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(({ ctx, input }) => ctx.schedules.resetSession(input.id)),
 
   runNow: manageAgentsProcedure
     .input(scheduleRunNowInputSchema)
+    .use(agentPermission("schedules", (input) => scheduleTarget([input.id])))
     .mutation(({ ctx, input }) => ctx.schedules.runNow(input.id)),
 });

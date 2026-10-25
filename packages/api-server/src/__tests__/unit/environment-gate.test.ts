@@ -66,6 +66,7 @@ async function world(
     signedInAs?: string;
     email?: string | null;
     ownerList?: string[];
+    editors?: string[];
     environmentList?: string[] | null;
     endpoints?: { name: string; port: number }[];
   } = {},
@@ -126,6 +127,7 @@ async function world(
   };
   const owners = { list: opts.ownerList ?? [] };
   const ownerList = async () => owners.list;
+  const editorsOf = async () => opts.editors ?? [];
   // UNIT_BOUNDARY_DESCRIPTION: the share host's sign-in, faked: a `share` cookie names a share session, alive or not, and its login path is where the share host would send a visitor without one through the identity provider.
   const shareLogins: string[] = [];
   const visitor = {
@@ -146,6 +148,7 @@ async function world(
       addressUrl: (a) => `http://${a}.${DOMAIN}`,
       repo,
       ownerList,
+      editorsOf,
       signIn,
       share: {
         ...shareSignIn,
@@ -172,6 +175,7 @@ async function world(
     signOutUrl: (address) => shareSignIn.logoutUrl(`/e/${address}`),
     repo,
     ownerList,
+    editorsOf,
     signIn,
     platform: PLATFORM,
     ensureReady: async (id) => void woken.push(id),
@@ -514,6 +518,21 @@ describe("the Environment gate", () => {
       environmentList: ["outsider@example.com"],
     });
     expect((await widened.frontDoor("app-pr-1-abcdef")).status).toBe(403);
+  });
+
+  // TEST_SCENARIO: an Agent Editor of the owning agent opens its Environments like the owner does: they are on no list, and a list the agent narrowed does not shut them out.
+  it("admits the owning agent's editors, whatever the lists say", async () => {
+    const editor = await world({
+      signedInAs: "editor-sub",
+      email: "Editor@Example.com",
+      editors: ["editor@example.com"],
+      environmentList: ["qa@example.com"],
+    });
+    const cookie = await editor.signInTo("app-pr-1-abcdef");
+    expect(
+      (await editor.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie }))
+        .status,
+    ).toBe(200);
   });
 
   // TEST_SCENARIO: an account whose email the identity provider did not verify matches no list, and the page says why.

@@ -3,9 +3,17 @@ import type { LiveEvent, LiveEventsService } from "api-server-api";
 export type PublishableLiveEvent = Exclude<LiveEvent, { topic: "sync" }>;
 
 export interface LiveEventsBus {
-  publish(ownerSub: string, event: PublishableLiveEvent): void;
-  subscribe(ownerSub: string, listener: (event: LiveEvent) => void): () => void;
+  publish(audience: string, event: PublishableLiveEvent): void;
+  subscribe(audience: string, listener: (event: LiveEvent) => void): () => void;
 }
+
+const EDITOR_AUDIENCE_PREFIX = "email:";
+
+export const editorAudience = (email: string) =>
+  `${EDITOR_AUDIENCE_PREFIX}${email}`;
+
+export const isEditorAudience = (audience: string) =>
+  audience.startsWith(EDITOR_AUDIENCE_PREFIX);
 
 const MAX_PENDING = 256;
 
@@ -13,10 +21,10 @@ export function createLiveEventsService(deps: {
   bus: LiveEventsBus;
 }): LiveEventsService {
   return {
-    async *ownerStream(sub, signal) {
+    async *ownerStream({ sub, editorEmail }, signal) {
       const pending: LiveEvent[] = [{ topic: "sync" }];
       let wake: (() => void) | undefined;
-      const unsubscribe = deps.bus.subscribe(sub, (event) => {
+      const listener = (event: LiveEvent) => {
         if (pending.length >= MAX_PENDING) {
           pending.length = 0;
           pending.push({ topic: "sync" });
@@ -24,7 +32,14 @@ export function createLiveEventsService(deps: {
           pending.push(event);
         }
         wake?.();
-      });
+      };
+      const unsubscribes = [
+        deps.bus.subscribe(sub, listener),
+        ...(editorEmail
+          ? [deps.bus.subscribe(editorAudience(editorEmail), listener)]
+          : []),
+      ];
+      const unsubscribe = () => unsubscribes.forEach((u) => u());
       const onAbort = () => wake?.();
       signal?.addEventListener("abort", onAbort, { once: true });
       try {

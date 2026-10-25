@@ -4,8 +4,11 @@ import type {
   PlatformPromptStartedParams,
   PlatformQueueChangedParams,
   PlatformRunStartedParams,
+  PlatformSenderRecordedParams,
   PlatformSessionResetParams,
   PlatformTurnEndedParams,
+  PlatformTurnStartedParams,
+  PlatformVerdictRecordedParams,
 } from "api-server-api";
 
 export type AcpUpdate =
@@ -16,6 +19,13 @@ export type AcpUpdate =
     } & PlatformPromptAcceptedParams)
   | ({ sessionUpdate: "platform_prompt_started" } & PlatformPromptStartedParams)
   | ({ sessionUpdate: "platform_run_started" } & PlatformRunStartedParams)
+  | ({
+      sessionUpdate: "platform_sender_recorded";
+    } & PlatformSenderRecordedParams)
+  | ({ sessionUpdate: "platform_turn_started" } & PlatformTurnStartedParams)
+  | ({
+      sessionUpdate: "platform_verdict_recorded";
+    } & PlatformVerdictRecordedParams)
   | ({ sessionUpdate: "platform_queue_changed" } & PlatformQueueChangedParams)
   | ({ sessionUpdate: "platform_session_reset" } & PlatformSessionResetParams)
   | { sessionUpdate: "platform_clipped_replay"; older?: string };
