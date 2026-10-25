@@ -61,6 +61,24 @@ describe("secret request page", () => {
     ).toEqual([expect.stringMatching(/^Expires: .*2026/)]);
   });
 
+  // TEST_SCENARIO: a GitHub App check names the bot, the account the app is installed on and the repositories its token reaches, and marks a list it could not read whole.
+  it("lists what a GitHub App check found", () => {
+    expect(
+      credentialCheckDetails({
+        status: "passed",
+        account: "dam-bot[bot]",
+        installedOn: "dam-agents",
+        repositories: ["docs", "web"],
+        repositoriesTruncated: true,
+        at: "2026-10-22T08:00:00.000Z",
+      }),
+    ).toEqual([
+      "Account: dam-bot[bot]",
+      "Installed on: dam-agents",
+      "Repositories: docs, web, …",
+    ]);
+  });
+
   // TEST_SCENARIO: a failed check and a check that could not run are told apart, since only the first says the secret is wrong.
   it("tells a failed check from one that could not run", () => {
     const at = "2026-10-22T08:00:00.000Z";

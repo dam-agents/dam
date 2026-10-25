@@ -15,11 +15,17 @@ const userSchema = z.object({
   email: z.string().nullable(),
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a host-supplied label as the platform stores and
+ * prints it. Control characters are dropped, and the C1 block with the C0 ones:
+ * U+009B is a one-byte CSI, so it opens an escape sequence without an ESC and
+ * would clear a terminal or fake output in it.
+ */
 export function stripControlChars(name: string): string {
   return [...name]
     .filter((c) => {
       const code = c.codePointAt(0) ?? 0;
-      return code >= 0x20 && code !== 0x7f;
+      return code >= 0x20 && code !== 0x7f && !(code >= 0x80 && code <= 0x9f);
     })
     .join("");
 }
