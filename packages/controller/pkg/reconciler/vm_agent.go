@@ -27,7 +27,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what tells anything inside the guest which backend it is on. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too, and not only the exec chain that came from the entrypoint. agent-runtime reads it to know it has no cgroup to measure memory against, and the image's boot to know its HOME is a local disk rather than a network volume.
+// UNIT_BOUNDARY_DESCRIPTION: what told anything inside the guest which backend it was on, kept for the images that still read it. An Agent's image may predate the container backend's removal: its entrypoint reads this to know its HOME is a local disk rather than a network volume, and takes the container path when it is missing. It rides the machine's own environment rather than being set by platform-init, so a process started out of band — a shell over ssh, a harness restarted by hand — sees it too. Remove it once every Agent runs an image that no longer reads it (agents.runtimeFleet.outdated).
 const vmBackendEnv = "PLATFORM_BACKEND"
 
 const (
