@@ -40,7 +40,7 @@ describe("assembleSpecFromTemplate", () => {
       "nous-1",
       {
         ...baseTemplate,
-        runtimeClassName: "kata",
+        runtimeClassName: "gvisor",
         nodeSelector: { pool: "gpu" },
       } as TemplateSpec,
       {},

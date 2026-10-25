@@ -123,11 +123,11 @@ func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg 
 	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL,
 		backend: crAgentBackend{dynamic: dyn, namespace: cfg.Namespace}}
 	r.busyProbe = func(ctx context.Context, name string) bool {
-		idle, answered := agentPodStatus(ctx, r.config.Namespace, name)
+		idle, answered := agentIdleStatus(ctx, r.config.Namespace, name)
 		return answered && !idle
 	}
 	r.podStatus = func(ctx context.Context, name string) (bool, bool) {
-		return agentPodStatus(ctx, r.config.Namespace, name)
+		return agentIdleStatus(ctx, r.config.Namespace, name)
 	}
 	return r
 }

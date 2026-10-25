@@ -3,7 +3,7 @@ import process from "node:process";
 const mcpUrl = process.env.PLATFORM_MCP_URL;
 if (!mcpUrl) {
   throw new Error(
-    "PLATFORM_MCP_URL is not set — the driver SDK only runs inside a platform agent pod.",
+    "PLATFORM_MCP_URL is not set — the driver SDK only runs inside a platform agent's machine.",
   );
 }
 

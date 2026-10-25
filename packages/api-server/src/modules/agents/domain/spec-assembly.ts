@@ -37,7 +37,7 @@ export function concreteResources(
     : { limits };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the spec an Agent's machine is built from. Every Agent runs on its owner's runner, so the template's size, class and mounts are what size that machine's disk. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it. `backend.type` is stamped `vm` because the CRD's Environment rule still requires it, and nothing reads it: the schema keeps that field until the Agents move to Postgres.
+// UNIT_BOUNDARY_DESCRIPTION: the spec an Agent's machine is built from. Every Agent runs on its owner's runner, so the template's size, class and mounts are what size that machine's disk. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it. `backend.type` is stamped `vm` because the CRD's Environment rule requires it and nothing reads it; the field stays in the schema until the crd authority is retired (ADR-122).
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,

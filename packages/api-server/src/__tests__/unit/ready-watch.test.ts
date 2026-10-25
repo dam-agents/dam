@@ -15,7 +15,7 @@ function agent(ready: "True" | "False"): KubeObject {
 
 describe("ready watch", () => {
   // TEST_SCENARIO: a grant rolls the gateway, Ready drops and comes back with
-  // TEST_SCENARIO: the agent pod untouched; only the return to True calls back.
+  // TEST_SCENARIO: the agent's machine untouched; only the return to True calls back.
   it("calls back when Ready turns True, not while it stays True", () => {
     const calls: string[] = [];
     const watch = createReadyWatch((id) => calls.push(id));
