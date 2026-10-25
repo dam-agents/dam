@@ -239,29 +239,6 @@ if [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NE
     --set=virtualization.runner.hostPort="$HOST_RUNNER_PORT"
   )
 fi
-no_kvm_warning() {
-  [ -n "$1" ] || return 0
-  cat >&2 <<WARN
-
-################################################################################
-#
-#  WARNING: this install has no way to run an agent on this machine.
-#
-#  $1
-#  Its UI, sign-in, API and controller work; an agent you create stays without
-#  a machine. 'mise run cluster:installs' lists the installs and their runners.
-#
-#  The runner is the one thing a cluster cannot share between installs, so this
-#  is a limit of the machine, not of the install.
-#
-################################################################################
-
-WARN
-}
-if [ -z "$HOST_RUNNER" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$CLUSTER_TARGET" = lima ] &&
-   { ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE" || ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm 2>/dev/null; }; then
-  NO_KVM_REASON="VM '$LIMA_INSTANCE' has no /dev/kvm (it was created without nested virtualization, which only a recreated VM gains), and the VM runner pods every agent runs on need it."
-fi
 # A host runner reaches each machine's gateway through a NodePort, which lima
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
 # template's catch-all ignore.
@@ -277,8 +254,6 @@ if [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
   echo "FATAL: this host cannot open /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   exit 1
 fi
-[ -z "${NO_KVM_REASON:-}" ] || no_kvm_warning "$NO_KVM_REASON"
-
 # k3s writes the kubeconfig before the node registers, and OpenRC's `rc-service
 # restart` returns before the API answers: waiting for a node is what gives the
 # `kubectl wait --all` below something to wait for, since on none it errors out
@@ -482,10 +457,8 @@ fi
 # VM runner pods run in a user namespace, where the runtime bind-mounts
 # /dev/kvm with its host owner unmapped: a 0660 root:kvm device, Ubuntu's
 # mode, opens for nobody in the pod. Open it to all, as systemd's own rule
-# does; the udev rule keeps the mode across a reboot of the lima VM. A node with
-# no /dev/kvm at all (a named install on a VM without nesting) has no rule to
-# write, and the warning above already said so.
-if [ -z "$HOST_RUNNER" ] && [ -z "${NO_KVM_REASON:-}" ]; then
+# does; the udev rule keeps the mode across a reboot of the lima VM.
+if [ -z "$HOST_RUNNER" ]; then
   KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
   if [ -n "${IS_SANDBOX:-}" ]; then
     as_root chmod 0666 /dev/kvm
@@ -750,6 +723,22 @@ fi
 # loopback, where the host-name bridge and cluster:open's forward reach it,
 # and the bridge's X-Forwarded-Proto is what tells Keycloak the browser uses
 # https.
+# A VM provisioned before the entrypoints moved into the cluster's config still
+# carries the static `traefik-config.yaml` manifest the lima template used to
+# write. k3s re-applies every manifest in that directory at each start, and it
+# deletes the object when its manifest goes, so the manifest must not stay: the
+# HelmChartConfig this install merges into is the only writer, and it survives a
+# restart. Remove the stale file and wait for the object it owned to go, before
+# the reservation below writes it again.
+if node_sh test -e /var/lib/rancher/k3s/server/manifests/traefik-config.yaml 2>/dev/null; then
+  echo "Removing the static Traefik manifest an older VM was provisioned with..."
+  node_sh rm -f /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+  for _ in $(seq 1 30); do
+    kubectl -n kube-system get helmchartconfig traefik >/dev/null 2>&1 || break
+    sleep 2
+  done
+fi
+
 TRAEFIK_INSECURE=""
 if [ "$CLUSTER_TARGET" = environment ]; then
   APP_PORT="$usage_backchannel_port"
@@ -1282,7 +1271,6 @@ wait "$PREPULL_PID" 2>/dev/null || true
 echo ""
 echo "=== Cluster ready ==="
 no_mesh_warning
-[ -z "${NO_KVM_REASON:-}" ] || no_kvm_warning "$NO_KVM_REASON"
 echo "KUBECONFIG=$KUBECONFIG"
 echo "Open it at http://localhost:$APP_PORT"
 if [ "$CLUSTER_TARGET" = environment ]; then

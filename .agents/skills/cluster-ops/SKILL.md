@@ -139,9 +139,9 @@ Unset it to try the mesh anyway.
 ## VM runner (KVM)
 
 Every agent is a microVM, so `cluster:install` needs a host that can run machines, and fails where it cannot open `/dev/kvm`.
-On a Mac it runs agents on one runner on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
+On a Mac it runs agents on a runner of the install's own, on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, with a named install's under that directory's `<name>/`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
 Everywhere else, and in the e2e install, the runner pods need a usable `/dev/kvm` on the k3s node: nested virtualization in the lima VM (Apple silicon M3+, macOS 15+), or a KVM host in sandbox mode; `cluster:install` then applies the KVM device plugin (`helm/extra/kvm-device-plugin.yaml`), and values-local.yaml names its `squat.ai/kvm` and the node image cache directory.
-The e2e install keeps the runner pods on a Mac too, since the suite restarts the runner by deleting its pod and the one host runner belongs to the dev cluster.
+The e2e install keeps the runner pods on a Mac too, since the suite restarts the runner by deleting its pod.
 `mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) stages the mock image for the VM runners and runs the smoke suite; `E2E_GATEWAY_PER_OWNER=1` installs with one gateway pod per owner (`virtualization.gateway.perOwner`) instead of the default gateway pod per agent.
 Boot waits are four minutes for a boot and five for a smoke test, so a guest that stops answering fails the run in minutes.
 

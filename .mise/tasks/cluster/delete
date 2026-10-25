@@ -35,8 +35,8 @@ else
   # The host runner's machines belonged to this cluster's agents. Its smolvm
   # release, disk templates and image volume are only caches, and stay.
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
-  # Every install on this VM ran a host runner of its own.
+  # Every install on this VM ran a host runner of its own: this stops those, and
+  # removes only the machines of the runners whose instance names this VM.
   host_runner_stop_vm
-  rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/Library" "$HOST_RUNNER_VM_HOME/Library" "$HOST_RUNNER_DIR/instance"
   echo "k3s cluster ($LIMA_INSTANCE) deleted."
 fi

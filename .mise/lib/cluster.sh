@@ -127,24 +127,23 @@ traefik_entrypoint_port() {
     [ -z "$json" ] || values="$(printf '%s' "$json" | jq -r '.spec.valuesContent // ""')"
     port="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].exposedPort // ""' 2>/dev/null)"
     if [ -n "$port" ]; then
-      # This install's already: a fixed port must agree with it, and a named
-      # install keeps the port it took before.
+      # This install's already. A fixed port that agrees with the record needs no
+      # write; one that differs is the caller moving the install (a changed
+      # `port` value, an Environment's backchannel port) and wins, below.
       if [ -z "$fixed" ] || [ "$fixed" = "$port" ]; then printf '%s' "$port"; return 0; fi
     fi
-    if [ -z "$port" ]; then
-      if [ -n "$fixed" ]; then
-        port="$fixed"
-      else
-        used="$(printf '%s' "$values" | yq -r '[.ports[]?.exposedPort] | join(" ")' 2>/dev/null)"
-        for p in $(seq "$CLUSTER_PORT_MIN" "$CLUSTER_PORT_MAX"); do
-          case " $used " in *" $p "*) continue ;; esac
-          port="$p"; break
-        done
-        [ -n "$port" ] || {
-          echo "FATAL: every port of $CLUSTER_PORT_MIN-$CLUSTER_PORT_MAX is taken by another install; remove one with 'mise run cluster:uninstall -- --name <name>'" >&2
-          return 1
-        }
-      fi
+    if [ -n "$fixed" ]; then
+      port="$fixed"
+    elif [ -z "$port" ]; then
+      used="$(printf '%s' "$values" | yq -r '[.ports[]?.exposedPort] | join(" ")' 2>/dev/null)"
+      for p in $(seq "$CLUSTER_PORT_MIN" "$CLUSTER_PORT_MAX"); do
+        case " $used " in *" $p "*) continue ;; esac
+        port="$p"; break
+      done
+      [ -n "$port" ] || {
+        echo "FATAL: every port of $CLUSTER_PORT_MIN-$CLUSTER_PORT_MAX is taken by another install; remove one with 'mise run cluster:uninstall -- --name <name>'" >&2
+        return 1
+      }
     fi
     values="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" PORT="$port" yq -r '
       .ports = ((.ports // {}) | .[env(ENTRY)] = {

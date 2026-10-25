@@ -15,14 +15,15 @@ export HOST_RUNNER_DIR="$HOST_RUNNER_BASE${CLUSTER_INSTALL:+/$CLUSTER_INSTALL}"
 # under a HOME that does not fit, naming the path and the limit. A named
 # install's own home is short and hashed instead of readable, for the same
 # limit: it carries up to 20 more characters.
-if [ -n "${PLATFORM_VM_RUNNER_VM_HOME:-}" ]; then
-  export HOST_RUNNER_VM_HOME="$PLATFORM_VM_RUNNER_VM_HOME"
-elif [ -n "$CLUSTER_INSTALL" ]; then
-  short="$(printf '%s' "$CLUSTER_INSTALL" | shasum -a 256 | cut -c1-8)"
-  export HOST_RUNNER_VM_HOME="$HOME/.pm-$short"
-else
-  export HOST_RUNNER_VM_HOME="$HOME/.platform-vm"
-fi
+# host_runner_vm_home <install-name>: the HOME that install's runner runs under.
+# Empty is the default install, whose home is readable; a named one is hashed.
+host_runner_vm_home() {
+  if [ -n "${PLATFORM_VM_RUNNER_VM_HOME:-}" ]; then printf '%s' "$PLATFORM_VM_RUNNER_VM_HOME"; return 0; fi
+  if [ -n "${1:-}" ]; then printf '%s' "$HOME/.pm-$(printf '%s' "$1" | shasum -a 256 | cut -c1-8)"; return 0; fi
+  printf '%s' "$HOME/.platform-vm"
+}
+HOST_RUNNER_VM_HOME="$(host_runner_vm_home "${CLUSTER_INSTALL:-}")"
+export HOST_RUNNER_VM_HOME
 # The address pods reach this host at: lima's user-mode network relays it to
 # the host's loopback, which is all the runner listens on.
 export HOST_RUNNER_ADDRESS=192.168.5.2
@@ -42,8 +43,18 @@ host_runner_port() {
   p="$(cat "$HOST_RUNNER_DIR/port" 2>/dev/null)"
   if [ -n "$p" ]; then printf '%s' "$p"; return 0; fi
   [ -n "$CLUSTER_INSTALL" ] || { printf '%s' "$HOST_RUNNER_PORT"; return 0; }
-  # 4600 is the default install's, whether or not its runner runs right now.
+  # 4600 is the default install's, whether or not its runner runs right now. So
+  # is a port another install recorded but has not started on yet: the record is
+  # written at install time, the runner starts at its end, and two installs that
+  # overlapped would otherwise bind one port.
+  used=" 4600 "
+  for f in "$HOST_RUNNER_BASE"/*/port; do
+    [ -f "$f" ] || continue
+    [ "$f" = "$HOST_RUNNER_DIR/port" ] && continue
+    used="$used$(cat "$f") "
+  done
   for p in $(seq 4601 4699); do
+    case "$used" in *" $p "*) continue ;; esac
     python3 -c 'import socket, sys; s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$p" 2>/dev/null || continue
     printf '%s' "$p"; return 0
   done
@@ -92,10 +103,16 @@ host_runner_stop() {
 # host_runner_stop_vm: stops every runner that serves this Lima VM, which is
 # what deleting the VM needs; cluster:stop stops this install's alone.
 host_runner_stop_vm() {
-  local d
+  local d name
   for d in "$HOST_RUNNER_BASE" "$HOST_RUNNER_BASE"/*/; do
+    d="${d%/}"
     [ -f "$d/instance" ] || continue
     [ "$(cat "$d/instance")" = "$LIMA_INSTANCE" ] || continue
-    host_runner_stop "${d%/}"
+    name="$(basename "$d")"
+    [ "$d" != "$HOST_RUNNER_BASE" ] || name=""
+    host_runner_stop "$d"
+    # The machines' disks are this runner's (its own home), and nothing else's
+    # install on the Mac touches them.
+    rm -rf "$d/machines" "$d/Library" "$(host_runner_vm_home "$name")/Library" "$d/instance"
   done
 }

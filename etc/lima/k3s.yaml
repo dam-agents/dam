@@ -143,24 +143,10 @@ provision:
         done
         rm -f "$installer"
       fi
-      # Configure Traefik to also listen on port 4444 (auto-forwarded by lima)
-      mkdir -p /var/lib/rancher/k3s/server/manifests
-      cat > /var/lib/rancher/k3s/server/manifests/traefik-config.yaml << 'EOF'
-      apiVersion: helm.cattle.io/v1
-      kind: HelmChartConfig
-      metadata:
-        name: traefik
-        namespace: kube-system
-      spec:
-        valuesContent: |
-          ports:
-            platform:
-              port: 4444
-              expose:
-                default: true
-              exposedPort: 4444
-              protocol: TCP
-      EOF
+      # Traefik's app entrypoint is not configured here: `cluster:install` owns
+      # the cluster's one HelmChartConfig, which it merges an entrypoint per
+      # install into. A manifest in this directory would be re-applied at every
+      # k3s start and would reset the installs' entrypoints.
 
 probes:
   - mode: readiness
