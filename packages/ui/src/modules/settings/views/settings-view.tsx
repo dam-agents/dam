@@ -24,6 +24,7 @@ import { UsageView } from "../../metrics/views/usage-view.js";
 import { useOperatorAvailability } from "../../operator/api/queries.js";
 import { OperatorView } from "../../operator/views/operator-view.js";
 import { routeToPath, type SettingsTab } from "../../platform/lib/routes.js";
+import { ProfileSection } from "../../profiles/components/profile-section.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
@@ -230,6 +231,8 @@ export function SettingsView() {
               <section className="mb-8">
                 <ProviderSection />
               </section>
+
+              <ProfileSection />
             </div>
           </div>
         )}
