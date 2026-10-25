@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/popover";
 
 import { useStore } from "../../../store.js";
+import { useAgent } from "../../agents/api/queries.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import {
   ProfileList,
@@ -82,6 +84,10 @@ export function ModelIndicator({
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  /* UNIT_BOUNDARY_DESCRIPTION: an Agent Editor may use the owner's profiles and
+   * not change that set, so the save is not offered on a shared agent. */
+  const agent = useAgent(agentId);
+  const canSaveProfile = agent === null || isOwnAgent(agent);
   /* UNIT_BOUNDARY_DESCRIPTION: the picker opens on the profiles, the same view a
    * new chat shows, so one place teaches the other. */
   const [custom, setCustom] = useState(false);
@@ -436,18 +442,21 @@ export function ModelIndicator({
               onChoose={onChoose}
             />
           )}
-          {routed && custom && model !== null && (
-            <div className="border-t border-border pt-2">
-              <SaveAsProfileRow
-                label={
-                  fromProfile
-                    ? `Update “${fromProfile.name}”`
-                    : "Save as a profile"
-                }
-                onClick={() => setSavingProfile(true)}
-              />
-            </div>
-          )}
+          {routed &&
+            (custom || sessionProfiles.length === 0) &&
+            model !== null &&
+            canSaveProfile && (
+              <div className="border-t border-border pt-2">
+                <SaveAsProfileRow
+                  label={
+                    fromProfile
+                      ? `Update “${fromProfile.name}”`
+                      : "Save as a profile"
+                  }
+                  onClick={() => setSavingProfile(true)}
+                />
+              </div>
+            )}
           {capability?.sessionSettings && (
             <div className="border-t border-border pt-2 empty:hidden">
               <SessionSettingsControls

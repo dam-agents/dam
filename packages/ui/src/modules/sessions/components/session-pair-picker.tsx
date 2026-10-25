@@ -24,6 +24,8 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { useAgent } from "../../agents/api/queries.js";
+import { isOwnAgent } from "../../agents/lib/agent-editors.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import {
   ProfileList,
@@ -108,6 +110,10 @@ export function SessionPairPicker(props: Props) {
   const routed = props.pending ? false : (props.routed ?? false);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  /* UNIT_BOUNDARY_DESCRIPTION: an Agent Editor may use the owner's profiles and
+   * not change that set, so the save is not offered on a shared agent. */
+  const agent = useAgent(agentId);
+  const canSaveProfile = agent === null || isOwnAgent(agent);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
@@ -575,18 +581,21 @@ export function SessionPairPicker(props: Props) {
               />
             </div>
           )}
-          {routed && custom && pair && (
-            <div className="border-t border-border px-2 pt-2">
-              <SaveAsProfileRow
-                label={
-                  fromProfile
-                    ? `Update “${fromProfile.name}”`
-                    : "Save as a profile"
-                }
-                onClick={() => setSavingProfile(true)}
-              />
-            </div>
-          )}
+          {routed &&
+            (custom || profiles.length === 0) &&
+            pair &&
+            canSaveProfile && (
+              <div className="border-t border-border px-2 pt-2">
+                <SaveAsProfileRow
+                  label={
+                    fromProfile
+                      ? `Update “${fromProfile.name}”`
+                      : "Save as a profile"
+                  }
+                  onClick={() => setSavingProfile(true)}
+                />
+              </div>
+            )}
           {!routed && (
             <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
               <PopoverClose asChild>

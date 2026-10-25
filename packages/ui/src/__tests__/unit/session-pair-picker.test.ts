@@ -164,6 +164,18 @@ vi.mock("../../modules/schedules/api/mutations.js", () => ({
 }));
 
 let profilesState: readonly unknown[] = [];
+let agentAccess: "owner" | "editor" = "owner";
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgent: () => ({
+    access: {
+      role: agentAccess,
+      editors: [],
+      permissions: [],
+      ...(agentAccess === "editor" ? { ownerEmail: "alice@example.com" } : {}),
+    },
+  }),
+}));
+
 vi.mock("../../modules/profiles/api/queries.js", () => ({
   useProfiles: () => ({ data: profilesState }),
 }));
@@ -930,6 +942,35 @@ describe("JanUI's picker and the default's editor", () => {
       expect(html).not.toContain("Attach this provider");
       expect(html).not.toContain("Manage providers");
       expect(html).not.toContain("Configure providers and defaults");
+    }
+  });
+});
+
+describe("the profile save on a shared agent", () => {
+  /** TEST_SCENARIO: An Agent Editor may use the owner's profiles and may not
+   * change that set, so the picker offers no save there. */
+  it("offers the save on an agent the person owns, and not on a shared one", () => {
+    profilesState = [];
+    state.loading = false;
+    state.owned = [];
+    state.catalogLoaded = true;
+    const render = () =>
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    const own = render();
+    expect(own).toContain("Save as a profile");
+    agentAccess = "editor";
+    try {
+      expect(render()).not.toContain("Save as a profile");
+    } finally {
+      agentAccess = "owner";
     }
   });
 });

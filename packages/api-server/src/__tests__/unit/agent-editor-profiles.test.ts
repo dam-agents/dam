@@ -115,40 +115,6 @@ describe("an Agent Editor and the profile set", () => {
     ]);
   });
 
-  /** TEST_SCENARIO: Saving a pick as a profile from a shared agent writes it
-   * into the owner's set, which is the only set that agent's references
-   * resolve against. */
-  it("creates the profile in the owner's set", async () => {
-    const w = world(BOB);
-    await w.caller.profiles.create({
-      name: "Fast review",
-      harness: "claude-code",
-      providerTemplate: "anthropic",
-      model: "anthropic/claude-sonnet-5-5",
-      agentId: AGENT,
-    });
-    expect(w.ownerProfiles.create).toHaveBeenCalled();
-    expect(w.ownProfiles.create).not.toHaveBeenCalled();
-  });
-
-  /** TEST_SCENARIO: A profile the editor made for themselves cannot be used on
-   * the shared agent: the owner's set is asked, and an id it does not hold is
-   * refused as unknown. */
-  it("refuses the editor's own profile on the shared agent", async () => {
-    const w = world(BOB);
-    w.ownerProfiles.update.mockRejectedValueOnce(
-      new Error("profile not found"),
-    );
-    await expect(
-      w.caller.profiles.update({
-        id: "profile-editor",
-        agentId: AGENT,
-        name: "x",
-      }),
-    ).rejects.toThrow(/profile not found/);
-    expect(w.ownProfiles.update).not.toHaveBeenCalled();
-  });
-
   /** TEST_SCENARIO: An editor without the settings permission is refused, and
    * no profile set is asked at all. */
   it("refuses an editor who may not change settings", async () => {
@@ -174,6 +140,63 @@ describe("an Agent Editor and the profile set", () => {
     const w = world(BOB);
     const listed = await w.caller.profiles.list();
     expect(listed.map((profile) => profile.id)).toEqual(["profile-editor"]);
+    expect(w.madeFor).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: Through a shared agent an editor may read the owner's
+   * profiles and reference them, and nothing else: saving, renaming and
+   * deleting are refused, and no set is asked. */
+  it.each([
+    {
+      procedure: "create",
+      call: (c: ReturnType<typeof world>["caller"]) =>
+        c.profiles.create({
+          name: "Fast review",
+          harness: "claude-code",
+          providerTemplate: "anthropic",
+          model: "anthropic/claude-sonnet-5-5",
+          agentId: AGENT,
+        }),
+    },
+    {
+      procedure: "update",
+      call: (c: ReturnType<typeof world>["caller"]) =>
+        c.profiles.update({ id: "profile-owner", agentId: AGENT, name: "x" }),
+    },
+    {
+      procedure: "delete",
+      call: (c: ReturnType<typeof world>["caller"]) =>
+        c.profiles.delete({ id: "profile-owner", agentId: AGENT }),
+    },
+  ])(
+    "refuses an editor's $procedure through the shared agent",
+    async ({ call }) => {
+      const w = world(BOB);
+      await expect(call(w.caller)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: expect.stringContaining("Only the agent's owner"),
+      });
+      expect(w.ownerProfiles.create).not.toHaveBeenCalled();
+      expect(w.ownerProfiles.update).not.toHaveBeenCalled();
+      expect(w.ownerProfiles.delete).not.toHaveBeenCalled();
+      expect(w.ownProfiles.create).not.toHaveBeenCalled();
+      expect(w.ownProfiles.update).not.toHaveBeenCalled();
+      expect(w.ownProfiles.delete).not.toHaveBeenCalled();
+    },
+  );
+
+  /** TEST_SCENARIO: The owner saving from a chat passes the agent too, and the
+   * write is theirs: no re-binding, no refusal. */
+  it("lets the owner save from a chat of their own agent", async () => {
+    const w = world(person(OWNER, "alice@example.com"));
+    await w.caller.profiles.create({
+      name: "Fast review",
+      harness: "claude-code",
+      providerTemplate: "anthropic",
+      model: "anthropic/claude-sonnet-5-5",
+      agentId: AGENT,
+    });
+    expect(w.ownProfiles.create).toHaveBeenCalled();
     expect(w.madeFor).toEqual([]);
   });
 });

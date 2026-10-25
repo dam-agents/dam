@@ -129,6 +129,10 @@ An editor is not offered what they lack: no channel tiles without `channels`, no
 Shared Agents add nothing to an editor's Home feed or unread marks (see [home feed](home-feed.md)).
 When an editor loses access while the Agent is open, the page goes home and says so by name, rather than to the owner's [public agent page](public-agent-page.md).
 
+**Profiles** are the owner's, not the Agent's: the model picker of a Shared Agent offers the owner's profiles, and a pick stores one on the Agent's chat default or its subagent slot, which is a set-up change an editor may make.
+An editor reads that set and references it, and never changes it: saving a pick as a profile, renaming one or deleting one is the owner's alone, the picker offers no save on a Shared Agent, and a write that arrives with the Agent named is refused rather than written into the editor's own set — the owner's other Agents point at those profiles too.
+Listings made without an Agent stay the caller's own, which is what Settings shows.
+
 ## Audit
 
 Each change to a list is an audit record naming who was added and who was removed, and an editor leaving is one too (see [logging](logging.md)).

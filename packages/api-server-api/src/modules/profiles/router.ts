@@ -1,4 +1,5 @@
 import { t } from "../../trpc.js";
+import { TRPCError } from "@trpc/server";
 import {
   agentPermission,
   agentTarget,
@@ -6,6 +7,7 @@ import {
   manageAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
+import type { ApiContext } from "../../context.js";
 import {
   profileCreateInputSchema,
   profileIdInputSchema,
@@ -38,20 +40,48 @@ export const profilesRouter = t.router({
     .output(profileUsageSchema)
     .query(({ ctx, input }) => ctx.profiles.usage(input.id)),
 
+  /* UNIT_BOUNDARY_DESCRIPTION: through a shared agent an Agent Editor may read
+   * the owner's profiles and reference them on that agent, and nothing else, so
+   * a write that names an agent is refused when it would run for someone other
+   * than the agent's owner. */
   create: manageAgentsProcedure
     .input(profileCreateInputSchema)
-    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .output(profileViewSchema)
-    .mutation(({ ctx, input }) => ctx.profiles.create(input)),
+    .mutation(async ({ ctx, input }) => {
+      await refuseEditorWrite(ctx, input.agentId);
+      return ctx.profiles.create(input);
+    }),
 
   update: manageAgentsProcedure
     .input(profileUpdateInputSchema)
-    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
     .output(profileUpdateResultSchema)
-    .mutation(({ ctx, input }) => ctx.profiles.update(input)),
+    .mutation(async ({ ctx, input }) => {
+      await refuseEditorWrite(ctx, input.agentId);
+      return ctx.profiles.update(input);
+    }),
 
   delete: manageAgentsProcedure
     .input(profileIdInputSchema)
-    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
-    .mutation(({ ctx, input }) => ctx.profiles.delete(input.id)),
+    .mutation(async ({ ctx, input }) => {
+      await refuseEditorWrite(ctx, input.agentId);
+      return ctx.profiles.delete(input.id);
+    }),
 });
+
+/** UNIT_BOUNDARY_DESCRIPTION: a write made from an agent runs in the agent's owner's context only for the owner. Anyone else is an Agent Editor, and an editor may reference a profile on the agent but never change the owner's set — its other agents point at it too. */
+async function refuseEditorWrite(
+  ctx: ApiContext,
+  agentId: string | undefined,
+): Promise<void> {
+  if (agentId === undefined) return;
+  const acting = await ctx.actOnAgent(agentTarget(agentId)!, "settings", {
+    path: "profiles",
+    mutation: true,
+  });
+  if (!acting.ok || acting.ctx !== ctx)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Only the agent's owner can save or change a profile; you can use this agent's owner's profiles as they are.",
+    });
+}
