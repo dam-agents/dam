@@ -24,7 +24,7 @@ Go through the needs below.
 
 - `different-harness` — it must run on another harness;
 - `own-setup` — its own repository to clone, an install command, env or skills;
-- `more-resources` — more disk than this sandbox, or a microVM for a container runtime or a cluster;
+- `more-resources` — more disk than this sandbox;
 - `isolation` — the work must not be able to touch this workspace;
 - `parallel` — heavy parallel work beyond what this sandbox can run;
 - `checked-result` — a result the platform checks against a schema.
@@ -133,7 +133,6 @@ result = d.spawn(
 | `install`     | Shell command run once in the workspace before the prompt. Must finish within 15 minutes; longer setup belongs in an image.                                                                |
 | `env`         | Environment variables (Python: a dict; JS: `[{ name, value }]`).                                                                                                                           |
 | `resources`   | `storage` (disk). CPU and memory are the owner's pool, never a spawn's choice; an omitted disk comes from the harness's defaults.                                                          |
-| `backend`     | `"vm"` for a microVM, when the work needs a container runtime or a cluster inside.                                                                                                         |
 | `skills`      | External skills to install: `[{"source": <skill source url>, "name": ...}]`.                                                                                                               |
 | `connections` | Connection ids to grant, a subset of your own.                                                                                                                                             |
 | `image`       | A custom image to run instead of the harness's default one.                                                                                                                                |

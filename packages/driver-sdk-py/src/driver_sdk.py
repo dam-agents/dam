@@ -178,8 +178,8 @@ s.enum = _s_enum  # type: ignore[attr-defined]
 
 
 def list_images() -> list[dict[str, Any]]:
-    """The harnesses a sub-agent may run on, each with its ``harness`` name and
-    ``size``; pass the name as ``harness=``."""
+    """The harnesses a sub-agent may run on, each with its ``harness`` name;
+    pass the name as ``harness=``."""
     return _request("GET", "/images")["images"]
 
 

@@ -774,7 +774,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "list_harnesses",
-    "List the harnesses and images a sub-agent can run on, each with its harness name, effective size, and the provider a spawn naming no model runs on there, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
+    "List the harnesses and images a sub-agent can run on, each with its harness name and the provider a spawn naming no model runs on there, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
     {},
     () => run(async () => json({ images: await ops.images() })),
   );
