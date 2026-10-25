@@ -24,6 +24,38 @@ Every `cluster:*` task honors `LIMA_INSTANCE` (default `platform-k3s`) to target
 
 Services are at `*.localhost:4444` (Traefik, auto-forwarded by lima); `*.localtest.me:4444` is an alias.
 
+## Several installs on one cluster
+
+The cluster holds one install per worktree.
+Each install is a Helm release `platform-<name>` in namespace `platform-<name>`, with agent namespace `platform-<name>-agents`, its own images tagged `platform-<component>:<name>`, its own ClusterIssuers and CA secrets, and its own hosts `<name>.localhost`, `keycloak.<name>.localhost`, `share.` and `content.` under them.
+The **name** is `.mise/lib/cluster.sh`'s: `--name`, else `DAM_INSTALL`, else the slug of the worktree's branch (so an agent in a worktree gets its own install without passing anything).
+The repository's own checkout is the **default** install and keeps the old names — release `platform`, namespace `default`, agents in `platform-agents`, hosts `localhost`/`keycloak.localhost`, images `:latest` — and so does the e2e lane (`DAM_INSTALL=default` in the `e2e:*` tasks, on its own VM).
+`DAM_INSTALL=default` in a worktree joins the default install.
+
+- `mise run cluster:install` (or `cluster:helm`, `cluster:build`) — all install-aware; `--name <name>` names another one.
+- `mise run cluster:installs -- --all` — every install, its namespace, its address and its status, plus the runners.
+- `mise run cluster:uninstall` — removes this worktree's install only: its agent namespace, the chart, the PVCs, its namespace and the runner PriorityClass the chart keeps.
+- `mise run cluster:status` — this worktree's pods (and the install list).
+
+**One entrypoint, host names, no ports.**
+Every install routes on the same Traefik entrypoint on 4444: Lima forwards that one port and its `portForwards` are read at VM start, so a per-install port would mean restarting the VM — and everyone else's install — to add a forward.
+A named install checks the entrypoint's port instead of moving it and refuses when it differs.
+Anything no install claims falls to the default install's catch-all Ingress rule (`ingress.catchAllAppHost`), so a removed install's host name shows the default UI rather than an error.
+
+**Per-install image tags.**
+A tag is node-wide state, so a named install aliases every local image it imports (`k3s ctr -n k8s.io images tag`), names its values' `platform-*` images `:<name>`, and stages its agent images under that reference.
+The default install keeps `:latest`, which any install's import still overwrites: rebuild in one worktree and the *default* install's pods run its build until it rebuilds too.
+
+**What stays cluster-wide, and why:**
+
+- the CRDs (install-only; a second install skips them, and `cluster:install` applies `helm/crds/` itself),
+- cert-manager, the Gateway API CRDs and the Istio mesh — one per cluster, and a named install follows the cluster's mesh mode rather than changing it (`--no-mesh` is refused when the dataplane is there, and only the default install writes the `kube-system/platform-local-no-mesh` marker),
+- the KVM device plugin (one per node; a named install applies the same manifest),
+- ClickStack (`CLICKSTACK=1`) — its operators are cluster-scoped and watch one namespace, so only the default install may run it,
+- the VM runner: one host runner per Mac, holding the default install's token, CA and port 4600, and runner pods need a node that can open `/dev/kvm`.
+  A named install therefore runs runner pods and, on a Mac whose VM was made without nested virtualization, warns at install time that an agent it creates cannot start (`Insufficient squat.ai/kvm`); `cluster:host-runner` refuses a named install.
+- the node's `/var/lib/platform-vm-images` (per-release subdirectories), the build caches and `~/platform-src.d`.
+
 ## In an Environment
 
 An agent on the vm backend installs DAM into one of its own [Environments](../../../docs/architecture/environments.md), from the current checkout, so a reviewer can open the change at the Environment's addresses.

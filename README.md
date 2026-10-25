@@ -137,6 +137,30 @@ mise run cluster:install
 
 Open [localhost:4444](http://localhost:4444) and log in with `dev` / `dev`.
 
+### Several installs in one local cluster
+
+The cluster is one per machine, and every worktree gets an install of its own on it, in its own namespace, with its own agents, database and Keycloak.
+The install's **name** comes from the worktree's branch, so `mise run cluster:install` in two worktrees installs twice instead of upgrading once.
+Each install answers at `http://<name>.localhost:4444`; the repository's own checkout is the default install at [localhost:4444](http://localhost:4444), so nothing changes for a single checkout.
+
+```sh
+mise run cluster:install                      # this worktree's install, named after its branch
+DAM_INSTALL=review mise run cluster:install   # name it yourself
+mise run cluster:installs -- --all            # what the cluster holds, and where each answers
+mise run cluster:uninstall                    # remove this worktree's install, leaving the others
+```
+
+The name decides the namespace, the Helm release, the agent namespace, the host names and the local image tag, and it is fixed once the install exists: it comes from `--name`, `DAM_INSTALL` or the branch on every run, so another branch in one worktree makes a second install rather than renaming the first.
+`DAM_INSTALL=default` joins the default install.
+
+What the installs still share, because the cluster has one of each:
+
+- the cluster, its node and its disk: two installs' pods compete for the VM's CPU and memory;
+- the Istio mesh, cert-manager, the Gateway API CRDs and the platform CRDs: installed once, and upgraded by whichever install runs;
+- the Traefik entrypoint on port 4444 — host names keep the installs apart, not ports;
+- the VM runner: on a Mac one runner serves the default install, and everywhere else the runner pods need a node that can open `/dev/kvm`.
+  An install without a runner serves its UI, sign-in and API, and an agent created there reports that it cannot start.
+
 ### The Rust build cache
 
 `cargo` in this repository runs through [mr boxington](https://mr-boxington.jdx.dev/), which keeps compiled crates in a content-addressed store and restores what another checkout or worktree already built.
