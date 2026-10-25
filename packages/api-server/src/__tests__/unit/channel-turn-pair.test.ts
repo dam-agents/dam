@@ -10,8 +10,12 @@ const PAIR = {
 
 const resolved = (overrides: Record<string, unknown> = {}) => ({
   pair: PAIR,
-  profile: { name: "Fast review" },
+  profile: {
+    name: "Fast review",
+    providerTemplate: "curve-bender-deployment",
+  },
   unavailable: null,
+  grantableProvider: null,
   ...overrides,
 });
 
@@ -55,6 +59,23 @@ describe("what a channel's turns run on", () => {
       profileName: "Fast review",
       detail: "AWS Bedrock is not connected",
     });
+  });
+
+  /** TEST_SCENARIO: a provider the owner holds and the agent does not is refused
+   * with the fix named, because an unattended turn has nobody to attach it. */
+  it("refuses a provider the agent does not hold, and names the fix", async () => {
+    const decision = await channelTurnPair({
+      profileId: "profile-1",
+      agentId: "agent-1",
+      resolveProfile: async () => resolved({ grantableProvider: "conn-1" }),
+    });
+    expect(decision).toMatchObject({
+      kind: "unavailable",
+      profileName: "Fast review",
+    });
+    expect((decision as { detail: string }).detail).toContain(
+      "isn't attached to this agent",
+    );
   });
 
   /** TEST_SCENARIO: a reference the owner no longer holds is a refusal too, not

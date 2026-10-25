@@ -1,4 +1,7 @@
-import type { SessionPair } from "api-server-api";
+import { displayNameForTemplate, type SessionPair } from "api-server-api";
+
+const providerName = (template: string): string =>
+  displayNameForTemplate(template) ?? template;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: what a fresh session in a channel runs on (D91).
@@ -19,8 +22,9 @@ export async function channelTurnPair(input: {
   agentId: string;
   resolveProfile: (input: { profileId: string; agentId: string }) => Promise<{
     pair: SessionPair;
-    profile: { name: string };
+    profile: { name: string; providerTemplate: string };
     unavailable: { detail: string } | null;
+    grantableProvider: string | null;
   } | null>;
 }): Promise<ChannelPairDecision> {
   if (input.profileId === null) return { kind: "none" };
@@ -41,6 +45,16 @@ export async function channelTurnPair(input: {
       kind: "unavailable",
       profileName: resolved.profile.name,
       detail: resolved.unavailable.detail,
+    };
+  /* UNIT_BOUNDARY_DESCRIPTION: a provider the owner holds and the agent does
+   * not is one a form attaches on the pick; nobody is there on a channel turn,
+   * so it is a refusal that names the fix rather than a session started on a
+   * grant the agent never had (R1). */
+  if (resolved.grantableProvider !== null)
+    return {
+      kind: "unavailable",
+      profileName: resolved.profile.name,
+      detail: `${providerName(resolved.profile.providerTemplate)} isn't attached to this agent — attach it on the agent's Models section, or pick another profile`,
     };
   return { kind: "profile", pair: resolved.pair };
 }
