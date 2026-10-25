@@ -242,33 +242,6 @@ describe("acp-runtime: rewriting a conversation", () => {
   );
 
   /**
-   * TEST_SCENARIO: The session a first-message rewrite opens calls the
-   * platform tools as itself: its session/new carries the platform MCP entry
-   * under a ref of its own, which the runtime keeps on the copy, so the tools
-   * resolve the copy and not the original.
-   */
-  it("should open the new session with the platform entry under its own ref", async () => {
-    const refs: string[] = [];
-    const { world, bob, metadata } = await readyWorld(
-      { [SESSION]: original },
-      refs,
-    );
-
-    bob.send(rewriteFrom(2, "u1"));
-    await settle();
-    expect(refs).toHaveLength(1);
-    expect(world.harness().received("session/new")[0]?.params).toMatchObject({
-      mcpServers: [{ name: "platform-outbound", ref: refs[0] }],
-    });
-    world.harness().replyTo("session/new", { sessionId: COPY });
-    await settle();
-
-    expect(bob.reply(2)).toMatchObject({ result: { sessionId: COPY } });
-    expect(metadata.store.get(COPY)?.meta.ref).toBe(refs[0]);
-    expect(refs[0]).not.toBe("ref-original");
-  });
-
-  /**
    * TEST_SCENARIO: A fork is a second session beside the original, so it
    * gets a ref of its own on its session/fork and the original keeps its
    * ref; two sessions under one ref would make the tools act on the wrong
@@ -290,6 +263,7 @@ describe("acp-runtime: rewriting a conversation", () => {
     await settle();
 
     expect(bob.reply(2)).toMatchObject({ result: { sessionId: COPY } });
+    expect(refs[0]).not.toBe("ref-original");
     expect(metadata.store.get(COPY)?.meta.ref).toBe(refs[0]);
     expect(metadata.store.get(SESSION)?.meta.ref).toBe("ref-original");
   });

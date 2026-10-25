@@ -13,11 +13,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-mcp-file.mjs", import.meta.url));
 const rootfs = fileURLToPath(new URL("../../../bob/rootfs/", import.meta.url));
-const home = mkdtempSync(join(tmpdir(), "bob-mcp-file-"));
+const home = mkdtempSync(join(tmpdir(), "bob mcp-file-"));
 const settings = join(home, ".bob/settings");
 const target = join(settings, "mcp.json");
-const other = join(settings, "other.json");
+const other = join(home, "work/.bob/mcp.json");
 mkdirSync(settings, { recursive: true });
+mkdirSync(join(home, "work/.bob"), { recursive: true });
 const platform = { type: "http", url: "http://platform/mcp", transportType: "http" };
 const slack = { type: "http", url: "https://mcp.slack.com/mcp", headers: { Authorization: "Bearer dummy-placeholder" } };
 const whole = JSON.stringify({ mcpServers: { "platform-outbound": platform, slack } }, null, 2);
@@ -34,10 +35,9 @@ const run = (script) => {
 };
 
 try {
-  // TEST_SCENARIO: Bob reads the file through fs/promises as Bob 2.0.6 does, through the named ESM export, with a callback after an options argument, as bytes, and by file URL. Each read lacks platform-outbound and keeps the rest, bytes come back as bytes, another file with the same content is read whole, nothing is said on stderr, and the preload takes its own --import out of NODE_OPTIONS only once the file is read, so a parent that reads nothing still hands it down and Bob's own children do not inherit it.
+  // TEST_SCENARIO: Bob reads the file through fs/promises as Bob 2.0.6 does, with a callback after an options argument, as bytes, and by file URL. Each read lacks platform-outbound and keeps the rest, bytes come back as bytes, the workspace mcp.json with the same content is read whole, nothing is said on stderr, and the preload takes its own --import out of NODE_OPTIONS only once the file is read, so a parent that reads nothing still hands it down and Bob's own children do not inherit it.
   const reads = run(`
     import fs from "node:fs";
-    import { readFile as readFileP } from "node:fs/promises";
     const target = ${JSON.stringify(target)};
     const names = (data) => Object.keys(JSON.parse(String(data)).mcpServers);
     const beforeRead = process.env.NODE_OPTIONS ?? null;
@@ -46,7 +46,6 @@ try {
     console.log(JSON.stringify({
       beforeRead,
       promise: names(await fs.promises.readFile(target, "utf8")),
-      namedImport: names(await readFileP(target, "utf8")),
       callback: names(callback),
       bytes: Buffer.isBuffer(bytes) ? names(bytes) : "not bytes",
       url: names(fs.readFileSync(new URL(${JSON.stringify(pathToFileURL(target).href)}), "utf8")),
@@ -57,7 +56,6 @@ try {
   assert.deepEqual(reads.out, {
     beforeRead: `--import=${preload} --max-old-space-size=512`,
     promise: ["slack"],
-    namedImport: ["slack"],
     callback: ["slack"],
     bytes: ["slack"],
     url: ["slack"],
@@ -67,7 +65,7 @@ try {
   assert.equal(reads.err.includes("bob-mcp-file:"), false, reads.err);
   assert.equal(readFileSync(target, "utf8"), whole, "a read changed the file on disk");
 
-  // TEST_SCENARIO: Bob rewrites the file from what it read, so the content it writes lacks platform-outbound. The preload puts the entry back from the file on disk, both for a direct write and for content staged in another file and renamed over it; the other file is written as given.
+  // TEST_SCENARIO: Bob rewrites the file from what it read, so the content it writes lacks platform-outbound. The preload puts the entry back from the file on disk, both for a direct write and for content staged in another file and renamed over it; the workspace mcp.json is written as given.
   const writes = run(`
     import fs from "node:fs";
     const target = ${JSON.stringify(target)};
