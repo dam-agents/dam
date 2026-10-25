@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -162,6 +162,7 @@ An Agent that has not yet reported its runtime features is polled too, so a poll
 Each poll read is bounded in time and ends when the Agent leaves the watcher's list, so an Agent deleted before its machine answered does not leave a socket that retries until the replica restarts.
 A live watch's read is bounded in time too.
 When it does write, it emits the same per-owner invalidation hint every other domain emits, so open tabs re-read over the query path rather than being pushed rows.
+The same pass reports a session that stops running to the [Kit Update](starter-kits.md#kit-update) reminder, which sends its one notice into that session.
 
 Two consequences are worth stating plainly, because both are costs.
 A busy Agent now reports whether or not a human is looking — the watch is no longer scoped to who has a tab open.

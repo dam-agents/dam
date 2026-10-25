@@ -271,6 +271,7 @@ export const seedStampSchema = z.object({
 export const kitUpdatePendingSchema = z.object({
   targetCommit: z.string().regex(/^[0-9a-f]{40}$/i),
   startedAt: z.string().min(1),
+  nudgedAt: z.string().min(1).optional(),
 });
 
 export const kitUpdateAgentInputSchema = z.object({

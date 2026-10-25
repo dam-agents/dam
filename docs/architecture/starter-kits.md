@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -270,6 +270,9 @@ The platform applies nothing, so the invariant below holds.
 
 **Completion is the agent's word.** While an update is pending the agent's MCP session carries a tool that reports it done for the targeted commit — moving the Seed Stamp there even when every change was declined — and one that withdraws it.
 Both clear the pending mark and raise the agents hint, so the UI drops the button at once.
+Nothing else reports an update, so the briefing makes the report the agent's own last act: it says the update stays pending until the agent calls the tool, and that the agent must neither ask the user for permission nor wait for the user to say the update is finished, which leaves the update pending with a user who does not know it needs their word.
+The platform also reminds the agent once: when the update session's turn ends with the update still pending, it sends one notice into that same session over the session-message rail — report the update if the checkout contains the target, or say what is still needed.
+The reminder is recorded as `nudgedAt` on the pending mark, so one update is reminded once even across a Continue, and a second turn end never repeats it.
 While the update is pending, the session lists badge its session — the initialization session opened since the update started — the way an onboarding session is badged.
 An abandoned update stays pending; the button then reopens its session or starts again against the current head.
 
