@@ -273,20 +273,30 @@ export function SessionPairPicker(props: Props) {
     }
     void grant(connection.id).then((ok) => {
       if (!ok) return;
+      /* UNIT_BOUNDARY_DESCRIPTION: the grant is read back from its own answer,
+       * not from the connections list this render captured, and the rule is
+       * resolved without a model list, since the listing the grant starts has
+       * not arrived yet — another harness then falls back to the agent's pick
+       * for the native subagent, which is the rule's safe side. */
       if (forSubagent) {
         if (pair)
           choose(
-            withSubagent(
-              pair,
-              profile,
-              capability,
-              groups.flatMap((g) => g.models.map((m) => ({ name: m.name }))),
-            ),
+            withSubagent(pair, profile, capabilityOf(profile.harness), []),
             { platformSubagentProfileId: profile.id },
           );
         return;
       }
-      chooseProfile(profile);
+      choose(
+        {
+          harness: profile.harness,
+          provider: connection.id,
+          model: profile.model,
+          ...(Object.keys(profile.settings).length > 0 && {
+            settings: profile.settings,
+          }),
+        },
+        { profileId: profile.id },
+      );
     });
   };
   const confirmDisconnect = (name: string, id: string) => {
