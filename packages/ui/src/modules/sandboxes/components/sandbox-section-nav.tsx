@@ -1,4 +1,4 @@
-import { WarningAltFilled } from "@carbon/icons-react";
+import { Locked, WarningAltFilled } from "@carbon/icons-react";
 import {
   Briefcase,
   CalendarEvent,
@@ -11,6 +11,7 @@ import {
   Network_02,
   Robot,
   Slack,
+  Teammates,
   UserInterface,
 } from "@carbon/pictograms-react";
 import { type ReactNode, useEffect, useRef } from "react";
@@ -34,6 +35,13 @@ export const SECTIONS: SectionEntry[] = [
     pictogram: Robot,
     title: "General",
     description: "Use and manage this agent.",
+  },
+  {
+    section: "people",
+    pictogram: Teammates,
+    title: "People",
+    description:
+      "People who can change and use this agent with you. You stay its owner.",
   },
   {
     section: "providers",
@@ -113,7 +121,10 @@ interface Props {
   onNavigate: (section: SandboxSection) => void;
   summaries?: Partial<Record<SandboxSection, string>>;
   warnings?: Partial<Record<SandboxSection, string>>;
+  locked?: ReadonlySet<SandboxSection>;
 }
+
+const LOCKED_LABEL = "Only the owner changes this";
 
 export function SandboxSectionNav({
   sections,
@@ -122,6 +133,7 @@ export function SandboxSectionNav({
   onNavigate,
   summaries,
   warnings,
+  locked,
 }: Props) {
   const strip = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -146,6 +158,12 @@ export function SandboxSectionNav({
                 className="text-warning"
                 aria-hidden
               />
+            ) : locked?.has(entry.section) ? (
+              <Locked
+                size={14}
+                className="text-muted-foreground"
+                aria-label={LOCKED_LABEL}
+              />
             ) : undefined,
           }))}
           value={active}
@@ -163,6 +181,7 @@ export function SandboxSectionNav({
             title={entry.title}
             summary={summaries?.[entry.section]}
             warning={warnings?.[entry.section]}
+            locked={locked?.has(entry.section) ?? false}
             active={entry.section === active}
             onClick={() => onNavigate(entry.section)}
           />
@@ -176,12 +195,14 @@ function SectionNavItem({
   title,
   summary,
   warning,
+  locked,
   active,
   onClick,
 }: {
   title: string;
   summary?: string;
   warning?: string;
+  locked: boolean;
   active: boolean;
   onClick: () => void;
 }) {
@@ -197,6 +218,17 @@ function SectionNavItem({
     >
       <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         {title}
+        {locked && (
+          <Tooltip content={LOCKED_LABEL}>
+            <span
+              className="inline-flex text-muted-foreground"
+              data-testid="section-lock"
+            >
+              <Locked size={14} aria-hidden />
+              <span className="sr-only">{LOCKED_LABEL}</span>
+            </span>
+          </Tooltip>
+        )}
         {warning && (
           <Tooltip content={warning}>
             <span className="ml-auto inline-flex text-warning">

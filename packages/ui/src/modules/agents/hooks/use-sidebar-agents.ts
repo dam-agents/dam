@@ -7,7 +7,7 @@ import {
   useActivitySessions,
 } from "../../home/hooks/use-activity-sessions.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
-import { useAgents } from "../api/queries.js";
+import { useAgents, useSharedAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
 import {
   groupSessionsByAgent,
@@ -81,4 +81,38 @@ export function useSidebarAgents() {
     sessionsOf,
     previewComplete: activity.complete,
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Agents shared with this person, for the
+ * sidebar's Shared with me section. Sorted by name: the owner's manual order
+ * belongs to the owner, and an editor does not reorder them. They fold away
+ * when asleep, and open to their Sessions, the same way the person's own
+ * agents do.
+ */
+export function useSidebarSharedAgents() {
+  const shared = useSharedAgents();
+  const openOverrides = useStore((s) => s.sidebarAgentOpen);
+  const openAgentId = useStore((s) =>
+    s.view === "chat"
+      ? s.selectedAgent
+      : s.view === "sandbox-home"
+        ? s.agentId
+        : null,
+  );
+  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
+  return useMemo(() => {
+    const sorted = [...shared].sort((a, b) => a.name.localeCompare(b.name));
+    const isFolded = (agent: AgentView) =>
+      sidebarAgentFolded(openOverrides, agent, openAgentId);
+    return {
+      shared: sorted,
+      active: sorted.filter((agent) => !isFolded(agent)),
+      folded: sorted.filter(isFolded),
+      openAgentId,
+      sessionOpen,
+      isOpen: (agentId: string) =>
+        sidebarAgentOpen(openOverrides, agentId, openAgentId),
+    };
+  }, [shared, openOverrides, openAgentId, sessionOpen]);
 }

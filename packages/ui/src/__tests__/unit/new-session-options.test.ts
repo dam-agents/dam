@@ -1,4 +1,5 @@
-// TEST_OVERVIEW: An empty chat offers ways to start a session elsewhere. With the new-layout experiment on, it is the Agent home's action list, whose CLI, editor and messenger rows slide open in place from a keyboard-reachable button; with it off, it is the launcher cards, unchanged.
+// TEST_OVERVIEW: An empty chat offers ways to start a session elsewhere. With the new-layout experiment on, it is the Agent home's action list, whose CLI, editor and messenger rows slide open in place from a keyboard-reachable button; with it off, it is the launcher cards, unchanged. Each way shows only to a person who holds the Agent Permission it needs, so an Agent Editor of a Shared Agent is offered no terminal, local editor or messenger.
+import { AGENT_PERMISSIONS, type AgentPermission } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
@@ -27,9 +28,19 @@ vi.mock(
   }),
 );
 
-const agent = { id: "a1", name: "scout" } as AgentView;
+const OWNER = { role: "owner", editors: [], permissions: AGENT_PERMISSIONS };
+const EDITOR_PERMISSIONS: AgentPermission[] = AGENT_PERMISSIONS.filter(
+  (p) => p !== "terminal" && p !== "channels",
+);
+const EDITOR = {
+  role: "editor",
+  ownerEmail: "jordan@example.com",
+  editors: ["alex@example.com"],
+  permissions: EDITOR_PERMISSIONS,
+};
 
-function render(newLayout: boolean) {
+function render(newLayout: boolean, access: object = OWNER) {
+  const agent = { id: "a1", name: "scout", access } as unknown as AgentView;
   return renderToStaticMarkup(
     createElement(NewSessionOptions, {
       agent,
@@ -56,4 +67,34 @@ it("keeps the launcher cards in the current layout", () => {
   const html = render(false);
   expect(html).toContain('data-testid="new-session-launcher"');
   expect(html).not.toContain("aria-expanded");
+});
+
+// TEST_SCENARIO: an editor's empty chat in the current layout offers no cards at all: every card needs the terminal or the channels permission, which only the owner holds.
+it("offers an editor no launcher cards", () => {
+  const html = render(false, EDITOR);
+  expect(html).toBe("");
+});
+
+// TEST_SCENARIO: an editor's empty chat in JanUI keeps Configure agent but offers no web terminal, CLI and SSH, VS Code and Zed, or Slack.
+it("offers an editor only Configure agent in JanUI", () => {
+  const html = render(true, EDITOR);
+  expect(html).toContain("Configure agent");
+  for (const title of [
+    "Web terminal",
+    "CLI and SSH",
+    "VS Code and Zed",
+    "Slack",
+  ])
+    expect(html).not.toContain(title);
+});
+
+// TEST_SCENARIO: a person who may open terminals but not bind channels gets the terminal cards and no Slack card.
+it("keeps the terminal cards without the channels permission", () => {
+  const html = render(false, {
+    ...OWNER,
+    permissions: AGENT_PERMISSIONS.filter((p) => p !== "channels"),
+  });
+  expect(html).toContain("Browser Terminal");
+  expect(html).toContain("VS Code / Zed");
+  expect(html).not.toContain("Slack Channel");
 });

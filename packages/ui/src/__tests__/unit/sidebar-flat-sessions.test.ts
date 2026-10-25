@@ -53,6 +53,12 @@ vi.mock("../../store.js", () => ({
     }),
 }));
 vi.mock("../../modules/agents/hooks/use-sidebar-agents.js", () => ({
+  useSidebarSharedAgents: () => ({
+    shared: [],
+    active: [],
+    folded: [],
+    openAgentId: null,
+  }),
   useSidebarAgents: () => ({
     agents: [{ id: "a1", name: "dam", state: "running" }],
     openAgentId: null,

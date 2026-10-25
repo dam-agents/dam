@@ -185,39 +185,6 @@ function DropdownMenuRadioItem({
   );
 }
 
-function DropdownMenuSwitchItem({
-  className,
-  children,
-  checked,
-  ...props
-}: Omit<
-  React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>,
-  "checked"
-> & { checked: boolean }) {
-  return (
-    <DropdownMenuPrimitive.CheckboxItem
-      checked={checked}
-      className={cn(
-        menuItemVariants({ tone: "default" }),
-        "group h-auto items-start justify-between gap-4 py-2",
-        className,
-      )}
-      {...props}
-    >
-      {children}
-      <span className="flex shrink-0 items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
-        <span aria-hidden>{checked ? "On" : "Off"}</span>
-        <span
-          aria-hidden
-          className="relative inline-flex h-4 w-7 items-center rounded-full bg-input transition-colors group-data-[state=checked]:bg-primary"
-        >
-          <span className="inline-block h-3 w-3 translate-x-0.5 rounded-full bg-background shadow-sm transition-transform group-data-[state=checked]:translate-x-3.5" />
-        </span>
-      </span>
-    </DropdownMenuPrimitive.CheckboxItem>
-  );
-}
-
 function DropdownMenuLabel({
   className,
   ...props
@@ -254,6 +221,5 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSwitchItem,
   DropdownMenuTrigger,
 };

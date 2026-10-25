@@ -13,6 +13,14 @@ export default defineConfig([
         "error",
         { case: "kebabCase", directoryRoots: [/(^|\/)__tests__$/] },
       ],
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
     },
   },
 ]);

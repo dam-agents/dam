@@ -132,7 +132,7 @@ Blocks 3–8 settle most; confirm rather than re-ask.
 - **Hard-required connections**: they refuse the create when missing, so anything behind an opt-in config key is suggested, not required.
 - **Schedules shipped on**: an enabled schedule fires as soon as onboarding completes.
   Anything people-facing ships suggested-off, like every proactive surface.
-- **Size and cadence**: more than the install default (CPU, memory, workspace disk, and why)?
+- **Disk and cadence**: more workspace disk than the install default, and why?
   A heartbeat finer than the idle timeout, so the agent should hibernate later instead of paying a wake-up per tick?
 - **Publication**: the repo must be **public** to be its own kit (catalogs are read anonymously).
   If it can't be, say so now: the kit then lives in the catalog repo and points at the private definition; the other answers are unchanged.

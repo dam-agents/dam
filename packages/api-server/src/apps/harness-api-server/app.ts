@@ -64,7 +64,7 @@ import {
   limitRequestBody,
   MAX_AGENT_REQUEST_BODY_BYTES,
 } from "../../core/request-body-bounds.js";
-import { agentsInstallSettings, type Config } from "../../config.js";
+import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type {
   RuntimeMutator,
@@ -160,10 +160,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     spendStatusFor,
   } = deps;
 
-  const defaultLimits = {
-    cpu: config.agentDefaultCpuLimit,
-    memory: config.agentDefaultMemoryLimit,
-  };
   const publishLimits = {
     perFileMaxBytes: config.kbSharePerFileMaxBytes,
     totalMaxBytes: config.kbShareTotalMaxBytes,
@@ -173,6 +169,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const composeSkills = (owner: string) =>
     composeSkillsModule({
       agentStateCache: deps.agentStateCache,
+      agentStore: { authority: config.agentStore },
       surface: "mcp",
       api,
       namespace: config.namespace,
@@ -233,7 +230,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const kbMcp = composeKbShareServing({
     db,
     store: artifacts,
-    k8s: k8sClient,
+    getAgent: (id) => deps.agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
   const kbPublishGate = composeKbPublishGate({
@@ -257,7 +254,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           (await agentsRepo.list(owner)).map((a) => a.id),
         isSlackUnlinked: async () => false,
       }).budgets,
-    defaultLimits,
     scriptOutputs: deps.scriptOutputs,
   };
 
@@ -267,6 +263,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   mountMcpRoutes(app, {
     channelManager,
     k8s: k8sClient,
+    readAgent: (id) => deps.agentStateCache.get(id),
     composeSkills,
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({
@@ -291,7 +288,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         agentId,
         async () => (await featureFlagsFor(owner))["chat-forms"],
       ),
-    agentImage: createAgentImageReader(k8sClient),
+    agentImage: createAgentImageReader((id) => deps.agentStateCache.get(id)),
     environments: async (owner, agentId) => {
       const flags = await featureFlagsFor(owner);
       if (!flags.environments) return null;
@@ -309,13 +306,18 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,
+    readAgent: (id) => deps.agentStateCache.get(id),
     kbMcp,
     connections: connectionsRepo,
     secretStore,
   });
-  mountInvocationRoutes(app, { k8s: k8sClient, ...driverOpsDeps });
+  mountInvocationRoutes(app, {
+    readAgent: (id) => deps.agentStateCache.get(id),
+    ...driverOpsDeps,
+  });
   mountRuntimeTrpc(app, {
     k8s: k8sClient,
+    readAgent: (id) => deps.agentStateCache.get(id),
     hello: runtimeHello,
     sessionDirectory,
     artifactTouchesFor: (owner): ArtifactTouchService => ({

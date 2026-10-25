@@ -87,6 +87,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "platform.postgres.secrets.fullname" . }}
                   key: POSTGRES_KEYCLOAK_PASSWORD
+            - name: POSTGRES_CONTROLLER_USER
+              value: {{ .Values.postgres.controllerUser | quote }}
+            - name: POSTGRES_CONTROLLER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.postgres.secrets.fullname" . }}
+                  key: POSTGRES_CONTROLLER_PASSWORD
           volumeMounts:
             - name: sql
               mountPath: /sql

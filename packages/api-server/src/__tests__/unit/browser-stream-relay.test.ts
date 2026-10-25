@@ -134,7 +134,9 @@ function aliceAdmission() {
         },
       } as never;
     },
-    verifyOwner: async (agentId, sub) => sub === "alice" && agentId === owned,
+    standingOf: async (agentId, user) =>
+      user.sub === "alice" && agentId === owned ? { role: "owner" } : null,
+    editorSockets: { track: () => {}, close: () => {} },
     isTermsAccepted: async () => true,
     surfaceAttribution: { uiClientId: "platform-ui", cliClientId: "cli" },
   });
@@ -154,6 +156,7 @@ describe("who reaches an agent's browser stream", () => {
           },
         },
         "browser",
+        "sessions",
         async () => true,
       ),
     });
@@ -201,7 +204,9 @@ describe("browser stream relay", () => {
       ok: true,
       user: { sub: "u" } as never,
       surface: "web",
+      editor: null,
       attached: () => {},
+      opened: () => {},
       watchKey: () => () => {},
     });
     let relayed = false;
@@ -213,6 +218,7 @@ describe("browser stream relay", () => {
         },
       },
       "browser",
+      "sessions",
       async () => false,
     );
     const server = createServer();
@@ -261,6 +267,9 @@ describe("browser stream relay", () => {
         sub: "u",
         surface: "web",
         attached: () => {},
+        editor: null,
+        email: null,
+        opened: () => {},
       }),
     );
     const port = await listen(server);
@@ -317,6 +326,9 @@ describe("browser stream relay", () => {
         sub: "u",
         surface: "web",
         attached: () => {},
+        editor: null,
+        email: null,
+        opened: () => {},
       }),
     );
     const port = await listen(server);
@@ -359,6 +371,7 @@ describe("browser stream relay", () => {
         aliceAdmission(),
         relay,
         "browser",
+        "sessions",
         async () => true,
       ),
     });
@@ -411,6 +424,9 @@ describe("browser stream relay", () => {
         sub: "u",
         surface: "web",
         attached: () => {},
+        editor: null,
+        email: null,
+        opened: () => {},
       }),
     );
     const port = await listen(server);

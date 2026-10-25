@@ -211,6 +211,7 @@ export interface ComposeEnvironmentGateDeps {
   stampActivity: (agentId: string) => Promise<void>;
   namespace: string;
   brandName: string;
+  editorsOf: (owningAgentId: string) => Promise<string[]>;
 }
 
 export interface EnvironmentGateComposition {
@@ -265,6 +266,7 @@ export function composeEnvironmentGate(
       deps.share.logoutUrl(`${FRONT_DOOR_PREFIX}${address}`),
     repo,
     ownerList,
+    editorsOf: deps.editorsOf,
     signIn,
     platform: deps.platform,
     ensureReady: deps.ensureReady,
@@ -282,6 +284,7 @@ export function composeEnvironmentGate(
     addressUrl,
     repo,
     ownerList,
+    editorsOf: deps.editorsOf,
     signIn,
     share: deps.share,
     brandName: deps.brandName,

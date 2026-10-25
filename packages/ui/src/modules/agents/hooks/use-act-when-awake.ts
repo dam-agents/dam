@@ -5,14 +5,14 @@ import { emitToast } from "@/lib/toast";
 import {
   agentReadinessNow,
   untilAgentOperable,
-  useAgentsList,
+  useAgent,
 } from "../api/queries.js";
 import { actWhenAwake } from "../lib/agent-start.js";
 import { useWakeAgent } from "./use-wake-agent.js";
 
 export function useActWhenAwake(agentId: string) {
   const { wake } = useWakeAgent();
-  const name = useAgentsList().find((a) => a.id === agentId)?.name ?? "agent";
+  const name = useAgent(agentId)?.name ?? "agent";
   const inFlight = useRef(new Set<string>());
 
   return (key: string, act: () => unknown) =>

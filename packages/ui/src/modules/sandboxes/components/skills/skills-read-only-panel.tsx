@@ -76,8 +76,8 @@ export function SkillsReadOnlyPanel({
   comingUp: boolean;
   disabledNotice?: ReactNode;
   onStart: () => void;
-  onAddSource: () => void;
-  onRemove: (source: SkillSource) => void;
+  onAddSource?: () => void;
+  onRemove?: (source: SkillSource) => void;
   onManageConnections?: (() => void) | undefined;
 }) {
   const {
@@ -127,9 +127,11 @@ export function SkillsReadOnlyPanel({
               </p>
               <div className="flex items-center gap-2">
                 {startButton}
-                <Button variant="outline" size="sm" onClick={onAddSource}>
-                  <Add size={16} /> Add source
-                </Button>
+                {onAddSource && (
+                  <Button variant="outline" size="sm" onClick={onAddSource}>
+                    <Add size={16} /> Add source
+                  </Button>
+                )}
               </div>
             </div>
           </Callout>
@@ -180,7 +182,7 @@ export function SkillsReadOnlyPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
-        {sourcesLoaded && (
+        {sourcesLoaded && onAddSource && (
           <Card className="mt-3 overflow-hidden">
             <AddSourceRow onClick={onAddSource} />
           </Card>

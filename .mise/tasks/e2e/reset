@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 #MISE description="Wipe the e2e cluster's data without reinstalling it"
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
-# Drops and recreates the platform DB, deletes agents (CRs, StatefulSets,
-# pods, PVCs) and clears stored Playwright auth; the cluster keeps running.
+# Drops and recreates the platform DB, deletes the anchors (and what they own:
+# StatefulSets, pods, PVCs) and the store marker, and clears stored Playwright
+# auth; the cluster keeps running.
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-# 1. Delete agents (custom resources) so the controller
-# stops reconciling them, plus the remaining durable ConfigMaps, then sweep the
-# StatefulSets/pods it owns and the PVCs k8s retains (StatefulSet
-# volumeClaimTemplates are never GC'd with their owner). Templates are
+# 1. The rows are the fleet now: drop the database they live in (step 2), and
+# first take down what holds a machine — the anchors own every child, so
+# removing them cascades the StatefulSets, Services and ConfigMaps the next run
+# would otherwise inherit. The store marker goes too, since a marker without
+# its database is a store the api-server refuses to serve. Templates are
 # helm-managed — leave them.
-echo "Deleting agents in platform-agents..."
-kubectl -n platform-agents delete agents.agent-platform.ai --all --ignore-not-found
-kubectl -n platform-agents delete configmap \
-  -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' \
-  --ignore-not-found
+echo "Deleting anchors and the store marker in platform-agents..."
+kubectl -n platform-agents delete configmap -l agent-platform.ai/agent --ignore-not-found
+kubectl -n platform-agents delete configmap -l 'agent-platform.ai/type in (agent-schedule,channel-secret)' --ignore-not-found
+kubectl -n platform-agents delete configmap platform-agent-store --ignore-not-found
 kubectl -n platform-agents delete statefulset --all --ignore-not-found --wait=true --timeout=60s
 kubectl -n platform-agents delete pod --all --ignore-not-found --force --grace-period=0 2>/dev/null || true
 kubectl -n platform-agents delete pvc --all --ignore-not-found --wait=true --timeout=60s

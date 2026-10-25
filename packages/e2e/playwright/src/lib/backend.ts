@@ -171,45 +171,17 @@ export async function expectHomeFile(
     .toBe(expected);
 }
 
-export async function listSessionIds(
-  token: () => Promise<string>,
-  agentId: string,
-): Promise<string[]> {
-  const started = Date.now();
-  const res = await fetch(agentTrpcUrl(agentId, "sessions.list"), {
-    headers: { authorization: `Bearer ${await token()}` },
-    signal: AbortSignal.timeout(20_000),
-  }).catch((err: unknown) => {
-    throw new Error(
-      `listing the sessions of ${agentId} got no answer after ${Date.now() - started}ms: ${String(err)}`,
-    );
-  });
-  const body = await res.text();
-  if (res.status !== 200)
-    throw new Error(
-      `listing the sessions of ${agentId} answered ${res.status} after ${Date.now() - started}ms: ${body.slice(0, 500)}`,
-    );
-  const parsed = JSON.parse(body) as {
-    result: { data: { sessions: { sessionId: string }[] } };
-  };
-  const ids = parsed.result.data.sessions.map((s) => s.sessionId).sort();
-  if (ids.length === 0)
-    console.log(
-      `[e2e] ${agentId} listed no session after ${Date.now() - started}ms: ${body.slice(0, 500)}`,
-    );
-  return ids;
-}
-
 function agentOwner(agentId: string): string {
   return kubectlWithin(
     LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "get",
-    "agents.agent-platform.ai",
-    agentId,
+    "configmaps",
+    "-l",
+    `agent-platform.ai/agent=${agentId}`,
     "-o",
-    "jsonpath={.metadata.labels.agent-platform\\.ai/owner}",
+    "jsonpath={.items[0].metadata.labels.agent-platform\\.ai/owner}",
   );
 }
 

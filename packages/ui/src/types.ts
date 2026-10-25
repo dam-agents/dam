@@ -1,4 +1,9 @@
-import type { PromptBlock, ProviderPresetType } from "api-server-api";
+import type { Sender } from "agent-runtime-api";
+import type {
+  AgentAccess,
+  PromptBlock,
+  ProviderPresetType,
+} from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
@@ -70,9 +75,11 @@ export interface RetryPayload {
 
 export interface VerdictPart {
   kind: "verdict";
+  toolCallId?: string;
   label: string;
   subject: string;
   allowed: boolean;
+  by?: Sender;
 }
 
 export type MessagePart =
@@ -125,7 +132,6 @@ export interface TemplateView {
   releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
-  size?: { cpu?: string; memory?: string };
 }
 
 export interface OnboardingStep {
@@ -171,7 +177,6 @@ export interface AgentView {
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: { at: string; for: "memory" | "compute" };
-  size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;
@@ -197,6 +202,7 @@ export interface AgentView {
   spawnedBy: string | null;
   environmentOf: string | null;
   kind?: AgentKind;
+  access: AgentAccess;
 }
 
 interface QuietWindowView {

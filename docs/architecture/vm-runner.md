@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 The pods every Agent runs on: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -179,13 +179,14 @@ What the check cannot see is said as a **warning**, logged only and never on an 
 ## Runner lifecycle
 
 **One lock per owner.** An agent's reconcile builds its owner's runner and ensures its machine under the owner's lock, and the orphan sweep takes the same lock before it looks at that runner, so the two never interleave.
-The sweep removes a machine only when a fresh List of the owner's Agents and the controller's cache both fail to name it.
+The sweep removes a machine only when a fresh List of the owner's Agents and the controller's cache both fail to name it, and only while the controller's Agent store answers: a store that has not answered lately is no basis for collecting a machine, and the next sweep that reads the fleet decides again.
+After the switch that cache and the live List are the store's rows and its change feed, and the per-Agent anchor ConfigMap is the durable record of a deletion the controller did not see.
 A sweep that finds it so only records the time: it goes once no sweep has seen an Agent for it in half an hour, since on a cluster that shares its CRDs the List can read empty for a while, and an Agent's workspace has no backup.
 It removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no Agent and the runner lists no machine.
 The Deployment is deleted only if it is still the one the sweep checked, by UID and version, and a refusal keeps everything else for the next sweep.
 A reconcile that finds any of the runner's objects still terminating from such a removal waits, and says so on the Agent, rather than building a runner on a claim that is going away.
 A runner that cannot be reached is kept while its owner has any Agent at all; once the owner has none for half an hour it is removed, but not its claim, which nobody could see into.
-The claim is marked as kept instead: on a cluster that shares its CRDs, a CRD event can make even a live List of Agents read empty for a while, so an owner who seems to have left is no proof that the disks are unused.
+The claim is marked as kept instead: a live read of the fleet can come back empty for a while — on a cluster that shares its CRDs, a CRD event does it, and after the switch a store that has not answered does too — so an owner who seems to have left is no proof that the disks are unused.
 The owner's next Agent builds its runner on that same claim, which drops the mark; a claim whose owner never comes back is left for an operator to find by the mark.
 
 **Node loss and the claim.** A runner is one pod on a claim only one node may attach, so when the node it sits on goes, or has not reported ready for longer than the kubelet's eviction toleration, the pod left behind keeps the claim and its replacement waits on Multi-Attach for as long as that holds: every agent of that owner is down, and none of them is booting.

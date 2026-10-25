@@ -116,6 +116,9 @@ describe("interrupted-turn recovery", () => {
     );
     expect(INTERRUPTION_NOTICE).toContain("Nobody rejected it");
     expect(INTERRUPTION_NOTICE).toContain(
+      "only a platform operator can raise their memory budget",
+    );
+    expect(INTERRUPTION_NOTICE).toContain(
       "Do not stop or wait for the user because of it.",
     );
   });

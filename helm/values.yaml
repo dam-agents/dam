@@ -718,12 +718,13 @@ postgres:
   podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
 
-  # -- Three Postgres login roles: one per service plus a dedicated SUPERUSER
-  # for DBA work. The two app roles are NOSUPERUSER and own only their own
-  # database, so a leaked app credential is bounded to one service's data.
-  # A fourth role, `usage_readers`, is a credential-less NOLOGIN group: it
-  # holds SELECT on the usage_src_* source passthrough views and grants
-  # nobody anything until an operator adds a member. The api-server
+  # -- Four Postgres login roles: one per service, the controller's, plus a
+  # dedicated SUPERUSER for DBA work. The app roles are NOSUPERUSER and own only
+  # their own database, so a leaked app credential is bounded to one service's
+  # data; the controller's owns nothing and is granted what it reconciles.
+  # A group role beside them, `usage_readers`, is a credential-less NOLOGIN
+  # group: it holds SELECT on the usage_src_* source passthrough views and
+  # grants nobody anything until an operator adds a member. The api-server
   # reconciles those grants after every migration run, naming this role, so
   # the name is fixed rather than configurable.
   # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
@@ -745,6 +746,13 @@ postgres:
   apiserverPassword: null
   keycloakUser: platform_keycloak
   keycloakPassword: null
+  # The controller's own login: NOSUPERUSER, and holding only the privileges
+  # the api-server grants it on the `control` schema — the status observations
+  # it writes and a column list of the definitions it reads. It owns no
+  # database and can reach no other schema. Named here because the api-server
+  # reconciles its grants after every migration run, so the name is fixed.
+  controllerUser: platform_controller
+  controllerPassword: null
   adminUser: platform
   adminPassword: null
 
@@ -934,9 +942,6 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        # 2.41.0 is under the 7-day age floor until 2026-10-20; taken early
-        # because it fixes the next (GHSA-vcvr-r3jv-pc5j), handlebars, shell-quote
-        # and proxy-addr criticals of 2.40.0. Drop this comment after that date.
         tag: "2.41.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
@@ -980,7 +985,11 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
-  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.5
+  # Named by the tool release and the Keycloak line it supports, not by the
+  # mutable latest-26.5.5 it duplicates byte for byte: the newest tag adorsys
+  # publishes, frozen since 2026-05-22, so its 644 base-OS findings wait on an
+  # upstream rebuild.
+  configCliImage: quay.io/adorsys/keycloak-config-cli:6.5.1-26.5.5
   port: 8080
 
   # -- Additional Keycloak server features. The chart always enables a required
@@ -1747,6 +1756,78 @@ apiServer:
       cpu: "2"
       memory: 1Gi
 
+# -- Where Agents and user budgets are authoritative.
+#
+# A move out of the Kubernetes API into Postgres, in three releases: the expand
+# release carries the tables, the controller's database login and the startup
+# fences; the switch release absorbs the custom resources and both components
+# read Postgres; the contract release stops reading or writing them, drops
+# their RBAC, and refuses to start until the rollback window has closed and the
+# archive is attested.
+#
+# The two components refuse to start rather than serve the wrong store. A build
+# still on the custom resources exits once the switch has marked the store as
+# Postgres, and a build configured for Postgres exits until the switch has
+# absorbed the resources. The marker is a ConfigMap `<release>-agent-store` the
+# switch writes into the agent namespace.
+agentStore:
+  # -- Which store is authoritative: `crd` (the custom resources), `postgres`
+  # (the switch release) or `contract` (past the rollback window). `postgres`
+  # recreates both Deployments, the api-server absorbs the custom resources in
+  # one transaction, and it serves only once the new controller leads and has
+  # ensured every anchor. `contract` reads no custom resource and renders no
+  # RBAC for them; its api-server refuses to start until `contract-check`
+  # passes, then records `contract-at` in the marker for the operator. Both
+  # refuse to render without `cutover.acknowledged`.
+  authority: crd
+  # -- Freeze both components for a rollback: both Deployments render zero
+  # replicas, so nothing writes rows while the reverse exporter restores the
+  # custom resources. Set it with `authority=postgres` and the acknowledgement,
+  # wait for the rollout (Flux applies it on its interval, ten minutes by
+  # default), run the exporter, then pin the previous release and clear it.
+  frozen: false
+  # -- Log, at api-server startup, what an absorb would write: which records
+  # would become rows, which would be refused and why, what the move would drop,
+  # and where the recorded connection grants disagree with the database. Writes
+  # nothing. Leave it off outside a cutover: the report is for an operator
+  # reading one install's log once.
+  previewReport: false
+  backup:
+    # -- age public key (`age1…`) the operator-held archive is encrypted to.
+    # Public, so it lives here; the identity is the operator's and never enters
+    # the cluster. `export-snapshot` uses it unless given `--recipient`.
+    recipient: ""
+  cutover:
+    # -- Set by the operator to time the switch release. It refuses to render
+    # until this is true, because a production install auto-upgrades on a semver
+    # range and the cutover is an outage of a minute or two. It fails the render
+    # when `authority` is `crd`, so it is never carried into a later release.
+    acknowledged: false
+  contract:
+    # -- SHA-256 of the encrypted file `export-snapshot` wrote, taken from the
+    # file itself (the export records it when it runs). The contract release
+    # refuses to start until this is the ciphertext digest of the export the
+    # platform recorded for this install, encrypted to the install's
+    # `backup.recipient` — which is what makes the operator's file, not a digest
+    # copied from a log, the attestation D79A asks for. Required by
+    # `authority: contract`, unless `emptyArchive` says the install never
+    # absorbed a custom resource.
+    backupSha256: ""
+    # -- An install that never had a custom resource (a new namespace beside the
+    # others): the contract release checks that the archive is empty instead of
+    # waiting for a digest. Never set it on an install that absorbed something.
+    emptyArchive: false
+    # -- A rehearsal's clock (`2026-10-25T00:00:00Z`), so the one-week rollback
+    # window is proved without waiting it out. It fails the render unless
+    # `rehearsal` is true, and the marker the gate then writes carries
+    # `contract-clock: rehearsal`, which `delete-crs` refuses
+    # without `--rehearsal`. Empty in an install.
+    now: ""
+    # -- Set it true only on a rehearsal cluster, beside `now`: it is what
+    # makes moving the window an explicit act, and what marks the install's
+    # gate as one no real deletion may trust.
+    rehearsal: false
+
 # -- Controller (Go reconciler + scheduler)
 controller:
   # -- Extra annotations for the controller Deployment object / its pod
@@ -1762,6 +1843,24 @@ controller:
 
   # -- slog level for the controller: debug | info | warn | error.
   logLevel: info
+
+  # -- Port the controller's /healthz and /readyz endpoints listen on. The
+  # chart's probes restart a leader that holds the Lease while its Agent store
+  # has not answered for two minutes.
+  healthPort: 8081
+
+  db:
+    # The controller's own login on the platform database, which it reads
+    # definitions from and writes observations to once `agentStore.authority` is
+    # `postgres`. It connects to the same database as the api-server — one
+    # platform database per install — so host, port and TLS come from
+    # `apiServer.db`; only the identity is its own.
+    user: platform_controller
+    # -- Password for an external database. Left null, the bundled database's
+    # chart-generated credential is used; set it, and the chart puts it in the
+    # api-server's credentials Secret, which the deployment reads through a
+    # secretKeyRef.
+    password: null
 
   # -- Agent configuration. Three layers, applied at reconcile time:
   #   1. `base`             — chart-only policy, never overridable by an agent.
@@ -1786,17 +1885,13 @@ controller:
       # still set here is ignored with a startup warning.)
 
       storageSize: "10Gi"
-      # Default agent Size when neither the user's slider nor the template
-      # chooses one. Limits are the user-facing concept (#1900): the Budget
-      # bounds Σ limits of a user's running agents, so limits ARE the
-      # agent's "power". A `requests` set here (or in a template) is carried
-      # onto the Agent as written — an operator escape hatch, not a user
-      # concept.
-      #
-      # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
-      # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
-      # an existing sandbox — NEW sandboxes get it directly, existing ones are
-      # backfilled at the identical `legacyAgentSize` below.
+      # The resource limits every Agent's spec is stamped with at create.
+      # Nothing user-facing chooses them: on a runner pod a machine's size is
+      # half its owner's pool whatever the spec says (`virtualization.runner`,
+      # see docs/architecture/vm-memory.md). The macOS host runner, which
+      # cannot see the share of the host it may give its machines, sizes each
+      # machine from these. A `requests` set here (or in a template) is
+      # carried onto the Agent as written — an operator escape hatch.
       resources:
         limits:
           cpu: "1"
@@ -1847,15 +1942,11 @@ controller:
       cpu: "1"
       memory: "2Gi"
 
-  # -- Per-user compute Ceiling defaults (#1900): the maximum CPU and memory
-  # one user's running agents can use concurrently, as the sum of their Sizes
-  # (`spec.resources.limits`, which hard-cap usage; the uniform per-agent
-  # gateway overhead is deliberately not counted — price it into these
-  # defaults). Enforced by the controller at the 0→1 scale-up; a user at the
-  # ceiling must pause, stop, or shrink a running sandbox before starting
-  # another. A platform operator raises (or lowers) them per user in the
-  # Operator tab of Settings or with `dam budget`, which write a UserBudget CR
-  # named `budget-<keycloak-sub>` in the agent namespace.
+  # -- Per-user pool defaults: the CPU and memory one user's machines share.
+  # Enforced by the owner's VM runner at the start of a machine (see
+  # docs/architecture/budgets.md). A platform operator raises (or lowers) them
+  # per user in the Operator tab of Settings or with `dam budget`, which write
+  # a UserBudget CR named `budget-<keycloak-sub>` in the agent namespace.
   userBudgets:
     defaultCpu: "8"
     defaultMemory: "16Gi"
@@ -1864,8 +1955,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.39.4 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4
+  # envoyproxy/envoy:distroless-v1.40.0 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. The api-server trusts them too
@@ -2147,7 +2238,7 @@ starterKits:
       gepa: { enabled: true }
       adaevolve: { enabled: true }
       evox: { enabled: false }
-      k-search: { enabled: true }
+      k-search: { enabled: false }
       spotlights: { enabled: true }
       software-developer: { enabled: false }
       micro-manager: { enabled: true }

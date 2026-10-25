@@ -81,7 +81,7 @@ export function createImageUpdate(deps: {
   async function migrate(id: string, templateImage: string): Promise<boolean> {
     let read: InfraAgent | null = null;
     const result = await executeTemplateUpgrade({
-      owner: undefined,
+      actor: undefined,
       actorKind: "system",
       getAgent: async (agentId) => {
         const live = await deps.getAgent(agentId);
@@ -100,6 +100,8 @@ export function createImageUpdate(deps: {
             [ANN_IMAGE_UPDATE_FROM]: read!.imageUpdateFrom ?? read!.spec.image!,
           },
           resourceVersion: read?.resourceVersion,
+          signalVersion: read?.signalVersion,
+          statusVersion: read?.statusVersion,
         });
         return written.ok ? written.value : null;
       },
@@ -114,13 +116,13 @@ export function createImageUpdate(deps: {
     const from = live?.imageUpdateFrom;
     if (!live || !from || !live.specStart) return;
     const failed = live.specStart === "failed";
-    const nodeFault = NODE_FAULT_REASONS.has(live.agentPodNotReadyReason ?? "");
+    const nodeFault = NODE_FAULT_REASONS.has(live.machineNotReadyReason ?? "");
     if (failed && nodeFault) {
-      const held = `${live.agentPodNotReadyReason!} ${live.spec.image}`;
+      const held = `${live.machineNotReadyReason!} ${live.spec.image}`;
       if (heldOn.get(id) !== held) {
         heldOn.set(id, held);
         deps.log(
-          `[image-update] ${id} holds its move to ${live.spec.image}: ${live.agentPodNotReadyReason}, which is the node's fault and not the image's, so the image is not refused and the move is tried again`,
+          `[image-update] ${id} holds its move to ${live.spec.image}: ${live.machineNotReadyReason}, which is the node's fault and not the image's, so the image is not refused and the move is tried again`,
         );
       }
       return;
@@ -138,6 +140,8 @@ export function createImageUpdate(deps: {
         ...(failed ? { [ANN_IMAGE_UPDATE_REFUSED]: live.spec.image! } : {}),
       },
       resourceVersion: live.resourceVersion,
+      signalVersion: live.signalVersion,
+      statusVersion: live.statusVersion,
     });
     if (!written.ok || !failed) return;
     deps.log(

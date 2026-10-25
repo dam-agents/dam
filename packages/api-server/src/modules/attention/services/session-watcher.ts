@@ -78,11 +78,14 @@ function toRow(
     activityAt: toDate(session.updatedAt),
     seenAt: toDate(session.seenAt),
     working: session.running,
+    startedBySub: session.startedBy?.sub ?? null,
+    startedByEmail: session.startedBy?.email ?? null,
   };
 }
 
 export function createSessionWatcher(deps: {
   listAgents: () => Promise<InfraAgent[]>;
+  onTurnEnded: (agentId: string, sessionId: string) => void;
   runtimeFeaturesFor: (
     agentIds: string[],
   ) => Promise<Map<string, RuntimeFeatures>>;
@@ -140,6 +143,8 @@ export function createSessionWatcher(deps: {
         const next = toRow(agentId, entry.ownerSub, session);
         const current = entry.known.get(next.sessionId);
         if (current && sameRecord(current, next)) continue;
+        if (current?.working === true && !next.working)
+          deps.onTurnEnded(agentId, next.sessionId);
         await deps.repo.upsertRecord(next);
         entry.known.set(next.sessionId, next);
         wrote = true;

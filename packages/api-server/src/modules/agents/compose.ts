@@ -3,9 +3,13 @@ import type { InfraAgent } from "./infrastructure/agent-mappers.js";
 import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
+import { emit, EventType } from "../../events.js";
 import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
-import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
+import type {
+  AgentStateCache,
+  RunningAgentStateCache,
+} from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
 import { createAgentServiceStatusClient } from "./infrastructure/agent-service-status-client.js";
@@ -14,8 +18,14 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createControlAgentsRepository } from "../agent-store/agents-repository.js";
+import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
+import { createAgentEditorsRepository } from "./infrastructure/agent-editors-repository.js";
+import { accessTo } from "./domain/agent-access.js";
+import { permissionsOf } from "./domain/agent-permissions.js";
+import type { AgentPermission } from "api-server-api";
 import {
   createAgentsService,
   type AgentCleanupHook,
@@ -71,6 +81,7 @@ export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
   agentStateCache: AgentStateCache;
+  agentStore: { authority: AgentStoreMode };
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
@@ -91,12 +102,20 @@ export function composeAgentsModule(deps: {
     AgentsServiceDeps["readSlackLoopGuardDrops"]
   >;
   grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
+  editorEmail: string | null;
+  actor?: string;
+  resolveUserEmail: (sub: string) => Promise<string | null>;
 }): {
   agents: AgentsService;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s, deps.agentStateCache);
+  const repo = readsRows(deps.agentStore.authority)
+    ? createControlAgentsRepository(
+        deps.db,
+        deps.agentStateCache as RunningAgentStateCache,
+      )
+    : createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
@@ -111,6 +130,7 @@ export function composeAgentsModule(deps: {
       telemetry: deps.install.telemetry,
       storageGate: deps.storageGate,
       owner: deps.owner,
+      actor: deps.actor ?? deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
       lastHelloAt: async (agentId) =>
         (await agentsRuntimeRepo.get(agentId))?.runtimeLastHelloAt ?? null,
@@ -124,7 +144,8 @@ export function composeAgentsModule(deps: {
       agentServiceStatus: createAgentServiceStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
-      listChannelsByAgent: listChannelsByAgent(deps.db, owner),
+      listChannelsByAgent: (agentId, agentOwner) =>
+        listChannelsByAgent(deps.db, agentOwner)(agentId),
       deleteChannelByType: deleteChannelByType(deps.db, owner),
       deleteSlackChannelByAgent: deleteSlackChannelByAgent(deps.db, owner),
       deleteChannelsByAgentIds: deleteChannelsByAgentIds(deps.db, owner),
@@ -142,6 +163,9 @@ export function composeAgentsModule(deps: {
       slackBinding: deps.slackBinding,
       resolveSlackConversationLabels: deps.resolveSlackConversationLabels,
       readSlackLoopGuardDrops: deps.readSlackLoopGuardDrops,
+      editors: createAgentEditorsRepository(deps.db),
+      editorEmail: deps.editorEmail,
+      resolveUserEmail: deps.resolveUserEmail,
     }),
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
@@ -317,4 +341,50 @@ export async function attachProviderToBareAgents(
   }
   if (failed.length > 0)
     throw new AggregateError(failed, `${failed.length} agent(s) not attached`);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Editor Lists as the rest of the server needs
+ * them: who edits an Agent, for live hints, and the cleanup that drops an
+ * Agent's list when the Agent goes. The cleanup tells each removed Agent
+ * Editor, so the Agent leaves their sidebar too.
+ */
+export function composeAgentEditors(db: Db): {
+  editorsOf: (agentId: string) => Promise<string[]>;
+  listAgentIds: () => Promise<string[]>;
+  cleanup: (agentId: string) => Promise<void>;
+} {
+  const repo = createAgentEditorsRepository(db);
+  return {
+    editorsOf: (agentId) => repo.list(agentId),
+    listAgentIds: () => repo.listAgentIds(),
+    async cleanup(agentId) {
+      const emails = await repo.deleteForAgent(agentId);
+      if (emails.length > 0)
+        emit({ type: EventType.AgentEditorsChanged, agentId, emails });
+    },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: How a signed-in person stands as an Agent Editor
+ * of one Agent: whose Agent it is and which Agent Permissions they hold on
+ * it. Null when they are not its editor: they own it, it does not exist, or
+ * their verified email is not on its Editor List.
+ */
+export function composeEditorStanding(deps: {
+  db: Db;
+  repo: AgentsRepository;
+}): (
+  agentId: string,
+  caller: { sub: string; editorEmail: string },
+) => Promise<{ ownerSub: string; permissions: AgentPermission[] } | null> {
+  const editors = createAgentEditorsRepository(deps.db);
+  return async (agentId, caller) => {
+    const infra = await deps.repo.get(agentId);
+    if (!infra?.owner || infra.owner === caller.sub) return null;
+    const list = await editors.list(agentId);
+    if (accessTo(infra.owner, list, caller) !== "editor") return null;
+    return { ownerSub: infra.owner, permissions: permissionsOf("editor") };
+  };
 }

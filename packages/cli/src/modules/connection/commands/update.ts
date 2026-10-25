@@ -1,5 +1,5 @@
 import { cancel, isCancel, text } from "@clack/prompts";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import type {
   ConnectionAuthKind,
   ConnectionCredentialUpdate,
@@ -18,6 +18,7 @@ import type { ConnectionService } from "../services/connection-service.js";
 import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 300;
+const SECRETS_GROUP = "Secrets (for scripts; agents leave these out):";
 
 const SECRET_LABELS: Record<
   Exclude<ConnectionAuthKind, "none" | "sigv4">,
@@ -53,21 +54,6 @@ export function buildUpdateCommand(deps: {
       "Connection id ('conn-…') or unique name (from `dam connection list`)",
     )
     .option(
-      "--value <value>",
-      "the new secret — the injected value, client secret, or private key, " +
-        "depending on the connection's auth kind (entered on a web page if omitted)",
-    )
-    .option(
-      "--access-key-id <id>",
-      "the new access key ID of an Object Storage connection " +
-        "(entered on a web page if both keys are omitted)",
-    )
-    .option(
-      "--secret-access-key <key>",
-      "the new secret access key of an Object Storage connection " +
-        "(entered on a web page if both keys are omitted)",
-    )
-    .option(
       "--server <url>",
       "override the configured server URL for this call",
     )
@@ -85,19 +71,44 @@ export function buildUpdateCommand(deps: {
       "how long to wait for the secret to be entered on the web page",
       String(DEFAULT_TIMEOUT_SECONDS),
     )
+    .addOption(
+      new Option(
+        "--value <value>",
+        "the new secret — the injected value, client secret, or private key, " +
+          "depending on the connection's auth kind — omit to enter it on a DAM web page " +
+          "(an OAuth client secret: at a hidden prompt)",
+      ).helpGroup(SECRETS_GROUP),
+    )
+    .addOption(
+      new Option(
+        "--access-key-id <id>",
+        "the new access key ID of an Object Storage connection " +
+          "— omit both keys to enter them on a DAM web page",
+      ).helpGroup(SECRETS_GROUP),
+    )
+    .addOption(
+      new Option(
+        "--secret-access-key <key>",
+        "the new secret access key of an Object Storage connection " +
+          "— omit both keys to enter them on a DAM web page",
+      ).helpGroup(SECRETS_GROUP),
+    )
     .addHelpText(
       "after",
-      "\nExamples:\n" +
-        "  dam connection update conn-61cc7b9137b0 --value sk-ant-...\n" +
-        "  dam connection update anthropic   # the user enters the value on a web page\n" +
-        "  dam connection update anthropic --prompt   # asks at a hidden prompt\n" +
-        "  dam connection update my-bucket --access-key-id … --secret-access-key …\n" +
-        "\nWithout the secret, the command opens a page of the server where the\n" +
-        "user enters it, waits until it is saved, and reports the result. Sign in\n" +
+      "\nWithout the secret, the command opens a DAM web page where the user\n" +
+        "enters it, waits until it is saved, and reports the result. Sign in\n" +
         "there as the same user. The page also takes a multi-line PEM key.\n" +
-        "\nAn Object Storage connection rotates both HMAC keys at once:\n" +
-        "pass --access-key-id and --secret-access-key, or answer the prompts.\n" +
-        "The new pair is verified against the endpoint before it is stored.\n" +
+        "\nExamples:\n" +
+        "  dam connection update anthropic   # the user enters the value on a DAM web page\n" +
+        "  dam connection update conn-61cc7b9137b0 --no-browser   # prints the page link\n" +
+        "  dam connection update anthropic --prompt   # asks at a hidden prompt\n" +
+        "  dam connection update my-bucket   # both keys, on the page\n" +
+        "\nAn Object Storage connection rotates both HMAC keys at once, on the page\n" +
+        "or at the prompts. The new pair is verified against the endpoint before\n" +
+        "it is stored.\n" +
+        "\nThe secret flags are for scripts with nobody at a browser, which read the\n" +
+        "secret from their environment; an agent leaves them out:\n" +
+        '  dam connection update anthropic --value "$ANTHROPIC_API_KEY" --json\n' +
         "\nOn an OAuth connection this rotates its *client secret* (only when the\n" +
         "connection carries its own). To replace expired tokens, re-consent:\n" +
         "  dam connection reauth <id-or-name>\n",
@@ -217,7 +228,9 @@ async function collectValue(
   if (match.authKind === "github-app") {
     process.stderr.write(
       "note: a PEM key can't be typed at the prompt — " +
-        'pass --value "$(cat app.pem)" instead\n',
+        (opts.prompt
+          ? "drop --prompt to paste it on a DAM web page instead\n"
+          : "this server has no page for it; pass the key with --value in your own terminal\n"),
     );
   }
   const entered = await promptSecret(`${label} for ${match.name}`);

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { routeExtNotification } from "../../modules/acp/ext-notifications.js";
+import {
+  PLATFORM_NOTIFICATION_METHODS,
+  routeExtNotification,
+} from "../../modules/acp/ext-notifications.js";
 
 /**
  * TEST_OVERVIEW: platform extension notifications route to the update handler
@@ -105,5 +108,36 @@ describe("routeExtNotification", () => {
       null,
     );
     expect(routeExtNotification("platform/turnEnded", {})).toBe(null);
+  });
+
+  /**
+   * TEST_SCENARIO: The connection subscribes only to the methods on the
+   * platform list, so a notification the router knows but the list leaves out
+   * never reaches the chat. Who sent a prompt, whose turn runs and who
+   * answered a tool call must all arrive live, not only after a reload.
+   */
+  it.each([
+    [
+      "platform/senderRecorded",
+      {
+        entry: {
+          at: "2026-10-24T10:00:00Z",
+          promptId: "p-1",
+          sender: { sub: "u-1", email: "a@example.com" },
+        },
+      },
+    ],
+    ["platform/turnStarted", { sender: { sub: "u-1" } }],
+    [
+      "platform/verdictRecorded",
+      {
+        verdict: { toolCallId: "tc-1", kind: "allow_once", by: { sub: "u-1" } },
+      },
+    ],
+  ])("should listen for and route %s", (method, params) => {
+    expect(PLATFORM_NOTIFICATION_METHODS).toContain(method);
+    expect(
+      routeExtNotification(method, { sessionId: "sess-1", ...params }),
+    ).not.toBeNull();
   });
 });

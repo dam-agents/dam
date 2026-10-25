@@ -8,7 +8,6 @@ import type {
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
-import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 export type TurnOutcome = "success" | "failure";
 
@@ -19,6 +18,7 @@ export enum EventType {
   AgentCreated = "AgentCreated",
   AgentUpdated = "AgentUpdated",
   AgentDeleted = "AgentDeleted",
+  AgentEditorsChanged = "AgentEditorsChanged",
   AgentRestarted = "AgentRestarted",
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
@@ -101,6 +101,13 @@ export type AgentDeleted = {
   type: EventType.AgentDeleted;
   agentId: string;
   ownerSub?: string;
+};
+
+export type AgentEditorsChanged = {
+  type: EventType.AgentEditorsChanged;
+  agentId: string;
+  ownerSub?: string;
+  emails: string[];
 };
 
 export type AgentRestarted = {
@@ -533,6 +540,7 @@ export type DomainEvent =
   | AgentCreated
   | AgentUpdated
   | AgentDeleted
+  | AgentEditorsChanged
   | AgentRestarted
   | AgentWoken
   | SlackConnected

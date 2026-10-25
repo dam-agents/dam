@@ -1,4 +1,4 @@
-import type { AcpPermissionOption, ApprovalVerdict } from "api-server-api";
+import type { AcpPermissionOption } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
@@ -33,7 +33,7 @@ export interface ApprovalsRelayService {
   resolveAcpNativeFromInSession(
     rowId: string,
     outcome: { outcome?: unknown; optionId?: unknown; kind?: unknown },
-    opts?: { authoritative?: boolean },
+    opts?: { authoritative?: boolean; decidedBy?: string },
   ): Promise<"settled" | "absent">;
   expireAcpNative(rowId: string): Promise<"settled" | "absent">;
   settleAbsentAcpNative(input: SettleAbsentInput): Promise<void>;
@@ -118,9 +118,12 @@ export function createApprovalsRelayService(
       });
       const casWon =
         row.status === "pending" &&
-        (await deps.repo.resolvePending(row.id, verdict, "in-session", {
-          markDelivered: true,
-        }));
+        (await deps.repo.resolvePending(
+          row.id,
+          verdict,
+          opts?.decidedBy ?? "in-session",
+          { markDelivered: true },
+        ));
       const corrected =
         !casWon &&
         opts?.authoritative === true &&

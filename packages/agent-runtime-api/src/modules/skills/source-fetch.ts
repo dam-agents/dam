@@ -14,7 +14,7 @@ export type EgressDenies = (
   path: string,
 ) => Promise<boolean>;
 
-/* UNIT_BOUNDARY_DESCRIPTION: Decides how an agent's pod fetches a skill source from the agent's egress rules: the repository archive as before, only the source path's directory when the archive is denied, or nothing when the path is denied too or missing. */
+/* UNIT_BOUNDARY_DESCRIPTION: Decides how an agent's machine fetches a skill source from the agent's egress rules: the repository archive as before, only the source path's directory when the archive is denied, or nothing when the path is denied too or missing. */
 export async function planSourceFetch(
   source: { url: string; path?: string; version: string },
   denies: EgressDenies,

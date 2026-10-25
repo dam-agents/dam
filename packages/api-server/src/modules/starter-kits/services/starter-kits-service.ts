@@ -5,7 +5,6 @@ import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import type {
   ResolvedStarterKit,
-  StarterKit,
   TemplateHarness,
   Agent,
   AgentCreateInput,

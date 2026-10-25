@@ -7,35 +7,18 @@ import {
 } from "./avatar/svg.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { envVarSchema } from "../shared.js";
+import {
+  VIEWER_ALLOWLIST_MAX,
+  viewerEmailSchema,
+} from "../artifact-library/schemas.js";
 
 const idSchema = z.object({ id: z.string().min(1) });
 
-const cpuQuantitySchema = z
-  .string()
-  .regex(/^\d+(\.\d+)?m?$/, "CPU must look like '2', '0.5' or '500m'")
-  .refine((v) => toCpuMilli(v) >= 100, {
-    message: "CPU must be at least 100m",
-  });
-const memoryQuantitySchema = z
-  .string()
-  .regex(/^\d+(Mi|Gi)$/, "memory must look like '512Mi' or '2Gi'")
-  .refine((v) => toMemoryMi(v) >= 384, {
-    message: "memory must be at least 384Mi",
-  });
-
-function toCpuMilli(v: string): number {
-  return v.endsWith("m") ? Number(v.slice(0, -1)) : Number(v) * 1000;
-}
 function toMemoryMi(v: string): number {
   return v.endsWith("Gi")
     ? Number(v.slice(0, -2)) * 1024
     : Number(v.slice(0, -2));
 }
-
-export const agentSizeSchema = z.object({
-  cpu: cpuQuantitySchema.optional(),
-  memory: memoryQuantitySchema.optional(),
-});
 
 export const storageQuantitySchema = z
   .string()
@@ -44,7 +27,18 @@ export const storageQuantitySchema = z
     message: "storage must be at least 1Gi",
   });
 
+export const agentListInputSchema = z
+  .object({ scope: z.enum(["mine", "all"]) })
+  .optional();
 export const agentGetInputSchema = idSchema;
+export const agentSetEditorsInputSchema = z.object({
+  id: z.string().min(1),
+  editors: z
+    .array(viewerEmailSchema)
+    .max(VIEWER_ALLOWLIST_MAX)
+    .transform((emails) => [...new Set(emails)]),
+});
+export const agentLeaveInputSchema = idSchema;
 export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;
@@ -112,14 +106,13 @@ export const agentCreateInputSchema = z.object({
     .optional(),
   connectionIds: z.array(z.string()).optional(),
   providerConnectionId: z.string().min(1).optional(),
-  size: agentSizeSchema.optional(),
   // UNIT_BOUNDARY_DESCRIPTION: kept only so a create that still asks for a container Agent is refused with a reason. Every Agent is a machine; the field is not written to the spec.
   vm: z.boolean().optional(),
   storage: storageQuantitySchema.optional(),
   sweepable: z.boolean().optional(),
   lifetimeMs: z.number().int().min(0).optional(),
 });
-export const agentUpdateInputSchema = z.object({
+export const agentPatchSchema = z.object({
   id: z.string().min(1),
   name: agentNameSchema.max(255).optional(),
   description: z.string().optional(),
@@ -127,9 +120,36 @@ export const agentUpdateInputSchema = z.object({
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
-  size: agentSizeSchema.optional(),
   requireConnectionAddress: z.boolean().optional(),
   whisper: z.boolean().optional(),
+});
+
+export const agentUpdateInputSchema = agentPatchSchema.pick({
+  id: true,
+  name: true,
+  description: true,
+  avatar: true,
+  hibernationTimeoutMin: true,
+});
+
+export const agentSetEnvInputSchema = z.object({
+  id: z.string().min(1),
+  env: z.array(envVarSchema).max(64),
+});
+
+export const agentSetSecretRefInputSchema = z.object({
+  id: z.string().min(1),
+  secretRef: z.string(),
+});
+
+export const agentSetCredentialInjectionInputSchema = z.object({
+  id: z.string().min(1),
+  requireConnectionAddress: z.boolean(),
+});
+
+export const agentSetWhisperInputSchema = z.object({
+  id: z.string().min(1),
+  whisper: z.boolean(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

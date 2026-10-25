@@ -36,7 +36,7 @@ describe("nextCrashNotices", () => {
     expect(replay([agent()], [oom], [oom])).toEqual([
       [],
       [
-        "Scout ran out of memory and restarted — give it a larger size in its settings",
+        "Scout ran out of memory and restarted — ask an operator to raise its memory budget",
       ],
       [],
     ]);
@@ -110,7 +110,7 @@ describe("nextCrashNotices", () => {
       ["Scout crashed — out of memory (OOMKilled)"],
       [],
       [
-        "Scout ran out of memory and restarted — give it a larger size in its settings",
+        "Scout ran out of memory and restarted — ask an operator to raise its memory budget",
       ],
     ]);
   });
@@ -125,7 +125,7 @@ describe("nextCrashNotices", () => {
         podTerminationReason: "out of memory (OOMKilled)",
       });
     const again =
-      "Scout ran out of memory and restarted — give it a larger size in its settings";
+      "Scout ran out of memory and restarted — ask an operator to raise its memory budget";
     expect(
       replay([agent()], [killed(0)], [killed(1)], [killed(2)], [killed(3)]),
     ).toEqual([

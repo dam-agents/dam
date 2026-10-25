@@ -42,7 +42,16 @@ function runKubectl(
   }).trim();
 }
 
-function kubectlOrEmpty(...args: string[]): string {
+// UNIT_BOUNDARY_DESCRIPTION: a whole log read, which can be larger than the 1 MiB a buffered child process allows by default: the controller logs every reconcile at debug, and a tail of the run's log is several megabytes. A read that hits that limit throws ENOBUFS, which is a read that failed, not a log with no lines.
+export function kubectlLarge(...args: string[]): string {
+  return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
+  }).trim();
+}
+
+export function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);
   } catch {
@@ -70,12 +79,31 @@ export function podField(name: string, jsonpath: string): string {
   return get("pod", name, jsonpath);
 }
 
+export function psql(query: string): string {
+  return kubectl(
+    "-n",
+    RELEASE_NS,
+    "exec",
+    "platform-postgres-0",
+    "--",
+    "psql",
+    "-U",
+    "platform",
+    "-d",
+    "platform",
+    "-tAc",
+    query,
+  );
+}
+
 function conditionPath(type: string): string {
   return `.status.conditions[?(@.type=="${type}")].status`;
 }
 
 export function agentConditionStatus(agent: string, type: string): string {
-  return get("agents.agent-platform.ai", agent, conditionPath(type));
+  return psql(
+    `select status from control.agent_conditions where agent_id = '${agent}' and type = '${type}'`,
+  ).trim();
 }
 
 export function podIsReady(name: string): boolean {
@@ -96,14 +124,20 @@ export function podEvents(name: string): string {
   );
 }
 
-export function deleteAgentCr(name: string): void {
+export function deleteAgentRow(name: string): void {
   kubectlOrEmpty(
     "-n",
-    AGENT_NS,
-    "delete",
-    "agents.agent-platform.ai",
-    name,
-    "--ignore-not-found",
+    RELEASE_NS,
+    "exec",
+    "platform-postgres-0",
+    "--",
+    "psql",
+    "-U",
+    "platform",
+    "-d",
+    "platform",
+    "-c",
+    `delete from control.agents where id = '${name}'`,
   );
 }
 
@@ -130,30 +164,4 @@ export function scaleController(replicas: 0 | 1): void {
       "--timeout=60s",
     );
   }
-}
-
-export interface RetainedVolume {
-  name: string;
-  mount: string;
-  until: string;
-}
-
-export function retainedVolumes(agent: string): RetainedVolume[] {
-  const out = kubectl(
-    "-n",
-    AGENT_NS,
-    "get",
-    "pvc",
-    "-l",
-    `agent-platform.ai/retained-for=${agent}`,
-    "-o",
-    String.raw`jsonpath={range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.agent-platform\.ai/retained-mount}{"\t"}{.metadata.annotations.agent-platform\.ai/retained-until}{"\n"}{end}`,
-  );
-  return out
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [name = "", mount = "", until = ""] = line.split("\t");
-      return { name, mount, until };
-    });
 }

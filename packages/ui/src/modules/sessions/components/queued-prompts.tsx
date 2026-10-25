@@ -19,6 +19,7 @@ import {
   steerQueuedPrompt,
   updateQueuedPrompt,
 } from "../api/acp-session-ops.js";
+import { useSenderNames } from "../hooks/use-sender-names.js";
 import { ChatMessage } from "./chat-message.js";
 import { MessageEditor } from "./message-editor.js";
 
@@ -78,6 +79,7 @@ function QueuedPromptItem({
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const steers = useStore((s) => s.harnessSteers);
+  const sentBy = useSenderNames(agentId).otherName(item?.sender);
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const target =
@@ -161,7 +163,7 @@ function QueuedPromptItem({
           className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
         >
           <Time size={14} />
-          Queued
+          {sentBy === null ? "Queued" : `Queued · ${sentBy}`}
         </span>
         {target !== null && (
           <>

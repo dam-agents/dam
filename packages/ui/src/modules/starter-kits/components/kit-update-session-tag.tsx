@@ -1,9 +1,8 @@
-import type { SessionView } from "api-server-api";
+import { isKitUpdateSession, type SessionView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 
 import { useKitUpdate } from "../api/queries.js";
-import { isKitUpdateSession } from "../lib/kit-update-session.js";
 
 export function KitUpdateSessionTag({ session }: { session: SessionView }) {
   const update = useKitUpdate(session.agentId);

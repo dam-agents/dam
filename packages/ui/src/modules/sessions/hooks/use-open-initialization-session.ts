@@ -17,10 +17,13 @@ export function useOpenInitializationSession(opts: {
   const openedForAgentRef = useRef<string | null>(null);
   const operable = useIsAgentOperable(agentId);
   const requestedSession = useStore((st) => st.pendingResumeSessionId);
+  const newSessionAgent = useStore((st) => st.newSessionAgent);
+  const markNewSession = useStore((st) => st.markNewSession);
   const armed =
     active &&
     idle &&
     requestedSession === null &&
+    newSessionAgent !== agentId &&
     agentId !== null &&
     operable &&
     openedForAgentRef.current !== agentId;
@@ -34,6 +37,12 @@ export function useOpenInitializationSession(opts: {
   useEffect(() => {
     if (agentId && active && !idle) openedForAgentRef.current = agentId;
   }, [agentId, active, idle]);
+
+  useEffect(() => {
+    if (!agentId || !active || newSessionAgent !== agentId) return;
+    openedForAgentRef.current = agentId;
+    markNewSession(null);
+  }, [agentId, active, newSessionAgent, markNewSession]);
 
   useEffect(() => {
     if (!armed || !agentId || sessions === undefined) return;

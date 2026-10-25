@@ -17,6 +17,7 @@ import { externalLinkProps } from "@/lib/external-link";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { holds } from "../../agents/lib/agent-permissions.js";
 import {
   useDocsUrl,
   useSlackInstallRequestUrl,
@@ -62,19 +63,22 @@ export function AgentUsageActions({
   const slackInstallUrl = useSlackInstallRequestUrl();
   const cliReferenceUrl = useDocsUrl("cliReference");
   const brand = getBrand();
+  const terminal = holds(agent.access, "terminal");
+  const channels = holds(agent.access, "channels");
 
-  const actions: Action[] = [
-    ...(showChat
+  const chatActions: Action[] =
+    showChat && holds(agent.access, "sessions")
       ? [
           {
             icon: <Chat />,
-            kind: "link" as const,
+            kind: "link",
             title: "Chat",
             description: "Chat with the agent in this browser.",
             onClick: () => selectAgent(agent.id),
           },
         ]
-      : []),
+      : [];
+  const terminalActions: Action[] = [
     {
       icon: <Terminal />,
       kind: "control",
@@ -148,6 +152,8 @@ export function AgentUsageActions({
         </div>
       ),
     },
+  ];
+  const messengerActions: Action[] = [
     ...(available.slack
       ? [
           {
@@ -180,6 +186,11 @@ export function AgentUsageActions({
           },
         ]
       : []),
+  ];
+  const actions: Action[] = [
+    ...chatActions,
+    ...(terminal ? terminalActions : []),
+    ...(channels ? messengerActions : []),
     ...(showConfigure
       ? [
           {

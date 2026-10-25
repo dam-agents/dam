@@ -16,6 +16,7 @@ export {
   agentEnv,
   environments,
   environmentAccessLists,
+  agentEditors,
   agentChatFormPreferences,
   agentSessions,
   agentPublicProfiles,
@@ -60,6 +61,19 @@ export {
   spendLimitExtensions,
   spendCeilings,
 } from "./schema.js";
+export {
+  control,
+  controlAgents,
+  controlAgentSignals,
+  controlAgentStatus,
+  controlAgentConditions,
+  controlAgentL7Hosts,
+  controlAgentKitState,
+  controlUserBudgets,
+  controlAgentStore,
+  controlAgentStoreExports,
+  controlCrdSnapshots,
+} from "./control-schema.js";
 export {
   eq,
   and,

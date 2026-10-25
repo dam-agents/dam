@@ -1,0 +1,1 @@
+ALTER TABLE "control"."agent_kit_state" ADD COLUMN "pending_nudged_at" timestamp with time zone;

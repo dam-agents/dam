@@ -10,10 +10,10 @@ have to be baked too). The Python twin of ``/usr/local/lib/driver-sdk.mjs``:
 - ``spawn_script`` runs a shell command on a sub-agent set up the same way,
   with no model turn, and returns its exit code, stdout and stderr byte for
   byte.
-- ``list_images`` / ``list_connections`` / ``budget`` read what a spawn can use.
+- ``list_images`` / ``list_connections`` read what a spawn can use.
 - ``s`` is shorthand for result schemas.
 
-Self-configures from ``PLATFORM_MCP_URL`` (set on every agent pod); there is no
+Self-configures from ``PLATFORM_MCP_URL`` (set on every agent's machine); there is no
 token, the mesh proves identity. Progress goes to stderr so the script's own
 stdout stays clean.
 """
@@ -34,7 +34,6 @@ __all__ = [
     "InvocationFailed",
     "ScriptFailed",
     "ScriptOutput",
-    "budget",
     "list_connections",
     "list_images",
     "s",
@@ -68,7 +67,7 @@ def _config() -> str:
     mcp_url = os.environ.get("PLATFORM_MCP_URL")
     if not mcp_url:
         raise RuntimeError(
-            "PLATFORM_MCP_URL is not set — the driver SDK only runs inside a platform agent pod."
+            "PLATFORM_MCP_URL is not set — the driver SDK only runs inside a platform agent's machine."
         )
     m = re.match(r"^(https?://[^/]+)/api/agents/([^/]+)/mcp$", mcp_url)
     if not m:
@@ -179,24 +178,14 @@ s.enum = _s_enum  # type: ignore[attr-defined]
 
 
 def list_images() -> list[dict[str, Any]]:
-    """The harnesses a sub-agent may run on, each with its ``harness`` name and
-    ``size``; pass the name as ``harness=``."""
+    """The harnesses a sub-agent may run on, each with its ``harness`` name;
+    pass the name as ``harness=``."""
     return _request("GET", "/images")["images"]
 
 
 def list_connections() -> list[dict[str, Any]]:
     """This driver's own connection grants: the ones a spawn may pass on."""
     return _request("GET", "/connections")["connections"]
-
-
-def budget() -> dict[str, Any]:
-    """The size a spawn gets when it names none, read live::
-
-        {"defaultWorkerSize": {"cpu": "1", "memory": "1Gi"}}
-
-    A spawn past the owner's free room queues until room frees, and that wait
-    counts against its TTL."""
-    return _request("GET", "/budget")
 
 
 def _target_body(
@@ -210,14 +199,10 @@ def _target_body(
     resources: dict[str, str] | None,
     skills: list[dict[str, str]] | None,
     ttl_ms: int | None,
-    memory: str | None,
-    cpu: str | None,
     label: str | None,
 ) -> dict[str, Any]:
     if harness is None and image is None:
         raise ValueError("pass harness= (or image=)")
-    if resources is not None and (memory is not None or cpu is not None):
-        raise ValueError("pass cpu and memory inside resources=, not beside it")
     body: dict[str, Any] = {}
     if harness is not None:
         body["harness"] = harness
@@ -239,10 +224,6 @@ def _target_body(
         body["skills"] = skills
     if ttl_ms is not None:
         body["ttlMs"] = ttl_ms
-    if memory is not None:
-        body["memory"] = memory
-    if cpu is not None:
-        body["cpu"] = cpu
     return body
 
 
@@ -281,8 +262,6 @@ def spawn(
     resources: dict[str, str] | None = None,
     skills: list[dict[str, str]] | None = None,
     ttl_ms: int | None = None,
-    memory: str | None = None,
-    cpu: str | None = None,
     model: str | None = None,
     mode: str | None = None,
     config_options: dict[str, str] | None = None,
@@ -300,10 +279,9 @@ def spawn(
     The sub-agent is set up the way a starter kit sets up an agent:
     ``seed={"url": ..., "ref": ..., "commit": ..., "into": "work"}`` clones a
     repository, ``install="..."`` runs a shell command in the workspace before
-    the prompt, ``env={"NAME": "value"}``, ``resources={"cpu": "2", "memory":
-    "4Gi", "storage": "10Gi"}``, and
-    ``skills=[{"source": ..., "name": ...}]``. A failed seed or install fails
-    the spawn at once with its reason.
+    the prompt, ``env={"NAME": "value"}``, ``resources={"storage": "10Gi"}``,
+    and ``skills=[{"source": ..., "name": ...}]``. A failed seed or install
+    fails the spawn at once with its reason.
 
     The sub-agent runs on this driver's model provider and receives only the
     ``connections`` passed (ids from ``list_connections()``). Its egress
@@ -335,8 +313,6 @@ def spawn(
         resources=resources,
         skills=skills,
         ttl_ms=ttl_ms,
-        memory=memory,
-        cpu=cpu,
         label=label,
     )
     name = label or harness or image or "invocation"
@@ -472,8 +448,6 @@ def spawn_script(
     resources: dict[str, str] | None = None,
     skills: list[dict[str, str]] | None = None,
     ttl_ms: int | None = None,
-    memory: str | None = None,
-    cpu: str | None = None,
     label: str | None = None,
     poll_seconds: float = _DEFAULT_POLL_SECONDS,
     timeout_seconds: float | None = None,
@@ -499,8 +473,6 @@ def spawn_script(
         resources=resources,
         skills=skills,
         ttl_ms=ttl_ms,
-        memory=memory,
-        cpu=cpu,
         label=label,
     )
     body["script"] = script

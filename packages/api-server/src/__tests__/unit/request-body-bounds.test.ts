@@ -148,10 +148,13 @@ describe("request body bounds", () => {
     );
   });
 
-  // TEST_SCENARIO: agent pods call the harness tRPC endpoint, so its batches have the same length limit.
+  // TEST_SCENARIO: agents' machines call the harness tRPC endpoint, so its batches have the same length limit.
   it("refuses an agent tRPC batch over the length limit", async () => {
     const app = new Hono();
     mountRuntimeTrpc(app, {
+      readAgent: async () => ({
+        metadata: { labels: { [LABEL_OWNER]: "owner" } },
+      }),
       k8s: {
         getCustomObject: async () => ({
           metadata: { labels: { [LABEL_OWNER]: "owner" } },

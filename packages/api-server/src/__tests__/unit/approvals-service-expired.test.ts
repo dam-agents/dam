@@ -82,6 +82,8 @@ function makeService(seed: PendingApprovalRow) {
     wrapperFrameSender: { send: async () => {} },
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",
+    actor: "owner-1",
+    actorEmail: null,
     agentBinding: "*",
   });
   return { rows, service, inserts };

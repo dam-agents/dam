@@ -31,11 +31,7 @@ export async function publishSkill(
   deps: PublishServiceDeps,
   input: SkillPublishInput,
 ): Promise<SkillPublishResult> {
-  const agent = await ensureAgentReachable(
-    deps.agents,
-    input.agentId,
-    deps.owner,
-  );
+  await ensureAgentReachable(deps.agents, input.agentId, deps.owner);
 
   const source = await deps.resolveSource(input.sourceId);
   if (!source)

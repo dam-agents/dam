@@ -1,0 +1,46 @@
+#!/usr/bin/env node
+//MISE description="Test that the panel browser's launcher starts Chromium with its automation report off and its own Google calls off"
+//MISE sources=["base/rootfs/usr/local/bin/platform-browser", "base/rootfs/etc/opt/chrome_for_testing/policies/managed/platform.json", "base/base.toml", ".mise/tasks/test/browser-launch"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const launcher = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/platform-browser", import.meta.url));
+const baseToml = readFileSync(new URL("../../../base/base.toml", import.meta.url), "utf8");
+const policy = JSON.parse(readFileSync(new URL("../../../base/rootfs/etc/opt/chrome_for_testing/policies/managed/platform.json", import.meta.url), "utf8"));
+const dir = mkdtempSync(join(tmpdir(), "browser-launch-"));
+const chromium = join(dir, "chromium");
+writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+writeFileSync(join(dir, "platform-browser"), readFileSync(launcher, "utf8").replaceAll("/opt/ms-playwright/chromium", chromium));
+const launch = (...args) =>
+  execFileSync("/bin/sh", [join(dir, "platform-browser"), ...args], {
+    env: { PATH: process.env.PATH },
+    encoding: "utf8",
+  }).trimEnd().split("\n");
+
+try {
+  // TEST_SCENARIO: agent-browser launches the panel's browser through the launcher, so every launch — the panel's and the agent's own — is launched the one way.
+  assert.match(baseToml, /^AGENT_BROWSER_EXECUTABLE_PATH = "\/usr\/local\/bin\/platform-browser"$/m);
+
+  // TEST_SCENARIO: every launch turns off the background networking that reaches Google with no page asking (the component updater, Safe Browsing's list updates), as the gateway would otherwise hold each for an approval the user did not cause.
+  const quiet = ["--disable-background-networking", "--disable-component-update"];
+
+  // TEST_SCENARIO: every launch turns off the browser's automation report (navigator.webdriver), which some sites' bot checks read to refuse the user's own clicks, and keeps the DevTools port agent-browser controls it through.
+  assert.deepEqual(launch("--remote-debugging-port=0", "--kiosk"), [
+    ...quiet,
+    "--disable-blink-features=AutomationControlled",
+    "--remote-debugging-port=0",
+    "--kiosk",
+  ]);
+
+  // TEST_SCENARIO: no launch switch stops the browser's connectivity check (connectivitycheck.gstatic.com) or its spell-check dictionary download (redirector.gvt1.com), so the managed policy turns off the error-page web service that probes for a captive portal, and blocks the dictionary languages so no dictionary is loaded or fetched. Chrome honours the blocklist only while SpellcheckEnabled is unset; the list holds English because an image that sets no locale gets that dictionary.
+  assert.equal(policy.AlternateErrorPagesEnabled, false);
+  assert.deepEqual(policy.SpellcheckLanguageBlocklist, ["en-US", "en-GB"]);
+  assert.equal(policy.SpellcheckEnabled, undefined);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}

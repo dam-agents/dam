@@ -1,6 +1,9 @@
+import type { Sender } from "agent-runtime-api";
 import {
   type PlatformContinuedFrom,
+  type PlatformSenderEntry,
   type PlatformUndeliveredPrompt,
+  type PlatformVerdict,
   type QueuedPrompt,
   SESSION_CATEGORIES,
   type SessionCategory,
@@ -53,11 +56,24 @@ export interface SessionError {
   kind: SessionFailureKind;
 }
 
+export interface SessionAttribution {
+  senders: PlatformSenderEntry[];
+  verdicts: PlatformVerdict[];
+  turnSender: Sender | null;
+}
+
+export const NO_ATTRIBUTION: SessionAttribution = {
+  senders: [],
+  verdicts: [],
+  turnSender: null,
+};
+
 export interface SessionsSlice {
   sessionId: string | null;
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  attribution: SessionAttribution;
   continuedFrom: PlatformContinuedFrom | null;
   queuedPrompts: QueuedPrompt[];
   harnessForks: boolean;
@@ -74,6 +90,7 @@ export interface SessionsSlice {
   pendingResumeSessionMode: SessionMode | null;
   pendingResumeFresh: boolean;
   chatRequest: ChatRequest | null;
+  newSessionAgent: string | null;
   toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
@@ -84,9 +101,14 @@ export interface SessionsSlice {
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   requestChat: (request: ChatRequest | null) => void;
+  markNewSession: (agentId: string | null) => void;
   setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
+  setAttribution: (attribution: SessionAttribution) => void;
+  addSender: (entry: PlatformSenderEntry) => void;
+  addVerdict: (verdict: PlatformVerdict) => void;
+  setTurnSender: (sender: Sender | null) => void;
   setContinuedFrom: (copy: PlatformContinuedFrom | null) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
   setHarnessForks: (forks: boolean) => void;
@@ -177,6 +199,7 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
+    attribution: NO_ATTRIBUTION,
     continuedFrom: null,
     queuedPrompts: [],
     harnessForks: false,
@@ -195,6 +218,7 @@ export const createSessionsSlice: StateCreator<
     pendingResumeSessionMode: null,
     pendingResumeFresh: false,
     chatRequest: null,
+    newSessionAgent: null,
     toolActivityExpanded: readPersistedFlag(
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
       false,
@@ -210,6 +234,7 @@ export const createSessionsSlice: StateCreator<
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
     requestChat: (request) => set({ chatRequest: request }),
+    markNewSession: (agentId) => set({ newSessionAgent: agentId }),
     setToolActivityExpanded: (expanded) => {
       writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
       set({ toolActivityExpanded: expanded });
@@ -219,6 +244,28 @@ export const createSessionsSlice: StateCreator<
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setAttribution: (attribution) => set({ attribution }),
+    addSender: (entry) =>
+      set((s) => ({
+        attribution: {
+          ...s.attribution,
+          senders: [...s.attribution.senders, entry],
+        },
+      })),
+    addVerdict: (verdict) =>
+      set((s) => ({
+        attribution: {
+          ...s.attribution,
+          verdicts: [
+            ...s.attribution.verdicts.filter(
+              (v) => v.toolCallId !== verdict.toolCallId,
+            ),
+            verdict,
+          ],
+        },
+      })),
+    setTurnSender: (sender) =>
+      set((s) => ({ attribution: { ...s.attribution, turnSender: sender } })),
     setContinuedFrom: (copy) => set({ continuedFrom: copy }),
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
@@ -335,6 +382,7 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        attribution: NO_ATTRIBUTION,
         continuedFrom: null,
         queuedPrompts: [],
         rewriting: null,

@@ -7,7 +7,6 @@ import type {
   ConnectionView,
   Schedule,
   ResolvedStarterKit,
-  StarterKit,
   TemplateSpec,
 } from "api-server-api";
 import { starterKitSchema } from "api-server-api";
@@ -41,6 +40,7 @@ const NO_MARKS = {
   begin: async () => {},
   end: async () => {},
   skip: async () => {},
+  nudge: async () => false,
 };
 const NO_LINKS: LinkedKits = {
   read: async () => {
@@ -564,12 +564,12 @@ describe("starter kits: apply", () => {
     expect(h.calls.created[1]).not.toHaveProperty("harness");
   });
 
-  it("passes the kit's declared size and disk to create, image or harness", async () => {
+  it("passes the kit's declared disk to create, image or harness", async () => {
     const own = makeHarness({
       ...LOADED,
       kit: kit({
         image: { ref: "quay.io/acme/nous:1.0.0" },
-        resources: { cpu: "2", memory: "4Gi", storage: "10Gi" },
+        resources: { storage: "10Gi" },
         connections: [],
       }),
     });
@@ -581,7 +581,6 @@ describe("starter kits: apply", () => {
       skipSchedules: [],
       scheduleOverrides: [],
     });
-    expect(own.calls.created[0].size).toEqual({ cpu: "2", memory: "4Gi" });
     expect(own.calls.created[0].storage).toBe("10Gi");
 
     const onHarness = makeHarness({
@@ -598,7 +597,6 @@ describe("starter kits: apply", () => {
       scheduleOverrides: [],
     });
     expect(onHarness.calls.created[0].templateId).toBe("claude-code");
-    expect(onHarness.calls.created[0].size).toBeUndefined();
     expect(onHarness.calls.created[0].storage).toBe("20Gi");
   });
 

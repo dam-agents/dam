@@ -1,3 +1,4 @@
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -6,6 +7,8 @@ import {
 } from "../../modules/agents/store.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const agent = (id: string, state: AgentView["state"]): AgentView => ({
   id,
@@ -26,7 +29,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   stopRequested: false,
   disabled: false,
   overBudget: false,
-  size: {},
   state,
   podRestarts: 0,
   contributionFailures: [],
@@ -35,6 +37,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   channels: [],
   spawnedBy: null,
   environmentOf: null,
+  access: { role: "owner", editors: [], permissions: OWNS },
 });
 
 describe("resolveAgentDisplay", () => {

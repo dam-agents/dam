@@ -73,7 +73,7 @@ describe("input array bounds", () => {
     );
   });
 
-  // TEST_SCENARIO: agent pods call the harness router, so the same limit holds there.
+  // TEST_SCENARIO: agents' machines call the harness router, so the same limit holds there.
   it("refuses an oversized array on every agent tRPC procedure before reading an element", async () => {
     expectAllRefused(
       await callEvery(
@@ -138,19 +138,17 @@ describe("input array bounds", () => {
     expect(parsed).toBe(0);
   });
 
-  // TEST_SCENARIO: an agent pod also posts a spawn request as a plain JSON body, outside tRPC and MCP, so the same limit holds there.
+  // TEST_SCENARIO: an agent's machine also posts a spawn request as a plain JSON body, outside tRPC and MCP, so the same limit holds there.
   it("refuses an oversized array in an agent's spawn request body", async () => {
     const app = new Hono();
     mountInvocationRoutes(app, {
-      k8s: {
-        getCustomObject: async () => ({
-          metadata: {
-            uid: "uid-1",
-            labels: { "agent-platform.ai/owner": "owner-1" },
-          },
-          spec: {},
-        }),
-      },
+      readAgent: async () => ({
+        metadata: {
+          uid: "uid-1",
+          labels: { "agent-platform.ai/owner": "owner-1" },
+        },
+        spec: {},
+      }),
       invocationsServiceFor: () => ({}),
       connectionsServiceFor: () => ({}),
     } as never);

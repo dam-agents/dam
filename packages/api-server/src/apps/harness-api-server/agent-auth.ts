@@ -1,7 +1,6 @@
 import { agentKindSchema, type AgentKind } from "api-server-api";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import {
-  AGENTS_PLURAL,
   ANN_AGENT_KIND,
   ANN_KB_SHARE_ROOTS,
   ANN_KB_TEMPLATE,
@@ -21,10 +20,10 @@ export interface AgentIdentity {
 }
 
 export async function resolveAgent(
-  k8s: K8sClient,
+  getAgent: (id: string) => Promise<KubeObject | null>,
   agentId: string,
 ): Promise<AgentIdentity | null> {
-  const obj = await k8s.getCustomObject(AGENTS_PLURAL, agentId);
+  const obj = await getAgent(agentId);
   if (!obj) return null;
   const owner = obj.metadata?.labels?.[LABEL_OWNER];
   if (!owner) return null;

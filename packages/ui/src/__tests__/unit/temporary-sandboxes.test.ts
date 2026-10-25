@@ -1,10 +1,10 @@
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
-import {
-  formatTemporaryDraw,
-  splitTemporarySandboxes,
-} from "../../modules/agents/utils/temporary-sandboxes.js";
+import { splitTemporarySandboxes } from "../../modules/agents/utils/temporary-sandboxes.js";
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   id,
@@ -25,7 +25,6 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   stopRequested: false,
   disabled: false,
   overBudget: false,
-  size: { cpu: "1", memory: "2Gi" },
   state: "running",
   podRestarts: 0,
   contributionFailures: [],
@@ -34,69 +33,35 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   channels: [],
   spawnedBy: null,
   environmentOf: null,
+  access: { role: "owner", editors: [], permissions: OWNS },
   ...overrides,
 });
 
 describe("splitTemporarySandboxes", () => {
-  test("hides targets and attributes their live compute to the driver", () => {
-    const { visible, drawByDriver } = splitTemporarySandboxes([
+  test("hides targets and counts them against the driver", () => {
+    const { visible, temporaryCountByDriver } = splitTemporarySandboxes([
       agent("driver"),
-      agent("t1", {
-        spawnedBy: "driver",
-        size: { cpu: "500m", memory: "1Gi" },
-      }),
-      agent("t2", { spawnedBy: "driver", size: { cpu: "2", memory: "3Gi" } }),
+      agent("t1", { spawnedBy: "driver" }),
+      agent("t2", { spawnedBy: "driver" }),
       agent("plain"),
     ]);
     expect(visible.map((a) => a.id)).toEqual(["driver", "plain"]);
-    expect(drawByDriver.get("driver")).toEqual({
-      count: 2,
-      cpuMilli: 2500,
-      memoryMi: 4096,
-    });
+    expect(temporaryCountByDriver.get("driver")).toBe(2);
   });
 
-  test("hides a hibernated target but keeps it out of the draw", () => {
-    const { visible, drawByDriver } = splitTemporarySandboxes([
+  test("hides a hibernated target but keeps it out of the count", () => {
+    const { visible, temporaryCountByDriver } = splitTemporarySandboxes([
       agent("driver"),
       agent("t1", { spawnedBy: "driver", state: "hibernated" }),
     ]);
     expect(visible.map((a) => a.id)).toEqual(["driver"]);
-    expect(drawByDriver.size).toBe(0);
+    expect(temporaryCountByDriver.size).toBe(0);
   });
 
-  test("counts a starting target — its pod is already reserving compute", () => {
-    const { drawByDriver } = splitTemporarySandboxes([
+  test("counts a starting target", () => {
+    const { temporaryCountByDriver } = splitTemporarySandboxes([
       agent("t1", { spawnedBy: "driver", state: "starting" }),
     ]);
-    expect(drawByDriver.get("driver")?.count).toBe(1);
-  });
-
-  test("tolerates a size nothing reported", () => {
-    const { drawByDriver } = splitTemporarySandboxes([
-      agent("t1", { spawnedBy: "driver", size: {} }),
-    ]);
-    expect(drawByDriver.get("driver")).toEqual({
-      count: 1,
-      cpuMilli: 0,
-      memoryMi: 0,
-    });
-  });
-});
-
-describe("formatTemporaryDraw", () => {
-  test("formats cores and Gi, trimming integer decimals", () => {
-    expect(
-      formatTemporaryDraw({ count: 2, cpuMilli: 2500, memoryMi: 4096 }),
-    ).toBe("using 2.5 cores, 4 Gi");
-    expect(
-      formatTemporaryDraw({ count: 1, cpuMilli: 1000, memoryMi: 512 }),
-    ).toBe("using 1 core, 0.5 Gi");
-  });
-
-  test("omits dimensions nothing reported", () => {
-    expect(formatTemporaryDraw({ count: 1, cpuMilli: 0, memoryMi: 0 })).toBe(
-      "",
-    );
+    expect(temporaryCountByDriver.get("driver")).toBe(1);
   });
 });

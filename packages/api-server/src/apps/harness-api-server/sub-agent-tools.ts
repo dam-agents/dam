@@ -51,7 +51,7 @@ const MAX_AWAIT_IDS = 50;
 const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent: if your harness has one, it runs here, starts in seconds and costs no extra compute, so prefer it whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
 - different-harness: it must run on another harness (see list_harnesses);
 - own-setup: it needs its own repository (seed), install command, env or skills;
-- more-resources: more CPU, memory or disk than this sandbox;
+- more-resources: more disk than this sandbox;
 - isolation: the work must not be able to touch this workspace;
 - parallel: heavy parallel work beyond what this sandbox can run;
 - checked-result: a result the platform validates against a schema.
@@ -151,7 +151,7 @@ const spawnInput = {
   ),
   env: spawnShape.env.describe("Environment variables, as [{name, value}]."),
   resources: spawnShape.resources.describe(
-    "cpu, memory and storage (disk) for the sub-agent's machine. Omitted values come from the harness's template; give a clone or build more memory.",
+    "Workspace disk for the sub-agent's machine, as {storage}. Its CPU and memory are its owner's pool, not a spawn's to choose; an omitted disk comes from the harness's template. Give a clone or build more disk.",
   ),
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",
@@ -235,13 +235,8 @@ export function unmetNeed(
     !body.skills?.length
   )
     return "own-setup without seed, install, env or skills";
-  if (
-    needs.includes("more-resources") &&
-    !body.resources &&
-    body.cpu === undefined &&
-    body.memory === undefined
-  )
-    return "more-resources without resources";
+  if (needs.includes("more-resources") && body.resources?.storage === undefined)
+    return "more-resources without resources.storage";
   return null;
 }
 
@@ -779,7 +774,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "list_harnesses",
-    "List the harnesses and images a sub-agent can run on, each with its harness name, effective size, and the provider a spawn naming no model runs on there, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
+    "List the harnesses and images a sub-agent can run on, each with its harness name and the provider a spawn naming no model runs on there, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
     {},
     () => run(async () => json({ images: await ops.images() })),
   );
@@ -789,12 +784,5 @@ export function registerSubAgentTools(
     "List your own granted connections (id, name, hosts). A sub-agent can be given any of these by id in spawn_subagent's connections.",
     {},
     () => run(async () => json({ connections: await ops.connections() })),
-  );
-
-  server.tool(
-    "get_budget",
-    "Read your owner's default worker size. Sub-agents past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.",
-    {},
-    () => run(async () => json(await ops.budget())),
   );
 }

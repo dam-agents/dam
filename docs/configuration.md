@@ -98,6 +98,18 @@ Disabling both the bundled store and the endpoint disables artifact storage — 
 Artifact bytes move directly: agents upload to the store through their gateway using short-lived links the platform mints, so the size cap is policy, not a transport limit.
 Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for external stores usually the same as `endpoint`) to have downloads redirect to the store as well; leave it empty and the api-server serves downloads itself — note it buffers each download in memory, so if you raise `apiServer.maxArtifactBytes` well past the default, set `publicEndpoint` too (and size the bundled store's volume to match).
 
+## Agent storage (operator)
+
+Agents and user budgets live in the install's Postgres database, in the `control` schema, not in the Kubernetes API.
+The chart values under `agentStore` move an install through the three releases that got it there: `crd` (the custom resources, an install that has not cut over yet), `postgres` (the switch), and `contract` (past the rollback window, no custom resources).
+`apiServer.db` points both components at one platform database; the controller has its own login, `platform_controller`, whose password lives beside the api-server's.
+
+Do not edit these values by hand outside a cutover: the switch is an acknowledged short outage, and the contract release refuses to start until the rollback window has closed and the install's archive is attested.
+The procedure is in [the cutover page](notes/agent-store-cutover.md); `docs/architecture/persistence.md` describes what the components do.
+A new install starts with `authority: postgres` and an empty namespace: it absorbs nothing and serves the rows.
+An install that never had a custom resource can skip the switch and take `authority: contract` with `contract.emptyArchive: true`.
+The CRDs stay on the cluster and are not touched: another install in another namespace may still read them.
+
 ## Knowledge base sharing
 
 Sharing a knowledge base as a read-only MCP endpoint needs object storage configured (above) — snapshot bytes live in the store.

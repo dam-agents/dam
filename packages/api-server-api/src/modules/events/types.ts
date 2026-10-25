@@ -1,5 +1,8 @@
 import type { LiveEvent } from "./schemas.js";
 
 export interface LiveEventsService {
-  ownerStream(sub: string, signal?: AbortSignal): AsyncIterable<LiveEvent>;
+  ownerStream(
+    audience: { sub: string; editorEmail: string | null },
+    signal?: AbortSignal,
+  ): AsyncIterable<LiveEvent>;
 }

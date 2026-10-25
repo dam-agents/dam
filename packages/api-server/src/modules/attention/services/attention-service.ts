@@ -1,7 +1,6 @@
 import {
   ATTENTION_FEED_LIMIT,
   ATTENTION_PAGE_LIMIT,
-  type AttentionDismissal,
   type AttentionItem,
   type AttentionList,
   type AttentionService,
@@ -35,6 +34,12 @@ function toItem(row: AttentionRecordRow): AttentionItem {
     activityAt: row.activityAt?.toISOString() ?? null,
     seenAt: row.seenAt?.toISOString() ?? null,
     working: row.working,
+    ...(row.startedBySub && {
+      startedBy: {
+        sub: row.startedBySub,
+        ...(row.startedByEmail && { email: row.startedByEmail }),
+      },
+    }),
   };
 }
 

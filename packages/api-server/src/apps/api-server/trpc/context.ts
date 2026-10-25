@@ -1,9 +1,14 @@
 import type { ApiContext, UserIdentity } from "api-server-api";
-import { ChannelType } from "api-server-api";
+import { ChannelType, editorEmailOf } from "api-server-api";
 import {
   composeAgentsModule,
+  composeEditorStanding,
   connectionGrantProvisioner,
 } from "../../../modules/agents/index.js";
+import { createEgressRulesRepository } from "../../../modules/egress-rules/infrastructure/egress-rules-repository.js";
+import { createEnvironmentsRepository } from "../../../modules/environments/infrastructure/environments-repository.js";
+import { createAgentTargetResolver } from "./agent-target.js";
+import { createActOnAgent } from "./act-on-agent.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { TRPCError } from "@trpc/server";
@@ -53,11 +58,11 @@ import { createApprovalsRepository } from "../../../modules/approvals/infrastruc
 import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
   composeEgressRulesModule,
-  createAgentL7HostsPort,
   createConnectionRulesSyncAdapter,
   createEgressRuleWriterAdapter,
   createKitRulesSeederAdapter,
 } from "../../../modules/egress-rules/compose.js";
+import { createL7HostsPortFor } from "../../../modules/agent-store/l7-hosts.js";
 import {
   findAgentByConversation,
   bindConversation,
@@ -114,6 +119,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     apiKeysModule,
     satellitesBoot,
     liveEvents,
+    userDirectory,
     wakeAgent,
     artifactLibraryFor,
   } = boot;
@@ -124,7 +130,22 @@ export function createApiContextFactory(boot: ApiServerDeps) {
   };
   const readChatFormPreferences = createChatFormPreferencesReader(db);
 
-  return (user: UserIdentity, surface: string): ApiContext => {
+  const editorStanding = composeEditorStanding({ db, repo: agentsRepo });
+  const agentOfTarget = createAgentTargetResolver({
+    schedules: schedulesBoot.repo,
+    egressRules: createEgressRulesRepository(db),
+    environments: createEnvironmentsRepository(db),
+    approvals: createApprovalsRepository(db),
+  });
+
+  const contextFor = (user: UserIdentity, surface: string): ApiContext => {
+    const actOnAgent = createActOnAgent({
+      user,
+      self: () => ctx,
+      agentOfTarget,
+      editorStanding,
+      contextFor: (identity) => contextFor(identity, surface),
+    });
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
       maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
@@ -167,12 +188,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       api,
       resolveSlackWorkspace: boot.resolveSlackWorkspace,
       agentStateCache: boot.agentStateCache,
+      agentStore: { authority: config.agentStore },
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: defaultLimits,
       install: agentsInstallSettings(config),
       storageGate,
       owner: user.sub,
+      actor: user.actingEditor ?? user.sub,
+      editorEmail: editorEmailOf(user),
+      resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
       db,
       telegramBinding: telegramBindFlows
         ? {
@@ -257,6 +282,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
+      agentStore: { authority: config.agentStore },
       surface,
       api,
       namespace: config.namespace,
@@ -268,7 +294,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       templatesRepo,
       runtimeProgress: contributionsProgress,
     });
-    const l7Hosts = createAgentL7HostsPort(k8sClient);
+    const l7Hosts = createL7HostsPortFor({
+      authority: config.agentStore,
+      k8s: k8sClient,
+      db,
+    });
     const { starterKits } = composeStarterKitsForOwner({
       owner: user.sub,
       repo: starterKitsRepo,
@@ -311,6 +341,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
+      actor: user.actingEditor ?? user.sub,
+      resolveUserEmail: (sub) => userDirectory.resolveBySub(sub),
       isAgentOwnedBy,
       l7Hosts,
       presetSeeder,
@@ -319,6 +351,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: approvals } = composeApprovalsService({
       db,
       ownerSub: user.sub,
+      actor: user.actingEditor ?? user.sub,
+      actorEmail:
+        (user.actingEditor !== undefined
+          ? user.actingEditorEmail
+          : user.email) ?? null,
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
@@ -409,7 +446,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ? createTelemetryService({ reader: telemetryReader, listOwnedAgents })
       : createDisabledTelemetryService();
 
-    return {
+    const ctx: ApiContext = {
       templates: templatesRepo,
       harnesses,
       repos: reposService,
@@ -462,6 +499,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       e2eEnabled: config.e2eEnabled,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
+      actOnAgent,
     };
+    return ctx;
   };
+  return contextFor;
 }

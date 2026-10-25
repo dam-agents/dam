@@ -78,6 +78,8 @@ function toRecord(row: RawRecord): AttentionRecordRow {
     activityAt: row.activityAt,
     seenAt: row.seenAt,
     working: row.working,
+    startedBySub: row.startedBySub,
+    startedByEmail: row.startedByEmail,
   };
 }
 
@@ -172,6 +174,8 @@ export function createAttentionRepository(db: Db): AttentionRepository {
             activityAt: row.activityAt,
             seenAt: row.seenAt,
             working: row.working,
+            startedBySub: row.startedBySub ?? null,
+            startedByEmail: row.startedByEmail ?? null,
             capturedAt: new Date(),
           },
         });

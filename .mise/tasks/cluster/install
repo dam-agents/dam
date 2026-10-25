@@ -402,7 +402,7 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.31.1"
+ISTIO_VERSION="1.31.2"
 # Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
 # and is being retired. --force-update repoints an `istio` repo a machine
 # already has registered at the old URL.
@@ -1068,7 +1068,13 @@ fi
 # --force-conflicts: Helm v4 applies server-side; field drift on a chart-managed
 # object (a stray kubectl patch/rollout, another controller) otherwise hard-fails
 # the upgrade with an ownership conflict. The chart is the source of truth here.
-helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}"
+# An existing release upgrades without touching the chart's crds/ (a dam-ops
+# HelmRelease says upgrade.crds: Skip for the same reason): the kinds are
+# install-only, and the line above is what keeps them current locally. A fresh
+# install still gets them from Helm.
+CRD_ARGS=()
+if helm status platform >/dev/null 2>&1; then CRD_ARGS+=(--skip-crds); fi
+helm upgrade --install platform helm -f helm/values-local.yaml --timeout 15m --force-conflicts ${HELM_VALUES:+-f "$HELM_VALUES"} "${HELM_EXTRA_ARGS[@]}" "${CRD_ARGS[@]}"
 
 e2e_mark "chart applied"
 if [ -n "${AGENT_LOAD_PID:-}" ]; then

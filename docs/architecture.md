@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## System context
 
@@ -68,11 +68,12 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside; [sessions](architecture/sessions.md); the [changes](architecture/agent-changes.md) in its repositories.
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user pool of memory, CPU and storage on the owner's VM runner, enforced when a machine starts; UserBudget CRs for privileged users.
-- [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, the owner's runner claim); [vm storage](architecture/vm-storage.md) — a machine's one disk and the owner's claim under it; what survives each lifecycle event.
+- [persistence](architecture/persistence.md) — the storage substrates (Postgres, the owner's runner claim); [vm storage](architecture/vm-storage.md) — a machine's one disk and the owner's claim under it; what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — identity, Secret storage, HITL, boundaries; [credential-gateway](architecture/credential-gateway.md).
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [slack-guarantees](architecture/slack-guarantees.md): what is guaranteed in Slack
+- [agent-editors](architecture/agent-editors.md) — the people an Agent's owner names to work on it with them, matched by verified email; the Shared Agent and what an editor may do.
 - [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [satellites](architecture/satellites.md) — MCP servers on machines outside the cluster: a polled queue, tools re-exposed to the agent scoped by machine, and the jobs it starts against them.

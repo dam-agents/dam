@@ -97,32 +97,52 @@ export function markTrustedRowsTakenOverAdapter(
   });
 }
 
+export interface AgentL7Source {
+  listAgentL7State: () => Promise<
+    Array<{ agentId: string; current: string[]; environmentOf?: string }>
+  >;
+  l7Hosts: AgentL7HostsPort;
+}
+
+export function createK8sAgentL7Source(k8sClient: K8sClient): AgentL7Source {
+  return {
+    l7Hosts: createAgentL7HostsPort(k8sClient),
+    listAgentL7State: async () => {
+      const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
+      return agents.flatMap((a) => {
+        const id = a.metadata?.name;
+        if (!id) return [];
+        const spec = (a.spec ?? {}) as {
+          l7Hosts?: string[];
+          environmentOf?: string;
+        };
+        return [
+          {
+            agentId: id,
+            current: spec.l7Hosts ?? [],
+            ...(spec.environmentOf
+              ? { environmentOf: spec.environmentOf }
+              : {}),
+          },
+        ];
+      });
+    },
+  };
+}
+
 export function createL7PromotionReconcile(
   db: Db,
-  k8sClient: K8sClient,
+  source: AgentL7Source,
   log: (message: string) => void,
 ): () => Promise<{ scanned: number; drifted: number; failed: number }> {
   const repo = createEgressRulesRepository(db);
-  const l7Hosts = createAgentL7HostsPort(k8sClient);
-  const listAgentL7State = async () => {
-    const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
-    return agents.flatMap((a) => {
-      const id = a.metadata?.name;
-      if (!id) return [];
-      const spec = (a.spec ?? {}) as {
-        l7Hosts?: string[];
-        environmentOf?: string;
-      };
-      return [
-        {
-          agentId: id,
-          current: spec.l7Hosts ?? [],
-          ...(spec.environmentOf ? { environmentOf: spec.environmentOf } : {}),
-        },
-      ];
+  return () =>
+    reconcileL7Promotions({
+      repo,
+      listAgentL7State: source.listAgentL7State,
+      l7Hosts: source.l7Hosts,
+      log,
     });
-  };
-  return () => reconcileL7Promotions({ repo, listAgentL7State, l7Hosts, log });
 }
 
 export { createAgentL7HostsPort };

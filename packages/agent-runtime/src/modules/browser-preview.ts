@@ -2,18 +2,10 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   renameSync,
   statSync,
 } from "node:fs";
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describeFailure, runOnce } from "../core/run-once.js";
 import {
@@ -62,24 +54,6 @@ export const DISPLAY_TOOLS = [
   "/usr/local/bin/platform-browser",
   "/opt/ms-playwright/chromium",
 ] as const;
-
-export const LAUNCH_MODE_FILE = ".local/share/platform/browser-launch";
-const STANDARD_LAUNCH = "standard";
-
-export function readTestingMode(path: string): boolean {
-  try {
-    return readFileSync(path, "utf8").trim() !== STANDARD_LAUNCH;
-  } catch {
-    return true;
-  }
-}
-
-async function writeTestingMode(path: string, on: boolean): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const next = `${path}.${process.pid}.tmp`;
-  await writeFile(next, on ? "testing\n" : `${STANDARD_LAUNCH}\n`);
-  await rename(next, path);
-}
 
 export function missingDisplayTools(
   exists: (path: string) => boolean = existsSync,
@@ -258,16 +232,12 @@ export function createCommandQueue(run: BrowserCommand): {
  * busy browser loses the user's page. Everything is refused, before anything
  * starts, on an agent that does not require named connections — the panel's
  * user would otherwise browse with the agent's injected credentials — and on
- * an image without the display stack. The testing mode switch saves how the
- * browser is launched to a file in the agent's home, which the image's
- * launcher (platform-browser) reads on every launch, the agent's own ones too,
- * and relaunches the browser on the same profile, back on the page it showed.
+ * an image without the display stack.
  */
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
   socketDir: string;
-  launchModeFile: string;
   available?: () => boolean;
   offered?: () => boolean;
   healthCheckMs?: number;
@@ -311,7 +281,6 @@ export function createBrowserPreview(deps: {
   let pendingNavigation: string | null = null;
   let lastAnswerAt = Date.now();
   let generation = 0;
-  let testingMode = readTestingMode(deps.launchModeFile);
 
   let dirty = false;
   let reconciling = false;
@@ -333,7 +302,6 @@ export function createBrowserPreview(deps: {
     state,
     message: failure,
     page: shown,
-    testingMode,
     tabs,
     activeTab,
   });
@@ -606,23 +574,6 @@ export function createBrowserPreview(deps: {
       selectForAgent(await target.closeTab(tab));
     });
 
-  async function setTestingMode(
-    on: boolean,
-  ): Promise<Result<void, BrowserDomainError>> {
-    const refused = refusal();
-    if (refused) return err(refused);
-    if (on === testingMode) return ok(undefined);
-    const saved = await attempt("save launch mode", () =>
-      writeTestingMode(deps.launchModeFile, on),
-    );
-    if (!saved.ok) return saved;
-    testingMode = on;
-    deps.log(`testing mode ${on ? "on" : "off"}`);
-    const reopen = shown && previewUrl(shown.url);
-    if (reopen && viewers.size > 0) pendingNavigation = reopen;
-    return attempt("relaunch", () => restart());
-  }
-
   function addViewer(viewer: (snapshot: BrowserSnapshot) => void) {
     viewers.add(viewer);
     if (viewers.size === 1) lastAnswerAt = Date.now();
@@ -760,7 +711,6 @@ export function createBrowserPreview(deps: {
     selectTab,
     newTab,
     closeTab,
-    setTestingMode,
     attachDisplay,
     viewers: () => viewers.size,
     close() {
@@ -828,7 +778,6 @@ export function composeBrowser(deps: {
     socketDir:
       process.env.AGENT_BROWSER_SOCKET_DIR ??
       join(deps.homeDir, ".agent-browser"),
-    launchModeFile: join(deps.homeDir, LAUNCH_MODE_FILE),
     log: log("browser-preview"),
   });
   setTimeout(start, DISPLAY_IDLE_START_MS).unref();

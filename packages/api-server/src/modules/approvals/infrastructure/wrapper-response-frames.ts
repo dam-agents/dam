@@ -1,3 +1,4 @@
+import type { Sender } from "agent-runtime-api";
 import { TOOL_CALL_ID_MAX } from "api-server-api";
 import type {
   AcpPermissionOption,
@@ -70,18 +71,23 @@ interface WrapperResponseFrame {
   result: {
     outcome:
       { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
+    _meta?: { platform: { answeredBy: Sender } };
   };
 }
 
 export function buildAcpPermissionResponse(
   rpcId: number | string,
   optionId: string | null,
+  answeredBy: Sender | null,
 ): WrapperResponseFrame {
   return {
     jsonrpc: "2.0",
     id: rpcId,
     result: optionId
-      ? { outcome: { outcome: "selected", optionId } }
+      ? {
+          outcome: { outcome: "selected", optionId },
+          ...(answeredBy !== null && { _meta: { platform: { answeredBy } } }),
+        }
       : { outcome: { outcome: "cancelled" } },
   };
 }

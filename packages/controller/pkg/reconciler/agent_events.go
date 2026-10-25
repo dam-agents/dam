@@ -16,16 +16,14 @@ import (
 
 // UNIT_BOUNDARY_DESCRIPTION: an Event on the Agent, so a state the controller reaches is visible in `kubectl get events` without reading its status. An Event that cannot be written is logged and never fails the step it describes.
 func (r *AgentReconciler) agentEvent(ctx context.Context, agent *apiv1.Agent, eventType, reason, message string) {
+	target, ok := r.eventReference(ctx, agent)
+	if !ok {
+		return
+	}
 	now := metav1.Now()
 	event := &corev1.Event{
-		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s.%x", agent.Name, now.UnixNano()), Namespace: r.config.Namespace},
-		InvolvedObject: corev1.ObjectReference{
-			APIVersion: agentGVK.GroupVersion().String(),
-			Kind:       agentGVK.Kind,
-			Name:       agent.Name,
-			Namespace:  r.config.Namespace,
-			UID:        agent.UID,
-		},
+		ObjectMeta:     metav1.ObjectMeta{Name: fmt.Sprintf("%s.%x", agent.Name, now.UnixNano()), Namespace: r.config.Namespace},
+		InvolvedObject: target,
 		Reason:         reason,
 		Message:        r.sanitizeFor(agent, message),
 		Type:           eventType,

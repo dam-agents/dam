@@ -7,11 +7,13 @@ import { cn } from "@/lib/utils";
 import { queryClient } from "../../../../query-client.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView, SessionView } from "../../../../types.js";
+import { useAgent } from "../../../agents/api/queries.js";
 import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
+import { isOwnAgent } from "../../../agents/lib/agent-editors.js";
 import {
   useFeatures,
   useInstallCapabilities,
@@ -97,7 +99,7 @@ export function togglePinKeepingFocus(
         ),
       ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
-        `[data-agent-id="${CSS.escape(agentId)}"] button[aria-expanded]`,
+        `[data-agent-id="${CSS.escape(agentId)}"] [data-agent-main]`,
       ) ??
       document.querySelector<HTMLElement>('[data-testid="sidebar-group-by"]')
     )?.focus();
@@ -133,6 +135,8 @@ export function TreeSessionRow({
   const actWhenAwake = useActWhenAwake(agentId);
   const remove = useDeleteTreeSession(agentId);
   const openSession = useOpenSession();
+  const agent = useAgent(agentId);
+  const pinnable = !agent || isOwnAgent(agent);
   const [renaming, setRenaming] = useState(false);
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -202,7 +206,9 @@ export function TreeSessionRow({
         quietPin
         className={TREE_ROW_CLASS}
         pinned={pinned}
-        onTogglePin={() => togglePinKeepingFocus(key, agentId, s)}
+        {...(pinnable && {
+          onTogglePin: () => togglePinKeepingFocus(key, agentId, s),
+        })}
         onResume={() => {
           openSession(agentId, s.sessionId, s.mode);
           onNavigate?.();

@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -148,6 +148,8 @@ The event knobs, log format, and realm import live in the Keycloak Helm values u
 Multi-tenancy is **soft** — a single Kubernetes namespace, with a `agent-platform.ai/owner` label on every owned resource carrying the authenticated user's `sub`.
 The api-server is the sole writer of resource spec and stamps the label on create; every list and get filters by it.
 There is no namespace-per-user.
+An owner can name [Agent Editors](agent-editors.md), matched by verified email, who may see an Agent they do not own, change its set-up and use its sessions through named Agent Permissions.
+An editor's change runs in a context made for the owner and bound to that one Agent, so an action an editor approves runs with the owner's connections; the owner's connections, credential injection switch, Channel Bindings, terminals and SSH stay owner-only.
 
 The controller picks credentials per-Agent by listing K8s Secrets labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent namespace, then mounting the matching set into the paired gateway pod.
 Cross- owner leakage is structurally prevented by the label selector — a missing `agent-platform.ai/owner` label is treated as no owner and never mounted.
@@ -228,14 +230,20 @@ Short-lived or dynamically-minted registry tokens (e.g. ECR) are out of scope.
 
 The credentials above are *upstream* secrets the platform injects on behalf of agents.
 The platform's own backing store has a separate credential boundary: the bundled Postgres splits application connection identities from DBA authority.
-Three login roles, not one:
+Four login roles, not one:
 
 - **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of the `platform` and `keycloak` databases respectively, each the only role its service connects as.
   `CONNECT` is revoked from `PUBLIC` and granted back only to that owner, plus the credential-less `usage_readers` group on `platform` ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked api-server credential can neither read Keycloak's database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) — it can only do DDL/DML within the `platform` database it already owns.
+- **`platform_controller`** — the controller's identity once Agents and user budgets live in Postgres: `NOSUPERUSER`, owning nothing.
+  The api-server, as the owner of the tables that hold them, grants it what it reconciles: writes on its own observation tables and on two reclaim columns of one shared row, and reads on the definition columns it renders, the signals row, the L7 hosts, the budgets, the connection-grant projection and the store row's progress columns.
+  It re-issues those grants on every start, so a role created before or after a migration converges.
+  It still reads and writes the Kubernetes API; what its login cannot do is reach a column it does not render, another schema, or another install's database ([persistence](persistence.md)).
 - **`platform`** — the lone `SUPERUSER`, used only for DBA work.
   It is the image's bootstrap superuser, because Postgres forbids demoting that role and so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
   An existing single-role cluster already bootstrapped under this name, so it is kept in place rather than renamed — Postgres forbids renaming the role you are connected as.
   A per-role `log_statement` default puts every admin-session statement into the audit trail, and every role and grant change is audited whoever issues it ([persistence](persistence.md)).
+
+A fifth role, `usage_readers`, is not a connection identity: it cannot log in, holds no password, and carries `SELECT` on the usage source passthrough views for whichever login an operator adds to it ([usage-tracking](usage-tracking.md#source-passthrough-views)).
 
 The admin credential lives in the same `platform-postgres-secrets` Secret and must be treated as high-value.
 The statement audit is best-effort, not enforced — a superuser session can `SET log_statement` mid-session.

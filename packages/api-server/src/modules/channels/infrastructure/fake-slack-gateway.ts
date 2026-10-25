@@ -5,7 +5,6 @@ import type { SlackSender } from "./slack-sender.js";
 import type {
   SlackViewSubmission,
   SlackBotJoinedChannelEvent,
-  SlackChannelMessageEvent,
   SlackGateway,
   SlackGatewayHandlers,
   SlackMentionEvent,

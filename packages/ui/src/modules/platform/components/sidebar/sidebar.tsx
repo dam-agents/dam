@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
+import { SidebarSharedAgents } from "../../../agents/components/sidebar-shared-agents.js";
 import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarDestinations } from "../../hooks/use-sidebar-destinations.js";
@@ -92,10 +93,16 @@ function CollapsedRail() {
       <div className="mt-4 flex flex-col gap-px">
         <SidebarFlyout label="Agents" icon={Bot}>
           {(close) => (
-            <SidebarAgents
-              stickyHeaderClassName="bg-popover"
-              onNavigate={close}
-            />
+            <>
+              <SidebarAgents
+                stickyHeaderClassName="bg-popover"
+                onNavigate={close}
+              />
+              <SidebarSharedAgents
+                stickyHeaderClassName="bg-popover"
+                onNavigate={close}
+              />
+            </>
           )}
         </SidebarFlyout>
         <SidebarFlyout label="Activity" icon={Activity} badge={hasUnread}>

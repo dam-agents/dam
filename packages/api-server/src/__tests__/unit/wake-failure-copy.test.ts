@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  POD_FAILURE_REASONS,
+  MACHINE_FAILURE_REASONS,
   classifyWakeFailure,
 } from "../../modules/agents/domain/wake-failure.js";
 import { wakeFailureUserCopy } from "../../modules/channels/infrastructure/wake-failure-copy.js";
@@ -13,7 +13,7 @@ describe("wakeFailureUserCopy for a start failure", () => {
   it("names full storage instead of a generic crash", () => {
     const failure = classifyWakeFailure({
       ...notReady,
-      agentPodNotReadyReason: "HomeVolumeFull",
+      machineNotReadyReason: "HomeVolumeFull",
     });
     expect(wakeFailureUserCopy(failure)).toContain("its storage is full");
     expect(wakeFailureUserCopy(failure)).not.toContain("crashed");
@@ -26,7 +26,7 @@ describe("wakeFailureUserCopy for a start failure", () => {
     const copy = wakeFailureUserCopy(
       classifyWakeFailure({
         ...notReady,
-        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+        machineNotReadyReason: "MachineImageCacheUnreachable",
       }),
     );
     expect(copy).toContain("can't reach its image cache");
@@ -43,16 +43,16 @@ describe("wakeFailureUserCopy for a start failure", () => {
     const fallback = wakeFailureUserCopy(
       classifyWakeFailure({
         ...notReady,
-        agentPodNotReadyReason: "ContainerTerminated",
+        machineNotReadyReason: "ContainerTerminated",
       }),
     );
-    for (const reason of POD_FAILURE_REASONS) {
+    for (const reason of MACHINE_FAILURE_REASONS) {
       if (!reason.startsWith("Machine")) continue;
       expect(
         wakeFailureUserCopy(
           classifyWakeFailure({
             ...notReady,
-            agentPodNotReadyReason: reason,
+            machineNotReadyReason: reason,
           }),
         ),
         reason,
@@ -65,7 +65,7 @@ describe("wakeFailureUserCopy for a start failure", () => {
     const copy = wakeFailureUserCopy(
       classifyWakeFailure({
         ...notReady,
-        agentPodNotReadyReason: "MachineAllocationUnreadable",
+        machineNotReadyReason: "MachineAllocationUnreadable",
       }),
     );
     expect(copy).toContain("has not reported how much memory");
@@ -78,7 +78,7 @@ describe("wakeFailureUserCopy for a start failure", () => {
     const copy = wakeFailureUserCopy(
       classifyWakeFailure({
         ...notReady,
-        agentPodNotReadyReason: "MachineStorageFull",
+        machineNotReadyReason: "MachineStorageFull",
       }),
     );
     expect(copy).toContain("its owner's agents have run out of storage");

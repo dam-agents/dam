@@ -15,7 +15,7 @@ export function ChannelRow({
   badge?: ReactNode;
   subtitle?: ReactNode;
   actionsLabel: string;
-  actions: ReactNode;
+  actions?: ReactNode;
   menuTestId?: string;
 }) {
   return (
@@ -31,9 +31,11 @@ export function ChannelRow({
           <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
         )}
       </div>
-      <RowActionsMenu label={actionsLabel} testId={menuTestId}>
-        {actions}
-      </RowActionsMenu>
+      {actions && (
+        <RowActionsMenu label={actionsLabel} testId={menuTestId}>
+          {actions}
+        </RowActionsMenu>
+      )}
     </div>
   );
 }

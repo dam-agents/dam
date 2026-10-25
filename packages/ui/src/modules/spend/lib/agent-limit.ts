@@ -8,3 +8,17 @@ export function agentLimitOf(
     (limit) => limit.scope.kind === "agent" && limit.scope.agentId === agentId,
   );
 }
+
+export function agentLimitReached(
+  status: SpendStatus | undefined,
+  agentId: string,
+): boolean {
+  return (
+    status?.limits.some(
+      (limit) =>
+        limit.scope.kind === "agent" &&
+        limit.scope.agentId === agentId &&
+        limit.state === "reached",
+    ) ?? false
+  );
+}

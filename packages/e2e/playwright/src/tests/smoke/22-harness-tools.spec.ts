@@ -132,10 +132,11 @@ test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner m
     "-n",
     AGENT_NS,
     "get",
-    "agents.agent-platform.ai",
-    agentId,
+    "configmaps",
+    "-l",
+    `agent-platform.ai/agent=${agentId}`,
     "-o",
-    "jsonpath={.metadata.labels.agent-platform\\.ai/owner}",
+    "jsonpath={.items[0].metadata.labels.agent-platform\\.ai/owner}",
   );
   const pod = kubectl(
     "-n",

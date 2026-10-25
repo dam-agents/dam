@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
 
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
-import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 import type { InvocationsRepository } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
@@ -108,7 +107,7 @@ const baseInput: SpawnInput = {
 };
 
 describe("spawn applies an Agent Setup", () => {
-  // TEST_SCENARIO: the seed, size, disk and env a kit would pass to the create reach the target's create unchanged, and the target keeps its minted name so spend views still recognise it once it is gone.
+  // TEST_SCENARIO: the seed, disk and env a kit would pass to the create reach the target's create unchanged, and the target keeps its minted name so spend views still recognise it once it is gone.
   test("the setup reaches the target's create", async () => {
     const { service, created } = makeService();
 
@@ -120,7 +119,7 @@ describe("spawn applies an Agent Setup", () => {
           commit: "a".repeat(40),
           into: "work",
         },
-        resources: { cpu: "2", memory: "4Gi", storage: "10Gi" },
+        resources: { storage: "10Gi" },
         env: [{ name: "MODE", value: "cell" }],
         skills: [],
       },
@@ -133,7 +132,6 @@ describe("spawn applies an Agent Setup", () => {
         commit: "a".repeat(40),
         into: "work",
       },
-      size: { cpu: "2", memory: "4Gi" },
       storage: "10Gi",
       env: [{ name: "MODE", value: "cell" }],
       connectionIds: ["conn-ghe"],
@@ -488,18 +486,16 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
   mountInvocationRoutes(app, {
     agents: { get: async () => null },
     scriptOutputs: {} as never,
-    k8s: {
-      getCustomObject: async (plural: string, id: string) =>
-        plural === AGENTS_PLURAL && id === "driver-1"
-          ? {
-              metadata: {
-                uid: "uid-1",
-                labels: { "agent-platform.ai/owner": "owner-1" },
-              },
-              spec: {},
-            }
-          : null,
-    } as never,
+    readAgent: async (id: string) =>
+      id === "driver-1"
+        ? {
+            metadata: {
+              uid: "uid-1",
+              labels: { "agent-platform.ai/owner": "owner-1" },
+            },
+            spec: {},
+          }
+        : null,
     invocationsServiceFor: () =>
       ({
         spawn: async (input: Record<string, unknown>) => {
@@ -528,7 +524,6 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
       telemetryEnv: () => [],
     },
     budgetsFor: () => ({}) as never,
-    defaultLimits: { cpu: "1", memory: "1Gi" },
   });
   return { app, spawned };
 }
@@ -642,20 +637,6 @@ describe("the spawn endpoint", () => {
     expect(spawned[0]?.driverProviders).toEqual([
       { id: "conn-litellm", type: "ibm-litellm" },
     ]);
-  });
-
-  // TEST_SCENARIO: agent images pinned to an older platform-base still send cpu and memory beside the setup; they arrive as the setup's resources.
-  test("the older cpu and memory fields become the setup's resources", async () => {
-    const { app, spawned } = makeApp(catalog);
-
-    await app.request(
-      "/api/agents/driver-1/invocations",
-      post({ harness: "claude-code", cpu: "2", memory: "4Gi" }),
-    );
-
-    expect(spawned[0]).toMatchObject({
-      setup: { resources: { cpu: "2", memory: "4Gi" } },
-    });
   });
 
   test("the setup passes through", async () => {

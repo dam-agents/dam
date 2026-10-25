@@ -1,11 +1,11 @@
 # Postgres role separation — operations
 
-Last verified: 2026-08-24
+Last verified: 2026-10-24
 
-Operational runbook for the three-role Postgres split.
+Operational runbook for the split-role Postgres layout.
 This note carries the *how* — the parts that move when the chart changes.
 
-The bundled Postgres ends up with three login roles:
+The bundled Postgres ends up with four login roles:
 
 - `platform` — `SUPERUSER`, `LOGIN`.
   The image's bootstrap superuser (`POSTGRES_USER`, set from `postgres.adminUser`, default `platform`); humans and the migration Job use it for DBA work.
@@ -15,6 +15,9 @@ The bundled Postgres ends up with three login roles:
   `LOGIN`, `NOSUPERUSER`.
 - `platform_keycloak` — owns the `keycloak` database; Keycloak's connection identity.
   `LOGIN`, `NOSUPERUSER`.
+- `platform_controller` — the controller's connection identity once Agents and user budgets live in Postgres.
+  `LOGIN`, `NOSUPERUSER`; it owns nothing and holds no privilege on any database object until the api-server grants it the columns it reconciles, which it does on every start.
+  Its password is chart-generated into the Postgres Secret as `POSTGRES_CONTROLLER_PASSWORD`, or supplied through `controller.db.password` on an external database.
 
 Plus one role that is not a connection identity at all:
 
@@ -33,8 +36,8 @@ Role names and passwords reach the script from the environment via `\getenv`, so
 
 ## Fresh install
 
-The image creates `platform` as the bootstrap superuser, then runs `01-roles.sql` on first PGDATA init to create the two NOSUPERUSER app roles, their databases, the CONNECT isolation, the `usage_readers` group, and the admin statement-log default.
-Passwords are auto-generated and stored in the `platform-postgres-secrets` Secret under `POSTGRES_APISERVER_PASSWORD`, `POSTGRES_KEYCLOAK_PASSWORD`, and `POSTGRES_ADMIN_PASSWORD`.
+The image creates `platform` as the bootstrap superuser, then runs `01-roles.sql` on first PGDATA init to create the NOSUPERUSER app roles — the two service identities and the controller's login — their databases, the CONNECT isolation, the `usage_readers` group, and the admin statement-log default.
+Passwords are auto-generated and stored in the `platform-postgres-secrets` Secret under `POSTGRES_APISERVER_PASSWORD`, `POSTGRES_KEYCLOAK_PASSWORD`, `POSTGRES_CONTROLLER_PASSWORD`, and `POSTGRES_ADMIN_PASSWORD`.
 Retrieve the admin credential with:
 
 ```sh
