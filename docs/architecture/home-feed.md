@@ -138,8 +138,8 @@ The panel's top bar becomes a 40 px row 8 px below the top of the panel, with it
 The bar scrolls when the window is too short to hold every tile, so the bottom of the rail stays reachable.
 The tiled bar offers the Artifacts tab on every page whether or not JanUI is on: outside an Agent's chat that tab lists the whole library, except on an Agent's configuration page without JanUI, where it lists that Agent's artifacts as it already did.
 The left navigation drops its own Artifacts entry while the bar offers it; Documentation, which no surface of the bar shows, stays there.
-With the flag on, an Agent's chat also holds the whole of its configuration, and the configuration page has no way in: every panel has a tile of its own on the rail — Spending, Services, Channels, Skills, Schedules, Environments and Network access — and each is the section that page already renders, so the rail's tiles carry the experiment's surfaces beside Artifacts, Files, Browser and Processes.
-Services holds three of them in one panel, under text-only headings: the providers the Agent may use with its chat default, the connections it holds, and its environment variables.
+With the flag on, an Agent's chat also holds the whole of its configuration, and the configuration page has no way in: every panel has a tile of its own on the rail — Spending, Services, Channels, Skills, Schedules and Environments — and each is the section that page already renders, so the rail's tiles carry the experiment's surfaces beside Artifacts, Files, Browser and Processes.
+Services holds the providers the Agent may use, the connections it holds, and, folded under a count, its environment variables and its network rules; each heading carries the one add button that belongs to it.
 Chat forms is the exception: its settings are not offered at all under the experiment, and no tile exists for them.
 Spending is the page's Usage section alone: the Agent itself is managed from its row menu and renamed from the dialog that menu opens.
 A link, a menu item or a deep link to the configuration page opens the chat on the panel that holds that section, so a bookmark keeps working, and the page itself redirects instead of drawing.
@@ -149,7 +149,7 @@ Not every surface moves: the section list's summaries and warnings, the page's r
 A recurring schedule created in that panel makes the browser add a line in the Agent's voice naming the shortest prompt that would have made that schedule — its cadence, its zone and its whole task, and nothing at all when the form set an advanced field or typed an rrule the presets only partly describe.
 That line is the browser's own: it is not part of the Session record, it is never sent to the Agent, and it goes when the conversation changes or the user writes again.
 A tool call of the platform's own MCP server that created or changed a schedule or a skill carries a card that opens its tab, and a schedule's card also expands that schedule.
-In the Skills panel the platform's own skills are one list, "Platform features", without feature badges, and every row opens the skill's info.
+In the Skills panel the platform's own skills are one list, "Platform features", without feature badges, and every row opens the skill's info; the panel shows no counts line under its search.
 Both are part of the experiment, so with the flag off the chat shows neither.
 Apart from the configuration panels, the rail's tab list and what each tab shows do not depend on this flag.
 The right side is the flag's either way: an Agent's chat draws the rail too, with one tab of the panel at a time, instead of the classic column of Files, Artifacts and Processes sections, and the file, artifact, browser, changes or output it docks shows in the panel of the tab it belongs to.

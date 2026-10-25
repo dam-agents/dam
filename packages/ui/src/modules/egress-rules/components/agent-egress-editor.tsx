@@ -17,6 +17,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardButton } from "@/components/ui/card-button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ListGroup } from "@/components/ui/list-group";
 import { ListSection } from "@/components/ui/list-section";
@@ -68,9 +74,11 @@ const EMPTY_DRAFT: RuleDraft = {
 export function AgentEgressEditor({
   agentId,
   header,
+  compact = false,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
+  compact?: boolean;
 }) {
   const {
     data: rules = EMPTY,
@@ -107,25 +115,51 @@ export function AgentEgressEditor({
   return (
     <>
       {header()}
-      <div className="mb-3 flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setAdding(true)}
-          data-testid="egress-rule-new"
-        >
-          <Add size={16} />
-          Create rule
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setChoosingPreset(true)}
-          data-testid="egress-preset-open"
-        >
-          Apply preset
-        </Button>
-      </div>
+      {compact ? (
+        <div className="mb-3 flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Add network access"
+                tooltip="Add network access"
+                data-testid="egress-add"
+              >
+                <Add size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setAdding(true)}>
+                New rule…
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setChoosingPreset(true)}>
+                Apply preset…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAdding(true)}
+            data-testid="egress-rule-new"
+          >
+            <Add size={16} />
+            Create rule
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setChoosingPreset(true)}
+            data-testid="egress-preset-open"
+          >
+            Apply preset
+          </Button>
+        </div>
+      )}
       <ListSection
         loading={isLoading}
         error={isError && "Couldn't load the rules."}

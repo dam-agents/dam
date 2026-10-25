@@ -28,10 +28,12 @@ export function SandboxProvidersSection({
   agentId,
   header,
   defaultsKinds,
+  compact = false,
 }: {
   agentId: string;
   header: SectionHeaderSlot;
   defaultsKinds?: readonly SessionDefaultKind[];
+  compact?: boolean;
 }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -66,6 +68,7 @@ export function SandboxProvidersSection({
             harnesses={catalog && providerHarnesses(catalog, p)}
             checked={attached}
             disabled={pending}
+            hideSupports={compact}
             onCheckedChange={(on) =>
               on
                 ? void grant(p.id)
@@ -82,12 +85,13 @@ export function SandboxProvidersSection({
                 connectionId={p.id}
                 connectionName={p.name}
                 templateId={p.templateId}
+                compact={compact}
               />
             )}
           </ProviderToggleRow>
         );
       })}
-      {owned.length > 0 && (
+      {owned.length > 0 && !compact && (
         <Card className="overflow-hidden">
           <AddRow onClick={() => navigateToSettings("providers")}>
             <Settings size={16} className="shrink-0" />

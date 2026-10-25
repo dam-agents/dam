@@ -63,13 +63,13 @@ beforeEach(() => {
 // TEST_SCENARIO: every section of the configuration page has a panel that carries its knobs, so no setting is left without a home once the page is gone. The Environments panel keeps its own renderer, and Documentation is no section of the page.
 it("maps every configuration section to a panel", () => {
   const panels = SECTIONS.map(configTabForSection);
-  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share seven panels: Providers, Connections and Environment vars are the Services panel, General and Usage the Spending one, and Chat forms has none.
-  expect(new Set(panels).size).toBe(7);
+  // UNIT_BOUNDARY_DESCRIPTION: eleven sections share six panels: Providers, Connections, Environment vars and Network access are the Services panel, General and Usage the Spending one, and Chat forms has none.
+  expect(new Set(panels).size).toBe(6);
   expect(panels).toEqual([
     "agent",
     "services",
     "services",
-    "network",
+    "services",
     "services",
     "channels",
     "agent",
@@ -83,7 +83,6 @@ it("maps every configuration section to a panel", () => {
       "agent",
       "channels",
       "environments",
-      "network",
       "schedules",
       "services",
       "skills",
@@ -102,7 +101,7 @@ it("opens the panel instead of the page, and the page when the experiment is off
   const on = navigationStore(true);
   on.getState().navigateToSandboxHome("agent-1", "network");
   expect(on.getState().view).toBe("chat");
-  expect(on.getState().sidePanelTab).toBe("network");
+  expect(on.getState().sidePanelTab).toBe("services");
   expect(location.pathname).toBe("/chat/agent-1");
 
   // UNIT_BOUNDARY_DESCRIPTION: a link inside the same conversation opens the panel and goes nowhere, so the reader keeps the place in the chat.
@@ -120,7 +119,7 @@ it("opens the panel instead of the page, and the page when the experiment is off
 
 // TEST_SCENARIO: a configuration address becomes a panel only when the install's flag says so; a browser that stored the experiment on last does not redirect a page the install turned off.
 it("redirects a configuration address only with the install's flag", () => {
-  expect(configRedirectTab(true, "network")).toBe("network");
+  expect(configRedirectTab(true, "network")).toBe("services");
   expect(configRedirectTab(true, "usage")).toBe("agent");
   expect(configRedirectTab(false, "network")).toBe(null);
 });

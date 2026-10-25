@@ -14,6 +14,7 @@ export function ProviderToggleRow({
   checked,
   disabled,
   onCheckedChange,
+  hideSupports = false,
   children,
 }: {
   provider: ProviderConnectionRef;
@@ -21,6 +22,7 @@ export function ProviderToggleRow({
   checked: boolean;
   disabled?: boolean;
   onCheckedChange: (on: boolean) => void;
+  hideSupports?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -31,18 +33,20 @@ export function ProviderToggleRow({
           <span className="block truncate text-base font-medium text-foreground">
             {provider.name}
           </span>
-          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            Supports:
-            {harnesses?.length ? (
-              <HarnessIcons
-                harnesses={harnesses}
-                size="sm"
-                className="flex-wrap opacity-70"
-              />
-            ) : (
-              <span>{harnesses ? "None" : "Compatibility unavailable"}</span>
-            )}
-          </span>
+          {!hideSupports && (
+            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              Supports:
+              {harnesses?.length ? (
+                <HarnessIcons
+                  harnesses={harnesses}
+                  size="sm"
+                  className="flex-wrap opacity-70"
+                />
+              ) : (
+                <span>{harnesses ? "None" : "Compatibility unavailable"}</span>
+              )}
+            </span>
+          )}
         </div>
         <Switch
           checked={checked}

@@ -117,7 +117,6 @@ it("gives every configuration panel its own tile", () => {
     "skills",
     "schedules",
     "environments",
-    "network",
   ])
     expect(html).toContain(`data-testid="side-panel-tab-${tab}"`);
   expect(html).not.toContain('data-testid="side-panel-configure"');

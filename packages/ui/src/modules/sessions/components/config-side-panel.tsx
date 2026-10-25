@@ -2,10 +2,7 @@ import { match } from "ts-pattern";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import type { SandboxSection } from "../../platform/lib/routes.js";
 import { SandboxChannelsSection } from "../../sandboxes/components/sandbox-channels-section.js";
-import { SECTIONS } from "../../sandboxes/components/sandbox-section-nav.js";
 import { SandboxSkillsSection } from "../../sandboxes/components/sandbox-skills-section.js";
 import { ServicesPanel } from "../../sandboxes/components/services-panel.js";
 import {
@@ -30,14 +27,6 @@ export const DEFAULTS_BY_PANEL: Partial<
   Record<ConfigPanelTab, readonly SessionDefaultKind[]>
 > = {
   channels: ["channel"],
-  schedules: ["scheduled"],
-};
-
-// UNIT_BOUNDARY_DESCRIPTION: a panel shows the page's description only where it carries copy that stops a mistake; Network access keeps its rules in the editor, so no description sits above it.
-const SECTION_OF_TAB: Partial<Record<ConfigPanelTab, SandboxSection>> = {
-  channels: "channels",
-  skills: "skills",
-  schedules: "schedules",
 };
 
 export function configPanelTitle(tab: SidePanelTab): string {
@@ -78,18 +67,9 @@ export function ConfigSidePanel({
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setSidePanelFocus = useStore((s) => s.setSidePanelFocus);
   const focus = useStore((s) => s.sidePanelFocus);
-  // UNIT_BOUNDARY_DESCRIPTION: the page's own description goes above every panel, because it carries the copy that stops a mistake there — env vars say they are plain text and secrets belong in Connections, and network says an unmatched request waits for approval on Home.
-  const section = SECTION_OF_TAB[tab];
-  const description = section
-    ? SECTIONS.find((entry) => entry.section === section)?.description
-    : undefined;
-
   return (
     <SidebarSection title={configPanelTitle(tab)} open className="flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        {description && (
-          <p className="mb-4 text-sm text-muted-foreground">{description}</p>
-        )}
         {match(tab)
           .with("agent", () => <SpendingPanel agentId={agentId} />)
           .with("services", () => (
@@ -101,7 +81,7 @@ export function ConfigSidePanel({
           ))
           .with("channels", () => (
             <>
-              <SandboxChannelsSection agentId={agentId} />
+              <SandboxChannelsSection agentId={agentId} compact />
               <SessionDefaultsSection
                 agentId={agentId}
                 kinds={DEFAULTS_BY_PANEL.channels}
@@ -124,16 +104,7 @@ export function ConfigSidePanel({
                   if (prompt) showJustAskHint({ agentId, sessionId, prompt });
                 }}
               />
-              <SessionDefaultsSection
-                agentId={agentId}
-                kinds={DEFAULTS_BY_PANEL.schedules}
-                label="Default model"
-                hint={false}
-              />
             </>
-          ))
-          .with("network", () => (
-            <AgentEgressEditor agentId={agentId} header={() => null} />
           ))
           .exhaustive(() => null)}
       </div>

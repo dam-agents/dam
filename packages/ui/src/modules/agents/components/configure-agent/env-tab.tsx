@@ -66,11 +66,13 @@ export function EnvTab({
   header,
   panelHeading,
   panelDescription,
+  panel = false,
 }: {
   agent: AgentView;
   header: SectionHeaderSlot;
   panelHeading?: string;
   panelDescription?: string;
+  panel?: boolean;
 }) {
   const updateAgent = useUpdateAgent();
   const { data: apps = [] } = useAppConnections();
@@ -142,10 +144,13 @@ export function EnvTab({
           description={panelDescription}
         />
       )}
+      {panel && !panelHeading && panelDescription && (
+        <p className="mb-3 text-sm text-muted-foreground">{panelDescription}</p>
+      )}
 
       <ListSection
         isEmpty={
-          panelHeading
+          panel || panelHeading
             ? envVars.length === 0 && shownInherited.length === 0
             : envVars.length === 0
         }
@@ -155,7 +160,7 @@ export function EnvTab({
         newTestId="env-var-new"
         newDisabled={saving}
         addRow={
-          panelHeading ? undefined : (
+          panel || panelHeading ? undefined : (
             <AddRow
               onClick={() => setEditing("new")}
               disabled={saving}
@@ -221,13 +226,13 @@ export function EnvTab({
           </div>
         ))}
         {/* UNIT_BOUNDARY_DESCRIPTION: in a panel the inherited entries join the manual ones in one list, since they are the same concept — a variable the Agent reads — and only their source differs. */}
-        {panelHeading &&
+        {(panel || panelHeading) &&
           shownInherited.map((e, i) => (
             <InheritedEnvRow key={`${e.name}:${i}`} entry={e} />
           ))}
       </ListSection>
 
-      {!panelHeading && shownInherited.length > 0 && (
+      {!panel && !panelHeading && shownInherited.length > 0 && (
         <ListSection
           label="Inherited"
           description="Set by the platform and by this agent's providers and connections. Read-only."

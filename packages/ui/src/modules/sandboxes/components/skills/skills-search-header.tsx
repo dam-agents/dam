@@ -27,6 +27,7 @@ export function SkillsSearchHeader({
   matchCount,
   notice,
   actions,
+  hideCounts = false,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
@@ -34,6 +35,7 @@ export function SkillsSearchHeader({
   matchCount: number | null;
   notice?: ReactNode;
   actions?: ReactNode;
+  hideCounts?: boolean;
 }) {
   const countsText =
     matchCount === null
@@ -58,7 +60,9 @@ export function SkillsSearchHeader({
       {notice}
       <div className="flex items-center justify-between gap-3">
         {}
-        <p className="text-sm text-muted-foreground">{countsText}</p>
+        {!hideCounts && (
+          <p className="text-sm text-muted-foreground">{countsText}</p>
+        )}
         <p role="status" aria-live="polite" className="sr-only">
           {announced}
         </p>

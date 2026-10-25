@@ -20,10 +20,17 @@ import {
 import { ChannelRow } from "./channel-row.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 import { SlackLoopGuardNotice } from "./slack-loop-guard-notice.js";
+import { WhisperCard } from "./whisper-card.js";
 
 type ModalTarget = SlackChannel | "new" | null;
 
-export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
+export function SlackChannelCard({
+  agent,
+  withWhisper = false,
+}: {
+  agent: AgentView | undefined;
+  withWhisper?: boolean;
+}) {
   const slackChannels = findSlackChannels(agent);
   const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
@@ -64,6 +71,12 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
           </AddRow>
         }
       >
+        {/* UNIT_BOUNDARY_DESCRIPTION: in a panel the whisper switch is one row of the Slack card, since a whisper is a way into this agent's Slack conversations, not a messenger of its own. */}
+        {withWhisper && agent && (
+          <div className="px-4 py-3">
+            <WhisperCard agent={agent} />
+          </div>
+        )}
         {agent &&
           slackChannels.map((channel) => (
             <SlackChannelRow

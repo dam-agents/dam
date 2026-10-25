@@ -12,7 +12,6 @@ export type SidePanelTab =
   | "skills"
   | "schedules"
   | "agent"
-  | "network"
   | "delegation"
   | "getting-started"
   | "approvals";
@@ -63,7 +62,6 @@ export function hiddenSidePanelTabs(
     skills: available.agent && available.configuration,
     schedules: available.agent && available.configuration,
     agent: available.agent && available.configuration,
-    network: available.agent && available.configuration,
     "getting-started": available.gettingStarted,
     approvals: true,
   };
@@ -102,20 +100,14 @@ export function visibleSidePanelTab(
 
 export type ConfigurationTab = Extract<
   SidePanelTab,
-  | "agent"
-  | "services"
-  | "channels"
-  | "skills"
-  | "schedules"
-  | "environments"
-  | "network"
+  "agent" | "services" | "channels" | "skills" | "schedules" | "environments"
 >;
 
 const SECTION_TAB: Record<SandboxSection, ConfigurationTab> = {
   setup: "agent",
   providers: "services",
   connections: "services",
-  network: "network",
+  network: "services",
   environment: "services",
   "chat-forms": "agent",
   channels: "channels",
@@ -149,7 +141,6 @@ export const CONFIGURATION_TABS: readonly ConfigurationTab[] = [
   "skills",
   "schedules",
   "environments",
-  "network",
 ];
 
 export type SidePanelSelection =

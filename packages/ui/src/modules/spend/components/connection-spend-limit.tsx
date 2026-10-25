@@ -18,6 +18,7 @@ interface Props {
   connectionId: string;
   connectionName: string;
   templateId: string;
+  compact?: boolean;
 }
 
 export function ConnectionSpendLimit({
@@ -25,12 +26,14 @@ export function ConnectionSpendLimit({
   connectionId,
   connectionName,
   templateId,
+  compact = false,
 }: Props) {
   const rule = connectionLimitRule(templateId);
   const { data: status } = useAgentSpendStatus(rule.limitable ? agentId : null);
   const agentName = useAgentDisplayName(agentId);
   const agent = useLevelAgent(agentId);
   if (!rule.limitable) {
+    if (compact) return null;
     return (
       <p className="border-t border-border pt-3 text-xs text-muted-foreground">
         {NO_LIMIT_REASONS[rule.reason]}
@@ -58,6 +61,7 @@ export function ConnectionSpendLimit({
         buttonTip={AGENT_PROVIDER_LIMIT_BUTTON_TIP}
         agentId={agentId}
         agent={agent}
+        compact={compact}
         compare={{
           spentMicros,
           extensions: view.current?.extensions ?? 0,

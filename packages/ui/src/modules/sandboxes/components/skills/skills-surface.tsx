@@ -132,6 +132,7 @@ export function SkillsSurface({
           {}
           <div className="mb-5">
             <SkillsSearchHeader
+              hideCounts={rightToolbar}
               query={query}
               onQueryChange={setQuery}
               totals={totals}
