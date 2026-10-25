@@ -24,9 +24,9 @@ const profileBodySchema = z.object({
   settings: profileSettingsSchema.optional(),
 });
 
-/* UNIT_BOUNDARY_DESCRIPTION: a write made from an agent names it, so an Agent
- * Editor's change lands in the owner's set — the only set that agent's
- * references resolve against. */
+/* UNIT_BOUNDARY_DESCRIPTION: a write made from an agent names it, so the check
+ * can tell the owner saving from a chat from an Agent Editor, who may reference
+ * that agent's owner's profiles and never write them. */
 export const profileCreateInputSchema = profileBodySchema.extend({
   name: profileNameSchema,
   agentId: z.string().min(1).optional(),

@@ -25,9 +25,9 @@ export function SaveAsProfile({
   onClose,
   onSaved,
 }: {
-  /* UNIT_BOUNDARY_DESCRIPTION: the agent the profile is saved from, so an Agent
-   * Editor's save lands in the owner's set — the one that agent resolves
-   * against. */
+  /* UNIT_BOUNDARY_DESCRIPTION: the agent the profile is saved from, so the
+   * server can refuse a save made through a Shared Agent: an editor references
+   * the owner's profiles there and never writes them. */
   agentId: string;
   pair: SessionPair;
   providerTemplate: string;
