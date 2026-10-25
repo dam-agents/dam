@@ -4,7 +4,7 @@ import {
 } from "api-server-api/avatar/svg";
 import { Controller } from "react-hook-form";
 
-import { FormField } from "@/components/form-field";
+import { FormError } from "@/components/form-error";
 import {
   DialogActions,
   DialogBody,
@@ -16,8 +16,10 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 import { ToggleRow } from "@/components/ui/toggle-row";
 
+import { getBrand } from "../../../../brand.js";
 import type { AgentView } from "../../../../types.js";
 import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
+import { SlackChannelPicker } from "../../../slack/components/slack-channel-picker.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
 import { ChannelSwitchCard } from "./channel-switch-card.js";
@@ -47,7 +49,7 @@ export function SlackChannelModal({
     <Modal onClose={isSubmitting ? undefined : onClose}>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
         <DialogHeader
-          title={editing ? "Slack channel settings" : "Connect a Slack channel"}
+          title={editing ? "Slack channel settings" : "Connect Slack channels"}
           onClose={onClose}
           closeDisabled={isSubmitting}
         />
@@ -56,20 +58,19 @@ export function SlackChannelModal({
           {channel ? (
             <ConnectedChannel slackChannelId={channel.slackChannelId} />
           ) : (
-            <FormField
-              label="Channel ID"
-
-              error={errors.channelId?.message}
-              hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
-            >
-              <Input
-                variant={errors.channelId ? "invalid" : undefined}
-                aria-invalid={!!errors.channelId}
-                placeholder="C0…"
-                data-testid="slack-channel-id"
-                {...register("channelId")}
+            <div className="flex flex-col gap-2">
+              <Controller
+                control={control}
+                name="channelIds"
+                render={({ field }) => (
+                  <SlackChannelPicker
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                )}
               />
-            </FormField>
+              <FormError message={errors.channelIds?.message} />
+            </div>
           )}
 
           <Controller
@@ -141,6 +142,12 @@ export function SlackChannelModal({
               </div>
             )}
           </div>
+          {!channel && (
+            <p className="text-sm text-muted-foreground">
+              For a direct message, open a DM with @{getBrand().name} in Slack
+              and run <code>/{getBrand().short} bind</code>.
+            </p>
+          )}
         </DialogBody>
 
         <DialogActions

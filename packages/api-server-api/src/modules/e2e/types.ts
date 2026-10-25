@@ -14,6 +14,7 @@ import type {
   slackFireMentionInputSchema,
   slackImportHelmTokenInputSchema,
   slackSetChannelsInputSchema,
+  slackAddMemberInputSchema,
   slackRenewTokensInputSchema,
   slackTokenStateInputSchema,
   slackTokenStateResultSchema,
@@ -60,6 +61,7 @@ export type SlackImportHelmTokenInput = z.infer<
   typeof slackImportHelmTokenInputSchema
 >;
 export type SlackSetChannelsInput = z.infer<typeof slackSetChannelsInputSchema>;
+export type SlackAddMemberInput = z.infer<typeof slackAddMemberInputSchema>;
 export type SlackRenewTokensInput = z.infer<typeof slackRenewTokensInputSchema>;
 export type SlackTokenStateInput = z.infer<typeof slackTokenStateInputSchema>;
 export type SlackTokenStateResult = z.infer<typeof slackTokenStateResultSchema>;
@@ -87,6 +89,10 @@ export interface E2eService {
     input: SlackConnectWorkspaceInput,
   ): Promise<SlackConnectWorkspaceResult>;
   slackSetChannels(input: SlackSetChannelsInput): Promise<ResetResult>;
+  slackAddMember(
+    keycloakSub: string,
+    input: SlackAddMemberInput,
+  ): Promise<ResetResult>;
   slackEnableTokenRotation(): Promise<ResetResult>;
   slackImportHelmToken(input: SlackImportHelmTokenInput): Promise<ResetResult>;
   slackRenewTokens(input: SlackRenewTokensInput): Promise<ResetResult>;

@@ -89,8 +89,11 @@ flowchart LR
   The apply form lists them with their cadence and the author's optional one-line `description`, keeps the task text behind a closed **Instructions** disclosure, and lets the user **skip** any before create; onboarding never asks for cadence, and the user edits the rest on the instance.
   A kit may also declare the schedule's [Precheck](schedules.md#precheck) — the shell check that decides its own fires — so a periodic check a kit ships is as cheap as one written by hand; a kit that seeds its definition declares the check its repository carries, and the apply form shows it with the rest of the schedule, to keep, replace or drop.
   Dropping travels as an explicit removal rather than an omission, because an omitted one means the kit's own command.
-- **Kit Channel** — suggested only.
-  A channel never blocks apply; the apply form offers the Slack picker, other messengers are a note onboarding repeats.
+- **Kit Channel** — suggested only, with an optional `conversation`: `channel` (the default) or `direct`, for a kit whose agent serves one person in a DM.
+  A channel never blocks apply.
+  The kit modal offers every messenger the install has, not only the kit's, and marks the kit's own with its badge and note.
+  For Slack it takes channels by name from the [channel picker](channels.md), which offers only channels the person and the bot are both in, so they are bound at apply, before the onboarding turn is composed and names them.
+  A `direct` channel gets no picker, since the platform does not pick a DM for the person: the modal gives the in-chat bind steps instead, as it does for a DM beside a picked channel and for Telegram, whose chats the bot cannot list.
 - **Provider compatibility** — a kit never states a provider as a Connection Requirement: it lists the provider presets it supports in `providers` (a kit with its own image states them on the image instead).
   The requirement list is for the connections the *job* needs; a kit from an external catalog that still declares a provider under `accepts` is read as its provider list and kept out of the Connections section.
   The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants one provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
@@ -199,7 +202,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
    The seed is a fixed part of the kit: the kit modal shows it but offers no way to drop it, and apply takes no input that would, because the definition's instructions, scripts and `ONBOARDING.md` are what the kit exists to provide — an Agent created without them cannot run the kit's setup.
    The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below, and a kit with Startup Items queues them as a `startup-items` event behind it.
-4. Create the declared schedules, toggling suggested ones off; bind the Slack conversation if one was given.
+4. Create the declared schedules, toggling suggested ones off; bind each Slack channel given, under the person's own [membership check](channels.md).
    A failure here deletes the fresh Agent and surfaces the error.
 5. Wake the Agent.
 6. Install the declared external skills.
@@ -208,7 +211,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
 
 The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **The Generalist**, is no kit: it creates a plain agent at once.
-A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channel — then applies without a further page.
+A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channels — then applies without a further page.
 Every kit shows at one size.
 Neither sits behind a flag: kits are how an agent is set up here, so the catalog is part of the product rather than something to opt into.
 The widget renders nothing when the install has no catalog.

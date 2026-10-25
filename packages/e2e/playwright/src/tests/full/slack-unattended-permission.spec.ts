@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { ensureAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const agentName = "e2e-slack-permission";
 const channel = "C-E2E-PERMISSION";
@@ -22,7 +23,7 @@ test("harness permission prompts on a Slack turn: the platform's own tools are a
 
   await test.step("the channel binds to the agent", async () => {
     await api.agents.disconnectSlack.mutate({ id: agentId });
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: channel,
     });
