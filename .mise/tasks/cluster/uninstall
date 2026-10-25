@@ -62,8 +62,12 @@ if [ -n "$CLUSTER_INSTALL" ]; then
   done
   kubectl delete ns "$CLUSTER_NAMESPACE" --ignore-not-found --wait=true --timeout=120s 2>/dev/null || true
   # Its runner is stopped, and the machines it ran were this install's agents:
-  # their disks have nothing left to belong to. Only a Mac has a host runner.
-  [ -z "${HOST_RUNNER_DIR:-}" ] || rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_VM_HOME"
+  # their disks have nothing left to belong to. Its port record goes with it, so
+  # a later install of this name takes a free port and the chart agrees with it.
+  # Only a Mac has a host runner.
+  if [ -n "${HOST_RUNNER_DIR:-}" ]; then
+    rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/port" "$HOST_RUNNER_VM_HOME"
+  fi
   echo "Install '$CLUSTER_INSTALL' removed (namespace $CLUSTER_NAMESPACE)."
 else
   echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."
