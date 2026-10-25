@@ -200,7 +200,7 @@ export function ScheduleCard({
                 <span aria-hidden>·</span>
                 <span
                   className="inline-flex items-center gap-1 whitespace-nowrap text-warning"
-                  title="The agent has no default model it can run. Set one on its Providers page, or pick a model for this schedule."
+                  title="The agent has no default model it can run. Pick one in a chat's model picker, or give this schedule a profile."
                 >
                   <WarningAlt size={12} />{" "}
                   {defaultModelNotice &&

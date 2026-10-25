@@ -51,6 +51,7 @@ import { ConnectionAddressingSection } from "../components/setup/setup-sections.
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
+  "models",
   "connections",
   "automations",
   "environments",
@@ -150,13 +151,10 @@ function AgentHome({ agent }: { agent: AgentView }) {
           ) : section === "models" ? (
             <>
               {header()}
-              <SandboxUsageSection agentId={agent.id} />
+              <SandboxProvidersSection agentId={agent.id} header={() => null} />
               <div className="mt-10">
-                <SectionHeader label="Providers" />
-                <SandboxProvidersSection
-                  agentId={agent.id}
-                  header={() => null}
-                />
+                <SectionHeader label="Spending" />
+                <SandboxUsageSection agentId={agent.id} />
               </div>
             </>
           ) : section === "chat-forms" ? (

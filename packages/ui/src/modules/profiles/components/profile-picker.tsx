@@ -65,7 +65,9 @@ export function ProfilePicker({
             <span
               className={cn(
                 "text-foreground",
-                selected === null && "italic text-muted-foreground",
+                selected === null &&
+                  custom === undefined &&
+                  "italic text-muted-foreground",
               )}
             >
               {current}

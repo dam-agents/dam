@@ -684,8 +684,8 @@ function CustomChoicesField({
   const now = (value: string) =>
     sameAsChat ? `Now: ${value}, same as chat` : `Now: ${value}`;
   const defaultHint = sameAsChat
-    ? "Scheduled default runs on the agent's scheduled default, set on its Providers page, which is the same as its chat default."
-    : "Scheduled default runs on the agent's scheduled default, set on its Providers page.";
+    ? "Scheduled default runs on the agent's scheduled default, set by a chat's model picker, which is the same as its chat default."
+    : "Scheduled default runs on the agent's scheduled default, set by a chat's model picker.";
   return (
     <div className="flex flex-col gap-4">
       <FormField label="Harness" hint={defaultHint}>
