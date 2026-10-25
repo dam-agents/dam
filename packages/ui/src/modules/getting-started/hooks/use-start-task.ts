@@ -46,7 +46,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
           setMobileScreen("chat");
         });
       };
-      const openAgentSection = async (section: "skills" | "channels") => {
+      const openAgentSection = async (section: "skills" | "automations") => {
         if (!agent) return createDefault.create();
         navigateToSandboxHome(agent.id, section);
       };
@@ -66,7 +66,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
           setArtifactsSectionOpen(true);
           setMobileScreen("files");
         })
-        .with("connect-slack", () => openAgentSection("channels"))
+        .with("connect-slack", () => openAgentSection("automations"))
         .exhaustive();
     },
     [

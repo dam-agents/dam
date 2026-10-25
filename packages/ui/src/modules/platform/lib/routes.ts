@@ -20,18 +20,32 @@ export type SettingsTab = z.infer<typeof settingsTabSchema>;
 const sandboxSectionSchema = z.enum([
   "setup",
   "people",
-  "providers",
+  "models",
   "connections",
-  "network",
-  "environment",
-  "channels",
-  "chat-forms",
   "skills",
-  "schedules",
+  "automations",
   "environments",
-  "usage",
+  "chat-forms",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
+
+/* UNIT_BOUNDARY_DESCRIPTION: the sections the page had before it grouped its
+ * configuration into four, so a bookmark, a link in a chat or a saved tab still
+ * lands on the panel that holds what it named. */
+const LEGACY_SANDBOX_SECTIONS = {
+  providers: "models",
+  usage: "models",
+  network: "connections",
+  environment: "connections",
+  channels: "automations",
+  schedules: "automations",
+} as const satisfies Record<string, SandboxSection>;
+
+const legacySandboxSectionSchema = z.enum(
+  Object.keys(LEGACY_SANDBOX_SECTIONS) as [
+    keyof typeof LEGACY_SANDBOX_SECTIONS,
+  ],
+);
 
 export type Route =
   | { view: "home" }
@@ -80,7 +94,13 @@ export const RETIRED_PATHS = new Set([
   "/agents/new",
 ]);
 
-const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
+/* UNIT_BOUNDARY_DESCRIPTION: the longest name first, so "environments" is not read as "environment". */
+const sandboxSectionPattern = [
+  ...sandboxSectionSchema.options,
+  ...legacySandboxSectionSchema.options,
+]
+  .sort((a, b) => b.length - a.length)
+  .join("|");
 const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
@@ -125,10 +145,15 @@ export function parseRoute(path: string, search = ""): Route {
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
+    const legacy = legacySandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
     return {
       view: "sandbox-home",
       agentId: decodeSegment(sandboxHomeMatch[1]!),
-      sandboxSection: section.success ? section.data : "setup",
+      sandboxSection: section.success
+        ? section.data
+        : legacy.success
+          ? LEGACY_SANDBOX_SECTIONS[legacy.data]
+          : "setup",
     };
   }
   if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };

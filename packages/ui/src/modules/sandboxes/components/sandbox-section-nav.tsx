@@ -5,12 +5,8 @@ import {
   type CarbonPictogramType,
   CloudComputing,
   ConnectApplications,
-  FinanceAndSupplyChain,
   FoundationModel,
-  Keystores,
-  Network_02,
   Robot,
-  Slack,
   Teammates,
   UserInterface,
 } from "@carbon/pictograms-react";
@@ -44,46 +40,18 @@ export const SECTIONS: SectionEntry[] = [
       "People who can change and use this agent with you. You stay its owner.",
   },
   {
-    section: "providers",
+    section: "models",
     pictogram: FoundationModel,
-    title: "Providers",
+    title: "Models",
     description:
-      "Choose which of your connected LLM providers this agent can use.",
+      "What this agent runs on, which providers it may reach a model through, and what it spends.",
   },
   {
     section: "connections",
     pictogram: ConnectApplications,
     title: "Connections",
     description:
-      "Connections let your agent talk to MCP servers and external services like GitHub.",
-  },
-  {
-    section: "network",
-    pictogram: Network_02,
-    title: "Network access",
-    description:
-      "Rules decide which outbound HTTP requests this agent can make. The most-specific rule wins. Without a matching rule, the request needs your approval on Home.",
-  },
-  {
-    section: "environment",
-    pictogram: Keystores,
-    title: "Environment vars",
-    description:
-      "Variables are sent to the agent as plain text, so never add secrets here. Use them for non-sensitive configuration only. Store secrets in Connections.",
-  },
-  {
-    section: "channels",
-    pictogram: Slack,
-    title: "Channels",
-    description:
-      "Channels let people message this agent from Slack or Telegram.",
-  },
-  {
-    section: "chat-forms",
-    pictogram: UserInterface,
-    title: "Chat forms",
-    description:
-      "How this agent may use forms, choices and cards in its web chat replies.",
+      "What this agent can reach: connections to MCP servers and external services like GitHub, its environment variables, and the network rules behind them.",
   },
   {
     section: "skills",
@@ -93,10 +61,11 @@ export const SECTIONS: SectionEntry[] = [
       "Skills are reusable instructions your agent loads when a task needs them.",
   },
   {
-    section: "schedules",
+    section: "automations",
     pictogram: CalendarEvent,
-    title: "Schedules",
-    description: "Schedules let your agent run tasks periodically.",
+    title: "Automations",
+    description:
+      "When this agent acts without you: its schedules, and the Slack and Telegram channels it answers in.",
   },
   {
     section: "environments",
@@ -106,11 +75,11 @@ export const SECTIONS: SectionEntry[] = [
       "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them.",
   },
   {
-    section: "usage",
-    pictogram: FinanceAndSupplyChain,
-    title: "Usage",
+    section: "chat-forms",
+    pictogram: UserInterface,
+    title: "Chat forms",
     description:
-      "What this agent spends on models, including the sub-agents it started, and its spend limit.",
+      "How this agent may use forms, choices and cards in its web chat replies.",
   },
 ];
 

@@ -7,7 +7,7 @@ import type { SandboxSection } from "../../../platform/lib/routes.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 
 const FEATURE_SECTION: Partial<Record<PlatformFeatureId, SandboxSection>> = {
-  schedules: "schedules",
+  schedules: "automations",
   connections: "connections",
   "chat-forms": "chat-forms",
 };

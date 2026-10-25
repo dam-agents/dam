@@ -57,7 +57,7 @@ export type LevelPlace =
 export function levelPlace(level: Level): LevelPlace {
   switch (level.kind) {
     case "agent-connection":
-      return { kind: "agent", section: "providers", label: "Providers" };
+      return { kind: "agent", section: "models", label: "Models" };
     case "all-connection":
       return {
         kind: "settings",
@@ -65,7 +65,7 @@ export function levelPlace(level: Level): LevelPlace {
         label: "Settings › Providers",
       };
     case "agent":
-      return { kind: "agent", section: "usage", label: "Usage" };
+      return { kind: "agent", section: "models", label: "Models" };
     case "total":
       return { kind: "settings", tab: "usage", label: "Settings › Usage" };
     case "ceiling":

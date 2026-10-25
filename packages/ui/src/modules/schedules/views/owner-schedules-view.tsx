@@ -54,7 +54,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
   return (
     <button
       type="button"
-      onClick={() => navigateToSandboxHome(schedule.agentId, "schedules")}
+      onClick={() => navigateToSandboxHome(schedule.agentId, "automations")}
       className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40"
     >
       <div className="min-w-0 flex-1">

@@ -2,6 +2,7 @@ import { Settings } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddRow } from "@/components/ui/list-section";
 
@@ -10,7 +11,7 @@ import { useAgent } from "../../agents/api/queries.js";
 import { OwnerOnlyNotice } from "../../agents/components/owner-only-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { holds, ownerName } from "../../agents/lib/agent-permissions.js";
-import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
+import { ProviderGrantRow } from "../../providers/components/provider-grant-row.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -33,7 +34,7 @@ export function SandboxProvidersSection({
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
   const { owned, granted, loaded } = useProviderConnections(agentId);
-  const { grant, revoke, pending } = useGrantProvider(agentId);
+  const { revoke, pending } = useGrantProvider(agentId);
   const catalog = useHarnessCatalog().data?.harnesses;
   const root = useRootDriver(agentId);
   const usage = useProviderUsage(agentId);
@@ -49,7 +50,7 @@ export function SandboxProvidersSection({
           testId="providers-owner-only"
         >
           This agent uses {ownerName(access)}&apos;s providers. You can still
-          change its default model and its spend limits.
+          pick the profile it runs on and set its spend limits.
         </OwnerOnlyNotice>
       )}
       {root && <RootDriverSpendNote root={root} />}
@@ -71,20 +72,32 @@ export function SandboxProvidersSection({
       {owned.map((p) => {
         const attached = granted.some((g) => g.id === p.id);
         return (
-          <ProviderToggleRow
+          <ProviderGrantRow
             key={p.id}
             provider={p}
             harnesses={catalog && providerHarnesses(catalog, p)}
-            checked={attached}
-            disabled={pending || !managesProviders}
-            onCheckedChange={(on) =>
-              on
-                ? void grant(p.id)
-                : void showConfirm(
-                    <DetachProviderMessage name={p.name} usage={usage(p)} />,
-                    `Disconnect ${p.name} from this agent?`,
-                    { kind: "destructive", confirmLabel: "Disconnect" },
-                  ).then((ok) => ok && revoke(p.id))
+            /* UNIT_BOUNDARY_DESCRIPTION: a provider the agent does not hold is
+             * granted by picking a profile that runs on it, so the row says
+             * that instead of offering a second way to grant one (D105). */
+            note={attached ? undefined : "Not used by this agent yet"}
+            actionsLabel={attached ? `Detach ${p.name}` : undefined}
+            actions={
+              attached &&
+              managesProviders && (
+                <DropdownMenuItem
+                  tone="danger"
+                  disabled={pending}
+                  onSelect={() =>
+                    void showConfirm(
+                      <DetachProviderMessage name={p.name} usage={usage(p)} />,
+                      `Detach ${p.name} from this agent?`,
+                      { kind: "destructive", confirmLabel: "Detach" },
+                    ).then((ok) => ok && revoke(p.id))
+                  }
+                >
+                  Detach
+                </DropdownMenuItem>
+              )
             }
           >
             {attached && root === null && p.templateId && (
@@ -95,7 +108,7 @@ export function SandboxProvidersSection({
                 templateId={p.templateId}
               />
             )}
-          </ProviderToggleRow>
+          </ProviderGrantRow>
         );
       })}
       {owned.length > 0 && managesProviders && (

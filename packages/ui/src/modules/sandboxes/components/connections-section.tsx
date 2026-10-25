@@ -119,7 +119,7 @@ export function ConnectionsSection({
         <ConnectionCatalogModal
           onGoToChannels={() => {
             setCatalogOpen(false);
-            navigateToSandboxHome(agentId, "channels");
+            navigateToSandboxHome(agentId, "automations");
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}

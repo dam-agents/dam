@@ -1,6 +1,7 @@
 import type { PendingRestart } from "agent-runtime-api";
 
 import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@/components/ui/list-section";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -33,6 +34,7 @@ import { AgentManagementActions } from "../components/agent-management-actions.j
 import { AgentUpdateRow } from "../components/agent-update-row.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
+import { FoldedSection } from "../components/folded-section.js";
 import { PeopleSection } from "../components/people-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import {
@@ -51,11 +53,8 @@ import { ConnectionAddressingSection } from "../components/setup/setup-sections.
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
-  "providers",
   "connections",
-  "network",
-  "environment",
-  "schedules",
+  "automations",
   "environments",
 ]);
 
@@ -154,30 +153,37 @@ function AgentHome({ agent }: { agent: AgentView }) {
             </>
           ) : section === "people" ? (
             <PeopleSection agent={agent} />
-          ) : section === "providers" ? (
-            <SandboxProvidersSection agentId={agent.id} header={header} />
-          ) : section === "network" ? (
-            <AgentEgressEditor agentId={agent.id} header={header} />
-          ) : section === "environment" ? (
-            <EnvTab agent={agent} header={header} />
-          ) : section === "channels" ? (
-            <SandboxChannelsSection agentId={agent.id} />
+          ) : section === "models" ? (
+            <>
+              {header()}
+              <SandboxUsageSection agentId={agent.id} />
+              <div className="mt-10">
+                <SectionHeader label="Providers" />
+                <SandboxProvidersSection
+                  agentId={agent.id}
+                  header={() => null}
+                />
+              </div>
+            </>
           ) : section === "chat-forms" ? (
             <ChatFormSettings agentId={agent.id} />
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
-          ) : section === "schedules" ? (
-            <SchedulesPanel
-              agentId={agent.id}
-              header={header}
-              onResumeSession={(sessionId) =>
-                openAgentSession(agent.id, sessionId)
-              }
-            />
+          ) : section === "automations" ? (
+            <>
+              <SchedulesPanel
+                agentId={agent.id}
+                header={header}
+                onResumeSession={(sessionId) =>
+                  openAgentSession(agent.id, sessionId)
+                }
+              />
+              <div className="mt-8">
+                <SandboxChannelsSection agentId={agent.id} />
+              </div>
+            </>
           ) : section === "environments" ? (
             <EnvironmentsSection agentId={agent.id} header={header} />
-          ) : section === "usage" ? (
-            <SandboxUsageSection agentId={agent.id} />
           ) : (
             <>
               <ConnectionsSection
@@ -190,6 +196,18 @@ function AgentHome({ agent }: { agent: AgentView }) {
                   sandboxSection: "connections",
                 })}
               />
+              <FoldedSection
+                title="Environment variables"
+                testId="connections-env-vars"
+              >
+                <EnvTab agent={agent} header={() => null} />
+              </FoldedSection>
+              <FoldedSection
+                title="Network access"
+                testId="connections-network"
+              >
+                <AgentEgressEditor agentId={agent.id} header={() => null} />
+              </FoldedSection>
             </>
           )}
         </div>

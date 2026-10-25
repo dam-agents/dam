@@ -33,7 +33,7 @@ export function AgentLimitCoverageNote({
       <Button
         variant="link"
         size="inline"
-        onClick={() => navigateToSandboxHome(agentId, "providers")}
+        onClick={() => navigateToSandboxHome(agentId, "models")}
       >
         Providers
       </Button>

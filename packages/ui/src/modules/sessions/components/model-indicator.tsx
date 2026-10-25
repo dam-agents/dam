@@ -426,7 +426,7 @@ export function ModelIndicator({
                 onRetry={() => void catalogModels.refetch()}
                 onChoose={(name) => onChoose(name)}
                 onManageProviders={() =>
-                  navigateToSandboxHome(agentId, "providers")
+                  navigateToSandboxHome(agentId, "models")
                 }
               />
             </div>

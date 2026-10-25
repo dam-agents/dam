@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useProfiles } from "../../profiles/api/queries.js";
 import { useHarnessCatalogModels } from "../../sessions/api/session-pair.js";
 import {
   modelGroups,
@@ -48,6 +49,10 @@ export function ScheduleDetails({
 }) {
   const { task, precheck, model, timezone, sessionMode, enabled, status } =
     schedule;
+  const { data: profiles = [] } = useProfiles(schedule.agentId);
+  const profileName = schedule.profile
+    ? (profiles.find((p) => p.id === schedule.profile)?.name ?? "Unavailable")
+    : null;
   const stopReason = enabled ? status?.stopReason : undefined;
   const nextRun =
     enabled && status?.nextRun
@@ -128,6 +133,7 @@ export function ScheduleDetails({
             <span className="capitalize">{sessionMode ?? "fresh"}</span>
           </DetailCard>
         )}
+        {profileName && <DetailCard label="Profile">{profileName}</DetailCard>}
         {schedule.harness && (
           <DetailCard label="Harness">{schedule.harness}</DetailCard>
         )}

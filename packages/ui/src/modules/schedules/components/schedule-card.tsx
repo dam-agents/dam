@@ -16,6 +16,7 @@ import {
   defaultModelScheduleWarning,
   defaultModelStopsRuns,
 } from "../../home/lib/default-model-copy.js";
+import { useProfiles } from "../../profiles/api/queries.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
@@ -56,6 +57,12 @@ export function ScheduleCard({
   const resetScheduleSession = useResetScheduleSession();
   const runScheduleNow = useRunScheduleNow();
   const defaultModels = useDefaultModelNotices();
+  /* UNIT_BOUNDARY_DESCRIPTION: the row names the profile it runs on (D92), so
+   * two schedules of one agent that differ only there can be told apart. */
+  const { data: profiles = [] } = useProfiles(schedule.agentId);
+  const profileName = schedule.profile
+    ? (profiles.find((p) => p.id === schedule.profile)?.name ?? "Unavailable")
+    : null;
 
   const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
@@ -146,15 +153,22 @@ export function ScheduleCard({
               </>
             )}
             {cadence && <span className="truncate">{cadence}</span>}
-            {(schedule.harness || schedule.model) && (
+            {profileName ? (
               <>
                 <span aria-hidden>·</span>
-                <span className="truncate">
-                  {[schedule.harness, schedule.model]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
+                <span className="truncate">Runs on {profileName}</span>
               </>
+            ) : (
+              (schedule.harness || schedule.model) && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="truncate">
+                    {[schedule.harness, schedule.model]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </>
+              )
             )}
             {outcome && (
               <>

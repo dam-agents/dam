@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
   count: 0,
   loading: false,
   enabled: true,
-  section: "usage",
+  section: "models",
   navigateToSandboxHome: vi.fn(),
 }));
 
@@ -42,6 +42,7 @@ vi.mock("../../modules/environments/api/queries.js", () => ({
 }));
 vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
   findAgent: (await importOriginal<typeof AgentQueries>()).findAgent,
+  useAgent: () => undefined,
   useIsAgentInaccessible: () => false,
   useAgents: () => ({
     data: {
@@ -108,6 +109,33 @@ vi.mock("../../modules/sandboxes/components/sandbox-setup-section.js", () => ({
 vi.mock("../../modules/metrics/components/sandbox-usage-section.js", () => ({
   SandboxUsageSection: () => null,
 }));
+vi.mock(
+  "../../modules/sandboxes/components/sandbox-providers-section.js",
+  () => ({
+    SandboxProvidersSection: () => null,
+  }),
+);
+vi.mock("../../modules/sandboxes/components/connections-section.js", () => ({
+  ConnectionsSection: () => null,
+}));
+vi.mock("../../modules/sandboxes/components/folded-section.js", () => ({
+  FoldedSection: () => null,
+}));
+vi.mock("../../modules/agents/components/configure-agent/env-tab.js", () => ({
+  EnvTab: () => null,
+}));
+vi.mock("../../modules/egress-rules/components/agent-egress-editor.js", () => ({
+  AgentEgressEditor: () => null,
+}));
+vi.mock("../../modules/schedules/components/schedules-panel.js", () => ({
+  SchedulesPanel: () => null,
+}));
+vi.mock(
+  "../../modules/sandboxes/components/sandbox-channels-section.js",
+  () => ({
+    SandboxChannelsSection: () => null,
+  }),
+);
 
 const { environmentsShown } =
   await import("../../modules/environments/lib/environments-tab.js");
@@ -152,11 +180,11 @@ it("shows the section only once the agent owns an Environment", () => {
 // TEST_SCENARIO: the agent's page lists Environments in its section navigation only once the agent owns one, and the section is still at its own address with the section's content, so a stale link works.
 it("hides the navigation entry until the agent owns one, and keeps the section address", () => {
   state.count = 0;
-  expect(renderPage("usage")).not.toContain("Environments");
+  expect(renderPage("models")).not.toContain("Environments");
   expect(renderPage("environments")).toContain("ENVIRONMENTS-SECTION");
   expect(renderPage("environments")).not.toContain(">Environments<");
   state.count = 1;
-  expect(renderPage("usage")).toContain("Environments");
+  expect(renderPage("models")).toContain("Environments");
 });
 
 // TEST_SCENARIO: with no Environment there is still a list of people to set before the first one exists, so the Manage card links to the section; once the agent owns one the section is in the navigation and the row goes, so nothing is offered twice. While the list loads the row waits, so it never flashes for an agent that has one.

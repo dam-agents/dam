@@ -67,7 +67,7 @@ export function ProviderErrorCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigateToSandboxHome(agentId, "providers")}
+              onClick={() => navigateToSandboxHome(agentId, "models")}
               data-testid="send-error-switch-provider"
             >
               Switch provider

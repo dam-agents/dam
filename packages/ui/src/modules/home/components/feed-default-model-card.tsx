@@ -32,7 +32,7 @@ export function FeedDefaultModelCard({
   const changed = notice.state === "changed";
   const open = () => {
     onOpen?.();
-    navigateToSandboxHome(notice.agentId, "providers");
+    navigateToSandboxHome(notice.agentId, "models");
   };
 
   return (

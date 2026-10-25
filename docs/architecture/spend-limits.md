@@ -327,18 +327,18 @@ The limit with the least left today, when it is not the place's own, is marked "
 The spend ceiling shows only when the operator has set one.
 The screens:
 
-- **The agent's page:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
+- **The agent's page, the Models section:** the section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
   The card also gives today's spend in the other units and how many calls are high estimates.
   Its "Also counted by" list holds, by provider, the agent's Connection limits and the Connection limits for all agents on its Connections, then the total daily limit and the ceiling.
-  An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
+  An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to the providers below it.
   The agent's summary shows today's spend in each unit and the limit.
   Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
   A sub-agent's card shows only the note about its root driver.
-- **The agent's Providers section:** each granted Connection that takes a limit has one line for the agent's limit on it, in the Connection's unit: a meter, the share used, the spend against the limit, and the button.
+- **The provider rows of the agent's Models section:** each granted Connection that takes a limit has one line for the agent's limit on it, in the Connection's unit: a meter, the share used, the spend against the limit, and the button.
   Clicking the line opens the other limits that count those calls: the Connection limit for all agents and, on a dollar Connection, the agent limit, the total daily limit and the ceiling; a line that nothing else counts does not open.
   The limit dialog says, while the user types, whether the new amount is already reached and which limit would stop the agent first.
   A Connection that takes no limit says why.
-- **Settings, Providers tab:** under each connected Connection that takes a limit, one line for the Connection limit for all agents, the same as in the agent's Providers section; on a dollar Connection it opens to the total daily limit and the ceiling.
+- **Settings, Providers tab:** under each connected Connection that takes a limit, one line for the Connection limit for all agents, the same as on the agent's Models section; on a dollar Connection it opens to the total daily limit and the ceiling.
   The attach dialog that lists the same Connections shows no limit.
 - **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
   Its "Also counted by" line holds the spend ceiling, when the operator has set one.

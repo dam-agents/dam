@@ -531,7 +531,7 @@ export function SessionPairPicker(props: Props) {
                         });
                       }}
                       onManageProviders={() =>
-                        navigateToSandboxHome(agentId, "providers")
+                        navigateToSandboxHome(agentId, "models")
                       }
                     />
                   </>
@@ -605,7 +605,7 @@ export function SessionPairPicker(props: Props) {
               <PopoverClose asChild>
                 <button
                   type="button"
-                  onClick={() => navigateToSandboxHome(agentId, "providers")}
+                  onClick={() => navigateToSandboxHome(agentId, "models")}
                   className="underline underline-offset-2 hover:text-foreground"
                 >
                   Configure providers and defaults
