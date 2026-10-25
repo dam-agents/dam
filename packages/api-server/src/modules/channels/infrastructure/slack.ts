@@ -72,6 +72,7 @@ import {
   type PromptUpdate,
 } from "../../../core/acp-client.js";
 import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
+import type { ChannelPairDecision } from "../domain/channel-pair.js";
 import { ChannelProfileRefusedError } from "../domain/channel-profile-refusal.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
@@ -2815,37 +2816,38 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     legacyThreadKey?: string;
     signal?: AbortSignal;
   }): Promise<string> {
-    /* UNIT_BOUNDARY_DESCRIPTION: a fresh session in this channel starts on the
-     * pair its row's profile resolves to, named in the meta so the channel's
-     * values win over the agent's default; a resumed thread keeps the values it
-     * already runs on (D94 A), so the meta matters only to a new session. */
-    const channelDecision =
-      channelPair && args.channelId
-        ? await channelPair(args.instanceName, {
-            type: "slack",
-            slackChannelId: args.channelId,
-          })
-        : { kind: "none" as const };
-    if (channelDecision.kind === "unavailable")
-      throw new ChannelProfileRefusedError(
-        channelDecision.profileName,
-        channelDecision.detail,
-      );
-    const platformMeta = {
-      type: SessionType.ChannelSlack,
-      threadTs: args.threadKey,
-      ...(channelDecision.kind === "profile" && {
-        harness: channelDecision.pair.harness,
-        ...(channelDecision.pair.provider !== null && {
-          provider: channelDecision.pair.provider,
+    /* UNIT_BOUNDARY_DESCRIPTION: the channel's profile is decided only where a
+     * session is created, so a thread already running keeps the values it runs
+     * on (D94 A, D119) and is never refused for a profile it does not use. */
+    const freshSessionMeta = async () => {
+      const channelDecision: ChannelPairDecision =
+        channelPair && args.channelId
+          ? await channelPair(args.instanceName, {
+              type: "slack",
+              slackChannelId: args.channelId,
+            })
+          : { kind: "none" };
+      if (channelDecision.kind === "unavailable")
+        throw new ChannelProfileRefusedError(
+          channelDecision.profileName,
+          channelDecision.detail,
+        );
+      return {
+        type: SessionType.ChannelSlack,
+        threadTs: args.threadKey,
+        ...(channelDecision.kind === "profile" && {
+          harness: channelDecision.pair.harness,
+          ...(channelDecision.pair.provider !== null && {
+            provider: channelDecision.pair.provider,
+          }),
+          ...(channelDecision.pair.model !== null && {
+            model: channelDecision.pair.model,
+          }),
+          ...(channelDecision.pair.settings && {
+            settings: channelDecision.pair.settings,
+          }),
         }),
-        ...(channelDecision.pair.model !== null && {
-          model: channelDecision.pair.model,
-        }),
-        ...(channelDecision.pair.settings && {
-          settings: channelDecision.pair.settings,
-        }),
-      }),
+      };
     };
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
@@ -2884,13 +2886,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           if (!(err instanceof AcpSessionLoadError)) throw err;
           args.onGhostTurn?.();
           return send(await args.buildFreshPrompt(), {
-            platformMeta,
+            platformMeta: await freshSessionMeta(),
             ...sendOpts,
           });
         }
       }
       return send(await args.buildFreshPrompt(), {
-        platformMeta,
+        platformMeta: await freshSessionMeta(),
         ...sendOpts,
       });
     });
