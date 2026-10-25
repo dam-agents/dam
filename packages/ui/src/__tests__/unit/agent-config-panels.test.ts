@@ -121,6 +121,8 @@ it("opens the panel instead of the page, and the page when the experiment is off
 it("redirects a configuration address only with the install's flag", () => {
   expect(configRedirectTab(true, "network")).toBe("services");
   expect(configRedirectTab(true, "usage")).toBe("agent");
+  // TEST_OVERVIEW: People arrived after the panels did, so no panel holds it and its address keeps the page.
+  expect(configRedirectTab(true, "people")).toBe(null);
   expect(configRedirectTab(false, "network")).toBe(null);
 });
 

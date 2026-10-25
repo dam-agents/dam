@@ -145,7 +145,8 @@ function AgentHome({ agent }: { agent: AgentView }) {
     />
   );
 
-  if (rightToolbar) return null;
+  // UNIT_BOUNDARY_DESCRIPTION: with the experiment on the page has no surface of its own except People, which no panel renders yet.
+  if (rightToolbar && section !== "people") return null;
   if (!display) return null;
 
   return (

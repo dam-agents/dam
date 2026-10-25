@@ -143,6 +143,7 @@ The left navigation drops its own Artifacts entry while the bar offers it; Docum
 With the flag on, an Agent's chat also holds the whole of its configuration, and the configuration page has no way in: every panel has a tile of its own on the rail — Spending, Services, Channels, Skills, Schedules and Environments — and each is the section that page already renders, so the rail's tiles carry the experiment's surfaces beside Artifacts, Files, Browser and Processes.
 Services holds the providers the Agent may use, the connections it holds, and, folded under a count, its environment variables and its network rules; each heading carries the one add button that belongs to it.
 Chat forms is the exception: its settings are not offered at all under the experiment, and no tile exists for them.
+People is the other: it arrived after the panels did, so no panel renders it and its own address keeps the page that draws it.
 Spending is the page's Usage section alone: the Agent itself is managed from its row menu and renamed from the dialog that menu opens.
 A link, a menu item or a deep link to the configuration page opens the chat on the panel that holds that section, so a bookmark keeps working, and the page itself redirects instead of drawing.
 The panels carry the page's own sections and their descriptions, so the warnings that stop a mistake — env vars are plain text and secrets belong in Connections, an unmatched request waits for approval on Home — are still read where the value is typed.

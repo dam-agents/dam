@@ -99,7 +99,7 @@ export function ConnectionsSection({
         <SectionHeading
           label={panelHeading}
           addLabel="Add connection"
-          onAdd={() => setCatalogOpen(true)}
+          onAdd={managesConnections ? () => setCatalogOpen(true) : undefined}
         />
       )}
       <GrantedConnectionsPanel

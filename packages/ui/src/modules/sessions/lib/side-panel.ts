@@ -126,12 +126,15 @@ export function configTabForSection(section: SandboxSection): ConfigurationTab {
  * UNIT_BOUNDARY_DESCRIPTION: which panel a configuration address opens, or
  * none: only the install's flag turns the page's own address into the panel
  * that holds its section, so a browser that last stored the experiment on
- * never redirects a page the install says is off.
+ * never redirects a page the install says is off. People arrived after the
+ * panels did and no panel renders it, so under the flag that one section keeps
+ * the page of its own rather than bouncing to a panel that would drop it.
  */
 export function configRedirectTab(
   flag: boolean,
   section: SandboxSection,
 ): ConfigurationTab | null {
+  if (section === "people") return null;
   return flag ? configTabForSection(section) : null;
 }
 
