@@ -151,7 +151,7 @@ const spawnInput = {
   ),
   env: spawnShape.env.describe("Environment variables, as [{name, value}]."),
   resources: spawnShape.resources.describe(
-    "cpu, memory and storage (disk) for the sub-agent's machine. Omitted values come from the harness's template; give a clone or build more memory.",
+    "Workspace disk for the sub-agent's machine, as {storage}. Its CPU and memory are its owner's pool, not a spawn's to choose; an omitted disk comes from the harness's template. Give a clone or build more disk.",
   ),
   skills: spawnShape.skills.describe(
     "External skills to install: [{source, name}].",
@@ -236,7 +236,7 @@ export function unmetNeed(
   )
     return "own-setup without seed, install, env or skills";
   if (needs.includes("more-resources") && body.resources?.storage === undefined)
-    return "more-resources without resources";
+    return "more-resources without resources.storage";
   return null;
 }
 

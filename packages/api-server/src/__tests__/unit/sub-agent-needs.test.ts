@@ -51,7 +51,9 @@ describe("unmetNeed", () => {
   });
 
   test("more-resources needs a disk of its own", () => {
-    expect(unmetNeed(["more-resources"], base, null)).toMatch(/more-resources/);
+    expect(unmetNeed(["more-resources"], base, null)).toBe(
+      "more-resources without resources.storage",
+    );
     expect(
       unmetNeed(
         ["more-resources"],
