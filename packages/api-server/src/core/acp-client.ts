@@ -156,6 +156,14 @@ export interface PlatformSessionMeta {
   threadTs?: string;
   createdAt?: string;
   customTitle?: string;
+  /* UNIT_BOUNDARY_DESCRIPTION: the pair a caller sends for a session it already
+   * decided on — a channel's profile — and the kind such a session follows when
+   * it does not name one itself. */
+  harness?: string;
+  provider?: string;
+  model?: string;
+  settings?: Record<string, string>;
+  follows?: "chat" | "channel" | "scheduled" | null;
 }
 
 export interface AcpSessionInfo {
@@ -173,6 +181,11 @@ const platformSessionMetaSchema = z.object({
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
   customTitle: z.string().optional(),
+  harness: z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  settings: z.record(z.string(), z.string()).optional(),
+  follows: z.enum(["chat", "channel", "scheduled"]).nullable().optional(),
 });
 
 export interface TriggerSessionResult {
@@ -470,6 +483,28 @@ async function resolvePair(
   return pair;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the `_meta.platform` a fresh session is created
+ * with. The caller's own values — a channel's profile — are what the session
+ * runs on and win over the agent's default; the agent's kind default fills in
+ * only a session the caller left open, and is then not even read when the
+ * caller named both a harness and a model, so a channel with a profile runs on
+ * an agent that has no default at all.
+ */
+export async function sessionPlatformMeta(input: {
+  platformMeta: PlatformSessionMeta | undefined;
+  firePair:
+    ((agentId: string) => Promise<SessionPair | null | undefined>) | undefined;
+  agentId: string;
+}): Promise<Record<string, unknown>> {
+  const caller = input.platformMeta;
+  const decided = caller?.harness !== undefined && caller?.model !== undefined;
+  const pair = decided
+    ? undefined
+    : await resolvePair(input.firePair, input.agentId);
+  return { ...pairMeta(pair), ...caller };
+}
+
 const refusedForNoModel = (err: unknown): boolean =>
   (err as { data?: { platform?: { reason?: unknown } } } | null)?.data?.platform
     ?.reason === NO_MODEL_REASON;
@@ -607,8 +642,11 @@ export function createAcpClient(opts: {
             sessionId = sendOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
-            const pair = await resolvePair(opts.firePair, agentId);
-            const platform = { ...sendOpts.platformMeta, ...pairMeta(pair) };
+            const platform = await sessionPlatformMeta({
+              platformMeta: sendOpts.platformMeta,
+              firePair: opts.firePair,
+              agentId,
+            });
             const newSession: NewSessionRequest = {
               cwd: ".",
               mcpServers: [],
