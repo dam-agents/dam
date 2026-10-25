@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { ListGroup } from "@/components/ui/list-group";
 import { ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { Select } from "@/components/ui/select";
 
 import { getUser } from "../../../auth.js";
@@ -116,7 +117,7 @@ export function AgentEgressEditor({
     <>
       {header()}
       {compact ? (
-        <div className="mb-3 flex justify-end">
+        <SectionHeading label={`Network access (${rules.length})`}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -138,7 +139,7 @@ export function AgentEgressEditor({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
+        </SectionHeading>
       ) : (
         <div className="mb-3 flex items-center gap-2">
           <Button
