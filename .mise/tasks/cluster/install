@@ -402,7 +402,7 @@ fi
 # dependencies are resolved into charts/ (gitignored) here, first: rendering
 # needs them even with clickstack.enabled=false, and the build refreshes both
 # repositories. Best effort: the kubelet still pulls whatever this misses.
-ISTIO_VERSION="1.31.1"
+ISTIO_VERSION="1.31.2"
 # Istio publishes its charts here from 1.31 on; the GCS bucket stops at 1.30
 # and is being retired. --force-update repoints an `istio` repo a machine
 # already has registered at the old URL.
@@ -1017,14 +1017,12 @@ done
 # The two operator charts install directly, not through the clickstack-operators umbrella
 # chart: its latest (1.1.0) pins them at 0.0.7 and 1.7.0, whose RBAC newer operator
 # images outgrow. The MongoDB agent stays on the 108 line, which still runs the
-# MongoDB 5.0 the clickstack subchart deploys: the 109 line 1.13 defaults to
-# dropped 5.0. Move it with that MongoDB version.
-# The operator image runs 1.13.1 under the 1.13.0 chart. The 1.13.1 tag was
-# built 2026-10-07 and has no upstream release or chart yet; it fixes the
-# libxml2 (CVE-2026-74860, CVE-2026-86138, CVE-2026-86140, CVE-2026-86142,
-# CVE-2026-86143, CVE-2026-86144) and gawk (CVE-2026-40467, CVE-2026-40468,
-# CVE-2026-40553) findings of 1.13.0. Drop operator.version once a chart ships
-# 1.13.1 or later.
+# MongoDB 5.0 the clickstack subchart deploys: the 109 line the chart now
+# defaults to drops 5.0. Move it with that MongoDB version. The 1.14 chart
+# ships operator 1.14.0, which carries the libxml2 (CVE-2026-74860,
+# CVE-2026-86138, CVE-2026-86140, CVE-2026-86142, CVE-2026-86143,
+# CVE-2026-86144) and gawk (CVE-2026-40467, CVE-2026-40468, CVE-2026-40553)
+# fixes the 1.13.0 image lacked, so no operator.version override is left.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
   # A cluster installed with the umbrella: its CRDs outlive the uninstall (resource-policy
@@ -1041,10 +1039,9 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --set manager.image.tag=v0.0.8
   helm upgrade --install mongodb-operator mongodb-kubernetes \
     --repo https://mongodb.github.io/helm-charts \
-    --version 1.13.0 --namespace clickstack-operators --wait --timeout 5m \
+    --version 1.14.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
-    --set operator.version=1.13.1 \
     --set community.agent.version=108.0.27.9091-1 \
     --set operator.watchNamespace=default \
     --set 'operator.watchedResources={mongodbcommunity}'
