@@ -27,6 +27,7 @@ import {
   type AcpClientFactory,
 } from "../../../core/acp-client.js";
 import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
+import { ChannelProfileRefusedError } from "../domain/channel-profile-refusal.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { channelDeny } from "./channel-authz.js";
@@ -716,26 +717,36 @@ export function createTelegramWorker(deps: {
           );
         }
       }
-      /* UNIT_BOUNDARY_DESCRIPTION: a fresh chat starts on the channel's profile,
-       * named in the meta before the agent's default fills anything in; a
-       * resumed chat keeps the values it already runs on (D94 A). */
-      const channelValues = deps.channelPair
+      /* UNIT_BOUNDARY_DESCRIPTION: a fresh chat starts on the pair its row's
+       * profile resolves to, named in the meta so the chat's values win over the
+       * agent's default; a resumed chat keeps the values it already runs on
+       * (D94 A). */
+      const channelDecision = deps.channelPair
         ? await deps.channelPair(agentId, {
             type: "telegram",
             conversationId: thread.id,
           })
-        : null;
+        : { kind: "none" as const };
+      if (channelDecision.kind === "unavailable")
+        throw new ChannelProfileRefusedError(
+          channelDecision.profileName,
+          channelDecision.detail,
+        );
       await acp.sendPrompt(prompt, {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
-          ...(channelValues && {
-            harness: channelValues.harness,
-            ...(channelValues.provider !== null && {
-              provider: channelValues.provider,
+          ...(channelDecision.kind === "profile" && {
+            harness: channelDecision.pair.harness,
+            ...(channelDecision.pair.provider !== null && {
+              provider: channelDecision.pair.provider,
             }),
-            ...(channelValues.model !== null && { model: channelValues.model }),
-            ...(channelValues.settings && { settings: channelValues.settings }),
+            ...(channelDecision.pair.model !== null && {
+              model: channelDecision.pair.model,
+            }),
+            ...(channelDecision.pair.settings && {
+              settings: channelDecision.pair.settings,
+            }),
           }),
         },
         ...(onSession ? { onSession } : {}),

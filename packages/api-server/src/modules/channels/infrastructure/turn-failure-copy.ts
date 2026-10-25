@@ -1,4 +1,5 @@
 import { AcpTurnAbandonedError } from "../../../core/acp-client.js";
+import { ChannelProfileRefusedError } from "../domain/channel-profile-refusal.js";
 import type { NoDefaultModelError } from "../../harness-config/index.js";
 import { isNoDefaultModelError } from "../../harness-config/index.js";
 import {
@@ -37,6 +38,15 @@ export function classifyTurnFailure(err: unknown): TurnFailure {
       reason: "no-default-model",
       copy: ({ uiBaseUrl, agentId }) =>
         noDefaultModelUserCopy(err, uiBaseUrl, agentId),
+    };
+  /* UNIT_BOUNDARY_DESCRIPTION: a channel whose profile cannot run is refused
+   * rather than run on another model, so the thread says why and where the fix
+   * is, as a refused schedule names its reason. */
+  if (err instanceof ChannelProfileRefusedError)
+    return {
+      reason: "profile-unavailable",
+      copy: ({ uiBaseUrl, agentId }) =>
+        `This channel runs on the profile “${err.profileName}”, which this agent can't use: ${err.detail}. Its owner can pick another profile on the channel's row at ${uiBaseUrl}/sandboxes/${agentId}/automations`,
     };
   return {
     reason: "acp-error",

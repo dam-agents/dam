@@ -72,6 +72,7 @@ import {
   type PromptUpdate,
 } from "../../../core/acp-client.js";
 import type { ChannelPairResolver } from "../services/channel-pair-resolver.js";
+import { ChannelProfileRefusedError } from "../domain/channel-profile-refusal.js";
 import { classifyTurnFailure } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
 import {
@@ -2814,26 +2815,36 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     legacyThreadKey?: string;
     signal?: AbortSignal;
   }): Promise<string> {
-    /* UNIT_BOUNDARY_DESCRIPTION: a fresh channel session starts on the channel's
-     * profile, which the meta names before the agent default fills anything in;
-     * a resumed thread keeps the values it already runs on (D94 A). */
-    const channelValues =
+    /* UNIT_BOUNDARY_DESCRIPTION: a fresh session in this channel starts on the
+     * pair its row's profile resolves to, named in the meta so the channel's
+     * values win over the agent's default; a resumed thread keeps the values it
+     * already runs on (D94 A), so the meta matters only to a new session. */
+    const channelDecision =
       channelPair && args.channelId
         ? await channelPair(args.instanceName, {
             type: "slack",
             slackChannelId: args.channelId,
           })
-        : null;
+        : { kind: "none" as const };
+    if (channelDecision.kind === "unavailable")
+      throw new ChannelProfileRefusedError(
+        channelDecision.profileName,
+        channelDecision.detail,
+      );
     const platformMeta = {
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
-      ...(channelValues && {
-        harness: channelValues.harness,
-        ...(channelValues.provider !== null && {
-          provider: channelValues.provider,
+      ...(channelDecision.kind === "profile" && {
+        harness: channelDecision.pair.harness,
+        ...(channelDecision.pair.provider !== null && {
+          provider: channelDecision.pair.provider,
         }),
-        ...(channelValues.model !== null && { model: channelValues.model }),
-        ...(channelValues.settings && { settings: channelValues.settings }),
+        ...(channelDecision.pair.model !== null && {
+          model: channelDecision.pair.model,
+        }),
+        ...(channelDecision.pair.settings && {
+          settings: channelDecision.pair.settings,
+        }),
       }),
     };
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {

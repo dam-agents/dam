@@ -1,5 +1,5 @@
-// TEST_OVERVIEW: A channel runs on its own profile; a channel without one keeps the chain it always had, and a profile that cannot run on the agent stops the turn rather than running on a substitute.
-import { describe, expect, it, vi } from "vitest";
+// TEST_OVERVIEW: What a channel's turns run on. A channel that names a profile runs on it; one that names none predates profiles and keeps the chain it always had; and a profile that cannot run on the agent is a refusal with its reason, never another model.
+import { describe, expect, it } from "vitest";
 import { channelTurnPair } from "../../modules/channels/domain/channel-pair.js";
 
 const PAIR = {
@@ -8,45 +8,63 @@ const PAIR = {
   model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
 };
 
-describe("the pair a channel's turns run on", () => {
+const resolved = (overrides: Record<string, unknown> = {}) => ({
+  pair: PAIR,
+  profile: { name: "Fast review" },
+  unavailable: null,
+  ...overrides,
+});
+
+describe("what a channel's turns run on", () => {
   /** TEST_SCENARIO: the channel names a profile, so its turns run on that
    * profile's values. */
   it("runs on the channel's profile", async () => {
-    const fallback = vi.fn(async () => null);
-    const pair = await channelTurnPair({
+    const decision = await channelTurnPair({
       profileId: "profile-1",
       agentId: "agent-1",
-      fallback,
-      resolveProfile: async () => ({ pair: PAIR, unavailable: null }),
+      resolveProfile: async () => resolved(),
     });
-    expect(pair).toEqual(PAIR);
-    expect(fallback).not.toHaveBeenCalled();
+    expect(decision).toEqual({ kind: "profile", pair: PAIR });
   });
 
-  /** TEST_SCENARIO: a channel from before profiles has none, and keeps the chat
-   * default it followed. */
-  it("falls back to the chat default when the channel names no profile", async () => {
-    const pair = await channelTurnPair({
+  /** TEST_SCENARIO: a channel from before profiles names none, and keeps the
+   * agent's default it followed. */
+  it("leaves the agent's default in place when the channel names no profile", async () => {
+    const decision = await channelTurnPair({
       profileId: null,
       agentId: "agent-1",
-      fallback: async () => PAIR,
       resolveProfile: async () => null,
     });
-    expect(pair).toEqual(PAIR);
+    expect(decision).toEqual({ kind: "none" });
   });
 
   /** TEST_SCENARIO: a profile whose provider the agent lost cannot run, and the
-   * turn reports no pair rather than another model. */
-  it("reports no pair for a profile that cannot run here", async () => {
-    const pair = await channelTurnPair({
+   * turn is refused with the profile's name and the reason, which is not the
+   * same as a channel that names no profile at all. */
+  it("refuses with the reason for a profile that cannot run here", async () => {
+    const decision = await channelTurnPair({
       profileId: "profile-1",
       agentId: "agent-1",
-      fallback: async () => PAIR,
-      resolveProfile: async () => ({
-        pair: PAIR,
-        unavailable: { detail: "AWS Bedrock is not connected" },
-      }),
+      resolveProfile: async () =>
+        resolved({
+          unavailable: { detail: "AWS Bedrock is not connected" },
+        }),
     });
-    expect(pair).toBeNull();
+    expect(decision).toEqual({
+      kind: "unavailable",
+      profileName: "Fast review",
+      detail: "AWS Bedrock is not connected",
+    });
+  });
+
+  /** TEST_SCENARIO: a reference the owner no longer holds is a refusal too, not
+   * a legacy channel. */
+  it("refuses a profile nobody holds", async () => {
+    const decision = await channelTurnPair({
+      profileId: "profile-gone",
+      agentId: "agent-1",
+      resolveProfile: async () => null,
+    });
+    expect(decision.kind).toBe("unavailable");
   });
 });

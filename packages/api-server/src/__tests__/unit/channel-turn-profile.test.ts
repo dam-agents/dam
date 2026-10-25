@@ -39,7 +39,9 @@ describe("a channel's turn", () => {
    * on that profile's pair rather than on whatever the agent defaults to. */
   it("starts a fresh session on the channel's profile", async () => {
     const h = await started(
-      telegramWorkerHarness({ channelPair: async () => PAIR }),
+      telegramWorkerHarness({
+        channelPair: async () => ({ kind: "profile", pair: PAIR }),
+      }),
     );
     h.sendDirect(JANE, "hello");
     await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
@@ -53,11 +55,30 @@ describe("a channel's turn", () => {
     });
   });
 
+  /** TEST_SCENARIO: a profile that cannot run stops the turn where it starts and
+   * the chat is told the reason, so it never answers on another model. */
+  it("refuses a profile that cannot run, and says why in the chat", async () => {
+    const h = await started(
+      telegramWorkerHarness({
+        channelPair: async () => ({
+          kind: "unavailable",
+          profileName: "Fast review",
+          detail: "AWS Bedrock is not connected",
+        }),
+      }),
+    );
+    h.sendDirect(JANE, "hello");
+    await vi.waitFor(() => expect(h.posts).toHaveLength(1));
+    expect(h.posts[0]).toContain("Fast review");
+    expect(h.posts[0]).toContain("AWS Bedrock is not connected");
+    expect(h.prompts).toHaveLength(0);
+  });
+
   /** TEST_SCENARIO: a chat bound before profiles names none, so the turn sends no
    * pair and the agent's own default applies as it always did. */
   it("sends no pair for a chat that names no profile", async () => {
     const h = await started(
-      telegramWorkerHarness({ channelPair: async () => null }),
+      telegramWorkerHarness({ channelPair: async () => ({ kind: "none" }) }),
     );
     h.sendDirect(JANE, "hello");
     await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
