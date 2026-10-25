@@ -45,7 +45,10 @@ export interface ProfilesServiceDeps {
     profileId: string;
     agentId: string;
     owner?: string;
-  }) => Promise<{ unavailable: { detail: string } | null } | null>;
+  }) => Promise<{
+    unavailable: { detail: string } | null;
+    grantableProvider: string | null;
+  } | null>;
 }
 
 /** UNIT_BOUNDARY_DESCRIPTION: what a new Agent starts on, so the owner's seeded profile is what its first chat runs on instead of waiting for the first-hello conversion. A restored Agent passes the same way: its profile references were cleared with the deletion, and a row that names neither shape is unbound. */
@@ -182,10 +185,12 @@ export function createProfilesService(
                       ? {
                           available: false,
                           reason: "this profile is not available here",
+                          attachable: false,
                         }
                       : {
                           available: resolved.unavailable === null,
                           reason: resolved.unavailable?.detail ?? null,
+                          attachable: resolved.grantableProvider !== null,
                         },
                   );
           const countsFor = counts.get(row.id) ?? {

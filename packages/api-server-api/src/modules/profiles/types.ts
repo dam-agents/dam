@@ -52,6 +52,7 @@ export interface ProfilesService {
 export type ProfileUnavailableReason =
   | "not-owned"
   | "no-provider"
+  | "provider-not-granted"
   | "rival-provider"
   | "harness-not-carried"
   | "model-not-listed";

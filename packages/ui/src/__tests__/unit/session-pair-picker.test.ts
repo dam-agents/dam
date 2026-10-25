@@ -257,23 +257,28 @@ describe("the profile view a routed picker opens on", () => {
   });
 
   /** TEST_SCENARIO: with profiles to pick from, the routed picker opens on the
-   * list, each row naming the model and provider it stands for, and the full
-   * picker one row away. An unavailable profile is crossed out with its reason
-   * rather than hidden. */
-  it("lists the profiles, then Custom, and crosses out the unavailable one", () => {
+   * model configuration: a primary-model section, a subagent section behind its
+   * toggle, and a custom row that says what it costs. An unavailable profile is
+   * disabled with its reason and the one action that would fix it. */
+  it("lists the profiles under both headings, and disables the unavailable one", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: "ibm/gpt-5.5",
+    };
     profilesState = [
       {
         id: "p1",
         name: "Fast review",
         harness: "pi",
-        providerTemplate: "anthropic",
-        model: "anthropic/claude-sonnet-5-5",
+        providerTemplate: "ibm-litellm",
+        model: "ibm/gpt-5.5",
         settings: {},
         seeded: false,
         createdAt: "",
         updatedAt: "",
         usage: { agents: 1, channels: 0, schedules: 0 },
-        availability: { available: true, reason: null },
+        availability: { available: true, reason: null, attachable: false },
       },
       {
         id: "p2",
@@ -289,6 +294,7 @@ describe("the profile view a routed picker opens on", () => {
         availability: {
           available: false,
           reason: "CurveBender (shared) is not connected",
+          attachable: false,
         },
       },
     ];
@@ -302,13 +308,19 @@ describe("the profile view a routed picker opens on", () => {
           onConnectProviders: state.connectProviders,
         }),
       );
+      expect(html).toContain("Model configuration");
+      expect(html).toContain("Primary model");
+      expect(html).toContain("Subagent model");
+      expect(html).toContain("Let the agent pick");
       expect(html).toContain("Fast review");
-      expect(html).toContain("Manage profiles");
-      expect(html).toContain("Custom");
-      expect(html).toContain("line-through");
+      expect(html).toContain("Custom selection");
+      expect(html).toContain("harnesses");
+      expect(html).not.toContain("line-through");
       expect(html).toContain("CurveBender (shared) is not connected");
+      expect(html).toContain("Configure providers");
     } finally {
       profilesState = [];
+      state.chosen = null;
     }
   });
 });

@@ -26,8 +26,9 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import {
-  PlatformSubagentSlot,
   ProfileList,
+  SaveAsProfileRow,
+  SubagentSection,
 } from "../../profiles/components/profile-list.js";
 import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
@@ -62,6 +63,7 @@ import {
   settingDefaults,
   settingsForModel,
 } from "../lib/session-settings.js";
+import { subagentProfileOf, withSubagent } from "../lib/subagent-choice.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { DetachProviderMessage } from "./detach-provider-message.js";
 import { SessionModelList } from "./session-model-list.js";
@@ -126,7 +128,7 @@ export function SessionPairPicker(props: Props) {
 
   const providers = useProviderConnections(agentId);
   const usage = useProviderUsage(agentId);
-  const { revoke, pending: revoking } = useGrantProvider(agentId);
+  const { grant, revoke, pending: revoking } = useGrantProvider(agentId);
   const attachDialog = useAttachProvidersDialog(agentId);
   const pending = revoking || attachDialog.pending;
   const attach = (connection: { id: string }) =>
@@ -224,6 +226,9 @@ export function SessionPairPicker(props: Props) {
       { profileId: profile.id },
     );
   };
+  /* UNIT_BOUNDARY_DESCRIPTION: what the view shows about the subagent slot and
+   * about what "Custom selection" costs, both read rather than kept in state. */
+  const subagentProfileId = subagentProfileOf(pair, profiles)?.id ?? null;
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
   const catalogModels = useHarnessCatalogModels(
@@ -233,6 +238,26 @@ export function SessionPairPicker(props: Props) {
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
+  /* UNIT_BOUNDARY_DESCRIPTION: the counts a person judges "Custom selection" by — the harnesses and models this agent can run. */
+  const catalogCounts = {
+    harnesses: harnesses.length,
+    models: groups.reduce((total, group) => total + group.models.length, 0),
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: an unavailable profile is repaired before it is
+   * picked: the owner's Connection of its provider is attached to this agent,
+   * whose grant refuses a rival alias, and then the pick is made. */
+  const attachAndPick = (profile: ProfileWithUsage) => {
+    const connection = providers.owned.find(
+      (p) => p.templateId === profile.providerTemplate,
+    );
+    if (!connection) {
+      navigateToSettings("providers");
+      return;
+    }
+    void grant(connection.id).then((ok) => {
+      if (ok) chooseProfile(profile);
+    });
+  };
   const confirmDisconnect = (name: string, id: string) => {
     const provider = providers.granted.find((p) => p.id === id);
     return void showConfirm(
@@ -330,35 +355,30 @@ export function SessionPairPicker(props: Props) {
               <ProfileList
                 profiles={profiles}
                 current={pair}
+                counts={catalogCounts}
                 onPick={chooseProfile}
                 onCustom={() => setCustom(true)}
+                onAttach={attachAndPick}
                 onManage={() => navigateToSettings("providers")}
               />
-              {capability?.platformSubagentSettings === true && (
-                <PlatformSubagentSlot
-                  profiles={profiles}
-                  value={profileOfSlot(pair, profiles)?.id ?? null}
-                  onPick={(profile) => {
-                    if (!pair) return;
-                    /* UNIT_BOUNDARY_DESCRIPTION: the slot's profile is not the
-                     * profile this pick holds, so a save must not offer to
-                     * update it. */
-                    const next = withSlot(pair, profile);
-                    choose(next, {
-                      platformSubagentProfileId: profile?.id ?? null,
+              <SubagentSection
+                profiles={profiles}
+                selectedId={subagentProfileId}
+                onAgentPicks={() => {
+                  if (pair)
+                    choose(withSubagent(pair, null), {
+                      platformSubagentProfileId: null,
                     });
-                  }}
-                />
-              )}
-              {pair && (
-                <button
-                  type="button"
-                  onClick={() => setSavingProfile(true)}
-                  className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  Save as a profile
-                </button>
-              )}
+                }}
+                onPick={(profile) => {
+                  if (pair)
+                    choose(withSubagent(pair, profile), {
+                      platformSubagentProfileId: profile.id,
+                    });
+                }}
+                onAttach={attachAndPick}
+                onManage={() => navigateToSettings("providers")}
+              />
             </div>
           ) : (
             <>
@@ -373,15 +393,16 @@ export function SessionPairPicker(props: Props) {
                 </button>
               )}
               {routed && pair && (
-                <button
-                  type="button"
-                  onClick={() => setSavingProfile(true)}
-                  className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  {fromProfile
-                    ? `Update “${fromProfile.name}”`
-                    : "Save as a profile"}
-                </button>
+                <div className="px-1">
+                  <SaveAsProfileRow
+                    label={
+                      fromProfile
+                        ? `Update “${fromProfile.name}”`
+                        : "Save as a profile"
+                    }
+                    onClick={() => setSavingProfile(true)}
+                  />
+                </div>
               )}
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
                 {harnesses.length > 0 && (
@@ -833,38 +854,5 @@ function HarnessModelCount({
     <span className="ml-auto shrink-0 text-xs text-muted-foreground">
       {count} {count === 1 ? "model" : "models"}
     </span>
-  );
-}
-
-/** UNIT_BOUNDARY_DESCRIPTION: the slot stores the profile, and the session runs on the harness and model it gives, which is all a slot contributes (D93). */
-function withSlot(
-  pair: SessionPair,
-  profile: ProfileWithUsage | null,
-): SessionPair {
-  const settings = { ...(pair.settings ?? {}) };
-  delete settings["platformSubagent.harness"];
-  delete settings["platformSubagent.model"];
-  if (profile !== null) {
-    settings["platformSubagent.harness"] = profile.harness;
-    settings["platformSubagent.model"] = profile.model;
-  }
-  return {
-    ...pair,
-    ...(Object.keys(settings).length > 0
-      ? { settings }
-      : { settings: undefined }),
-  };
-}
-
-/** UNIT_BOUNDARY_DESCRIPTION: which profile's harness and model the slot currently names, so the dropdown shows the choice rather than an empty row. */
-function profileOfSlot(
-  pair: SessionPair | null,
-  profiles: readonly ProfileWithUsage[],
-): ProfileWithUsage | null {
-  const harness = pair?.settings?.["platformSubagent.harness"];
-  const model = pair?.settings?.["platformSubagent.model"];
-  if (harness === undefined || model === undefined) return null;
-  return (
-    profiles.find((p) => p.harness === harness && p.model === model) ?? null
   );
 }

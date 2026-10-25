@@ -73,6 +73,10 @@ export const profileSchema = z.object({
 export const profileAvailabilitySchema = z.object({
   available: z.boolean(),
   reason: z.string().nullable(),
+  /* UNIT_BOUNDARY_DESCRIPTION: the owner holds a Connection of the profile's
+   * provider and the agent does not, so a picker can attach it in one click
+   * instead of sending the user to another page. */
+  attachable: z.boolean(),
 });
 
 export const profileViewSchema = profileSchema.extend({

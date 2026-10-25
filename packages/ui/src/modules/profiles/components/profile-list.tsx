@@ -1,4 +1,4 @@
-import { ChevronRight, Settings } from "@carbon/icons-react";
+import { ChevronRight, Save, Settings } from "@carbon/icons-react";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
 
 import { cn } from "@/lib/utils";
@@ -6,82 +6,220 @@ import { cn } from "@/lib/utils";
 import { profileDetail } from "../api/queries.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the profile view a picker opens on. A row names the
- * profile and the model and provider it stands for; one that cannot run on this
- * agent is crossed out with the reason in its title, never hidden. The last row
- * leads to the full picker, and the cogwheel to the page that manages profiles.
+ * UNIT_BOUNDARY_DESCRIPTION: the model configuration a picker opens on. Two
+ * sections of the same weight — the primary model and the subagent model — then
+ * the row that leads to the full picker. A profile that cannot run here stays
+ * where it is, disabled, and says why, with the one action that would fix it.
  */
 export function ProfileList({
   profiles,
   current,
+  counts,
   onPick,
   onCustom,
+  onAttach,
   onManage,
 }: {
   profiles: readonly ProfileWithUsage[];
   current: SessionPair | null;
+  counts: { harnesses: number; models: number };
   onPick: (profile: ProfileWithUsage) => void;
   onCustom: () => void;
+  onAttach: (profile: ProfileWithUsage) => void;
   onManage: () => void;
 }) {
   return (
     <div className="flex flex-col">
       <div className="flex h-6 items-center justify-between">
-        <span className="px-2 text-xs text-muted-foreground">Profile</span>
+        <span className="px-2 text-xs text-muted-foreground">
+          Model configuration
+        </span>
         <button
           type="button"
-          aria-label="Manage profiles"
-          title="Manage profiles"
+          aria-label="Configure providers"
+          title="Configure providers"
           onClick={onManage}
           className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <Settings size={14} />
         </button>
       </div>
-      <ul className="flex flex-col">
-        {profiles.map((profile) => {
-          const unavailable = profile.availability?.available === false;
-          const selected = current !== null && sameAsProfile(current, profile);
-          return (
-            <li key={profile.id}>
-              <button
-                type="button"
-                aria-current={selected ? "true" : undefined}
-                aria-disabled={unavailable ? true : undefined}
-                disabled={unavailable}
-                title={profile.availability?.reason ?? profileDetail(profile)}
-                onClick={() => onPick(profile)}
-                className={cn(
-                  "flex w-full min-w-0 flex-col rounded px-2 py-1 text-left hover:bg-muted",
-                  unavailable && "line-through opacity-60",
-                  selected && "font-medium text-foreground",
-                )}
-              >
-                <span className="truncate">{profile.name}</span>
-                <span className="truncate text-xs text-muted-foreground no-underline">
-                  {unavailable
-                    ? (profile.availability?.reason ?? profileDetail(profile))
-                    : profileDetail(profile)}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-        {profiles.length === 0 && (
-          <li className="px-2 py-1 text-muted-foreground">
-            No profiles yet. Pick a model below and save it as one.
-          </li>
-        )}
-      </ul>
+      <SectionHeading>Primary model</SectionHeading>
+      <ProfileChoices
+        profiles={profiles}
+        current={current}
+        onPick={onPick}
+        onAttach={onAttach}
+        onManage={onManage}
+      />
       <button
         type="button"
         onClick={onCustom}
-        className="mt-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="mt-1 flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
       >
-        Custom
-        <ChevronRight size={14} aria-hidden />
+        <span className="min-w-0">
+          <span className="block truncate text-foreground">
+            Custom selection
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {current === null || profiles.some((p) => sameAsProfile(current, p))
+              ? `${counts.harnesses} harnesses, ${counts.models} models`
+              : selectionLabel(current)}
+          </span>
+        </span>
+        <ChevronRight size={14} aria-hidden className="mt-0.5 shrink-0" />
       </button>
     </div>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: one heading size for both sections, so the subagent choice reads as the same kind of setting as the primary one. */
+export function SectionHeading({ children }: { children: string }) {
+  return (
+    <div className="flex h-6 items-center px-2 pt-1">
+      <h3 className="truncate text-2xs font-medium uppercase leading-[17px] tracking-[1.65px] text-muted-foreground">
+        {children}
+      </h3>
+    </div>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the rows a section offers. A profile that cannot run on this agent is disabled, keeps its normal styling, and shows why with the action that would fix it — attach a provider the owner already holds, or open the page that connects one. */
+export function ProfileChoices({
+  profiles,
+  current,
+  selectedId = null,
+  onPick,
+  onAttach,
+  onManage,
+}: {
+  profiles: readonly ProfileWithUsage[];
+  current: SessionPair | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: the subagent slot has no pair of its own, so it names the selected profile outright. */
+  selectedId?: string | null;
+  onPick: (profile: ProfileWithUsage) => void;
+  onAttach: (profile: ProfileWithUsage) => void;
+  onManage: () => void;
+}) {
+  return (
+    <ul className="flex flex-col">
+      {profiles.map((profile) => {
+        const unavailable = profile.availability?.available === false;
+        const selected =
+          profile.id === selectedId ||
+          (current !== null && sameAsProfile(current, profile));
+        return (
+          <li key={profile.id} className="flex flex-col">
+            <button
+              type="button"
+              aria-current={selected ? "true" : undefined}
+              aria-disabled={unavailable ? true : undefined}
+              disabled={unavailable}
+              title={profile.availability?.reason ?? profileDetail(profile)}
+              onClick={() => onPick(profile)}
+              className={cn(
+                "flex w-full min-w-0 flex-col rounded px-2 py-1 text-left hover:bg-muted disabled:pointer-events-none disabled:opacity-60",
+                selected && "font-medium text-foreground",
+              )}
+            >
+              <span className="truncate">{profile.name}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {unavailable
+                  ? (profile.availability?.reason ?? profileDetail(profile))
+                  : profileDetail(profile)}
+              </span>
+            </button>
+            {unavailable && (
+              <button
+                type="button"
+                onClick={() =>
+                  profile.availability?.attachable === true
+                    ? onAttach(profile)
+                    : onManage()
+                }
+                className="self-start px-2 pb-1 text-xs text-accent underline-offset-2 hover:underline"
+              >
+                {profile.availability?.attachable === true
+                  ? "Connect this provider"
+                  : "Configure providers"}
+              </button>
+            )}
+          </li>
+        );
+      })}
+      {profiles.length === 0 && (
+        <li className="px-2 py-1 text-muted-foreground">
+          No profiles yet. Pick a model in Custom selection and save it as one.
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one choice for both kinds of subagent, behind a
+ * toggle that lets the agent pick. Off, the same rows the primary model offers
+ * appear again; the values each kind of subagent takes from the pick are the
+ * resolution rule's, not the picker's.
+ */
+export function SubagentSection({
+  profiles,
+  selectedId,
+  onAgentPicks,
+  onPick,
+  onAttach,
+  onManage,
+}: {
+  profiles: readonly ProfileWithUsage[];
+  selectedId: string | null;
+  onAgentPicks: (on: boolean) => void;
+  onPick: (profile: ProfileWithUsage) => void;
+  onAttach: (profile: ProfileWithUsage) => void;
+  onManage: () => void;
+}) {
+  return (
+    <div className="flex flex-col">
+      <SectionHeading>Subagent model</SectionHeading>
+      <label className="flex items-center gap-2 px-2 py-1 text-sm text-foreground">
+        <input
+          type="checkbox"
+          aria-label="Let the agent pick"
+          checked={selectedId === null}
+          onChange={(e) => onAgentPicks(e.target.checked)}
+        />
+        Let the agent pick
+      </label>
+      {selectedId !== null && (
+        <ProfileChoices
+          profiles={profiles}
+          current={null}
+          selectedId={selectedId}
+          onPick={onPick}
+          onAttach={onAttach}
+          onManage={onManage}
+        />
+      )}
+    </div>
+  );
+}
+
+/** UNIT_BOUNDARY_DESCRIPTION: the button the full picker carries at its foot — the only place a profile is created or updated, since that is where the values are. */
+export function SaveAsProfileRow({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      <Save size={14} aria-hidden />
+      {label}
+    </button>
   );
 }
 
@@ -99,52 +237,5 @@ export function sameAsProfile(
   );
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot (D93) offers the same
- * profiles and stores its own reference, which contributes only a harness and a
- * model; it is shown only for a harness that can pass those settings on.
- */
-export function PlatformSubagentSlot({
-  profiles,
-  value,
-  onPick,
-}: {
-  profiles: readonly ProfileWithUsage[];
-  value: string | null;
-  onPick: (profile: ProfileWithUsage | null) => void;
-}) {
-  const current = profiles.find((profile) => profile.id === value) ?? null;
-  return (
-    <label className="flex flex-col gap-0.5 rounded px-2 py-1">
-      <span className="text-xs text-muted-foreground">
-        Platform subagent model
-      </span>
-      <select
-        aria-label="Platform subagent model"
-        value={value ?? ""}
-        onChange={(e) => {
-          const next = profiles.find((p) => p.id === e.target.value) ?? null;
-          onPick(next);
-        }}
-        className="w-full rounded border border-input bg-transparent px-2 py-1 text-sm text-foreground"
-      >
-        <option value="">Agent picks</option>
-        {profiles.map((profile) => (
-          <option
-            key={profile.id}
-            value={profile.id}
-            disabled={profile.availability?.available === false}
-          >
-            {profile.name}
-            {profile.availability?.available === false ? " — unavailable" : ""}
-          </option>
-        ))}
-      </select>
-      {current?.availability?.available === false && (
-        <span className="text-xs text-warning">
-          {current.availability.reason}
-        </span>
-      )}
-    </label>
-  );
-}
+const selectionLabel = (pair: SessionPair): string =>
+  [pair.harness, pair.model ?? "no model"].filter(Boolean).join(" · ");

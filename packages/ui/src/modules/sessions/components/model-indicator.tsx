@@ -1,5 +1,6 @@
 import { ChevronLeft } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
+import type { ProfileWithUsage } from "api-server-api";
 import {
   aliasForProviderType,
   type DefaultKind,
@@ -21,8 +22,9 @@ import {
 import { useStore } from "../../../store.js";
 import { useProfiles } from "../../profiles/api/queries.js";
 import {
-  PlatformSubagentSlot,
   ProfileList,
+  SaveAsProfileRow,
+  SubagentSection,
 } from "../../profiles/components/profile-list.js";
 import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
@@ -44,6 +46,7 @@ import {
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
 import { settingDefaults } from "../lib/session-settings.js";
+import { subagentProfileOf, withSubagent } from "../lib/subagent-choice.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
@@ -94,6 +97,23 @@ export function ModelIndicator({
    * the profiles that run on it, and the slot's options and its current value
    * read the same list. */
   const sessionProfiles = profiles.filter((p) => p.harness === harness);
+  const withSubagentSettings = (profile: ProfileWithUsage | null) => {
+    const next = withSubagent(
+      { harness, provider, model, ...(settings && { settings }) },
+      profile,
+      capability,
+      groups.flatMap((g) => g.models.map((m) => ({ name: m.name }))),
+    );
+    const keys = [
+      "platformSubagent.harness",
+      "platformSubagent.model",
+      "subagentModel",
+      "subagentEffort",
+    ];
+    return Object.fromEntries(
+      keys.map((id) => [id, next.settings?.[id] ?? ""]),
+    );
+  };
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { data: catalog } = useHarnessCatalog();
   const capability = carried.find((h) => h.name === harness);
@@ -132,6 +152,28 @@ export function ModelIndicator({
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
+  /* UNIT_BOUNDARY_DESCRIPTION: the values the view reads — what "Custom
+   * selection" costs and how a repair attaches a provider — derived from the
+   * pair and the connections, never kept in state. */
+  const catalogCounts = {
+    harnesses: carried.length,
+    models: groups.reduce((total, group) => total + group.models.length, 0),
+  };
+  const attachAndPick = (profile: ProfileWithUsage) => {
+    const connection = owned.find(
+      (p) => p.templateId === profile.providerTemplate,
+    );
+    if (!connection) {
+      navigateToSettings("providers");
+      return;
+    }
+    void grant(connection.id).then((ok) => {
+      if (ok) onChoose(profile.model);
+    });
+  };
+  /* UNIT_BOUNDARY_DESCRIPTION: the subagent section writes the slot's keys and
+   * the native ones through the ordinary configure call, empty string clearing
+   * a key, so the session and its next saved default agree. */
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
     ? []
@@ -308,36 +350,32 @@ export function ModelIndicator({
                     kind === "chat" ? { profileId: profile.id } : undefined,
                   );
                 }}
+                counts={catalogCounts}
+                onAttach={attachAndPick}
                 onCustom={() => setCustom(true)}
                 onManage={() => navigateToSettings("providers")}
               />
-              {capability?.platformSubagentSettings === true && (
-                <PlatformSubagentSlot
-                  profiles={sessionProfiles}
-                  value={
-                    sessionProfiles.find(
-                      (p) =>
-                        p.harness === settings["platformSubagent.harness"] &&
-                        p.model === settings["platformSubagent.model"],
-                    )?.id ?? null
-                  }
-                  onPick={(profile) =>
-                    onConfigure({
-                      "platformSubagent.harness": profile?.harness ?? "",
-                      "platformSubagent.model": profile?.model ?? "",
-                    })
-                  }
-                />
-              )}
-              <button
-                type="button"
-                onClick={() => setSavingProfile(true)}
-                className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                {fromProfile
-                  ? `Update “${fromProfile.name}”`
-                  : "Save as a profile"}
-              </button>
+              <SubagentSection
+                /* UNIT_BOUNDARY_DESCRIPTION: a platform sub-agent is another
+                 * agent, so this section offers every profile; the native rule
+                 * decides what the session's own harness can take from it. */
+                profiles={profiles}
+                selectedId={
+                  subagentProfileOf(
+                    {
+                      harness,
+                      provider,
+                      model,
+                      ...(settings && { settings }),
+                    },
+                    sessionProfiles,
+                  )?.id ?? null
+                }
+                onAgentPicks={() => onConfigure(withSubagentSettings(null))}
+                onPick={(profile) => onConfigure(withSubagentSettings(profile))}
+                onAttach={attachAndPick}
+                onManage={() => navigateToSettings("providers")}
+              />
             </div>
           ) : routed ? (
             <div
@@ -353,6 +391,16 @@ export function ModelIndicator({
                   <ChevronLeft size={14} aria-hidden />
                   Use a profile
                 </button>
+              )}
+              {model !== null && (
+                <SaveAsProfileRow
+                  label={
+                    fromProfile
+                      ? `Update “${fromProfile.name}”`
+                      : "Save as a profile"
+                  }
+                  onClick={() => setSavingProfile(true)}
+                />
               )}
               <SessionModelList
                 agentId={agentId}
