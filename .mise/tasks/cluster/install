@@ -724,19 +724,37 @@ fi
 # and the bridge's X-Forwarded-Proto is what tells Keycloak the browser uses
 # https.
 # A VM provisioned before the entrypoints moved into the cluster's config still
-# carries the static `traefik-config.yaml` manifest the lima template used to
-# write. k3s re-applies every manifest in that directory at each start, and it
-# deletes the object when its manifest goes, so the manifest must not stay: the
-# HelmChartConfig this install merges into is the only writer, and it survives a
-# restart. Remove the stale file and wait for the object it owned to go, before
-# the reservation below writes it again.
-if node_sh test -e /var/lib/rancher/k3s/server/manifests/traefik-config.yaml 2>/dev/null; then
-  echo "Removing the static Traefik manifest an older VM was provisioned with..."
+# has the static `traefik-config.yaml` manifest the lima template used to write,
+# and k3s keeps an Addon for it whose applied content is that one entrypoint. The
+# addon controller re-applies that content at every start, which would reset the
+# merged config and lose every install's port. So: keep the live values, remove
+# the file, the addon and the object's k3s ownership, and put the values back.
+# The HelmChartConfig the reservation below merges into is then the only writer,
+# and it survives a restart.
+if node_sh test -e /var/lib/rancher/k3s/server/manifests/traefik-config.yaml 2>/dev/null ||
+   kubectl -n kube-system get addon traefik-config >/dev/null 2>&1; then
+  echo "Taking the Traefik config away from the k3s manifest an older VM was provisioned with..."
+  KEPT_PORTS="$(kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null || true)"
   node_sh rm -f /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
-  for _ in $(seq 1 30); do
-    kubectl -n kube-system get helmchartconfig traefik >/dev/null 2>&1 || break
-    sleep 2
-  done
+  kubectl -n kube-system delete addon traefik-config --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n kube-system label helmchartconfig traefik objectset.rio.cattle.io/hash- >/dev/null 2>&1 || true
+  kubectl -n kube-system annotate helmchartconfig traefik \
+    objectset.rio.cattle.io/applied- objectset.rio.cattle.io/id- objectset.rio.cattle.io/owner-gvk- \
+    objectset.rio.cattle.io/owner-name- objectset.rio.cattle.io/owner-namespace- >/dev/null 2>&1 || true
+  # An addon's removal can take the object it applied with it; the reservations
+  # of the other installs live in that object.
+  if [ -n "$KEPT_PORTS" ] && ! kubectl -n kube-system get helmchartconfig traefik >/dev/null 2>&1; then
+    kubectl apply -f - >/dev/null <<YAML
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |
+$(printf '%s' "$KEPT_PORTS" | sed 's/^/    /')
+YAML
+  fi
 fi
 
 TRAEFIK_INSECURE=""
