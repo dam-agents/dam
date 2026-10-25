@@ -782,6 +782,74 @@ describe("a schedule's profile", () => {
   });
 });
 
+describe("a schedule's quiet hours at save", () => {
+  const stored: Schedule = {
+    id: SCHEDULE_ID,
+    agentId: "agent-1",
+    name: "daily",
+    spec: {
+      version: "1",
+      type: "rrule",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      quietHours: [{ startTime: "22:00", endTime: "06:00", enabled: true }],
+      task: "do the thing",
+      enabled: true,
+      createdBy: "user",
+    },
+  };
+
+  function save(input: {
+    quietHours?: { startTime: string; endTime: string; enabled: boolean }[];
+  }) {
+    let saved: ScheduleSpec | undefined;
+    const service = createSchedulesService({
+      repo: {
+        async get() {
+          return stored;
+        },
+        async getRaw() {
+          return stored;
+        },
+        async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
+          saved = spec;
+          return { ...stored, spec };
+        },
+        async updateName() {},
+      } as unknown as SchedulesRepository,
+      runner: { async sync() {} } as unknown as SchedulerRunner,
+      owner: OWNER,
+      agentBinding: "*",
+      ownedProfile: async () => true,
+    });
+    return service
+      .updateRRule({
+        ...baseUpdate,
+        quietHours: undefined,
+        timezone: "UTC",
+        ...input,
+      })
+      .then(() => saved);
+  }
+
+  /** TEST_SCENARIO: a form that changed nothing sends no quiet hours, and the
+   * stored ones stand. */
+  it("leaves the stored quiet hours when the save names none", async () => {
+    const saved = await save({});
+    const quietHours = saved?.type === "rrule" ? saved.quietHours : undefined;
+    expect(quietHours).toEqual([
+      { startTime: "22:00", endTime: "06:00", enabled: true },
+    ]);
+  });
+
+  /** TEST_SCENARIO: an explicit empty list clears the stored quiet hours. */
+  it("clears them on an explicit empty list", async () => {
+    const saved = await save({ quietHours: [] });
+    const quietHours = saved?.type === "rrule" ? saved.quietHours : undefined;
+    expect(quietHours).toBeUndefined();
+  });
+});
+
 describe("a schedule's profile at save", () => {
   /** TEST_SCENARIO: a profile that cannot run on the agent is refused at save
    * with its reason, rather than stored to refuse every fire (QA D4). */

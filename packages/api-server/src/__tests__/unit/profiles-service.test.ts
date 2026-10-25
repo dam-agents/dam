@@ -81,6 +81,10 @@ function fakeRepo(opts: {
   counts?: Map<string, { agents: number; channels: number; schedules: number }>;
 }): Fake {
   const rows = [...(opts.rows ?? [])];
+  /* UNIT_BOUNDARY_DESCRIPTION: every write takes the next millisecond, so two
+   * writes in one test are two versions, as the database's timestamps are. */
+  let clock = Date.parse("2026-10-20T00:00:00.000Z");
+  const tick = () => new Date((clock += 1));
   const calls: Fake["calls"] = {
     seeds: [],
     inserts: [],
@@ -108,11 +112,19 @@ function fakeRepo(opts: {
       rows.push(inserted);
       return inserted;
     },
-    update: async (_owner, id, profile) => {
+    update: async (_owner, id, profile, options) => {
       calls.updates.push({ id, profile });
       const at = rows.findIndex((r) => r.id === id);
       if (at === -1) return null;
-      const updated = { ...rows[at]!, ...profile, updatedAt: new Date() };
+      /* UNIT_BOUNDARY_DESCRIPTION: a compare-and-set lands only on the version
+       * the caller read, as the repository's own does. */
+      if (options?.expect && +rows[at]!.updatedAt !== +options.expect)
+        return null;
+      const updated = {
+        ...rows[at]!,
+        ...profile,
+        updatedAt: options?.at ?? tick(),
+      };
       rows[at] = updated;
       return updated;
     },
@@ -553,6 +565,40 @@ describe("profiles service — the fan-out of an edit", () => {
     expect(err.message).toContain("no agent can run this profile");
     const kept = fake.rows.find((r) => r.id === "p1");
     expect(kept?.settings).toEqual(before.settings);
+  });
+
+  /** TEST_SCENARIO: an edit that lands while the fan-out runs is not undone by
+   * the revert of a rejected one. */
+  it("does not undo a later edit when it reverts a rejected one", async () => {
+    const before = row({ id: "p1", seed: null, ...valid });
+    const fake = fakeRepo({
+      rows: [before],
+      usage: {
+        agents: [{ id: "agent-1", slots: ["chat"] }],
+        channels: [],
+        schedules: [],
+      },
+    });
+    const err = await refusal(() =>
+      createProfilesService({
+        repo: fake.repo,
+        owner: "owner-1",
+        catalog,
+        seededProvider: shared,
+        fanOut: {
+          republishDefaults: async () => {
+            /* TEST_SCENARIO: a second edit lands while the fan-out runs. */
+            await fake.repo.update("owner-1", "p1", {
+              model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2040",
+            });
+            return { published: false, reason: "no agent can run it" };
+          },
+        },
+      }).update({ id: "p1", settings: { effort: "ultra-mega" } }),
+    );
+    expect(err.code).toBe("BAD_REQUEST");
+    const kept = fake.rows.find((r) => r.id === "p1");
+    expect(kept?.model).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2040");
   });
 
   it("fans out to nobody when nothing points at the profile", async () => {

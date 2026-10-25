@@ -71,10 +71,15 @@ export interface ProfilesRepository {
     profileId: string,
   ): Promise<void>;
   insert(owner: string, profile: ProfileWrite): Promise<ProfileRow>;
+  /** UNIT_BOUNDARY_DESCRIPTION: `expect` makes the write a compare-and-set — it
+   * lands only while the row is still the version the caller read, so a write
+   * that only undoes another one cannot undo a later edit — and `at` names the
+   * version the row is written as. */
   update(
     owner: string,
     id: string,
     profile: Partial<ProfileWrite>,
+    options?: { expect?: Date; at?: Date },
   ): Promise<ProfileRow | null>;
   /** UNIT_BOUNDARY_DESCRIPTION: one transaction holds the profile row, so an assignment made while the delete runs is either seen by the usage recheck or refused by the vanished row. */
   deleteIfUnused(
@@ -270,9 +275,9 @@ export function createProfilesRepository(
       return rowToProfile(rows[0]!);
     },
 
-    async update(owner, id, profile) {
+    async update(owner, id, profile, options) {
       const patch: Partial<typeof profiles.$inferInsert> = {
-        updatedAt: new Date(),
+        updatedAt: options?.at ?? new Date(),
       };
       if (profile.name !== undefined) patch.name = profile.name;
       if (profile.harness !== undefined) patch.harness = profile.harness;
@@ -283,7 +288,15 @@ export function createProfilesRepository(
       const rows = await db
         .update(profiles)
         .set(patch)
-        .where(and(eq(profiles.owner, owner), eq(profiles.id, id)))
+        .where(
+          and(
+            eq(profiles.owner, owner),
+            eq(profiles.id, id),
+            ...(options?.expect
+              ? [eq(profiles.updatedAt, options.expect)]
+              : []),
+          ),
+        )
         .returning();
       return rows[0] ? rowToProfile(rows[0]) : null;
     },
