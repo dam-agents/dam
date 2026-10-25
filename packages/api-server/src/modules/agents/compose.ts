@@ -80,6 +80,7 @@ export interface AgentsInstallSettings {
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
+  slackChannelMembership?: AgentsServiceDeps["slackChannelMembership"];
   agentStateCache: AgentStateCache;
   agentStore: { authority: AgentStoreMode };
   namespace: string;
@@ -161,6 +162,7 @@ export function composeAgentsModule(deps: {
       },
       findSlackBindings: findSlackBindingsByChannelId(deps.db),
       resolveSlackWorkspace: deps.resolveSlackWorkspace,
+      slackChannelMembership: deps.slackChannelMembership,
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
       resolveSlackConversationLabels: deps.resolveSlackConversationLabels,

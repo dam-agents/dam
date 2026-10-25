@@ -105,7 +105,7 @@ var testConfig = &config.Config{
 	AgentBase: config.AgentBase{
 		VMIdleTimeout: config.Duration(5 * time.Minute),
 	},
-	AgentTemplateDefaults: config.AgentTemplateDefaults{
+	HarnessTemplateDefaults: config.HarnessTemplateDefaults{
 		StorageSize: "10Gi",
 	},
 }

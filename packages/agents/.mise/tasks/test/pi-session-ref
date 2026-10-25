@@ -10,7 +10,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { acpClient, responsesText } from "../../../test-lib/acp-client.mjs";
+import { acpClient, fakePlatformMcp, responsesText } from "../../../test-lib/acp-client.mjs";
 
 // TEST_OVERVIEW: The real pi-acp, patched as harness-chat loads it, drives the real Pi against a fake Model Router and a fake platform MCP server. The home holds the platform entry as the pi-agent manifest's mcp-entry binding writes it, its header naming PLATFORM_SESSION_REF. The fake server records the session ref of each connection, one initialize per connection.
 
@@ -44,49 +44,16 @@ const router = createServer((req, res) => {
   });
 });
 
-const refs = [];
-const waiters = [];
-const platform = createServer((req, res) => {
-  if (req.method !== "POST") {
-    res.statusCode = 405;
-    return res.end();
-  }
-  let body = "";
-  req.on("data", (chunk) => { body += chunk; });
-  req.on("end", () => {
-    const message = JSON.parse(body);
-    if (message.method === "initialize") {
-      refs.push(req.headers[HEADER]);
-      for (const w of waiters.splice(0)) w();
-    }
-    if (message.id === undefined) {
-      res.statusCode = 202;
-      return res.end();
-    }
-    const result = message.method === "initialize"
-      ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "platform", version: "0" } }
-      : message.method === "tools/list" ? { tools: [] } : {};
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
-  });
-});
-const connections = async (count, timeoutMs = 60_000) => {
-  const deadline = Date.now() + timeoutMs;
-  while (refs.length < count) {
-    const left = deadline - Date.now();
-    assert.ok(left > 0, `the platform server saw ${refs.length} of ${count} connections: ${JSON.stringify(refs)}`);
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, left);
-      waiters.push(() => { clearTimeout(timer); resolve(); });
-    });
-  }
-  return refs.slice(0, count);
+const platform = await fakePlatformMcp();
+const refs = () => platform.calls.filter((c) => c.method === "initialize").map((c) => c.headers[HEADER]);
+const connections = async (count) => {
+  await platform.waitFor((calls) => calls.filter((c) => c.method === "initialize").length >= count, `${count} platform connections`);
+  return refs().slice(0, count);
 };
 
 router.listen(0, "127.0.0.1");
-platform.listen(0, "127.0.0.1");
-await Promise.all([once(router, "listening"), once(platform, "listening")]);
-const platformUrl = `http://127.0.0.1:${platform.address().port}/mcp`;
+await once(router, "listening");
+const platformUrl = platform.url;
 
 const shared = join(home, ".pi/agent");
 mkdirSync(shared, { recursive: true });

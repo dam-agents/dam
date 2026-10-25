@@ -6,6 +6,7 @@ import {
   WarningAlt,
 } from "@carbon/icons-react";
 import {
+  ChannelType,
   type ConnectionTemplateView,
   formatEgressRuleInline,
   LINKED_KIT_CATALOG,
@@ -368,7 +369,13 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const connections = useAppConnections();
-  const agents = useAgents().data?.list;
+  const agentsData = useAgents().data;
+  const agents = agentsData?.list;
+  const availableChannels = agentsData?.availableChannels ?? {};
+  const offersChannels = !!(
+    availableChannels[ChannelType.Slack] ||
+    availableChannels[ChannelType.Telegram]
+  );
   const apply = useApplyStarterKit();
   const returnPath = routeToPath({
     view: "starter-kit",
@@ -668,7 +675,7 @@ function KitDetail({
 
           {(connectionRequirements(kit).length > 0 ||
             kit.schedules.length > 0 ||
-            kit.channels.length > 0) && (
+            offersChannels) && (
             <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
               You&apos;ll set up
             </h2>
@@ -736,15 +743,14 @@ function KitDetail({
             </section>
           )}
 
-          {kit.channels.length > 0 && (
-            <KitChannelsSection
-              kit={kit}
-              slackChannelId={form.slackChannelId}
-              onSlackChannelIdChange={(slackChannelId) =>
-                update({ slackChannelId })
-              }
-            />
-          )}
+          <KitChannelsSection
+            kit={kit}
+            available={availableChannels}
+            slackChannelIds={form.slackChannelIds}
+            onSlackChannelIdsChange={(slackChannelIds) =>
+              update({ slackChannelIds })
+            }
+          />
         </DialogBody>
 
         <DialogFooter className="justify-between">

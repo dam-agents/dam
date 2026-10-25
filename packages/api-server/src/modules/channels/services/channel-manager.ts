@@ -15,6 +15,10 @@ import type {
   SlackLabelledConversation,
 } from "../infrastructure/slack-gateway.js";
 import type { SlackConversationStanding } from "./slack-workspace-probe.js";
+import type {
+  SlackChannelChoices,
+  SlackChannelMembership,
+} from "../domain/slack-channel-choices.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
 import type { BlobHandoff } from "../../../core/blob-handoff.js";
@@ -114,6 +118,12 @@ export interface ChannelManager {
     slackChannelId: string,
     teamId: string,
   ): Promise<SlackConversationStanding>;
+  slackChannelChoices(keycloakSub: string): Promise<SlackChannelChoices>;
+  slackChannelMembership(
+    keycloakSub: string,
+    slackChannelId: string,
+    teamId: string,
+  ): Promise<SlackChannelMembership>;
   readThread(
     instanceName: string,
     channelType: ChannelType,
@@ -149,6 +159,8 @@ const METHOD_NAMES = [
   ...ADDRESSED_METHODS,
   "resolveConversationLabels",
   "slackConversationStanding",
+  "slackChannelChoices",
+  "slackChannelMembership",
   "notifyPerson",
 ] as const;
 
@@ -183,6 +195,8 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   describeMessageReactions: forInstance.rest(z.unknown()),
   resolveConversationLabels: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
+  slackChannelChoices: z.tuple([z.string()]),
+  slackChannelMembership: z.tuple([z.string(), z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
   notifyPerson: z.tuple([
@@ -227,6 +241,21 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
   ),
   slackConversationStanding: z.enum(["member", "known", "unknown"]),
+  slackChannelChoices: z.discriminatedUnion("linked", [
+    z.object({ linked: z.literal(false) }),
+    z.object({
+      linked: z.literal(true),
+      channels: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          teamId: z.string(),
+          isPrivate: z.boolean(),
+        }),
+      ),
+    }),
+  ]),
+  slackChannelMembership: z.enum(["member", "not-member", "unlinked"]),
   readThread: z.union([threadResultSchema, z.object({ error: z.string() })]),
   fetchAttachment: z.union([
     attachmentResultSchema,
@@ -433,6 +462,22 @@ export function createChannelManager(deps: {
       deps.slackWorker
         ? deps.slackWorker.conversationStanding(slackChannelId, teamId)
         : Promise.reject(new Error("slack worker not available")),
+    slackChannelChoices: (keycloakSub: string): Promise<SlackChannelChoices> =>
+      deps.slackWorker
+        ? deps.slackWorker.channelChoices(keycloakSub)
+        : Promise.resolve({ linked: false }),
+    slackChannelMembership: (
+      keycloakSub: string,
+      slackChannelId: string,
+      teamId: string,
+    ): Promise<SlackChannelMembership> =>
+      deps.slackWorker
+        ? deps.slackWorker.channelMembership(
+            keycloakSub,
+            slackChannelId,
+            teamId,
+          )
+        : Promise.reject(new Error("slack worker not available")),
     notifyPerson: async (keycloakSub: string, notice: PersonNotice) => {
       const { telegram } = notice;
       const results = await Promise.all([
@@ -611,6 +656,25 @@ export function createChannelManager(deps: {
         [slackChannelId, teamId],
         () =>
           explicitHandlers.slackConversationStanding(slackChannelId, teamId),
+      );
+    },
+
+    slackChannelChoices(keycloakSub) {
+      return dispatch("slackChannelChoices", [keycloakSub], () =>
+        explicitHandlers.slackChannelChoices(keycloakSub),
+      );
+    },
+
+    slackChannelMembership(keycloakSub, slackChannelId, teamId) {
+      return dispatch(
+        "slackChannelMembership",
+        [keycloakSub, slackChannelId, teamId],
+        () =>
+          explicitHandlers.slackChannelMembership(
+            keycloakSub,
+            slackChannelId,
+            teamId,
+          ),
       );
     },
 

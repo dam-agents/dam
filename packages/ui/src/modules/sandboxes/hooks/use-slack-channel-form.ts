@@ -26,28 +26,37 @@ import {
 
 export type { SlackChannel };
 
-const slackChannelFormSchema = z
-  .object({
-    channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
-    ambient: z.boolean(),
-    customEmojiEnabled: z.boolean(),
-    customEmoji: z.array(z.string()),
-    profile: z.string(),
-  })
-  .superRefine((values, ctx) => {
-    if (!values.customEmojiEnabled) return;
-    values.customEmoji.forEach((name, i) => {
-      if (!/^:?[a-z0-9_'+-]{1,100}:?$/.test(name.trim()))
+const slackChannelFormSchema = (editing: boolean) =>
+  z
+    .object({
+      channelIds: z.array(z.string()),
+      ambient: z.boolean(),
+      customEmojiEnabled: z.boolean(),
+      customEmoji: z.array(z.string()),
+      profile: z.string(),
+    })
+    .superRefine((values, ctx) => {
+      if (!editing && values.channelIds.length === 0)
         ctx.addIssue({
           code: "custom",
-          path: ["customEmoji", i],
-          message:
-            "Use the emoji's name: lowercase letters, digits, - _ + or '.",
+          path: ["channelIds"],
+          message: "Pick a channel.",
         });
+      if (!values.customEmojiEnabled) return;
+      values.customEmoji.forEach((name, i) => {
+        if (!/^:?[a-z0-9_'+-]{1,100}:?$/.test(name.trim()))
+          ctx.addIssue({
+            code: "custom",
+            path: ["customEmoji", i],
+            message:
+              "Use the emoji's name: lowercase letters, digits, - _ + or '.",
+          });
+      });
     });
-  });
 
-type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
+type SlackChannelFormValues = z.infer<
+  ReturnType<typeof slackChannelFormSchema>
+>;
 
 export function useSlackChannelForm(
   agent: AgentView,
@@ -62,7 +71,7 @@ export function useSlackChannelForm(
   const { data: profiles = [] } = useProfiles(agent.id);
   const chatProfileId =
     useSessionDefaults(agent.id).data?.chatProfileId ?? null;
-  /* UNIT_BOUNDARY_DESCRIPTION: a new channel starts on the profile the newest
+  /* UNIT_BOUNDARY_DESCRIPTION: a new binding starts on the profile the newest
    * channel of this agent runs on, else the chat profile (D91); the field is
    * the one place the pick is made for a binding, so the row never opens
    * without one. */
@@ -76,9 +85,9 @@ export function useSlackChannelForm(
         });
 
   const form = useForm<SlackChannelFormValues>({
-    resolver: zodResolver(slackChannelFormSchema),
+    resolver: zodResolver(slackChannelFormSchema(editing)),
     defaultValues: {
-      channelId: channel?.slackChannelId ?? "",
+      channelIds: [],
       ambient: channel?.ambient ?? false,
       customEmojiEnabled: !!channel?.customEmoji,
       customEmoji:
@@ -99,40 +108,49 @@ export function useSlackChannelForm(
   }, [preselected, form]);
 
   const onSubmit = form.handleSubmit(async (values) => {
+    const channelIds = channel ? [channel.slackChannelId] : values.channelIds;
     const audience =
-      editing || isSlackDirectMessageId(values.channelId)
+      editing || channelIds.every(isSlackDirectMessageId)
         ? null
         : { kind: "slack-channel" as const, name: null };
     if (!(await bindConfirm.confirm(audience, "Connect", agent.whisper)))
       return;
-    const connect = planSlackChannelSave({
-      agentId: agent.id,
-      channel,
-      values: {
-        ...values,
-        customEmoji: values.customEmojiEnabled
-          ? values.customEmoji.map((n) => n.trim().replace(/^:|:$/g, ""))
-          : null,
-      },
-    });
-    const failed = await saveSlackChannel({
-      connect: () =>
-        connect ? connectSlack.mutateAsync(connect) : Promise.resolve(),
-      setProfile:
-        !editing && values.profile !== ""
-          ? () =>
-              setChannelProfile.mutateAsync({
-                type: "slack",
-                slackChannelId: values.channelId.trim(),
-                profileId: values.profile,
-              })
-          : null,
-    });
-    if (failed !== null)
-      emitToast({
-        kind: "error",
-        message: `The channel is connected, but its profile couldn't be set: ${getErrorMessage(failed.profileError, "try again from the channel's row.")}`,
+    const customEmoji = values.customEmojiEnabled
+      ? values.customEmoji.map((n) => n.trim().replace(/^:|:$/g, ""))
+      : null;
+    for (const channelId of channelIds) {
+      const connect = planSlackChannelSave({
+        agentId: agent.id,
+        channel,
+        values: { channelId, ambient: values.ambient, customEmoji },
       });
+      /* UNIT_BOUNDARY_DESCRIPTION: the binding is made first and the profile it
+       * runs on after it, both awaited, so the dialog cannot report a channel
+       * set up before its row says what it runs on (D91). */
+      const failed = await saveSlackChannel({
+        connect: () =>
+          connect ? connectSlack.mutateAsync(connect) : Promise.resolve(),
+        setProfile:
+          !channel && values.profile !== ""
+            ? () =>
+                setChannelProfile.mutateAsync({
+                  type: "slack",
+                  slackChannelId: channelId,
+                  profileId: values.profile,
+                })
+            : null,
+      });
+      if (failed !== null)
+        emitToast({
+          kind: "error",
+          message: `The channel is connected, but its profile couldn't be set: ${getErrorMessage(failed.profileError, "try again from the channel's row.")}`,
+        });
+      if (!channel)
+        form.setValue(
+          "channelIds",
+          form.getValues("channelIds").filter((id) => id !== channelId),
+        );
+    }
     onSaved();
   });
 

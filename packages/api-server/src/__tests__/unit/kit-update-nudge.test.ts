@@ -3,6 +3,7 @@ import type { Session } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import type { KitUpdatePending } from "api-server-api";
 
+import { lastTurnReply } from "../../modules/starter-kits/infrastructure/turn-reply.js";
 import { createKitUpdateNudge } from "../../modules/starter-kits/services/kit-update-nudge.js";
 
 const NEW = "b".repeat(40);
@@ -37,6 +38,7 @@ function harness(opts: {
   pending: KitUpdatePending | null;
   sessions: Session[];
   markLands?: boolean;
+  reply?: string;
 }) {
   const marked: { pending: KitUpdatePending; at: string }[] = [];
   const sent: { agentId: string; text: string; notice?: boolean }[] = [];
@@ -49,6 +51,7 @@ function harness(opts: {
       },
     },
     listSessions: async () => ({ sessions: opts.sessions }),
+    lastReply: async () => opts.reply ?? "",
     send: async (agentId, payload) => {
       sent.push({
         agentId,
@@ -60,6 +63,25 @@ function harness(opts: {
   });
   return { nudge, marked, sent };
 }
+
+function chunk(sessionUpdate: string, text: string): string {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "s-update",
+      update: { sessionUpdate, content: { type: "text", text } },
+    },
+  });
+}
+
+const FORM = '<a2ui-json>\n[{"version":"v1.0"}]\n</a2ui-json>';
+
+const FORM_REPLY = [
+  chunk("user_message_chunk", "Update the kit."),
+  chunk("agent_message_chunk", "Which changes should I take?\n"),
+  chunk("agent_message_chunk", FORM),
+];
 
 describe("kit update nudge", () => {
   // TEST_SCENARIO: the update session's turn ends with the update still pending. The agent gets one notice in that session that says how to report it, and the pending mark records that the reminder went out.
@@ -129,5 +151,32 @@ describe("kit update nudge", () => {
       expect(h.marked).toEqual([]);
       expect(h.sent).toEqual([]);
     }
+  });
+
+  // TEST_SCENARIO: the update session's turn ends with a reply that asks the user through a chat form. A notice would answer in the user's place and lock the form, so nothing is sent and the reminder stays for a later turn end.
+  it("waits while the turn's reply holds a form for the user", async () => {
+    const h = harness({
+      pending: pending(),
+      sessions: [session("s-update")],
+      reply: `Which changes should I take?\n${FORM}`,
+    });
+
+    await h.nudge.turnEnded("agent-1", "s-update");
+
+    expect(h.marked).toEqual([]);
+    expect(h.sent).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the user answered the form and the agent's next turn ended with plain text. Only the reply since the last prompt counts, so the form of the earlier turn no longer holds the reminder back.
+  it("reads only the reply since the last prompt", () => {
+    expect(lastTurnReply(FORM_REPLY)).toContain("<a2ui-json>");
+    expect(
+      lastTurnReply([
+        ...FORM_REPLY,
+        chunk("user_message_chunk", "Take all of them."),
+        chunk("agent_message_chunk", "Done, "),
+        chunk("agent_message_chunk", "the checkout is up to date."),
+      ]),
+    ).toBe("Done, the checkout is up to date.");
   });
 });

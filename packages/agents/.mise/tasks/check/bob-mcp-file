@@ -1,0 +1,23 @@
+#!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+//MISE description="The bob acp preload that hides the file's platform MCP entry targets the Bob version the image pins, so a bump revisits it"
+//MISE sources=["bob/image.toml", "bob/rootfs/usr/local/lib/bob-mcp-file.mjs", ".mise/tasks/check/bob-mcp-file"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+const pinned = read("bob/image.toml").match(/^\[tools\."http:bob"\]\nversion = "([^"]+)"$/m)?.[1];
+const targeted = read("bob/rootfs/usr/local/lib/bob-mcp-file.mjs").match(/^const BOB_VERSION = "([^"]+)";$/m)?.[1];
+
+if (pinned === undefined || pinned !== targeted) {
+  console.error(
+    `bob-mcp-file: the image pins Bob ${pinned} but the preload targets ${targeted}. ` +
+      "Run `mise run //packages/agents:test:bob-session-ref` with BOB_CLI naming the new Bob's dist/bob.js. " +
+      "If its control scenario fails, Bob now lets a session's own MCP entry outrank its file's: delete " +
+      "bob/rootfs/usr/local/lib/bob-mcp-file.mjs, its line in bob/rootfs/usr/local/bin/harness-chat, " +
+      "test:bob-mcp-file, test:bob-session-ref and this check (packages/agents/bob/README.md, \"Session ref\"). " +
+      "Otherwise confirm every other scenario passes and update BOB_VERSION.",
+  );
+  process.exit(1);
+}
+console.log("bob-mcp-file: ok");

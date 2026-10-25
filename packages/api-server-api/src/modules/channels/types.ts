@@ -1,5 +1,15 @@
 import type { ChannelType } from "../shared.js";
 
+export interface SlackChannelChoiceView {
+  id: string;
+  name: string;
+  isPrivate: boolean;
+  workspace: string | null;
+}
+
+export type SlackChannelChoicesView =
+  { linked: false } | { linked: true; channels: SlackChannelChoiceView[] };
+
 /** UNIT_BOUNDARY_DESCRIPTION: what writing a channel's profile did. A binding that no longer exists, a profile the agent's owner does not hold, and one whose provider the agent does not hold are refusals the user sees, never a silent no-op and never a reference whose turns would refuse. */
 export type SetChannelProfileResult =
   | { outcome: "saved" }
@@ -22,4 +32,5 @@ export interface ChannelsService {
     conversationId?: string;
     profileId: string | null;
   }) => Promise<SetChannelProfileResult>;
+  slackChannelChoices: () => Promise<SlackChannelChoicesView>;
 }

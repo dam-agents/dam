@@ -12,7 +12,8 @@ set -euo pipefail
 # install hands it in (VM_IMAGE_DIR), since its render is the only one that
 # knows its overlay and --set; on its own, the chart's local values are all
 # there is. Either way a staged tree lands where that install's runners look.
-IMAGE_DIR="${VM_IMAGE_DIR:-$(helm template platform "$MISE_CONFIG_ROOT/helm" \
+IMAGE_DIR="${VM_IMAGE_DIR:-$(helm template "$CLUSTER_RELEASE" "$MISE_CONFIG_ROOT/helm" \
+  -n "$CLUSTER_NAMESPACE" \
   -f "$MISE_CONFIG_ROOT/helm/values-local.yaml" \
   --show-only templates/controller/deployment.yaml \
   | yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].env[]
@@ -39,6 +40,10 @@ layout="$work/layout"
 mkdir -p "$layout"
 if [ -d "$usage_image" ]; then cp -al "$usage_image/." "$layout"; else tar -xf "$usage_image" -C "$layout"; fi
 IMAGE="$(jq -r '.[0].RepoTags[0]' "$layout/manifest.json")"
+# A named install runs its own tag (cluster:install aliased the imported image
+# under it), and the runner looks a staged tree up by the reference its agent
+# names: the tree takes the install's tag, not the tar's `:latest`.
+[ -z "$CLUSTER_INSTALL" ] || IMAGE="${IMAGE%:latest}:$CLUSTER_INSTALL"
 name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 
 # The record the runner reads beside the tree: what the image says to run.

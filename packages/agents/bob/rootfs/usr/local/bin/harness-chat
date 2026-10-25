@@ -3,21 +3,25 @@
 # --trust: every session/new carries the pod workspace, which Bob would
 # otherwise refuse as untrusted.
 #
+# Bob keeps one MCP server per name and lets its own file's entry outrank the
+# one a session carries, so the chat process must not see the platform entry
+# the mcp-entry driver writes for the terminal: the session's own entry, with
+# the session ref, is then the one Bob starts. bob chat reads the whole file.
+preload="--import=/usr/local/lib/bob-mcp-file.mjs"
 # The platform runs one Bob process per approval posture (and, on an older
 # runtime, per provider and model). Bob reads and watches one fixed settings
 # file, so each process gets its own copy, written from the shared file plus
 # that process's own pins.
-preload=""
 if [ -n "$PLATFORM_PROVIDER$PLATFORM_MODEL$BOB_SESSION_APPROVALS" ]; then
   key=$(printf '%s\n' "$PLATFORM_PROVIDER" "$PLATFORM_MODEL" "$BOB_SESSION_APPROVALS" | sha256sum | cut -c1-16)
   BOB_SETTINGS_FILE="$HOME/.bob/platform-processes/$key/settings.json"
   export BOB_SETTINGS_FILE
-  preload="--import=/usr/local/lib/bob-settings-file.mjs"
+  preload="$preload --import=/usr/local/lib/bob-settings-file.mjs"
 fi
 # Bob's model calls go to the Model Router on the machine's loopback, which Bob's
 # own proxy agent would send through the gateway proxy.
 if [ -n "$PLATFORM_MODEL_ROUTER_URL" ]; then
-  preload="--import=/usr/local/lib/bob-loopback-direct.mjs${preload:+ $preload}"
+  preload="--import=/usr/local/lib/bob-loopback-direct.mjs $preload"
 fi
 
 # The bootstrap resolves the settings posture and prints the approval mode it
@@ -32,8 +36,6 @@ approvals=$(node /app/bob-settings.mjs) || exit 1
 # allowlist of safe commands is reachable from the TUI only.
 set --
 [ "$approvals" = "ask" ] || set -- "$@" --auto-approve
-if [ -n "$preload" ]; then
-  NODE_OPTIONS="$preload${NODE_OPTIONS:+ $NODE_OPTIONS}"
-  export NODE_OPTIONS
-fi
+NODE_OPTIONS="$preload${NODE_OPTIONS:+ $NODE_OPTIONS}"
+export NODE_OPTIONS
 exec bob acp --trust --accept-license "$@"

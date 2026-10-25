@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An Agent Editor who answers an approval on a Shared Agent reads one line that says the action runs with the owner's connections, naming the owner and the agent's granted connections. Model provider connections are left out, since a tool call never acts through them. More than three names end in "and N more", and no names means no line.
+// TEST_OVERVIEW: An Agent Editor who answers an approval on a Shared Agent reads one line that says the action runs with the owner's connections, naming the owner and the agent's granted connections, each with the account it acts as when that is known. Model provider connections are left out, since a tool call never acts through them. More than three names end in "and N more", and no names means no line.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -52,5 +52,18 @@ describe("which connections the line names", () => {
         { name: "GitHub", templateId: "github" },
       ]),
     ).toEqual(["GitHub", "Slack"]);
+  });
+});
+
+describe("the accounts the line names", () => {
+  // TEST_SCENARIO: AC-8 — a GitHub connection acting as tomkis reads "GitHub as tomkis" on the editor's approval line; one with no known account reads by its name.
+  it("names each connection as the account it acts as", () => {
+    const names = actingConnectionNames([
+      { name: "GitHub", templateId: "github", accountLabel: "tomkis" },
+      { name: "Linear", templateId: "linear" },
+    ]);
+    expect(ownerConnectionsLine(OWNER, names)?.text).toBe(
+      "Runs with jordan@example.com's connections: GitHub as tomkis, Linear.",
+    );
   });
 });

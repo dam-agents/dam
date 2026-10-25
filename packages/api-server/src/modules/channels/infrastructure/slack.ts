@@ -21,6 +21,12 @@ import {
 import { match, P } from "ts-pattern";
 import type { SlackConversationStanding } from "../services/slack-workspace-probe.js";
 import {
+  pickableSlackChannels,
+  type SlackChannelChoices,
+  type SlackChannelMembership,
+  type SlackWorkspaceReach,
+} from "../domain/slack-channel-choices.js";
+import {
   ambientThreadKey,
   isAmbientThreadKey,
   slackThreadKey,
@@ -995,6 +1001,12 @@ export interface SlackWorker extends ChannelWorker, AddressedWorker {
     slackChannelId: string,
     teamId: SlackWorkspace,
   ): Promise<SlackConversationStanding>;
+  channelChoices(keycloakSub: string): Promise<SlackChannelChoices>;
+  channelMembership(
+    keycloakSub: string,
+    slackChannelId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackChannelMembership>;
   start(instanceName: string): Promise<void>;
   stop(instanceName: string): Promise<void>;
   resolveConversationLabels(
@@ -1377,6 +1389,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
     }
     return reach;
+  }
+
+  async function linkedWorkspaces(
+    links: { teamId: string | null }[],
+  ): Promise<SlackWorkspace[]> {
+    return [
+      ...new Set([
+        ...(await listWorkspaces()),
+        ...links.flatMap((l) => (l.teamId === null ? [] : [l.teamId])),
+      ]),
+    ];
   }
 
   async function mayMessageDirectly(
@@ -6045,6 +6068,60 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           () => "unknown" as const,
         )
         .exhaustive();
+    },
+
+    async channelChoices(keycloakSub: string): Promise<SlackChannelChoices> {
+      const links = await identityLinks.externalLinksOf("slack", keycloakSub);
+      if (links.length === 0) return { linked: false };
+      const gw = await ensureGateway();
+      if (!gw) throw new Error("slack gateway is not connected here");
+      const userIds = [...new Set(links.map((l) => l.externalUserId))];
+      const reach = await Promise.all(
+        (await linkedWorkspaces(links)).map(
+          async (teamId): Promise<SlackWorkspaceReach> => {
+            const [botChannels, ...shared] = await Promise.all([
+              gw.listBotChannels(teamId),
+              ...userIds.map((userId) => gw.listSharedChannels(userId, teamId)),
+            ]);
+            return {
+              teamId,
+              botChannels,
+              sharedChannelIds: new Set(shared.flat()),
+            };
+          },
+        ),
+      );
+      return { linked: true, channels: pickableSlackChannels(reach) };
+    },
+
+    async channelMembership(
+      keycloakSub: string,
+      slackChannelId: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackChannelMembership> {
+      const links = await identityLinks.externalLinksOf("slack", keycloakSub);
+      if (links.length === 0) return "unlinked";
+      const gw = await ensureGateway();
+      if (!gw) throw new Error("slack gateway is not connected here");
+      const userIds = [...new Set(links.map((l) => l.externalUserId))];
+      if (isDirectMessageId(slackChannelId)) {
+        const lookup = await gw.getConversationInfo(slackChannelId, teamId);
+        return lookup.kind === "found" &&
+          lookup.directMessageUser !== null &&
+          userIds.includes(lookup.directMessageUser)
+          ? "member"
+          : "not-member";
+      }
+      const workspaces = [
+        ...new Set([teamId, ...(await linkedWorkspaces(links))]),
+      ];
+      for (const workspace of workspaces) {
+        for (const userId of userIds) {
+          const shared = await gw.listSharedChannels(userId, workspace);
+          if (shared.includes(slackChannelId)) return "member";
+        }
+      }
+      return "not-member";
     },
 
     async listConversations(instanceName: string) {

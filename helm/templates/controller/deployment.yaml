@@ -94,15 +94,15 @@ spec:
             # surface at startup.
             #   - AGENT_BASE: chart-only policy, never overridable by an agent
             #     ConfigMap.
-            #   - AGENT_TEMPLATE_DEFAULTS: fallbacks for fields a template can
-            #     override (template wins when set).
+            #   - AGENT_HARNESS_TEMPLATE_DEFAULTS: fallbacks for fields a
+            #     harness template can override (template wins when set).
             - name: AGENT_BASE
               value: {{ .Values.controller.agent.base | toJson | quote }}
             # `$HOME` literals in mount paths are substituted at
             # chart render time with the fixed agent home, so the
             # controller and api-server only ever see absolute paths.
-            - name: AGENT_TEMPLATE_DEFAULTS
-              value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" "/home/agent" | quote }}
+            - name: AGENT_HARNESS_TEMPLATE_DEFAULTS
+              value: {{ .Values.controller.agent.harnessTemplateDefaults | toJson | replace "$HOME" "/home/agent" | quote }}
             # Every agent's machine runs on its owner's VM runner; see
             # `virtualization` in values.yaml.
             {{- $r := .Values.virtualization.runner }}
@@ -122,12 +122,16 @@ spec:
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
                   "priorityClassName" (include "platform.vmRunner.priorityClassName" .)
-                  "hostAddress" ($r.hostAddress | default "")
+                  "hostAddress" ($r.hostAddress | default "") "hostPort" ($r.hostPort | default 0)
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "stalledTimeout" ($r.rollout.stalledTimeout | default "30m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
             - name: AGENT_VM
               value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
+            # Cluster-scoped, so an install with its own (several share a cluster)
+            # names its own; the controller mints gateway leaves from it.
+            - name: ENVOY_MITM_CA_ISSUER
+              value: {{ .Values.controller.envoyMitm.caIssuerName | quote }}
             # Per-user pool defaults; a UserBudget overrides them for one
             # user. The owner's runner admits machines against them.
             - name: DEFAULT_USER_CPU_BUDGET

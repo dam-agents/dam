@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { AgentView } from "../../../../types.js";
-import { SharedChannelsNotice } from "../../../connections/components/shared-channels-notice.js";
+import { ConnectionAudienceNotice } from "../../../connections/components/connection-audience-notice.js";
 import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
 import { useActiveScheduleCounts } from "../../hooks/use-active-schedule-counts.js";
 import { useBindSharingConfirm } from "../../hooks/use-bind-sharing-confirm.js";
@@ -122,9 +122,9 @@ export function AgentBindPicker({
           notice={
             bindConfirm.dismissed &&
             sharing && (
-              <SharedChannelsNotice className="mb-4">
+              <ConnectionAudienceNotice className="mb-4">
                 {sharing}
-              </SharedChannelsNotice>
+              </ConnectionAudienceNotice>
             )
           }
           action={copy.action}

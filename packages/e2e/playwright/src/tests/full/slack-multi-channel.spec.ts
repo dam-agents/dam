@@ -4,6 +4,7 @@ import { ensureAgentRunning } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { mockDefaultReply } from "../../lib/fixtures.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const agentName = "e2e-slack-multi";
 
@@ -36,11 +37,11 @@ test("one agent serves two Slack channels, each its own conversation (#3086)", a
 
   await test.step("both channels bind to the same agent", async () => {
     await api.agents.disconnectSlack.mutate({ id: agentId });
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: channelA,
     });
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: channelB,
     });

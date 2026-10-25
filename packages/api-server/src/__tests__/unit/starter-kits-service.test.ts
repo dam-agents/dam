@@ -179,7 +179,7 @@ function makeHarness(
       },
       async connectSlack(agentId, channel, ambient) {
         calls.slack.push({ agentId, channel, ambient });
-        return { agent: fakeAgent(agentId), alreadyConnected: false } as never;
+        return { ok: true, value: fakeAgent(agentId) } as never;
       },
     },
     schedules: {
@@ -320,7 +320,7 @@ describe("starter kits: apply", () => {
       name: "reviewer",
       templateId: "claude-code",
       connectionIds: ["c-gh", "c-slack"],
-      slackChannelId: "C123",
+      slackChannelIds: ["C123"],
       skipSchedules: [],
       scheduleOverrides: [],
     });
@@ -874,7 +874,7 @@ describe("starter kits: onboarding turn", () => {
         channels: [{ type: "slack" } as never],
       }),
     );
-    await service.apply({ ...APPLY, slackChannelId: "C123" });
+    await service.apply({ ...APPLY, slackChannelIds: ["C123"] });
 
     const events = onboardingEvents(calls);
     expect(events).toHaveLength(1);

@@ -6,6 +6,7 @@ import {
   agentTarget,
   manageAgentsProcedure,
   readAgentProcedure,
+  requireWildcardBinding,
 } from "../../auth-procedures.js";
 
 export const channelsRouter = t.router({
@@ -53,4 +54,8 @@ export const channelsRouter = t.router({
     const username = ctx.channels.telegramBotUsername();
     return username ? { username } : null;
   }),
+
+  slackChannelChoices: readAgentProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.channels.slackChannelChoices()),
 });

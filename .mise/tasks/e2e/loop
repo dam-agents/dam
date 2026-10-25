@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite"
 #MISE raw=true
-#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default" }
 #USAGE flag "--headed" help="Run Playwright headed"
 #USAGE flag "--full" help="Smoke plus the slow on-demand specs under src/tests/full/; the pipeline runs smoke only"
 #USAGE flag "--rebuild <components>" help="Comma-separated cluster:build components (controller, api-server, ui, keycloak, agents); asked for when omitted on a terminal"

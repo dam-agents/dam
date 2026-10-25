@@ -241,7 +241,10 @@ export type ConnectSlackError =
   | { type: "ChannelAlreadyBound" }
   | { type: "WorkspaceUnresolved" }
   | { type: "WorkspaceUnreachable" }
-  | { type: "NoSlackWorkspace" };
+  | { type: "NoSlackWorkspace" }
+  | { type: "SlackAccountUnlinked" }
+  | { type: "NotChannelMember" }
+  | { type: "MembershipUnchecked" };
 
 export type ConnectSlackResult =
   { ok: true; value: Agent } | { ok: false; error: ConnectSlackError };

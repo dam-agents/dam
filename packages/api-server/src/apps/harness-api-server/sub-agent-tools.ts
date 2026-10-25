@@ -521,7 +521,7 @@ function workKindRefusal(
 }
 
 const UNIDENTIFIED_SESSION =
-  "this session does not identify itself to the platform (Bob sessions and terminal sessions do not), so its platform sub-agent settings cannot apply. Pass a harness and a provider-qualified model (list_harnesses lists each harness's models).";
+  "this call names no session (a terminal session's calls never do), so its platform sub-agent settings cannot apply. Pass a harness and a provider-qualified model (list_harnesses lists each harness's models).";
 
 export function registerSubAgentTools(
   server: McpServer,
