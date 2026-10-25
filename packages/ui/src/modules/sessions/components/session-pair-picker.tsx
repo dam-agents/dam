@@ -392,18 +392,6 @@ export function SessionPairPicker(props: Props) {
                   Use a profile
                 </button>
               )}
-              {routed && pair && (
-                <div className="px-1">
-                  <SaveAsProfileRow
-                    label={
-                      fromProfile
-                        ? `Update “${fromProfile.name}”`
-                        : "Save as a profile"
-                    }
-                    onClick={() => setSavingProfile(true)}
-                  />
-                </div>
-              )}
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
                 {harnesses.length > 0 && (
                   <ul
@@ -537,6 +525,18 @@ export function SessionPairPicker(props: Props) {
                     settings: applySettingChanges(settings, changes),
                   })
                 }
+              />
+            </div>
+          )}
+          {routed && custom && pair && (
+            <div className="border-t border-border px-2 pt-2">
+              <SaveAsProfileRow
+                label={
+                  fromProfile
+                    ? `Update “${fromProfile.name}”`
+                    : "Save as a profile"
+                }
+                onClick={() => setSavingProfile(true)}
               />
             </div>
           )}

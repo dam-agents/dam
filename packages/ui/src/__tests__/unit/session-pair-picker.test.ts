@@ -166,7 +166,11 @@ vi.mock("../../modules/schedules/api/mutations.js", () => ({
 let profilesState: readonly unknown[] = [];
 vi.mock("../../modules/profiles/api/queries.js", () => ({
   useProfiles: () => ({ data: profilesState }),
+}));
+
+vi.mock("../../modules/profiles/lib/profile-detail.js", () => ({
   profileDetail: () => "",
+  profileProviderName: () => "",
 }));
 
 vi.mock("../../modules/profiles/components/save-as-profile.js", () => ({

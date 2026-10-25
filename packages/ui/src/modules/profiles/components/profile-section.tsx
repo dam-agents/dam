@@ -8,7 +8,8 @@ import { SectionHeader } from "@/components/ui/list-section";
 
 import { useStore } from "../../../store.js";
 import { useDeleteProfile, useUpdateProfile } from "../api/mutations.js";
-import { profileDetail, useProfiles } from "../api/queries.js";
+import { useProfiles } from "../api/queries.js";
+import { profileDetail } from "../lib/profile-detail.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the owner's profiles in Settings: a list with what

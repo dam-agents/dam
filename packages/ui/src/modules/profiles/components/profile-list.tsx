@@ -1,9 +1,10 @@
 import { ChevronRight, Save, Settings } from "@carbon/icons-react";
 import type { ProfileWithUsage, SessionPair } from "api-server-api";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { profileDetail } from "../api/queries.js";
+import { profileDetail } from "../lib/profile-detail.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the model configuration a picker opens on. Two
@@ -177,6 +178,10 @@ export function SubagentSection({
   onAttach: (profile: ProfileWithUsage) => void;
   onManage: () => void;
 }) {
+  /* UNIT_BOUNDARY_DESCRIPTION: the toggle reveals the list without choosing
+   * anything, so turning it off and walking away still leaves the agent to
+   * pick; checking it again clears the choice. */
+  const [revealed, setRevealed] = useState(selectedId !== null);
   return (
     <div className="flex flex-col">
       <SectionHeading>Subagent model</SectionHeading>
@@ -184,12 +189,15 @@ export function SubagentSection({
         <input
           type="checkbox"
           aria-label="Let the agent pick"
-          checked={selectedId === null}
-          onChange={(e) => onAgentPicks(e.target.checked)}
+          checked={selectedId === null && !revealed}
+          onChange={(e) => {
+            setRevealed(!e.target.checked);
+            if (e.target.checked) onAgentPicks(true);
+          }}
         />
         Let the agent pick
       </label>
-      {selectedId !== null && (
+      {(revealed || selectedId !== null) && (
         <ProfileChoices
           profiles={profiles}
           current={null}

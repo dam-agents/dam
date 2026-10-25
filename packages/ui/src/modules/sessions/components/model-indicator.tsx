@@ -392,16 +392,6 @@ export function ModelIndicator({
                   Use a profile
                 </button>
               )}
-              {model !== null && (
-                <SaveAsProfileRow
-                  label={
-                    fromProfile
-                      ? `Update “${fromProfile.name}”`
-                      : "Save as a profile"
-                  }
-                  onClick={() => setSavingProfile(true)}
-                />
-              )}
               <SessionModelList
                 agentId={agentId}
                 groups={groups}
@@ -427,6 +417,18 @@ export function ModelIndicator({
               failed={isError || data?.availableModels === undefined}
               onChoose={onChoose}
             />
+          )}
+          {routed && custom && model !== null && (
+            <div className="border-t border-border pt-2">
+              <SaveAsProfileRow
+                label={
+                  fromProfile
+                    ? `Update “${fromProfile.name}”`
+                    : "Save as a profile"
+                }
+                onClick={() => setSavingProfile(true)}
+              />
+            </div>
           )}
           {capability?.sessionSettings && (
             <div className="border-t border-border pt-2 empty:hidden">
