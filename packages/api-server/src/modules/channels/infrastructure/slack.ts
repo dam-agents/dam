@@ -53,18 +53,15 @@ import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
   AddressedWorker,
   AttachmentQuery,
-  AttachmentResult,
   ChannelAttachment,
   ChannelReaction,
   ChannelReply,
   ChannelSendResult,
   ChannelUser,
   ChannelWorker,
-  MessageReactionsResult,
   PostMessageOptions,
   ReactionsQuery,
   ThreadQuery,
-  ThreadResult,
 } from "../services/worker-contract.js";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import {
@@ -123,7 +120,6 @@ import type {
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
-  SlackMessageReaction,
   SlackSlashCommand,
   SlackThreadRead,
   SlackUserInfo,
@@ -139,7 +135,6 @@ import {
   agentContextBlock,
   agentFooterLabel,
   catchUpLegend,
-  formatSlackTs,
   historyLegend,
   historyPreamble,
   labelHistoryMessage,
@@ -160,7 +155,6 @@ import {
 import {
   aboveBoundary,
   formatThreadCursor,
-  isAfterTs,
   lastOwnPostTs,
   laterTs,
   newestTs,

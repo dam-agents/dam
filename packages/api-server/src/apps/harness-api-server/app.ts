@@ -64,7 +64,7 @@ import {
   limitRequestBody,
   MAX_AGENT_REQUEST_BODY_BYTES,
 } from "../../core/request-body-bounds.js";
-import { agentsInstallSettings, type Config } from "../../config.js";
+import { type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type {
   RuntimeMutator,

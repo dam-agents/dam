@@ -14,7 +14,6 @@ import {
   RESULT_ACCEPTED_FIELD,
   SESSION_REF_HEADER,
   sessionTitleSchema,
-  type AppRouter,
 } from "agent-runtime-api";
 import type { SatelliteView, SpendStatus } from "api-server-api";
 import { skillSourcePathSchema } from "api-server-api";

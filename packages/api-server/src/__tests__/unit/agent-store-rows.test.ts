@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import {
-  goDuration,
   resourceFromRows,
   rowsFromResource,
 } from "../../modules/agent-store/rows.js";

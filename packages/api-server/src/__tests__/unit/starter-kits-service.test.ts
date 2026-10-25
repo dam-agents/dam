@@ -7,7 +7,6 @@ import type {
   ConnectionView,
   Schedule,
   ResolvedStarterKit,
-  StarterKit,
   TemplateSpec,
 } from "api-server-api";
 import { starterKitSchema } from "api-server-api";

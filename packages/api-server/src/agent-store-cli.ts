@@ -17,7 +17,6 @@ import {
   createApi,
   createK8sClient,
   currentClusterServer,
-  type KubeObject,
 } from "./modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
@@ -32,7 +31,6 @@ import {
 } from "./modules/agent-store/frozen.js";
 import {
   absentAbsorbedResources,
-  attestedDigestMatches,
   restoreBody,
   rePointAction,
   rollbackVerdict,

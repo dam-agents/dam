@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 
 import { RESERVED } from "../../workspace-path.js";
 import {

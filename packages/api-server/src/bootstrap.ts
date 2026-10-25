@@ -383,7 +383,6 @@ import {
   createOutcomeDelivery,
   createOutcomeWakeRetry,
 } from "./modules/satellites/index.js";
-import { createApprovalsRepository } from "./modules/approvals/infrastructure/approvals-repository.js";
 
 export async function bootstrap() {
   const config = loadConfig();
@@ -2019,9 +2018,6 @@ export async function bootstrap() {
       ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
       agentApi: agentApiClient,
     }).artifactLibrary;
-  const artifactLibraryForSystem = (owner: string) =>
-    artifactLibraryFor(owner, "system");
-
   const environments = composeEnvironments({
     db,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
