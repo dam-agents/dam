@@ -453,6 +453,7 @@ describe("imgbb agent icons", () => {
     });
 
     expect(await iconUrl({ kind: "character", character: "lens" })).toBeNull();
+    await vi.waitFor(() => expect(calls).toBe(1));
     answer(ok());
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
