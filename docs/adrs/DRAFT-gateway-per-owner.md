@@ -1,7 +1,7 @@
 ---
 id:
 title: One gateway pod per owner serves all of that owner's vm Agents
-status: proposed
+status: accepted
 supersedes:
 subsystem: security-and-credentials
 tags: [gateway, envoy, vm, wake, latency, mesh, networkpolicy]
@@ -10,7 +10,7 @@ summary: Each owner gets one long-lived gateway pod beside their VM runner, reac
 
 # ADR-NNN: One gateway pod per owner serves all of that owner's vm Agents
 
-**Date:** 2026-10-17 **Status:** Proposed **Owner:** @JanPokorny
+**Date:** 2026-10-17 **Status:** Accepted **Owner:** @JanPokorny
 
 ## Context
 

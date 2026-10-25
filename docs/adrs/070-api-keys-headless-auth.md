@@ -1,14 +1,14 @@
 ---
 id: 070
 title: API keys with scopes for headless CLI use
-status: proposed
+status: accepted
 subsystem: security-and-credentials
 summary: Long-lived owner-scoped API keys with a pk_ prefix share the bearer slot with Keycloak JWTs, carrying a fixed five-scope vocabulary and an agent binding.
 ---
 
 # ADR-070: API keys with scopes for headless CLI use
 
-**Date:** 2026-06-15 **Status:** Proposed **Owner:** @jezekra1
+**Date:** 2026-06-15 **Status:** Accepted **Owner:** @jezekra1
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 id:
 title: Agent reads served from a watch-backed cache, writes from live reads
-status: proposed
+status: accepted
 supersedes:
 subsystem: agent-lifecycle
 tags: [kubernetes, api-server, latency]
@@ -10,7 +10,7 @@ summary: The api-server serves Agent reads from a per-replica watch-backed cache
 
 # ADR-NNN: Agent reads served from a watch-backed cache, writes from live reads
 
-**Date:** 2026-08-27 **Status:** Proposed **Owner:** @jezekra1
+**Date:** 2026-08-27 **Status:** Accepted **Owner:** @jezekra1
 
 ## Context
 
