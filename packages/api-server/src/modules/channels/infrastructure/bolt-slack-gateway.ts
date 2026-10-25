@@ -805,7 +805,12 @@ export function createBoltSlackGateway(
           cursor,
         });
         for (const c of page.channels ?? []) {
-          if (c.id) channels.push({ id: c.id, name: c.name ?? c.id });
+          if (c.id)
+            channels.push({
+              id: c.id,
+              name: c.name ?? c.id,
+              isPrivate: !!c.is_private,
+            });
         }
         cursor = page.response_metadata?.next_cursor || undefined;
       } while (cursor);

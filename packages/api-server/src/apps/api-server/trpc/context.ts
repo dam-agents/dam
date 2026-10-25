@@ -21,6 +21,8 @@ import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import { createSlackLoopGuardDropsRepository } from "../../../modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
+import { listSlackInstalls } from "../../../modules/channels/infrastructure/slack-installs-repository.js";
+import { withWorkspaceNames } from "../../../modules/channels/domain/slack-channel-choices.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -187,6 +189,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
       resolveSlackWorkspace: boot.resolveSlackWorkspace,
+      slackChannelMembership: (keycloakSub, slackChannelId, teamId) =>
+        channelManager.slackChannelMembership(
+          keycloakSub,
+          slackChannelId,
+          teamId,
+        ),
       agentStateCache: boot.agentStateCache,
       agentStore: { authority: config.agentStore },
       namespace: config.namespace,
@@ -455,6 +463,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       channels: {
         available: channelManager.availableChannels(),
         telegramBotUsername: () => channelManager.telegramBotUsername(),
+        slackChannelChoices: async () => {
+          const [choices, installs] = await Promise.all([
+            channelManager.slackChannelChoices(user.actingEditor ?? user.sub),
+            listSlackInstalls(db)(),
+          ]);
+          return withWorkspaceNames(
+            choices,
+            new Map(installs.map((i) => [i.teamId, i.teamName])),
+          );
+        },
       },
       connections,
       secretRequests,

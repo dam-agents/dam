@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -245,6 +245,12 @@ The differences are transport, identity model, and where the bot token comes fro
   Nothing is deleted.
 - **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub` and the workspace the command ran in.
   The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
+- **A connect from the platform needs the person in the conversation.** A connect from the UI or the CLI binds only a conversation the person and the bot are both in: one of the person's linked Slack identities shares the channel with the bot in some connected workspace, or is the other side of the 1:1 DM.
+  A group DM is outside what Slack lists for a person, so it is connected in-chat only.
+  Without it, anyone who knows a conversation id could lend an Agent to a private channel they are not in.
+  An unlinked person is refused and pointed at `/platform login`, or at the in-chat bind, whose run inside the conversation is the proof and so needs no check.
+  Only a new binding is checked; a re-connect of an existing one, which changes ambient mode or custom emoji, is not.
+  The UI therefore picks channels by name from the same rule rather than taking an id: the channel choices are the bot's channels that the person's linked identities also share, across every connected workspace and listed once per conversation id, and a pasted id is matched against that list.
 - **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert or an outage alert, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.

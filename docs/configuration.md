@@ -156,7 +156,8 @@ A Slack channel binds to at most one instance globally; the binding routes every
 5. Connect the app's own workspace the way every workspace is connected (below).
    No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
 
-6. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
+6. Link your Slack account with `/dam login` in Slack, invite the bot to a channel you are in, then connect an agent to it from the agent's Channels settings (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
+   The platform connects an agent only to a channel you and the bot are both in; `/dam bind` in the channel itself works without linking first.
 
 **Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's.
 The scope is opt-in.

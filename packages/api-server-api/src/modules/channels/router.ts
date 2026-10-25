@@ -1,5 +1,8 @@
 import { t } from "../../trpc.js";
-import { readAgentProcedure } from "../../auth-procedures.js";
+import {
+  readAgentProcedure,
+  requireWildcardBinding,
+} from "../../auth-procedures.js";
 
 export const channelsRouter = t.router({
   available: readAgentProcedure.query(({ ctx }) => ctx.channels.available),
@@ -8,4 +11,8 @@ export const channelsRouter = t.router({
     const username = ctx.channels.telegramBotUsername();
     return username ? { username } : null;
   }),
+
+  slackChannelChoices: readAgentProcedure
+    .use(requireWildcardBinding)
+    .query(({ ctx }) => ctx.channels.slackChannelChoices()),
 });
