@@ -491,7 +491,6 @@ describe("session pair model choices", () => {
       renderToStaticMarkup(
         createElement(ModelIndicator, {
           kind: "chat",
-          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "ibm",
@@ -563,7 +562,6 @@ describe("session pair model choices", () => {
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
           kind: "chat",
-          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "curve",
@@ -600,7 +598,6 @@ describe("session pair model choices", () => {
         renderToStaticMarkup(
           createElement(ModelIndicator, {
             kind: "chat",
-            onFollowDefault: () => {},
             agentId: "agent",
             harness: "pi",
             provider: "curve",
@@ -801,7 +798,6 @@ describe("one model list on a runtime that routes by model name", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
         kind: "chat",
-        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: "ibm",
@@ -826,7 +822,6 @@ describe("one model list on a runtime that routes by model name", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
         kind: "chat",
-        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: "curve",
@@ -864,7 +859,6 @@ describe("one model list on a runtime that routes by model name", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
         kind: "chat",
-        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: null,

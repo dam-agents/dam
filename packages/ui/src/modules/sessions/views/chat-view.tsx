@@ -126,7 +126,6 @@ import {
 } from "../api/queries.js";
 import {
   attachProviderQuietly,
-  rememberFirstModel,
   useHarnessCatalogModels,
   useProviderConnections,
 } from "../api/session-pair.js";
@@ -1176,15 +1175,6 @@ export function ChatView() {
                       <ModelIndicator
                         agentId={selectedAgent}
                         kind={defaultKindOf(sessionView?.type)}
-                        follows={currentSession.follows}
-                        followsDefaults={
-                          harnessStatus?.followsDefaults ?? false
-                        }
-                        onFollowDefault={(afterNextDefaults) => {
-                          const kind = defaultKindOf(sessionView?.type);
-                          if (kind)
-                            void configureSession({}, kind, afterNextDefaults);
-                        }}
                         harness={choice.harness}
                         provider={currentSession.provider ?? null}
                         model={currentSession.model ?? null}
@@ -1192,16 +1182,7 @@ export function ChatView() {
                         carried={harnessStatus?.harnesses ?? []}
                         routed={harnessStatus?.modelRouter ?? false}
                         turnRunning={busy}
-                        onChoose={(value) =>
-                          void chooseSessionModel(value, () => {
-                            if (harnessStatus?.modelRouter)
-                              void rememberFirstModel(selectedAgent, {
-                                harness: choice.harness,
-                                provider: null,
-                                model: value,
-                              });
-                          })
-                        }
+                        onChoose={(value) => void chooseSessionModel(value)}
                         onConfigure={(change) => void configureSession(change)}
                         onNewSession={() => handleNewSession(true)}
                       />

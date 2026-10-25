@@ -3,7 +3,7 @@ import type { SessionPair } from "api-server-api";
 import { useStore } from "../../../store.js";
 import {
   attachProviderQuietly,
-  rememberFirstModel,
+  rememberSessionPair,
   useHarnessCatalogModels,
   useProviderConnections,
 } from "../api/session-pair.js";
@@ -49,7 +49,9 @@ export function useCurveBender(input: {
       model,
     };
     setPair(agentId, pair);
-    void rememberFirstModel(agentId, pair);
+    /* UNIT_BOUNDARY_DESCRIPTION: the last pick in any chat is the next chat's
+     * default (D90), and this alert's pick is a pick. */
+    rememberSessionPair(agentId, pair, "chat");
     return true;
   };
 

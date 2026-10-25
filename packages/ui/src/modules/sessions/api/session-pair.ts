@@ -410,27 +410,6 @@ export function rememberSessionPair(
     .finally(() => invalidateDefaults());
 }
 
-export async function rememberFirstModel(
-  agentId: string,
-  pair: SessionPair,
-): Promise<void> {
-  if (pair.model === null) return;
-  let saved: SessionPair | null;
-  try {
-    saved = await queryClient.ensureQueryData({
-      ...trpc.harnessConfig.sessionPair.queryOptions({ agentId }),
-      retry: false,
-    });
-  } catch (err) {
-    emitToast({
-      kind: "error",
-      message: `Couldn't check the agent's default model, so ${pair.model} was not saved as its default: ${err instanceof Error ? err.message : String(err)}`,
-    });
-    return;
-  }
-  if (!saved?.model) rememberSessionPair(agentId, pair);
-}
-
 export function harnessOfSession(
   agentId: string,
   sessionId: string,

@@ -5,6 +5,7 @@ import {
   parseQualifiedModel,
   type ProviderPresetType,
 } from "api-server-api";
+import { useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,9 @@ import {
 } from "@/components/ui/popover";
 
 import { useStore } from "../../../store.js";
+import { useProfiles } from "../../profiles/api/queries.js";
+import { ProfileList } from "../../profiles/components/profile-list.js";
+import { SaveAsProfile } from "../../profiles/components/save-as-profile.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -24,8 +28,8 @@ import {
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
-  useRememberedPair,
 } from "../api/session-pair.js";
+import { rememberSessionPair } from "../api/session-pair.js";
 import {
   modelGroups,
   sameSideGroups,
@@ -35,19 +39,14 @@ import {
   harnessDisplayName,
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
-import { settingDefaults, settingsForModel } from "../lib/session-settings.js";
-import { DefaultFollowState } from "./default-follow-state.js";
+import { settingDefaults } from "../lib/session-settings.js";
 import { SessionModelList } from "./session-model-list.js";
-import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
 
 interface Props {
   agentId: string;
   kind: DefaultKind | null;
-  follows?: DefaultKind | null;
-  followsDefaults?: boolean;
-  onFollowDefault: (afterNextDefaults: boolean) => void;
   harness: string;
   provider: string | null;
   model: string | null;
@@ -63,9 +62,6 @@ interface Props {
 export function ModelIndicator({
   agentId,
   kind,
-  follows,
-  followsDefaults = false,
-  onFollowDefault,
   harness,
   provider,
   model,
@@ -78,9 +74,13 @@ export function ModelIndicator({
   onNewSession,
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
+  /* UNIT_BOUNDARY_DESCRIPTION: the picker opens on the profiles, the same view a
+   * new chat shows, so one place teaches the other. */
+  const [custom, setCustom] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const { data: profiles = [] } = useProfiles(agentId);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { data: catalog } = useHarnessCatalog();
-  const { data: remembered } = useRememberedPair(agentId, kind ?? "chat");
   const capability = carried.find((h) => h.name === harness);
   const defaults = settingDefaults(
     capability,
@@ -135,186 +135,211 @@ export function ModelIndicator({
     !!data?.availableModels?.length &&
     !data.availableModels.some((m) => m.value === model);
 
+  const savingAsProfile =
+    savingProfile && activeProvider?.templateId !== undefined ? (
+      <SaveAsProfile
+        pair={{ harness, provider, model, ...(settings && { settings }) }}
+        providerTemplate={activeProvider.templateId}
+        profile={null}
+        onClose={() => setSavingProfile(false)}
+        onSaved={() => setSavingProfile(false)}
+      />
+    ) : null;
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <SessionPairTrigger
-          testId="session-model-picker"
-          harness={harness}
-          label={
-            harnessName &&
-            [
-              routed
-                ? modelName
-                : modelProviderLabel(
-                    modelName,
-                    activeProvider?.name,
-                    harnessName,
-                  ),
-              removed ? "Provider removed" : null,
-              unlisted ? "Model not offered" : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")
-          }
-        />
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        aria-label="Session harness and model"
-        collisionPadding={8}
-        className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
-      >
-        <div className="flex items-center gap-2 px-1">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex items-center gap-2 font-medium text-foreground">
-              <span className="text-muted-foreground">
-                <HarnessIcons harnesses={[harness]} size="xs" />
-              </span>
-              <span className="truncate">{harnessName ?? harness}</span>
-            </div>
-            {!routed && activeProvider && (
-              <h3 className={labelVariants()}>{activeProvider.name}</h3>
-            )}
-            {routed && turnRunning && (
-              <p className="text-xs text-muted-foreground">
-                A model picked now applies to the next message.
-              </p>
-            )}
-          </div>
-          {!routed && (
-            <PopoverClose asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  void showConfirm(
-                    <>
-                      <p>
-                        To use a different harness or model provider, start a
-                        new session.
-                      </p>
-                      <p className="mt-2">
-                        If you need to move over context from the current
-                        session, ask the agent to save it to a file.
-                      </p>
-                    </>,
-                    "Change harness or provider",
-                    { confirmLabel: "New session" },
-                  ).then((ok) => ok && onNewSession())
-                }
-              >
-                Change
-              </Button>
-            </PopoverClose>
-          )}
-        </div>
-        {routed && removed && (
-          <section
-            aria-label="Provider removed"
-            className="flex flex-col gap-1 px-1 text-muted-foreground"
-          >
-            <p>
-              The provider this session ran on was removed. Pick another
-              provider's model below
-              {removedConnection ? ", or attach it again." : "."}
-            </p>
-            {removedConnection && (
-              <Button
-                variant="link"
-                size="inline"
-                className="self-start"
-                disabled={pending}
-                onClick={() => void grant(removedConnection.id)}
-              >
-                Attach {removedConnection.name} again
-              </Button>
-            )}
-          </section>
-        )}
-        {routed ? (
-          <div
-            aria-label="Models for this session"
-            className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
-          >
-            <SessionModelList
-              agentId={agentId}
-              groups={groups}
-              current={model}
-              loading={catalogModels.isLoading}
-              waiting={catalogModels.waiting}
-              failed={catalogModels.isError}
-              onRetry={() => void catalogModels.refetch()}
-              onChoose={(name) => onChoose(name)}
-              onManageProviders={() =>
-                navigateToSandboxHome(agentId, "providers")
-              }
-            />
-          </div>
-        ) : (
-          <OldRuntimeModels
-            providerName={activeProvider?.name}
-            models={models}
-            model={model}
-            removed={removed}
-            operable={operable}
-            loading={isLoading}
-            failed={isError || data?.availableModels === undefined}
-            onChoose={onChoose}
+    <>
+      {savingAsProfile}
+      <Popover>
+        <PopoverTrigger asChild>
+          <SessionPairTrigger
+            testId="session-model-picker"
+            harness={harness}
+            label={
+              harnessName &&
+              [
+                routed
+                  ? modelName
+                  : modelProviderLabel(
+                      modelName,
+                      activeProvider?.name,
+                      harnessName,
+                    ),
+                removed ? "Provider removed" : null,
+                unlisted ? "Model not offered" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            }
           />
-        )}
-        {capability?.sessionSettings && (
-          <div className="border-t border-border pt-2 empty:hidden">
-            <SessionSettingsControls
-              agentId={agentId}
-              carried={carried}
-              capability={capability}
-              model={model}
-              settings={settings}
-              defaults={defaults}
-              modelChoices={sameSideGroups(groups, model).flatMap((g) =>
-                g.models.map((m) => ({
-                  value: m.name,
-                  name: `${m.upstreamId} · ${g.displayName}`,
-                })),
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          aria-label="Session harness and model"
+          collisionPadding={8}
+          className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
+        >
+          <div className="flex items-center gap-2 px-1">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex items-center gap-2 font-medium text-foreground">
+                <span className="text-muted-foreground">
+                  <HarnessIcons harnesses={[harness]} size="xs" />
+                </span>
+                <span className="truncate">{harnessName ?? harness}</span>
+              </div>
+              {!routed && activeProvider && (
+                <h3 className={labelVariants()}>{activeProvider.name}</h3>
               )}
-              onChange={onConfigure}
-            />
+              {routed && turnRunning && (
+                <p className="text-xs text-muted-foreground">
+                  A model picked now applies to the next message.
+                </p>
+              )}
+            </div>
+            {!routed && (
+              <PopoverClose asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    void showConfirm(
+                      <>
+                        <p>
+                          To use a different harness or model provider, start a
+                          new session.
+                        </p>
+                        <p className="mt-2">
+                          If you need to move over context from the current
+                          session, ask the agent to save it to a file.
+                        </p>
+                      </>,
+                      "Change harness or provider",
+                      { confirmLabel: "New session" },
+                    ).then((ok) => ok && onNewSession())
+                  }
+                >
+                  Change
+                </Button>
+              </PopoverClose>
+            )}
           </div>
-        )}
-        <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
-          {kind && routed && followsDefaults && (
-            <DefaultFollowState
-              kind={kind}
-              follows={follows}
-              harness={harness}
+          {routed && removed && (
+            <section
+              aria-label="Provider removed"
+              className="flex flex-col gap-1 px-1 text-muted-foreground"
+            >
+              <p>
+                The provider this session ran on was removed. Pick another
+                provider's model below
+                {removedConnection ? ", or attach it again." : "."}
+              </p>
+              {removedConnection && (
+                <Button
+                  variant="link"
+                  size="inline"
+                  className="self-start"
+                  disabled={pending}
+                  onClick={() => void grant(removedConnection.id)}
+                >
+                  Attach {removedConnection.name} again
+                </Button>
+              )}
+            </section>
+          )}
+          {routed && !custom && profiles.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <ProfileList
+                /* UNIT_BOUNDARY_DESCRIPTION: a session keeps its harness, so it
+                 * offers only the profiles that run on it; another harness needs a
+                 * new session, which the profile list cannot show. */
+                profiles={profiles.filter((p) => p.harness === harness)}
+                current={{
+                  harness,
+                  provider,
+                  model,
+                  ...(settings && { settings }),
+                }}
+                onPick={(profile) => {
+                  onChoose(profile.model);
+                  rememberSessionPair(
+                    agentId,
+                    {
+                      harness,
+                      provider,
+                      model: profile.model,
+                      ...(Object.keys(profile.settings).length > 0 && {
+                        settings: profile.settings,
+                      }),
+                    },
+                    kind ?? "chat",
+                    undefined,
+                    { profileId: profile.id },
+                  );
+                }}
+                onCustom={() => setCustom(true)}
+                onManage={() => navigateToSandboxHome(agentId, "providers")}
+              />
+              <button
+                type="button"
+                onClick={() => setSavingProfile(true)}
+                className="rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                Save as a profile
+              </button>
+            </div>
+          ) : routed ? (
+            <div
+              aria-label="Models for this session"
+              className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
+            >
+              <SessionModelList
+                agentId={agentId}
+                groups={groups}
+                current={model}
+                loading={catalogModels.isLoading}
+                waiting={catalogModels.waiting}
+                failed={catalogModels.isError}
+                onRetry={() => void catalogModels.refetch()}
+                onChoose={(name) => onChoose(name)}
+                onManageProviders={() =>
+                  navigateToSandboxHome(agentId, "providers")
+                }
+              />
+            </div>
+          ) : (
+            <OldRuntimeModels
+              providerName={activeProvider?.name}
+              models={models}
               model={model}
-              target={remembered}
-              onFollow={() => onFollowDefault(false)}
+              removed={removed}
+              operable={operable}
+              loading={isLoading}
+              failed={isError || data?.availableModels === undefined}
+              onChoose={onChoose}
             />
           )}
-          {kind && !(followsDefaults && follows === kind) && (
-            <SetAsDefault
-              agentId={agentId}
-              kind={kind}
-              pair={{
-                harness,
-                provider,
-                model,
-                settings: settingsForModel(capability, groups, model, {
-                  ...defaults,
-                  ...settings,
-                }),
-              }}
-              defaults={defaults}
-              remembered={remembered}
-              {...(followsDefaults && { onSet: () => onFollowDefault(true) })}
-            />
+          {capability?.sessionSettings && (
+            <div className="border-t border-border pt-2 empty:hidden">
+              <SessionSettingsControls
+                agentId={agentId}
+                carried={carried}
+                capability={capability}
+                model={model}
+                settings={settings}
+                defaults={defaults}
+                modelChoices={sameSideGroups(groups, model).flatMap((g) =>
+                  g.models.map((m) => ({
+                    value: m.name,
+                    name: `${m.upstreamId} · ${g.displayName}`,
+                  })),
+                )}
+                onChange={onConfigure}
+              />
+            </div>
           )}
-        </div>
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
 
