@@ -34,6 +34,10 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
 
   await test.step("add a narrow allow rule in the network panel", async () => {
     await page.goto(`/sandboxes/${encodeURIComponent(agentId)}/network`);
+    /* UNIT_BOUNDARY_DESCRIPTION: the network rules are a section of Connections
+     * since the four-tile page (D104), folded away until it is asked for, which
+     * the old /network address does not do by itself. */
+    await page.getByTestId("connections-network").click();
     await page.getByTestId("egress-rule-new").click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Host").fill(host);
