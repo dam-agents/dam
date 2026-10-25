@@ -260,6 +260,8 @@ export function createSchedulesService(deps: {
     },
   ) => Promise<string | undefined>;
   ownedProfile?: (profileId: string) => Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: why a profile cannot run on this agent, or null; absent leaves the check to the fire. */
+  profileIssue?: (profileId: string, agentId: string) => Promise<string | null>;
   now?: () => Date;
 }): SchedulesService {
   const now = deps.now ?? (() => new Date());
@@ -285,6 +287,19 @@ export function createSchedulesService(deps: {
     if (!profile) return;
     if (deps.ownedProfile === undefined || !(await deps.ownedProfile(profile)))
       throw badRequest("unknown profile");
+  }
+
+  /* UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run on its agent
+   * would refuse every fire, so the save is refused with that reason instead —
+   * the same refusal a channel's profile gets (QA D4). */
+  async function ensureProfileRuns(
+    profile: string | null | undefined,
+    agentId: string,
+  ) {
+    await ensureProfileOwned(profile);
+    if (!profile || deps.profileIssue === undefined) return;
+    const issue = await deps.profileIssue(profile, agentId);
+    if (issue !== null) throw badRequest(`that profile cannot run: ${issue}`);
   }
 
   async function ensureSessionChoices(
@@ -344,7 +359,7 @@ export function createSchedulesService(deps: {
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
-      await ensureProfileOwned(input.profile);
+      await ensureProfileRuns(input.profile, input.agentId);
       if (!input.profile)
         await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
       const spec: ScheduleSpec = {
@@ -397,7 +412,7 @@ export function createSchedulesService(deps: {
         validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       await ensureAgent(input.agentId);
-      await ensureProfileOwned(input.profile);
+      await ensureProfileRuns(input.profile, input.agentId);
       if (!input.profile)
         await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
       const spec: ScheduleSpec = {
@@ -455,7 +470,7 @@ export function createSchedulesService(deps: {
       asBadRequest(() => validateTimezone(input.timezone));
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
-      await ensureProfileOwned(input.profile);
+      await ensureProfileRuns(input.profile, input.agentId);
       if (!input.profile)
         await ensureSessionChoices(input.agentId, choicesOf(input), origin);
       if (input.sessionTitle && origin?.mode === "continue")
@@ -514,7 +529,7 @@ export function createSchedulesService(deps: {
         throw badRequest("not a one-time schedule");
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
-      await ensureProfileOwned(input.profile);
+      await ensureProfileRuns(input.profile, current.agentId);
       const at = resolveMoment(input.at, input.timezone, now());
       if (input.profile === undefined && choicesChanged(input, current.spec))
         await ensureSessionChoices(
@@ -573,7 +588,7 @@ export function createSchedulesService(deps: {
       if (!current) return null;
       if (current.spec.type !== "cron")
         throw badRequest("only a cron schedule is edited with updateCron");
-      await ensureProfileOwned(input.profile);
+      await ensureProfileRuns(input.profile, current.agentId);
       const merged = mergedChoices(input, current.spec);
       if (input.profile === undefined && choicesChanged(merged, current.spec))
         await ensureSessionChoices(
@@ -639,7 +654,7 @@ export function createSchedulesService(deps: {
       if (!current) return null;
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
-      await ensureProfileOwned(input.profile);
+      await ensureProfileRuns(input.profile, current.agentId);
       const merged = mergedChoices(input, current.spec);
       if (input.profile === undefined && choicesChanged(merged, current.spec))
         await ensureSessionChoices(
@@ -655,7 +670,10 @@ export function createSchedulesService(deps: {
         type: "rrule",
         rrule: input.rrule,
         timezone: input.timezone,
-        quietHours: input.quietHours,
+        /* UNIT_BOUNDARY_DESCRIPTION: an empty list is no quiet hours at all, so
+         * a form that sends one for a schedule that never had any leaves the
+         * stored spec untouched (QA: a no-change save added `quietHours: []`). */
+        ...(input.quietHours.length > 0 && { quietHours: input.quietHours }),
         task: input.task,
       };
       if (input.sessionMode) spec.sessionMode = input.sessionMode;

@@ -244,8 +244,31 @@ export function createProfilesService(
       const renamed = Object.keys(input).every(
         (key) => key === "id" || key === "name",
       );
-      const edited = await view(input.id);
       const rejected = renamed ? [] : await rejectedAgents(input.id);
+      /* UNIT_BOUNDARY_DESCRIPTION: an edit no referencing agent can take is not
+       * a preference, it is a profile nothing can run — so it is put back as it
+       * was and the caller is told why, rather than leaving every new chat on
+       * that agent to fail against it (QA D5). A partial rejection keeps the
+       * edit, which is the owner's intent for the agents that can take it. */
+      const referencing = await repo.usage(owner, input.id);
+      if (
+        !renamed &&
+        rejected.length > 0 &&
+        rejected.length === referencing.agents.length
+      ) {
+        await repo.update(owner, input.id, {
+          name: current.name,
+          harness: current.harness,
+          providerTemplate: current.providerTemplate,
+          model: current.model,
+          settings: current.settings,
+        });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `no agent can run this profile: ${rejected[0]!.reason}`,
+        });
+      }
+      const edited = await view(input.id);
       return { profile: edited, rejected };
     },
 

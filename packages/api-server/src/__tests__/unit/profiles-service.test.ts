@@ -491,6 +491,38 @@ describe("profiles service — the fan-out of an edit", () => {
     ]);
   });
 
+  /** TEST_SCENARIO: an edit no referencing agent can take is put back, so no
+   * new chat is left failing against a profile nothing can run. */
+  it("puts the previous values back when every agent rejects the edit", async () => {
+    const before = row({ id: "p1", seed: null, ...valid });
+    const fake = fakeRepo({
+      rows: [before],
+      usage: {
+        agents: [{ id: "agent-1", slots: ["chat"] }],
+        channels: [],
+        schedules: [],
+      },
+    });
+    const err = await refusal(() =>
+      createProfilesService({
+        repo: fake.repo,
+        owner: "owner-1",
+        catalog,
+        seededProvider: shared,
+        fanOut: {
+          republishDefaults: async () => ({
+            published: false,
+            reason: "Unsupported session setting: effort=ultra-mega",
+          }),
+        },
+      }).update({ id: "p1", settings: { effort: "ultra-mega" } }),
+    );
+    expect(err.code).toBe("BAD_REQUEST");
+    expect(err.message).toContain("no agent can run this profile");
+    const kept = fake.rows.find((r) => r.id === "p1");
+    expect(kept?.settings).toEqual(before.settings);
+  });
+
   it("fans out to nobody when nothing points at the profile", async () => {
     const fake = fakeRepo({ rows: [row({ id: "p1", seed: null, ...valid })] });
     let called = 0;
