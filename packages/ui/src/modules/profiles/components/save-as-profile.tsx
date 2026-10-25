@@ -18,12 +18,17 @@ import { useCreateProfile, useUpdateProfile } from "../api/mutations.js";
  * take the values as they are, since that is exactly what the user tuned.
  */
 export function SaveAsProfile({
+  agentId,
   pair,
   providerTemplate,
   profile,
   onClose,
   onSaved,
 }: {
+  /* UNIT_BOUNDARY_DESCRIPTION: the agent the profile is saved from, so an Agent
+   * Editor's save lands in the owner's set — the one that agent resolves
+   * against. */
+  agentId: string;
   pair: SessionPair;
   providerTemplate: string;
   /** UNIT_BOUNDARY_DESCRIPTION: present when the pick is the named profile's own values, so the save updates it instead of creating a second one. */
@@ -62,7 +67,7 @@ export function SaveAsProfile({
     };
     if (profile) {
       update.mutate(
-        { id: profile.id, name: trimmed, ...body },
+        { id: profile.id, name: trimmed, agentId, ...body },
         {
           onSuccess: () => onSaved(profile.id, trimmed),
           onError: (err) => setError(err.message),
@@ -71,7 +76,7 @@ export function SaveAsProfile({
       return;
     }
     create.mutate(
-      { name: trimmed, ...body },
+      { name: trimmed, agentId, ...body },
       {
         onSuccess: (saved) => onSaved(saved.id, saved.name),
         onError: (err) => setError(err.message),

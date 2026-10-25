@@ -13,6 +13,7 @@ export function useUpdateProfile() {
       providerTemplate?: string;
       model?: string;
       settings?: Record<string, string>;
+      agentId?: string;
     }) => api.profiles.update.mutate(input),
     meta: { invalidates: [trpc.profiles.list.queryKey()] },
   });
@@ -20,7 +21,8 @@ export function useUpdateProfile() {
 
 export function useDeleteProfile() {
   return useMutation({
-    mutationFn: (input: { id: string }) => api.profiles.delete.mutate(input),
+    mutationFn: (input: { id: string; agentId?: string }) =>
+      api.profiles.delete.mutate(input),
     meta: { invalidates: [trpc.profiles.list.queryKey()] },
   });
 }
@@ -34,6 +36,7 @@ export function useCreateProfile() {
       providerTemplate: string;
       model: string;
       settings?: Record<string, string>;
+      agentId?: string;
     }) => api.profiles.create.mutate(input),
     meta: { invalidates: [trpc.profiles.list.queryKey()] },
   });

@@ -195,6 +195,7 @@ export function ModelIndicator({
   const savingAsProfile =
     savingProfile && activeProvider?.templateId !== undefined ? (
       <SaveAsProfile
+        agentId={agentId}
         pair={{ harness, provider, model, ...(settings && { settings }) }}
         providerTemplate={activeProvider.templateId}
         profile={fromProfile}

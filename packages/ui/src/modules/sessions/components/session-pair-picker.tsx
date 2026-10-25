@@ -356,6 +356,7 @@ export function SessionPairPicker(props: Props) {
   const savingAsProfile =
     savingProfile && pair && profileConnection?.templateId !== undefined ? (
       <SaveAsProfile
+        agentId={agentId}
         pair={pair}
         providerTemplate={profileConnection.templateId}
         profile={fromProfile}
