@@ -19,14 +19,29 @@ export interface DismissibleConfirm {
   confirm: (request: DismissibleConfirmRequest) => Promise<boolean>;
 }
 
-export function useDismissibleConfirm(storageKey: string): DismissibleConfirm {
+export interface DismissibleConfirms {
+  dismissed: (storageKey: string) => boolean;
+  confirm: (
+    request: DismissibleConfirmRequest,
+    storageKeys: readonly string[],
+  ) => Promise<boolean>;
+}
+
+export function useDismissibleConfirms(): DismissibleConfirms {
   const showConfirm = useStore((s) => s.showConfirm);
-  const [dismissed, setDismissed] = useState(() =>
-    readPersistedFlag(storageKey, false),
+  const [written, setWritten] = useState<ReadonlySet<string>>(new Set());
+  const dismissed = useCallback(
+    (storageKey: string) =>
+      written.has(storageKey) || readPersistedFlag(storageKey, false),
+    [written],
   );
   const confirm = useCallback(
-    async ({ title, body, confirmLabel }: DismissibleConfirmRequest) => {
-      if (readPersistedFlag(storageKey, false)) return true;
+    async (
+      { title, body, confirmLabel }: DismissibleConfirmRequest,
+      storageKeys: readonly string[],
+    ) => {
+      if (storageKeys.every((key) => readPersistedFlag(key, false)))
+        return true;
       const choice = { dontShowAgain: false };
       const ok = await showConfirm(
         <DismissibleBody
@@ -39,14 +54,24 @@ export function useDismissibleConfirm(storageKey: string): DismissibleConfirm {
         { kind: "info", confirmLabel },
       );
       if (ok && choice.dontShowAgain) {
-        writePersistedFlag(storageKey, true);
-        setDismissed(true);
+        for (const key of storageKeys) writePersistedFlag(key, true);
+        setWritten((prev) => new Set([...prev, ...storageKeys]));
       }
       return ok;
     },
-    [showConfirm, storageKey],
+    [showConfirm],
   );
   return { dismissed, confirm };
+}
+
+export function useDismissibleConfirm(storageKey: string): DismissibleConfirm {
+  const confirms = useDismissibleConfirms();
+  const { confirm: confirmAll } = confirms;
+  const confirm = useCallback(
+    (request: DismissibleConfirmRequest) => confirmAll(request, [storageKey]),
+    [confirmAll, storageKey],
+  );
+  return { dismissed: confirms.dismissed(storageKey), confirm };
 }
 
 function DismissibleBody({
