@@ -1,4 +1,9 @@
+import { sessionHistorySchema } from "agent-runtime-api";
 import { isNonNullObject, parseFrame } from "api-server-api";
+
+import { agentServiceClient } from "../../../core/agent-service-client.js";
+
+const REPLY_TAIL_FRAMES = 2_000;
 
 function textChunk(line: string, kind: string): string | null {
   const frame = parseFrame(line);
@@ -25,4 +30,20 @@ export function lastTurnReply(frames: readonly string[]): string {
     if (text) chunks.push(text);
   }
   return chunks.reverse().join("");
+}
+
+export function createTurnReplyReader(namespace: string) {
+  return async (
+    agentId: string,
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const { frames } = sessionHistorySchema.parse(
+      await agentServiceClient(agentId, namespace).sessions.history.query(
+        { sessionId, tail: REPLY_TAIL_FRAMES },
+        { signal },
+      ),
+    );
+    return lastTurnReply(frames);
+  };
 }

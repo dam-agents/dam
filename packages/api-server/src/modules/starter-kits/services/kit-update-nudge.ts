@@ -4,12 +4,9 @@ import { isKitUpdateSession } from "api-server-api";
 import type { KitUpdatePending } from "api-server-api";
 import { hasA2uiBlock } from "api-server-api/chat-forms";
 
-import { lastTurnReply } from "../domain/turn-reply.js";
-
 import type { KitUpdateMarks } from "./kit-updates.js";
 
 const SESSION_READ_TIMEOUT_MS = 10_000;
-const REPLY_TAIL_FRAMES = 2_000;
 
 export interface KitUpdateNudge {
   turnEnded(agentId: string, sessionId: string): Promise<void>;
@@ -43,12 +40,11 @@ export function createKitUpdateNudge(deps: {
     agentId: string,
     signal: AbortSignal,
   ) => Promise<{ sessions: Session[] }>;
-  history: (
+  lastReply: (
     agentId: string,
     sessionId: string,
-    tail: number,
     signal: AbortSignal,
-  ) => Promise<string[]>;
+  ) => Promise<string>;
   send: (
     agentId: string,
     payload: SessionMessageEventPayload,
@@ -67,13 +63,12 @@ export function createKitUpdateNudge(deps: {
       );
       const session = sessions.find((s) => s.sessionId === sessionId);
       if (!session || !isKitUpdateSession(session, pending)) return;
-      const frames = await deps.history(
+      const reply = await deps.lastReply(
         agentId,
         sessionId,
-        REPLY_TAIL_FRAMES,
         AbortSignal.timeout(SESSION_READ_TIMEOUT_MS),
       );
-      if (hasA2uiBlock(lastTurnReply(frames))) return;
+      if (hasA2uiBlock(reply)) return;
 
       const marked = await deps.marks.nudge(
         agentId,

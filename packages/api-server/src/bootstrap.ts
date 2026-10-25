@@ -234,7 +234,6 @@ import {
   createStateCountsRepository,
 } from "./modules/usage-metrics/index.js";
 import { formatError } from "./core/format-error.js";
-import { agentServiceClient } from "./core/agent-service-client.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
   createAuth,
@@ -285,6 +284,7 @@ import {
   createGitRefResolver,
   createKitUpstream,
   createKitUpdateNudge,
+  createTurnReplyReader,
   createKitUpdateReporter,
   createLinkedKits,
   createResolvedCatalogRepository,
@@ -1348,13 +1348,7 @@ export async function bootstrap() {
     marks: createKitUpdateMarks(agentsRepo),
     listSessions: (agentId, signal) =>
       sessionWatch.listSessions(agentId, signal),
-    history: async (agentId, sessionId, tail, signal) =>
-      (
-        await agentServiceClient(
-          agentId,
-          config.namespace,
-        ).sessions.history.query({ sessionId, tail }, { signal })
-      ).frames,
+    lastReply: createTurnReplyReader(config.namespace),
     send: (agentId, payload) =>
       runtimeDelivery.sessionMessages.send(agentId, payload),
   });
