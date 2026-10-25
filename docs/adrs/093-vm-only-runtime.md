@@ -2,7 +2,7 @@
 id: 093
 title: smolvm microVMs are the only agent runtime
 status: accepted
-supersedes: [038, 073, 032]
+supersedes: [038, 073]
 subsystem: vm-runner
 tags: [vm, smolvm, gateway, quota, migration]
 summary: Every agent becomes a smolvm machine in its owner's runner pod, with a per-owner CPU and storage pool and the owner's gateway as a sidecar there; container agent pods and Kata are removed once every agent has been migrated with its HOME.
