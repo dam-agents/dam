@@ -293,4 +293,28 @@ describe("acp-runtime: rewriting a conversation", () => {
     expect(metadata.store.get(COPY)?.meta.ref).toBe(refs[0]);
     expect(metadata.store.get(SESSION)?.meta.ref).toBe("ref-original");
   });
+
+  /**
+   * TEST_SCENARIO: A rewind by copy takes the original's place and the
+   * original goes, so the copy keeps the original's ref: a check-back the
+   * original scheduled with `continue` must still find its session.
+   */
+  it("should rewind by copy under the original's ref", async () => {
+    const { world, bob, metadata } = await readyWorld({
+      [SESSION]: original,
+      [COPY]: copy,
+    });
+
+    bob.send(rewriteFrom(2, "u2", "rewind"));
+    await settle();
+    expect(world.harness().received("session/fork")[0]?.params).toMatchObject({
+      mcpServers: [{ name: "platform-outbound", ref: "ref-original" }],
+    });
+    world.harness().replyTo("session/fork", { sessionId: COPY });
+    await settle();
+    world.harness().replyTo("session/load", {});
+    await settle();
+
+    expect(metadata.store.get(COPY)?.meta.ref).toBe("ref-original");
+  });
 });

@@ -1565,7 +1565,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): void {
     const oldId = params.sessionId;
     const fresh = cut.kind === "start";
-    const ref = randomUUID();
+    const ref = params.mode === "rewind" ? refFor(oldId) : randomUUID();
     requestFromHarness(
       fresh ? "session/new" : "session/fork",
       {
