@@ -67,6 +67,8 @@ type VMRunnerSpec struct {
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: set, every vm machine runs on one runner outside the cluster, reached at this address, instead of on per-owner runner pods. It is for a local cluster on a laptop, whose hypervisor the runner uses directly rather than nesting one inside the cluster's VM; the chart renders that runner's token and certificate, and the install starts it.
 	HostAddress string `json:"hostAddress,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the port that runner answers on. One Mac runs one runner per Platform install, so each install's controller reaches its own; zero keeps the runner pod's Service port, which is what an install without a host runner runs nothing else.
+	HostPort int `json:"hostPort,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the node directory a stager DaemonSet copies each runner release into. A runner pod keeps the image it was created with, and its loader takes a new release from here without restarting the machines. Required for runner pods.
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `enforce`.

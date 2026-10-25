@@ -122,7 +122,7 @@ spec:
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
                   "priorityClassName" (include "platform.vmRunner.priorityClassName" .)
-                  "hostAddress" ($r.hostAddress | default "")
+                  "hostAddress" ($r.hostAddress | default "") "hostPort" ($r.hostPort | default 0)
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "stalledTimeout" ($r.rollout.stalledTimeout | default "30m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
             - name: AGENT_VM
               value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}

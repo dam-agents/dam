@@ -533,6 +533,10 @@ virtualization:
     # certificate; `mise run cluster:install` starts it. There is no per-owner
     # boundary: one owner's escaped guest reaches every owner's machines.
     hostAddress: ""
+    # -- The port that runner answers on. One Mac runs one host runner per
+    # Platform install (`cluster:install` picks a free one per install), so each
+    # install's controller dials its own; 0 keeps the runner pod's port, 4600.
+    hostPort: 0
   # One gateway pod per owner serves every vm Agent of that owner, each on
   # ports of its own behind the agent's own gateway Service, so a wake starts
   # no gateway pod. Off: each vm Agent keeps a gateway pod of its own, which
