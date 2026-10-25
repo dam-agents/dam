@@ -144,8 +144,25 @@ export function EnvTab({
           description={panelDescription}
         />
       )}
-      {panel && !panelHeading && panelDescription && (
-        <p className="mb-3 text-sm text-muted-foreground">{panelDescription}</p>
+      {panel && !panelHeading && (
+        <div className="mb-2 flex items-start gap-2">
+          {panelDescription && (
+            <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+              {panelDescription}
+            </p>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Create variable"
+            tooltip="Create variable"
+            data-testid="env-var-new-panel"
+            disabled={saving}
+            onClick={() => setEditing("new")}
+          >
+            <Add size={16} />
+          </Button>
+        </div>
       )}
 
       <ListSection
