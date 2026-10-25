@@ -417,9 +417,6 @@ export async function composeRuntimeChannel(
               derivedStartMode: plugin.derivedStartMode,
             }),
             ...(nativeTemplates?.length && { nativeTemplates }),
-            ...(opts.manifests[name]?.sessionMcpEntry === false && {
-              identifiesSession: false,
-            }),
           };
         }),
         kbPublish: 2,

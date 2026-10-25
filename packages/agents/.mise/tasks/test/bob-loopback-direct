@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="Test that Bob's proxy agent leaves loopback calls to the Model Router direct and every other host on the proxy"
-//MISE sources=["bob/rootfs/usr/local/lib/bob-loopback-direct.mjs", ".mise/tasks/test/bob-loopback-direct"]
+//MISE sources=["bob/rootfs/usr/local/lib/bob-loopback-direct.mjs", "bob/rootfs/usr/local/lib/bob-preload-lib.mjs", ".mise/tasks/test/bob-loopback-direct"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";

@@ -1243,7 +1243,7 @@ export function createMcpSession(
       const mode = inSession ?? "fresh";
       if (mode !== "fresh" && !deps.sessionRef)
         return errorResult(
-          `inSession "${mode}" needs to know which session is calling, and this harness does not identify it; use "fresh".`,
+          `inSession "${mode}" needs to know which session is calling, and this call names none; use "fresh".`,
         );
       return run(async () => {
         const sched = await schedules.createOnce(
@@ -1290,7 +1290,7 @@ export function createMcpSession(
       const ref = deps.sessionRef;
       if (!ref)
         return errorResult(
-          "renaming needs to know which session is calling, and this harness does not identify it.",
+          "renaming needs to know which session is calling, and this call names none.",
         );
       try {
         await runtimeClient.sessions.setTitle.mutate({

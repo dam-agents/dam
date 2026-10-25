@@ -1512,12 +1512,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   ): void {
     const oldId = params.sessionId;
     const fresh = cut.kind === "start";
+    const ref = params.mode === "rewind" ? refFor(oldId) : randomUUID();
     requestFromHarness(
       fresh ? "session/new" : "session/fork",
       {
         ...(fresh ? {} : { sessionId: oldId }),
         cwd: ".",
-        mcpServers: [],
+        mcpServers: deps.sessionMcpServers?.(ref) ?? [],
         ...(!fresh && {
           _meta: {
             jetbrains: {
@@ -1559,6 +1560,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             rewritingSessions.delete(oldId);
             const meta = {
               ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
+              ref,
               ...(params.title !== undefined && { customTitle: params.title }),
             };
             deps.continuedFrom.copy(oldId, newId, !fresh);
