@@ -169,17 +169,14 @@ fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
 
-# A named install's own names: the release namespace, the host names, and a
-# ClusterIssuer family and CA secrets of its own (cluster-scoped names would
-# otherwise collide with the default install's). The chart's values.yaml keeps
-# the default install's names, so a production install renders as it did.
+# A named install's own names: the agent namespace, and a ClusterIssuer family
+# and CA secrets of its own (cluster-scoped names would otherwise collide with
+# the default install's). Host names stay `localhost`/`keycloak.localhost` for
+# every install — the port is what tells them apart (step 1e) — so no domain
+# override; the chart's values.yaml keeps the default install's names, and a
+# production install renders as it did.
 if [ -n "$CLUSTER_INSTALL" ]; then
   HELM_EXTRA_ARGS+=(
-    "--set=domain=$CLUSTER_DOMAIN"
-    # `localtest.me` is the default install's alias, and the Environments' hosts
-    # are named after the domain: both would be claimed by two installs at once.
-    "--set=ingress.aliasDomains={}"
-    "--set=environments.domain=env.$CLUSTER_DOMAIN"
     "--set-string=agentNamespace=$CLUSTER_AGENT_NAMESPACE"
     "--set-string=controller.envoyMitm.bootstrapIssuerName=platform-$CLUSTER_INSTALL-selfsigned-bootstrap"
     "--set-string=controller.envoyMitm.caIssuerName=platform-$CLUSTER_INSTALL-mitm-ca-issuer"
@@ -225,19 +222,22 @@ kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 
 # boots several times slower, and only M3 and later nest at all.
 # PLATFORM_NESTED_VIRT=1 keeps the pods.
 HOST_RUNNER=""
-if [ -n "$CLUSTER_INSTALL" ]; then
-  # One host runner per Mac: it holds one install's token and CA, listens on one
-  # fixed port, and its state is one directory. So a named install runs its
-  # agents on runner pods, the path a Linux host with /dev/kvm takes, and never
-  # touches the default install's runner. On a Mac whose VM was made without
-  # nested virtualization that leaves no KVM to boot a machine on: the warning
-  # after step 1 says so, and the install still serves its UI.
-  export PLATFORM_NESTED_VIRT=1
-elif [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
+if [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwin ] && [ -z "${PLATFORM_NESTED_VIRT:-}" ]; then
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   HOST_RUNNER=1
   export VM_HOST_RUNNER=1
-  HELM_EXTRA_ARGS+=(--set=virtualization.runner.hostAddress="$HOST_RUNNER_ADDRESS")
+  # One host runner per install: its own directory, port and machine-port range,
+  # so a named install's agents run on this Mac beside the default install's
+  # (see cluster:host-runner). The controller is told which port to dial.
+  HOST_RUNNER_PORT="$(host_runner_port)" || exit 1
+  # Recorded now, not when the runner starts at the end of the install: the next
+  # install reads this file to know which ports are taken.
+  mkdir -p "$HOST_RUNNER_DIR"
+  printf '%s\n' "$HOST_RUNNER_PORT" > "$HOST_RUNNER_DIR/port"
+  HELM_EXTRA_ARGS+=(
+    --set=virtualization.runner.hostAddress="$HOST_RUNNER_ADDRESS"
+    --set=virtualization.runner.hostPort="$HOST_RUNNER_PORT"
+  )
 fi
 no_kvm_warning() {
   [ -n "$1" ] || return 0
@@ -258,14 +258,16 @@ no_kvm_warning() {
 
 WARN
 }
-if [ -n "$CLUSTER_INSTALL" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$CLUSTER_TARGET" = lima ] &&
+if [ -z "$HOST_RUNNER" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$CLUSTER_TARGET" = lima ] &&
    { ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE" || ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm 2>/dev/null; }; then
-  NO_KVM_REASON="VM '$LIMA_INSTANCE' has no /dev/kvm (it was created without nested virtualization, which only a recreated VM gains), and this Mac's one host runner belongs to the default install."
+  NO_KVM_REASON="VM '$LIMA_INSTANCE' has no /dev/kvm (it was created without nested virtualization, which only a recreated VM gains), and the VM runner pods every agent runs on need it."
 fi
 # A host runner reaches each machine's gateway through a NodePort, which lima
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
 # template's catch-all ignore.
 NODEPORT_FORWARD='.portForwards = [{"guestPortRange": [30000, 32767], "hostIP": "127.0.0.1"}] + .portForwards'
+# A named install answers on a port of its own, which one rule carries whole.
+INSTALL_PORT_FORWARD='.portForwards = [{"guestPortRange": [4400, 4499], "hostIP": "127.0.0.1"}] + .portForwards'
 if [ "$CLUSTER_TARGET" = environment ] && ! env_ssh 'test -e /dev/kvm' 2>/dev/null; then
   echo "FATAL: Environment '$CLUSTER_ENVIRONMENT' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it." >&2
   echo "Nothing in create_environment asks for nesting: an Environment gives one only when the install that owns it sets controller.agent.templateDefaults.nestedVirtualization: true and lets its runners nest (virtualization.runner.nestedVirtualization), on a node whose KVM allows it." >&2
@@ -400,11 +402,18 @@ else
       limactl create --name="$LIMA_INSTANCE" "$LIMA_TEMPLATE" --tty=false
     fi
   fi
-  # A VM made before the host runner has no such rule; lima reads it at start.
-  if [ -n "$HOST_RUNNER" ] && [ "$(yq '[.portForwards[] | select(.guestPortRange[0] == 30000)] | length' "${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/lima.yaml")" = 0 ]; then
+  # A VM made before these rules has neither; lima reads them at start, so this
+  # is the one time an install restarts the VM, and only while a rule is missing.
+  LIMA_CONF="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/lima.yaml"
+  if [ -n "$HOST_RUNNER" ] && [ "$(yq '[.portForwards[] | select(.guestPortRange[0] == 30000)] | length' "$LIMA_CONF")" = 0 ]; then
     echo "Forwarding NodePorts from $LIMA_INSTANCE to this Mac's loopback (restarts the VM)..."
     limactl stop "$LIMA_INSTANCE" 2>/dev/null || true
     limactl edit "$LIMA_INSTANCE" --tty=false --set "$NODEPORT_FORWARD"
+  fi
+  if [ "$(yq '[.portForwards[] | select(.guestPortRange[0] == 4400)] | length' "$LIMA_CONF")" = 0 ]; then
+    echo "Forwarding ports $CLUSTER_PORT_MIN-$CLUSTER_PORT_MAX from $LIMA_INSTANCE to this host (restarts the VM)..."
+    limactl stop "$LIMA_INSTANCE" 2>/dev/null || true
+    limactl edit "$LIMA_INSTANCE" --tty=false --set "$INSTALL_PORT_FORWARD"
   fi
   STATUS=$(limactl list --json | python3 -c "import sys,json; [print(json.loads(l)['status']) for l in sys.stdin if json.loads(l)['name']=='$LIMA_INSTANCE']" 2>/dev/null || echo "Stopped")
   if [ "$STATUS" != "Running" ]; then
@@ -412,16 +421,11 @@ else
     limactl start "$LIMA_INSTANCE"
   fi
   # A VM made without nested virtualization cannot gain it (create-time only),
-  # and its runner pods would have no /dev/kvm to boot a machine on. A named
-  # install gets a warning instead: no runner is reachable for it anyway.
+  # and its runner pods would have no /dev/kvm to boot a machine on.
   if [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
-    if [ -z "$CLUSTER_INSTALL" ]; then
-      echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it" >&2
-      echo "(nested virtualization is create-time only: cluster:delete, then reinstall; it needs Apple silicon M3+ on macOS 15+)." >&2
-      exit 1
-    fi
-    NO_KVM_REASON="VM '$LIMA_INSTANCE' has no /dev/kvm (it was created without nested virtualization, which only a recreated VM gains), and this Mac's one host runner belongs to the default install."
-    no_kvm_warning "$NO_KVM_REASON"
+    echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm, and every agent runs as a microVM on a VM runner that needs it" >&2
+    echo "(nested virtualization is create-time only: cluster:delete, then reinstall; it needs Apple silicon M3+ on macOS 15+)." >&2
+    exit 1
   fi
   echo "Waiting for k3s to be ready..."
   wait_for_nodes
@@ -732,33 +736,26 @@ else
   fi
 fi
 
-# 1e. Traefik app entrypoint — on lima this rides the provision script's
-# k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
-# so the app port silently doesn't exist. HelmChartConfig via kubectl apply
-# is idempotent and works on both. The port follows `--set=port=…` so the
-# ingress listens where the chart's URLs point (dev defaults to 4444, the
-# e2e install passes 6555); the last install wins.
+# 1e. The install's app entrypoint — on lima this rides the provision script's
+# k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that, so
+# the port silently doesn't exist. Every install on the cluster routes on that
+# one Traefik, on a port of its own: the default install keeps 4444 (or the
+# e2e lane's 6555), a named install takes the first free port of
+# CLUSTER_PORT_MIN..MAX, which one Lima port-forward rule carries to the host
+# (etc/lima/k3s.yaml). The entrypoints live in the cluster's one HelmChartConfig,
+# merged under a compare-and-swap so two installs never drop each other's, and
+# the install's Ingress names its own (they all serve the same host names).
 # In an Environment the port is the backchannel's, set above, and the
 # entrypoint trusts the forwarded headers: the gate relays only to the node's
 # loopback, where the host-name bridge and cluster:open's forward reach it,
 # and the bridge's X-Forwarded-Proto is what tells Keycloak the browser uses
 # https.
-TRAEFIK_FORWARDED=""
+TRAEFIK_INSECURE=""
 if [ "$CLUSTER_TARGET" = environment ]; then
-  TRAEFIK_FORWARDED='
-        forwardedHeaders:
-          insecure: true'
+  APP_PORT="$usage_backchannel_port"
+  TRAEFIK_INSECURE=insecure
 elif [ -n "$CLUSTER_INSTALL" ]; then
-  # Every install on the cluster routes on the one entrypoint the VM forwards;
-  # the host name keeps them apart (values-local.yaml's e2e lane only ever runs
-  # on its own VM). So a named install checks the port instead of moving it.
-  ENTRY_PORT="$(kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null |
-    yq '.ports.platform.exposedPort // ""' 2>/dev/null)"
-  if [ -n "$ENTRY_PORT" ] && [ "$ENTRY_PORT" != "$CLUSTER_APP_PORT" ]; then
-    echo "FATAL: the cluster's Traefik app entrypoint is on port $ENTRY_PORT, and this install's addresses name $CLUSTER_APP_PORT. Installs share one entrypoint; a port is not per install (see the multi-install design)." >&2
-    exit 1
-  fi
-  APP_PORT="$CLUSTER_APP_PORT"
+  APP_PORT="" # the first free port of the range, below
 else
   if [ -n "$HELM_VALUES" ]; then
     APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"
@@ -769,22 +766,22 @@ else
     esac
   done
 fi
-kubectl apply -f - <<YAML
-apiVersion: helm.cattle.io/v1
-kind: HelmChartConfig
-metadata:
-  name: traefik
-  namespace: kube-system
-spec:
-  valuesContent: |
-    ports:
-      platform:
-        port: $APP_PORT
-        expose:
-          default: true
-        exposedPort: $APP_PORT
-        protocol: TCP$TRAEFIK_FORWARDED
-YAML
+APP_PORT="$(traefik_entrypoint_port "$APP_PORT" "$TRAEFIK_INSECURE")" || exit 1
+HELM_EXTRA_ARGS+=(
+  "--set-string=port=$APP_PORT"
+  # Traefik attaches a router with no entrypoints to all of them, and every
+  # install serves `localhost`, so each Ingress names the one it belongs to.
+  "--set-string=ingress.annotations.traefik\.ingress\.kubernetes\.io/router\.entrypoints=$CLUSTER_ENTRYPOINT"
+)
+if [ -n "$CLUSTER_INSTALL" ]; then
+  # An install whose Ingress predates that annotation (the default one, until
+  # its next cluster:install) still claims `Host(localhost)` on every
+  # entrypoint, and Traefik breaks the tie by rule length. A named install's
+  # router names itself the winner on its own port; once every install carries
+  # the entrypoint annotation the priority decides nothing.
+  HELM_EXTRA_ARGS+=("--set-string=ingress.annotations.traefik\.ingress\.kubernetes\.io/router\.priority=1000")
+fi
+echo "Install $CLUSTER_RELEASE answers on port $APP_PORT (Traefik entrypoint $CLUSTER_ENTRYPOINT)"
 if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Installing the host-name bridge on port $BRIDGE_PORT..."
   env_bridge_manifest "$(yq '.controller.envoyImage' helm/values.yaml)" \
@@ -1287,7 +1284,7 @@ echo "=== Cluster ready ==="
 no_mesh_warning
 [ -z "${NO_KVM_REASON:-}" ] || no_kvm_warning "$NO_KVM_REASON"
 echo "KUBECONFIG=$KUBECONFIG"
-echo "Open it at $CLUSTER_URL"
+echo "Open it at http://localhost:$APP_PORT"
 if [ "$CLUSTER_TARGET" = environment ]; then
   echo "Open it at $(printf '%s\n' "$ENV_VALUES" | sed -n 's/^urls.ui=//p'), behind the Environment's sign-in."
   if [ "$BACKCHANNEL" = true ]; then

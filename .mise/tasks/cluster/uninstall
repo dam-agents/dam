@@ -9,6 +9,14 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   echo "An Environment's install goes with the Environment: delete it with the delete_environment tool." >&2
   exit 1
 fi
+# The runner this install started on the Mac stops with it, and its entrypoint
+# leaves the cluster's Traefik config so its port is free for the next install.
+if [ "$(uname -s)" = Darwin ]; then
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  host_runner_stop
+fi
+traefik_entrypoint_drop
+
 if ! helm status "$CLUSTER_RELEASE" -n "$CLUSTER_NAMESPACE" >/dev/null 2>&1; then
   if [ -n "$CLUSTER_INSTALL" ]; then
     echo "No install '$CLUSTER_RELEASE' in namespace '$CLUSTER_NAMESPACE'; nothing to remove."
@@ -53,6 +61,9 @@ if [ -n "$CLUSTER_INSTALL" ]; then
     kubectl -n cert-manager delete certificate,secret "$ca" --ignore-not-found 2>/dev/null || true
   done
   kubectl delete ns "$CLUSTER_NAMESPACE" --ignore-not-found --wait=true --timeout=120s 2>/dev/null || true
+  # Its runner is stopped, and the machines it ran were this install's agents:
+  # their disks have nothing left to belong to. Only a Mac has a host runner.
+  [ -z "${HOST_RUNNER_DIR:-}" ] || rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_VM_HOME"
   echo "Install '$CLUSTER_INSTALL' removed (namespace $CLUSTER_NAMESPACE)."
 else
   echo "Platform uninstalled and cleaned up. Use 'mise run cluster:delete' to remove the entire cluster."

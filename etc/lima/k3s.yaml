@@ -181,6 +181,11 @@ copyToHost:
 portForwards:
   - guestPort: 4444
     hostPort: 4444
+  # A named Platform install serves the same host names on a port of its own,
+  # taken from this range (`cluster:install`); one rule carries the whole range
+  # to this host's loopback.
+  - guestPortRange: [4400, 4499]
+    hostIP: 127.0.0.1
   - guestPort: 16443
     hostPort: 16443
   # Deny-by-default: lima otherwise auto-forwards every 0.0.0.0 listener in the

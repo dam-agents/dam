@@ -85,11 +85,111 @@ fi
 export CLUSTER_RELEASE="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}"
 export CLUSTER_NAMESPACE="${CLUSTER_INSTALL:+platform-}${CLUSTER_INSTALL:-default}"
 export CLUSTER_AGENT_NAMESPACE="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}-agents"
-export CLUSTER_DOMAIN="${CLUSTER_INSTALL:+$CLUSTER_INSTALL.}localhost"
-export CLUSTER_APP_PORT=4444
-# Every install routes on the one Traefik entrypoint the VM forwards; the host
-# name is what keeps them apart (docs/design in the PR).
-export CLUSTER_URL="http://$CLUSTER_DOMAIN:$CLUSTER_APP_PORT"
+# The entrypoint this install's Ingress attaches to in the cluster's one Traefik
+# config. Every install serves the same host names (`localhost`,
+# `keycloak.localhost`, …) on a port of its own, so the entrypoint is what tells
+# them apart; the default install keeps the name it had before there were several.
+export CLUSTER_ENTRYPOINT="platform${CLUSTER_INSTALL:+-$CLUSTER_INSTALL}"
+# A named install's port comes from this range, which one Lima port-forward rule
+# carries from the VM to this host's loopback (`etc/lima/k3s.yaml`).
+export CLUSTER_PORT_MIN=4400 CLUSTER_PORT_MAX=4499
+
+# cluster_install_port: the port this install's entrypoint listens on, read from
+# the cluster's Traefik config — the only record of it, and the reason two
+# worktrees never take one port. Empty when the install is not there.
+cluster_install_port() {
+  kubectl -n kube-system get helmchartconfig traefik -o jsonpath='{.spec.valuesContent}' 2>/dev/null |
+    ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].exposedPort // ""' 2>/dev/null
+}
+
+# install_url: where this install answers from this host. Empty when it is not
+# installed.
+install_url() {
+  local p
+  p="$(cluster_install_port)"
+  [ -n "$p" ] && printf 'http://localhost:%s' "$p"
+}
+
+# traefik_entrypoint_port [fixed-port] [insecure]: adds this install's entrypoint
+# to the cluster's one Traefik chart config and prints the port it took. The
+# config is shared, so the write is a compare-and-swap on the object's
+# resourceVersion: two installs starting at once take two ports, and neither
+# drops the other's entrypoint. A fixed port is the default install's (and an
+# Environment's); a named install takes the first port of the range no entrypoint
+# names yet, and keeps it on the next run.
+# yq reads the entrypoint name and port from ENTRY/PORT: mikefarah's yq has no
+# --arg.
+traefik_entrypoint_port() {
+  local fixed="${1:-}" insecure="${2:-}" values json port used p i
+  for i in $(seq 1 20); do
+    json="$(kubectl -n kube-system get helmchartconfig traefik -o json 2>/dev/null)" || json=""
+    values=""
+    [ -z "$json" ] || values="$(printf '%s' "$json" | jq -r '.spec.valuesContent // ""')"
+    port="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].exposedPort // ""' 2>/dev/null)"
+    if [ -n "$port" ]; then
+      # This install's already: a fixed port must agree with it, and a named
+      # install keeps the port it took before.
+      if [ -z "$fixed" ] || [ "$fixed" = "$port" ]; then printf '%s' "$port"; return 0; fi
+    fi
+    if [ -z "$port" ]; then
+      if [ -n "$fixed" ]; then
+        port="$fixed"
+      else
+        used="$(printf '%s' "$values" | yq -r '[.ports[]?.exposedPort] | join(" ")' 2>/dev/null)"
+        for p in $(seq "$CLUSTER_PORT_MIN" "$CLUSTER_PORT_MAX"); do
+          case " $used " in *" $p "*) continue ;; esac
+          port="$p"; break
+        done
+        [ -n "$port" ] || {
+          echo "FATAL: every port of $CLUSTER_PORT_MIN-$CLUSTER_PORT_MAX is taken by another install; remove one with 'mise run cluster:uninstall -- --name <name>'" >&2
+          return 1
+        }
+      fi
+    fi
+    values="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" PORT="$port" yq -r '
+      .ports = ((.ports // {}) | .[env(ENTRY)] = {
+        "port": (env(PORT) | tonumber),
+        "expose": {"default": true},
+        "exposedPort": (env(PORT) | tonumber),
+        "protocol": "TCP"
+      })')" || return 1
+    if [ "$insecure" = insecure ]; then
+      values="$(printf '%s' "$values" | ENTRY="$CLUSTER_ENTRYPOINT" yq -r '.ports[env(ENTRY)].forwardedHeaders = {"insecure": true}')" || return 1
+    fi
+    if [ -z "$json" ]; then
+      kubectl apply -f - >/dev/null <<YAML || continue
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |
+$(printf '%s' "$values" | sed 's/^/    /')
+YAML
+      printf '%s' "$port"; return 0
+    fi
+    if printf '%s' "$json" | jq --arg v "$values" '.spec.valuesContent = $v' | kubectl replace -f - >/dev/null 2>&1; then
+      printf '%s' "$port"; return 0
+    fi
+  done
+  echo "FATAL: could not reserve a Traefik entrypoint for install '$CLUSTER_INSTALL' (the cluster's Traefik config kept changing)" >&2
+  return 1
+}
+
+# traefik_entrypoint_drop: takes this install's entrypoint out of the cluster's
+# Traefik config, so its port is free for the next install.
+traefik_entrypoint_drop() {
+  local json values i
+  for i in $(seq 1 20); do
+    json="$(kubectl -n kube-system get helmchartconfig traefik -o json 2>/dev/null)" || return 0
+    values="$(printf '%s' "$json" | jq -r '.spec.valuesContent // ""' |
+      ENTRY="$CLUSTER_ENTRYPOINT" yq -r 'del(.ports[env(ENTRY)])' 2>/dev/null)" || return 0
+    printf '%s' "$json" | jq --arg v "$values" '.spec.valuesContent = $v' | kubectl replace -f - >/dev/null 2>&1 && return 0
+  done
+  echo "WARN: could not drop install $CLUSTER_INSTALL's Traefik entrypoint; its port stays reserved" >&2
+  return 0
+}
 
 # install_image_tags <component>...: aliases each freshly imported local image as
 # this install's own tag. A tag is node-wide state, so two installs on one node
