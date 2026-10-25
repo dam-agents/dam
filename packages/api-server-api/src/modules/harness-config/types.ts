@@ -8,12 +8,14 @@ import type {
   harnessConfigSnapshotResultSchema,
   harnessConfigSnapshotSchema,
   sessionDefaultsSchema,
+  sessionDefaultsViewSchema,
   sessionPairSchema,
 } from "./schemas.js";
 
 export type SessionPair = z.infer<typeof sessionPairSchema>;
 export type DefaultKind = z.infer<typeof defaultKindSchema>;
 export type SessionDefaults = z.infer<typeof sessionDefaultsSchema>;
+export type SessionDefaultsView = z.infer<typeof sessionDefaultsViewSchema>;
 
 /* UNIT_BOUNDARY_DESCRIPTION: a chat default is a profile reference or an inline
  * pair; a reference names a profile the agent's owner holds, and the runtime is
@@ -68,7 +70,7 @@ export interface HarnessConfigService {
     harness?: string,
   ): Promise<HarnessConfigSnapshotResult>;
   sessionPair(agentId: string, kind: DefaultKind): Promise<SessionPair | null>;
-  sessionDefaults(agentId: string): Promise<SessionDefaults>;
+  sessionDefaults(agentId: string): Promise<SessionDefaultsView>;
   rememberSessionPair(
     agentId: string,
     kind: DefaultKind,

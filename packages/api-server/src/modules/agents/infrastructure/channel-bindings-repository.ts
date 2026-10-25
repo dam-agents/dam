@@ -8,12 +8,16 @@ function toChannelConfig(row: {
   type: string;
   config: unknown;
   profileId?: string | null;
+  createdAt?: Date;
 }): ChannelConfig {
   const config = row.config as Record<string, unknown>;
   return {
     type: row.type as ChannelType,
     ...config,
     ...(row.profileId !== undefined && { profileId: row.profileId }),
+    ...(row.createdAt !== undefined && {
+      createdAt: row.createdAt.toISOString(),
+    }),
   } as ChannelConfig;
 }
 

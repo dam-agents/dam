@@ -6,6 +6,7 @@ import type {
 } from "api-server-api";
 import type {
   AgentKind,
+  ChannelConfig,
   EnvVar,
   SlackChannel,
   TemplateHarness,
@@ -193,7 +194,7 @@ export interface AgentView {
     attempts: number;
     maxAttempts: number;
   }[];
-  channels: SlackChannel[];
+  channels: (SlackChannel & Pick<ChannelConfig, "profileId" | "createdAt">)[];
   kbTemplateId: string | null;
   kbShareRoots?: string[];
   starterKit: string | null;

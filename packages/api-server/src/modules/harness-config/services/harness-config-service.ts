@@ -148,7 +148,11 @@ export function createHarnessConfigService(deps: {
 
     async sessionDefaults(agentId) {
       await requireOwned(agentId);
-      return deps.pairRepo.readSaved(agentId);
+      const [defaults, references] = await Promise.all([
+        deps.pairRepo.readSaved(agentId),
+        deps.pairRepo.readReferences(agentId),
+      ]);
+      return { ...defaults, chatProfileId: references.sessionProfile ?? null };
     },
 
     async defaultFor(agentId, kind, harness) {

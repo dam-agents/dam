@@ -103,8 +103,12 @@ export interface SlackChannel extends Channel {
 
 /* UNIT_BOUNDARY_DESCRIPTION: a channel runs on a profile of its own (D91), kept
  * on its row; null is a channel that predates profiles and still falls back to
- * the agent's chat default. */
-export type ChannelConfig = SlackChannel & { profileId?: string | null };
+ * the agent's chat default. `createdAt` orders the rows, so a new channel's
+ * bind dialog starts on the profile the newest one runs on. */
+export type ChannelConfig = SlackChannel & {
+  profileId?: string | null;
+  createdAt?: string;
+};
 
 export type AgentState =
   | "starting"

@@ -42,7 +42,11 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
         <SlackChannelCard agent={agent} readOnly={readOnly} />
       )}
       {available.telegram && (
-        <TelegramChannelCard agentId={agentId} readOnly={readOnly} />
+        <TelegramChannelCard
+          agent={agent}
+          agentId={agentId}
+          readOnly={readOnly}
+        />
       )}
     </>
   );

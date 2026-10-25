@@ -12,18 +12,23 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { AddRow, ListSection } from "@/components/ui/list-section";
 import { externalLinkProps } from "@/lib/external-link";
 
+import type { AgentView } from "../../../../types.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
 import {
   useTelegramBot,
   useTelegramChats,
 } from "../../../telegram/api/queries.js";
+import { conversationProfileId } from "../../lib/channel-bindings.js";
+import { ChannelProfileLine } from "./channel-profile-line.js";
 import { ChannelRow } from "./channel-row.js";
 
 export function TelegramChannelCard({
+  agent,
   agentId,
   readOnly = false,
 }: {
+  agent: AgentView | undefined;
   agentId: string;
   readOnly?: boolean;
 }) {
@@ -68,28 +73,38 @@ export function TelegramChannelCard({
         }
       >
         {list.map((chat) => (
-          <ChannelRow
-            key={chat.conversationId}
-            title={chat.title}
-            actionsLabel={`Telegram chat ${chat.title} actions`}
-            menuTestId="telegram-chat-menu"
-            actions={
-              !readOnly && (
-                <DropdownMenuItem
-                  tone="danger"
-                  disabled={unbind.isPending}
-                  onSelect={() =>
-                    unbind.mutate({
-                      agentId,
-                      conversationId: chat.conversationId,
-                    })
-                  }
-                >
-                  Disconnect
-                </DropdownMenuItem>
-              )
-            }
-          />
+          <div key={chat.conversationId}>
+            <ChannelRow
+              title={chat.title}
+              actionsLabel={`Telegram chat ${chat.title} actions`}
+              menuTestId="telegram-chat-menu"
+              actions={
+                !readOnly && (
+                  <DropdownMenuItem
+                    tone="danger"
+                    disabled={unbind.isPending}
+                    onSelect={() =>
+                      unbind.mutate({
+                        agentId,
+                        conversationId: chat.conversationId,
+                      })
+                    }
+                  >
+                    Disconnect
+                  </DropdownMenuItem>
+                )
+              }
+            />
+            <ChannelProfileLine
+              agentId={agentId}
+              channel={{
+                type: "telegram",
+                conversationId: chat.conversationId,
+              }}
+              profileId={conversationProfileId(agent, chat.conversationId)}
+              readOnly={readOnly}
+            />
+          </div>
         ))}
       </ListSection>
       {instructionsOpen && (

@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { SlackChannel } from "api-server-api";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -7,6 +8,13 @@ import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
 import { useBindSharingConfirm } from "../../agents/hooks/use-bind-sharing-confirm.js";
+import { useProfiles } from "../../profiles/api/queries.js";
+import {
+  defaultProfileId,
+  newestProfileId,
+} from "../../profiles/lib/default-profile.js";
+import { useSessionDefaults } from "../../sessions/api/session-pair.js";
+import { useSetChannelProfile } from "../api/channel-profile.js";
 import { isSlackDirectMessageId } from "../lib/shared-channels.js";
 import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
@@ -18,6 +26,7 @@ const slackChannelFormSchema = z
     ambient: z.boolean(),
     customEmojiEnabled: z.boolean(),
     customEmoji: z.array(z.string()),
+    profile: z.string(),
   })
   .superRefine((values, ctx) => {
     if (!values.customEmojiEnabled) return;
@@ -42,7 +51,23 @@ export function useSlackChannelForm(
   const editing = !!channel;
 
   const connectSlack = useConnectSlack();
+  const setChannelProfile = useSetChannelProfile(agent.id);
   const bindConfirm = useBindSharingConfirm(editing ? null : agent);
+  const { data: profiles = [] } = useProfiles(agent.id);
+  const chatProfileId =
+    useSessionDefaults(agent.id).data?.chatProfileId ?? null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a new channel starts on the profile the newest
+   * channel of this agent runs on, else the chat profile (D91); the field is
+   * the one place the pick is made for a binding, so the row never opens
+   * without one. */
+  const preselected =
+    editing || profiles.length === 0
+      ? null
+      : defaultProfileId({
+          profiles,
+          newestProfileId: newestProfileId(agent.channels),
+          chatProfileId,
+        });
 
   const form = useForm<SlackChannelFormValues>({
     resolver: zodResolver(slackChannelFormSchema),
@@ -56,8 +81,16 @@ export function useSlackChannelForm(
           { length: 8 },
           (_, i) => `${getBrand().short}-agent-${i + 1}`,
         ),
+      profile: "",
     },
   });
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the preselection arrives with the profiles, so
+   * it is written once they are here — and never over a pick already made. */
+  useEffect(() => {
+    if (preselected === null || form.getValues("profile") !== "") return;
+    form.setValue("profile", preselected);
+  }, [preselected, form]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     const audience =
@@ -77,6 +110,12 @@ export function useSlackChannelForm(
       },
     });
     if (connect) await connectSlack.mutateAsync(connect);
+    if (!editing && values.profile !== "")
+      setChannelProfile.mutate({
+        type: "slack",
+        slackChannelId: values.channelId.trim(),
+        profileId: values.profile,
+      });
     onSaved();
   });
 

@@ -77,6 +77,13 @@ export const sessionDefaultsSchema = z.object({
   scheduled: sessionPairSchema.nullable(),
 });
 
+/* UNIT_BOUNDARY_DESCRIPTION: the saved defaults, plus the profile the chat
+ * default names, so a form that prefills from "the chat profile" reads the
+ * reference instead of guessing it from the values. */
+export const sessionDefaultsViewSchema = sessionDefaultsSchema.extend({
+  chatProfileId: z.string().nullable(),
+});
+
 export const harnessConfigSettledSchema = z.object({
   settled: z.boolean(),
 });

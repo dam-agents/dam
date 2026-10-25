@@ -11,17 +11,18 @@ import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDisconnectSlack } from "../../../agents/api/mutations.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
-import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
+import type { SlackChannelBinding } from "../../lib/slack-channels.js";
 import {
   findSlackChannels,
   isSlackConversationGone,
   slackChannelLabel,
 } from "../../lib/slack-channels.js";
+import { ChannelProfileLine } from "./channel-profile-line.js";
 import { ChannelRow } from "./channel-row.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 import { SlackLoopGuardNotice } from "./slack-loop-guard-notice.js";
 
-type ModalTarget = SlackChannel | "new" | null;
+type ModalTarget = SlackChannelBinding | "new" | null;
 
 export function SlackChannelCard({
   agent,
@@ -104,7 +105,7 @@ function SlackChannelRow({
   onEdit,
 }: {
   agentId: string;
-  channel: SlackChannel;
+  channel: SlackChannelBinding;
   readOnly: boolean;
   onEdit: () => void;
 }) {
@@ -172,6 +173,12 @@ function SlackChannelRow({
             </>
           )
         }
+      />
+      <ChannelProfileLine
+        agentId={agentId}
+        channel={{ type: "slack", slackChannelId: channel.slackChannelId }}
+        profileId={channel.profileId ?? null}
+        readOnly={readOnly}
       />
       {channel.loopGuard && <SlackLoopGuardNotice drops={channel.loopGuard} />}
     </div>
