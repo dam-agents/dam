@@ -47,6 +47,19 @@ export function listAgentIdsByOwner(db: Db, pseudo: SubPseudonymizer) {
   };
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: whether the row a boot pass is about to write was
+ * soft-deleted before it, which is what tells a restore from an Agent still
+ * waiting for its first hello. */
+export function isAgentRowDeleted(db: Db) {
+  return async (id: string): Promise<boolean> => {
+    const rows = await db
+      .select({ deletedAt: agents.deletedAt })
+      .from(agents)
+      .where(eq(agents.id, id));
+    return rows[0]?.deletedAt !== undefined && rows[0]?.deletedAt !== null;
+  };
+}
+
 export function listLiveAgentIds(db: Db) {
   return async (): Promise<string[]> => {
     const rows = await db

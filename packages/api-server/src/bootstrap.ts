@@ -205,7 +205,10 @@ import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
 } from "./modules/usage/index.js";
-import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
+import {
+  isAgentRowDeleted,
+  listAgentIdsByOwner,
+} from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import {
   composeTelemetryReader,
   createTelemetryRoutes,
@@ -1254,13 +1257,15 @@ export async function bootstrap() {
   usageMetrics.start();
   const seedSources = parseSeedSources(config.skillSourcesSeed);
 
-  /* UNIT_BOUNDARY_DESCRIPTION: an Agent restored from the registry has no chat
-   * default of its own — a deletion cleared its references — so the boot pass
-   * binds the owner's seeded Default exactly as a create does. */
+  /* UNIT_BOUNDARY_DESCRIPTION: an Agent restored from deletion has no chat
+   * default of its own — the deletion cleared its references — so it is bound to
+   * the owner's seeded Default under the same rules as create: a kit that names
+   * a model decides the default, and an Environment never starts a session. */
   const bindRestoredAgent = async (agentId: string): Promise<void> => {
     const agent = await agentsRepo.get(agentId);
     const harness = agent?.spec.harness;
     if (!agent?.owner || typeof harness !== "string") return;
+    if (agent.spec.environmentOf || agent.starterKitDefaultModel) return;
     await createProfilesService({
       repo: profilesRepository,
       owner: agent.owner,
@@ -1268,10 +1273,12 @@ export async function bootstrap() {
       seededProvider: seededProvider(config.curveBenderDeployment !== null),
     }).bindDefaultAgentProfile({ agentId, harness });
   };
+  const isRestoredAgent = isAgentRowDeleted(db);
   const usage = composeUsageModule({
     db,
     subPseudonymizer,
-    onAgentRowUpserted: bindRestoredAgent,
+    isRestoredAgent,
+    onAgentRestored: bindRestoredAgent,
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
     listK8sAgents: async () => {

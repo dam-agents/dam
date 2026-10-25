@@ -27,6 +27,14 @@ import {
   isNoDefaultModelError,
   type FirePair,
 } from "../../harness-config/index.js";
+
+/** UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run on its agent fails the same way every fire, so the attempt is final rather than retried like a transient refusal. */
+class ProfileRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProfileRefusedError";
+  }
+}
 import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
 
@@ -199,10 +207,9 @@ export function createSchedulerRunner(
      * on its agent fails with that reason; it never runs the agent's default and
      * is never recorded as following one. */
     if (sched.profileIssue !== undefined)
-      throw new TRPCError({
-        code: "PRECONDITION_FAILED",
-        message: `this schedule's profile cannot run: ${sched.profileIssue}`,
-      });
+      throw new ProfileRefusedError(
+        `this schedule's profile cannot run: ${sched.profileIssue}`,
+      );
     if (!continues && opts.wakeFirst) {
       const stamp = await deps.ensureDefault(sched.agentId);
       if (stamp) earlyWake.set(sched, stamp);
@@ -416,7 +423,10 @@ export function createSchedulerRunner(
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
         noteFire("failure", { stage: "commit" });
-        const final = lastAttempt || isNoDefaultModelError(err);
+        const final =
+          lastAttempt ||
+          isNoDefaultModelError(err) ||
+          err instanceof ProfileRefusedError;
         if (final) {
           await deps.repo
             .writeStatus(sched.id, {
@@ -513,7 +523,10 @@ export function createSchedulerRunner(
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
-      const final = lastAttempt || isNoDefaultModelError(err);
+      const final =
+        lastAttempt ||
+        isNoDefaultModelError(err) ||
+        err instanceof ProfileRefusedError;
       const after = final ? nextFireAt(spec, now()) : fireAt;
       if (stage === "commit")
         await deps.repo
@@ -611,7 +624,7 @@ export function createSchedulerRunner(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
         await emitFired(sched, "failure");
-        if (isNoDefaultModelError(err)) {
+        if (isNoDefaultModelError(err) || err instanceof ProfileRefusedError) {
           await deps.repo
             .writeStatus(scheduleId, {
               lastFiredAt: now(),

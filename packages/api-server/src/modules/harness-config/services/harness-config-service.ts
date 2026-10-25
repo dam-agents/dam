@@ -223,6 +223,24 @@ export function createHarnessConfigService(deps: {
        * to, so the value written is validated exactly as a picked one, and the
        * runtime is sent values either way. A reference that cannot run here is
        * refused at save rather than left to fail every later run. */
+      if (profileId !== null) {
+        const resolved = await deps.profiles.resolveStored({
+          profileId,
+          agentId,
+          owner: deps.ownerSub,
+        });
+        if (!resolved)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "profile not found",
+          });
+        if (resolved.unavailable)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: resolved.unavailable.detail,
+          });
+        pair = resolved.pair;
+      }
       const subagentProfileId = references?.platformSubagentProfileId ?? null;
       if (subagentProfileId !== null) {
         /* UNIT_BOUNDARY_DESCRIPTION: the platform sub-agent slot names a profile
@@ -253,24 +271,6 @@ export function createHarnessConfigService(deps: {
             }),
           },
         };
-      }
-      if (profileId !== null) {
-        const resolved = await deps.profiles.resolveStored({
-          profileId,
-          agentId,
-          owner: deps.ownerSub,
-        });
-        if (!resolved)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "profile not found",
-          });
-        if (resolved.unavailable)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: resolved.unavailable.detail,
-          });
-        pair = resolved.pair;
       }
       pair = await validDefaultPair(agentId, pair);
       await deps.pairRepo.write(agentId, kind, pair, references);

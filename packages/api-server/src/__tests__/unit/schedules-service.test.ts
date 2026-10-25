@@ -890,3 +890,78 @@ describe("a schedule's profile ownership on every write", () => {
     expect(saved?.profile).toBeUndefined();
   });
 });
+
+describe("a profile schedule saved from a form", () => {
+  const profiled = (): Schedule => ({
+    ...makeCurrent(),
+    spec: {
+      ...makeCurrent().spec,
+      profile: "profile-1",
+      harness: "claude-code",
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      settings: { effort: "high" },
+    },
+  });
+  const resolved = {
+    harness: "claude-code",
+    model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    settings: { effort: "high" },
+  };
+
+  /** TEST_SCENARIO: The web form pre-fills the resolved values and sends them
+   * back, blank or not, on every save; a task-only edit must keep the profile. */
+  it("keeps the reference when the form repeats the resolved values", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({
+      ...baseUpdate,
+      task: "another thing",
+      ...resolved,
+    });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+    expect(getSavedSpec()?.model).toBeUndefined();
+  });
+
+  it("keeps the reference when the form sends blanks", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({
+      ...baseUpdate,
+      harness: null,
+      model: null,
+      settings: null,
+    });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+    expect(getSavedSpec()?.harness).toBeUndefined();
+  });
+
+  it("detaches on a value that differs, keeping what the profile gave", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({
+      ...baseUpdate,
+      ...resolved,
+      model: "cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030",
+    });
+    const saved = getSavedSpec();
+    expect(saved?.profile).toBeUndefined();
+    expect(saved?.harness).toBe("claude-code");
+    expect(saved?.model).toBe("cb/rits/deepseek-ai/DeepSeek-V4.1-Flash-2030");
+  });
+
+  /** TEST_SCENARIO: A schedule whose profile cannot run shows the form blank;
+   * saving the task must not drop the reference and quietly fall back. */
+  it("keeps the reference of a profile that cannot run on a task-only edit", async () => {
+    const unavailable: Schedule = {
+      ...makeCurrent(),
+      spec: { ...makeCurrent().spec, profile: "profile-1" },
+      profileIssue: "CurveBender (shared) is not connected",
+    };
+    const { service, getSavedSpec } = makeDeps(unavailable);
+    await service.updateRRule({
+      ...baseUpdate,
+      task: "another thing",
+      harness: null,
+      model: null,
+      settings: null,
+    });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+  });
+});

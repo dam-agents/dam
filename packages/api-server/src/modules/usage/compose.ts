@@ -35,6 +35,38 @@ import type { AgentSizing } from "./domain/analytics-report.js";
 import { createUsageRoutes } from "./routes.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
+export interface BootAgentRow {
+  id: string;
+  owner: string;
+  starterKit: string | null;
+  onboardedAt: string | null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one Agent row a boot pass writes. Only a row that
+ * was soft-deleted is a restore, and only a restore is bound to the seeded
+ * Default; an Agent still waiting for its first hello keeps no default, so its
+ * conversion can save the model it actually ran.
+ */
+export async function upsertBootAgent(
+  deps: {
+    isRestoredAgent?: (agentId: string) => Promise<boolean>;
+    upsert: (row: { id: string; ownerSub: string }) => Promise<void>;
+    fillKitFacts: (agent: BootAgentRow) => Promise<void>;
+    onAgentRestored?: (agentId: string) => Promise<void>;
+    log: (message: string) => void;
+  },
+  agent: BootAgentRow,
+): Promise<void> {
+  const restored = (await deps.isRestoredAgent?.(agent.id)) ?? false;
+  await deps.upsert({ id: agent.id, ownerSub: agent.owner });
+  await deps.fillKitFacts(agent);
+  if (!restored) return;
+  await deps.onAgentRestored?.(agent.id).catch((err: unknown) => {
+    deps.log(`[usage/bootstrap-agents] binding ${agent.id} failed: ${err}`);
+  });
+}
+
 export interface UsageModuleDeps {
   db: Db;
   subPseudonymizer: SubPseudonymizer;
@@ -52,8 +84,10 @@ export interface UsageModuleDeps {
     Array<{ metadata?: { name?: string }; spec?: unknown }>
   >;
   agentSizing: AgentSizing;
-  /** UNIT_BOUNDARY_DESCRIPTION: called for each Agent the boot pass writes, which is where a restored one reappears. */
-  onAgentRowUpserted?: (agentId: string) => Promise<void>;
+  /** UNIT_BOUNDARY_DESCRIPTION: true when the row this boot pass writes was soft-deleted before it, which is what a restore is. */
+  isRestoredAgent?: (agentId: string) => Promise<boolean>;
+  /** UNIT_BOUNDARY_DESCRIPTION: called for an Agent whose row a boot pass brings back from deletion, never for one that was merely waiting for its first hello. */
+  onAgentRestored?: (agentId: string) => Promise<void>;
 }
 
 type AppEnv = {
@@ -116,19 +150,21 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
       upsertActorRole: upsertRole,
     });
     (async () => {
-      for (const a of await deps.listK8sAgents()) {
-        await upsertAgentRow({ id: a.id, ownerSub: a.owner });
-        await fillKitFacts(a);
-        /* UNIT_BOUNDARY_DESCRIPTION: this boot pass is where a deleted Agent
-         * comes back as a row again; its references were cleared with the
-         * deletion, so it is bound to the seeded Default here, as a new one is
-         * at create. */
-        await deps.onAgentRowUpserted?.(a.id).catch((err: unknown) => {
-          process.stderr.write(
-            `[usage/bootstrap-agents] binding ${a.id} failed: ${err}\n`,
-          );
-        });
-      }
+      for (const a of await deps.listK8sAgents())
+        await upsertBootAgent(
+          {
+            ...(deps.isRestoredAgent && {
+              isRestoredAgent: deps.isRestoredAgent,
+            }),
+            upsert: upsertAgentRow,
+            fillKitFacts,
+            ...(deps.onAgentRestored && {
+              onAgentRestored: deps.onAgentRestored,
+            }),
+            log: (message) => process.stderr.write(`${message}\n`),
+          },
+          a,
+        );
     })().catch((err) => {
       process.stderr.write(
         `[usage/bootstrap-agents] backfill failed: ${err}\n`,

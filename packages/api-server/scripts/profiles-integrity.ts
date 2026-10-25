@@ -18,6 +18,7 @@ import { createProfileResolver } from "../src/modules/profiles/services/profile-
 import { createSessionPairRepo } from "../src/modules/harness-config/infrastructure/session-pair-repo.js";
 import { createSchedulesRepository } from "../src/modules/schedules/infrastructure/schedules-repository.js";
 import {
+  isAgentRowDeleted,
   markAgentDeleted,
   upsertAgent,
 } from "../src/modules/usage/infrastructure/agents-postgres-repository.js";
@@ -396,6 +397,18 @@ async function main() {
   await db.execute(sql`DELETE FROM connections WHERE owner = ${restoreOwner}`);
   await db.execute(sql`DELETE FROM profile_seeds WHERE owner = ${restoreOwner}`);
   await db.execute(sql`DELETE FROM profiles WHERE owner = ${restoreOwner}`);
+
+  process.stdout.write("\nwhat a boot pass treats as a restore\n");
+  const liveAgent = await insertAgent(owner);
+  const deletedAgent = await insertAgent(owner);
+  await markAgentDeleted(db)(deletedAgent);
+  check(
+    "only a row that was soft-deleted reads as restored",
+    (await isAgentRowDeleted(db)(deletedAgent)) === true &&
+      (await isAgentRowDeleted(db)(liveAgent)) === false &&
+      (await isAgentRowDeleted(db)(unique("absent"))) === false,
+    "predicate",
+  );
 
   process.stdout.write("\nownership at the write\n");
   const ownProfile = (await service.list())[0]!;

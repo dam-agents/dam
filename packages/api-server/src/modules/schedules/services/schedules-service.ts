@@ -110,26 +110,11 @@ function choicesOf(input: {
  * ones the stored schedule ends up with, never the changed fields alone.
  */
 /* UNIT_BOUNDARY_DESCRIPTION: a schedule stores a profile or its own values,
- * never both. Naming one clears the inline fields; sending an inline field
- * detaches from the profile; an explicit null clears the reference and leaves
- * the inline fields as they are; omission changes nothing. */
-/* UNIT_BOUNDARY_DESCRIPTION: a write starts from the stored spec, never from the
- * resolved one, or a profile schedule would be saved with a frozen copy of the
- * values beside the reference. The resolved read is still what validates and
- * what a detach copies. */
-function storedCurrentSpec(
-  stored: Schedule | null,
-  current: Schedule,
-): Extract<ScheduleSpec, { type: "once" }> {
-  return stored?.spec.type === "once"
-    ? stored.spec
-    : (current.spec as Extract<ScheduleSpec, { type: "once" }>);
-}
-
-function requireStored(stored: Schedule | null, current: Schedule): Schedule {
-  return stored ?? current;
-}
-
+ * never both. Naming a profile clears the inline fields; a form that merely
+ * repeats the values the profile resolves to — or blanks one — keeps the
+ * reference, because a task-only edit from a form must not detach it; only a
+ * value that differs detaches, and it detaches to the values the schedule was
+ * running on plus the change. */
 function applyProfileTransition(
   spec: {
     profile?: string;
@@ -149,10 +134,6 @@ function applyProfileTransition(
     settings?: Record<string, string>;
   },
 ): void {
-  const inlineGiven =
-    input.harness !== undefined ||
-    input.model !== undefined ||
-    input.settings !== undefined;
   if (input.profile === null) {
     delete spec.profile;
     return;
@@ -164,16 +145,46 @@ function applyProfileTransition(
     delete spec.settings;
     return;
   }
-  if (inlineGiven) {
-    delete spec.profile;
-    if (resolved === undefined) return;
-    if (spec.harness === undefined && resolved.harness !== undefined)
-      spec.harness = resolved.harness;
-    if (spec.model === undefined && resolved.model !== undefined)
-      spec.model = resolved.model;
-    if (spec.settings === undefined && resolved.settings !== undefined)
-      spec.settings = resolved.settings;
+  if (spec.profile === undefined) return;
+  const given = {
+    harness: input.harness,
+    model: input.model,
+    settings: input.settings,
+  };
+  const differs = (key: "harness" | "model" | "settings"): boolean => {
+    const value = given[key];
+    if (value === undefined || value === null) return false;
+    if (key === "settings")
+      return JSON.stringify(value) !== JSON.stringify(resolved?.settings ?? {});
+    return value !== resolved?.[key];
+  };
+  if (!differs("harness") && !differs("model") && !differs("settings")) {
+    delete spec.harness;
+    delete spec.model;
+    delete spec.settings;
+    return;
   }
+  delete spec.profile;
+  for (const key of ["harness", "model", "settings"] as const)
+    if (spec[key] === undefined && resolved?.[key] !== undefined)
+      Object.assign(spec, { [key]: resolved[key] });
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: a write starts from the stored spec, never from the
+ * resolved one, or a profile schedule would be saved with a frozen copy of the
+ * values beside the reference. The resolved read is still what validates and
+ * what a detach copies. */
+function storedCurrentSpec(
+  stored: Schedule | null,
+  current: Schedule,
+): Extract<ScheduleSpec, { type: "once" }> {
+  return stored?.spec.type === "once"
+    ? stored.spec
+    : (current.spec as Extract<ScheduleSpec, { type: "once" }>);
+}
+
+function requireStored(stored: Schedule | null, current: Schedule): Schedule {
+  return stored ?? current;
 }
 
 function mergedChoices(
