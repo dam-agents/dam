@@ -101,7 +101,10 @@ export interface SlackChannel extends Channel {
   loopGuard?: SlackLoopGuardDrops;
 }
 
-export type ChannelConfig = SlackChannel;
+/* UNIT_BOUNDARY_DESCRIPTION: a channel runs on a profile of its own (D91), kept
+ * on its row; null is a channel that predates profiles and still falls back to
+ * the agent's chat default. */
+export type ChannelConfig = SlackChannel & { profileId?: string | null };
 
 export type AgentState =
   | "starting"

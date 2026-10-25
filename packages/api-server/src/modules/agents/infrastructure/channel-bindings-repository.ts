@@ -7,9 +7,14 @@ import { isUniqueViolation } from "../../../core/db-errors.js";
 function toChannelConfig(row: {
   type: string;
   config: unknown;
+  profileId?: string | null;
 }): ChannelConfig {
   const config = row.config as Record<string, unknown>;
-  return { type: row.type as ChannelType, ...config } as ChannelConfig;
+  return {
+    type: row.type as ChannelType,
+    ...config,
+    ...(row.profileId !== undefined && { profileId: row.profileId }),
+  } as ChannelConfig;
 }
 
 export function listChannelsByOwner(db: Db, owner: string) {
