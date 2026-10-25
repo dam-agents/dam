@@ -282,8 +282,15 @@ export function ModelIndicator({
                    * session keeps its own on the row or the spec. */
                   setFromProfile({ id: profile.id, name: profile.name });
                   onChoose(profile.model);
-                  if (Object.keys(profile.settings).length > 0)
-                    onConfigure(profile.settings);
+                  /* UNIT_BOUNDARY_DESCRIPTION: the session takes exactly what
+                   * the profile holds, so a setting the profile does not name is
+                   * cleared rather than left from the previous pick. */
+                  onConfigure({
+                    ...Object.fromEntries(
+                      Object.keys(settings).map((id) => [id, ""]),
+                    ),
+                    ...profile.settings,
+                  });
                   rememberSessionPair(
                     agentId,
                     {

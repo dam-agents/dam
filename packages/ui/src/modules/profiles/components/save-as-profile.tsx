@@ -43,11 +43,19 @@ export function SaveAsProfile({
       setError("Give the profile a name.");
       return;
     }
+    /* UNIT_BOUNDARY_DESCRIPTION: a profile holds the session's own settings, so
+     * the platform sub-agent keys a session may carry are left out: the server
+     * refuses them, and that slot keeps a reference of its own. */
+    const settings = Object.fromEntries(
+      Object.entries(pair.settings ?? {}).filter(
+        ([id]) => !id.startsWith("platformSubagent."),
+      ),
+    );
     const body = {
       harness: pair.harness,
       providerTemplate,
       model: pair.model ?? "",
-      ...(pair.settings && { settings: pair.settings }),
+      ...(Object.keys(settings).length > 0 && { settings }),
     };
     if (profile) {
       update.mutate(
