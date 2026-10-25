@@ -28,6 +28,11 @@ import {
   type FirePair,
 } from "../../harness-config/index.js";
 
+import { emit, EventType } from "../../../events.js";
+import { annotateSpan } from "../../../core/background-span.js";
+
+const TRIGGER_TTL_SECONDS = 3600;
+
 /** UNIT_BOUNDARY_DESCRIPTION: a schedule whose profile cannot run on its agent fails the same way every fire, so the attempt is final rather than retried like a transient refusal. */
 class ProfileRefusedError extends Error {
   constructor(message: string) {
@@ -35,10 +40,6 @@ class ProfileRefusedError extends Error {
     this.name = "ProfileRefusedError";
   }
 }
-import { emit, EventType } from "../../../events.js";
-import { annotateSpan } from "../../../core/background-span.js";
-
-const TRIGGER_TTL_SECONDS = 3600;
 
 export type ActivityStamp = AgentActivityStamp;
 

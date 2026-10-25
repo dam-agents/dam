@@ -48,9 +48,12 @@ export interface UpdateCronScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the form changed it,
+   * so a blank or untouched field leaves the stored one — and a profile the
+   * schedule names — alone. */
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
   sessionTitle: string | null;
 }
 
@@ -78,9 +81,12 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
-  harness: string | null;
-  model: string | null;
-  settings: Record<string, string> | null;
+  /* UNIT_BOUNDARY_DESCRIPTION: a choice travels only when the form changed it,
+   * so a blank or untouched field leaves the stored one — and a profile the
+   * schedule names — alone. */
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
   sessionTitle: string | null;
 }
 

@@ -47,7 +47,7 @@ export function RecurringScheduleForm({
     resolver: zodResolver(scheduleFormSchema),
     defaultValues: { ...scheduleFormDefaults(existing), ...draft },
   });
-  const { errors } = form.formState;
+  const { errors, dirtyFields } = form.formState;
   const values = form.watch();
 
   const quietHoursError =
@@ -85,9 +85,14 @@ export function RecurringScheduleForm({
           id: existing.id,
           ...common,
           precheck: precheck || null,
-          harness: harness || null,
-          model: model || null,
-          settings: hasSettings ? settings : null,
+          /* UNIT_BOUNDARY_DESCRIPTION: choices travel only when the user
+           * changed them, so a profile edited after the form opened is not
+           * detached by the values the form was loaded with. */
+          ...(dirtyFields.harness ? { harness: harness || null } : {}),
+          ...(dirtyFields.model ? { model: model || null } : {}),
+          ...(dirtyFields.settings
+            ? { settings: hasSettings ? settings : null }
+            : {}),
           sessionTitle: sessionTitle || null,
         },
         { onSuccess },

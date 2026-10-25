@@ -174,10 +174,7 @@ export function buildUpdateCommand(deps: {
           view,
           opts,
           await profileOrExit(deps, host, opts.profile),
-          async (): Promise<void> => {
-            const id = await profileOrExit(deps, host, opts.profile);
-            await noteDetach(deps, host, view, opts, id);
-          },
+          (saved) => noteDetach(deps, host, view, saved),
         );
       }
       if (opts.at !== undefined) {
@@ -238,7 +235,6 @@ export function buildUpdateCommand(deps: {
 
       const sessionMode = opts.sessionMode ?? view.sessionMode;
       const profileId = await profileOrExit(deps, host, opts.profile);
-      await noteDetach(deps, host, view, opts, profileId);
       const result = await svc.updateRRule({
         id,
         name: opts.name ?? view.name,
@@ -251,6 +247,7 @@ export function buildUpdateCommand(deps: {
         ...choicesOrExit(opts, view, true, profileId),
       });
       exitOnServiceError(result, host, describeScheduleError);
+      await noteDetach(deps, host, view, result.value);
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result.value)}\n`);
@@ -269,7 +266,7 @@ async function updateOnce(
   view: ScheduleView,
   opts: UpdateOpts,
   profileId: string | null,
-  noteDetachOf: () => Promise<void>,
+  note: (saved: ScheduleView) => Promise<void>,
 ): Promise<never> {
   const conflicting = recurringFlagsGiven(opts);
   if (conflicting.length > 0) {
@@ -278,7 +275,6 @@ async function updateOnce(
     );
     process.exit(EXIT_INVALID_INPUT);
   }
-  await noteDetachOf();
   const timezone = opts.timezone ?? view.timezone ?? detectTimezone();
   let at: string;
   try {
@@ -299,6 +295,7 @@ async function updateOnce(
     ...choicesOrExit(opts, view, false, profileId),
   });
   exitOnServiceError(result, host, describeScheduleError);
+  await note(result.value);
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(result.value)}\n`);
   } else {
@@ -320,18 +317,12 @@ async function noteDetach(
   },
   host: string,
   view: ScheduleView,
-  opts: UpdateOpts,
-  profileId: string | null,
+  saved: ScheduleView,
 ): Promise<void> {
-  if (view.profile === null || profileId !== null) return;
-  const inline =
-    opts.harness !== undefined ||
-    opts.harnessDefault === true ||
-    opts.model !== undefined ||
-    opts.modelDefault === true ||
-    opts.setting.length > 0 ||
-    opts.settingsDefault === true;
-  if (!inline) return;
+  /* UNIT_BOUNDARY_DESCRIPTION: the server decides what detached — a blank or
+   * unchanged value keeps the profile — so the note follows the schedule that
+   * came back, never the flag that was passed. */
+  if (view.profile === null || saved.profile !== null) return;
   const name = (await deps.profileName(host, view.profile)) ?? view.profile;
   process.stderr.write(`note: detached from profile ${name}\n`);
 }

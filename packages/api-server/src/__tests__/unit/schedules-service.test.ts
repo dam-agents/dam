@@ -921,6 +921,14 @@ describe("a profile schedule saved from a form", () => {
     expect(getSavedSpec()?.model).toBeUndefined();
   });
 
+  /** TEST_SCENARIO: a form that sends nothing for a choice cannot detach the
+   * profile, even when the profile changed after the form was opened. */
+  it("keeps the reference when the form sends no choices at all", async () => {
+    const { service, getSavedSpec } = makeDeps(profiled());
+    await service.updateRRule({ ...baseUpdate, task: "another thing" });
+    expect(getSavedSpec()?.profile).toBe("profile-1");
+  });
+
   it("keeps the reference when the form sends blanks", async () => {
     const { service, getSavedSpec } = makeDeps(profiled());
     await service.updateRRule({

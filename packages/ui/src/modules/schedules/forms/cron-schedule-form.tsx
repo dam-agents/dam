@@ -74,7 +74,7 @@ export function CronScheduleForm({
     resolver: zodResolver(cronFormSchema),
     defaultValues: cronFormDefaults(existing),
   });
-  const { errors, isDirty } = formState;
+  const { errors, isDirty, dirtyFields } = formState;
   const close = useGuardedClose(isDirty, onClose);
   useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
   const cron = watch("cron").trim();
@@ -130,9 +130,9 @@ export function CronScheduleForm({
         task: draft.task ?? "",
         sessionMode: v.sessionMode,
         precheck: draft.precheck,
-        harness: draft.harness,
-        model: draft.model,
-        settings: draft.settings,
+        ...(dirtyFields.harness ? { harness: draft.harness } : {}),
+        ...(dirtyFields.model ? { model: draft.model } : {}),
+        ...(dirtyFields.settings ? { settings: draft.settings } : {}),
         sessionTitle: draft.sessionTitle,
       },
       {
