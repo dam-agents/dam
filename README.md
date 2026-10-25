@@ -151,12 +151,13 @@ mise run cluster:uninstall                    # remove this worktree's install, 
 ```
 
 The name decides the namespace, the Helm release, the agent namespace, the host names and the local image tag, and it is fixed once the install exists: it comes from `--name`, `DAM_INSTALL` or the branch on every run, so another branch in one worktree makes a second install rather than renaming the first.
+A worktree (a linked checkout) never gets the default install, `main` included; the repository's own checkout is the only one that does.
 `DAM_INSTALL=default` joins the default install.
 
 What the installs still share, because the cluster has one of each:
 
 - the cluster, its node and its disk: two installs' pods compete for the VM's CPU and memory;
-- the Istio mesh, cert-manager, the Gateway API CRDs and the platform CRDs: installed once, and upgraded by whichever install runs;
+- the Istio mesh, cert-manager, the Gateway API CRDs and the platform CRDs: installed once — the default install re-applies the CRDs on every run, a named install only adds the ones the cluster lacks;
 - the Traefik entrypoint on port 4444 — host names keep the installs apart, not ports;
 - the VM runner: on a Mac one runner serves the default install, and everywhere else the runner pods need a node that can open `/dev/kvm`.
   An install without a runner serves its UI, sign-in and API, and an agent created there reports that it cannot start.

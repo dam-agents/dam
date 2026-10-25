@@ -10,9 +10,15 @@ if [ "$CLUSTER_TARGET" = environment ]; then
   exit 1
 fi
 if ! helm status "$CLUSTER_RELEASE" -n "$CLUSTER_NAMESPACE" >/dev/null 2>&1; then
-  echo "No install '$CLUSTER_RELEASE' in namespace '$CLUSTER_NAMESPACE'; nothing to remove."
-  echo "mise run cluster:installs -- --all lists the installs this cluster has."
-  exit 0
+  if [ -n "$CLUSTER_INSTALL" ]; then
+    echo "No install '$CLUSTER_RELEASE' in namespace '$CLUSTER_NAMESPACE'; nothing to remove."
+    echo "mise run cluster:installs -- --all lists the installs this cluster has."
+    exit 0
+  fi
+  # The default install's chart can be gone (a failed run, a hand-run helm
+  # uninstall) while its agent namespace, PVCs and namespaces are not: sweep
+  # those anyway, as the task always did.
+  echo "No 'platform' release left; cleaning up what it left behind."
 fi
 
 # Drain agent workloads BEFORE helm uninstall, so their PVCs and namespace
@@ -40,6 +46,12 @@ if [ -n "$CLUSTER_INSTALL" ]; then
   # it on uninstall so a runner pod that outlives the release still names a class
   # that exists, and nothing here outlives it.
   kubectl delete priorityclass -l "app.kubernetes.io/instance=$CLUSTER_RELEASE" --ignore-not-found 2>/dev/null || true
+  # cert-manager creates the CA Secrets in its own namespace and keeps them when
+  # the Certificate that made them goes; they are this install's alone, so the
+  # name carries the release.
+  for ca in "platform-$CLUSTER_INSTALL-mitm-ca" "platform-$CLUSTER_INSTALL-vm-runner-ca"; do
+    kubectl -n cert-manager delete certificate,secret "$ca" --ignore-not-found 2>/dev/null || true
+  done
   kubectl delete ns "$CLUSTER_NAMESPACE" --ignore-not-found --wait=true --timeout=120s 2>/dev/null || true
   echo "Install '$CLUSTER_INSTALL' removed (namespace $CLUSTER_NAMESPACE)."
 else

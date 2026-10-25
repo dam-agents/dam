@@ -53,7 +53,7 @@ for c in "${components[@]}"; do
       tars=()
       for a in "${agents[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$a")"); done
       mise run cluster:import -- "${tars[@]}"
-      install_image_tags "${agents[@]}" || true
+      install_image_tags "${agents[@]}" || exit 1
       # A machine boots from the node image cache, so a rebuilt image reaches
       # it at its next start and no pod is restarted to do it. Restart one
       # agent's machine by changing the revision it boots with; deleting a
@@ -74,7 +74,7 @@ for c in "${components[@]}"; do
   esac
   mise run "//packages/$pkg:oci"
   mise run cluster:import -- "$(.mise/tasks/image/resolve tar-path "$c")"
-  install_image_tags "$c" || true
+  install_image_tags "$c" || exit 1
   kubectl -n "$CLUSTER_NAMESPACE" rollout restart deployment "$deploy"
   kubectl -n "$CLUSTER_NAMESPACE" rollout status deployment "$deploy" --timeout="$timeout"
 done

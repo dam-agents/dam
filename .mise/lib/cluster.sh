@@ -37,7 +37,8 @@ cluster_install_name() {
   # A DNS label, short enough for every name the chart and the controller build
   # from the release: `<release>-extauthz-agent-<16 hex>` is the longest, and
   # Kubernetes caps a name at 63, so the release (9 + name) may take 32.
-  # `default` here is the reserved name of the shared install, never a worktree's.
+  # `default` here is the reserved name of the shared install, never a worktree's;
+  # a branch named `…-agents` is refused by the checks below, not mapped.
   local slug
   slug="$(printf '%s' "$branch" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//' | cut -c1-20 | sed 's/-$//')"
   case "$slug" in
@@ -63,6 +64,21 @@ if [ -n "$CLUSTER_INSTALL" ]; then
   case "$CLUSTER_INSTALL" in
     *[!a-z0-9-]*) echo "FATAL: install name '$CLUSTER_INSTALL' may hold only lowercase letters, digits and dashes" >&2; exit 1 ;;
   esac
+  # 20, so every name the chart and the controller build from the release stays
+  # under Kubernetes' 63: `<release>-extauthz-agent-<16 hex>` is the longest.
+  if [ ${#CLUSTER_INSTALL} -gt 20 ]; then
+    echo "FATAL: install name '$CLUSTER_INSTALL' is ${#CLUSTER_INSTALL} characters; at most 20, or the per-agent names the controller builds from the release outgrow Kubernetes' 63" >&2
+    exit 1
+  fi
+  # An install's namespace `platform-<name>` must not be another install's agent
+  # namespace `platform-<name>-agents`, or a later uninstall takes that one with
+  # it: `agents` claims the default install's, `foo-agents` claims install foo's.
+  case "$CLUSTER_INSTALL" in
+    agents|*-agents)
+      echo "FATAL: install name '$CLUSTER_INSTALL' would claim a namespace another install's agents live in (platform-<name>-agents); pass --name with another name." >&2
+      exit 1
+      ;;
+  esac
 fi
 # Everything the install's objects are named after. The chart's own values page
 # repeats this for a production install; a local one gets it from these.
@@ -85,7 +101,7 @@ install_image_tags() {
   for c in "$@"; do
     node_sh k3s ctr -n k8s.io images tag --force "docker.io/library/platform-$c:latest" \
       "docker.io/library/platform-$c:$CLUSTER_INSTALL" >/dev/null || {
-      echo "WARN: could not tag platform-$c:$CLUSTER_INSTALL on the node" >&2; rc=1
+      echo "FATAL: could not tag platform-$c:$CLUSTER_INSTALL on the node; the install would run the shared :latest instead" >&2; rc=1
     }
   done
   return $rc

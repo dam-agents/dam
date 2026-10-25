@@ -30,7 +30,9 @@ The cluster holds one install per worktree.
 Each install is a Helm release `platform-<name>` in namespace `platform-<name>`, with agent namespace `platform-<name>-agents`, its own images tagged `platform-<component>:<name>`, its own ClusterIssuers and CA secrets, and its own hosts `<name>.localhost`, `keycloak.<name>.localhost`, `share.` and `content.` under them.
 The **name** is `.mise/lib/cluster.sh`'s: `--name`, else `DAM_INSTALL`, else the slug of the worktree's branch (so an agent in a worktree gets its own install without passing anything).
 The repository's own checkout is the **default** install and keeps the old names — release `platform`, namespace `default`, agents in `platform-agents`, hosts `localhost`/`keycloak.localhost`, images `:latest` — and so does the e2e lane (`DAM_INSTALL=default` in the `e2e:*` tasks, on its own VM).
+A *linked* worktree never gets the default install, `main` included: only the repository's own checkout owns `default`, so two checkouts cannot land on one install by accident.
 `DAM_INSTALL=default` in a worktree joins the default install.
+An explicit `--name`/`DAM_INSTALL` is refused when it is longer than 20 characters, holds anything but `[a-z0-9-]`, or ends in `-agents` (its namespace `platform-<name>` would be another install's `platform-<name>-agents`); a branch whose slug would do either is refused the same way, so pass `--name`.
 
 - `mise run cluster:install` (or `cluster:helm`, `cluster:build`) — all install-aware; `--name <name>` names another one.
 - `mise run cluster:installs -- --all` — every install, its namespace, its address and its status, plus the runners.
@@ -48,13 +50,18 @@ The default install keeps `:latest`, which any install's import still overwrites
 
 **What stays cluster-wide, and why:**
 
-- the CRDs (install-only; a second install skips them, and `cluster:install` applies `helm/crds/` itself),
+- the CRDs: cluster-scoped and install-only.
+  The **default** install re-applies `helm/crds/` on every run, which is what keeps the local cluster's schema current; a **named** install skips them unless a CRD is missing, so a worktree's schema change cannot rewrite the CRDs every install on the cluster runs against.
+  Helm's own `crds/` copy is skipped once the kinds exist (`--skip-crds`);
 - cert-manager, the Gateway API CRDs and the Istio mesh — one per cluster, and a named install follows the cluster's mesh mode rather than changing it (`--no-mesh` is refused when the dataplane is there, and only the default install writes the `kube-system/platform-local-no-mesh` marker),
 - the KVM device plugin (one per node; a named install applies the same manifest),
 - ClickStack (`CLICKSTACK=1`) — its operators are cluster-scoped and watch one namespace, so only the default install may run it,
 - the VM runner: one host runner per Mac, holding the default install's token, CA and port 4600, and runner pods need a node that can open `/dev/kvm`.
   A named install therefore runs runner pods and, on a Mac whose VM was made without nested virtualization, warns at install time that an agent it creates cannot start (`Insufficient squat.ai/kvm`); `cluster:host-runner` refuses a named install.
 - the node's `/var/lib/platform-vm-images` (per-release subdirectories), the build caches and `~/platform-src.d`.
+
+Nothing serialises installs that run at the same time: they share the CRD apply, the Traefik `HelmChartConfig`, the KVM device plugin, the image import and the image prune.
+Every one of those is idempotent on a warm cluster, and none is safe on a fresh one (Istio and cert-manager install on a check-then-install): install the default install first, then the others.
 
 ## In an Environment
 
