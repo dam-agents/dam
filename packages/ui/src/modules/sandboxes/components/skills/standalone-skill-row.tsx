@@ -38,7 +38,7 @@ export function StandaloneSkillRow({
   publish?: SkillPublishRecord;
   readOnly: boolean;
   canPublish: boolean;
-  onPublish: () => void;
+  onPublish?: () => void;
   onDownload: () => void;
   onDelete: () => void;
   onTrack: (target: ReadyTrackTarget) => void;
@@ -114,7 +114,7 @@ export function StandaloneSkillRow({
             </span>
           </DropdownMenuItem>
         )}
-        {canRepublish && (
+        {canRepublish && onPublish && (
           <DropdownMenuItem
             disabled={!canPublish}
             onSelect={onPublish}

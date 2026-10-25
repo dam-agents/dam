@@ -123,6 +123,7 @@ interface VirtualChannel extends ClientChannel {
 
 interface Attachment {
   viewer: boolean;
+  marksSeen: boolean;
   initialize: unknown;
 }
 
@@ -446,7 +447,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const attachment = attachments.get(real)!;
     const v = virtualChannel(real, lease);
     lease.channels.set(real, v);
-    lease.runtime.attach(v, { viewer: attachment.viewer });
+    lease.runtime.attach(v, {
+      viewer: attachment.viewer,
+      marksSeen: attachment.marksSeen,
+    });
     if (attachment.initialize !== undefined) {
       v.deliver(
         JSON.stringify({
@@ -911,6 +915,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     attach(real, opts) {
       attachments.set(real, {
         viewer: opts?.viewer !== false,
+        marksSeen: opts?.marksSeen !== false,
         initialize: undefined,
       });
       real.onMessage((data) => route(real, data));

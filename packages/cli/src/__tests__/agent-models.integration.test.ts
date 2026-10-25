@@ -21,6 +21,7 @@ import type {
 } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDam } from "./run-dam.js";
+import { ownedAgents } from "./owned-agents.js";
 
 const AGENT_ID = "agent-0000000000000001";
 
@@ -73,9 +74,10 @@ describe("dam agent get / update / models (integration)", () => {
 
     const apiContext = {
       user: { sub: "fixture-user", scopes: ALL_SCOPES, agentIds: "*" },
+      actOnAgent: async () => ({ ok: true, ctx: apiContext }),
       terms: { isAccepted: async () => true },
       invocationsQuery: { listTargets: async () => [] },
-      agents: {
+      agents: ownedAgents({
         get: async (): Promise<Agent> => ({
           id: AGENT_ID,
           name: "demo",
@@ -93,7 +95,7 @@ describe("dam agent get / update / models (integration)", () => {
           workspaceFailures: [],
           channels: [],
         }),
-      },
+      }),
       connections: {
         listAndReconcileConnections: async () => {
           if (connectionsRefusal !== null) {

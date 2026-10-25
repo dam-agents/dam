@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import { framesToMessages } from "../../acp/frames-to-messages.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { findAgent, useAgents } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
 import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
@@ -35,7 +35,7 @@ const noop = () => {};
 
 export function DockedDelegationPanel({ driverAgentId, id }: Props) {
   const setDock = useStore((s) => s.setDock);
-  const agents = useAgentsList();
+  const { data: agentsData } = useAgents();
   const ids = useMemo(() => [id], [id]);
   const {
     data: tree,
@@ -44,8 +44,8 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
   } = useDelegationTree(driverAgentId, ids);
   const node = tree?.nodes[0];
   const driverName =
-    agents.find((a) => a.id === driverAgentId)?.name ?? driverAgentId;
-  const agentState = agents.find((a) => a.id === id)?.state;
+    findAgent(agentsData, driverAgentId)?.name ?? driverAgentId;
+  const agentState = findAgent(agentsData, id)?.state;
 
   return (
     <div className="flex h-full min-h-0 flex-col">

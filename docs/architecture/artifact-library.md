@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -59,6 +59,7 @@ It sends requests to the host over `window.postMessage`; the in-app sandbox reta
 The host validates both the message payload and the sending window against its preview frame: the injected API is an authoring convenience, not an authorization gate.
 The page still never holds a credential for either call.
 The frame is sandboxed without modals, so browser dialogs are blocked.
+A link the page opens in a new tab escapes the sandbox, so a link to a shared page loads as if the viewer pasted it.
 
 Callbacks are available in the docked preview inside the publishing Agent's chat, including maximized and full page, and work in a newly started conversation without reloading the page.
 The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.

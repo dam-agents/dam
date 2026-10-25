@@ -1,10 +1,26 @@
+import type { Sender } from "agent-runtime-api";
+import type { PlatformSenderEntry } from "api-server-api";
+
 import { clockLabel, dayLabel, sameLocalDay, timeAgo } from "@/lib/format-time";
 
 import type { Message } from "../../../types.js";
+import { senderMarks } from "./senders.js";
 
 type ThreadItem =
   | { kind: "message"; message: Message; index: number }
-  | { kind: "divider"; variant: "day" | "run"; at: string; key: string };
+  | { kind: "divider"; variant: "day" | "run"; at: string; key: string }
+  | {
+      kind: "divider";
+      variant: "sender";
+      sender: Sender;
+      at?: string;
+      key: string;
+    };
+
+export interface ThreadSenders {
+  entries: readonly PlatformSenderEntry[];
+  viewerSub: string | undefined;
+}
 
 interface Timed {
   at: string;
@@ -81,10 +97,15 @@ function runDividers(
 export function threadItems(
   messages: readonly Message[],
   runStarts: readonly string[] = [],
+  senders?: ThreadSenders,
 ): ThreadItem[] {
   const timed = timedOf(messages);
   const days = dayDividers(timed);
   const runs = runDividers(timed, runStarts);
+  const marks =
+    senders === undefined
+      ? new Map<number, Sender>()
+      : senderMarks(messages, senders.entries, senders.viewerSub);
   const items: ThreadItem[] = [];
 
   const pushRuns = (index: number): void => {
@@ -95,7 +116,17 @@ export function threadItems(
   messages.forEach((message, index) => {
     pushRuns(index);
     const day = days.get(index);
-    if (day !== undefined && !runs.has(index)) {
+    const showDay = day !== undefined && !runs.has(index);
+    const sender = marks.get(index);
+    if (sender !== undefined) {
+      items.push({
+        kind: "divider",
+        variant: "sender",
+        sender,
+        ...(showDay && { at: day.at }),
+        key: `sender:${message.id}`,
+      });
+    } else if (showDay) {
       items.push({
         kind: "divider",
         variant: "day",
@@ -111,7 +142,12 @@ export function threadItems(
 export function dividerLabel(
   item: Extract<ThreadItem, { kind: "divider" }>,
   now: Date,
+  senderName: (sender: Sender) => string = (sender) => sender.email ?? "",
 ): string {
+  if (item.variant === "sender") {
+    const name = senderName(item.sender);
+    return item.at === undefined ? name : `${dayLabel(item.at, now)} · ${name}`;
+  }
   const day = dayLabel(item.at, now);
   return item.variant === "run"
     ? `${day} ${clockLabel(item.at)} · Scheduled run`

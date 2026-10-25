@@ -34,7 +34,7 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgent } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
@@ -43,6 +43,7 @@ import {
   sessionSpendTitle,
 } from "../../spend/lib/amounts-label.js";
 import { KitUpdateSessionTag } from "../../starter-kits/components/kit-update-session-tag.js";
+import { useSenderNames } from "../hooks/use-sender-names.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
@@ -112,6 +113,7 @@ export function SessionRow({
   className,
 }: Props) {
   const mainRef = useRef<HTMLButtonElement>(null);
+  const startedBy = useSenderNames(s.agentId).otherName(s.startedBy);
   const metaId = useId();
   const afterMenu = useRef<(() => void) | null>(null);
 
@@ -137,8 +139,7 @@ export function SessionRow({
     s.type === SessionType.ScheduleCron ||
     s.type === SessionType.ScheduleOnce ||
     !!s.scheduleId;
-  const agents = useAgentsList();
-  const agent = agents.find((a) => a.id === s.agentId);
+  const agent = useAgent(s.agentId);
   const onboarding =
     s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;
@@ -291,6 +292,12 @@ export function SessionRow({
               <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
                 {timeAgo(s.updatedAt ?? s.createdAt)}
               </span>
+              {startedBy !== null && (
+                <span data-testid="session-started-by">
+                  {" · "}
+                  {startedBy}
+                </span>
+              )}
               {runTime && (
                 <span data-testid="session-run-time">
                   {" · "}

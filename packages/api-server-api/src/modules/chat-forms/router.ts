@@ -1,5 +1,7 @@
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
@@ -12,6 +14,7 @@ import {
 export const chatFormsRouter = t.router({
   preferences: readAgentProcedure
     .input(chatFormPreferencesGetInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.chatFormPreferences.get(input.agentId);
@@ -19,6 +22,7 @@ export const chatFormsRouter = t.router({
 
   setPreferences: manageAgentsProcedure
     .input(chatFormPreferencesSetInputSchema)
+    .use(agentPermission("chatForms", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) =>
       ctx.chatFormPreferences.set(input.agentId, input.preferences),
     ),

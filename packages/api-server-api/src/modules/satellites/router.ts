@@ -1,5 +1,7 @@
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   operateAgentsProcedure,
   requireWildcardBinding,
@@ -25,6 +27,7 @@ export const satellitesRouter = t.router({
 
   grant: operateAgentsProcedure
     .input(satelliteGrantInputSchema)
+    .use(agentPermission("connections", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.satellites.grant(input.satellite, input.agentId);
@@ -32,6 +35,7 @@ export const satellitesRouter = t.router({
 
   revoke: operateAgentsProcedure
     .input(satelliteGrantInputSchema)
+    .use(agentPermission("connections", (input) => agentTarget(input.agentId)))
     .mutation(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.satellites.revoke(input.satellite, input.agentId);

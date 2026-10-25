@@ -41,7 +41,11 @@ export function createDeliverySweeper(
           idsWhole: row.payload.optionsWhole === true,
         });
         const frame = JSON.stringify(
-          buildAcpPermissionResponse(rpcId, optionId),
+          buildAcpPermissionResponse(
+            rpcId,
+            optionId,
+            row.decidedBy === null ? null : { sub: row.decidedBy },
+          ),
         );
         try {
           await deps.wrapperFrameSender.send(row.agentId, frame);

@@ -7,8 +7,9 @@ import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { describeSendError } from "../../acp/errors.js";
+import { describeSendError, isSpendRefusal } from "../../acp/errors.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { useSpendRefusalViewer } from "../hooks/use-spend-refusal-viewer.js";
 import { QuietNotice } from "./quiet-notice.js";
 
 interface Props {
@@ -59,7 +60,8 @@ function withProvidersLink(text: string): ReactNode {
 }
 
 export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
-  const { title, message, hint } = describeSendError(rawError);
+  const viewer = useSpendRefusalViewer(isSpendRefusal(rawError));
+  const { title, message, hint } = describeSendError(rawError, viewer);
   if (interrupted && quiet) {
     return (
       <QuietNotice testId="prompt-delivery-error">

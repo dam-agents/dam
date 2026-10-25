@@ -264,6 +264,7 @@ It re-reads the candidate's CR right before reaping, so a row written after its 
 The sweep is what makes a deletion done directly in the cluster, or one the api-server crashed halfway through, end in the same state as an API delete.
 The attention record is trimmed on age as well as on delete: a periodic job removes rows past 90 days, so feed cost tracks recent activity rather than an Agent's whole history.
 Kept on purpose: the usage row (soft-deleted, its runtime and config snapshots cleared so a later Agent under the same name starts clean), library artifacts, the activity log, the session directory (kept so spend stays attributable), and the spend ledger.
+An Agent's Editor List is one of these kinds; its cleanup also tells each removed [Agent Editor](agent-editors.md).
 Sessions are agent-owned files on the machine disk, not Postgres rows — they follow the disk column, not this one.
 
 An Agent created on a private custom image carries an agent-scoped image-pull Secret that follows the Agent itself: the api-server writes it at create and removes it on delete (a delete-time cleanup hook, with a label-scoped orphan sweep as backstop).

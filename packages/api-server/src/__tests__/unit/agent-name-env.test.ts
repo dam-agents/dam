@@ -40,6 +40,7 @@ function setup() {
   const enqueueAfterCommit = vi.fn(async () => {});
   const agents = createAgentsService({
     owner: "owner-1",
+    actor: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [existing],
       get: async (id) => (id === existing.id ? existing : null),
@@ -78,6 +79,9 @@ function setup() {
     resolveSlackWorkspace: async () => ({ kind: "unknown" }),
     findSlackBindings: async () => [],
     onboardingChecklists: { readMany: async () => new Map() },
+    editors: unused<AgentsDeps["editors"]>(),
+    editorEmail: null,
+    resolveUserEmail: async () => null,
   });
   return { agents, bump, enqueueAfterCommit };
 }

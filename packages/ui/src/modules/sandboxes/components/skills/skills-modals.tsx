@@ -50,7 +50,7 @@ export function SkillsModals({
   agentId: string | null;
   surface: SkillsSurface;
   derived: SkillsDerivations;
-  onPublish: (skill: LocalSkill) => void;
+  onPublish?: (skill: LocalSkill) => void;
   onDeleteLocal: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   onClose: () => void;
 }) {
@@ -143,7 +143,7 @@ export function SkillsModals({
           footer={
             createdHere ? (
               <>
-                {canRepublish && (
+                {canRepublish && onPublish && (
                   <Button
                     variant="outline"
                     size="sm"

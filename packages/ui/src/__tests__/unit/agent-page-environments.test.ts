@@ -1,11 +1,15 @@
 // TEST_OVERVIEW: An agent's page shows no Environments surface until the agent owns one: its section navigation has no Environments entry, and while it has none the Manage card of its General section links to the section instead, so the owner can still name the people who may open the Environments it creates. The section itself stays at its own address with its empty text.
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
+import type * as AgentQueries from "../../modules/agents/api/queries.js";
 import type { AgentView } from "../../types.js";
 
 vi.stubGlobal("window", new EventTarget());
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const state = vi.hoisted(() => ({
   count: 0,
@@ -36,11 +40,21 @@ vi.mock("../../modules/environments/api/queries.js", () => ({
           isLoading: state.loading,
         },
 }));
-vi.mock("../../modules/agents/api/queries.js", () => ({
+vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
+  findAgent: (await importOriginal<typeof AgentQueries>()).findAgent,
   useIsAgentInaccessible: () => false,
   useAgents: () => ({
     data: {
-      list: [{ id: "agent-dev", name: "dam", vm: true, disabled: false }],
+      list: [
+        {
+          id: "agent-dev",
+          name: "dam",
+          vm: true,
+          disabled: false,
+          access: { role: "owner", editors: [], permissions: OWNS },
+        },
+      ],
+      shared: [],
     },
   }),
 }));
@@ -108,6 +122,7 @@ const agent = () =>
     name: "dam",
     disabled: false,
     env: [],
+    access: { role: "owner", editors: [], permissions: OWNS },
   }) as unknown as AgentView;
 
 const renderRow = () =>

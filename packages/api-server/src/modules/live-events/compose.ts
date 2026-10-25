@@ -3,6 +3,7 @@ import type { LiveEventsService } from "api-server-api";
 import type { RedisBus } from "../../core/redis-bus.js";
 import { createRedisLiveEventsBus } from "./infrastructure/redis-live-events-bus.js";
 import { startAgentWatch } from "./infrastructure/k8s-agent-watch.js";
+import { createEditorFanoutBus } from "./infrastructure/editor-fanout-bus.js";
 import { createLiveEventsService } from "./services/live-events-service.js";
 import { startLiveHintsSaga } from "./sagas/live-hints.js";
 import {
@@ -26,8 +27,13 @@ export function composeLiveEventsModule(deps: {
   log: (message: string) => void;
   k8s: Pick<K8sClient, "watchCustomObjects">;
   onAgentChanged: (agentId: string) => void;
+  editorsOf: (agentId: string) => Promise<string[]>;
 }): LiveEventsModule {
-  const bus = createRedisLiveEventsBus(deps.bus, deps.log);
+  const bus = createEditorFanoutBus(
+    createRedisLiveEventsBus(deps.bus, deps.log),
+    deps.editorsOf,
+    deps.log,
+  );
   let saga: Subscription | null = null;
   let watch: { stop(): void } | null = null;
   return {

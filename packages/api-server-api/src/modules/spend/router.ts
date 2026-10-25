@@ -1,5 +1,7 @@
 import { t } from "../../trpc.js";
 import {
+  agentPermission,
+  agentTarget,
   checkAgentBinding,
   manageAgentsProcedure,
   operatorProcedure,
@@ -16,10 +18,16 @@ import {
   spendSubAgentsInputSchema,
   spendTurnsInputSchema,
 } from "./schemas.js";
+import type { SpendLimitScope } from "./types.js";
+
+function limitTarget(scope: SpendLimitScope) {
+  return agentTarget("agentId" in scope ? scope.agentId : undefined);
+}
 
 export const spendRouter = t.router({
   daily: readAgentProcedure
     .input(spendDailyInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.spend.daily(input);
@@ -27,6 +35,7 @@ export const spendRouter = t.router({
 
   breakdown: readAgentProcedure
     .input(spendBreakdownInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.spend.breakdown(input);
@@ -34,6 +43,7 @@ export const spendRouter = t.router({
 
   sessions: readAgentProcedure
     .input(spendSessionsInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.sessions(input);
@@ -41,6 +51,7 @@ export const spendRouter = t.router({
 
   subAgents: readAgentProcedure
     .input(spendSubAgentsInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.subAgents(input);
@@ -48,6 +59,7 @@ export const spendRouter = t.router({
 
   turns: readAgentProcedure
     .input(spendTurnsInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.turns(input);
@@ -55,6 +67,7 @@ export const spendRouter = t.router({
 
   calls: readAgentProcedure
     .input(spendCallsInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input.agentId)))
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.calls(input);
@@ -64,6 +77,7 @@ export const spendRouter = t.router({
 
   status: readAgentProcedure
     .input(spendStatusInputSchema)
+    .use(agentPermission("view", (input) => agentTarget(input?.agentId)))
     .query(({ ctx, input }) => {
       if (input?.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.spend.status(input);
@@ -71,6 +85,7 @@ export const spendRouter = t.router({
 
   setLimit: manageAgentsProcedure
     .input(spendSetLimitInputSchema)
+    .use(agentPermission("spendLimits", (input) => limitTarget(input.scope)))
     .mutation(({ ctx, input }) => ctx.spend.setLimit(input)),
 
   ceilings: t.router({

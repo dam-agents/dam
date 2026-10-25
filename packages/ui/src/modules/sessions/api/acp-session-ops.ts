@@ -164,6 +164,7 @@ function toSessionViewFromApi(agentId: string, s: Session): SessionView {
     ...(s.settings && { settings: s.settings }),
     ...(s.follows !== undefined && { follows: s.follows }),
     ...(s.repositories?.length ? { repositories: s.repositories } : {}),
+    ...(s.startedBy !== undefined && { startedBy: s.startedBy }),
   };
 }
 

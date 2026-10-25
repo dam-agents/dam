@@ -14,6 +14,11 @@ export const sessionTypeSchema = z.enum([
   "invocation",
 ]);
 
+export const senderSchema = z.object({
+  sub: z.string().min(1),
+  email: z.string().min(1).optional(),
+});
+
 export const sessionSchema = z.object({
   sessionId: z.string().min(1),
   mode: sessionModeSchema,
@@ -37,6 +42,7 @@ export const sessionSchema = z.object({
   settings: sessionSettingsSchema.optional(),
   follows: z.enum(["chat", "channel", "scheduled"]).nullable().optional(),
   repositories: z.array(sessionRepositorySchema).optional(),
+  startedBy: senderSchema.optional(),
 });
 
 export const SESSION_CATEGORIES = [

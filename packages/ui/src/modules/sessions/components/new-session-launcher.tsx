@@ -8,6 +8,7 @@ import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { holds } from "../../agents/lib/agent-permissions.js";
 import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
@@ -39,7 +40,7 @@ export function NewSessionOptions({
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the cards an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent.
+// UNIT_BOUNDARY_DESCRIPTION: the cards an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent. Each card shows only to a person who holds the Agent Permission it needs: terminal for the terminals and editors, channels for the messengers.
 export function NewSessionLauncher({
   agent,
   onNewTerminal,
@@ -52,6 +53,10 @@ export function NewSessionLauncher({
   const agentsData = useAgents().data;
   const available = agentsData?.availableChannels ?? {};
   const ref = cliAgentRef(agent, agentsData?.list ?? [agent]);
+  const terminal = holds(agent.access, "terminal");
+  const channels = holds(agent.access, "channels");
+  if (!terminal && !(channels && (available.slack || available.telegram)))
+    return null;
 
   return (
     <>
@@ -59,25 +64,29 @@ export function NewSessionLauncher({
         className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 sm:grid-cols-2"
         data-testid="new-session-launcher"
       >
-        <LauncherTile
-          icon={<Terminal size={18} />}
-          title="Browser Terminal"
-          description="Interactive session in this tab"
-          onClick={onNewTerminal}
-        />
-        <LauncherTile
-          icon={<Terminal size={18} />}
-          title="Local Terminal"
-          description="SSH into the agent from your machine"
-          onClick={() => setLocal("terminal")}
-        />
-        <LauncherTile
-          icon={<Code size={18} />}
-          title="VS Code / Zed"
-          description="Open workspace in your local editor"
-          onClick={() => setLocal("ide")}
-        />
-        {available.slack && (
+        {terminal && (
+          <>
+            <LauncherTile
+              icon={<Terminal size={18} />}
+              title="Browser Terminal"
+              description="Interactive session in this tab"
+              onClick={onNewTerminal}
+            />
+            <LauncherTile
+              icon={<Terminal size={18} />}
+              title="Local Terminal"
+              description="SSH into the agent from your machine"
+              onClick={() => setLocal("terminal")}
+            />
+            <LauncherTile
+              icon={<Code size={18} />}
+              title="VS Code / Zed"
+              description="Open workspace in your local editor"
+              onClick={() => setLocal("ide")}
+            />
+          </>
+        )}
+        {channels && available.slack && (
           <LauncherTile
             icon={<SlackColorIcon aria-hidden width={18} height={18} />}
             title="Slack Channel"
@@ -85,7 +94,7 @@ export function NewSessionLauncher({
             onClick={() => setMessenger("slack")}
           />
         )}
-        {available.telegram && (
+        {channels && available.telegram && (
           <LauncherTile
             icon={<TelegramColorIcon aria-hidden width={18} height={18} />}
             title="Telegram Chat"

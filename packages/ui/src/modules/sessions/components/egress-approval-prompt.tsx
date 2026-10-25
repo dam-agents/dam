@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import { useNow } from "../../../hooks/use-now.js";
 import { useStore } from "../../../store.js";
+import { OwnerConnectionsNote } from "../../agents/components/owner-connections-note.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { ApprovalActionsMenu } from "../../approvals/components/approval-actions-menu.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
@@ -68,6 +69,7 @@ function EgressApprovalCard({
           {reason}
         </p>
       )}
+      <OwnerConnectionsNote agentId={approval.agentId} className="pl-4" />
       <div className="flex flex-wrap items-center gap-2">
         <ApprovalActionsMenu
           actions={actions}

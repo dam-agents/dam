@@ -1,7 +1,10 @@
+import { AGENT_PERMISSIONS } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import { agentUsage } from "../../modules/agents/utils/sandbox-subtitle.js";
 import type { AgentView } from "../../types.js";
+
+const OWNS = [...AGENT_PERMISSIONS];
 
 const agent: AgentView = {
   id: "agent",
@@ -30,6 +33,7 @@ const agent: AgentView = {
   channels: [],
   spawnedBy: null,
   environmentOf: null,
+  access: { role: "owner", editors: [], permissions: OWNS },
 };
 
 const usage = (memoryUsedBytes: number, storageUsedBytes: number) => ({
