@@ -122,7 +122,7 @@ func requireConnectionAddressValue(spec *apiv1.AgentSpec) string {
 	}
 	return "false"
 }
-func resolveSpecMounts(agentSpec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) []apiv1.Mount {
+func resolveSpecMounts(agentSpec *apiv1.AgentSpec, defaults config.HarnessTemplateDefaults) []apiv1.Mount {
 	if len(agentSpec.Mounts) > 0 {
 		return agentSpec.Mounts
 	}

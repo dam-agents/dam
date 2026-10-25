@@ -20,6 +20,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.templatesRenamedFromAgentTemplates" . -}}
+{{- include "platform.validate.templateDefaultsRenamed" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
@@ -659,5 +660,19 @@ to rename.
 {{- define "platform.validate.templatesRenamedFromAgentTemplates" -}}
 {{- if hasKey .Values "agentTemplates" -}}
 {{- fail "agentTemplates is no longer read: the key was renamed to harnessTemplates with no alias, so this install would render none of the Templates it declares and no pull Secret one of them brings, while the Agents created from those Templates still name it. Rename the key to harnessTemplates in every values file." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The chart-wide defaults were renamed from `controller.agent.templateDefaults`
+to `controller.agent.harnessTemplateDefaults` with no alias. Helm keeps the old
+map and reads none of it, so an install that kept the key renders the chart's
+own defaults instead of its own: every Agent built from a harness template
+silently takes the wrong disk size, mounts, env and nesting ask. Fail at render
+instead, naming the key to rename.
+*/}}
+{{- define "platform.validate.templateDefaultsRenamed" -}}
+{{- if hasKey .Values.controller.agent "templateDefaults" -}}
+{{- fail "controller.agent.templateDefaults is no longer read: the key was renamed to harnessTemplateDefaults with no alias, so this install would render the chart's defaults instead of its own for every agent built from a harness template. Rename the key to harnessTemplateDefaults in every values file." -}}
 {{- end -}}
 {{- end -}}

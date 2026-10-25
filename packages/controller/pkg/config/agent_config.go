@@ -106,7 +106,7 @@ type VMRunnerRollout struct {
 	IdleWait       Duration `json:"idleWait,omitempty"`
 }
 
-type AgentTemplateDefaults struct {
+type HarnessTemplateDefaults struct {
 	StorageSize string                       `json:"storageSize,omitempty"`
 	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
 

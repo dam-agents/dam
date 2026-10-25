@@ -96,7 +96,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		AgentBase: config.AgentBase{
 			VMIdleTimeout: config.Duration(time.Hour),
 		},
-		AgentTemplateDefaults: config.AgentTemplateDefaults{
+		HarnessTemplateDefaults: config.HarnessTemplateDefaults{
 			StorageSize: "10Gi",
 		},
 		DefaultUserCPUBudget:    resource.MustParse("4"),
