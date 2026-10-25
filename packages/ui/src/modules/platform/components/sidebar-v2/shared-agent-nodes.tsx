@@ -27,7 +27,11 @@ import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on
 import { useSidebarSharedAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { holds } from "../../../agents/lib/agent-permissions.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
-import { isExpanded, toggleExpanded } from "../../lib/sidebar-tree.js";
+import {
+  isExpanded,
+  openWithPage,
+  toggleExpanded,
+} from "../../lib/sidebar-tree.js";
 import {
   AddRow,
   TREE_AGENT_NAME_MAX,
@@ -40,8 +44,10 @@ import { AgentSessionList } from "./agent-session-list.js";
  * UNIT_BOUNDARY_DESCRIPTION: The tree's Shared with me section, after the
  * person's own Agents: the Agents another person owns and named this person
  * an Agent Editor of. Hidden while nothing is shared. A row the person may
- * use sessions on opens to the agent's Sessions, like their own agents' rows;
- * any other row opens the agent's page. The rows keep no manual order, which
+ * use sessions on acts like their own agents' rows: a click on it closed
+ * opens the agent's new-session page and its Sessions, a click on it open
+ * closes them, and its chevron only opens and closes them; any other row
+ * opens the agent's page. The rows keep no manual order, which
  * belongs to the owner.
  */
 export function SharedAgentNodes({ onNavigate }: { onNavigate?: () => void }) {
@@ -70,6 +76,7 @@ export function SharedAgentNodes({ onNavigate }: { onNavigate?: () => void }) {
               onToggle={() =>
                 setToggled(toggleExpanded(toggled, agent.id, openAgentId))
               }
+              onOpen={() => setToggled(openWithPage(toggled, agent.id))}
               onNavigate={onNavigate}
             />
           ) : (
@@ -141,12 +148,14 @@ function SharedAgentSessionsNode({
   current,
   expanded,
   onToggle,
+  onOpen,
   onNavigate,
 }: {
   agent: AgentView;
   current: boolean;
   expanded: boolean;
   onToggle: () => void;
+  onOpen: () => void;
   onNavigate: (() => void) | undefined;
 }) {
   useAutoWakeOnSidebarOpen(agent, expanded);
@@ -175,11 +184,17 @@ function SharedAgentSessionsNode({
       >
         <button
           type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={expanded ? listId : undefined}
+          onClick={
+            expanded
+              ? onToggle
+              : go(() => {
+                  onOpen();
+                  startSession(agent.id);
+                })
+          }
           aria-current={current && !newSessionPage ? "page" : undefined}
           data-testid="sidebar-shared-agent-row"
+          data-agent-main
           className={cn(
             SQUIRCLE,
             "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
@@ -191,21 +206,13 @@ function SharedAgentSessionsNode({
               : "text-foreground",
           )}
         >
-          <span className={cn(TREE_LEADING, "relative items-center")}>
+          <span className={cn(TREE_LEADING, "items-center")}>
             <AgentAvatar
               name={agent.name}
               avatar={agent.avatar}
               size={TREE_AVATAR}
               mood={mood}
               className="group-has-focus-visible/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
-            />
-            <ChevronRight
-              size={SIDEBAR_GLYPH}
-              aria-hidden
-              className={cn(
-                "invisible absolute text-muted-foreground transition-transform group-has-focus-visible/agent:visible group-hover/agent:visible motion-reduce:transition-none [@media(hover:none)]:visible",
-                expanded && "rotate-90",
-              )}
             />
           </span>
           <span
@@ -214,6 +221,28 @@ function SharedAgentSessionsNode({
           >
             {agent.name}
           </span>
+        </button>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={expanded ? listId : undefined}
+          aria-label={`Sessions of ${agent.name}`}
+          data-testid="sidebar-shared-agent-toggle"
+          className={cn(
+            "absolute inset-y-0 left-0 w-10 items-center justify-center rounded-lg text-muted-foreground",
+            "flex opacity-0 group-has-focus-visible/agent:opacity-100 group-hover/agent:opacity-100 [@media(hover:none)]:opacity-100",
+            FOCUS_RING,
+          )}
+        >
+          <ChevronRight
+            size={SIDEBAR_GLYPH}
+            aria-hidden
+            className={cn(
+              "transition-transform motion-reduce:transition-none",
+              expanded && "rotate-90",
+            )}
+          />
         </button>
         <SharedAgentConfigureButton
           name={agent.name}

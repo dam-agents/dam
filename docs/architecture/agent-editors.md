@@ -1,6 +1,6 @@
 # Agent editors
 
-Last verified: 2026-10-25
+Last verified: 2026-10-26
 
 ## Overview
 
@@ -121,7 +121,7 @@ Their page is the owner's page with every control they lack permission for hidde
 A section where they hold none of its permissions carries a lock in the section list: People, Connections and Channels.
 Each such page opens with a notice that says what only the owner does, why, and names the owner to ask; Providers has one too, with its switches disabled.
 Where the owner would delete the Agent, a line says only the owner can.
-Under Shared with me, a Shared Agent lists its sessions as the owner's own Agents do; they are not in an editor's Activity, All sessions or Pinned.
+Under Shared with me, a Shared Agent lists its sessions as the owner's own Agents do, and its row and chevron act as theirs do: a click on its closed row opens its new-session page and its list, a click on its open row closes the list; its sessions are not in an editor's Activity, All sessions or Pinned.
 A session of a Shared Agent carries the Shared badge in its top bar for the owner and the editors alike.
 An editor's approval prompts in the chat add one line naming the owner and the Agent's connections other than its model providers, each with the account it acts as when that is known ("GitHub as tomkis"), since the platform cannot know which one a tool call will use; the owner's prompts do not.
 Wherever the owner gives a Shared Agent a connection, they are reminded that its editors can use it with the owner's access.
