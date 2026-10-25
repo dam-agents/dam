@@ -1,6 +1,7 @@
 import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import {
   SessionMode,
+  type SessionPair,
   SessionType,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
@@ -114,6 +115,7 @@ import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { processesBadgeTone } from "../../processes/lib/process-summary.js";
+import { useProfiles } from "../../profiles/api/queries.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
@@ -129,6 +131,7 @@ import {
 } from "../api/queries.js";
 import {
   attachProviderQuietly,
+  rememberSessionPair,
   useHarnessCatalogModels,
   useProviderConnections,
 } from "../api/session-pair.js";
@@ -204,6 +207,7 @@ import {
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
+import { primaryProfileOf, subagentProfileOf } from "../lib/subagent-choice.js";
 import {
   dividerLabel,
   setupMessageOf,
@@ -386,6 +390,19 @@ export function ChatView() {
   });
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
   const setDraft = useStore((s) => s.setDraft);
+  const { data: profiles = [] } = useProfiles(selectedAgent);
+  /* UNIT_BOUNDARY_DESCRIPTION: a pick inside a running chat is the next chat's
+   * default too (D90) — the last pick in any chat, new or open, is what a new
+   * one starts on. The profile and slot references the pair still matches travel
+   * with it, so a subagent choice or a small tune does not detach the primary
+   * from its profile. */
+  const rememberSessionChoice = (pair: SessionPair) => {
+    if (!selectedAgent) return;
+    rememberSessionPair(selectedAgent, pair, "chat", undefined, {
+      profileId: primaryProfileOf(pair, profiles)?.id ?? null,
+      platformSubagentProfileId: subagentProfileOf(pair, profiles)?.id ?? null,
+    });
+  };
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -1208,8 +1225,36 @@ export function ChatView() {
                         carried={harnessStatus?.harnesses ?? []}
                         routed={harnessStatus?.modelRouter ?? false}
                         turnRunning={busy}
-                        onChoose={(value) => void chooseSessionModel(value)}
-                        onConfigure={(change) => void configureSession(change)}
+                        onChoose={(value) =>
+                          void chooseSessionModel(value, () =>
+                            rememberSessionChoice({
+                              harness: choice.harness,
+                              provider: currentSession.provider ?? null,
+                              model: value,
+                              ...(currentSession.settings && {
+                                settings: currentSession.settings,
+                              }),
+                            }),
+                          )
+                        }
+                        onConfigure={(change) => {
+                          const settings = Object.fromEntries(
+                            Object.entries({
+                              ...(currentSession.settings ?? {}),
+                              ...change,
+                            }).filter(([, value]) => value !== ""),
+                          );
+                          void configureSession(change, null, false, () =>
+                            rememberSessionChoice({
+                              harness: choice.harness,
+                              provider: currentSession.provider ?? null,
+                              model: currentSession.model ?? null,
+                              ...(Object.keys(settings).length > 0 && {
+                                settings,
+                              }),
+                            }),
+                          );
+                        }}
                         onNewSession={() => handleNewSession(true)}
                       />
                       <SessionPullRequests

@@ -99,6 +99,34 @@ describe("the model configuration", () => {
     expect(attachable).toContain("Connect this provider");
   });
 
+  /** TEST_SCENARIO: a profile the owner holds a provider for that the agent has
+   * not been granted reads as available but offers the same one-click repair,
+   * which is the case the action exists for (QA D3). */
+  it("offers Connect this provider for an available but unattached profile", () => {
+    const html = render(
+      createElement(ProfileList, {
+        profiles: [
+          profile({
+            availability: {
+              available: true,
+              reason: null,
+              attachable: true,
+            },
+          }),
+        ],
+        current: null,
+        counts: { harnesses: 1, models: 1 },
+        onPick: () => {},
+        onCustom: () => {},
+        onAttach: () => {},
+        onManage: () => {},
+      }),
+    );
+    expect(html).toContain("Connect this provider");
+    expect(html).toContain("Connect its provider to run it here");
+    expect(html).not.toContain("aria-disabled");
+  });
+
   /** TEST_SCENARIO: the subagent toggle is on by default, and off reveals the
    * same rows the primary model offers. */
   it("shows the subagent list only once the agent is not picking", () => {

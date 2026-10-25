@@ -125,6 +125,33 @@ export function primaryPickSettings(input: {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: which profile the primary slot names, found by the
+ * harness, the model and the settings the profile holds. The subagent keys are
+ * left out of the comparison, because a subagent choice is written onto the same
+ * pair and must not make the primary stop being that profile (QA D2).
+ */
+export function primaryProfileOf(
+  pair: SessionPair | null,
+  profiles: readonly ProfileWithUsage[],
+): ProfileWithUsage | null {
+  if (pair === null) return null;
+  const own = (value: Readonly<Record<string, string>> | undefined) =>
+    JSON.stringify(
+      Object.entries(value ?? {})
+        .filter(([id]) => !id.startsWith("platformSubagent."))
+        .sort(),
+    );
+  return (
+    profiles.find(
+      (profile) =>
+        profile.harness === pair.harness &&
+        profile.model === pair.model &&
+        own(profile.settings) === own(pair.settings),
+    ) ?? null
+  );
+}
+
 /** UNIT_BOUNDARY_DESCRIPTION: which profile the subagent slot names, found by the harness and model it holds; a slot with no harness is the agent's pick. */
 export function subagentProfileOf(
   pair: SessionPair | null,

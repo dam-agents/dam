@@ -1,12 +1,14 @@
 import { Edit, TrashCan } from "@carbon/icons-react";
-import type { ProfileWithUsage } from "api-server-api";
+import type { ProfileUsage, ProfileWithUsage } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionHeader } from "@/components/ui/list-section";
 
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import { useDeleteProfile, useUpdateProfile } from "../api/mutations.js";
 import { useProfiles } from "../api/queries.js";
 import { profileDetail } from "../lib/profile-detail.js";
@@ -36,19 +38,16 @@ export function ProfileSection() {
     if (next === "" || next === profile.name) return;
     update.mutate({ id: profile.id, name: next });
   };
-  const confirmDelete = (profile: ProfileWithUsage) => {
-    const usage = [
-      profile.usage.agents > 0 &&
-        `${profile.usage.agents} agent default${profile.usage.agents === 1 ? "" : "s"}`,
-      profile.usage.channels > 0 && `${profile.usage.channels} channel`,
-      profile.usage.schedules > 0 &&
-        `${profile.usage.schedules} schedule${profile.usage.schedules === 1 ? "" : "s"}`,
-    ].filter(Boolean);
-    if (usage.length > 0) {
-      /* UNIT_BOUNDARY_DESCRIPTION: nothing to confirm, so the dialog says what
-       * stands in the way and offers no Delete the server would refuse. */
+  const confirmDelete = async (profile: ProfileWithUsage) => {
+    if (uses(profile) > 0) {
+      /* UNIT_BOUNDARY_DESCRIPTION: nothing to confirm, so the dialog names what
+       * stands in the way — the schedules and channels by name, not a count —
+       * and offers no Delete the server would refuse. */
+      const detail = await queryClient.fetchQuery(
+        trpc.profiles.usage.queryOptions({ id: profile.id }),
+      );
       void showConfirm(
-        `It is used by ${usage.join(", ")}. Move them to another profile first.`,
+        `It is used by ${usedBy(detail)}. Move ${uses(profile) === 1 ? "it" : "them"} to another profile first.`,
         `“${profile.name}” cannot be deleted`,
         { confirmLabel: "Close" },
       );
@@ -108,7 +107,7 @@ export function ProfileSection() {
                 </p>
               </div>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {usedBy(profile)}
+                {usageLabel(profile)}
               </span>
               <Button
                 variant="ghost"
@@ -123,7 +122,7 @@ export function ProfileSection() {
                 size="sm"
                 aria-label={`Delete ${profile.name}`}
                 disabled={remove.isPending}
-                onClick={() => confirmDelete(profile)}
+                onClick={() => void confirmDelete(profile)}
               >
                 <TrashCan size={14} />
               </Button>
@@ -140,7 +139,22 @@ export function ProfileSection() {
   );
 }
 
-function usedBy(profile: ProfileWithUsage): string {
+const uses = (profile: ProfileWithUsage): number =>
+  profile.usage.agents + profile.usage.channels + profile.usage.schedules;
+
+/** UNIT_BOUNDARY_DESCRIPTION: what points at a profile, named so the owner knows which schedule or channel to move. */
+function usedBy(usage: ProfileUsage): string {
+  return [
+    ...usage.agents.map(
+      (agent) =>
+        `the agent default${agent.slots.length > 1 ? "s" : ""} of ${agent.id}`,
+    ),
+    ...usage.channels.map((channel) => `the channel ${channel.label}`),
+    ...usage.schedules.map((schedule) => `the schedule “${schedule.name}”`),
+  ].join(", ");
+}
+
+function usageLabel(profile: ProfileWithUsage): string {
   const total =
     profile.usage.agents + profile.usage.channels + profile.usage.schedules;
   if (total === 0) return "unused";
