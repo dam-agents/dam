@@ -1,8 +1,29 @@
+import { z } from "zod";
 import { t } from "../../trpc.js";
-import { readAgentProcedure } from "../../auth-procedures.js";
+import {
+  agentPermission,
+  agentTarget,
+  manageAgentsProcedure,
+  readAgentProcedure,
+} from "../../auth-procedures.js";
 
 export const channelsRouter = t.router({
   available: readAgentProcedure.query(({ ctx }) => ctx.channels.available),
+
+  /* UNIT_BOUNDARY_DESCRIPTION: the profile a channel's turns run on (D91), set
+   * from the channel's row; an Agent Editor may change it, as any set-up. */
+  setProfile: manageAgentsProcedure
+    .input(
+      z.object({
+        agentId: z.string().min(1),
+        type: z.enum(["slack", "telegram"]),
+        slackChannelId: z.string().min(1).optional(),
+        conversationId: z.string().min(1).optional(),
+        profileId: z.string().min(1).nullable(),
+      }),
+    )
+    .use(agentPermission("settings", (input) => agentTarget(input.agentId)))
+    .mutation(({ ctx, input }) => ctx.channels.setProfile(input)),
 
   telegramBot: readAgentProcedure.query(({ ctx }) => {
     const username = ctx.channels.telegramBotUsername();

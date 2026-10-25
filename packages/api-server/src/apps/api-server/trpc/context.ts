@@ -23,6 +23,7 @@ import {
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
+import { setChannelProfile } from "../../../modules/channels/infrastructure/channel-profile-repository.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import { createSlackLoopGuardDropsRepository } from "../../../modules/channels/infrastructure/slack-loop-guard-drops-repository.js";
 import {
@@ -486,6 +487,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       channels: {
         available: channelManager.availableChannels(),
         telegramBotUsername: () => channelManager.telegramBotUsername(),
+        setProfile: (input) =>
+          setChannelProfile(db)({ ...input, owner: user.sub }),
       },
       connections,
       secretRequests,
