@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { connectionEgressPlaceholder } from "api-server-api";
 
 import { expectAgentEnv, wakeAgent } from "../../lib/agents.js";
-import { createApiClient, type ApiClient } from "../../lib/api-client.js";
+import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { getConnectionId } from "../../lib/connections.js";
 import { agentName, connectionName, envName } from "../../lib/fixtures.js";

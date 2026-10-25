@@ -872,8 +872,6 @@ describe("the shipped proof-of-concept catalog", () => {
       /^quay\.io\/dam-agents\/nous(:|$)/,
     );
     expect(kits.find((k) => k.kit.id === "nous")!.kit.resources).toMatchObject({
-      cpu: "2",
-      memory: "4Gi",
       storage: "10Gi",
     });
     expect(

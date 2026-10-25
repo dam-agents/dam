@@ -253,6 +253,7 @@ export const controlAgentKitState = control.table(
     defaultModel: text("default_model"),
     pendingCommit: text("pending_commit"),
     pendingStartedAt: timestamp("pending_started_at", { withTimezone: true }),
+    pendingNudgedAt: timestamp("pending_nudged_at", { withTimezone: true }),
     skippedCommit: text("skipped_commit"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

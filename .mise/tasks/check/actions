@@ -3,14 +3,26 @@
 # Offline: the online rules ask GitHub about archived repositories, impostor
 # commits and advisories, and print nothing here. JACTIONLINT_ONLINE=1 turns
 # them on for a run that has a token (it reads GITHUB_TOKEN, GH_TOKEN, then
-# `gh auth token`). With no file it checks every workflow, composite action and
-# dependabot.yml of the repository. Ignored paths and findings live in
-# .github/jactionlint.yaml (it reads actionlint's file too); it honors the
-# `# zizmor: ignore[...]` comments the workflows still carry.
+# `gh auth token`). The file list is the tracked workflows, composite actions
+# and dependabot.yml: with no file, jactionlint walks the working tree, and that
+# includes any clone in an ignored directory (a smolvm checkout in scratchpad/),
+# whose unpinned actions would fail a check the developer cannot fix. Ignored
+# paths and findings live in .github/jactionlint.yaml (it reads actionlint's file
+# too); it honors the `# zizmor: ignore[...]` comments the workflows still carry.
 set -u
 
+# Only tracked files: a lint of the repository is a lint of what is published.
+files=$(git ls-files -- '.github/workflows/*.yml' '.github/workflows/*.yaml' \
+  '.github/actions/*/action.yml' '.github/dependabot.yml') || exit 1
+if [ -z "$files" ]; then
+  echo "check:actions: no workflow, composite action or dependabot.yml is tracked" >&2
+  exit 1
+fi
+
 status=0
-jactionlint || status=1
+# Word splitting is the list; no tracked path here holds a space.
+# shellcheck disable=SC2086
+jactionlint $files || status=1
 
 # rules.template-injection.pedantic in .github/jactionlint.yaml is what keeps
 # the checks the zizmor task reported: a matrix value, a step output or

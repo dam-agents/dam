@@ -9,7 +9,6 @@ import type {
 import {
   createHarnessConfigService,
   resolveFirePair,
-  harnessesOf,
 } from "./services/harness-config-service.js";
 import { NoDefaultModelError } from "./domain/no-default-model.js";
 import { createSessionPairRepo } from "./infrastructure/session-pair-repo.js";

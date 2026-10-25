@@ -63,7 +63,6 @@ import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
-import type { SessionsService } from "agent-runtime-api";
 import {
   createSessionChanges,
   notifyingSessionMetadataStore,

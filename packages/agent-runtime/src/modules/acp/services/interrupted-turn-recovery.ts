@@ -21,8 +21,8 @@ export const INTERRUPTION_NOTICE = [
     "finished.",
   DISOWNED_REJECTION,
   CHECK_AND_CONTINUE,
-  "If this problem persists, stop and instruct the user to go to ⵗ → " +
-    "Configure agent → set Compute Resources dropdown to a higher tier.",
+  "If this problem persists, stop and tell the user that only a platform " +
+    "operator can raise their memory budget.",
   "</turn-interrupted>",
 ].join("\n");
 

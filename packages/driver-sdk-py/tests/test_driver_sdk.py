@@ -55,7 +55,7 @@ def test_spawn_sends_a_kit_shaped_setup(stub):
         seed={"url": "https://github.example/acme/tool", "commit": "a" * 40},
         install="uv pip install ./tool",
         env={"MODE": "cell"},
-        resources={"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
+        resources={"storage": "10Gi"},
         skills=[{"source": "https://github.example/acme/skills", "name": "grill"}],
         ttl_ms=3_600_000,
         label="cell:persona/task",
@@ -71,46 +71,16 @@ def test_spawn_sends_a_kit_shaped_setup(stub):
         "seed": {"url": "https://github.example/acme/tool", "commit": "a" * 40},
         "install": {"command": "uv pip install ./tool"},
         "env": [{"name": "MODE", "value": "cell"}],
-        "resources": {"cpu": "2", "memory": "4Gi", "storage": "10Gi"},
+        "resources": {"storage": "10Gi"},
         "skills": [{"source": "https://github.example/acme/skills", "name": "grill"}],
         "ttlMs": 3_600_000,
         "label": "cell:persona/task",
     }
 
 
-def test_spawn_keeps_the_older_size_arguments(stub):
-    _done(stub)
-
-    d.spawn(
-        "do it",
-        "integer",
-        harness="claude-code",
-        memory="4Gi",
-        cpu="2",
-        label="cell",
-        poll_seconds=0,
-    )
-
-    body = stub.requests[0][2]
-    assert (body["memory"], body["cpu"]) == ("4Gi", "2")
-    assert body["label"] == "cell"
-
-
 def test_spawn_needs_a_harness_or_an_image(stub):
     with pytest.raises(ValueError, match="harness="):
         d.spawn("do it", "integer")
-    assert stub.requests == []
-
-
-def test_spawn_refuses_size_both_inside_and_beside_resources(stub):
-    with pytest.raises(ValueError, match="inside resources"):
-        d.spawn(
-            "do it",
-            "integer",
-            harness="claude-code",
-            resources={"cpu": "2"},
-            memory="4Gi",
-        )
     assert stub.requests == []
 
 
@@ -137,12 +107,3 @@ def test_spawn_failure_without_a_reason_stays_bare(stub):
 
     assert str(exc.value).endswith("failed")
     assert exc.value.reason is None
-
-
-def test_budget_reads_the_owner_figures(stub):
-    stub.routes[("GET", "/budget")] = (
-        200,
-        {"defaultWorkerSize": {"cpu": "1", "memory": "1Gi"}},
-    )
-
-    assert d.budget()["defaultWorkerSize"] == {"cpu": "1", "memory": "1Gi"}

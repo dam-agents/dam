@@ -7,7 +7,7 @@ import {
 } from "./labels.js";
 
 export function createKitUpdateMarks(
-  repo: Pick<AgentsRepository, "patchAnnotations">,
+  repo: Pick<AgentsRepository, "patchAnnotations" | "nudgeKitUpdate">,
 ) {
   return {
     begin: (agentId: string, stamp: SeedStamp, pending: KitUpdatePending) =>
@@ -17,6 +17,8 @@ export function createKitUpdateMarks(
       }),
     skip: (agentId: string, commit: string) =>
       repo.patchAnnotations(agentId, { [ANN_KIT_UPDATE_SKIPPED]: commit }),
+    nudge: (agentId: string, expected: KitUpdatePending, at: string) =>
+      repo.nudgeKitUpdate(agentId, expected.targetCommit, at),
     end: (agentId: string, stamp: SeedStamp | null) =>
       repo.patchAnnotations(agentId, {
         ...(stamp ? { [ANN_STARTER_KIT_SEED]: JSON.stringify(stamp) } : {}),

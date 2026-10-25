@@ -1,4 +1,4 @@
-import type { AcpPermissionOption, ApprovalVerdict } from "api-server-api";
+import type { AcpPermissionOption } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";

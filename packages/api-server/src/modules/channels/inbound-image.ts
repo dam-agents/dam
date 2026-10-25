@@ -1,11 +1,5 @@
-const READABLE_IMAGE_MIME_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-] as const;
-
-export type ReadableImageMimeType = (typeof READABLE_IMAGE_MIME_TYPES)[number];
+export type ReadableImageMimeType =
+  "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 export type InboundAttachment =
   | { kind: "image"; mimeType: ReadableImageMimeType }

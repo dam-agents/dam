@@ -128,8 +128,8 @@ spec:
               value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
-            # Per-user compute ceiling defaults (#1900); a UserBudget CR
-            # overrides them for one user. Enforced at the 0→1 scale-up.
+            # Per-user pool defaults; a UserBudget overrides them for one
+            # user. The owner's runner admits machines against them.
             - name: DEFAULT_USER_CPU_BUDGET
               value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
             - name: DEFAULT_USER_MEMORY_BUDGET

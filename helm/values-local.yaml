@@ -33,10 +33,9 @@ controller:
   # out, the node flapped NotReady, Keycloak crash-looped on liveness kills
   # and the UI lost auth. 6 of the VM's 10 CPUs caps agent burst so k3s,
   # Istio, Keycloak and the api-server always keep ~4; 14Gi + the ~5Gi
-  # platform stack stays inside the VM's 20Gi. Spawns that fit this ceiling
-  # but not the currently-free room queue (sweepable targets auto-start when
-  # room frees); a worker sized past the ceiling is rejected at the spawn
-  # route instead of parking until its deadline.
+  # platform stack stays inside the VM's 20Gi. A spawn that fits this ceiling
+  # but not the currently-free room waits in the queue until room frees
+  # (sweepable targets auto-start).
   userBudgets:
     defaultCpu: "6"
     defaultMemory: "14Gi"
