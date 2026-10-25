@@ -83,7 +83,10 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   name: z.string().min(1),
   rrule: z.string().min(1),
   timezone: z.string().min(1),
-  quietHours: z.array(quietWindowSchema),
+  /* UNIT_BOUNDARY_DESCRIPTION: absent leaves the stored quiet hours alone, and
+   * either null or an empty list clears them, as every other choice of a
+   * schedule says it: omitted keeps, null clears. */
+  quietHours: z.array(quietWindowSchema).nullable().optional(),
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
