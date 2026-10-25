@@ -20,7 +20,11 @@ import type {
   StarterKitsService,
   StarterKitView,
 } from "api-server-api";
-import { resolveKitSchedulePrecheck } from "api-server-api";
+import {
+  resolveKitSchedulePrecheck,
+  type ConnectSlackError,
+} from "api-server-api";
+import { match } from "ts-pattern";
 import {
   kitInitializationTask,
   describeAccepts,
@@ -47,6 +51,35 @@ import type { KitUpstream } from "../infrastructure/kit-upstream.js";
 import type { LinkedKits } from "../infrastructure/linked-kits.js";
 
 export type LoadedKit = Omit<ResolvedKitRow, "kitId">;
+
+function slackConnectRefusal(
+  reason: ConnectSlackError["type"],
+  slackChannelId: string,
+): string {
+  return match(reason)
+    .with(
+      "NotChannelMember",
+      () =>
+        `you and the bot are not both in the Slack channel ${slackChannelId}`,
+    )
+    .with(
+      "SlackAccountUnlinked",
+      () => "link your Slack account first to connect a Slack channel",
+    )
+    .with(
+      "WorkspaceUnreachable",
+      "MembershipUnchecked",
+      () => "Slack could not be reached to connect its channel. Try again",
+    )
+    .with(
+      "WorkspaceUnresolved",
+      "NoSlackWorkspace",
+      "AgentNotFound",
+      "ChannelAlreadyBound",
+      () => `the Slack channel ${slackChannelId} could not be connected`,
+    )
+    .exhaustive();
+}
 
 export interface StarterKitsRepository {
   list(): Promise<LoadedKit[]>;
@@ -377,8 +410,18 @@ export function createStarterKitsService(
           input.skipSchedules,
           input.scheduleOverrides,
         );
-        if (input.slackChannelId)
-          await deps.agents.connectSlack(agent.id, input.slackChannelId, false);
+        for (const slackChannelId of input.slackChannelIds ?? []) {
+          const connected = await deps.agents.connectSlack(
+            agent.id,
+            slackChannelId,
+            false,
+          );
+          if (!connected.ok)
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `The agent was not created: ${slackConnectRefusal(connected.error.type, slackChannelId)}`,
+            });
+        }
         const briefs =
           kit.onboarding !== false &&
           !(kit.onboarding && "command" in kit.onboarding);

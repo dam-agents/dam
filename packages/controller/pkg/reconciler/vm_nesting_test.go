@@ -13,7 +13,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// TEST_OVERVIEW: nesting is asked for per Agent, through the nestedVirtualization the Agent's Backend still carries, or for every agent at once through controller.agent.templateDefaults.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
+// TEST_OVERVIEW: nesting is asked for per Agent, through the nestedVirtualization the Agent's Backend still carries, or for every agent at once through controller.agent.harnessTemplateDefaults.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
 
 func nestingAgent() *apiv1.Agent {
 	agent := vmAgentCR()
@@ -83,12 +83,12 @@ func TestAnAgentThatDoesNotAskNeitherNestsNorCarriesTheCondition(t *testing.T) {
 	assert.Nil(t, readNestingCondition(t, r, "my-agent"))
 }
 
-// TEST_SCENARIO: an install that turns nesting on in templateDefaults asks for it on every vm agent, so an Agent that never set the field still gets it on its machine, and its owner sees the condition like one who asked.
+// TEST_SCENARIO: an install that turns nesting on in harnessTemplateDefaults asks for it on every vm agent, so an Agent that never set the field still gets it on its machine, and its owner sees the condition like one who asked.
 func TestTheTemplateDefaultAsksToNestForAnAgentThatDoesNotSetIt(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
 	r.config.VM.Runner.NestedVirtualization = true
-	r.config.AgentTemplateDefaults.NestedVirtualization = true
+	r.config.HarnessTemplateDefaults.NestedVirtualization = true
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	assert.True(t, node.spec("my-agent").NestedVirtualization)
 
@@ -103,7 +103,7 @@ func TestTheTemplateDefaultAsksToNestForAnAgentThatDoesNotSetIt(t *testing.T) {
 func TestTheTemplateDefaultOnAnInstallThatForbidsNestingIsToldWhy(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	r.config.AgentTemplateDefaults.NestedVirtualization = true
+	r.config.HarnessTemplateDefaults.NestedVirtualization = true
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.False(t, node.spec("my-agent").NestedVirtualization)

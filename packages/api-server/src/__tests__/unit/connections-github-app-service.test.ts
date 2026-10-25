@@ -43,7 +43,10 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
-    mergeInputs: async () => {},
+    mergeInputs: async (id, inputs) => {
+      const c = rows.get(id);
+      if (c) rows.set(id, { ...c, inputs: { ...c.inputs, ...inputs } });
+    },
     delete: async (id) => {
       rows.delete(id);
     },
@@ -184,7 +187,7 @@ describe("github-app connection create", () => {
     const { svc, rows, stored, tokenCalls } = makeService();
     const id = await svc.createFromTemplate(createInput());
 
-    expect(tokenCalls).toEqual([
+    expect(tokenCalls.filter((url) => url.includes("/access_tokens"))).toEqual([
       "https://api.github.com/app/installations/987654/access_tokens",
     ]);
 
@@ -582,5 +585,215 @@ describe("github-app scope editing", () => {
     expect(tokenCalls).toContain(
       "https://api.github.com/app/installations/987654",
     );
+  });
+});
+
+describe("github-app credential check", () => {
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+
+  function github(
+    overrides: { mint?: () => Response; installation?: () => Response } = {},
+  ) {
+    return (url: string) => {
+      if (url.includes("/access_tokens")) {
+        return (
+          overrides.mint?.() ??
+          json({ token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" }, 201)
+        );
+      }
+      if (url.endsWith("/app/installations/987654")) {
+        return (
+          overrides.installation?.() ??
+          json({ app_slug: "dam-bot", account: { login: "dam-agents" } })
+        );
+      }
+      if (url.includes("/installation/repositories")) {
+        return json({
+          total_count: 2,
+          repositories: [
+            { id: 12, name: "docs" },
+            { id: 34, name: "web" },
+          ],
+        });
+      }
+      return new Response(null, { status: 204 });
+    };
+  }
+
+  // TEST_SCENARIO: a GitHub App connection that mints a token is saved with a passed check that names the bot, the account the app is installed on and the repositories the token reaches, so the CLI and the page can tell the user who the connection acts as.
+  it("names the bot, the installation's account and the repositories on save", async () => {
+    const { svc } = makeService(github());
+    const id = await svc.createFromTemplate(createInput());
+
+    const check = (await svc.getConnection(id))?.check;
+    expect(check).toMatchObject({
+      status: "passed",
+      account: "dam-bot[bot]",
+      installedOn: "dam-agents",
+      repositories: ["docs", "web"],
+    });
+    expect(check).not.toHaveProperty("repositoriesTruncated");
+    expect(Date.parse(check!.at)).not.toBeNaN();
+  });
+
+  // TEST_SCENARIO: the token the check minted for itself is revoked, and the one the save minted stays the connection's own, so a check on demand leaves no extra live token behind.
+  it("checks a stored connection again and revokes the token it minted", async () => {
+    let mints = 0;
+    const { svc, stored, tokenCalls } = makeService(
+      github({
+        mint: () =>
+          json(
+            { token: `ghs_${++mints}`, expires_at: "2027-01-15T13:00:00Z" },
+            201,
+          ),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+
+    const check = await svc.checkCredential(id);
+
+    expect(check).toMatchObject({ status: "passed", account: "dam-bot[bot]" });
+    expect(mints).toBe(2);
+    expect(tokenCalls.at(-1)).toBe("https://api.github.com/installation/token");
+    expect(stored.get(SECRET_PATH)!.access_token).toBe("ghs_1");
+    expect((await svc.getConnection(id))?.check?.status).toBe("passed");
+  });
+
+  // TEST_SCENARIO: a key revoked or an installation removed after the save is found on demand: the check fails with the input GitHub rejected and the listing keeps that result, so the user learns before an agent's gh call is refused.
+  it("fails a stored connection GitHub no longer accepts, naming the input", async () => {
+    let refuse = false;
+    const { svc } = makeService(
+      github({
+        mint: () =>
+          refuse
+            ? json({ message: "Not Found" }, 404)
+            : json({ token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" }, 201),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    refuse = true;
+
+    const check = await svc.checkCredential(id);
+
+    expect(check?.status).toBe("failed");
+    expect(check?.reason).toMatch(/^The Installation ID is wrong/);
+    expect((await svc.getConnection(id))?.check?.status).toBe("failed");
+  });
+
+  // TEST_SCENARIO: a suspended installation answers 403, which fails the check with advice about the installation.
+  it("fails a suspended installation", async () => {
+    let refuse = false;
+    const { svc } = makeService(
+      github({
+        mint: () =>
+          refuse
+            ? json({ message: "This installation has been suspended" }, 403)
+            : json({ token: "ghs_1" }, 201),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    refuse = true;
+
+    const check = await svc.checkCredential(id);
+
+    expect(check?.status).toBe("failed");
+    expect(check?.reason).toMatch(/not suspended/);
+  });
+
+  // TEST_SCENARIO: a GitHub outage says nothing about the app's credentials, so the check is unchecked rather than failed.
+  it("leaves the check unchecked when GitHub has an outage", async () => {
+    let outage = false;
+    const { svc } = makeService(
+      github({
+        mint: () =>
+          outage
+            ? new Response("oops", { status: 502 })
+            : json({ token: "ghs_1" }, 201),
+      }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    outage = true;
+
+    const check = await svc.checkCredential(id);
+
+    expect(check?.status).toBe("unchecked");
+    expect(check?.reason).toMatch(/HTTP 502/);
+  });
+
+  // TEST_SCENARIO: the bot and the repositories are details: when GitHub will not say them, the check still passes on the minted token, without the details.
+  it("passes without details when the installation cannot be read", async () => {
+    const { svc } = makeService(
+      github({ installation: () => json({ message: "Not Found" }, 404) }),
+    );
+    const id = await svc.createFromTemplate(createInput());
+
+    const check = (await svc.getConnection(id))?.check;
+    expect(check?.status).toBe("passed");
+    expect(check).not.toHaveProperty("account");
+    expect(check?.repositories).toEqual(["docs", "web"]);
+  });
+
+  // TEST_SCENARIO: a key rotation records a fresh check, so the result reads as the new key's.
+  it("records a fresh check when the private key is rotated", async () => {
+    const { svc, rows } = makeService(github());
+    const id = await svc.createFromTemplate(createInput());
+    const row = rows.get(id)!;
+    rows.set(id, {
+      ...row,
+      inputs: {
+        ...row.inputs,
+        credentialCheck: {
+          status: "failed",
+          reason: "old",
+          at: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+
+    await svc.update(id, { value: PRIVATE_KEY_PEM });
+
+    expect((await svc.getConnection(id))?.check).toMatchObject({
+      status: "passed",
+      account: "dam-bot[bot]",
+    });
+  });
+
+  // TEST_SCENARIO: a narrowed scope is checked with the token minted for it, so the check lists only the repositories the narrowed token reaches.
+  it("records the check of the new scope", async () => {
+    let scoped = false;
+    const respond = github();
+    const { svc } = makeService((url) =>
+      scoped && url.includes("/installation/repositories")
+        ? json({ total_count: 1, repositories: [{ id: 12, name: "docs" }] })
+        : respond(url),
+    );
+    const id = await svc.createFromTemplate(createInput());
+    scoped = true;
+
+    await svc.updateGitHubAppScope({ id, repositories: "docs" });
+
+    expect((await svc.getConnection(id))?.check?.repositories).toEqual([
+      "docs",
+    ]);
+  });
+
+  // TEST_SCENARIO: an installation with more repositories than one page lists the first page and says the list is truncated, rather than claim it is complete.
+  it("flags a repository list longer than one page", async () => {
+    const respond = github();
+    const { svc } = makeService((url) =>
+      url.includes("/installation/repositories")
+        ? json({ total_count: 250, repositories: [{ id: 12, name: "docs" }] })
+        : respond(url),
+    );
+    const id = await svc.createFromTemplate(createInput());
+
+    expect((await svc.getConnection(id))?.check).toMatchObject({
+      repositories: ["docs"],
+      repositoriesTruncated: true,
+    });
   });
 });

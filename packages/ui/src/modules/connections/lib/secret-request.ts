@@ -47,6 +47,12 @@ export function secretRequestErrorCopy(code: string | undefined): {
 export function credentialCheckDetails(check: CredentialCheck): string[] {
   const details: string[] = [];
   if (check.account) details.push(`Account: ${check.account}`);
+  if (check.installedOn) details.push(`Installed on: ${check.installedOn}`);
+  if (check.repositories) {
+    details.push(
+      `Repositories: ${check.repositories.length > 0 ? check.repositories.join(", ") : "none"}${check.repositoriesTruncated ? ", …" : ""}`,
+    );
+  }
   if (check.expiresAt) {
     details.push(
       `Expires: ${new Date(check.expiresAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`,

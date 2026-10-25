@@ -37,6 +37,7 @@ export const starterKitConnectionRequirementSchema = z.object({
 
 export const starterKitChannelSchema = z.object({
   type: z.enum(["slack", "telegram"]),
+  conversation: z.enum(["channel", "direct"]).default("channel"),
   note: z.string().optional(),
 });
 
@@ -242,7 +243,7 @@ export const starterKitApplyInputSchema = z
     avatar: avatarSchema.optional(),
     templateId: z.string().min(1).optional(),
     connectionIds: z.array(z.string().min(1)).default([]),
-    slackChannelId: z.string().min(1).optional(),
+    slackChannelIds: z.array(z.string().min(1)).optional(),
     skipSchedules: z.array(z.string().min(1)).default([]),
     scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
   })

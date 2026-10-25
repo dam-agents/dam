@@ -287,6 +287,7 @@ import {
   createGitRefResolver,
   createKitUpstream,
   createKitUpdateNudge,
+  createTurnReplyReader,
   createKitUpdateReporter,
   createLinkedKits,
   createResolvedCatalogRepository,
@@ -1184,6 +1185,8 @@ export async function bootstrap() {
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
+    linkSlackUser: (slackUserId, keycloakSub, teamId) =>
+      upsertIdentityLink(db)("slack", slackUserId, keycloakSub, teamId),
     ...(fakeSlackGateway && fakeSlackRotation
       ? {
           slackInstalls: {
@@ -1382,6 +1385,7 @@ export async function bootstrap() {
     marks: createKitUpdateMarks(agentsRepo),
     listSessions: (agentId, signal) =>
       sessionWatch.listSessions(agentId, signal),
+    lastReply: createTurnReplyReader(config.namespace),
     send: (agentId, payload) =>
       runtimeDelivery.sessionMessages.send(agentId, payload),
   });

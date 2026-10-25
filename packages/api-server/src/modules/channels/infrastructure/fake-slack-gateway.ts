@@ -24,6 +24,7 @@ export interface FakeSlackChannel {
   name: string;
   botIsMember: boolean;
   members?: string[];
+  isPrivate?: boolean;
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId" | "sender"> & {
@@ -68,6 +69,7 @@ export interface FakeSlackGateway extends SlackGateway {
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
+  addChannelMember(channelId: string, userId: string, teamId?: string): void;
   setHistory(messages: SlackMessage[]): void;
   setMessage(channel: string, message: SlackMessage & { ts: string }): void;
   setThreadedHistory(messages: SlackMessage[]): void;
@@ -372,7 +374,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async listBotChannels(teamId) {
       return (channelsByWorkspace.get(teamId) ?? [])
         .filter((c) => c.botIsMember)
-        .map(({ id, name }) => ({ id, name }));
+        .map(({ id, name, isPrivate }) => ({
+          id,
+          name,
+          isPrivate: isPrivate ?? false,
+        }));
     },
 
     async getConversationInfo(channelId, teamId) {
@@ -480,6 +486,20 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setChannels(next, teamId = "") {
       channelsByWorkspace.set(teamId, [...next]);
+    },
+
+    addChannelMember(channelId, userId, teamId = "") {
+      const channels = channelsByWorkspace.get(teamId) ?? [];
+      const channel = channels.find((c) => c.id === channelId) ?? {
+        id: channelId,
+        name: channelId,
+        botIsMember: true,
+      };
+      const members = [...new Set([...(channel.members ?? []), userId])];
+      channelsByWorkspace.set(teamId, [
+        ...channels.filter((c) => c.id !== channelId),
+        { ...channel, members },
+      ]);
     },
 
     setHistory(next) {

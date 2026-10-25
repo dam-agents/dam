@@ -19,6 +19,7 @@ import {
   slackReadOutboundResultSchema,
   slackImportHelmTokenInputSchema,
   slackSetChannelsInputSchema,
+  slackAddMemberInputSchema,
   slackRenewTokensInputSchema,
   slackTokenStateInputSchema,
   slackTokenStateResultSchema,
@@ -123,6 +124,14 @@ export const e2eRouter = t.router({
     .mutation(({ ctx, input }) => {
       gate(ctx);
       return ctx.e2e.slackSetChannels(input);
+    }),
+
+  slackAddMember: t.procedure
+    .input(slackAddMemberInputSchema)
+    .output(resetResultSchema)
+    .mutation(({ ctx, input }) => {
+      gate(ctx);
+      return ctx.e2e.slackAddMember(ctx.user.sub, input);
     }),
 
   slackEnableTokenRotation: t.procedure

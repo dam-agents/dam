@@ -1,51 +1,56 @@
-import type { StarterKitView } from "api-server-api";
+import { ChannelType, type StarterKitView } from "api-server-api";
 
-import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { SlackChannelPicker } from "../../slack/components/slack-channel-picker.js";
+import { useTelegramBot } from "../../telegram/api/queries.js";
 
-const CHANNELS = [
+const MESSENGERS = [
   {
-    type: "slack" as const,
-    title: "Slack channel",
+    type: "slack",
+    channelType: ChannelType.Slack,
+    title: "Slack",
     blurb:
       "Your team can interact with the agent in a Slack channel or their DMs.",
   },
   {
-    type: "telegram" as const,
-    title: "Telegram chat",
+    type: "telegram",
+    channelType: ChannelType.Telegram,
+    title: "Telegram",
     blurb: "Your team can interact with the agent in a Telegram group or DM.",
   },
-];
+] as const;
 
 interface Props {
   kit: StarterKitView;
-  slackChannelId: string;
-  onSlackChannelIdChange: (value: string) => void;
+  available: Partial<Record<ChannelType, boolean>>;
+  slackChannelIds: readonly string[];
+  onSlackChannelIdsChange: (ids: string[]) => void;
 }
 
 export function KitChannelsSection({
   kit,
-  slackChannelId,
-  onSlackChannelIdChange,
+  available,
+  slackChannelIds,
+  onSlackChannelIdsChange,
 }: Props) {
+  const offered = MESSENGERS.filter((m) => available[m.channelType]);
+  if (offered.length === 0) return null;
   return (
     <section className="mb-8">
       <SectionLabel spaced>
         Channels <span className="font-normal">(optional)</span>
       </SectionLabel>
-
       <ul className="flex flex-col gap-2">
-        {CHANNELS.map((channel) => {
-          const fromKit = kit.channels.find((c) => c.type === channel.type);
+        {offered.map((messenger) => {
+          const fromKit = kit.channels.find((c) => c.type === messenger.type);
           return (
             <li
-              key={channel.type}
+              key={messenger.type}
               className={cn(
                 "rounded-lg border px-4 py-3",
                 fromKit ? "border-kit-line bg-kit-surface" : "border-border",
@@ -53,7 +58,7 @@ export function KitChannelsSection({
             >
               <div className="flex items-start gap-3">
                 <ConnectionIcon
-                  iconSlug={channel.type}
+                  iconSlug={messenger.type}
                   alt=""
                   size={16}
                   className="mt-0.5 shrink-0"
@@ -61,7 +66,7 @@ export function KitChannelsSection({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-foreground">
-                      {channel.title}
+                      {messenger.title}
                     </span>
                     {fromKit && (
                       <Badge variant="kit" size="sm">
@@ -70,53 +75,80 @@ export function KitChannelsSection({
                     )}
                   </div>
                   <p className="mt-0.5 text-sm text-muted-foreground">
-                    {fromKit?.note ?? channel.blurb}
+                    {fromKit?.note ?? messenger.blurb}
                   </p>
                 </div>
-                {channel.type === "slack" ? (
-                  <Checkbox
-                    checked={slackChannelId.trim().length > 0}
-                    disabled
-                    aria-label="Slack is bound by giving a channel ID below"
-                    className="mt-0.5 shrink-0"
+              </div>
+              <div className="mt-3 flex flex-col gap-3 pl-7">
+                {messenger.type === "slack" ? (
+                  <SlackSetup
+                    directOnly={fromKit?.conversation === "direct"}
+                    slackChannelIds={slackChannelIds}
+                    onSlackChannelIdsChange={onSlackChannelIdsChange}
                   />
                 ) : (
-                  <Checkbox
-                    checked={false}
-                    disabled
-                    aria-label="Telegram is bound in chat after the agent starts"
-                    className="mt-0.5 shrink-0"
-                  />
+                  <TelegramSetup />
                 )}
               </div>
-
-              {channel.type === "slack" && (
-                <div className="mt-3 pl-7">
-                  <FormField
-                    label="Slack channel ID"
-
-                    hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
-                  >
-                    <Input
-                      value={slackChannelId}
-                      onChange={(e) => onSlackChannelIdChange(e.target.value)}
-                      placeholder="C0…"
-                      data-testid="starter-kit-slack-channel-id"
-                    />
-                  </FormField>
-                </div>
-              )}
-
-              {channel.type === "telegram" && (
-                <p className="mt-2 pl-7 text-xs text-muted-foreground">
-                  Once the agent is running, send <code>/bind</code> to the bot
-                  in the Telegram chat to connect it.
-                </p>
-              )}
             </li>
           );
         })}
       </ul>
     </section>
+  );
+}
+
+function SlackSetup({
+  directOnly,
+  slackChannelIds,
+  onSlackChannelIdsChange,
+}: {
+  directOnly: boolean;
+  slackChannelIds: readonly string[];
+  onSlackChannelIdsChange: (ids: string[]) => void;
+}) {
+  const { name, short } = getBrand();
+  if (directOnly)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Once the agent is created, open a DM with @{name} in Slack and run{" "}
+        <code>/{short} bind</code>, then pick this agent on the page Slack
+        opens.
+      </p>
+    );
+  return (
+    <>
+      <SlackChannelPicker
+        value={slackChannelIds}
+        onChange={onSlackChannelIdsChange}
+      />
+      <p className="text-sm text-muted-foreground">
+        To talk to the agent in a direct message too: once it is created, open a
+        DM with @{name} and run <code>/{short} bind</code>.
+      </p>
+    </>
+  );
+}
+
+function TelegramSetup() {
+  const handle = useTelegramBot().data?.username;
+  return (
+    <p className="text-sm text-muted-foreground">
+      Once the agent is created: add{" "}
+      {handle ? (
+        <a
+          href={`https://t.me/${handle}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent underline-offset-2 hover:underline"
+        >
+          @{handle}
+        </a>
+      ) : (
+        "the Telegram bot"
+      )}{" "}
+      to the chat, send <code>/bind</code> there, and pick this agent on the
+      page it opens.
+    </p>
   );
 }

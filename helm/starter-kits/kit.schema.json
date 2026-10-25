@@ -336,6 +336,14 @@
               "telegram"
             ]
           },
+          "conversation": {
+            "default": "channel",
+            "type": "string",
+            "enum": [
+              "channel",
+              "direct"
+            ]
+          },
           "note": {
             "type": "string"
           }

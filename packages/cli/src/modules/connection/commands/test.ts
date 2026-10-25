@@ -29,13 +29,14 @@ export function buildTestCommand(deps: {
     )
     .option(
       "--json",
-      "emit { id, name, check } as JSON; check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, reason?, at }",
+      "emit { id, name, check } as JSON; check { status: passed|failed|unchecked, account?, expiresAt?, scopes?, installedOn?, repositories?, repositoriesTruncated?, reason?, at }",
     )
     .addHelpText(
       "after",
       "\nThe server uses the stored credential the way an agent does: a GitHub token\n" +
         "against GitHub's user endpoint, a Kubernetes token in a SelfSubjectReview on\n" +
-        "its cluster's API server, a model provider key against the provider.\n" +
+        "its cluster's API server, a GitHub App by minting an installation token for\n" +
+        "the connection's scope, a model provider key against the provider.\n" +
         "The result replaces the one `dam connection list --json` shows.\n" +
         "\nExit codes: 0 the check passed, 1 it failed or could not run,\n" +
         "2 the connection has no check.\n" +
@@ -64,7 +65,7 @@ export function buildTestCommand(deps: {
       if (!check) {
         process.stderr.write(
           `error: '${match.name}' has no credential check; ` +
-            "GitHub and Kubernetes tokens and model provider keys have one\n",
+            "GitHub tokens and GitHub Apps, Kubernetes tokens and model provider keys have one\n",
         );
         process.exit(EXIT_INVALID_INPUT);
       }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Wipe the e2e cluster's data without reinstalling it"
-#MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
+#MISE env={ LIMA_INSTANCE = "platform-k3s-test", DAM_INSTALL = "default" }
 # Drops and recreates the platform DB, deletes the anchors (and what they own:
 # StatefulSets, pods, PVCs) and the store marker, and clears stored Playwright
 # auth; the cluster keeps running.

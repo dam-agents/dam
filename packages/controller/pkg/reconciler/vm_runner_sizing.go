@@ -87,7 +87,7 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 	}
 	var d runnerDemand
 	for _, a := range agents {
-		if _, err := resolveVMDiskGiB(&a.Spec, r.config.AgentTemplateDefaults); err != nil {
+		if _, err := resolveVMDiskGiB(&a.Spec, r.config.HarnessTemplateDefaults); err != nil {
 			continue
 		}
 		running := selfRunning

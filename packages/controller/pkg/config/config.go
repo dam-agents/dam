@@ -28,7 +28,7 @@ type Config struct {
 
 	AgentBase AgentBase
 
-	AgentTemplateDefaults AgentTemplateDefaults
+	HarnessTemplateDefaults HarnessTemplateDefaults
 
 	VM          VMConfig
 	KubeAPIAddr string
@@ -208,7 +208,7 @@ func LoadFromEnv() (*Config, error) {
 	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {
 		return nil, err
 	}
-	if err := decodeJSONEnv("AGENT_TEMPLATE_DEFAULTS", &cfg.AgentTemplateDefaults); err != nil {
+	if err := decodeJSONEnv("AGENT_HARNESS_TEMPLATE_DEFAULTS", &cfg.HarnessTemplateDefaults); err != nil {
 		return nil, err
 	}
 	if err := decodeJSONEnv("AGENT_VM", &cfg.VM); err != nil {
@@ -319,14 +319,14 @@ func LoadFromEnv() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.AgentTemplateDefaults.StorageSize == "" {
-		return fmt.Errorf("controller.agent.templateDefaults.storageSize is required")
+	if c.HarnessTemplateDefaults.StorageSize == "" {
+		return fmt.Errorf("controller.agent.harnessTemplateDefaults.storageSize is required")
 	}
-	if _, err := resource.ParseQuantity(c.AgentTemplateDefaults.StorageSize); err != nil {
-		return fmt.Errorf("controller.agent.templateDefaults.storageSize %q is not a valid K8s quantity: %w", c.AgentTemplateDefaults.StorageSize, err)
+	if _, err := resource.ParseQuantity(c.HarnessTemplateDefaults.StorageSize); err != nil {
+		return fmt.Errorf("controller.agent.harnessTemplateDefaults.storageSize %q is not a valid K8s quantity: %w", c.HarnessTemplateDefaults.StorageSize, err)
 	}
-	if r := c.AgentTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
-		return fmt.Errorf("controller.agent.templateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
+	if r := c.HarnessTemplateDefaults.Resources; r == nil || r.Limits.Cpu().IsZero() || r.Limits.Memory().IsZero() {
+		return fmt.Errorf("controller.agent.harnessTemplateDefaults.resources.limits must set cpu and memory (the default agent size and the budget fallback for legacy specs)")
 	}
 	return nil
 }

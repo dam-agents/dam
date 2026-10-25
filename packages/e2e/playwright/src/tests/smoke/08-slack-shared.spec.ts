@@ -12,6 +12,7 @@ import {
   mockDefaultReply,
   sentinel,
 } from "../../lib/fixtures.js";
+import { connectSlackAsMember } from "../../lib/slack.js";
 
 const sharedChannelId = "C-E2E-SHARED";
 const strangerSlackUserId = "U-E2E-STRANGER";
@@ -27,7 +28,7 @@ test("any channel member drives the agent through a shared binding", async () =>
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("owner binds the channel", async () => {
-    await api.agents.connectSlack.mutate({
+    await connectSlackAsMember(api, {
       id: agentId,
       slackChannelId: sharedChannelId,
     });
