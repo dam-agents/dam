@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import {
@@ -28,7 +28,6 @@ export function RenameAgentDialog({
   onClose: () => void;
 }) {
   const update = useUpdateAgent();
-  const errorId = useId();
   const [name, setName] = useState(agent.name);
   const [avatar, setAvatar] = useState(
     agent.avatar ?? resolveCharacter(agent.name, agent.avatar),
@@ -74,7 +73,6 @@ export function RenameAgentDialog({
               <FormField label="Name" error={error ?? undefined}>
                 <Input
                   autoFocus
-                  aria-describedby={error ? errorId : undefined}
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
