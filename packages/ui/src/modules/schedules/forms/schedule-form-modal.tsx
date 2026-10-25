@@ -62,6 +62,7 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
           <CronScheduleForm
             agentId={agentId}
             existing={cronDraft ?? editing}
+            baseline={editing}
             onClose={onClose}
             onDirtyChange={setDirty}
             onConvert={(draft, conversion, choices) =>

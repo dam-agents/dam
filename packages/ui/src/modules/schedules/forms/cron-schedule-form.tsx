@@ -43,6 +43,10 @@ import {
 interface Props {
   agentId: string;
   existing: Schedule;
+  /* UNIT_BOUNDARY_DESCRIPTION: the schedule the modal opened, which the draft a
+   * Convert and Back remounts carries cannot change, so a changed choice is
+   * still a changed choice after that round trip. */
+  baseline: Schedule;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onConvert: (
@@ -64,6 +68,7 @@ const RUN_FORMAT: Intl.DateTimeFormatOptions = {
 export function CronScheduleForm({
   agentId,
   existing,
+  baseline,
   onClose,
   onConvert,
   onDirtyChange,
@@ -114,7 +119,7 @@ export function CronScheduleForm({
    * form was loaded with. The comparison is against the schedule the form was
    * opened with, never against the form's own dirty state: Convert unmounts and
    * remounts this form with the draft, which would forget every change. */
-  const loaded = cronFormDefaults(existing);
+  const loaded = cronFormDefaults(baseline);
   const loadedSettings = Object.fromEntries(
     Object.entries(loaded.settings).filter(([, value]) => value !== ""),
   );
