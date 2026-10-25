@@ -25,9 +25,11 @@ export type ChannelPairResolver = (
 ) => Promise<ChannelPairDecision>;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a turn in a channel runs on, decided by the
- * rule in `channelTurnPair` from the profile its row names (D91). The row is
- * read per turn, so a profile edit reaches the channel's next fresh session.
+ * UNIT_BOUNDARY_DESCRIPTION: what a fresh session in a channel starts on,
+ * decided by the rule in `channelTurnPair` from the profile its row names
+ * (D91). The row is read when a session is created, so an edit reaches the
+ * channel's next fresh thread and never the one already running: a resumed
+ * thread keeps the values it has, as a session that picked does (D94 A, D119).
  */
 export function createChannelPairResolver(deps: {
   db: Db;

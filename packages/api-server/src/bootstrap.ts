@@ -1668,8 +1668,10 @@ export async function bootstrap() {
 
   const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
   /* UNIT_BOUNDARY_DESCRIPTION: a channel's own profile decides what a fresh
-   * session in it starts on (D91, D119); a row without one, or one that cannot
-   * run on the agent, leaves the turn on the agent's default as before. */
+   * session in it starts on (D91, D119), and a thread already running keeps the
+   * values it has, as a session that picked does (D94 A). A row without one
+   * keeps the agent's default chain; a profile that cannot run refuses the turn
+   * rather than falling back to that default. */
   const channelPair = createChannelPairResolver({
     db,
     resolver: profileResolver,

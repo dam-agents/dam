@@ -1,12 +1,13 @@
 import type { SessionPair } from "api-server-api";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: what a channel's turn runs on (D91). A channel
- * whose row names a profile runs on it; one that names none predates profiles
- * and keeps the chain it always had — the agent's channel default, which the
- * turn is created with. A profile that cannot run on the agent is a third case
- * and not a fallback: the turn is refused with that reason, never run on
- * another model.
+ * UNIT_BOUNDARY_DESCRIPTION: what a fresh session in a channel runs on (D91).
+ * A channel whose row names a profile runs on it; one that names none predates
+ * profiles and keeps the chain it always had — the agent's channel default,
+ * which the session is created with. A profile that cannot run on the agent is
+ * a third case and not a fallback: the turn is refused with that reason, never
+ * run on another model. A thread that is resumed keeps the values it already
+ * runs on (D94 A, D119), so nothing here is applied to it.
  */
 export type ChannelPairDecision =
   | { kind: "profile"; pair: SessionPair }
