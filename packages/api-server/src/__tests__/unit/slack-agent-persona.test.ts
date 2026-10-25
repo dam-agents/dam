@@ -1,6 +1,7 @@
 // TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji, which also opens the Agent Footer in both cases, is the agent's emoji avatar, else the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen avatar, or the character picked from its owner and name when none is chosen. An emoji avatar links the public Twemoji PNG and is never uploaded; an uploaded image is read from the store and uploaded like a character. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
 import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
+import sharp from "sharp";
 import {
   AVATAR_CHARACTERS,
   type Avatar,
@@ -287,6 +288,15 @@ describe("imgbb agent icons", () => {
     expect(image.type).toBe("image/png");
     const bytes = new Uint8Array(await image.arrayBuffer());
     expect([...bytes.slice(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
+    const drawn = await sharp(bytes)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect([drawn.info.width, drawn.info.height]).toEqual([512, 512]);
+    expect(
+      drawn.data.some((value, i) => i % 4 === 3 && value > 0),
+      "the character was drawn, not an empty canvas",
+    ).toBe(true);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     expect(image.name).toBe(`${sha256.slice(0, 16)}.png`);
     expect(store.rows.get(sha256)).toBe(ICON);
