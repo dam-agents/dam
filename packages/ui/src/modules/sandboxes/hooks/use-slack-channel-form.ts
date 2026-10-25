@@ -5,6 +5,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { getBrand } from "../../../brand.js";
+import { getErrorMessage } from "../../../lib/errors.js";
+import { emitToast } from "../../../lib/toast.js";
 import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
 import { useBindSharingConfirm } from "../../agents/hooks/use-bind-sharing-confirm.js";
@@ -17,7 +19,10 @@ import {
 import { useSessionDefaults } from "../../sessions/api/session-pair.js";
 import { useSetChannelProfile } from "../api/channel-profile.js";
 import { isSlackDirectMessageId } from "../lib/shared-channels.js";
-import { planSlackChannelSave } from "../lib/slack-channel-save.js";
+import {
+  planSlackChannelSave,
+  saveSlackChannel,
+} from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
 
@@ -110,12 +115,23 @@ export function useSlackChannelForm(
           : null,
       },
     });
-    if (connect) await connectSlack.mutateAsync(connect);
-    if (!editing && values.profile !== "")
-      setChannelProfile.mutate({
-        type: "slack",
-        slackChannelId: values.channelId.trim(),
-        profileId: values.profile,
+    const failed = await saveSlackChannel({
+      connect: () =>
+        connect ? connectSlack.mutateAsync(connect) : Promise.resolve(),
+      setProfile:
+        !editing && values.profile !== ""
+          ? () =>
+              setChannelProfile.mutateAsync({
+                type: "slack",
+                slackChannelId: values.channelId.trim(),
+                profileId: values.profile,
+              })
+          : null,
+    });
+    if (failed !== null)
+      emitToast({
+        kind: "error",
+        message: `The channel is connected, but its profile couldn't be set: ${getErrorMessage(failed.profileError, "try again from the channel's row.")}`,
       });
     onSaved();
   });
