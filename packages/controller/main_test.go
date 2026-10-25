@@ -14,8 +14,11 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	"errors"
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
+	"net/http"
+	"net/http/httptest"
 )
 
 func agentObj(name, resourceVersion string) *unstructured.Unstructured {
@@ -243,4 +246,41 @@ func TestANameTheCacheDoesNotHoldIsDropped(t *testing.T) {
 		total += s.Len()
 	}
 	assert.Equal(t, 1, total)
+}
+
+// TEST_SCENARIO: The probes are what turn a leader whose store stopped answering into a restart, and what
+// TEST_SCENARIO: keeps a leader that has not listed yet out of the ready set. Readiness follows the list;
+// TEST_SCENARIO: liveness follows the store's last answer, with a two-minute grace so a short outage is not a
+// TEST_SCENARIO: restart storm.
+func TestHealthEndpoints(t *testing.T) {
+	h := &healthState{storeHealthy: func() error { return errors.New("no answer") }}
+	h.markContact()
+	request := func(path string) int {
+		recorder := httptest.NewRecorder()
+		h.mux().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		return recorder.Code
+	}
+	if got := request("/readyz"); got != http.StatusOK {
+		t.Fatalf("a fresh store answer is not ready: %d", got)
+	}
+	if got := request("/healthz"); got != http.StatusOK {
+		t.Fatalf("a fresh store answer is unhealthy: %d", got)
+	}
+	h.lastOK.Store(time.Now().Add(-time.Minute).Unix())
+	if got := request("/readyz"); got != http.StatusServiceUnavailable {
+		t.Fatalf("a store silent for a minute still reads ready, which stalls a one-replica rollout: %d", got)
+	}
+	if got := request("/healthz"); got != http.StatusOK {
+		t.Fatalf("a store silent for a minute is not yet a wedged leader: %d", got)
+	}
+	h.lastOK.Store(time.Now().Add(-3 * time.Minute).Unix())
+	if got := request("/healthz"); got != http.StatusServiceUnavailable {
+		t.Fatalf("a store silent for three minutes is healthy: %d", got)
+	}
+	noStore := &healthState{}
+	recorder := httptest.NewRecorder()
+	noStore.mux().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("the custom-resource mode has no store and is unhealthy: %d", recorder.Code)
+	}
 }

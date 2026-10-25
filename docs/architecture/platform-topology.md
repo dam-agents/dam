@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -40,10 +40,13 @@ flowchart LR
 ### controller
 
 A stateless Go reconciler built on client-go.
-It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by periodic re-checks; each of its eight workers reconciles the agents of the owners hashed to it, one at a time, and takes what a person waits on first, so one owner's hung VM runner delays only the owners on its worker, except while a runner roll holds its install-wide lock ([budgets](budgets.md#enforcement), [#4939](https://github.com/dam-agents/dam/issues/4939)).
+It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by periodic re-checks; after the store's switch it reads the Agent rows and is woken by the store's change feed instead ([persistence](persistence.md#postgres)).
+Each of its eight workers reconciles the agents of the owners hashed to it, one at a time, and takes what a person waits on first, so one owner's hung VM runner delays only the owners on its worker, except while a runner roll holds its install-wide lock ([budgets](budgets.md#enforcement), [#4939](https://github.com/dam-agents/dam/issues/4939)).
 It reconciles each agent's machine on its owner's [VM runner](#vm-runner), its gateway StatefulSet, Services, NetworkPolicies and per-agent Secret, computes agent readiness from the machine and the gateway onto the Agent status, hibernates idle agents by stopping the machine and scaling the gateway to zero, and deletes gateway pods stranded NotReady on a configuration it has already superseded (the one case where it evicts a pod outside hibernation — see [security-and-credentials](security-and-credentials.md) and [agent-lifecycle](agent-lifecycle.md)).
 The schedule loop lives in the api-server, not here (see [schedules](schedules.md)).
-The controller writes only the `status` subresource on the resources it owns; it never writes `spec`.
+The controller writes only the `status` subresource on the resources it owns; it never writes `spec`, and once the rows own the definition it writes only the tables it observes plus the store row's two progress columns ([persistence](persistence.md#postgres)).
+It opens its store before it campaigns for the Lease and exits when it cannot, so no leader holds the election with an unread fleet behind it.
+Its readiness probe says the replica leads and has listed its fleet, and its liveness probe restarts a leader whose store has not answered for two minutes — a leader that is wedged on a database is replaced rather than left renewing the Lease in silence.
 See [`packages/controller/`](../../packages/controller/).
 
 ### api-server

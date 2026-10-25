@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -142,8 +142,8 @@ flowchart LR
   A bare command cannot do that job — it is stamped onboarded at create and has nothing to report with.
 - **Agent Setup** — the seed, install, env and external skills are one definition shared with spawning a sub-agent, so a target is set up exactly like a kit-created Agent ([invocations](invocations.md)).
   A new setup field lands there and works for both, or is kept kit-only on purpose.
-- **Kit Size** — optional `resources`: the CPU, memory and disk a kit declares for its workload, plus a `note` saying why.
-  It sizes nothing: every Agent is a machine with no CPU, memory or disk of its own, drawing on its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools, so the kit modal shows no size for any kit.
+- **Kit Disk** — optional `resources.storage`: the workspace disk a kit declares for its workload, plus a `note` saying why.
+  CPU and memory are not a kit's to declare: every Agent is a machine with no CPU, memory or disk of its own, drawing on its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools, so the kit modal shows no size for any kit.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.
   `into` says where: `work` (the default — the toolkit-as-workspace shape the wiki kits use) or `home` (a definition that wants to be `$HOME`, with `CLAUDE.md`, `scripts/` and `docs/` beside the platform's own dotfiles and `work/` as its git-ignored data directory — Code Guardian's shape).
@@ -270,6 +270,9 @@ The platform applies nothing, so the invariant below holds.
 
 **Completion is the agent's word.** While an update is pending the agent's MCP session carries a tool that reports it done for the targeted commit — moving the Seed Stamp there even when every change was declined — and one that withdraws it.
 Both clear the pending mark and raise the agents hint, so the UI drops the button at once.
+Nothing else reports an update, so the briefing makes the report the agent's own last act: it says the update stays pending until the agent calls the tool, and that the agent must neither ask the user for permission nor wait for the user to say the update is finished, which leaves the update pending with a user who does not know it needs their word.
+The platform also reminds the agent once: when the update session's turn ends with the update still pending, it sends one notice into that same session over the session-message rail — report the update if the checkout contains the target, or say what is still needed.
+The reminder is recorded as `nudgedAt` on the pending mark, so one update is reminded once even across a Continue, and a second turn end never repeats it.
 While the update is pending, the session lists badge its session — the initialization session opened since the update started — the way an onboarding session is badged.
 An abandoned update stays pending; the button then reopens its session or starts again against the current head.
 

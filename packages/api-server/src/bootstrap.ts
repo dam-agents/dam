@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { createDb, runMigrations } from "db";
+import { controlAgents, createDb, runMigrations } from "db";
 import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
@@ -9,8 +9,42 @@ import {
   createApi,
   createK8sClient,
   createLeaseApi,
+  currentClusterServer,
   agentServiceAddress,
+  createAuthorizationApi,
+  type KubeObject,
 } from "./modules/agents/infrastructure/k8s.js";
+import {
+  createAgentChangeFeed,
+  postgresChangeSource,
+} from "./modules/agent-store/feed.js";
+import { createControlAgentStateCache } from "./modules/agent-store/cache.js";
+import { createControlAgentsRepository } from "./modules/agent-store/agents-repository.js";
+import {
+  readAgentRows,
+  readOneAgent,
+} from "./modules/agent-store/control-read.js";
+import { createControlAgentL7HostsPort } from "./modules/agent-store/l7-hosts.js";
+import {
+  CONTRACT_MARKER_KEY,
+  CONTRACT_REHEARSAL_KEY,
+  CONTRACT_REHEARSAL_VALUE,
+  agentStoreMarkerName,
+  agentStoreRefusal,
+  readAgentStoreMarker,
+  readsRows,
+  verifyAgentStoreWriteFence,
+  writeAgentStoreMarker,
+} from "./modules/agent-store/fence.js";
+import {
+  contractVerdict,
+  describeContract,
+  readContractFacts,
+} from "./modules/agent-store/contract.js";
+import { createObjectStoreReader } from "./modules/agent-store/object-store.js";
+import { reportAbsorbPreview } from "./modules/agent-store/preview.js";
+import { absorbAgentStore } from "./modules/agent-store/absorb.js";
+import { passCutoverBarrier } from "./modules/agent-store/barrier.js";
 import {
   composeStorageGate,
   composeUserBudgetsAdmin,
@@ -163,6 +197,7 @@ import {
   createAttentionCleanupHook,
   listAttentionAgentIds,
 } from "./modules/attention/index.js";
+import { createSessionWatchClient } from "./modules/attention/infrastructure/session-watch-client.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
@@ -189,6 +224,8 @@ import { composeTermsModule } from "./modules/terms/index.js";
 import { agentsInstallSettings, loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
+import { reconcileControlGrants } from "./modules/agent-store/infrastructure/control-grants.js";
+import { reportControlGrants } from "./modules/agent-store/infrastructure/control-grants-report.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
 import {
@@ -245,6 +282,7 @@ import {
   createGitHosts,
   createGitRefResolver,
   createKitUpstream,
+  createKitUpdateNudge,
   createKitUpdateReporter,
   createLinkedKits,
   createResolvedCatalogRepository,
@@ -293,6 +331,7 @@ import { composeOutageAlerts } from "./modules/outage-alerts/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
+  createK8sAgentL7Source,
   createL7PromotionReconcile,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
@@ -357,6 +396,31 @@ export async function bootstrap() {
   getLogger().info("api-server starting");
 
   const { api } = createApi(config.namespace);
+  const markerName =
+    config.agentStoreMarker ?? agentStoreMarkerName(config.releaseName);
+  const k8sClient = createK8sClient(api, config.namespace);
+  const leaseApi = createLeaseApi();
+  const agentStoreMarker = await readAgentStoreMarker(
+    api,
+    config.namespace,
+    markerName,
+  );
+  if (config.agentStore === "crd") {
+    const refusal = agentStoreRefusal(config.agentStore, agentStoreMarker);
+    if (refusal) {
+      getLogger().error(
+        { agentStore: config.agentStore, release: config.releaseName },
+        refusal,
+      );
+      throw new Error(refusal);
+    }
+  }
+  if (config.agentStoreFrozen) {
+    const refusal =
+      "the Agent store is frozen for a rollback: this build serves and writes nothing until the rollback clears the freeze.";
+    getLogger().error({ agentStore: config.agentStore }, refusal);
+    throw new Error(refusal);
+  }
   const dbTls = {
     ca: config.databaseCaCertPath
       ? readFileSync(config.databaseCaCertPath, "utf8")
@@ -377,6 +441,7 @@ export async function bootstrap() {
     poolMax: config.databasePoolMax,
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
+  reportControlGrants(getLogger(), await reconcileControlGrants(db));
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
@@ -406,6 +471,142 @@ export async function bootstrap() {
     bootRetry,
   );
   const artifacts = artifactsModule.service;
+  const snapshotStore = artifactsModule.store
+    ? {
+        put: (key: string, body: Buffer) =>
+          artifactsModule.store!.put({
+            key,
+            content: body,
+            contentType: "application/yaml",
+          }),
+        get: async (key: string) =>
+          (await artifactsModule.store!.get(key))?.content ?? null,
+      }
+    : null;
+
+  if (config.agentStorePreviewReport && config.agentStore === "crd")
+    await reportAbsorbPreview({
+      listCustomObjects: (plural) => k8sClient.listCustomObjects(plural),
+      db,
+      logger: getLogger(),
+      defaults: {
+        cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
+        memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+      },
+    });
+
+  if (readsRows(config.agentStore)) {
+    const writeFence = await verifyAgentStoreWriteFence(
+      createAuthorizationApi(),
+      config.namespace,
+    );
+    if (writeFence) throw new Error(writeFence);
+  }
+  const absorbsEmpty = config.agentStoreContractEmptyArchive;
+  if (
+    readsRows(config.agentStore) &&
+    (config.agentStore === "postgres" || absorbsEmpty)
+  ) {
+    if (agentStoreMarker?.store !== "postgres")
+      await absorbAgentStore({
+        db,
+        logger: getLogger(),
+        listCustomObjects:
+          config.agentStore === "contract"
+            ? async () => []
+            : (plural) => k8sClient.listCustomObjects(plural),
+        writeMarker: (data) =>
+          writeAgentStoreMarker(api, config.namespace, markerName, data),
+        readMarker: () =>
+          readAgentStoreMarker(api, config.namespace, markerName),
+        install: {
+          releaseName: config.releaseName,
+          namespace: config.namespace,
+          apiServer: currentClusterServer(),
+        },
+        store: snapshotStore,
+        backupKeyPrefix: `crd-snapshots/${config.releaseName}`,
+        backupRefPrefix: config.objectStorageEndpoint
+          ? `s3://${config.objectStorageBucket}`
+          : "",
+        defaults: {
+          cpuLimit: process.env.AGENT_LEGACY_CPU_LIMIT ?? "1",
+          memoryLimit: process.env.AGENT_LEGACY_MEMORY_LIMIT ?? "2Gi",
+        },
+        absorbedByVersion: config.appVersion,
+        now: new Date(),
+      });
+  }
+
+  if (readsRows(config.agentStore)) {
+    const switched = await readAgentStoreMarker(
+      api,
+      config.namespace,
+      markerName,
+    );
+    const refusal = agentStoreRefusal(config.agentStore, switched);
+    if (refusal) throw new Error(refusal);
+    await passCutoverBarrier({
+      db,
+      leases: leaseApi,
+      namespace: config.namespace,
+      leaseName: `${config.releaseName}-controller`,
+      markerAbsorbedAt: switched?.["absorbed-at"] ?? null,
+      log: (message, fields) => getLogger().info(fields ?? {}, message),
+    });
+    if (config.agentStore === "contract") {
+      const objectStore = config.objectStorageEndpoint
+        ? createObjectStoreReader({
+            endpoint: config.objectStorageEndpoint,
+            region: config.objectStorageRegion,
+            bucket: config.objectStorageBucket,
+            forcePathStyle: config.objectStorageForcePathStyle,
+            credentials:
+              config.objectStorageAccessKeyId !== null &&
+              config.objectStorageSecretAccessKey !== null
+                ? {
+                    accessKeyId: config.objectStorageAccessKeyId,
+                    secretAccessKey: config.objectStorageSecretAccessKey,
+                  }
+                : null,
+          })
+        : null;
+      const rehearsalClock = config.agentStoreContractNow;
+      const now = rehearsalClock ? new Date(rehearsalClock) : new Date();
+      const verdict = contractVerdict(
+        await readContractFacts(db, {
+          now,
+          attestedSha256: config.agentStoreContractSha256 ?? null,
+          emptyArchive: config.agentStoreContractEmptyArchive,
+          expectedRecipient: config.agentStoreBackupRecipient ?? null,
+          readObject: objectStore,
+        }),
+      );
+      if (!verdict.ok)
+        throw new Error(
+          `the contract release refuses: ${verdict.reason}. This install keeps its custom resources until it can.`,
+        );
+      await writeAgentStoreMarker(api, config.namespace, markerName, {
+        ...(switched ?? {}),
+        [CONTRACT_MARKER_KEY]:
+          switched?.[CONTRACT_MARKER_KEY] ?? now.toISOString(),
+        ...(verdict.archived
+          ? { "contract-sha256": verdict.sha256 }
+          : { "contract-empty-archive": "true" }),
+        ...(rehearsalClock
+          ? { [CONTRACT_REHEARSAL_KEY]: CONTRACT_REHEARSAL_VALUE }
+          : {}),
+      });
+      getLogger().info(
+        {
+          agentStore: config.agentStore,
+          release: config.releaseName,
+          contract: describeContract(verdict),
+        },
+        "agentStore.contract.armed",
+      );
+    }
+  }
 
   if (!config.redisUrl)
     throw new Error("REDIS_URL is required (Redis is a platform primitive)");
@@ -425,8 +626,6 @@ export async function bootstrap() {
     log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
   });
 
-  const k8sClient = createK8sClient(api, config.namespace);
-  const leaseApi = createLeaseApi();
   const outOfMemoryWatch = createOutOfMemoryWatch();
   let deliverOnReady: (agentId: string) => Promise<void> = async () => {};
   const readyWatch = createReadyWatch((agentId) => {
@@ -437,26 +636,54 @@ export async function bootstrap() {
       ),
     );
   });
-  const agentStateCache = startAgentStateCache({
-    informer: createAgentInformer(config.namespace),
-    live: k8sClient,
-    namespace: config.namespace,
-    log: (m) => getLogger().warn(`[agents] ${m}`),
-    observe: (kind, obj) => {
-      outOfMemoryWatch(kind, obj);
-      readyWatch(kind, obj);
-      agentRemovalWatch(kind, obj);
-    },
-  });
-  const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  let agentHint: (agentId: string, ownerSub: string) => void = () => {};
+  const observe = ((kind: "add" | "update" | "delete", obj: KubeObject) => {
+    outOfMemoryWatch(kind, obj);
+    readyWatch(kind, obj);
+    agentRemovalWatch(kind, obj);
+    const agentId = obj.metadata?.name;
+    const ownerSub = obj.metadata?.labels?.[LABEL_OWNER];
+    if (agentId && ownerSub) agentHint(agentId, ownerSub);
+  }) as (kind: "add" | "update" | "delete", obj: KubeObject) => void;
+  const agentStateCache = readsRows(config.agentStore)
+    ? (() => {
+        let refresh: () => Promise<void> = async () => {};
+        let invalidate: (id: string | null) => void = () => {};
+        const feed = createAgentChangeFeed({
+          source: postgresChangeSource(sql),
+          snapshot: () => refresh(),
+          onChange: (id) => invalidate(id),
+          log: (message, fields) =>
+            getLogger().warn(fields ?? {}, `[agents] ${message}`),
+        });
+        const cache = createControlAgentStateCache({
+          db,
+          feed,
+          observe,
+          log: (message, fields) =>
+            getLogger().warn(fields ?? {}, `[agents] ${message}`),
+        });
+        refresh = cache.snapshot;
+        invalidate = cache.invalidate;
+        return cache;
+      })()
+    : startAgentStateCache({
+        informer: createAgentInformer(config.namespace),
+        live: k8sClient,
+        namespace: config.namespace,
+        log: (m) => getLogger().warn(`[agents] ${m}`),
+        observe,
+      });
+  const agentsRepo = readsRows(config.agentStore)
+    ? createControlAgentsRepository(db, agentStateCache)
+    : createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createDelegationFramesClient({
     namespace: config.namespace,
     isReady: (agentId) => agentsRepo.isReady(agentId),
   });
-  const liveAgentsRepo = createAgentsRepository(
-    k8sClient,
-    createLiveAgentStateCache(k8sClient),
-  );
+  const liveAgentsRepo = readsRows(config.agentStore)
+    ? agentsRepo
+    : createAgentsRepository(k8sClient, createLiveAgentStateCache(k8sClient));
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -644,8 +871,22 @@ export async function bootstrap() {
     sessionPresence.reconcile(),
   );
 
-  const l7PromotionReconcile = createL7PromotionReconcile(db, k8sClient, (m) =>
-    getLogger().info(`[l7-reconcile] ${m}`),
+  const l7PromotionReconcile = createL7PromotionReconcile(
+    db,
+    readsRows(config.agentStore)
+      ? {
+          l7Hosts: createControlAgentL7HostsPort(db),
+          listAgentL7State: async () =>
+            (await readAgentRows(db)).map((row) => ({
+              agentId: row.agent.id,
+              current: row.hosts,
+              ...(row.agent.environmentOf
+                ? { environmentOf: row.agent.environmentOf }
+                : {}),
+            })),
+        }
+      : createK8sAgentL7Source(k8sClient),
+    (m) => getLogger().info(`[l7-reconcile] ${m}`),
   );
   await periodicJobs.register(
     "l7-promotion-reconcile",
@@ -1009,7 +1250,9 @@ export async function bootstrap() {
     activityTrackingEnabled: config.activityTrackingEnabled,
     inspectorRole: config.keycloakInspectorRole ?? "",
     listK8sAgents: async () => {
-      const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
+      const agents = readsRows(config.agentStore)
+        ? await agentStateCache.list()
+        : await k8sClient.listCustomObjects(AGENTS_PLURAL);
       return agents
         .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
         .map((a) => {
@@ -1094,11 +1337,32 @@ export async function bootstrap() {
     });
   convertDefault = (agentId) => defaultConverter.convert(agentId);
 
+  const sessionWatch = createSessionWatchClient(config.namespace, (m) =>
+    getLogger().warn(`[attention] ${m}`),
+  );
+  const kitUpdateNudge = createKitUpdateNudge({
+    pending: async (agentId) =>
+      (await agentsRepo.get(agentId))?.kitUpdatePending ?? null,
+    marks: createKitUpdateMarks(agentsRepo),
+    listSessions: (agentId, signal) =>
+      sessionWatch.listSessions(agentId, signal),
+    send: (agentId, payload) =>
+      runtimeDelivery.sessionMessages.send(agentId, payload),
+  });
   const sessionWatcher = composeSessionWatcher({
     db,
     namespace: config.namespace,
     listAgents: () => agentsRepo.list(),
     runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
+    onTurnEnded: (agentId, sessionId) => {
+      void kitUpdateNudge
+        .turnEnded(agentId, sessionId)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            `[kit-update] no reminder for ${agentId}: ${formatError(err)}`,
+          );
+        });
+    },
     log: (m) => getLogger().warn(`[attention] ${m}`),
   });
 
@@ -1113,9 +1377,17 @@ export async function bootstrap() {
     },
   });
   liveEventsModule.start();
+  // UNIT_BOUNDARY_DESCRIPTION: after the switch the hints come from the row feed, through the cache's
+  // UNIT_BOUNDARY_DESCRIPTION: observe hook, because the custom resources are frozen and the watch has nothing
+  // UNIT_BOUNDARY_DESCRIPTION: to watch (and no `watch` verb). In CR mode the watch is the source.
+  agentHint = readsRows(config.agentStore)
+    ? (agentId, ownerSub) => liveEventsModule.agentChanged(agentId, ownerSub)
+    : () => {};
   const agentWatchRole: LeaderRole = {
     name: "live-events-agent-watch",
-    onAcquired: () => liveEventsModule.startAgentWatch(),
+    onAcquired: readsRows(config.agentStore)
+      ? () => {}
+      : () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
   };
 
@@ -1134,6 +1406,7 @@ export async function bootstrap() {
     resolveSlackWorkspace: (slackChannelId) =>
       resolveSlackWorkspace(slackChannelId),
     agentStateCache,
+    agentStore: { authority: config.agentStore },
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
@@ -1381,7 +1654,7 @@ export async function bootstrap() {
   const kbShareServing = composeKbShareServing({
     db,
     store: artifacts,
-    k8s: k8sClient,
+    getAgent: (id) => agentStateCache.get(id),
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
   const shareHostGate = createByLinkHostGate(
@@ -1919,7 +2192,18 @@ export async function bootstrap() {
     findKbShareOwnerByAgent(db),
   ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
-    k8s: k8sClient,
+    listAgentIds: async () =>
+      readsRows(config.agentStore)
+        ? (await db.select({ id: controlAgents.id }).from(controlAgents)).map(
+            (row) => row.id,
+          )
+        : (await k8sClient.listCustomObjects(AGENTS_PLURAL))
+            .map((a) => a.metadata?.name)
+            .filter((n): n is string => Boolean(n)),
+    hasAgent: async (agentId) =>
+      readsRows(config.agentStore)
+        ? (await readOneAgent(db, agentId)) !== null
+        : (await k8sClient.getCustomObject(AGENTS_PLURAL, agentId)) !== null,
     sources: agentCleanupSources,
     resolveOwner: async (agentId) => {
       for (const lookup of orphanOwnerLookups) {
@@ -1984,6 +2268,7 @@ export async function bootstrap() {
       storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
+      agentStore: { authority: config.agentStore },
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       install: agentsInstallSettings(config),
@@ -2162,6 +2447,7 @@ export async function bootstrap() {
     spendCeilingsForOperator: spend.ceilingsForOperator,
     userBudgetsForOperator: composeUserBudgetsAdmin({
       k8s: k8sClient,
+      agentStore: { authority: config.agentStore, db },
       users: {
         subByEmail: (email) => userDirectory.resolveByEmail(email),
         emailsBySub: (subs) => userDirectory.resolveManyBySub([...subs]),

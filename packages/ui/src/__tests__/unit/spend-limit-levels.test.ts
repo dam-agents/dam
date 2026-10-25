@@ -32,7 +32,7 @@ function limit(
 
 const connection = {
   id: "conn-1",
-  name: "CurveBender",
+  name: "CurveBender (own key)",
   templateId: "curve-bender",
 };
 const otherConnection = {

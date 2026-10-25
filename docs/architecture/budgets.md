@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-23
+Last verified: 2026-10-24
 
 ## Overview
 
@@ -30,36 +30,33 @@ Each pool carries a level, warning from 75% and critical from 90%, defined once 
 ## The pool
 
 Install-wide defaults live in `virtualization.runner`.
-A **UserBudget** CR overrides them for one user:
+A **UserBudget** row overrides them for one user (a custom resource before the store's switch):
 
 ```yaml
-apiVersion: agent-platform.ai/v1
-kind: UserBudget
-metadata:
-  name: budget-<keycloak-sub>   # pinned to spec.owner at admission (CEL)
-  namespace: <agents-namespace>   # the chart's agent namespace (default platform-agents)
-spec:
-  owner: "<keycloak-sub>"        # exact plaintext sub, as on the agent owner label
-  cpu: "16"
-  memory: "32Gi"
-  storage: "500Gi"               # their VM runner claim's size
+# control.user_budgets — one row per owner subject
+owner_sub: "<keycloak-sub>"      # exact plaintext sub, as on the Agent's owner label
+cpu: "16"
+memory: "32Gi"
+storage: "500Gi"                 # their VM runner claim's size
 ```
 
-Every field but `owner` is optional, and each falls back on its own: `memory` is their runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which their claim is created at and grows to ([vm-memory](vm-memory.md), [vm storage](vm-storage.md#the-owners-claim)).
+Every field but `owner_sub` is optional, and each falls back on its own: `memory` is their runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which their claim is created at and grows to ([vm-memory](vm-memory.md), [vm storage](vm-storage.md#the-owners-claim)).
 
-The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed pool is rejected rather than silently parsed to zero.
+The key makes one-budget-per-user structural (a second row is a primary-key collision), and the schema validates quantities, so a malformed pool is rejected rather than silently parsed to zero.
+A budget with no override does not exist; a row written outside the platform carries no invented audit time.
 UserBudgets are operator-managed; there is no self-service path.
 A platform operator ([security-and-credentials](security-and-credentials.md#identity)) lists, sets, changes and removes them in the Operator tab of Settings or with `dam budget`, with no cluster access; `kubectl` and GitOps still work.
-The api-server writes the UserBudget for them, so the controller keeps reading the one resource it enforces.
+The api-server writes the budget row for them, and the controller reads it from the store it reconciles from — the `control.user_budgets` row after the switch, the custom resource before it — so the controller enforces the one record the api-server owns.
 A new budget names its user by email, which the api-server looks up in Keycloak; an existing one can also be named by the user's id, so a typo never creates a budget for nobody.
 A change sets only the fields it names, a field taken back to the default is dropped from the spec, and a budget left with no field is deleted.
 Each write records the operator and the time on the UserBudget's annotations (`agent-platform.ai/budget-set-by`, `agent-platform.ai/budget-updated-at`), and the api-server logs it with the sizes before and after (`budgets.user_budget_changed`); a budget written with `kubectl` has no such record and shows as set outside the platform.
 The list is found, sorted and paged by the api-server, so the screen asks for one page at a time and the identity directory is asked for that page's emails alone; a search by part of an email asks Keycloak which users match.
-Role-based budgets and approval flows are out of scope — when they arrive, richer policy in the api-server will *materialize* its results as UserBudget CRs, and the controller's contract stays a dumb numeric invariant.
+Role-based budgets and approval flows are out of scope — when they arrive, richer policy in the api-server will *materialize* its results as UserBudget rows, and the controller's contract stays a dumb numeric invariant.
 
 ## Enforcement
 
 On each reconcile that wants an agent up (`shouldRun` true), the controller asks the owner's runner for the machine, and the runner admits it or refuses it for the owner's memory ([vm-memory](vm-memory.md)).
+The pool it decides from is the one the store last answered; a controller whose feed is down makes no hibernation or reclaim decision and leaves running machines alone, so a stale budget can never shrink a live pool.
 Admission cannot interleave for two same-owner agents because every agent of one owner is reconciled by the **same worker**, one at a time: the leader-elected instance runs a fixed eight workers, each with its own queue, and an agent's owner label picks its worker; a per-owner mutex backs it up.
 Different owners' agents reconcile in parallel, so a VM runner that hangs holds up only the owners that share its worker, not the whole install.
 The exception is a runner roll: its install-wide lock is held across runner calls while it decides, so during a release that rolls runners a hung runner can hold every worker that reaches the roll ([#4939](https://github.com/dam-agents/dam/issues/4939) narrows it).

@@ -21,6 +21,7 @@ function session(
   sessionId: string,
   updatedAt: string | null,
   threadTs: string | null = null,
+  running = false,
 ): Session {
   return {
     sessionId,
@@ -35,7 +36,7 @@ function session(
     runStartedAt: null,
     runTotalMs: null,
     runCount: null,
-    running: false,
+    running,
   };
 }
 
@@ -61,6 +62,7 @@ interface Harness {
   notify: () => void;
   upserted: string[];
   deleted: string[][];
+  turnEnded: string[];
   reads: number;
   setSessions: (sessions: Session[], incomplete?: boolean) => void;
   failNextWrite: () => void;
@@ -80,6 +82,7 @@ function harness(): Harness {
   const state: Partial<Harness> = {
     upserted: [],
     deleted: [],
+    turnEnded: [],
     reads: 0,
   };
 
@@ -125,6 +128,8 @@ function harness(): Harness {
 
   const watcher = createSessionWatcher({
     listAgents: async () => [agent("a1", "owner-1")],
+    onTurnEnded: (agentId, sessionId) =>
+      state.turnEnded?.push(`${agentId}:${sessionId}`),
     runtimeFeaturesFor: async () =>
       new Map([["a1", { liveUpdates: true } as never]]),
     sessions: {
@@ -196,6 +201,33 @@ describe("createSessionWatcher", () => {
     h.settleRead();
     await flush();
     expect(h.reads).toBe(2);
+
+    h.watcher.stop();
+  });
+
+  /*
+   * TEST_SCENARIO: a session's turn ends. A session that stops running is the
+   * only signal the platform has that a turn finished, so a watcher must report
+   * it — once, on the change — and not for a session that was already idle.
+   */
+  it("reports a turn end when a session stops running", async () => {
+    const h = harness();
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", null, true)]);
+
+    h.watcher.start();
+    await flush();
+    expect(h.turnEnded).toEqual([]);
+
+    h.setSessions([session("s1", "2026-09-10T00:00:01.000Z")]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.turnEnded).toEqual(["a1:s1"]);
+
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.turnEnded).toEqual(["a1:s1"]);
 
     h.watcher.stop();
   });
@@ -348,6 +380,7 @@ describe("createSessionWatcher", () => {
     const signals: AbortSignal[] = [];
     const watcher = createSessionWatcher({
       listAgents: async () => agents,
+      onTurnEnded: () => {},
       runtimeFeaturesFor: async () => new Map(),
       sessions: {
         watchAgent: () => {

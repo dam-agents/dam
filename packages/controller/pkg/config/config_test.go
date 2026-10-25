@@ -212,6 +212,8 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
 		"PLATFORM_TELEMETRY_COLLECTOR_HOST", "PLATFORM_TELEMETRY_COLLECTOR_PORT",
 		"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS",
+		"PLATFORM_AGENT_STORE", "PLATFORM_AGENT_STORE_MARKER",
+		"PLATFORM_DATABASE_URL", "PLATFORM_HEALTH_PORT",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })
@@ -407,4 +409,27 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
 	assert.Equal(t, 45*time.Minute, cfg.VM.Runner.Rollout.StalledTimeout.AsDuration())
 	assert.Equal(t, 2*time.Hour, cfg.VM.Runner.Rollout.IdleWait.AsDuration())
+}
+
+// TEST_SCENARIO: A controller told to read the rows without a database to read them from would start and then refuse every reconcile; it fails at load instead, where the deployment's missing environment is visible.
+func TestLoadFromEnv_PostgresModeNeedsItsURL(t *testing.T) {
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"PLATFORM_AGENT_STORE":  "postgres",
+	})
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatal("a Postgres-mode controller loaded with no database URL")
+	}
+	setEnv(t, map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+		"PLATFORM_AGENT_STORE":  "postgres",
+		"PLATFORM_DATABASE_URL": "postgresql://controller@db/platform",
+	})
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, "postgres", cfg.AgentStore)
+	assert.Equal(t, "postgresql://controller@db/platform", cfg.DatabaseURL)
+	assert.Equal(t, 8081, cfg.HealthPort)
 }

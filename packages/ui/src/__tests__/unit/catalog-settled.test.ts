@@ -11,6 +11,7 @@ import {
   modelIndicatorLabel,
   sameModel,
   sameSideGroups,
+  sessionModelLabel,
 } from "../../modules/sessions/lib/catalog-groups.js";
 import { settingsForModel } from "../../modules/sessions/lib/session-settings.js";
 
@@ -237,6 +238,10 @@ describe("modelIndicatorLabel", () => {
     expect(modelIndicatorLabel(groups, "ibm/aws/claude-opus-4-5")).toBe(
       "aws/claude-opus-4-5 (IBM ETE LiteLLM Proxy)",
     );
+    expect(sessionModelLabel(groups, "ibm/aws/claude-opus-4-5")).toBe(
+      "Claude Opus 4.5",
+    );
+    expect(sessionModelLabel(groups, "cb/unlisted")).toBe("cb/unlisted");
     expect(sameModel("claude/ibm/aws/x", "ibm/aws/x")).toBe(true);
     expect(sameModel("ibm/aws/x", null)).toBe(false);
   });

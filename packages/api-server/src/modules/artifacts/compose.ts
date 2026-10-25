@@ -1,4 +1,5 @@
 import { S3Client, type S3ClientConfig } from "@aws-sdk/client-s3";
+import type { ArtifactStore } from "./domain/artifact-store.js";
 
 import {
   createS3ArtifactStore,
@@ -26,13 +27,18 @@ export interface ComposeArtifactsDeps {
 export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
   service: ArtifactService;
   ensureReady: () => Promise<void>;
+  store: ArtifactStore | null;
 } {
   if (!deps.objectStorage) {
     const service = createArtifactService({
       store: createUnconfiguredArtifactStore(),
       maxBytes: deps.maxBytes,
     });
-    return { service, ensureReady: () => Promise.resolve() };
+    return {
+      service,
+      ensureReady: () => Promise.resolve(),
+      store: null,
+    };
   }
 
   const { endpoint, agentEndpoint, publicEndpoint, ...common } =
@@ -59,5 +65,9 @@ export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
       : null,
   });
   const service = createArtifactService({ store, maxBytes: deps.maxBytes });
-  return { service, ensureReady: () => ensureBucket(client, common.bucket) };
+  return {
+    service,
+    ensureReady: () => ensureBucket(client, common.bucket),
+    store,
+  };
 }

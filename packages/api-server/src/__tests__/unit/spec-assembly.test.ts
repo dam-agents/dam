@@ -114,19 +114,10 @@ describe("resolveEffectiveHibernationTimeoutMin", () => {
 });
 
 describe("concreteResources", () => {
-  it("falls to the small chart default when neither slider nor template chooses", () => {
-    expect(concreteResources(undefined, undefined, defaultLimits)).toEqual({
+  it("falls to the small chart default when the template chooses none", () => {
+    expect(concreteResources(undefined, defaultLimits)).toEqual({
       limits: { cpu: "1", memory: "1Gi" },
     });
-  });
-
-  it("the user's size wins over the template, per dimension", () => {
-    const out = concreteResources(
-      { limits: { cpu: "500m", memory: "2Gi" } },
-      { cpu: "4" },
-      defaultLimits,
-    );
-    expect(out.limits).toEqual({ cpu: "4", memory: "2Gi" });
   });
 
   it("template limits win over the chart default; requests pass through as the operator escape hatch", () => {
@@ -135,7 +126,6 @@ describe("concreteResources", () => {
         limits: { cpu: "2" },
         requests: { cpu: "1" },
       },
-      undefined,
       defaultLimits,
     );
     expect(out.limits).toEqual({ cpu: "2", memory: "1Gi" });
@@ -145,7 +135,6 @@ describe("concreteResources", () => {
   it("preserves extended resources on limits", () => {
     const out = concreteResources(
       { limits: { "nvidia.com/gpu": "1" } },
-      undefined,
       defaultLimits,
     );
     expect(out.limits["nvidia.com/gpu"]).toBe("1");

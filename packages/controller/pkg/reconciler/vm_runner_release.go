@@ -234,7 +234,7 @@ func (r *AgentReconciler) runnerHandoffSettled(ctx context.Context, owner string
 		if st, err := client.Status(ctx, id); err == nil && (st.Ready || machineStopped(st)) {
 			continue
 		}
-		if _, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{}); k8serrors.IsNotFound(err) {
+		if _, err := r.backend.Get(ctx, id); k8serrors.IsNotFound(err) {
 			continue
 		}
 		return false, false, ""

@@ -13,12 +13,12 @@ uv = "latest"
 python = "3.12"
 kubectl = "latest"
 k3s = "latest"
-"npm:playwright" = "1.64.0"
-"npm:agent-browser" = "0.39.0"
+"npm:playwright" = "1.64.1"
+"npm:agent-browser" = "0.39.1"
 
 # The static bundle: trixie's docker.io is a release line behind.
 [tools."http:docker"]
-version = "29.9.0"
+version = "29.9.1"
 
 [tools."http:docker".platforms]
 linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/docker-{{version}}.tgz" }
@@ -70,8 +70,8 @@ PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 # traffic is off by policy (/etc/opt/chrome_for_testing/policies).
 # agent-browser passes a --disable-features of its own (Translate), which this
 # one may replace; the policy turns Translate off either way.
-# It starts through platform-browser, which launches it the way the panel's
-# Browser testing mode switch chose, for every caller.
+# It starts through platform-browser, which launches it with its automation
+# report off, for every caller.
 AGENT_BROWSER_EXECUTABLE_PATH = "/usr/local/bin/platform-browser"
 AGENT_BROWSER_HEADED = "1"
 AGENT_BROWSER_NO_XVFB = "1"

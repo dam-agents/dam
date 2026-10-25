@@ -20,10 +20,6 @@ import { statusTone } from "../lib/status-tone.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import type { AgentUsage } from "../utils/sandbox-subtitle.js";
-import {
-  formatTemporaryDraw,
-  type TemporaryDraw,
-} from "../utils/temporary-sandboxes.js";
 import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
@@ -42,7 +38,7 @@ interface Props {
   display: AgentDisplay;
   working?: boolean;
   usage: AgentUsage | null;
-  temporaryDraw?: TemporaryDraw;
+  temporaryCount?: number;
   updatePending: boolean;
   updateBusy: boolean;
   onSelect: () => void;
@@ -56,7 +52,7 @@ export function AgentRow({
   display,
   working,
   usage,
-  temporaryDraw,
+  temporaryCount,
   updatePending,
   updateBusy,
   onSelect,
@@ -140,15 +136,12 @@ export function AgentRow({
           {usage && <UsagePairs usage={usage} />}
         </div>
         <AgentChannelChips agent={agent} className="mt-2" />
-        {temporaryDraw && temporaryDraw.count > 0 && (
+        {temporaryCount !== undefined && temporaryCount > 0 && (
           <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
             <Chemistry size={12} className="shrink-0 text-accent" />
             <span className="truncate">
-              {temporaryDraw.count} temporary agent
-              {temporaryDraw.count === 1 ? "" : "s"} running
-              {formatTemporaryDraw(temporaryDraw) &&
-                ` · ${formatTemporaryDraw(temporaryDraw)}`}{" "}
-              ·{" "}
+              {temporaryCount} temporary agent
+              {temporaryCount === 1 ? "" : "s"} running ·{" "}
               <span className="text-muted-foreground">
                 released when the run ends
               </span>

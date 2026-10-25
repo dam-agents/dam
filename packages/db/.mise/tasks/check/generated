@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Every schema.ts change has a generated migration"
-#MISE sources=["src/schema.ts", "drizzle/meta/*.json"]
+#MISE sources=["src/*schema*.ts", "drizzle/meta/*.json"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 # Guard: assert every schema.ts change has been generated into a
@@ -8,6 +8,9 @@
 # copy of drizzle/ — if `generate` would add a migration, the schema changed
 # without `mise run //packages/db:generate`. Pure files, no database, so it runs
 # in `mise run check`. Views aren't in schema.ts, so they're out of scope by design.
+# The source glob covers every schema module: a schema split into a second file
+# would otherwise be outside this task's inputs, so a cache restored from main
+# would report green without ever diffing it.
 set -euo pipefail
 # Temp copy lives under node_modules so the parallel lint/format/tsc tasks
 # (which ignore node_modules) never scan it — avoids a scandir race as it's

@@ -112,7 +112,7 @@ func TestHibernatingWhileTheRunnerIsUnreachableScalesDownButDoesNotPublishHibern
 	}))
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
 
-	_, err := hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent")
+	_, err := hibernateAgentPair(ctx, r.client, r.backend, unreachable, testOwner, "test-agents", "my-agent")
 	require.Error(t, err)
 
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))

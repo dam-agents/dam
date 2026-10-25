@@ -20,6 +20,11 @@ type Config struct {
 	APIServerInstanceLabel string
 	LeaseName              string
 	PodName                string
+	AgentStore             string
+	AgentStoreMarker       string
+	AgentStoreFrozen       bool
+	DatabaseURL            string
+	HealthPort             int
 
 	AgentBase AgentBase
 
@@ -56,6 +61,18 @@ type Config struct {
 	GatewayUpstreamTrustBundle string
 	ExtraTrustedCAs            string
 	GatewayEgress              GatewayEgress
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the port the controller's health and readiness endpoints listen on. A wedged leader — one that holds the Lease while its store has not answered for minutes — is visible to the kubelet only through a probe, so the port has a default rather than being absent on an install that sets nothing.
+func healthPort(raw string) int {
+	if raw == "" {
+		return 8081
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port <= 0 || port > 65535 {
+		return 8081
+	}
+	return port
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -178,6 +195,14 @@ func LoadFromEnv() (*Config, error) {
 		APIServerInstanceLabel: envOrDefault("PLATFORM_INSTANCE_LABEL", release),
 		LeaseName:              envOrDefault("PLATFORM_LEASE_NAME", release+"-controller"),
 		PodName:                podName,
+		AgentStore:             envOrDefault("PLATFORM_AGENT_STORE", "crd"),
+		AgentStoreMarker:       os.Getenv("PLATFORM_AGENT_STORE_MARKER"),
+		AgentStoreFrozen:       os.Getenv("PLATFORM_AGENT_STORE_FROZEN") == "true",
+		DatabaseURL:            os.Getenv("PLATFORM_DATABASE_URL"),
+		HealthPort:             healthPort(os.Getenv("PLATFORM_HEALTH_PORT")),
+	}
+	if (cfg.AgentStore == "postgres" || cfg.AgentStore == "contract") && cfg.DatabaseURL == "" {
+		return nil, fmt.Errorf("PLATFORM_DATABASE_URL is required when PLATFORM_AGENT_STORE is postgres or contract")
 	}
 
 	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {
@@ -237,7 +262,7 @@ func LoadFromEnv() (*Config, error) {
 
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0")
 	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.14.7")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

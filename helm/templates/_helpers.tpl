@@ -383,6 +383,58 @@ API Server secrets name — chart-managed Secret holding operator-supplied crede
 {{/*
 API Server database password secret name — uses shared postgres secret when db.password is empty
 */}}
+{{/*
+The ConfigMap the switch leaves behind, and the one ConfigMap both components
+read at startup. The chart names it because the api-server's Role pins it by
+name; the truncation matches what any Kubernetes object name allows, so a long
+release name cannot render a marker nothing can create.
+*/}}
+{{- define "platform.agentStore.markerName" -}}
+{{- printf "%s-agent-store" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{/*
+The controller's connection string: the api-server's database and TLS — one
+platform database per install — under the controller's own login. The password
+arrives through the pod's POSTGRES_PASSWORD, so the string carries a reference
+rather than a credential.
+*/}}
+{{- define "platform.controller.postgres.dsn" -}}
+{{- $dsn := printf "postgresql://%s:$(POSTGRES_PASSWORD)@%s:%v/%s" .Values.controller.db.user (include "platform.apiserver.db.host" .) (int .Values.apiServer.db.port) .Values.apiServer.db.database -}}
+{{- /* The CA reaches the driver the way libpq reads it: sslrootcert in the
+       string. An install that sets one but no sslmode gets verify-full, since a
+       CA nobody verifies is decoration; require plus a root certificate then
+       verifies the chain as verify-ca, which is libpq's own rule. */ -}}
+{{- $sslmode := .Values.apiServer.db.sslmode -}}
+{{- if and .Values.apiServer.db.caCert (not $sslmode) -}}
+{{- $sslmode = "verify-full" -}}
+{{- end -}}
+{{- $params := list -}}
+{{- if $sslmode -}}
+{{- $params = append $params (printf "sslmode=%s" $sslmode) -}}
+{{- end -}}
+{{- if .Values.apiServer.db.caCert -}}
+{{- $params = append $params "sslrootcert=/etc/platform/pg-ca/ca.crt" -}}
+{{- end -}}
+{{- if $params -}}
+{{- $dsn = printf "%s?%s" $dsn (join "&" $params) -}}
+{{- end -}}
+{{- $dsn -}}
+{{- end }}
+
+{{/*
+Where the controller's password comes from: the api-server's credentials Secret
+when an operator supplies one (an external database, usually through ESO), and
+the bundled database's Secret otherwise.
+*/}}
+{{- define "platform.controller.db.password.secretName" -}}
+{{- if .Values.controller.db.password }}
+{{- include "platform.apiserver.secrets.fullname" . }}
+{{- else }}
+{{- include "platform.postgres.secrets.fullname" . }}
+{{- end }}
+{{- end }}
+
 {{- define "platform.apiserver.db.password.secretName" -}}
 {{- if .Values.apiServer.db.password }}
 {{- include "platform.apiserver.secrets.fullname" . }}

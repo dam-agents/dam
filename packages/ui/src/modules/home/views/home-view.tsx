@@ -25,7 +25,8 @@ function CurrentHomeView() {
   const { workingByAgent } = useFeed();
 
   const allAgents = agentsData?.list ?? [];
-  const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
+  const { visible, temporaryCountByDriver } =
+    splitTemporarySandboxes(allAgents);
 
   if (!initialLoaded) {
     return (
@@ -69,7 +70,7 @@ function CurrentHomeView() {
       </div>
       <SandboxList
         agents={visible}
-        drawByDriver={drawByDriver}
+        temporaryCountByDriver={temporaryCountByDriver}
         rowProps={rowProps}
         workingByAgent={workingByAgent}
       />

@@ -10,3 +10,23 @@ depends = [":check:*"]
 [tasks.fix]
 description = "Apply this package's fixes"
 depends = [":fix:*"]
+
+[tasks."test:agent-store"]
+description = "Check the controller's Agent store against a real PostgreSQL, as its own login"
+run = '''
+set -euo pipefail
+: "${AGENT_STORE_DATABASE_URL:?point it at a disposable database as its owner}"
+: "${AGENT_STORE_CONTROLLER_URL:?point it at the same database as platform_controller}"
+: "${AGENT_STORE_ADMIN_DATABASE_URL:?point it at the same database as a role that may create logins}"
+(cd "{{vars.repo_root}}/packages/db" && DATABASE_URL="$AGENT_STORE_DATABASE_URL" pnpm exec drizzle-kit migrate >/dev/null)
+# The api-server owns the tables, so its own reconcile makes the grants the
+# controller is checked against. It leaves the role behind for this run.
+(cd "{{vars.repo_root}}/packages/api-server" && \
+  CONTROL_GRANTS_KEEP_ROLE=1 \
+  CONTROL_GRANTS_DATABASE_URL="$AGENT_STORE_DATABASE_URL" \
+  CONTROL_GRANTS_ADMIN_DATABASE_URL="$AGENT_STORE_ADMIN_DATABASE_URL" \
+  pnpm exec tsx scripts/control-grants-check.ts >/dev/null)
+AGENT_STORE_DATABASE_URL="$AGENT_STORE_DATABASE_URL" \
+AGENT_STORE_CONTROLLER_URL="$AGENT_STORE_CONTROLLER_URL" \
+  go test ./pkg/store/ -run TestPostgres -count=1 "$@"
+'''

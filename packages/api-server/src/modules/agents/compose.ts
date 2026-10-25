@@ -5,7 +5,10 @@ import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
-import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
+import type {
+  AgentStateCache,
+  RunningAgentStateCache,
+} from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
 import { createAgentServiceStatusClient } from "./infrastructure/agent-service-status-client.js";
@@ -14,6 +17,8 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createControlAgentsRepository } from "../agent-store/agents-repository.js";
+import { readsRows, type AgentStoreMode } from "../agent-store/fence.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
@@ -71,6 +76,7 @@ export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
   agentStateCache: AgentStateCache;
+  agentStore: { authority: AgentStoreMode };
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
@@ -96,7 +102,12 @@ export function composeAgentsModule(deps: {
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s, deps.agentStateCache);
+  const repo = readsRows(deps.agentStore.authority)
+    ? createControlAgentsRepository(
+        deps.db,
+        deps.agentStateCache as RunningAgentStateCache,
+      )
+    : createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const agentsRuntimeRepo = createAgentsRuntimeRepo(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);

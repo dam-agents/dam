@@ -22,7 +22,6 @@ const agent: AgentView = {
   stopRequested: false,
   disabled: false,
   overBudget: false,
-  size: {},
   state: "hibernated",
   podRestarts: 0,
   contributionFailures: [],

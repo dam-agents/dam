@@ -11,7 +11,25 @@ metadata:
     app.kubernetes.io/component: controller
   {{- include "platform.annotations" (dict "root" $ "component" .Values.controller) | nindent 2 }}
 spec:
+  {{- if .Values.agentStore.frozen }}
+  # Frozen for a rollback: no controller runs, so it cannot re-create an anchor
+  # or re-adopt a child while the exporter restores the custom resources.
+  replicas: 0
+  {{- else }}
   replicas: {{ .Values.controller.replicas | default 1 }}
+  {{- end }}
+  {{- if eq .Values.agentStore.authority "postgres" }}
+  # The switch takes the old controller down before it starts the new one (no
+  # surge). Recreate itself cannot replace an install's Deployment whose
+  # strategy the API server defaulted, so no-surge is how the same ordering is
+  # reached declaratively; the Lease and the api-server's barrier are what
+  # still keep two controllers from acting on the same store.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
   selector:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
@@ -33,6 +51,29 @@ spec:
           env:
             - name: LOG_LEVEL
               value: {{ .Values.controller.logLevel | default "info" | quote }}
+            - name: PLATFORM_HEALTH_PORT
+              value: {{ .Values.controller.healthPort | default 8081 | quote }}
+            # Which store is authoritative for Agents and budgets. The binary
+            # refuses to run the pairing the cluster's marker contradicts.
+            - name: PLATFORM_AGENT_STORE
+              value: {{ .Values.agentStore.authority | quote }}
+            - name: PLATFORM_AGENT_STORE_MARKER
+              value: {{ include "platform.agentStore.markerName" . | quote }}
+            - name: PLATFORM_AGENT_STORE_FROZEN
+              value: {{ .Values.agentStore.frozen | quote }}
+            {{- if ne .Values.agentStore.authority "crd" }}
+            # The controller's own login, on the api-server's database: it
+            # reads definitions and writes observations, and nothing else. The
+            # credential is rendered only by a release that reads Postgres —
+            # the switch and the contract release both do.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.controller.db.password.secretName" . }}
+                  key: POSTGRES_CONTROLLER_PASSWORD
+            - name: PLATFORM_DATABASE_URL
+              value: {{ include "platform.controller.postgres.dsn" . | quote }}
+            {{- end }}
             - name: PLATFORM_RELEASE_NAME
               value: {{ include "platform.fullname" . }}
             # Value of `app.kubernetes.io/instance` on chart-rendered apiserver
@@ -87,8 +128,8 @@ spec:
               value: {{ dict "runner" $runner "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
-            # Per-user compute ceiling defaults (#1900); a UserBudget CR
-            # overrides them for one user. Enforced at the 0→1 scale-up.
+            # Per-user pool defaults; a UserBudget overrides them for one
+            # user. The owner's runner admits machines against them.
             - name: DEFAULT_USER_CPU_BUDGET
               value: {{ .Values.controller.userBudgets.defaultCpu | quote }}
             - name: DEFAULT_USER_MEMORY_BUDGET
@@ -178,5 +219,43 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+          ports:
+            - name: health
+              containerPort: {{ .Values.controller.healthPort | default 8081 }}
+          {{- if .Values.probes.enabled }}
+          # UNIT_BOUNDARY_DESCRIPTION: the kubelet is what turns a leader that holds the Lease with no fleet behind it into a restart. Readiness is the store answering in the last half minute, not leadership — a standby must read ready or a one-replica rollout waits for a leader it cannot have; liveness allows two minutes of silence. CRD mode has no store, so both are always healthy. The startup budget covers the first list and, after the switch, the anchor pass.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
           resources:
             {{- toYaml .Values.controller.resources | nindent 12 }}
+          {{- if and (ne .Values.agentStore.authority "crd") .Values.apiServer.db.caCert }}
+          volumeMounts:
+            - name: pg-ca
+              mountPath: /etc/platform/pg-ca
+              readOnly: true
+          {{- end }}
+      {{- if and (ne .Values.agentStore.authority "crd") .Values.apiServer.db.caCert }}
+      volumes:
+        - name: pg-ca
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-db-ca
+      {{- end }}

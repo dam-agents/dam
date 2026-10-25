@@ -19,12 +19,21 @@ function fakeK8s(
   } as unknown as K8sClient;
 }
 
+const agentsOf = (k8s: K8sClient) => ({
+  listAgentIds: async () =>
+    (await k8s.listCustomObjects("agents"))
+      .map((a) => a.metadata?.name)
+      .filter((name): name is string => Boolean(name)),
+  hasAgent: async (id: string) =>
+    (await k8s.getCustomObject("agents", id)) !== null,
+});
+
 describe("agent-artifacts-sweeper", () => {
   it("deletes only orphans (agent_ids present in DB but missing in K8s)", async () => {
     const cleaned: Array<{ source: string; id: string }> = [];
 
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s(["agent-live-1", "agent-live-2"]),
+      ...agentsOf(fakeK8s(["agent-live-1", "agent-live-2"])),
       sources: [
         {
           name: "egress",
@@ -62,7 +71,7 @@ describe("agent-artifacts-sweeper", () => {
   it("respects batchSize per tick", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s([]),
+      ...agentsOf(fakeK8s([])),
       sources: [
         {
           name: "egress",
@@ -87,7 +96,7 @@ describe("agent-artifacts-sweeper", () => {
     const cleaned: string[] = [];
 
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s([]),
+      ...agentsOf(fakeK8s([])),
       sources: [
         {
           name: "egress",
@@ -123,7 +132,7 @@ describe("agent-artifacts-sweeper", () => {
   it("skips a candidate whose Agent exists by the time it is reaped", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s([], { appearsAfterList: ["agent-new"] }),
+      ...agentsOf(fakeK8s([], { appearsAfterList: ["agent-new"] })),
       sources: [
         {
           name: "usage-agents",
@@ -156,7 +165,7 @@ describe("agent-artifacts-sweeper", () => {
         order.push(`deleted:${e.agentId}:${e.ownerSub ?? "?"}`);
       });
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s(["agent-live"], { appearsAfterList: ["agent-new"] }),
+      ...agentsOf(fakeK8s(["agent-live"], { appearsAfterList: ["agent-new"] })),
       sources: [
         {
           name: "egress",
@@ -189,7 +198,7 @@ describe("agent-artifacts-sweeper", () => {
   it("is a no-op when there are no orphans", async () => {
     const cleaned: string[] = [];
     const sweeper = createAgentArtifactsSweeper({
-      k8s: fakeK8s(["agent-1"]),
+      ...agentsOf(fakeK8s(["agent-1"])),
       sources: [
         {
           name: "egress",

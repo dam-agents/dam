@@ -1390,7 +1390,7 @@ describe("slack turn — contract framing and attendance", () => {
      * TEST_SCENARIO: the harness died because the agent ran past its memory
      * limit, and the pod restarted while the turn was being watched. The
      * nudge must name that cause, so the agent can tell the person why the
-     * answer was lost and point them at the memory setting. Without it the
+     * answer was lost and point them at their memory budget. Without it the
      * agent only knows the turn failed, and the one fix that helps is never
      * suggested.
      */
@@ -1402,7 +1402,7 @@ describe("slack turn — contract framing and attendance", () => {
         ),
       );
       expect(nudge).toContain("ran out of memory");
-      expect(nudge).toContain("Compute Resources");
+      expect(nudge).toContain("memory budget");
     });
 
     /**

@@ -35,7 +35,10 @@ import type {
   ChannelManager,
   ChannelAttachment,
 } from "./../../modules/channels/services/channel-manager.js";
-import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type {
+  K8sClient,
+  KubeObject,
+} from "../../modules/agents/infrastructure/k8s.js";
 import { agentServiceClient } from "../../core/agent-service-client.js";
 import type {
   SubAgentAwaitMarks,
@@ -959,7 +962,7 @@ export function createMcpSession(
     const kitUpdate = deps.kitUpdate;
     server.tool(
       "report_kit_updated",
-      "Call this once a Kit Update the user started is finished: the definition checkout is at the commit the update targets and the user is done deciding. Call it even when the user declined every change. Pass the full target commit from the update briefing.",
+      "Call this the moment a Kit Update's work is done: the definition checkout contains the commit the update targets and you have nothing left to ask the user. The update stays pending, and the user keeps seeing an Update prompt, until you call it, so call it in the turn you finish and do not ask the user for permission first. Call it even when the user declined every change. Pass the full target commit from the update briefing.",
       { commit: z.string().regex(/^[0-9a-f]{40}$/i) },
       ({ commit }) =>
         textTool(
@@ -1497,6 +1500,7 @@ function localTime(iso: string, timeZone: string): string {
 export interface MountMcpDeps {
   channelManager: ChannelManager;
   k8s: K8sClient;
+  readAgent: (id: string) => Promise<KubeObject | null>;
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   markOnboardingComplete: OnboardingMarker;
@@ -1535,7 +1539,7 @@ export interface MountMcpDeps {
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/agents/:id/mcp", async (c) => {
     const agentId = c.req.param("id")!;
-    const verified = await resolveAgent(deps.k8s, agentId);
+    const verified = await resolveAgent(deps.readAgent, agentId);
     if (!verified) {
       securityLog("warn", "mcp.resolve_fail", {
         category: "authn",
