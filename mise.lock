@@ -340,26 +340,26 @@ url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/58085
 provenance = "github-attestations"
 
 [[tools."github:jolars/panache"]]
-version = "3.15.0"
+version = "3.17.0"
 backend = "github:jolars/panache"
-specifiers = ["3.15.0"]
+specifiers = ["3.17.0"]
 
 [tools."github:jolars/panache"."platforms.linux-arm64"]
-checksum = "sha256:667f8536e2b56a12e2526a4c5d15efded5153ff8e32f05d87edd9bcc09cfea30"
-url = "https://github.com/jolars/panache/releases/download/v3.15.0/panache-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jolars/panache/releases/assets/624801448"
+checksum = "sha256:7af5f91319ceb05790c5b744c140f01623f539453d7b21d5a2bf2c0018994caa"
+url = "https://github.com/jolars/panache/releases/download/v3.17.0/panache-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/654083925"
 provenance = "github-attestations"
 
 [tools."github:jolars/panache"."platforms.linux-x64"]
-checksum = "sha256:2dfff0d735ceb3f77abe3a21131daea1268092bb7f4dcae358bf0f79c618be96"
-url = "https://github.com/jolars/panache/releases/download/v3.15.0/panache-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jolars/panache/releases/assets/624802485"
+checksum = "sha256:6001f0f7f0971c9f8036554b6138ac674e9a06ce9de340197113a985913c9262"
+url = "https://github.com/jolars/panache/releases/download/v3.17.0/panache-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/654085331"
 provenance = "github-attestations"
 
 [tools."github:jolars/panache"."platforms.macos-arm64"]
-checksum = "sha256:3014ea8e0b124bb77c4298d4405025c9ac8f9554124e7a28150a71bd59f5d412"
-url = "https://github.com/jolars/panache/releases/download/v3.15.0/panache-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jolars/panache/releases/assets/624808450"
+checksum = "sha256:64caec57b89c63162dd0fef5a9ce813cf20f0626672bd5537f0ae99eb50e350a"
+url = "https://github.com/jolars/panache/releases/download/v3.17.0/panache-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/654087995"
 provenance = "github-attestations"
 
 [[tools.go]]
@@ -390,9 +390,9 @@ backend = "go:honnef.co/go/tools/cmd/staticcheck"
 specifiers = ["latest"]
 
 [[tools."go:sigs.k8s.io/controller-tools/cmd/controller-gen"]]
-version = "0.22.0"
+version = "0.23.0"
 backend = "go:sigs.k8s.io/controller-tools/cmd/controller-gen"
-specifiers = ["0.22.0"]
+specifiers = ["0.23.0"]
 
 [[tools."go:sigs.k8s.io/crdify"]]
 version = "0.6.0"
@@ -460,26 +460,26 @@ checksum = "sha256:6b54a3cfc229fd33c2b88569257beb52377ee95ecc31f8f1bad32948934ba
 url = "https://downloads.mend.io/production/unified/26.9.2.4/darwin_arm64/mend"
 
 [[tools.jactionlint]]
-version = "2.1.0"
+version = "2.2.0"
 backend = "github:jdx/jactionlint"
-specifiers = ["2.1.0"]
+specifiers = ["2.2.0"]
 
 [tools.jactionlint."platforms.linux-arm64"]
-checksum = "sha256:ec0c6496d8a2f37b2ae2a1af0fbf98d58df1f7c98a27cf9fdd64c20ad317234b"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112146"
+checksum = "sha256:6d4c3831cc360b14550fb2f4605b4de9d2761515cd3fd5c1da718528b314647d"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.2.0/jactionlint_2.2.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/640875713"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64"]
-checksum = "sha256:baebfc5792135438fb3bb5ea266c3bf2538a089753616f1988ef618e4c0c3cb1"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628112089"
+checksum = "sha256:8137d5bfe266dd5e48d2af2306827785ce07c6988e04b1c3d6ad4776e97d27d2"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.2.0/jactionlint_2.2.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/640875708"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.macos-arm64"]
-checksum = "sha256:3766a4b0890d3eb36fe58760289885712131c7974de4bc9fabb9a3faa599e931"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.1.0/jactionlint_2.1.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/628111988"
+checksum = "sha256:622b29b15a59618bc032163073209ffc434252e9a19eafd451e69207a50f266a"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.2.0/jactionlint_2.2.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/640875646"
 provenance = "github-attestations"
 
 [[tools.java]]
@@ -789,24 +789,24 @@ url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222609"
 provenance = "cosign"
 
 [[tools.zizmor]]
-version = "1.30.1"
+version = "1.31.1"
 backend = "aqua:zizmorcore/zizmor"
-specifiers = ["1.30.1"]
+specifiers = ["1.31.1"]
 
 [tools.zizmor."platforms.linux-arm64"]
-checksum = "sha256:7ff1dce33bdd18fd2a4affe63bdd47efcccca97b2cec1c1863ec26e9e2647540"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/552067643"
+checksum = "sha256:37eebbd5762a44f262d94875431b14a6d2402991e90a685113ea97b8b41be833"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.31.1/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/645467282"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.linux-x64"]
-checksum = "sha256:e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/552067642"
+checksum = "sha256:d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.31.1/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/645467284"
 provenance = "github-attestations"
 
 [tools.zizmor."platforms.macos-arm64"]
-checksum = "sha256:e28d22b087f9ebb8d99da6e740d348c930f559961c7c3f12badda54f882195a2"
-url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/552067640"
+checksum = "sha256:ad5aa633cd56215b11e6c51d51f90c7e6b22904a75047d1215abbd422f61d698"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.31.1/zizmor-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/645467283"
 provenance = "github-attestations"
