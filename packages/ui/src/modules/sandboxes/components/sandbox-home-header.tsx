@@ -8,8 +8,6 @@ import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { SharedBadge } from "../../agents/components/shared-badge.js";
-import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
-import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { isSharedAgent, ownerLine } from "../../agents/lib/agent-editors.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
@@ -50,39 +48,22 @@ export function SandboxIdentity({ agent, display }: Props) {
 export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
 
 export function SandboxHomeHeader({
-  agent,
   title,
   description,
   pictogram,
   actions,
-  showUpdate = true,
 }: {
-  agent: AgentView;
   title: string;
   description?: string;
   pictogram?: ReactNode;
   actions?: ReactNode;
-  showUpdate?: boolean;
 }) {
-  const { updateOne, updatingId } = useUpdateSandbox();
   return (
     <PageHeader
       title={title}
       description={description}
       pictogram={pictogram}
-      actions={
-        <>
-          {showUpdate && (
-            <UpdateAvailableAction
-              agent={agent}
-              pending={updatingId === agent.id}
-              busy={updatingId !== null}
-              onUpdate={() => void updateOne(agent)}
-            />
-          )}
-          {actions}
-        </>
-      }
+      actions={actions}
     />
   );
 }

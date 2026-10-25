@@ -24,14 +24,12 @@ import {
 } from "../../environments/api/queries.js";
 import { EnvironmentsSection } from "../../environments/components/environments-section.js";
 import { environmentsShown } from "../../environments/lib/environments-tab.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
 import { AgentManagementActions } from "../components/agent-management-actions.js";
-import { AgentUpdateRow } from "../components/agent-update-row.js";
 import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { FoldedSection } from "../components/folded-section.js";
@@ -88,7 +86,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   const display = useResolvedAgentDisplay(agent);
-  const newLayout = useNewLayout();
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
@@ -117,12 +114,10 @@ function AgentHome({ agent }: { agent: AgentView }) {
 
   const header: SectionHeaderSlot = (actions) => (
     <SandboxHomeHeader
-      agent={agent}
       title={sectionEntry?.title ?? ""}
       description={sectionEntry?.description}
       pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
       actions={actions}
-      showUpdate={!(newLayout && section === "setup")}
     />
   );
 
@@ -144,7 +139,6 @@ function AgentHome({ agent }: { agent: AgentView }) {
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>
-              {newLayout && <AgentUpdateRow agent={agent} />}
               {holds(agent.access, "sessions") && (
                 <AgentUsageActions agent={agent} />
               )}

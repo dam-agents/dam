@@ -1,4 +1,4 @@
-import { Tools, TrashCan } from "@carbon/icons-react";
+import { Renew, Tools, TrashCan } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import {
@@ -21,6 +21,7 @@ import type { AgentView } from "../../../../types.js";
 import { useDeleteAgent } from "../../../agents/api/mutations.js";
 import { AgentUpdateDot } from "../../../agents/components/update-available-action.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
+import { useUpdateSandbox } from "../../../agents/hooks/use-update-sandbox.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { defaultActivityFilters } from "../../../home/lib/activity-filter.js";
 import {
@@ -81,7 +82,7 @@ export function AgentRowActions({
             testId="sidebar-agent-menu"
             dense
           >
-            <AgentMenuItems {...actions} />
+            <AgentMenuItems agent={agent} {...actions} />
           </RowActionsMenu>
           <AgentUpdateDot
             available={!!agent.templateUpdate}
@@ -97,14 +98,14 @@ export function AgentRowActions({
  * UNIT_BOUNDARY_DESCRIPTION: An Agent's Configure and Remove items, drawn by its row's "⋯" menu and by the menu a right click on its row opens.
  */
 export function AgentMenuItems({
+  agent,
   onConfigure,
   onRemove,
-  updateAvailable,
   menu = "dropdown",
 }: {
+  agent: AgentView;
   onConfigure: () => void;
   onRemove: () => void;
-  updateAvailable: boolean;
   menu?: keyof typeof MENU_PARTS;
 }) {
   const { Item, Separator } = MENU_PARTS[menu];
@@ -112,13 +113,33 @@ export function AgentMenuItems({
     <>
       <Item onSelect={onConfigure}>
         <Tools size={14} /> Configure
-        <AgentUpdateDot available={updateAvailable} className="ml-auto" />
       </Item>
+      {/* UNIT_BOUNDARY_DESCRIPTION: the newer sandbox an Agent can move to is
+       * an action on its row (D107), not a card on the page it configures. */}
+      {agent.templateUpdate && <AgentUpdateItem agent={agent} Item={Item} />}
       <Separator />
       <Item tone="danger" onSelect={onRemove}>
         <TrashCan size={14} /> Remove
       </Item>
     </>
+  );
+}
+
+/* UNIT_BOUNDARY_DESCRIPTION: the update reads its own state, so a menu of an
+ * Agent with nowhere to move to needs no query client at all. */
+function AgentUpdateItem({
+  agent,
+  Item,
+}: {
+  agent: AgentView;
+  Item: typeof DropdownMenuItem;
+}) {
+  const { updateOne } = useUpdateSandbox();
+  return (
+    <Item onSelect={() => void updateOne(agent)}>
+      <Renew size={14} /> Update…
+      <AgentUpdateDot available className="ml-auto" />
+    </Item>
   );
 }
 
@@ -136,7 +157,6 @@ function useAgentMenuActions({
   const confirmDelete = useConfirmDeleteAgent();
   const deleteAgent = useDeleteAgent();
   return {
-    updateAvailable: !!agent.templateUpdate,
     onConfigure: () => {
       navigateToSandboxHome(agent.id);
       onNavigate?.();
@@ -171,7 +191,7 @@ export function AgentContextMenu({
     <ContextMenu onOpenChange={onOpenChange}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <AgentMenuItems menu="context" {...actions} />
+        <AgentMenuItems agent={agent} menu="context" {...actions} />
       </ContextMenuContent>
     </ContextMenu>
   );
