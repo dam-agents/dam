@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-23
+Last verified: 2026-10-25
 
 ## Overview
 
@@ -99,7 +99,8 @@ So agent-runtime gives every session a reference of its own and hands the harnes
 A harness that does not honour a per-session entry sends no reference, and the tool refuses to tie the task to a session rather than guess.
 Codex's ACP adapter drops a session's entry whose name its `config.toml` already holds, and the platform entry is there for the terminal's `codex`, so Codex chat processes run with that filtering off and the session's own entry wins.
 Pi's adapter takes no HTTP servers, so the reference reaches Pi another way: the image's patch of the adapter starts each session's Pi process with the reference its session carried, and the platform entry in Pi's own file names it in its header, which Pi fills in per process.
-Bob reads MCP servers only from its own files, so it gets no entry: its manifest declares `sessionMcpEntry: false`, the harness reports `identifiesSession: false`, the session picker's Subagents block says a session's platform sub-agent settings cannot pass, and `spawn_subagent` names that reason when a spawn from such a session names no model.
+Bob takes a session's entry too, but keeps one server per name and lets its own settings file's entry outrank it, and the platform entry is in that file for the terminal's `bob chat`; so Bob's chat process alone runs with a preload that hides the file's platform entry from what Bob reads and restores it in what Bob writes, and the session's own entry wins.
+A session the runtime opens for a rewind or a fork gets an entry and a reference of its own the same way, never the original's.
 The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it waits on Home for a verdict the way a detached run's does, and expires only when nobody answers it in time ([cli](cli.md#headless-runs)).
 If that session is gone by then, *continue* runs the task in a fresh session instead, so it is not lost; *report* drops the result, since there is nobody left to tell.
 

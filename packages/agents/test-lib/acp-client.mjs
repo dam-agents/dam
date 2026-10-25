@@ -575,3 +575,76 @@ export function chatStream(model, { text, tool }) {
       "data: [DONE]\n\n",
   };
 }
+
+export async function fakePlatformMcp({ tools = [], callResult } = {}) {
+  const calls = [];
+  const waiters = [];
+  const server = createServer((req, res) => {
+    if (req.method !== "POST") {
+      res.statusCode = 405;
+      return res.end();
+    }
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const message = JSON.parse(body);
+      calls.push({
+        method: message.method,
+        headers: req.headers,
+        params: message.params,
+      });
+      for (const w of waiters.splice(0)) w();
+      if (message.id === undefined) {
+        res.statusCode = 202;
+        return res.end();
+      }
+      const result =
+        message.method === "initialize"
+          ? {
+              protocolVersion: message.params.protocolVersion,
+              capabilities: { tools: {} },
+              serverInfo: { name: "platform", version: "0" },
+            }
+          : message.method === "tools/list"
+            ? { tools }
+            : message.method === "tools/call"
+              ? {
+                  content: [
+                    {
+                      type: "text",
+                      text: callResult?.(message.params, req.headers) ?? "ok",
+                    },
+                  ],
+                }
+              : {};
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return {
+    url: `http://127.0.0.1:${server.address().port}/mcp`,
+    calls,
+    waitFor: async (pred, what, timeoutMs = 60_000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (!pred(calls)) {
+        const left = deadline - Date.now();
+        if (left <= 0)
+          throw new Error(
+            `timed out waiting for ${what}; the platform server saw: ${calls.map((c) => c.method).join(", ") || "nothing"}`,
+          );
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, left);
+          waiters.push(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+      }
+    },
+    close: () => server.close(),
+  };
+}
